@@ -1,0 +1,26 @@
+[package]
+name = "zsui"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/qiu7824/zsui"
+description = "Rust-first native system UI declarations and host contracts."
+readme = "README.md"
+
+[dependencies]
+arboard = "3.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
+winit = "0.30"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
