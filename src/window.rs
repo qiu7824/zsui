@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::capability::{CapabilityStatus, CapabilitySupport, HostCapabilities};
+use crate::components::UiNode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowSpec {
@@ -14,6 +15,7 @@ pub struct WindowSpec {
     pub decorations: bool,
     pub always_on_top: bool,
     pub transparent: bool,
+    pub content: Option<UiNode>,
 }
 
 pub type Window = WindowSpec;
@@ -48,6 +50,7 @@ impl WindowSpec {
             decorations: true,
             always_on_top: false,
             transparent: false,
+            content: None,
         }
     }
 
@@ -85,6 +88,11 @@ impl WindowSpec {
 
     pub fn transparent(mut self, transparent: bool) -> Self {
         self.transparent = transparent;
+        self
+    }
+
+    pub fn content(mut self, content: UiNode) -> Self {
+        self.content = Some(content);
         self
     }
 

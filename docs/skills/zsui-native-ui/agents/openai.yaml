@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZSUI Native UI"
+  short_description: "Work on standalone ZSUI native UI contracts and hosts."
+  default_prompt: "Use this skill to modify or verify ZSUI native UI framework surfaces without adding product behavior."

@@ -1,3 +1,7 @@
+use serde::{Deserialize, Serialize};
+
+use crate::core::Command;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ZsTabSpec {
     pub id: &'static str,
@@ -7,6 +11,141 @@ pub struct ZsTabSpec {
 impl ZsTabSpec {
     pub const fn new(id: &'static str, label: &'static str) -> Self {
         Self { id, label }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UiStackDirection {
+    Row,
+    Column,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UiNodeKind {
+    Text {
+        text: String,
+    },
+    Button {
+        label: String,
+        command: Command,
+    },
+    TextInput {
+        label: String,
+        value: String,
+    },
+    Checkbox {
+        label: String,
+        checked: bool,
+        command: Option<Command>,
+    },
+    Stack {
+        direction: UiStackDirection,
+        gap: u16,
+    },
+    Spacer {
+        size: u16,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiNode {
+    pub id: String,
+    pub kind: UiNodeKind,
+    pub children: Vec<UiNode>,
+}
+
+impl UiNode {
+    pub fn new(id: impl Into<String>, kind: UiNodeKind) -> Self {
+        Self {
+            id: id.into(),
+            kind,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn text(id: impl Into<String>, text: impl Into<String>) -> Self {
+        Self::new(id, UiNodeKind::Text { text: text.into() })
+    }
+
+    pub fn button(id: impl Into<String>, label: impl Into<String>, command: Command) -> Self {
+        Self::new(
+            id,
+            UiNodeKind::Button {
+                label: label.into(),
+                command,
+            },
+        )
+    }
+
+    pub fn text_input(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            id,
+            UiNodeKind::TextInput {
+                label: label.into(),
+                value: value.into(),
+            },
+        )
+    }
+
+    pub fn checkbox(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        checked: bool,
+        command: Option<Command>,
+    ) -> Self {
+        Self::new(
+            id,
+            UiNodeKind::Checkbox {
+                label: label.into(),
+                checked,
+                command,
+            },
+        )
+    }
+
+    pub fn stack(id: impl Into<String>, direction: UiStackDirection) -> Self {
+        Self::new(id, UiNodeKind::Stack { direction, gap: 0 })
+    }
+
+    pub fn row(id: impl Into<String>) -> Self {
+        Self::stack(id, UiStackDirection::Row)
+    }
+
+    pub fn column(id: impl Into<String>) -> Self {
+        Self::stack(id, UiStackDirection::Column)
+    }
+
+    pub fn spacer(id: impl Into<String>, size: u16) -> Self {
+        Self::new(id, UiNodeKind::Spacer { size })
+    }
+
+    pub fn gap(mut self, gap: u16) -> Self {
+        if let UiNodeKind::Stack { gap: current, .. } = &mut self.kind {
+            *current = gap;
+        }
+        self
+    }
+
+    pub fn child(mut self, child: UiNode) -> Self {
+        self.children.push(child);
+        self
+    }
+
+    pub fn children(mut self, children: impl IntoIterator<Item = UiNode>) -> Self {
+        self.children.extend(children);
+        self
+    }
+
+    pub fn node_count(&self) -> usize {
+        1 + self.children.iter().map(UiNode::node_count).sum::<usize>()
+    }
+
+    pub fn contains_node_id(&self, id: &str) -> bool {
+        self.id == id || self.children.iter().any(|child| child.contains_node_id(id))
     }
 }
 
@@ -168,5 +307,35 @@ mod label_tests {
         assert_eq!(output.children[0].component, ComponentId(1));
         assert_eq!(renderer.text, vec!["hello"]);
         assert_eq!(label.lifecycle_state().phase(), ComponentPhase::Active);
+    }
+}
+
+#[cfg(test)]
+mod ui_node_tests {
+    use super::*;
+
+    #[test]
+    fn ui_node_builders_create_serializable_component_tree() {
+        let tree = UiNode::column("root")
+            .gap(8)
+            .child(UiNode::text("title", "Hello"))
+            .child(UiNode::row("actions").child(UiNode::button(
+                "save",
+                "Save",
+                Command::custom("demo.save"),
+            )))
+            .child(UiNode::checkbox(
+                "enabled",
+                "Enabled",
+                true,
+                Some(Command::custom("demo.toggle")),
+            ));
+
+        let json = serde_json::to_string(&tree).expect("ui node tree should serialize");
+
+        assert_eq!(tree.node_count(), 5);
+        assert!(tree.contains_node_id("save"));
+        assert!(json.contains("demo.save"));
+        assert!(json.contains("Enabled"));
     }
 }

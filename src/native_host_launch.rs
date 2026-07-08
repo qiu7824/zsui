@@ -1,0 +1,138 @@
+use serde::Serialize;
+
+use crate::{
+    native_ui_backend_for_current_target, native_ui_backend_for_platform, NativeUiPlatform,
+    NativeUiToolkit,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum NativeHostLaunchMode {
+    RealNativeHost,
+    ContractScaffoldFallback,
+}
+
+impl NativeHostLaunchMode {
+    pub const fn mode_name(self) -> &'static str {
+        match self {
+            Self::RealNativeHost => "real_native_host",
+            Self::ContractScaffoldFallback => "contract_scaffold_fallback",
+        }
+    }
+
+    pub const fn enters_real_event_loop(self) -> bool {
+        matches!(self, Self::RealNativeHost)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct NativeHostLaunchPlan {
+    pub platform: NativeUiPlatform,
+    pub toolkit: NativeUiToolkit,
+    pub entry_point: &'static str,
+    pub native_application_type: &'static str,
+    pub native_window_type: &'static str,
+    pub real_host_module_path: &'static str,
+    pub fallback_module_path: &'static str,
+    pub mode: NativeHostLaunchMode,
+    pub target_os_verification_required: bool,
+}
+
+impl NativeHostLaunchPlan {
+    pub const fn platform_name(&self) -> &'static str {
+        self.platform.platform_name()
+    }
+
+    pub const fn toolkit_name(&self) -> &'static str {
+        self.toolkit.toolkit_name()
+    }
+
+    pub const fn mode_name(&self) -> &'static str {
+        self.mode.mode_name()
+    }
+
+    pub const fn enters_real_event_loop(&self) -> bool {
+        self.mode.enters_real_event_loop()
+    }
+
+    pub const fn needs_target_os_verification(&self) -> bool {
+        self.target_os_verification_required
+    }
+}
+
+pub fn native_host_launch_plan_for_platform(
+    platform: NativeUiPlatform,
+) -> Option<NativeHostLaunchPlan> {
+    let backend = native_ui_backend_for_platform(platform)?;
+    let desktop = matches!(
+        platform,
+        NativeUiPlatform::Windows | NativeUiPlatform::Macos | NativeUiPlatform::Linux
+    );
+
+    Some(NativeHostLaunchPlan {
+        platform,
+        toolkit: backend.toolkit,
+        entry_point: if desktop {
+            "zsui::native_window(\"Title\").run()"
+        } else {
+            "mobile runtime host scaffold"
+        },
+        native_application_type: match platform {
+            NativeUiPlatform::Windows => "winit desktop event loop on Windows",
+            NativeUiPlatform::Macos => "winit desktop event loop on macOS",
+            NativeUiPlatform::Linux => "winit desktop event loop on Linux",
+            NativeUiPlatform::Android => "Android Activity host",
+            NativeUiPlatform::Harmony => "Harmony Ability host",
+        },
+        native_window_type: match platform {
+            NativeUiPlatform::Windows | NativeUiPlatform::Macos | NativeUiPlatform::Linux => {
+                "winit::window::Window"
+            }
+            NativeUiPlatform::Android => "android.app.Activity surface",
+            NativeUiPlatform::Harmony => "OpenHarmony Ability window",
+        },
+        real_host_module_path: backend.module_path,
+        fallback_module_path: "src/host.rs",
+        mode: if desktop {
+            NativeHostLaunchMode::RealNativeHost
+        } else {
+            NativeHostLaunchMode::ContractScaffoldFallback
+        },
+        target_os_verification_required: true,
+    })
+}
+
+pub fn native_host_launch_plan_for_current_target() -> Option<NativeHostLaunchPlan> {
+    native_host_launch_plan_for_platform(native_ui_backend_for_current_target()?.platform)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launch_plan_reports_platform_toolkit_and_real_loop_mode() {
+        let plan = native_host_launch_plan_for_platform(NativeUiPlatform::Windows)
+            .expect("windows launch plan should exist");
+
+        assert_eq!(plan.platform_name(), "windows");
+        assert_eq!(plan.toolkit_name(), "winit_desktop");
+        assert_eq!(plan.mode_name(), "real_native_host");
+        assert_eq!(plan.real_host_module_path, "src/native.rs");
+        assert!(plan.enters_real_event_loop());
+        assert!(plan.needs_target_os_verification());
+    }
+
+    #[test]
+    fn mobile_launch_plans_are_explicit_scaffold_fallbacks() {
+        let android = native_host_launch_plan_for_platform(NativeUiPlatform::Android)
+            .expect("android launch plan should exist");
+        let harmony = native_host_launch_plan_for_platform(NativeUiPlatform::Harmony)
+            .expect("harmony launch plan should exist");
+
+        assert_eq!(android.toolkit, NativeUiToolkit::AndroidActivity);
+        assert_eq!(android.mode, NativeHostLaunchMode::ContractScaffoldFallback);
+        assert!(!android.enters_real_event_loop());
+        assert_eq!(harmony.toolkit, NativeUiToolkit::HarmonyAbility);
+        assert_eq!(harmony.mode_name(), "contract_scaffold_fallback");
+    }
+}

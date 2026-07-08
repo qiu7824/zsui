@@ -5,6 +5,8 @@
 //! shortcuts, settings pages and commands in Rust, while platform hosts map
 //! those declarations to Win32, AppKit or GTK/libadwaita backends.
 
+pub mod agent_context;
+pub mod android_activity_host;
 pub mod app;
 pub mod capability;
 pub mod clipboard;
@@ -15,23 +17,49 @@ pub mod control_protocol;
 pub mod core;
 pub mod event_protocol;
 pub mod geometry;
+pub mod harmony_ability_host;
 pub mod host;
+pub mod host_protocol;
 pub mod hotkey;
 pub mod icon;
 pub mod menu;
+pub mod mobile_host;
 pub mod native;
+pub mod native_adapter_manifest;
+pub mod native_host_launch;
+pub mod native_hosts;
+pub mod native_smoke;
+pub mod product_adapter;
 pub mod render_protocol;
 pub mod settings;
+pub mod timer_protocol;
 pub mod tray;
 pub mod ui_surface_protocol;
 pub mod window;
 
-pub use app::{app, AppBuilder, ZsuiApp, ZsuiAppRuntime};
+pub use agent_context::{
+    zsui_agent_context, zsui_agent_context_json, zsui_completion_areas,
+    zsui_framework_boundary_rules, zsui_framework_layers, zsui_native_runtime_gate_plans,
+    zsui_reuse_bootstrap_plan, zsui_reuse_readiness_report, ZsuiAgentContext,
+    ZsuiAgentIntegrationStep, ZsuiCompletionArea, ZsuiFrameworkBoundaryRule, ZsuiFrameworkLayer,
+    ZsuiNativeRuntimeGateCompletion, ZsuiNativeRuntimeGatePlan, ZsuiReuseBootstrapPlan,
+    ZsuiReuseReadinessReport, ZSUI_AGENT_CONTEXT_VERSION, ZSUI_FRAMEWORK_NAME,
+};
+pub use android_activity_host::{
+    android_activity_bridge_entry_points, android_activity_capability_bindings,
+    android_activity_host_scaffold, android_activity_lifecycle_bindings,
+    android_activity_required_permissions,
+};
+pub use app::{
+    app, audit_app_declaration, zsui_declaration_audit_surface_names, AppBuilder, ZsuiApp,
+    ZsuiAppDeclarationReport, ZsuiAppRuntime, ZsuiDeclarationIssue, ZsuiDeclarationIssueLevel,
+    ZSUI_DECLARATION_AUDIT_SURFACES,
+};
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
 pub use clipboard::ClipboardData;
 pub use command_protocol::{CommandId, CommandPayload, CommandQueue, CommandScope, UiCommand};
 pub use component_protocol::Component;
-pub use components::{Label, ZsTabSpec};
+pub use components::{Label, UiNode, UiNodeKind, UiStackDirection, ZsTabSpec};
 pub use control_protocol::{
     NativeControlFamily, NativeControlMapper, NativeControlMapperOperation,
     NativeSettingsControlHost, SettingsComponentKind, SettingsControlHostOperation,
@@ -50,11 +78,114 @@ pub use geometry::{
     DpiCompensationState, LayoutInput, LayoutNode, LayoutOutput, LayoutProtocol, Point, Rect,
     SharedUiProtocol, Size, UiRect, SHARED_NON_HOST_UI_PROTOCOLS,
 };
+pub use harmony_ability_host::{
+    harmony_ability_bridge_entry_points, harmony_ability_capability_bindings,
+    harmony_ability_host_scaffold, harmony_ability_lifecycle_bindings,
+    harmony_ability_required_permissions,
+};
 pub use host::{MemoryHost, PlatformHost, TrayRecord, WindowRecord, ZsuiHost};
+pub use host_protocol::{
+    clipboard_monitor_poll_result_for_sequence, native_paste_target_activation_snapshot,
+    native_window_identity_snapshot, poll_clipboard_monitor, ClipboardHost,
+    ClipboardMonitorPollResult, ClipboardMonitorState, NativeAutostartApplyResult,
+    NativeAutostartHost, NativeAutostartStatus, NativeDialogButtons, NativeDialogHost,
+    NativeDialogHostOperation, NativeDialogLevel, NativeDialogResponse, NativeEditTextDialogHost,
+    NativeEditTextDialogHostOperation, NativeEditTextDialogRequest, NativeEditTextDialogResult,
+    NativeEditTextSaveHandler, NativeFileDialogHost, NativeFileDialogHostOperation,
+    NativeFileDialogRequest, NativeImeCandidateAnchor, NativeImeCompositionAnchor, NativeImeHost,
+    NativeImeHostOperation, NativeMailMergeWindowHost, NativeMailMergeWindowHostOperation,
+    NativeMailMergeWindowRequest, NativePasteTargetActivationSnapshot, NativePasteTargetHost,
+    NativePasteTargetHostOperation, NativePopupMenuEntry, NativePopupMenuHost,
+    NativePopupMenuHostOperation, NativePopupMenuPlacement, NativeShellOpenHost,
+    NativeShellOpenHostOperation, NativeTextCaretAnchor, NativeTextCaretHost,
+    NativeTextCaretHostOperation, NativeTextInputDialogHost, NativeTextInputDialogHostOperation,
+    NativeTextInputDialogRequest, NativeTransientWindowHost, NativeTransientWindowHostOperation,
+    NativeTransientWindowPresentation, NativeTransientWindowRequest, NativeWindowIdentityHost,
+    NativeWindowIdentityHostOperation, NativeWindowIdentitySnapshot, PasteTargetFocusStatus,
+    PasteTargetTextInputCapabilities, REQUIRED_NATIVE_DIALOG_HOST_OPERATIONS,
+    REQUIRED_NATIVE_EDIT_TEXT_DIALOG_HOST_OPERATIONS, REQUIRED_NATIVE_FILE_DIALOG_HOST_OPERATIONS,
+    REQUIRED_NATIVE_IME_HOST_OPERATIONS, REQUIRED_NATIVE_MAIL_MERGE_WINDOW_HOST_OPERATIONS,
+    REQUIRED_NATIVE_PASTE_TARGET_HOST_OPERATIONS, REQUIRED_NATIVE_POPUP_MENU_HOST_OPERATIONS,
+    REQUIRED_NATIVE_SHELL_OPEN_HOST_OPERATIONS, REQUIRED_NATIVE_TEXT_CARET_HOST_OPERATIONS,
+    REQUIRED_NATIVE_TEXT_INPUT_DIALOG_HOST_OPERATIONS,
+    REQUIRED_NATIVE_TRANSIENT_WINDOW_HOST_OPERATIONS,
+    REQUIRED_NATIVE_WINDOW_IDENTITY_HOST_OPERATIONS,
+};
 pub use hotkey::HotkeySpec;
 pub use icon::ZsIcon;
 pub use menu::{MenuItemSpec, MenuSpec};
-pub use native::{native_window, run_native_window, NativeWindowBuilder, NativeWindowHost};
+pub use mobile_host::{
+    mobile_runtime_host_scaffold, mobile_runtime_host_scaffold_json,
+    mobile_runtime_host_scaffold_module_paths, mobile_runtime_host_scaffolds,
+    mobile_runtime_host_scaffolds_json, MobileRuntimeBridgeEntryPoint,
+    MobileRuntimeCapabilityBinding, MobileRuntimeHostScaffold, MobileRuntimeLifecycleBinding,
+    MobileRuntimePermission,
+};
+pub use native::{
+    native_window, run_native_window, run_native_window_smoke, NativeWindowBuilder,
+    NativeWindowHost, NativeWindowRuntimeDriver, NativeWindowRuntimeDriverReport,
+    NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
+};
+pub use native_adapter_manifest::{
+    native_ui_adapter_parity_report, native_ui_backend_capability_matrix,
+    native_ui_backend_capability_matrix_for_platform, native_ui_backend_for_current_target,
+    native_ui_backend_for_platform, native_ui_backend_for_toolkit,
+    native_ui_platform_for_current_target, NativeUiAdapterBindingPlan, NativeUiAdapterCapability,
+    NativeUiAdapterManifest, NativeUiAdapterParityReport, NativeUiAdapterReusePackage,
+    NativeUiBackendCapabilityMatrix, NativeUiBackendDescriptor, NativeUiBackendStatus,
+    NativeUiPlatform, NativeUiToolkit, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
+    SUPPORTED_NATIVE_UI_BACKENDS, SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
+};
+pub use native_host_launch::{
+    native_host_launch_plan_for_current_target, native_host_launch_plan_for_platform,
+    NativeHostLaunchMode, NativeHostLaunchPlan,
+};
+pub use native_hosts::{
+    required_native_runtime_driver_operation_names,
+    required_native_settings_page_model_host_operation_names,
+    required_native_status_item_host_operation_names, NativeAppIconResource,
+    NativeMainSearchControlHost, NativeMainSearchControlHostOperation,
+    NativeMainSearchControlPresentation, NativeMainSearchControlRequest,
+    NativeMainSearchStylePresentation, NativeMainSearchStyleRequest, NativeMainWindowHandles,
+    NativeMainWindowHost, NativeMainWindowHostOperation, NativeMainWindowPresentMode,
+    NativeMainWindowPresentation, NativeMainWindowRequest, NativeRuntimeDriver,
+    NativeRuntimeDriverOperation, NativeRuntimeStartupRequest, NativeRuntimeStartupResult,
+    NativeSettingsDropdownHost, NativeSettingsDropdownHostOperation,
+    NativeSettingsDropdownPresentation, NativeSettingsDropdownRequest, NativeSettingsPageModelHost,
+    NativeSettingsPageModelHostOperation, NativeSettingsPageModelPresentation,
+    NativeSettingsPageModelRequest, NativeSettingsWindowHost, NativeSettingsWindowHostOperation,
+    NativeSettingsWindowPresentation, NativeSettingsWindowRequest, NativeStatusItemHost,
+    NativeStatusItemHostOperation, NativeStatusItemPresentation, NativeStatusItemRequest,
+    NativeWindowOptions, REQUIRED_NATIVE_MAIN_SEARCH_CONTROL_HOST_OPERATIONS,
+    REQUIRED_NATIVE_MAIN_WINDOW_HOST_OPERATIONS, REQUIRED_NATIVE_RUNTIME_DRIVER_OPERATIONS,
+    REQUIRED_NATIVE_SETTINGS_DROPDOWN_HOST_OPERATIONS,
+    REQUIRED_NATIVE_SETTINGS_PAGE_MODEL_HOST_OPERATIONS,
+    REQUIRED_NATIVE_SETTINGS_WINDOW_HOST_OPERATIONS, REQUIRED_NATIVE_STATUS_ITEM_HOST_OPERATIONS,
+};
+pub use native_smoke::{
+    native_host_smoke_artifact_names, native_host_smoke_artifact_requirements,
+    native_host_smoke_command_names, native_host_smoke_plan,
+    native_host_smoke_plan_for_current_target, native_host_smoke_plan_json,
+    native_host_smoke_plan_with_artifact_root, native_host_smoke_plans,
+    native_host_smoke_plans_json, review_native_host_smoke_artifacts,
+    review_native_host_smoke_artifacts_at, write_native_host_smoke_artifacts,
+    write_native_host_smoke_artifacts_to, write_native_host_smoke_artifacts_with_interaction_to,
+    NativeHostSmokeArtifactKind, NativeHostSmokeArtifactRequirement, NativeHostSmokeArtifactStatus,
+    NativeHostSmokeInteractionReport, NativeHostSmokePlan, NativeHostSmokeReviewReport,
+    NativeHostSmokeWriteReport,
+};
+pub use product_adapter::{
+    product_adapter_reuse_checklist, product_adapter_runtime_smoke_example_names,
+    required_product_adapter_surface_names, required_product_adapter_task_names,
+    ui_command_id_name, zsui_reusable_runtime_harness_stage_names, ProductAdapterHost,
+    ProductAdapterIdentity, ProductAdapterReuseChecklist, ProductAdapterRuntimeSmokeReport,
+    ProductAdapterRuntimeSmokeRequest, ProductAdapterSurface, ProductAdapterTask,
+    ProductAiCapabilityDescriptor, ProductAiExecutionPlan, ProductAiExecutorBoundary,
+    ProductAiInvocation, ProductAiProviderFamily, ProductAiResult, ProductUiProjection,
+    ZsuiReusableRuntimeHarness, ZsuiReusableRuntimeHarnessStage, PRODUCT_ADAPTER_SMOKE_COMMAND,
+    REQUIRED_PRODUCT_ADAPTER_SURFACES, REQUIRED_PRODUCT_ADAPTER_TASKS,
+    ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
+};
 pub use render_protocol::{
     Color, ColorRole, HorizontalAlign, NativeStyleHostOperation, NativeStyleResolver, Renderer,
     RendererHostOperation, SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole,
@@ -62,6 +193,10 @@ pub use render_protocol::{
     REQUIRED_RENDERER_HOST_OPERATIONS, REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};
+pub use timer_protocol::{
+    main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
+    SettingsTimerIds, SettingsTimerTask,
+};
 pub use tray::TraySpec;
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
@@ -302,5 +437,31 @@ mod tests {
         let json = serde_json::to_string(&spec).expect("tray spec should serialize");
         assert!(json.contains("ShowMainWindow"));
         assert!(json.contains("OpenSettings"));
+    }
+
+    #[test]
+    fn window_can_carry_a_declarative_component_tree() {
+        let mut host = MemoryHost::new();
+        let content = UiNode::column("root")
+            .gap(10)
+            .child(UiNode::text("title", "Example"))
+            .child(UiNode::button(
+                "refresh",
+                "Refresh",
+                Command::custom("example.refresh"),
+            ));
+
+        app("Example")
+            .window(Window::new("Example").content(content))
+            .run_with_host(&mut host)
+            .expect("component tree should be a valid window declaration");
+
+        let content = host.windows()[0]
+            .spec
+            .content
+            .as_ref()
+            .expect("content tree should be recorded");
+        assert_eq!(content.node_count(), 3);
+        assert!(content.contains_node_id("refresh"));
     }
 }
