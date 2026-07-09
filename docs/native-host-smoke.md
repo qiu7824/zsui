@@ -117,6 +117,13 @@ be inspected with:
 ```powershell
 cargo run --example mobile_scaffold_manifest -- --bridge android
 cargo run --example mobile_scaffold_manifest -- --bridge harmony
+cargo run --example mobile_scaffold_manifest -- --parity android
+cargo run --example mobile_scaffold_manifest -- --dispatch android
+cargo run --example mobile_scaffold_manifest -- --dispatch-smoke android
+cargo run --example mobile_scaffold_manifest -- --write-contract android
+cargo run --example mobile_scaffold_manifest -- --review-contract android
+cargo run --example mobile_scaffold_manifest -- --write-contract all target/mobile-contract-smoke
+cargo run --example mobile_scaffold_manifest -- --review-contract all target/mobile-contract-smoke
 cargo run --example mobile_scaffold_manifest -- --smoke android
 cargo run --example mobile_scaffold_manifest -- --review android
 ```
@@ -124,8 +131,16 @@ cargo run --example mobile_scaffold_manifest -- --review android
 The mobile contracts require device-side artifacts such as
 `device-launch.log`, `device-window.png`, `lifecycle.json`, `surface.json` and
 `input.json` before a mobile backend can move beyond scaffold status. The
-review command validates artifact presence, JSON files and PNG headers; it does
-not generate or fake device proof.
+parity command reports required callback route coverage and pending FFI symbols.
+The dispatch command maps the required callback symbols to lifecycle, surface,
+typed input and `NativeRuntimeDriver` operations. The dispatch-smoke command
+locally replays the required bridge sequence as a contract smoke only. The
+write-contract command writes local contract JSON artifacts, but intentionally
+does not create device launch logs, screenshots, lifecycle, surface or input
+traces. The review-contract command validates only those local contract JSON
+artifacts. Both contract artifact commands accept `all` to cover Android and
+Harmony. The review command validates device-smoke artifact presence, JSON files
+and PNG headers. None of these commands generates or fakes device proof.
 
 Current Windows proof command sequence:
 

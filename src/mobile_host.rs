@@ -5,6 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::native_hosts::NativeRuntimeDriverOperation;
 use crate::{
     android_activity_host::android_activity_host_scaffold,
     harmony_ability_host::harmony_ability_host_scaffold,
@@ -83,6 +84,16 @@ impl MobileRuntimeBridgeCallbackKind {
         }
     }
 }
+
+const REQUIRED_MOBILE_RUNTIME_BRIDGE_CALLBACK_KINDS: [MobileRuntimeBridgeCallbackKind; 7] = [
+    MobileRuntimeBridgeCallbackKind::Bootstrap,
+    MobileRuntimeBridgeCallbackKind::Lifecycle,
+    MobileRuntimeBridgeCallbackKind::Surface,
+    MobileRuntimeBridgeCallbackKind::Input,
+    MobileRuntimeBridgeCallbackKind::Command,
+    MobileRuntimeBridgeCallbackKind::EventPoll,
+    MobileRuntimeBridgeCallbackKind::Shutdown,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MobileRuntimeBridgeCallback {
@@ -244,6 +255,176 @@ pub struct MobileRuntimeDeviceSmokeReviewReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeParityReport {
+    pub platform: NativeUiPlatform,
+    pub platform_name: &'static str,
+    pub toolkit_name: &'static str,
+    pub status_name: &'static str,
+    pub scaffold_module_path: &'static str,
+    pub contract_module_path: &'static str,
+    pub native_library_name: &'static str,
+    pub rust_entry_point: &'static str,
+    pub foreign_entry_file: &'static str,
+    pub entry_point_symbol_names: Vec<&'static str>,
+    pub contract_callback_kind_names: Vec<&'static str>,
+    pub required_callback_kind_names: Vec<&'static str>,
+    pub missing_required_callback_kind_names: Vec<&'static str>,
+    pub required_callback_symbol_names: Vec<&'static str>,
+    pub pending_ffi_callback_symbol_names: Vec<&'static str>,
+    pub required_device_smoke_file_names: Vec<&'static str>,
+    pub lifecycle_binding_count: usize,
+    pub required_lifecycle_binding_count: usize,
+    pub capability_binding_count: usize,
+    pub implemented_capability_count: usize,
+    pub pending_capability_count: usize,
+    pub required_device_smoke_artifact_count: usize,
+    pub scaffold_matches_contract: bool,
+    pub contract_covers_required_runtime_routes: bool,
+    pub runtime_ffi_implemented: bool,
+    pub ready_for_device_smoke: bool,
+    pub blocking_reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeDispatchStep {
+    pub callback_name: &'static str,
+    pub symbol_name: &'static str,
+    pub kind: MobileRuntimeBridgeCallbackKind,
+    pub kind_name: &'static str,
+    pub dispatch_operation_name: &'static str,
+    pub payload_contract: &'static str,
+    pub required_for_runtime: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeDispatchReport {
+    pub platform: NativeUiPlatform,
+    pub platform_name: &'static str,
+    pub toolkit_name: &'static str,
+    pub status_name: &'static str,
+    pub dispatch_steps: Vec<MobileRuntimeBridgeDispatchStep>,
+    pub dispatch_operation_names: Vec<&'static str>,
+    pub native_runtime_driver_operation_names: Vec<&'static str>,
+    pub required_callback_kind_names: Vec<&'static str>,
+    pub covered_required_callback_kind_names: Vec<&'static str>,
+    pub missing_required_callback_kind_names: Vec<&'static str>,
+    pub required_dispatch_step_count: usize,
+    pub dispatch_contract_ready: bool,
+    pub runtime_ffi_implemented: bool,
+    pub device_smoke_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeContractSmokeStep {
+    pub callback_name: &'static str,
+    pub symbol_name: &'static str,
+    pub kind_name: &'static str,
+    pub dispatch_operation_name: &'static str,
+    pub payload_contract: &'static str,
+    pub accepted_by_contract: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeContractSmokeReport {
+    pub platform: NativeUiPlatform,
+    pub platform_name: &'static str,
+    pub toolkit_name: &'static str,
+    pub status_name: &'static str,
+    pub smoke_kind_name: &'static str,
+    pub steps: Vec<MobileRuntimeBridgeContractSmokeStep>,
+    pub observed_dispatch_operation_names: Vec<&'static str>,
+    pub required_dispatch_operation_names: Vec<&'static str>,
+    pub missing_dispatch_operation_names: Vec<&'static str>,
+    pub native_runtime_driver_operation_names: Vec<&'static str>,
+    pub lifecycle_event_count: usize,
+    pub surface_event_count: usize,
+    pub input_event_count: usize,
+    pub command_event_count: usize,
+    pub event_poll_count: usize,
+    pub shutdown_count: usize,
+    pub accepted_step_count: usize,
+    pub required_step_count: usize,
+    pub contract_smoke_complete: bool,
+    pub runtime_ffi_implemented: bool,
+    pub device_smoke_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeContractArtifactWriteReport {
+    pub platform: NativeUiPlatform,
+    pub platform_name: &'static str,
+    pub artifact_dir: String,
+    pub written_files: Vec<String>,
+    pub contract_artifacts_complete: bool,
+    pub device_smoke_complete: bool,
+    pub missing_required_device_artifacts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeContractArtifactRequirement {
+    pub artifact_name: &'static str,
+    pub file_name: &'static str,
+    pub required_for_contract_smoke: bool,
+    pub description: &'static str,
+}
+
+impl MobileRuntimeBridgeContractArtifactRequirement {
+    pub const fn new(
+        artifact_name: &'static str,
+        file_name: &'static str,
+        required_for_contract_smoke: bool,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            artifact_name,
+            file_name,
+            required_for_contract_smoke,
+            description,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeContractArtifactStatus {
+    pub artifact_name: &'static str,
+    pub file_name: &'static str,
+    pub required_for_contract_smoke: bool,
+    pub path: String,
+    pub exists: bool,
+    pub byte_len: Option<u64>,
+    pub non_empty: bool,
+    pub json_valid: Option<bool>,
+    pub validation_error: Option<String>,
+}
+
+impl MobileRuntimeBridgeContractArtifactStatus {
+    pub fn contract_smoke_satisfied(&self) -> bool {
+        self.exists
+            && self.non_empty
+            && self
+                .json_valid
+                .map(|json_valid| json_valid && self.validation_error.is_none())
+                .unwrap_or_else(|| self.validation_error.is_none())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeBridgeContractArtifactReviewReport {
+    pub platform: NativeUiPlatform,
+    pub platform_name: &'static str,
+    pub artifact_dir: String,
+    pub reviewed_at_unix_ms: u128,
+    pub artifact_statuses: Vec<MobileRuntimeBridgeContractArtifactStatus>,
+    pub required_artifact_count: usize,
+    pub present_required_artifact_count: usize,
+    pub valid_required_artifact_count: usize,
+    pub missing_required_artifacts: Vec<String>,
+    pub invalid_required_artifacts: Vec<String>,
+    pub contract_artifacts_complete: bool,
+    pub device_smoke_proof_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MobileRuntimeCapabilityBinding {
     pub capability: NativeUiAdapterCapability,
     pub capability_name: &'static str,
@@ -387,9 +568,21 @@ pub fn mobile_runtime_device_smoke_command_names() -> Vec<&'static str> {
     vec![
         "mobile_scaffold_manifest",
         "mobile_scaffold_manifest --bridge",
+        "mobile_scaffold_manifest --parity",
+        "mobile_scaffold_manifest --dispatch",
+        "mobile_scaffold_manifest --dispatch-smoke",
+        "mobile_scaffold_manifest --write-contract",
+        "mobile_scaffold_manifest --review-contract",
         "mobile_scaffold_manifest --smoke",
         "mobile_scaffold_manifest --review",
     ]
+}
+
+pub fn mobile_runtime_required_bridge_callback_kind_names() -> Vec<&'static str> {
+    REQUIRED_MOBILE_RUNTIME_BRIDGE_CALLBACK_KINDS
+        .iter()
+        .map(|kind| kind.kind_name())
+        .collect()
 }
 
 pub fn mobile_runtime_bridge_contract_json(
@@ -400,6 +593,602 @@ pub fn mobile_runtime_bridge_contract_json(
 
 pub fn mobile_runtime_bridge_contracts_json() -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&mobile_runtime_bridge_contracts())
+}
+
+pub fn mobile_runtime_bridge_parity_report(
+    platform: NativeUiPlatform,
+) -> Option<MobileRuntimeBridgeParityReport> {
+    let scaffold = mobile_runtime_host_scaffold(platform)?;
+    let contract = scaffold.bridge_contract.clone();
+    let required_callback_symbol_names = contract.required_callback_symbol_names();
+    let required_callback_kind_names = mobile_runtime_required_bridge_callback_kind_names();
+    let contract_callback_kind_names = contract_callback_kind_names(&contract.callbacks);
+    let missing_required_callback_kind_names =
+        missing_required_callback_kind_names(&contract.callbacks);
+    let entry_point_symbol_names = scaffold
+        .bridge_entry_points
+        .iter()
+        .map(|entry| entry.symbol_name)
+        .collect::<Vec<_>>();
+    let runtime_ffi_implemented = scaffold.status != NativeUiBackendStatus::AdapterBoundaryScaffold
+        && scaffold
+            .capability_bindings
+            .iter()
+            .any(|binding| binding.implemented);
+    let pending_ffi_callback_symbol_names = if runtime_ffi_implemented {
+        Vec::new()
+    } else {
+        required_callback_symbol_names.clone()
+    };
+    let required_device_smoke_file_names = contract.required_device_smoke_file_names();
+    let ready_for_device_smoke = mobile_runtime_device_smoke_plan(platform)
+        .map(|plan| plan.device_smoke_ready)
+        .unwrap_or(false);
+    let scaffold_matches_contract = scaffold.platform == contract.platform
+        && scaffold.toolkit == contract.toolkit
+        && scaffold.module_path == contract.module_path
+        && scaffold.native_library_name == contract.native_library_name
+        && scaffold.rust_entry_point == contract.rust_entry_point;
+    let contract_covers_required_runtime_routes = missing_required_callback_kind_names.is_empty();
+    let implemented_capability_count = scaffold
+        .capability_bindings
+        .iter()
+        .filter(|binding| binding.implemented)
+        .count();
+    let pending_capability_count = scaffold
+        .capability_bindings
+        .iter()
+        .filter(|binding| !binding.implemented)
+        .count();
+    let mut blocking_reasons = Vec::new();
+
+    if !scaffold_matches_contract {
+        blocking_reasons.push(format!(
+            "{} scaffold and bridge contract metadata differ",
+            scaffold.platform_name
+        ));
+    }
+    if !contract_covers_required_runtime_routes {
+        blocking_reasons.push(format!(
+            "{} bridge contract is missing required callback route kinds: {}",
+            scaffold.platform_name,
+            missing_required_callback_kind_names.join(", ")
+        ));
+    }
+    if !runtime_ffi_implemented {
+        blocking_reasons.push(format!(
+            "{} FFI callback symbols are declared but still pending implementation",
+            scaffold.platform_name
+        ));
+    }
+    if !ready_for_device_smoke {
+        blocking_reasons.push(format!(
+            "{} device smoke is blocked until the Activity/Ability runtime exists",
+            scaffold.platform_name
+        ));
+    }
+
+    Some(MobileRuntimeBridgeParityReport {
+        platform,
+        platform_name: scaffold.platform_name,
+        toolkit_name: scaffold.toolkit_name,
+        status_name: scaffold.status_name,
+        scaffold_module_path: scaffold.module_path,
+        contract_module_path: contract.module_path,
+        native_library_name: scaffold.native_library_name,
+        rust_entry_point: scaffold.rust_entry_point,
+        foreign_entry_file: contract.foreign_entry_file,
+        entry_point_symbol_names,
+        contract_callback_kind_names,
+        required_callback_kind_names,
+        missing_required_callback_kind_names,
+        required_callback_symbol_names,
+        pending_ffi_callback_symbol_names,
+        required_device_smoke_file_names,
+        lifecycle_binding_count: scaffold.lifecycle_bindings.len(),
+        required_lifecycle_binding_count: scaffold
+            .lifecycle_bindings
+            .iter()
+            .filter(|binding| binding.required_for_runtime)
+            .count(),
+        capability_binding_count: scaffold.capability_bindings.len(),
+        implemented_capability_count,
+        pending_capability_count,
+        required_device_smoke_artifact_count: contract
+            .device_smoke_artifacts
+            .iter()
+            .filter(|artifact| artifact.required_for_device_smoke)
+            .count(),
+        scaffold_matches_contract,
+        contract_covers_required_runtime_routes,
+        runtime_ffi_implemented,
+        ready_for_device_smoke,
+        blocking_reasons,
+    })
+}
+
+pub fn mobile_runtime_bridge_parity_reports() -> Vec<MobileRuntimeBridgeParityReport> {
+    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+        .into_iter()
+        .filter_map(mobile_runtime_bridge_parity_report)
+        .collect()
+}
+
+pub fn mobile_runtime_bridge_parity_report_json(
+    platform: NativeUiPlatform,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_bridge_parity_report(platform))
+}
+
+pub fn mobile_runtime_bridge_parity_reports_json() -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_bridge_parity_reports())
+}
+
+pub fn mobile_runtime_bridge_dispatch_steps(
+    platform: NativeUiPlatform,
+) -> Option<Vec<MobileRuntimeBridgeDispatchStep>> {
+    let contract = mobile_runtime_bridge_contract(platform)?;
+    Some(
+        contract
+            .callbacks
+            .into_iter()
+            .map(|callback| MobileRuntimeBridgeDispatchStep {
+                callback_name: callback.callback_name,
+                symbol_name: callback.symbol_name,
+                kind: callback.kind,
+                kind_name: callback.kind_name,
+                dispatch_operation_name: mobile_runtime_bridge_dispatch_operation_name(
+                    callback.kind,
+                ),
+                payload_contract: callback.payload_contract,
+                required_for_runtime: callback.required_for_runtime,
+            })
+            .collect(),
+    )
+}
+
+pub fn mobile_runtime_bridge_dispatch_report(
+    platform: NativeUiPlatform,
+) -> Option<MobileRuntimeBridgeDispatchReport> {
+    let scaffold = mobile_runtime_host_scaffold(platform)?;
+    let dispatch_steps = mobile_runtime_bridge_dispatch_steps(platform)?;
+    let covered_required_callback_kind_names =
+        covered_required_callback_kind_names_from_steps(&dispatch_steps);
+    let missing_required_callback_kind_names =
+        missing_required_callback_kind_names_from_steps(&dispatch_steps);
+    let dispatch_operation_names = dispatch_operation_names_from_steps(&dispatch_steps);
+    let native_runtime_driver_operation_names =
+        mobile_runtime_bridge_native_driver_operation_names_from_steps(&dispatch_steps);
+    let runtime_ffi_implemented = scaffold.status != NativeUiBackendStatus::AdapterBoundaryScaffold
+        && scaffold
+            .capability_bindings
+            .iter()
+            .any(|binding| binding.implemented);
+    let device_smoke_ready = mobile_runtime_device_smoke_plan(platform)
+        .map(|plan| plan.device_smoke_ready)
+        .unwrap_or(false);
+    let required_dispatch_step_count = dispatch_steps
+        .iter()
+        .filter(|step| step.required_for_runtime)
+        .count();
+    let dispatch_contract_ready = missing_required_callback_kind_names.is_empty()
+        && native_runtime_driver_operation_names
+            .contains(&NativeRuntimeDriverOperation::StartRuntime.operation_name())
+        && native_runtime_driver_operation_names
+            .contains(&NativeRuntimeDriverOperation::DispatchUiCommand.operation_name())
+        && native_runtime_driver_operation_names
+            .contains(&NativeRuntimeDriverOperation::PollApplicationEvent.operation_name())
+        && native_runtime_driver_operation_names
+            .contains(&NativeRuntimeDriverOperation::RequestShutdown.operation_name())
+        && dispatch_operation_names.contains(&"apply_lifecycle_event")
+        && dispatch_operation_names.contains(&"bind_or_resize_surface")
+        && dispatch_operation_names.contains(&"dispatch_ui_event");
+
+    Some(MobileRuntimeBridgeDispatchReport {
+        platform,
+        platform_name: scaffold.platform_name,
+        toolkit_name: scaffold.toolkit_name,
+        status_name: scaffold.status_name,
+        dispatch_steps,
+        dispatch_operation_names,
+        native_runtime_driver_operation_names,
+        required_callback_kind_names: mobile_runtime_required_bridge_callback_kind_names(),
+        covered_required_callback_kind_names,
+        missing_required_callback_kind_names,
+        required_dispatch_step_count,
+        dispatch_contract_ready,
+        runtime_ffi_implemented,
+        device_smoke_ready,
+    })
+}
+
+pub fn mobile_runtime_bridge_dispatch_reports() -> Vec<MobileRuntimeBridgeDispatchReport> {
+    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+        .into_iter()
+        .filter_map(mobile_runtime_bridge_dispatch_report)
+        .collect()
+}
+
+pub fn mobile_runtime_bridge_dispatch_report_json(
+    platform: NativeUiPlatform,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_bridge_dispatch_report(platform))
+}
+
+pub fn mobile_runtime_bridge_dispatch_reports_json() -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_bridge_dispatch_reports())
+}
+
+pub fn mobile_runtime_required_bridge_dispatch_operation_names() -> Vec<&'static str> {
+    vec![
+        NativeRuntimeDriverOperation::StartRuntime.operation_name(),
+        "apply_lifecycle_event",
+        "bind_or_resize_surface",
+        "dispatch_ui_event",
+        NativeRuntimeDriverOperation::DispatchUiCommand.operation_name(),
+        NativeRuntimeDriverOperation::PollApplicationEvent.operation_name(),
+        NativeRuntimeDriverOperation::RequestShutdown.operation_name(),
+    ]
+}
+
+pub fn mobile_runtime_bridge_contract_smoke_report(
+    platform: NativeUiPlatform,
+) -> Option<MobileRuntimeBridgeContractSmokeReport> {
+    let dispatch = mobile_runtime_bridge_dispatch_report(platform)?;
+    let required_dispatch_operation_names =
+        mobile_runtime_required_bridge_dispatch_operation_names();
+    let observed_dispatch_operation_names =
+        dispatch_operation_names_from_steps(&dispatch.dispatch_steps);
+    let missing_dispatch_operation_names = required_dispatch_operation_names
+        .iter()
+        .filter(|operation| !observed_dispatch_operation_names.contains(operation))
+        .copied()
+        .collect::<Vec<_>>();
+    let steps = dispatch
+        .dispatch_steps
+        .iter()
+        .map(|step| MobileRuntimeBridgeContractSmokeStep {
+            callback_name: step.callback_name,
+            symbol_name: step.symbol_name,
+            kind_name: step.kind_name,
+            dispatch_operation_name: step.dispatch_operation_name,
+            payload_contract: step.payload_contract,
+            accepted_by_contract: step.required_for_runtime
+                && required_dispatch_operation_names.contains(&step.dispatch_operation_name),
+        })
+        .collect::<Vec<_>>();
+    let accepted_step_count = steps
+        .iter()
+        .filter(|step| step.accepted_by_contract)
+        .count();
+    let contract_smoke_complete = missing_dispatch_operation_names.is_empty()
+        && accepted_step_count == dispatch.required_dispatch_step_count
+        && dispatch.dispatch_contract_ready;
+
+    Some(MobileRuntimeBridgeContractSmokeReport {
+        platform,
+        platform_name: dispatch.platform_name,
+        toolkit_name: dispatch.toolkit_name,
+        status_name: dispatch.status_name,
+        smoke_kind_name: "contract_dispatch_smoke",
+        lifecycle_event_count: mobile_runtime_bridge_kind_count(
+            &dispatch.dispatch_steps,
+            MobileRuntimeBridgeCallbackKind::Lifecycle,
+        ),
+        surface_event_count: mobile_runtime_bridge_kind_count(
+            &dispatch.dispatch_steps,
+            MobileRuntimeBridgeCallbackKind::Surface,
+        ),
+        input_event_count: mobile_runtime_bridge_kind_count(
+            &dispatch.dispatch_steps,
+            MobileRuntimeBridgeCallbackKind::Input,
+        ),
+        command_event_count: mobile_runtime_bridge_kind_count(
+            &dispatch.dispatch_steps,
+            MobileRuntimeBridgeCallbackKind::Command,
+        ),
+        event_poll_count: mobile_runtime_bridge_kind_count(
+            &dispatch.dispatch_steps,
+            MobileRuntimeBridgeCallbackKind::EventPoll,
+        ),
+        shutdown_count: mobile_runtime_bridge_kind_count(
+            &dispatch.dispatch_steps,
+            MobileRuntimeBridgeCallbackKind::Shutdown,
+        ),
+        native_runtime_driver_operation_names: dispatch.native_runtime_driver_operation_names,
+        required_step_count: dispatch.required_dispatch_step_count,
+        runtime_ffi_implemented: dispatch.runtime_ffi_implemented,
+        device_smoke_ready: dispatch.device_smoke_ready,
+        steps,
+        observed_dispatch_operation_names,
+        required_dispatch_operation_names,
+        missing_dispatch_operation_names,
+        accepted_step_count,
+        contract_smoke_complete,
+    })
+}
+
+pub fn mobile_runtime_bridge_contract_smoke_reports() -> Vec<MobileRuntimeBridgeContractSmokeReport>
+{
+    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+        .into_iter()
+        .filter_map(mobile_runtime_bridge_contract_smoke_report)
+        .collect()
+}
+
+pub fn mobile_runtime_bridge_contract_smoke_report_json(
+    platform: NativeUiPlatform,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_bridge_contract_smoke_report(platform))
+}
+
+pub fn mobile_runtime_bridge_contract_smoke_reports_json() -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_bridge_contract_smoke_reports())
+}
+
+pub fn mobile_runtime_bridge_contract_artifact_requirements(
+) -> Vec<MobileRuntimeBridgeContractArtifactRequirement> {
+    vec![
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "mobile_manifest",
+            "manifest.json",
+            true,
+            "serialized mobile host scaffold manifest",
+        ),
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "bridge_contract",
+            "bridge-contract.json",
+            true,
+            "serialized mobile bridge callback contract",
+        ),
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "bridge_parity",
+            "bridge-parity.json",
+            true,
+            "scaffold and bridge contract parity report",
+        ),
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "bridge_dispatch",
+            "bridge-dispatch.json",
+            true,
+            "callback to runtime-operation dispatch report",
+        ),
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "dispatch_smoke",
+            "dispatch-smoke.json",
+            true,
+            "local contract dispatch smoke report",
+        ),
+    ]
+}
+
+pub fn mobile_runtime_bridge_contract_artifact_file_names() -> Vec<&'static str> {
+    mobile_runtime_bridge_contract_artifact_requirements()
+        .iter()
+        .map(|requirement| requirement.file_name)
+        .collect()
+}
+
+pub fn write_mobile_runtime_bridge_contract_artifacts(
+    platform: NativeUiPlatform,
+) -> ZsuiResult<MobileRuntimeBridgeContractArtifactWriteReport> {
+    write_mobile_runtime_bridge_contract_artifacts_to(platform, "target/mobile-device-smoke")
+}
+
+pub fn write_mobile_runtime_bridge_contract_artifacts_for_all(
+) -> ZsuiResult<Vec<MobileRuntimeBridgeContractArtifactWriteReport>> {
+    write_mobile_runtime_bridge_contract_artifacts_for_all_to("target/mobile-device-smoke")
+}
+
+pub fn write_mobile_runtime_bridge_contract_artifacts_for_all_to(
+    artifact_root: impl AsRef<Path>,
+) -> ZsuiResult<Vec<MobileRuntimeBridgeContractArtifactWriteReport>> {
+    let artifact_root = artifact_root.as_ref();
+    [NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+        .into_iter()
+        .map(|platform| write_mobile_runtime_bridge_contract_artifacts_to(platform, artifact_root))
+        .collect()
+}
+
+pub fn write_mobile_runtime_bridge_contract_artifacts_to(
+    platform: NativeUiPlatform,
+    artifact_root: impl AsRef<Path>,
+) -> ZsuiResult<MobileRuntimeBridgeContractArtifactWriteReport> {
+    let plan = mobile_runtime_device_smoke_plan_with_artifact_root(platform, artifact_root)
+        .ok_or_else(|| {
+            ZsuiError::unsupported(
+                "mobile_bridge_contract_artifacts",
+                format!(
+                    "no mobile bridge contract artifact plan exists for `{}`",
+                    platform.platform_name()
+                ),
+            )
+        })?;
+    let scaffold = mobile_runtime_host_scaffold(platform).ok_or_else(|| {
+        ZsuiError::unsupported(
+            "mobile_bridge_contract_artifacts",
+            format!(
+                "no mobile host scaffold exists for `{}`",
+                platform.platform_name()
+            ),
+        )
+    })?;
+    let bridge_contract = mobile_runtime_bridge_contract(platform).ok_or_else(|| {
+        ZsuiError::unsupported(
+            "mobile_bridge_contract_artifacts",
+            format!(
+                "no mobile bridge contract exists for `{}`",
+                platform.platform_name()
+            ),
+        )
+    })?;
+    let parity = mobile_runtime_bridge_parity_report(platform).ok_or_else(|| {
+        ZsuiError::unsupported(
+            "mobile_bridge_contract_artifacts",
+            format!(
+                "no mobile bridge parity report exists for `{}`",
+                platform.platform_name()
+            ),
+        )
+    })?;
+    let dispatch = mobile_runtime_bridge_dispatch_report(platform).ok_or_else(|| {
+        ZsuiError::unsupported(
+            "mobile_bridge_contract_artifacts",
+            format!(
+                "no mobile bridge dispatch report exists for `{}`",
+                platform.platform_name()
+            ),
+        )
+    })?;
+    let dispatch_smoke =
+        mobile_runtime_bridge_contract_smoke_report(platform).ok_or_else(|| {
+            ZsuiError::unsupported(
+                "mobile_bridge_contract_artifacts",
+                format!(
+                    "no mobile bridge contract smoke report exists for `{}`",
+                    platform.platform_name()
+                ),
+            )
+        })?;
+
+    let artifact_dir = PathBuf::from(&plan.artifact_dir);
+    fs::create_dir_all(&artifact_dir)
+        .map_err(|err| mobile_smoke_io_error("create_artifact_dir", &artifact_dir, err))?;
+
+    let mut written_files = Vec::new();
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "manifest.json",
+        &scaffold,
+        &mut written_files,
+    )?;
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "bridge-contract.json",
+        &bridge_contract,
+        &mut written_files,
+    )?;
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "bridge-parity.json",
+        &parity,
+        &mut written_files,
+    )?;
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "bridge-dispatch.json",
+        &dispatch,
+        &mut written_files,
+    )?;
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "dispatch-smoke.json",
+        &dispatch_smoke,
+        &mut written_files,
+    )?;
+
+    let missing_required_device_artifacts: Vec<String> = plan
+        .artifact_requirements
+        .iter()
+        .filter(|artifact| artifact.required_for_device_smoke)
+        .filter(|artifact| !artifact_dir.join(artifact.file_name).exists())
+        .map(|artifact| artifact.file_name.to_string())
+        .collect();
+
+    Ok(MobileRuntimeBridgeContractArtifactWriteReport {
+        platform,
+        platform_name: plan.platform_name,
+        artifact_dir: plan.artifact_dir,
+        contract_artifacts_complete: written_files.len() == 5,
+        device_smoke_complete: missing_required_device_artifacts.is_empty(),
+        written_files,
+        missing_required_device_artifacts,
+    })
+}
+
+pub fn review_mobile_runtime_bridge_contract_artifacts(
+    platform: NativeUiPlatform,
+) -> ZsuiResult<MobileRuntimeBridgeContractArtifactReviewReport> {
+    review_mobile_runtime_bridge_contract_artifacts_at(platform, "target/mobile-device-smoke")
+}
+
+pub fn review_mobile_runtime_bridge_contract_artifacts_for_all(
+) -> ZsuiResult<Vec<MobileRuntimeBridgeContractArtifactReviewReport>> {
+    review_mobile_runtime_bridge_contract_artifacts_for_all_at("target/mobile-device-smoke")
+}
+
+pub fn review_mobile_runtime_bridge_contract_artifacts_for_all_at(
+    artifact_root: impl AsRef<Path>,
+) -> ZsuiResult<Vec<MobileRuntimeBridgeContractArtifactReviewReport>> {
+    let artifact_root = artifact_root.as_ref();
+    [NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+        .into_iter()
+        .map(|platform| review_mobile_runtime_bridge_contract_artifacts_at(platform, artifact_root))
+        .collect()
+}
+
+pub fn review_mobile_runtime_bridge_contract_artifacts_at(
+    platform: NativeUiPlatform,
+    artifact_root: impl AsRef<Path>,
+) -> ZsuiResult<MobileRuntimeBridgeContractArtifactReviewReport> {
+    let plan = mobile_runtime_device_smoke_plan_with_artifact_root(platform, artifact_root)
+        .ok_or_else(|| {
+            ZsuiError::unsupported(
+                "mobile_bridge_contract_artifact_review",
+                format!(
+                    "no mobile bridge contract artifact review exists for `{}`",
+                    platform.platform_name()
+                ),
+            )
+        })?;
+    let artifact_dir = PathBuf::from(&plan.artifact_dir);
+    let artifact_statuses: Vec<_> = mobile_runtime_bridge_contract_artifact_requirements()
+        .iter()
+        .map(|requirement| review_mobile_contract_artifact(&artifact_dir, requirement))
+        .collect();
+    let required_artifact_count = artifact_statuses
+        .iter()
+        .filter(|artifact| artifact.required_for_contract_smoke)
+        .count();
+    let present_required_artifact_count = artifact_statuses
+        .iter()
+        .filter(|artifact| artifact.required_for_contract_smoke && artifact.exists)
+        .count();
+    let valid_required_artifact_count = artifact_statuses
+        .iter()
+        .filter(|artifact| {
+            artifact.required_for_contract_smoke && artifact.contract_smoke_satisfied()
+        })
+        .count();
+    let missing_required_artifacts = artifact_statuses
+        .iter()
+        .filter(|artifact| artifact.required_for_contract_smoke && !artifact.exists)
+        .map(|artifact| artifact.file_name.to_string())
+        .collect();
+    let invalid_required_artifacts = artifact_statuses
+        .iter()
+        .filter(|artifact| {
+            artifact.required_for_contract_smoke
+                && artifact.exists
+                && !artifact.contract_smoke_satisfied()
+        })
+        .map(|artifact| artifact.file_name.to_string())
+        .collect();
+
+    Ok(MobileRuntimeBridgeContractArtifactReviewReport {
+        platform,
+        platform_name: plan.platform_name,
+        artifact_dir: plan.artifact_dir,
+        reviewed_at_unix_ms: unix_ms_now(),
+        contract_artifacts_complete: valid_required_artifact_count == required_artifact_count,
+        device_smoke_proof_claimed: false,
+        artifact_statuses,
+        required_artifact_count,
+        present_required_artifact_count,
+        valid_required_artifact_count,
+        missing_required_artifacts,
+        invalid_required_artifacts,
+    })
 }
 
 pub fn mobile_runtime_device_smoke_plan(
@@ -573,6 +1362,191 @@ pub fn mobile_runtime_host_scaffolds_json() -> Result<String, serde_json::Error>
     serde_json::to_string_pretty(&mobile_runtime_host_scaffolds())
 }
 
+fn mobile_runtime_bridge_dispatch_operation_name(
+    kind: MobileRuntimeBridgeCallbackKind,
+) -> &'static str {
+    match kind {
+        MobileRuntimeBridgeCallbackKind::Bootstrap => {
+            NativeRuntimeDriverOperation::StartRuntime.operation_name()
+        }
+        MobileRuntimeBridgeCallbackKind::Lifecycle => "apply_lifecycle_event",
+        MobileRuntimeBridgeCallbackKind::Surface => "bind_or_resize_surface",
+        MobileRuntimeBridgeCallbackKind::Input => "dispatch_ui_event",
+        MobileRuntimeBridgeCallbackKind::Command => {
+            NativeRuntimeDriverOperation::DispatchUiCommand.operation_name()
+        }
+        MobileRuntimeBridgeCallbackKind::EventPoll => {
+            NativeRuntimeDriverOperation::PollApplicationEvent.operation_name()
+        }
+        MobileRuntimeBridgeCallbackKind::Shutdown => {
+            NativeRuntimeDriverOperation::RequestShutdown.operation_name()
+        }
+    }
+}
+
+fn covered_required_callback_kind_names_from_steps(
+    dispatch_steps: &[MobileRuntimeBridgeDispatchStep],
+) -> Vec<&'static str> {
+    REQUIRED_MOBILE_RUNTIME_BRIDGE_CALLBACK_KINDS
+        .iter()
+        .filter(|kind| {
+            dispatch_steps
+                .iter()
+                .any(|step| step.required_for_runtime && step.kind == **kind)
+        })
+        .map(|kind| kind.kind_name())
+        .collect()
+}
+
+fn missing_required_callback_kind_names_from_steps(
+    dispatch_steps: &[MobileRuntimeBridgeDispatchStep],
+) -> Vec<&'static str> {
+    REQUIRED_MOBILE_RUNTIME_BRIDGE_CALLBACK_KINDS
+        .iter()
+        .filter(|kind| {
+            !dispatch_steps
+                .iter()
+                .any(|step| step.required_for_runtime && step.kind == **kind)
+        })
+        .map(|kind| kind.kind_name())
+        .collect()
+}
+
+fn dispatch_operation_names_from_steps(
+    dispatch_steps: &[MobileRuntimeBridgeDispatchStep],
+) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for step in dispatch_steps {
+        if step.required_for_runtime && !names.contains(&step.dispatch_operation_name) {
+            names.push(step.dispatch_operation_name);
+        }
+    }
+    names
+}
+
+fn mobile_runtime_bridge_native_driver_operation_names_from_steps(
+    dispatch_steps: &[MobileRuntimeBridgeDispatchStep],
+) -> Vec<&'static str> {
+    let native_names = [
+        NativeRuntimeDriverOperation::StartRuntime.operation_name(),
+        NativeRuntimeDriverOperation::DispatchUiCommand.operation_name(),
+        NativeRuntimeDriverOperation::PollApplicationEvent.operation_name(),
+        NativeRuntimeDriverOperation::RequestShutdown.operation_name(),
+    ];
+    dispatch_operation_names_from_steps(dispatch_steps)
+        .into_iter()
+        .filter(|name| native_names.contains(name))
+        .collect()
+}
+
+fn mobile_runtime_bridge_kind_count(
+    dispatch_steps: &[MobileRuntimeBridgeDispatchStep],
+    kind: MobileRuntimeBridgeCallbackKind,
+) -> usize {
+    dispatch_steps
+        .iter()
+        .filter(|step| step.required_for_runtime && step.kind == kind)
+        .count()
+}
+
+fn write_mobile_json_artifact<T: Serialize>(
+    artifact_dir: &Path,
+    file_name: &str,
+    value: &T,
+    written_files: &mut Vec<String>,
+) -> ZsuiResult<()> {
+    let path = artifact_dir.join(file_name);
+    let json = serde_json::to_string_pretty(value).map_err(|err| {
+        ZsuiError::host(
+            "write_mobile_json_artifact",
+            format!("serialize `{file_name}` failed: {err}"),
+        )
+    })?;
+    fs::write(&path, format!("{json}\n"))
+        .map_err(|err| mobile_smoke_io_error("write_artifact", &path, err))?;
+    written_files.push(path_to_mobile_manifest_string(path));
+    Ok(())
+}
+
+fn review_mobile_contract_artifact(
+    artifact_dir: &Path,
+    requirement: &MobileRuntimeBridgeContractArtifactRequirement,
+) -> MobileRuntimeBridgeContractArtifactStatus {
+    let path = artifact_dir.join(requirement.file_name);
+    let path_string = path_to_mobile_manifest_string(&path);
+    let metadata = fs::metadata(&path);
+    let exists = metadata.is_ok();
+    let byte_len = metadata.ok().map(|metadata| metadata.len());
+    let non_empty = byte_len.map(|len| len > 0).unwrap_or(false);
+    let mut json_valid = None;
+    let mut validation_error = None;
+
+    if exists && !non_empty {
+        validation_error = Some("artifact is empty".to_string());
+    }
+
+    if exists && requirement.file_name.ends_with(".json") {
+        match fs::read_to_string(&path) {
+            Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
+                Ok(_) => json_valid = Some(true),
+                Err(err) => {
+                    json_valid = Some(false);
+                    validation_error = Some(format!("invalid json: {err}"));
+                }
+            },
+            Err(err) => {
+                json_valid = Some(false);
+                validation_error = Some(format!("read failed: {err}"));
+            }
+        }
+    }
+
+    MobileRuntimeBridgeContractArtifactStatus {
+        artifact_name: requirement.artifact_name,
+        file_name: requirement.file_name,
+        required_for_contract_smoke: requirement.required_for_contract_smoke,
+        path: path_string,
+        exists,
+        byte_len,
+        non_empty,
+        json_valid,
+        validation_error,
+    }
+}
+
+fn mobile_smoke_io_error(operation: &str, path: &Path, err: std::io::Error) -> ZsuiError {
+    ZsuiError::host(
+        operation,
+        format!("{}: {err}", path_to_mobile_manifest_string(path)),
+    )
+}
+
+fn contract_callback_kind_names(callbacks: &[MobileRuntimeBridgeCallback]) -> Vec<&'static str> {
+    REQUIRED_MOBILE_RUNTIME_BRIDGE_CALLBACK_KINDS
+        .iter()
+        .filter(|kind| {
+            callbacks
+                .iter()
+                .any(|callback| callback.required_for_runtime && callback.kind == **kind)
+        })
+        .map(|kind| kind.kind_name())
+        .collect()
+}
+
+fn missing_required_callback_kind_names(
+    callbacks: &[MobileRuntimeBridgeCallback],
+) -> Vec<&'static str> {
+    REQUIRED_MOBILE_RUNTIME_BRIDGE_CALLBACK_KINDS
+        .iter()
+        .filter(|kind| {
+            !callbacks
+                .iter()
+                .any(|callback| callback.required_for_runtime && callback.kind == **kind)
+        })
+        .map(|kind| kind.kind_name())
+        .collect()
+}
+
 fn review_mobile_smoke_artifact(
     artifact_dir: &Path,
     requirement: &MobileRuntimeDeviceSmokeArtifact,
@@ -722,6 +1696,225 @@ mod tests {
     }
 
     #[test]
+    fn mobile_bridge_parity_reports_contract_coverage_without_claiming_runtime() {
+        let reports = mobile_runtime_bridge_parity_reports();
+        let android = mobile_runtime_bridge_parity_report(NativeUiPlatform::Android)
+            .expect("android parity report should exist");
+        let harmony = mobile_runtime_bridge_parity_report(NativeUiPlatform::Harmony)
+            .expect("harmony parity report should exist");
+
+        assert_eq!(reports.len(), 2);
+        assert!(android.scaffold_matches_contract);
+        assert!(android.contract_covers_required_runtime_routes);
+        assert!(android.missing_required_callback_kind_names.is_empty());
+        assert!(!android.runtime_ffi_implemented);
+        assert!(!android.ready_for_device_smoke);
+        assert!(android.contract_callback_kind_names.contains(&"surface"));
+        assert!(android
+            .pending_ffi_callback_symbol_names
+            .contains(&"zsui_android_activity_dispatch_ui_event"));
+        assert!(android
+            .required_device_smoke_file_names
+            .contains(&"device-window.png"));
+        assert!(harmony
+            .pending_ffi_callback_symbol_names
+            .contains(&"zsui_harmony_ability_dispatch_ui_event"));
+        assert!(mobile_runtime_required_bridge_callback_kind_names().contains(&"event_poll"));
+        assert!(mobile_runtime_device_smoke_command_names()
+            .contains(&"mobile_scaffold_manifest --parity"));
+    }
+
+    #[test]
+    fn mobile_bridge_dispatch_report_maps_callbacks_to_runtime_operations() {
+        let android = mobile_runtime_bridge_dispatch_report(NativeUiPlatform::Android)
+            .expect("android dispatch report should exist");
+        let harmony = mobile_runtime_bridge_dispatch_report(NativeUiPlatform::Harmony)
+            .expect("harmony dispatch report should exist");
+
+        assert!(android.dispatch_contract_ready);
+        assert!(!android.runtime_ffi_implemented);
+        assert!(!android.device_smoke_ready);
+        assert_eq!(
+            android.missing_required_callback_kind_names,
+            Vec::<&str>::new()
+        );
+        assert_eq!(android.covered_required_callback_kind_names.len(), 7);
+        assert!(android
+            .dispatch_operation_names
+            .contains(&"apply_lifecycle_event"));
+        assert!(android
+            .dispatch_operation_names
+            .contains(&"bind_or_resize_surface"));
+        assert!(android
+            .dispatch_operation_names
+            .contains(&"dispatch_ui_event"));
+        assert!(android
+            .native_runtime_driver_operation_names
+            .contains(&"start_runtime"));
+        assert!(android
+            .native_runtime_driver_operation_names
+            .contains(&"dispatch_ui_command"));
+        assert!(android
+            .native_runtime_driver_operation_names
+            .contains(&"poll_application_event"));
+        assert!(android
+            .native_runtime_driver_operation_names
+            .contains(&"request_shutdown"));
+        assert!(android.dispatch_steps.iter().any(|step| step.symbol_name
+            == "zsui_android_activity_dispatch_ui_event"
+            && step.dispatch_operation_name == "dispatch_ui_event"));
+        assert!(harmony.dispatch_contract_ready);
+        assert!(harmony.dispatch_steps.iter().any(|step| step.symbol_name
+            == "zsui_harmony_ability_surface_resized"
+            && step.dispatch_operation_name == "bind_or_resize_surface"));
+        assert!(mobile_runtime_bridge_dispatch_reports_json()
+            .expect("dispatch reports should serialize")
+            .contains("dispatch_contract_ready"));
+        assert!(mobile_runtime_device_smoke_command_names()
+            .contains(&"mobile_scaffold_manifest --dispatch"));
+    }
+
+    #[test]
+    fn mobile_bridge_contract_smoke_replays_dispatch_steps_without_device_claims() {
+        let android = mobile_runtime_bridge_contract_smoke_report(NativeUiPlatform::Android)
+            .expect("android contract smoke report should exist");
+        let harmony = mobile_runtime_bridge_contract_smoke_report(NativeUiPlatform::Harmony)
+            .expect("harmony contract smoke report should exist");
+
+        assert_eq!(android.smoke_kind_name, "contract_dispatch_smoke");
+        assert!(android.contract_smoke_complete);
+        assert!(!android.runtime_ffi_implemented);
+        assert!(!android.device_smoke_ready);
+        assert_eq!(android.accepted_step_count, android.required_step_count);
+        assert!(android.missing_dispatch_operation_names.is_empty());
+        assert_eq!(android.lifecycle_event_count, 1);
+        assert_eq!(android.surface_event_count, 3);
+        assert_eq!(android.input_event_count, 1);
+        assert_eq!(android.command_event_count, 1);
+        assert_eq!(android.event_poll_count, 1);
+        assert_eq!(android.shutdown_count, 1);
+        assert!(android
+            .required_dispatch_operation_names
+            .contains(&"dispatch_ui_event"));
+        assert!(android
+            .native_runtime_driver_operation_names
+            .contains(&"start_runtime"));
+        assert!(harmony.contract_smoke_complete);
+        assert!(harmony.steps.iter().any(|step| step.symbol_name
+            == "zsui_harmony_ability_dispatch_command"
+            && step.dispatch_operation_name == "dispatch_ui_command"));
+        assert!(mobile_runtime_bridge_contract_smoke_reports_json()
+            .expect("contract smoke reports should serialize")
+            .contains("contract_dispatch_smoke"));
+        assert!(mobile_runtime_device_smoke_command_names()
+            .contains(&"mobile_scaffold_manifest --dispatch-smoke"));
+    }
+
+    #[test]
+    fn mobile_bridge_contract_artifact_writer_does_not_fake_device_smoke() {
+        let root = unique_mobile_test_root("contract-writer");
+        let report =
+            write_mobile_runtime_bridge_contract_artifacts_to(NativeUiPlatform::Android, &root)
+                .expect("contract artifacts should write");
+
+        assert!(report.contract_artifacts_complete);
+        assert!(!report.device_smoke_complete);
+        assert_eq!(report.written_files.len(), 5);
+        assert!(report
+            .written_files
+            .iter()
+            .any(|path| path.ends_with("manifest.json")));
+        assert!(report
+            .written_files
+            .iter()
+            .any(|path| path.ends_with("dispatch-smoke.json")));
+        assert!(!report
+            .missing_required_device_artifacts
+            .contains(&"manifest.json".to_string()));
+        assert!(report
+            .missing_required_device_artifacts
+            .contains(&"device-window.png".to_string()));
+
+        let contract_review =
+            review_mobile_runtime_bridge_contract_artifacts_at(NativeUiPlatform::Android, &root)
+                .expect("contract review should inspect contract artifacts");
+        assert!(contract_review.contract_artifacts_complete);
+        assert!(!contract_review.device_smoke_proof_claimed);
+        assert_eq!(
+            contract_review.valid_required_artifact_count,
+            contract_review.required_artifact_count
+        );
+        assert!(contract_review.missing_required_artifacts.is_empty());
+        assert!(contract_review.invalid_required_artifacts.is_empty());
+
+        let review =
+            review_mobile_runtime_device_smoke_artifacts_at(NativeUiPlatform::Android, &root)
+                .expect("review should inspect contract artifacts");
+        assert!(!review.device_smoke_complete);
+        assert_eq!(review.present_required_artifact_count, 1);
+        assert!(review
+            .missing_required_artifacts
+            .contains(&"device-window.png".to_string()));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mobile_bridge_contract_artifact_writer_and_review_support_all_platforms() {
+        let root = unique_mobile_test_root("contract-all");
+        let write_reports = write_mobile_runtime_bridge_contract_artifacts_for_all_to(&root)
+            .expect("all mobile contract artifacts should write");
+
+        assert_eq!(write_reports.len(), 2);
+        assert!(write_reports
+            .iter()
+            .all(|report| report.contract_artifacts_complete));
+        assert!(write_reports
+            .iter()
+            .all(|report| !report.device_smoke_complete));
+        assert!(write_reports
+            .iter()
+            .any(|report| report.platform == NativeUiPlatform::Android));
+        assert!(write_reports
+            .iter()
+            .any(|report| report.platform == NativeUiPlatform::Harmony));
+
+        let review_reports = review_mobile_runtime_bridge_contract_artifacts_for_all_at(&root)
+            .expect("all mobile contract artifacts should review");
+        assert_eq!(review_reports.len(), 2);
+        assert!(review_reports
+            .iter()
+            .all(|report| report.contract_artifacts_complete));
+        assert!(review_reports
+            .iter()
+            .all(|report| !report.device_smoke_proof_claimed));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mobile_bridge_contract_artifact_review_reports_missing_contract_files() {
+        let root = unique_mobile_test_root("contract-review-missing");
+        let report =
+            review_mobile_runtime_bridge_contract_artifacts_at(NativeUiPlatform::Harmony, &root)
+                .expect("contract review should report missing files");
+
+        assert!(!report.contract_artifacts_complete);
+        assert!(!report.device_smoke_proof_claimed);
+        assert_eq!(report.present_required_artifact_count, 0);
+        assert!(report
+            .missing_required_artifacts
+            .contains(&"bridge-contract.json".to_string()));
+        assert!(
+            mobile_runtime_bridge_contract_artifact_file_names().contains(&"dispatch-smoke.json")
+        );
+        assert!(mobile_runtime_device_smoke_command_names()
+            .contains(&"mobile_scaffold_manifest --review-contract"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn mobile_device_smoke_plan_names_review_gate_without_claiming_runtime_ready() {
         let android = mobile_runtime_device_smoke_plan(NativeUiPlatform::Android)
             .expect("android device smoke plan should exist");
@@ -790,6 +1983,16 @@ mod tests {
         assert!(json.contains("harmony_ability"));
         assert!(json.contains("device smoke artifacts"));
         assert!(json.contains("zsui_android_activity_surface_created"));
+
+        let parity =
+            mobile_runtime_bridge_parity_reports_json().expect("parity reports should serialize");
+        assert!(parity.contains("pending_ffi_callback_symbol_names"));
+        assert!(parity.contains("contract_covers_required_runtime_routes"));
+
+        let smoke = mobile_runtime_bridge_contract_smoke_reports_json()
+            .expect("contract smoke reports should serialize");
+        assert!(smoke.contains("contract_smoke_complete"));
+        assert!(smoke.contains("dispatch_ui_command"));
     }
 
     fn unique_mobile_test_root(name: &str) -> PathBuf {

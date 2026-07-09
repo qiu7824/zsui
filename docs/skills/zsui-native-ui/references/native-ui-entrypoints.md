@@ -157,6 +157,28 @@ Already reusable at code level:
 - Android/Harmony bridge contracts through `mobile_runtime_bridge_contract()`,
   including FFI callback symbols, lifecycle/surface/input/command routes,
   safety rules and required device-smoke artifact names.
+- Android/Harmony bridge parity reports through
+  `mobile_runtime_bridge_parity_report()` and
+  `mobile_scaffold_manifest --parity` to check scaffold/contract metadata,
+  required callback route coverage and pending FFI symbols without claiming
+  runtime readiness.
+- Android/Harmony bridge dispatch reports through
+  `mobile_runtime_bridge_dispatch_report()` and
+  `mobile_scaffold_manifest --dispatch` to map required callback symbols to
+  lifecycle, surface, typed input and `NativeRuntimeDriver` operations.
+- Android/Harmony contract dispatch smoke through
+  `mobile_runtime_bridge_contract_smoke_report()` and
+  `mobile_scaffold_manifest --dispatch-smoke` to replay the declared bridge
+  sequence without faking device proof.
+- Android/Harmony local contract artifact writing through
+  `write_mobile_runtime_bridge_contract_artifacts()` and
+  `mobile_scaffold_manifest --write-contract` without generating launch,
+  screenshot, lifecycle, surface or input proof.
+- Android/Harmony local contract artifact review through
+  `review_mobile_runtime_bridge_contract_artifacts()` and
+  `mobile_scaffold_manifest --review-contract`, separate from device-smoke
+  proof review. The write/review contract paths support an `all` target for
+  Android and Harmony together.
 - Android/Harmony device-smoke plans and read-only review through
   `mobile_runtime_device_smoke_plan()` and
   `review_mobile_runtime_device_smoke_artifacts()`.

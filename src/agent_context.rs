@@ -402,8 +402,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "android_and_harmony",
-            percent_complete: 16,
-            status_name: "mobile_device_smoke_review_contract_ready",
+            percent_complete: 27,
+            status_name: "mobile_bridge_contract_artifact_all_platform_review_ready",
             source_path: "src/mobile_host.rs",
             missing_before_complete: vec![
                 "Android Activity FFI implementation",
@@ -947,6 +947,26 @@ mod tests {
         assert!(context
             .readiness
             .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --parity"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --dispatch"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --dispatch-smoke"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --write-contract"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --review-contract"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
             .contains(&"mobile_scaffold_manifest --review"));
         assert!(context
             .readiness
@@ -1019,6 +1039,11 @@ mod tests {
         assert!(json.contains("harmony_ability"));
         assert!(json.contains("zsui_harmony_ability_surface_created"));
         assert!(json.contains("device-window.png"));
+        assert!(json.contains("mobile_scaffold_manifest --parity"));
+        assert!(json.contains("mobile_scaffold_manifest --dispatch"));
+        assert!(json.contains("mobile_scaffold_manifest --dispatch-smoke"));
+        assert!(json.contains("mobile_scaffold_manifest --write-contract"));
+        assert!(json.contains("mobile_scaffold_manifest --review-contract"));
         assert!(json.contains("mobile_scaffold_manifest --review"));
         assert!(json.contains("src/harmony_ability_host.rs"));
     }

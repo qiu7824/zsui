@@ -162,6 +162,24 @@ assert!(report.is_valid());
 - Android Activity and Harmony Ability scaffold manifests plus FFI/lifecycle/
   surface/input bridge contracts through `mobile_runtime_host_scaffold()` and
   `mobile_runtime_bridge_contract()`
+- Android/Harmony bridge parity reports through
+  `mobile_runtime_bridge_parity_report()` for checking scaffold/contract
+  metadata, required callback route kinds and pending FFI symbols without
+  claiming device runtime readiness
+- Android/Harmony bridge dispatch reports through
+  `mobile_runtime_bridge_dispatch_report()` for mapping required callback
+  symbols to lifecycle, surface, typed input and `NativeRuntimeDriver`
+  operations before real FFI code is added
+- Android/Harmony contract dispatch smoke through
+  `mobile_runtime_bridge_contract_smoke_report()` for locally replaying the
+  required bridge sequence without faking device proof
+- Android/Harmony contract artifact writing through
+  `write_mobile_runtime_bridge_contract_artifacts()` without generating device
+  launch, screenshot, lifecycle, surface or input proof
+- Android/Harmony contract artifact review through
+  `review_mobile_runtime_bridge_contract_artifacts()` so local bridge artifacts
+  can be validated separately from device smoke; the `for_all` variants and
+  CLI `all` target cover both Android and Harmony in one run
 - Android/Harmony device-smoke plans and read-only artifact review through
   `mobile_runtime_device_smoke_plan()` and
   `review_mobile_runtime_device_smoke_artifacts()`
@@ -253,8 +271,12 @@ it falls back to in-memory clipboard storage.
 - `examples/native_smoke_review.rs`: reviews target smoke artifacts and reports
   missing or invalid required proof files.
 - `examples/mobile_scaffold_manifest.rs`: JSON manifest for Android Activity
-  and Harmony Ability host scaffolds, bridge contracts with `--bridge`, device
-  smoke plans with `--smoke` and artifact review with `--review`.
+  and Harmony Ability host scaffolds, bridge contracts with `--bridge`, parity
+  reports with `--parity`, dispatch reports with `--dispatch`, contract
+  dispatch smoke with `--dispatch-smoke`, local contract artifact writing with
+  `--write-contract`, local contract artifact review with `--review-contract`,
+  device smoke plans with `--smoke` and artifact review with `--review`; the
+  write/review contract commands also accept `all`.
 - `examples/product_adapter.rs`: product adapter plus reusable runtime harness
   wiring without ZSClip product code.
 - `examples/product_adapter_smoke.rs`: machine-readable runtime harness smoke

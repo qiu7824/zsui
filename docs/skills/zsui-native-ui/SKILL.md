@@ -52,7 +52,18 @@ platform host into a copy of a product application.
    menu, tray, hotkey or settings declaration shapes.
 3. For Android or Harmony, inspect `mobile_runtime_host_scaffold(platform)` and
    `mobile_runtime_bridge_contract(platform)` before editing Activity/Ability
-   bridge code. Use `mobile_runtime_device_smoke_plan(platform)` and
+   bridge code. Use `mobile_runtime_bridge_parity_report(platform)` to check
+   required callback route coverage and pending FFI symbols. Use
+   `mobile_runtime_bridge_dispatch_report(platform)` to check how required
+   callback symbols map to lifecycle, surface, typed input and runtime driver
+   operations. Use `mobile_runtime_bridge_contract_smoke_report(platform)` for
+   local contract dispatch smoke before claiming device proof. Use
+   `write_mobile_runtime_bridge_contract_artifacts(platform)` to record local
+   contract artifacts without fabricating device evidence. Use
+   `review_mobile_runtime_bridge_contract_artifacts(platform)` to validate
+   local contract artifacts separately from device proof. Use the `*_for_all`
+   variants or CLI `all` target when updating Android and Harmony together. Use
+   `mobile_runtime_device_smoke_plan(platform)` and
    `review_mobile_runtime_device_smoke_artifacts(platform)` when changing
    mobile device proof requirements.
 4. Edit platform code only for native presentation or OS service calls.
@@ -81,8 +92,14 @@ When answering progress questions, separate:
   relevant.
 
 Use `native_ui_backend_capability_matrix()`,
-`native_ui_adapter_parity_report()`, `native_host_smoke_plan()` and
-`docs/ai-agent.md` as the current ZSUI source of truth for progress. If the
+`native_ui_adapter_parity_report()`,
+`mobile_runtime_bridge_parity_report()`,
+`mobile_runtime_bridge_dispatch_report()`,
+`mobile_runtime_bridge_contract_smoke_report()`,
+`write_mobile_runtime_bridge_contract_artifacts()`,
+`review_mobile_runtime_bridge_contract_artifacts()`,
+`native_host_smoke_plan()` and `docs/ai-agent.md` as the current ZSUI source of
+truth for progress. If the
 current machine is Windows, say that macOS, Linux, Android and Harmony runtime
 proof still requires target artifacts.
 

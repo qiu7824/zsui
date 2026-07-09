@@ -59,6 +59,27 @@ mobile surfaces. Their current scaffold manifests and bridge contracts live in
 `examples/mobile_scaffold_manifest.rs --bridge <platform>`. The bridge
 contracts name the FFI symbols, lifecycle/surface/input callbacks, safety
 rules and device-smoke artifact files that the real mobile hosts must satisfy.
+`mobile_runtime_bridge_parity_report(platform)` and
+`examples/mobile_scaffold_manifest.rs --parity <platform>` compare the
+scaffold and contract metadata, confirm required callback route coverage and
+list pending FFI callback symbols without claiming runtime readiness.
+`mobile_runtime_bridge_dispatch_report(platform)` and
+`examples/mobile_scaffold_manifest.rs --dispatch <platform>` map those callback
+symbols to lifecycle, surface, typed input and `NativeRuntimeDriver`
+operations before real Activity/Ability FFI glue exists.
+`mobile_runtime_bridge_contract_smoke_report(platform)` and
+`examples/mobile_scaffold_manifest.rs --dispatch-smoke <platform>` locally
+replay that dispatch sequence as contract smoke while still reporting that FFI
+and device proof are pending.
+`write_mobile_runtime_bridge_contract_artifacts(platform)` and
+`examples/mobile_scaffold_manifest.rs --write-contract <platform>` write the
+local contract JSON artifacts without fabricating launch logs, screenshots,
+lifecycle traces, surface traces or input traces.
+`review_mobile_runtime_bridge_contract_artifacts(platform)` and
+`examples/mobile_scaffold_manifest.rs --review-contract <platform>` validate
+those local contract artifacts without treating them as device proof. The
+`*_for_all` helpers and CLI `all` target can write/review Android and Harmony
+contract artifacts together.
 `mobile_runtime_device_smoke_plan(platform)` and
 `review_mobile_runtime_device_smoke_artifacts(platform)` provide the current
 read-only verification contract for those required device artifacts.
