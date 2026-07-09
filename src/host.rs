@@ -253,8 +253,18 @@ pub struct PlatformHost {
 
 impl PlatformHost {
     pub fn new() -> Self {
+        #[cfg(feature = "clipboard")]
+        let capabilities = HostCapabilities::current_platform_scaffold();
+        #[cfg(not(feature = "clipboard"))]
+        let mut capabilities = HostCapabilities::current_platform_scaffold();
+        #[cfg(not(feature = "clipboard"))]
+        {
+            capabilities.clipboard_text = CapabilitySupport::partial(
+                "system clipboard bridge is feature-gated; enable zsui/clipboard",
+            );
+        }
         Self {
-            inner: MemoryHost::with_capabilities(HostCapabilities::current_platform_scaffold()),
+            inner: MemoryHost::with_capabilities(capabilities),
         }
     }
 
@@ -295,36 +305,52 @@ impl ZsuiHost for PlatformHost {
     }
 
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
-        if !self.capabilities().clipboard_text.accepts_declaration() {
-            return self.inner.read_clipboard();
+        #[cfg(feature = "clipboard")]
+        {
+            if !self.capabilities().clipboard_text.accepts_declaration() {
+                return self.inner.read_clipboard();
+            }
+            match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
+                Ok(text) => return Ok(Some(ClipboardData::Text(text))),
+                Err(_) => return self.inner.read_clipboard(),
+            }
         }
-        match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
-            Ok(text) => Ok(Some(ClipboardData::Text(text))),
-            Err(_) => self.inner.read_clipboard(),
+
+        #[cfg(not(feature = "clipboard"))]
+        {
+            self.inner.read_clipboard()
         }
     }
 
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
-        match data {
-            ClipboardData::Text(text) => {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    clipboard
-                        .set_text(text.clone())
-                        .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()))?;
-                    self.inner.write_clipboard(data)?;
-                    return Ok(());
+        #[cfg(feature = "clipboard")]
+        {
+            return match data {
+                ClipboardData::Text(text) => {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        clipboard
+                            .set_text(text.clone())
+                            .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()))?;
+                        self.inner.write_clipboard(data)?;
+                        return Ok(());
+                    }
+                    self.inner.write_clipboard(data)
                 }
-                self.inner.write_clipboard(data)
-            }
-            ClipboardData::Empty => self.inner.write_clipboard(data),
-            ClipboardData::ImageRgba { .. } => Err(ZsuiError::unsupported(
-                "clipboard_image",
-                "PlatformHost image clipboard bridge is not wired yet",
-            )),
-            ClipboardData::Files(_) => Err(ZsuiError::unsupported(
-                "clipboard_files",
-                "PlatformHost file clipboard bridge is not wired yet",
-            )),
+                ClipboardData::Empty => self.inner.write_clipboard(data),
+                ClipboardData::ImageRgba { .. } => Err(ZsuiError::unsupported(
+                    "clipboard_image",
+                    "PlatformHost image clipboard bridge is not wired yet",
+                )),
+                ClipboardData::Files(_) => Err(ZsuiError::unsupported(
+                    "clipboard_files",
+                    "PlatformHost file clipboard bridge is not wired yet",
+                )),
+            };
+        }
+
+        #[cfg(not(feature = "clipboard"))]
+        {
+            self.inner.write_clipboard(data)
         }
     }
 

@@ -14,10 +14,12 @@ platform host into a copy of a product application.
    completion vocabulary.
 2. Read `docs/ai-agent.md` for the current standalone completion estimate.
 3. Read `docs/architecture.md` for the framework boundary.
-4. Read `docs/porting.md` before adding or changing host surfaces.
-5. Read `docs/native-host-smoke.md` before claiming target-smoke or
+4. Inspect `src/framework_goals.rs`, `docs/framework-goals.md`, `src/view.rs`
+   and `src/style.rs` before changing user-facing API shape.
+5. Read `docs/porting.md` before adding or changing host surfaces.
+6. Read `docs/native-host-smoke.md` before claiming target-smoke or
    system-complete status.
-6. Inspect the relevant Rust entry points instead of guessing from UI labels.
+7. Inspect the relevant Rust entry points instead of guessing from UI labels.
 
 ## Layer Rules
 
@@ -29,20 +31,30 @@ platform host into a copy of a product application.
   shared contracts and report real capabilities.
 - Do not create product-specific APIs for behavior that belongs behind a
   product adapter.
+- Keep the user-facing API aligned with `zsui_rust_first_goals()`: composition
+  and traits, typed messages, RAII resources, typed units, explicit state and
+  safe public APIs. Use `docs/framework-goals.md` for the fuller guidance on
+  one-line native window entry points, typed messages, feature/crate trimming,
+  split crates/modules for heavy widget and backend families, Android/Harmony
+  host boundaries, ZSClip no-flicker rendering reuse and no global widget
+  registration.
 - Do not report a platform feature as complete just because a declaration or
   scaffold compiles. Use code-level, target-smoke and system-complete
   separately.
 
 ## Common Workflow
 
-1. Identify the feature surface: app declaration audit, window, tray/status menu, menu, hotkey,
-   clipboard, settings, dialog, shell-open, file picker, runtime launch,
-   adapter metadata or mobile host.
+1. Identify the feature surface: app declaration audit, Cargo feature gate,
+   window, tray/status menu, menu, hotkey, clipboard, settings, dialog,
+   shell-open, file picker, runtime launch, adapter metadata or mobile host.
 2. Check the shared contract in `src/` before editing platform code.
    Use `AppBuilder::declaration_report_for(...)` when changing app, window,
    menu, tray, hotkey or settings declaration shapes.
-3. For Android or Harmony, inspect `mobile_runtime_host_scaffold(platform)`
-   before editing Activity/Ability bridge code.
+3. For Android or Harmony, inspect `mobile_runtime_host_scaffold(platform)` and
+   `mobile_runtime_bridge_contract(platform)` before editing Activity/Ability
+   bridge code. Use `mobile_runtime_device_smoke_plan(platform)` and
+   `review_mobile_runtime_device_smoke_artifacts(platform)` when changing
+   mobile device proof requirements.
 4. Edit platform code only for native presentation or OS service calls.
 5. Route behavior through public contracts such as `ZsuiHost`,
    `NativeRuntimeDriver`, `NativeMainWindowHost`, `NativeDialogHost`,
@@ -81,6 +93,7 @@ Local checks:
 ```powershell
 cargo fmt --check
 cargo check
+cargo check --no-default-features --features "button,label"
 cargo test
 ```
 

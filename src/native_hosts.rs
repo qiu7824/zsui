@@ -1,6 +1,6 @@
 use crate::{
-    AppEvent, HostCapabilities, MenuSpec, Point, SettingsPageSpec, Size, TraySpec, UiCommand,
-    UiRect, WindowSpec,
+    AppEvent, Command, HostCapabilities, MenuItemSpec, MenuSpec, Point, SettingsPageSpec,
+    SettingsValue, Size, TraySpec, UiCommand, UiRect, WindowSpec,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +68,7 @@ pub struct NativeMainWindowRequest {
     pub title: String,
     pub size: Size,
     pub options: NativeWindowOptions,
+    pub icon_path: Option<String>,
     pub main_visible: bool,
     pub degraded_capabilities: Vec<String>,
 }
@@ -161,6 +162,7 @@ impl NativeMainWindowRequest {
                 height: u32_to_i32_saturating(window.height).max(1),
             },
             options: NativeWindowOptions::from_zsui_window(window),
+            icon_path: window.icon_path.clone(),
             main_visible: window.visible,
             degraded_capabilities: Vec::new(),
         }
@@ -389,6 +391,123 @@ pub const REQUIRED_NATIVE_STATUS_ITEM_HOST_OPERATIONS: [NativeStatusItemHostOper
 
 pub fn required_native_status_item_host_operation_names() -> Vec<&'static str> {
     REQUIRED_NATIVE_STATUS_ITEM_HOST_OPERATIONS
+        .iter()
+        .map(|operation| operation.operation_name())
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeStatusMenuCommandRequest {
+    pub status_item_index: usize,
+    pub item_id: Option<String>,
+    pub label: Option<String>,
+}
+
+impl NativeStatusMenuCommandRequest {
+    pub fn by_id(status_item_index: usize, item_id: impl Into<String>) -> Self {
+        Self {
+            status_item_index,
+            item_id: Some(item_id.into()),
+            label: None,
+        }
+    }
+
+    pub fn by_label(status_item_index: usize, label: impl Into<String>) -> Self {
+        Self {
+            status_item_index,
+            item_id: None,
+            label: Some(label.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeStatusMenuCommandResult {
+    Dispatched(Command),
+    Disabled,
+    NotFound,
+}
+
+pub trait NativeStatusMenuCommandHost {
+    fn dispatch_status_menu_command(
+        &mut self,
+        request: NativeStatusMenuCommandRequest,
+    ) -> NativeStatusMenuCommandResult;
+}
+
+pub fn native_status_menu_command_from_menu(
+    menu: &MenuSpec,
+    request: &NativeStatusMenuCommandRequest,
+) -> NativeStatusMenuCommandResult {
+    for item in &menu.items {
+        match item {
+            MenuItemSpec::Command {
+                id,
+                label,
+                command,
+                enabled,
+                ..
+            } if status_menu_item_matches(id.as_deref(), label, request) => {
+                return if *enabled {
+                    NativeStatusMenuCommandResult::Dispatched(command.clone())
+                } else {
+                    NativeStatusMenuCommandResult::Disabled
+                };
+            }
+            MenuItemSpec::Submenu {
+                id,
+                label,
+                enabled,
+                menu,
+            } => {
+                if status_menu_item_matches(id.as_deref(), label, request) {
+                    return if *enabled {
+                        NativeStatusMenuCommandResult::NotFound
+                    } else {
+                        NativeStatusMenuCommandResult::Disabled
+                    };
+                }
+                let result = native_status_menu_command_from_menu(menu, request);
+                if !matches!(result, NativeStatusMenuCommandResult::NotFound) {
+                    return result;
+                }
+            }
+            MenuItemSpec::Command { .. } | MenuItemSpec::Separator => {}
+        }
+    }
+    NativeStatusMenuCommandResult::NotFound
+}
+
+fn status_menu_item_matches(
+    item_id: Option<&str>,
+    label: &str,
+    request: &NativeStatusMenuCommandRequest,
+) -> bool {
+    if let Some(requested_id) = request.item_id.as_deref() {
+        return item_id == Some(requested_id);
+    }
+    request.label.as_deref() == Some(label)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStatusMenuCommandHostOperation {
+    DispatchStatusMenuCommand,
+}
+
+impl NativeStatusMenuCommandHostOperation {
+    pub const fn operation_name(self) -> &'static str {
+        match self {
+            Self::DispatchStatusMenuCommand => "dispatch_status_menu_command",
+        }
+    }
+}
+
+pub const REQUIRED_NATIVE_STATUS_MENU_COMMAND_HOST_OPERATIONS:
+    [NativeStatusMenuCommandHostOperation; 1] =
+    [NativeStatusMenuCommandHostOperation::DispatchStatusMenuCommand];
+
+pub fn required_native_status_menu_command_host_operation_names() -> Vec<&'static str> {
+    REQUIRED_NATIVE_STATUS_MENU_COMMAND_HOST_OPERATIONS
         .iter()
         .map(|operation| operation.operation_name())
         .collect()
@@ -649,6 +768,66 @@ pub fn required_native_settings_page_model_host_operation_names() -> Vec<&'stati
         .collect()
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeSettingsItemUpdateRequest {
+    pub page_id: String,
+    pub item_id: String,
+    pub value: SettingsValue,
+}
+
+impl NativeSettingsItemUpdateRequest {
+    pub fn new(
+        page_id: impl Into<String>,
+        item_id: impl Into<String>,
+        value: SettingsValue,
+    ) -> Self {
+        Self {
+            page_id: page_id.into(),
+            item_id: item_id.into(),
+            value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeSettingsItemUpdateResult {
+    Updated,
+    NotBound,
+    PageNotFound,
+    ItemNotFound,
+}
+
+pub trait NativeSettingsItemUpdateHost {
+    fn update_settings_item_value(
+        &mut self,
+        request: NativeSettingsItemUpdateRequest,
+    ) -> NativeSettingsItemUpdateResult;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeSettingsItemUpdateHostOperation {
+    UpdateSettingsItemValue,
+}
+
+impl NativeSettingsItemUpdateHostOperation {
+    pub const fn operation_name(self) -> &'static str {
+        match self {
+            Self::UpdateSettingsItemValue => "update_settings_item_value",
+        }
+    }
+}
+
+pub const REQUIRED_NATIVE_SETTINGS_ITEM_UPDATE_HOST_OPERATIONS:
+    [NativeSettingsItemUpdateHostOperation; 1] =
+    [NativeSettingsItemUpdateHostOperation::UpdateSettingsItemValue];
+
+pub fn required_native_settings_item_update_host_operation_names() -> Vec<&'static str> {
+    REQUIRED_NATIVE_SETTINGS_ITEM_UPDATE_HOST_OPERATIONS
+        .iter()
+        .map(|operation| operation.operation_name())
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeSettingsDropdownRequest<Owner: Copy + Eq> {
     pub owner: Owner,
@@ -753,6 +932,7 @@ mod tests {
                     height: 240,
                 },
                 options: NativeWindowOptions::standard(),
+                icon_path: None,
                 main_visible: true,
                 degraded_capabilities: Vec::new(),
             },
@@ -795,6 +975,40 @@ mod tests {
     }
 
     #[test]
+    fn native_window_request_carries_declarative_icon_path() {
+        let request = NativeMainWindowRequest::from_zsui_window(
+            &WindowSpec::new("Example").icon_path("assets/app.ico"),
+        );
+
+        assert_eq!(request.icon_path.as_deref(), Some("assets/app.ico"));
+    }
+
+    #[test]
+    fn status_menu_command_helper_routes_nested_typed_commands() {
+        let menu = MenuSpec::new()
+            .item("Open", Command::ShowMainWindow)
+            .submenu(
+                "More",
+                MenuSpec::new().item("Refresh", Command::custom("example.refresh")),
+            );
+
+        assert_eq!(
+            native_status_menu_command_from_menu(
+                &menu,
+                &NativeStatusMenuCommandRequest::by_label(0, "Refresh"),
+            ),
+            NativeStatusMenuCommandResult::Dispatched(Command::custom("example.refresh"))
+        );
+        assert_eq!(
+            native_status_menu_command_from_menu(
+                &menu,
+                &NativeStatusMenuCommandRequest::by_label(0, "Missing"),
+            ),
+            NativeStatusMenuCommandResult::NotFound
+        );
+    }
+
+    #[test]
     fn native_main_window_host_operations_are_stable() {
         let names: Vec<_> = REQUIRED_NATIVE_MAIN_WINDOW_HOST_OPERATIONS
             .iter()
@@ -824,6 +1038,14 @@ mod tests {
                 "update_settings_pages",
                 "clear_settings_pages"
             ]
+        );
+        assert_eq!(
+            required_native_status_menu_command_host_operation_names(),
+            vec!["dispatch_status_menu_command"]
+        );
+        assert_eq!(
+            required_native_settings_item_update_host_operation_names(),
+            vec!["update_settings_item_value"]
         );
     }
 }

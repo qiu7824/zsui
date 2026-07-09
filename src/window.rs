@@ -15,6 +15,7 @@ pub struct WindowSpec {
     pub decorations: bool,
     pub always_on_top: bool,
     pub transparent: bool,
+    pub icon_path: Option<String>,
     pub content: Option<UiNode>,
 }
 
@@ -50,6 +51,7 @@ impl WindowSpec {
             decorations: true,
             always_on_top: false,
             transparent: false,
+            icon_path: None,
             content: None,
         }
     }
@@ -88,6 +90,11 @@ impl WindowSpec {
 
     pub fn transparent(mut self, transparent: bool) -> Self {
         self.transparent = transparent;
+        self
+    }
+
+    pub fn icon_path(mut self, icon_path: impl Into<String>) -> Self {
+        self.icon_path = Some(icon_path.into());
         self
     }
 

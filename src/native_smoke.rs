@@ -71,6 +71,21 @@ pub struct NativeHostSmokeInteractionReport {
     pub exited_by_auto_close: bool,
     pub native_window_events: Vec<String>,
     pub screenshot_captured: bool,
+    pub draw_plan_requested: bool,
+    pub draw_plan_window_count: usize,
+    pub draw_command_count: usize,
+    pub text_command_count: usize,
+    pub status_item_requested: bool,
+    pub status_item_created: bool,
+    pub status_item_menu_item_count: usize,
+    pub status_item_error: Option<String>,
+    pub status_menu_native_command_count: usize,
+    pub status_menu_command_routed: bool,
+    pub status_menu_command_error: Option<String>,
+    pub status_menu_popup_created: bool,
+    pub status_menu_popup_command_count: usize,
+    pub status_menu_popup_destroyed: bool,
+    pub status_menu_popup_error: Option<String>,
     pub interaction_artifacts_captured: bool,
     pub notes: Vec<String>,
 }
@@ -86,6 +101,21 @@ impl NativeHostSmokeInteractionReport {
             exited_by_auto_close: false,
             native_window_events: Vec::new(),
             screenshot_captured: false,
+            draw_plan_requested: false,
+            draw_plan_window_count: 0,
+            draw_command_count: 0,
+            text_command_count: 0,
+            status_item_requested: false,
+            status_item_created: false,
+            status_item_menu_item_count: 0,
+            status_item_error: None,
+            status_menu_native_command_count: 0,
+            status_menu_command_routed: false,
+            status_menu_command_error: None,
+            status_menu_popup_created: false,
+            status_menu_popup_command_count: 0,
+            status_menu_popup_destroyed: false,
+            status_menu_popup_error: None,
             interaction_artifacts_captured: false,
             notes: vec![
                 "artifact writer records contract-level smoke context only".to_string(),
@@ -109,6 +139,29 @@ impl NativeHostSmokeInteractionReport {
                     .to_string(),
             );
         }
+        if report.draw_plan_requested {
+            notes.push(format!(
+                "native draw plan attached to {} window(s) with {} command(s)",
+                report.draw_plan_window_count, report.draw_command_count
+            ));
+        }
+        if report.status_item_requested && report.status_item_created {
+            notes.push("status item was created by the native smoke runner".to_string());
+            if report.status_menu_command_routed {
+                notes.push("status menu command routing was exercised".to_string());
+            }
+            if report.status_menu_popup_created && report.status_menu_popup_destroyed {
+                notes.push(
+                    "status popup menu was created and destroyed by the native smoke runner"
+                        .to_string(),
+                );
+            }
+        } else if report.status_item_requested {
+            notes.push(
+                "status item was requested but still needs target host proof before completion"
+                    .to_string(),
+            );
+        }
 
         Self {
             platform_name,
@@ -119,6 +172,21 @@ impl NativeHostSmokeInteractionReport {
             exited_by_auto_close: report.exited_by_auto_close,
             native_window_events: report.events.clone(),
             screenshot_captured: report.screenshot_captured,
+            draw_plan_requested: report.draw_plan_requested,
+            draw_plan_window_count: report.draw_plan_window_count,
+            draw_command_count: report.draw_command_count,
+            text_command_count: report.text_command_count,
+            status_item_requested: report.status_item_requested,
+            status_item_created: report.status_item_created,
+            status_item_menu_item_count: report.status_item_menu_item_count,
+            status_item_error: report.status_item_error.clone(),
+            status_menu_native_command_count: report.status_menu_native_command_count,
+            status_menu_command_routed: report.status_menu_command_routed,
+            status_menu_command_error: report.status_menu_command_error.clone(),
+            status_menu_popup_created: report.status_menu_popup_created,
+            status_menu_popup_command_count: report.status_menu_popup_command_count,
+            status_menu_popup_destroyed: report.status_menu_popup_destroyed,
+            status_menu_popup_error: report.status_menu_popup_error.clone(),
             interaction_artifacts_captured: report.visible_window_was_created(),
             notes,
         }
@@ -613,7 +681,7 @@ mod tests {
             .expect("windows smoke plan should exist");
 
         assert_eq!(plan.platform_name, "windows");
-        assert_eq!(plan.toolkit_name, "winit_desktop");
+        assert_eq!(plan.toolkit_name, "win32_gdi");
         assert!(plan.target_smoke_ready);
         assert_eq!(plan.artifact_dir, "target/native-host-smoke/windows");
         assert!(plan.required_artifact_file_names().contains(&"window.png"));
@@ -689,8 +757,28 @@ mod tests {
             screenshot_file: None,
             screenshot_captured: false,
             screenshot_error: None,
+            draw_plan_requested: true,
+            draw_plan_window_count: 1,
+            draw_command_count: 3,
+            text_command_count: 1,
+            status_item_requested: true,
+            status_item_required: false,
+            status_item_created: true,
+            status_item_menu_item_count: 2,
+            status_item_error: None,
+            status_menu_native_command_count: 2,
+            status_menu_command_routed: true,
+            status_menu_command_error: None,
+            status_menu_popup_created: true,
+            status_menu_popup_command_count: 2,
+            status_menu_popup_destroyed: true,
+            status_menu_popup_error: None,
             events: vec![
                 "window_created:Smoke".to_string(),
+                "status_item_created:1".to_string(),
+                "status_menu_command_dispatched:ShowMainWindow".to_string(),
+                "status_menu_popup_created:2".to_string(),
+                "status_menu_popup_destroyed".to_string(),
                 "auto_close_elapsed".to_string(),
             ],
         };
@@ -713,6 +801,9 @@ mod tests {
             .missing_required_artifacts
             .contains(&"window.png".to_string()));
         assert!(interaction_json.contains("\"artifact_writer_opened_real_window\": true"));
+        assert!(interaction_json.contains("\"status_item_created\": true"));
+        assert!(interaction_json.contains("\"status_menu_command_routed\": true"));
+        assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("auto_close_elapsed"));
     }
 

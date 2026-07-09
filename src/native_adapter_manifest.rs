@@ -52,7 +52,8 @@ pub const SUPPORTED_NATIVE_UI_PLATFORMS: [NativeUiPlatform; 5] = [
     NativeUiPlatform::Harmony,
 ];
 
-pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 3] = [
+pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 4] = [
+    NativeUiToolkit::Win32Gdi,
     NativeUiToolkit::WinitDesktop,
     NativeUiToolkit::AndroidActivity,
     NativeUiToolkit::HarmonyAbility,
@@ -113,10 +114,10 @@ impl NativeUiBackendDescriptor {
 pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Windows,
-        toolkit: NativeUiToolkit::WinitDesktop,
+        toolkit: NativeUiToolkit::Win32Gdi,
         status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "DesktopWinitNativeWindowBoundary",
-        module_path: "src/native.rs",
+        adapter_boundary: "WindowsWin32GdiNativeWindowBoundary",
+        module_path: "src/windows_win32_host.rs",
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Macos,
@@ -518,10 +519,10 @@ mod tests {
         let windows = native_ui_backend_for_platform(NativeUiPlatform::Windows)
             .expect("windows backend should be declared");
 
-        assert_eq!(windows.toolkit, NativeUiToolkit::WinitDesktop);
+        assert_eq!(windows.toolkit, NativeUiToolkit::Win32Gdi);
         assert_eq!(windows.status, NativeUiBackendStatus::NativeHostFirstPass);
         assert_eq!(windows.platform_name(), "windows");
-        assert_eq!(windows.toolkit_name(), "winit_desktop");
+        assert_eq!(windows.toolkit_name(), "win32_gdi");
         let android = native_ui_backend_for_platform(NativeUiPlatform::Android)
             .expect("android backend should be declared");
         assert_eq!(android.toolkit, NativeUiToolkit::AndroidActivity);
@@ -539,7 +540,7 @@ mod tests {
         );
 
         assert_eq!(SUPPORTED_NATIVE_UI_PLATFORMS.len(), 5);
-        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 3);
+        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 4);
         assert_eq!(REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES.len(), 18);
     }
 

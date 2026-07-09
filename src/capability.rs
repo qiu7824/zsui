@@ -258,6 +258,9 @@ impl HostCapabilities {
         capabilities.window_transparency = CapabilitySupport::unsupported(
             "Win32 main window transparency is not mapped by the native window host yet",
         );
+        capabilities.tray_or_status_menu = CapabilitySupport::partial(
+            "Win32 status items can be created by the direct native host; target tray/menu command proof is still pending",
+        );
         capabilities
     }
 

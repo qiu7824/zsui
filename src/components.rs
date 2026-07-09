@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(feature = "button", feature = "checkbox"))]
 use crate::core::Command;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,17 +23,21 @@ pub enum UiStackDirection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UiNodeKind {
+    #[cfg(feature = "label")]
     Text {
         text: String,
     },
+    #[cfg(feature = "button")]
     Button {
         label: String,
         command: Command,
     },
+    #[cfg(feature = "textbox")]
     TextInput {
         label: String,
         value: String,
     },
+    #[cfg(feature = "checkbox")]
     Checkbox {
         label: String,
         checked: bool,
@@ -63,10 +68,12 @@ impl UiNode {
         }
     }
 
+    #[cfg(feature = "label")]
     pub fn text(id: impl Into<String>, text: impl Into<String>) -> Self {
         Self::new(id, UiNodeKind::Text { text: text.into() })
     }
 
+    #[cfg(feature = "button")]
     pub fn button(id: impl Into<String>, label: impl Into<String>, command: Command) -> Self {
         Self::new(
             id,
@@ -77,6 +84,7 @@ impl UiNode {
         )
     }
 
+    #[cfg(feature = "textbox")]
     pub fn text_input(
         id: impl Into<String>,
         label: impl Into<String>,
@@ -91,6 +99,7 @@ impl UiNode {
         )
     }
 
+    #[cfg(feature = "checkbox")]
     pub fn checkbox(
         id: impl Into<String>,
         label: impl Into<String>,
@@ -149,6 +158,7 @@ impl UiNode {
     }
 }
 
+#[cfg(feature = "label")]
 use crate::{
     command_protocol::CommandQueue,
     component_protocol::Component,
@@ -157,6 +167,7 @@ use crate::{
     render_protocol::{Renderer, TextLayout, TextStyle},
 };
 
+#[cfg(feature = "label")]
 pub struct Label {
     id: ComponentId,
     lifecycle: LifecycleState,
@@ -165,6 +176,7 @@ pub struct Label {
     bounds: Rect,
 }
 
+#[cfg(feature = "label")]
 impl Label {
     pub fn new(id: ComponentId, text: impl Into<String>, style: TextStyle) -> Self {
         Self {
@@ -194,6 +206,7 @@ impl Label {
     }
 }
 
+#[cfg(feature = "label")]
 impl LayoutProtocol for Label {
     fn layout(&mut self, input: LayoutInput) -> LayoutOutput {
         self.bounds = input.bounds;
@@ -207,6 +220,7 @@ impl LayoutProtocol for Label {
     }
 }
 
+#[cfg(feature = "label")]
 impl Component for Label {
     fn id(&self) -> ComponentId {
         self.id
@@ -229,7 +243,7 @@ impl Component for Label {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "label"))]
 mod label_tests {
     use super::*;
     use crate::{
@@ -310,7 +324,7 @@ mod label_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "label", feature = "button"))]
 mod ui_node_tests {
     use super::*;
 
@@ -323,19 +337,12 @@ mod ui_node_tests {
                 "save",
                 "Save",
                 Command::custom("demo.save"),
-            )))
-            .child(UiNode::checkbox(
-                "enabled",
-                "Enabled",
-                true,
-                Some(Command::custom("demo.toggle")),
-            ));
+            )));
 
         let json = serde_json::to_string(&tree).expect("ui node tree should serialize");
 
-        assert_eq!(tree.node_count(), 5);
+        assert_eq!(tree.node_count(), 4);
         assert!(tree.contains_node_id("save"));
         assert!(json.contains("demo.save"));
-        assert!(json.contains("Enabled"));
     }
 }

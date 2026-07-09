@@ -9,17 +9,23 @@ use crate::{
         AppEvent, DialogResponse, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId,
         ZsuiError, ZsuiResult,
     },
+    geometry::{Dpi, Rect},
     host::{MemoryHost, TrayRecord, WindowRecord, ZsuiHost},
     hotkey::HotkeySpec,
     menu::{MenuItemSpec, MenuSpec},
     native_hosts::{
-        NativeMainWindowHandles, NativeRuntimeDriver, NativeRuntimeStartupRequest,
-        NativeRuntimeStartupResult, NativeSettingsPageModelHost,
-        NativeSettingsPageModelPresentation, NativeSettingsPageModelRequest, NativeStatusItemHost,
-        NativeStatusItemPresentation, NativeStatusItemRequest,
+        native_status_menu_command_from_menu, NativeMainWindowHandles, NativeRuntimeDriver,
+        NativeRuntimeStartupRequest, NativeRuntimeStartupResult, NativeSettingsItemUpdateHost,
+        NativeSettingsItemUpdateRequest, NativeSettingsItemUpdateResult,
+        NativeSettingsPageModelHost, NativeSettingsPageModelPresentation,
+        NativeSettingsPageModelRequest, NativeStatusItemHost, NativeStatusItemPresentation,
+        NativeStatusItemRequest, NativeStatusMenuCommandHost, NativeStatusMenuCommandRequest,
+        NativeStatusMenuCommandResult,
     },
+    render_protocol::NativeDrawPlan,
     settings::SettingsPageSpec,
     tray::TraySpec,
+    view::{View, ViewLayoutCx, ViewNode, ViewPaintCx},
     window::{Window, WindowSpec},
 };
 
@@ -171,7 +177,7 @@ impl NativeWindowRuntimeDriver {
         &self,
         options: NativeWindowSmokeRunOptions,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
-        run_native_window_smoke_event_loop(self.windows.clone(), options)
+        run_native_window_smoke_event_loop(self.windows.clone(), Vec::new(), options)
     }
 }
 
@@ -329,12 +335,70 @@ impl NativeSettingsPageModelHost for NativeWindowRuntimeDriver {
     }
 }
 
+impl NativeStatusMenuCommandHost for NativeWindowRuntimeDriver {
+    fn dispatch_status_menu_command(
+        &mut self,
+        request: NativeStatusMenuCommandRequest,
+    ) -> NativeStatusMenuCommandResult {
+        self.record_native_operation("dispatch_status_menu_command");
+        let Some(status_item) = self.status_items.get(request.status_item_index) else {
+            return NativeStatusMenuCommandResult::NotFound;
+        };
+        let result = native_status_menu_command_from_menu(&status_item.menu, &request);
+        if let NativeStatusMenuCommandResult::Dispatched(command) = &result {
+            self.events.push(AppEvent::TrayCommand {
+                command: command.clone(),
+            });
+        }
+        result
+    }
+}
+
+impl NativeSettingsItemUpdateHost for NativeWindowRuntimeDriver {
+    fn update_settings_item_value(
+        &mut self,
+        request: NativeSettingsItemUpdateRequest,
+    ) -> NativeSettingsItemUpdateResult {
+        self.record_native_operation("update_settings_item_value");
+        if !self.settings_model_bound {
+            return NativeSettingsItemUpdateResult::NotBound;
+        }
+
+        let page_id = request.page_id;
+        let item_id = request.item_id;
+        let value = request.value;
+        let Some(page) = self
+            .settings_pages
+            .iter_mut()
+            .find(|page| page.id == page_id.as_str())
+        else {
+            return NativeSettingsItemUpdateResult::PageNotFound;
+        };
+        let Some(item) = page
+            .items
+            .iter_mut()
+            .find(|item| item.id == item_id.as_str())
+        else {
+            return NativeSettingsItemUpdateResult::ItemNotFound;
+        };
+
+        item.default_value = Some(value);
+        self.events.push(AppEvent::SettingsChanged {
+            page: page_id,
+            item: item_id,
+        });
+        NativeSettingsItemUpdateResult::Updated
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeWindowSmokeRunOptions {
     pub auto_close_after_ms: u64,
     pub require_visible_window: bool,
     pub screenshot_file: Option<String>,
     pub require_screenshot: bool,
+    pub status_item: Option<TraySpec>,
+    pub require_status_item: bool,
 }
 
 impl NativeWindowSmokeRunOptions {
@@ -344,6 +408,8 @@ impl NativeWindowSmokeRunOptions {
             require_visible_window: true,
             screenshot_file: None,
             require_screenshot: false,
+            status_item: None,
+            require_status_item: false,
         }
     }
 
@@ -365,6 +431,16 @@ impl NativeWindowSmokeRunOptions {
         self.require_screenshot = require_screenshot;
         self
     }
+
+    pub fn status_item(mut self, status_item: TraySpec) -> Self {
+        self.status_item = Some(status_item);
+        self
+    }
+
+    pub const fn require_status_item(mut self, require_status_item: bool) -> Self {
+        self.require_status_item = require_status_item;
+        self
+    }
 }
 
 impl Default for NativeWindowSmokeRunOptions {
@@ -384,11 +460,33 @@ pub struct NativeWindowSmokeRunReport {
     pub screenshot_file: Option<String>,
     pub screenshot_captured: bool,
     pub screenshot_error: Option<String>,
+    pub draw_plan_requested: bool,
+    pub draw_plan_window_count: usize,
+    pub draw_command_count: usize,
+    pub text_command_count: usize,
+    pub status_item_requested: bool,
+    pub status_item_required: bool,
+    pub status_item_created: bool,
+    pub status_item_menu_item_count: usize,
+    pub status_item_error: Option<String>,
+    pub status_menu_native_command_count: usize,
+    pub status_menu_command_routed: bool,
+    pub status_menu_command_error: Option<String>,
+    pub status_menu_popup_created: bool,
+    pub status_menu_popup_command_count: usize,
+    pub status_menu_popup_destroyed: bool,
+    pub status_menu_popup_error: Option<String>,
     pub events: Vec<String>,
 }
 
 impl NativeWindowSmokeRunReport {
     pub fn empty(options: NativeWindowSmokeRunOptions) -> Self {
+        let status_item_requested = options.status_item.is_some();
+        let status_item_menu_item_count = options
+            .status_item
+            .as_ref()
+            .map(|status_item| status_item.menu.items.len())
+            .unwrap_or(0);
         Self {
             requested_window_count: 0,
             created_window_count: 0,
@@ -399,6 +497,22 @@ impl NativeWindowSmokeRunReport {
             screenshot_file: options.screenshot_file,
             screenshot_captured: false,
             screenshot_error: None,
+            draw_plan_requested: false,
+            draw_plan_window_count: 0,
+            draw_command_count: 0,
+            text_command_count: 0,
+            status_item_requested,
+            status_item_required: options.require_status_item,
+            status_item_created: false,
+            status_item_menu_item_count,
+            status_item_error: None,
+            status_menu_native_command_count: 0,
+            status_menu_command_routed: false,
+            status_menu_command_error: None,
+            status_menu_popup_created: false,
+            status_menu_popup_command_count: 0,
+            status_menu_popup_destroyed: false,
+            status_menu_popup_error: None,
             events: Vec::new(),
         }
     }
@@ -408,10 +522,37 @@ impl NativeWindowSmokeRunReport {
     }
 }
 
+#[allow(dead_code)]
+fn record_draw_plan_smoke(
+    report: &mut NativeWindowSmokeRunReport,
+    draw_plans: &[Option<NativeDrawPlan>],
+) {
+    report.draw_plan_window_count = draw_plans.iter().filter(|plan| plan.is_some()).count();
+    report.draw_plan_requested = report.draw_plan_window_count > 0;
+    report.draw_command_count = draw_plans
+        .iter()
+        .filter_map(|plan| plan.as_ref())
+        .map(NativeDrawPlan::command_count)
+        .sum();
+    report.text_command_count = draw_plans
+        .iter()
+        .filter_map(|plan| plan.as_ref())
+        .map(NativeDrawPlan::text_count)
+        .sum();
+    if report.draw_plan_requested {
+        report.events.push(format!(
+            "draw_plan_attached:{}:{}",
+            report.draw_plan_window_count, report.draw_command_count
+        ));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeWindowBuilder {
     app_name: String,
     window: WindowSpec,
+    draw_plan: Option<NativeDrawPlan>,
+    view_layout_node_count: usize,
 }
 
 impl NativeWindowBuilder {
@@ -420,6 +561,8 @@ impl NativeWindowBuilder {
         Self {
             app_name: title.clone(),
             window: Window::new(title),
+            draw_plan: None,
+            view_layout_node_count: 0,
         }
     }
 
@@ -463,8 +606,40 @@ impl NativeWindowBuilder {
         self
     }
 
+    pub fn draw_plan(mut self, draw_plan: NativeDrawPlan) -> Self {
+        self.draw_plan = Some(draw_plan);
+        self.view_layout_node_count = 0;
+        self
+    }
+
+    pub fn view<Msg: Clone>(mut self, mut view: ViewNode<Msg>) -> Self {
+        let mut layout_cx = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.window.width as i32,
+                height: self.window.height as i32,
+            },
+            Dpi::standard(),
+        );
+        let layout = view.layout(&mut layout_cx);
+        let mut paint_cx = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint_cx);
+        self.view_layout_node_count = layout.children.len();
+        self.draw_plan = Some(paint_cx.into_plan());
+        self
+    }
+
     pub fn window_spec(&self) -> &WindowSpec {
         &self.window
+    }
+
+    pub fn native_draw_plan(&self) -> Option<&NativeDrawPlan> {
+        self.draw_plan.as_ref()
+    }
+
+    pub const fn view_layout_node_count(&self) -> usize {
+        self.view_layout_node_count
     }
 
     pub fn build(self) -> ZsuiResult<ZsuiApp> {
@@ -472,8 +647,10 @@ impl NativeWindowBuilder {
     }
 
     pub fn run(self) -> ZsuiResult<ZsuiAppRuntime> {
+        let draw_plan = self.draw_plan.clone();
         let app = self.build()?;
         let mut host = NativeWindowHost::new();
+        host.set_next_window_draw_plan(draw_plan);
         app.run_with_host(&mut host)
     }
 
@@ -481,12 +658,14 @@ impl NativeWindowBuilder {
         self,
         options: NativeWindowSmokeRunOptions,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        let draw_plan = self.draw_plan.clone();
         let app = self.build()?;
         let mut host = NativeWindowHost::new();
         for window in &app.windows {
             host.create_main_window(window)?;
         }
-        run_native_window_smoke_event_loop(host.windows.clone(), options)
+        host.set_window_draw_plan(0, draw_plan);
+        run_native_window_smoke_event_loop(host.windows.clone(), host.draw_plans.clone(), options)
     }
 }
 
@@ -494,6 +673,9 @@ impl NativeWindowBuilder {
 pub struct NativeWindowHost {
     inner: MemoryHost,
     windows: Vec<WindowSpec>,
+    trays: Vec<TraySpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
+    next_window_draw_plan: Option<NativeDrawPlan>,
 }
 
 impl NativeWindowHost {
@@ -501,6 +683,9 @@ impl NativeWindowHost {
         Self {
             inner: MemoryHost::with_capabilities(HostCapabilities::current_native_window_host()),
             windows: Vec::new(),
+            trays: Vec::new(),
+            draw_plans: Vec::new(),
+            next_window_draw_plan: None,
         }
     }
 
@@ -510,6 +695,26 @@ impl NativeWindowHost {
 
     pub fn recorded_trays(&self) -> &[TrayRecord] {
         self.inner.trays()
+    }
+
+    pub fn window_draw_plans(&self) -> &[Option<NativeDrawPlan>] {
+        &self.draw_plans
+    }
+
+    pub fn set_next_window_draw_plan(&mut self, draw_plan: Option<NativeDrawPlan>) {
+        self.next_window_draw_plan = draw_plan;
+    }
+
+    pub fn set_window_draw_plan(
+        &mut self,
+        window_index: usize,
+        draw_plan: Option<NativeDrawPlan>,
+    ) -> bool {
+        let Some(slot) = self.draw_plans.get_mut(window_index) else {
+            return false;
+        };
+        *slot = draw_plan;
+        true
     }
 }
 
@@ -539,6 +744,9 @@ fn window_spec_from_startup_request(request: &NativeRuntimeStartupRequest) -> Wi
             i32_to_u32_window_size(min_size.height),
         );
     }
+    if let Some(icon_path) = &main.icon_path {
+        window = window.icon_path(icon_path.clone());
+    }
 
     window
 }
@@ -566,6 +774,7 @@ impl ZsuiHost for NativeWindowHost {
         let id = self.inner.create_main_window(spec)?;
         let capabilities = self.capabilities();
         self.windows.push(spec.resolve_for(&capabilities).effective);
+        self.draw_plans.push(self.next_window_draw_plan.take());
         Ok(id)
     }
 
@@ -574,7 +783,9 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn create_tray(&mut self, spec: &TraySpec) -> ZsuiResult<TrayId> {
-        self.inner.create_tray(spec)
+        let id = self.inner.create_tray(spec)?;
+        self.trays.push(spec.clone());
+        Ok(id)
     }
 
     fn register_global_hotkey(&mut self, spec: &HotkeySpec) -> ZsuiResult<HotkeyId> {
@@ -602,16 +813,52 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn run_event_loop(&mut self) -> ZsuiResult<()> {
-        run_native_window_event_loop(self.windows.clone())
+        run_native_window_event_loop(
+            self.windows.clone(),
+            self.trays.clone(),
+            self.draw_plans.clone(),
+        )
     }
 }
 
+#[cfg(all(windows, feature = "windows-win32"))]
+fn run_native_window_event_loop(
+    windows: Vec<WindowSpec>,
+    trays: Vec<TraySpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
+) -> ZsuiResult<()> {
+    crate::windows_win32_host::run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items(
+        &windows,
+        &draw_plans,
+        &trays,
+    )
+}
+
+#[cfg(all(windows, not(feature = "windows-win32")))]
+fn run_native_window_event_loop(
+    _windows: Vec<WindowSpec>,
+    _trays: Vec<TraySpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
+) -> ZsuiResult<()> {
+    Err(ZsuiError::unsupported(
+        "native_window",
+        "enable the windows-win32 feature to compile the direct Win32 native window host",
+    ))
+}
+
 #[cfg(any(
-    target_os = "windows",
-    target_os = "macos",
-    all(target_os = "linux", not(target_env = "ohos"))
+    all(feature = "desktop-winit", target_os = "macos"),
+    all(
+        feature = "desktop-winit",
+        target_os = "linux",
+        not(target_env = "ohos")
+    )
 ))]
-fn run_native_window_event_loop(windows: Vec<WindowSpec>) -> ZsuiResult<()> {
+fn run_native_window_event_loop(
+    windows: Vec<WindowSpec>,
+    _trays: Vec<TraySpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
+) -> ZsuiResult<()> {
     use std::collections::HashMap;
     use winit::{
         application::ApplicationHandler,
@@ -686,6 +933,12 @@ fn run_native_window_event_loop(windows: Vec<WindowSpec>) -> ZsuiResult<()> {
     if windows.is_empty() {
         return Ok(());
     }
+    if !trays.is_empty() {
+        return Err(ZsuiError::unsupported(
+            "native_window_status_item",
+            "native tray/status item runtime is wired only for the direct Windows Win32 host",
+        ));
+    }
 
     let event_loop = EventLoop::new()
         .map_err(|err| ZsuiError::host("native_window_event_loop", err.to_string()))?;
@@ -705,13 +958,202 @@ fn run_native_window_event_loop(windows: Vec<WindowSpec>) -> ZsuiResult<()> {
     }
 }
 
+#[cfg(all(windows, feature = "windows-win32"))]
+fn run_native_window_smoke_event_loop(
+    windows: Vec<WindowSpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
+    options: NativeWindowSmokeRunOptions,
+) -> ZsuiResult<NativeWindowSmokeRunReport> {
+    use std::{thread, time::Duration};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+
+    if windows.is_empty() {
+        return Ok(NativeWindowSmokeRunReport::empty(options));
+    }
+
+    let mut report = NativeWindowSmokeRunReport {
+        requested_window_count: windows.len(),
+        auto_close_after_ms: options.auto_close_after_ms,
+        ..NativeWindowSmokeRunReport::empty(options.clone())
+    };
+    record_draw_plan_smoke(&mut report, &draw_plans);
+    let handles = crate::windows_win32_host::create_owned_windows_for_specs_with_draw_plans(
+        &windows,
+        &draw_plans,
+    )
+    .map_err(|err| {
+        report.startup_error = Some(err.to_string());
+        report.events.push("startup_error".to_string());
+        err
+    })?;
+
+    report.created_window_count = handles.len();
+    report.events.extend(
+        windows
+            .iter()
+            .map(|spec| format!("window_created:{}", spec.title)),
+    );
+
+    let mut _status_item_host = None;
+    if let Some(status_item) = options.status_item.clone() {
+        let mut host =
+            crate::windows_win32_host::WindowsWin32StatusItemHost::new(handles[0].main());
+        match host.create_status_item(NativeStatusItemRequest::from_tray_spec(&status_item)) {
+            NativeStatusItemPresentation::Created(handle) => {
+                report.status_item_created = true;
+                report.events.push(format!("status_item_created:{handle}"));
+                report.events.push(format!(
+                    "status_item_menu_items:{}",
+                    status_item.menu.items.len()
+                ));
+                report.status_menu_native_command_count = host.native_menu_command_count(0);
+                if let Some(native_command_id) = host.first_native_menu_command_id(0) {
+                    match host.dispatch_native_menu_command(0, native_command_id) {
+                        NativeStatusMenuCommandResult::Dispatched(command) => {
+                            report.status_menu_command_routed = true;
+                            report
+                                .events
+                                .push(format!("status_menu_command_dispatched:{command:?}"));
+                        }
+                        NativeStatusMenuCommandResult::Disabled => {
+                            report.status_menu_command_error =
+                                Some("first status menu command is disabled".to_string());
+                            report
+                                .events
+                                .push("status_menu_command_disabled".to_string());
+                        }
+                        NativeStatusMenuCommandResult::NotFound => {
+                            report.status_menu_command_error =
+                                Some("first status menu command was not found".to_string());
+                            report
+                                .events
+                                .push("status_menu_command_not_found".to_string());
+                        }
+                    }
+                } else if !status_item.menu.items.is_empty() {
+                    report.status_menu_command_error =
+                        Some("status item menu has no native command entries".to_string());
+                    report
+                        .events
+                        .push("status_menu_command_missing".to_string());
+                }
+                match host.create_popup_menu_for_status_item(0) {
+                    Ok(popup_menu) => {
+                        report.status_menu_popup_created = true;
+                        report.status_menu_popup_command_count = popup_menu.command_entry_count();
+                        report.events.push(format!(
+                            "status_menu_popup_created:{}",
+                            report.status_menu_popup_command_count
+                        ));
+                        report.status_menu_popup_destroyed = popup_menu.destroy();
+                        if report.status_menu_popup_destroyed {
+                            report
+                                .events
+                                .push("status_menu_popup_destroyed".to_string());
+                        } else {
+                            report.status_menu_popup_error =
+                                Some("DestroyMenu failed for status popup menu".to_string());
+                            report
+                                .events
+                                .push("status_menu_popup_destroy_error".to_string());
+                        }
+                    }
+                    Err(err) => {
+                        report.status_menu_popup_error = Some(err.to_string());
+                        report.events.push("status_menu_popup_error".to_string());
+                    }
+                }
+            }
+            NativeStatusItemPresentation::Failed => {
+                let error = host
+                    .last_error()
+                    .unwrap_or("Win32 status item creation failed")
+                    .to_string();
+                report.status_item_error = Some(error);
+                report.events.push("status_item_error".to_string());
+            }
+        }
+        _status_item_host = Some(host);
+    }
+
+    if let Some(path) = report.screenshot_file.clone() {
+        match capture_win32_hwnd_png(handles[0].main(), &path) {
+            Ok(()) => {
+                report.screenshot_captured = true;
+                report.events.push(format!("screenshot_captured:{path}"));
+            }
+            Err(err) => {
+                report.screenshot_error = Some(err);
+                report.events.push("screenshot_error".to_string());
+            }
+        }
+    }
+
+    let close_handles: Vec<isize> = handles
+        .iter()
+        .map(|handles| handles.main() as isize)
+        .collect();
+    let auto_close_after = Duration::from_millis(options.auto_close_after_ms.max(1));
+    thread::spawn(move || {
+        thread::sleep(auto_close_after);
+        for handle in close_handles {
+            unsafe {
+                PostMessageW(handle as _, WM_CLOSE, 0, 0);
+            }
+        }
+    });
+
+    match crate::windows_win32_host::WindowsWin32MessageLoop::run() {
+        crate::windows_win32_host::WindowsWin32MessageLoopResult::Quit(_) => {
+            report.exited_by_auto_close = true;
+            report.close_requested_count = report.created_window_count;
+            report.events.push("auto_close_elapsed".to_string());
+        }
+        crate::windows_win32_host::WindowsWin32MessageLoopResult::Failed => {
+            report.startup_error = Some("GetMessageW failed".to_string());
+            report.events.push("message_loop_error".to_string());
+        }
+    }
+
+    if options.require_visible_window && !report.visible_window_was_created() {
+        return Err(ZsuiError::host(
+            "native_window_smoke",
+            "no visible native window was created",
+        ));
+    }
+    if options.require_screenshot && !report.screenshot_captured {
+        return Err(ZsuiError::host(
+            "native_window_smoke_screenshot",
+            report
+                .screenshot_error
+                .clone()
+                .unwrap_or_else(|| "window screenshot was not captured".to_string()),
+        ));
+    }
+    if options.require_status_item && !report.status_item_created {
+        return Err(ZsuiError::host(
+            "native_window_smoke_status_item",
+            report
+                .status_item_error
+                .clone()
+                .unwrap_or_else(|| "status item was not created".to_string()),
+        ));
+    }
+
+    Ok(report)
+}
+
 #[cfg(any(
-    target_os = "windows",
-    target_os = "macos",
-    all(target_os = "linux", not(target_env = "ohos"))
+    all(feature = "desktop-winit", target_os = "macos"),
+    all(
+        feature = "desktop-winit",
+        target_os = "linux",
+        not(target_env = "ohos")
+    )
 ))]
 fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     use std::{
@@ -858,9 +1300,20 @@ fn run_native_window_smoke_event_loop(
         screenshot_attempted: false,
         auto_close_reported: false,
     };
+    record_draw_plan_smoke(&mut app.report, &draw_plans);
     event_loop
         .run_app(&mut app)
         .map_err(|err| ZsuiError::host("native_window_smoke_event_loop", err.to_string()))?;
+
+    if options.status_item.is_some() {
+        app.report.status_item_error = Some(
+            "status item smoke is currently implemented only for the direct Windows Win32 host"
+                .to_string(),
+        );
+        app.report
+            .events
+            .push("status_item_unsupported".to_string());
+    }
 
     if let Some(err) = &app.report.startup_error {
         return Err(ZsuiError::host("create_native_window", err.clone()));
@@ -880,24 +1333,22 @@ fn run_native_window_smoke_event_loop(
                 .unwrap_or_else(|| "window screenshot was not captured".to_string()),
         ));
     }
+    if options.require_status_item && !app.report.status_item_created {
+        return Err(ZsuiError::unsupported(
+            "native_window_smoke_status_item",
+            app.report
+                .status_item_error
+                .clone()
+                .unwrap_or_else(|| "status item was not created".to_string()),
+        ));
+    }
 
     Ok(app.report)
 }
 
-#[cfg(windows)]
-fn capture_first_native_window_png(
-    windows: &std::collections::HashMap<winit::window::WindowId, winit::window::Window>,
-    path: &str,
-) -> Result<(), String> {
-    let window = windows
-        .values()
-        .next()
-        .ok_or_else(|| "no native window exists for screenshot capture".to_string())?;
-    capture_winit_window_png(window, path)
-}
-
 #[cfg(all(
     not(windows),
+    feature = "desktop-winit",
     any(
         target_os = "macos",
         all(target_os = "linux", not(target_env = "ohos"))
@@ -910,28 +1361,174 @@ fn capture_first_native_window_png(
     Err("native smoke screenshot capture is currently implemented for Windows only".to_string())
 }
 
-#[cfg(windows)]
-fn capture_winit_window_png(window: &winit::window::Window, path: &str) -> Result<(), String> {
+#[cfg(all(windows, not(feature = "windows-win32")))]
+fn run_native_window_smoke_event_loop(
+    _windows: Vec<WindowSpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _options: NativeWindowSmokeRunOptions,
+) -> ZsuiResult<NativeWindowSmokeRunReport> {
+    Err(ZsuiError::unsupported(
+        "native_window_smoke",
+        "enable the windows-win32 feature to compile the direct Win32 native smoke host",
+    ))
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+struct Win32WindowDeviceContext {
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    dc: windows_sys::Win32::Graphics::Gdi::HDC,
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Win32WindowDeviceContext {
+    fn acquire(hwnd: windows_sys::Win32::Foundation::HWND) -> Result<Self, String> {
+        let dc = unsafe { windows_sys::Win32::Graphics::Gdi::GetDC(hwnd) };
+        if dc.is_null() {
+            Err("GetDC failed".to_string())
+        } else {
+            Ok(Self { hwnd, dc })
+        }
+    }
+
+    const fn hdc(&self) -> windows_sys::Win32::Graphics::Gdi::HDC {
+        self.dc
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Drop for Win32WindowDeviceContext {
+    fn drop(&mut self) {
+        if !self.dc.is_null() {
+            unsafe {
+                windows_sys::Win32::Graphics::Gdi::ReleaseDC(self.hwnd, self.dc);
+            }
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+struct Win32CompatibleDeviceContext {
+    dc: windows_sys::Win32::Graphics::Gdi::HDC,
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Win32CompatibleDeviceContext {
+    fn create(source: windows_sys::Win32::Graphics::Gdi::HDC) -> Result<Self, String> {
+        let dc = unsafe { windows_sys::Win32::Graphics::Gdi::CreateCompatibleDC(source) };
+        if dc.is_null() {
+            Err("CreateCompatibleDC failed".to_string())
+        } else {
+            Ok(Self { dc })
+        }
+    }
+
+    const fn hdc(&self) -> windows_sys::Win32::Graphics::Gdi::HDC {
+        self.dc
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Drop for Win32CompatibleDeviceContext {
+    fn drop(&mut self) {
+        if !self.dc.is_null() {
+            unsafe {
+                windows_sys::Win32::Graphics::Gdi::DeleteDC(self.dc);
+            }
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+struct Win32CompatibleBitmap {
+    bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Win32CompatibleBitmap {
+    fn create(
+        dc: windows_sys::Win32::Graphics::Gdi::HDC,
+        width: i32,
+        height: i32,
+    ) -> Result<Self, String> {
+        let bitmap =
+            unsafe { windows_sys::Win32::Graphics::Gdi::CreateCompatibleBitmap(dc, width, height) };
+        if bitmap.is_null() {
+            Err("CreateCompatibleBitmap failed".to_string())
+        } else {
+            Ok(Self { bitmap })
+        }
+    }
+
+    const fn handle(&self) -> windows_sys::Win32::Graphics::Gdi::HBITMAP {
+        self.bitmap
+    }
+
+    fn object(&self) -> windows_sys::Win32::Graphics::Gdi::HGDIOBJ {
+        self.bitmap.cast()
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Drop for Win32CompatibleBitmap {
+    fn drop(&mut self) {
+        if !self.bitmap.is_null() {
+            unsafe {
+                windows_sys::Win32::Graphics::Gdi::DeleteObject(self.bitmap.cast());
+            }
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+struct Win32SelectedGdiObject {
+    dc: windows_sys::Win32::Graphics::Gdi::HDC,
+    old: windows_sys::Win32::Graphics::Gdi::HGDIOBJ,
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Win32SelectedGdiObject {
+    fn select(
+        dc: windows_sys::Win32::Graphics::Gdi::HDC,
+        object: windows_sys::Win32::Graphics::Gdi::HGDIOBJ,
+    ) -> Option<Self> {
+        if dc.is_null() || object.is_null() {
+            return None;
+        }
+        let old = unsafe { windows_sys::Win32::Graphics::Gdi::SelectObject(dc, object) };
+        if old.is_null() {
+            None
+        } else {
+            Some(Self { dc, old })
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+impl Drop for Win32SelectedGdiObject {
+    fn drop(&mut self) {
+        if !self.dc.is_null() && !self.old.is_null() {
+            unsafe {
+                windows_sys::Win32::Graphics::Gdi::SelectObject(self.dc, self.old);
+            }
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn capture_win32_hwnd_png(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    path: &str,
+) -> Result<(), String> {
     use std::{ffi::c_void, mem, path::Path};
     use windows_sys::Win32::{
-        Foundation::{HWND, RECT},
+        Foundation::RECT,
         Graphics::Gdi::{
-            BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-            GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-            DIB_RGB_COLORS, RGBQUAD, SRCCOPY,
+            BitBlt, GetDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, RGBQUAD,
+            SRCCOPY,
         },
         UI::WindowsAndMessaging::GetClientRect,
     };
-    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-    let raw = window
-        .window_handle()
-        .map_err(|err| err.to_string())?
-        .as_raw();
-    let hwnd = match raw {
-        RawWindowHandle::Win32(handle) => handle.hwnd.get() as isize as HWND,
-        _ => return Err("native smoke screenshot requires a Win32 window handle".to_string()),
-    };
     let mut rect = RECT {
         left: 0,
         top: 0,
@@ -945,94 +1542,74 @@ fn capture_winit_window_png(window: &winit::window::Window, path: &str) -> Resul
 
     let width = (rect.right - rect.left).max(1);
     let height = (rect.bottom - rect.top).max(1);
-    let hdc = unsafe { GetDC(hwnd) };
-    if hdc.is_null() {
-        return Err("GetDC failed".to_string());
-    }
+    let window_dc = Win32WindowDeviceContext::acquire(hwnd)?;
+    let memory_dc = Win32CompatibleDeviceContext::create(window_dc.hdc())?;
+    let bitmap = Win32CompatibleBitmap::create(window_dc.hdc(), width, height)?;
+    let _selected_bitmap = Win32SelectedGdiObject::select(memory_dc.hdc(), bitmap.object());
 
-    let result = (|| {
-        let memory_dc = unsafe { CreateCompatibleDC(hdc) };
-        if memory_dc.is_null() {
-            return Err("CreateCompatibleDC failed".to_string());
-        }
-
-        let bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
-        if bitmap.is_null() {
-            unsafe {
-                DeleteDC(memory_dc);
-            }
-            return Err("CreateCompatibleBitmap failed".to_string());
-        }
-
-        let old_object = unsafe { SelectObject(memory_dc, bitmap.cast()) };
-        let blit_ok = unsafe { BitBlt(memory_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) };
-        let mut bitmap_info = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                biHeight: -height,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB,
-                biSizeImage: 0,
-                biXPelsPerMeter: 0,
-                biYPelsPerMeter: 0,
-                biClrUsed: 0,
-                biClrImportant: 0,
-            },
-            bmiColors: [RGBQUAD {
-                rgbBlue: 0,
-                rgbGreen: 0,
-                rgbRed: 0,
-                rgbReserved: 0,
-            }; 1],
-        };
-        let mut bgra = vec![0u8; width as usize * height as usize * 4];
-        let dib_lines = if blit_ok != 0 {
-            unsafe {
-                GetDIBits(
-                    memory_dc,
-                    bitmap,
-                    0,
-                    height as u32,
-                    bgra.as_mut_ptr().cast::<c_void>(),
-                    &mut bitmap_info,
-                    DIB_RGB_COLORS,
-                )
-            }
-        } else {
-            0
-        };
-
-        if !old_object.is_null() {
-            unsafe {
-                SelectObject(memory_dc, old_object);
-            }
-        }
+    let blit_ok = unsafe {
+        BitBlt(
+            memory_dc.hdc(),
+            0,
+            0,
+            width,
+            height,
+            window_dc.hdc(),
+            0,
+            0,
+            SRCCOPY,
+        )
+    };
+    let mut bitmap_info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width,
+            biHeight: -height,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB,
+            biSizeImage: 0,
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0,
+        },
+        bmiColors: [RGBQUAD {
+            rgbBlue: 0,
+            rgbGreen: 0,
+            rgbRed: 0,
+            rgbReserved: 0,
+        }; 1],
+    };
+    let mut bgra = vec![0u8; width as usize * height as usize * 4];
+    let dib_lines = if blit_ok != 0 {
         unsafe {
-            DeleteObject(bitmap.cast());
-            DeleteDC(memory_dc);
+            GetDIBits(
+                memory_dc.hdc(),
+                bitmap.handle(),
+                0,
+                height as u32,
+                bgra.as_mut_ptr().cast::<c_void>(),
+                &mut bitmap_info,
+                DIB_RGB_COLORS,
+            )
         }
+    } else {
+        0
+    };
 
-        if blit_ok == 0 {
-            return Err("BitBlt failed".to_string());
-        }
-        if dib_lines == 0 {
-            return Err("GetDIBits failed".to_string());
-        }
-
-        let rgba = bgra_to_rgba(&bgra);
-        write_rgba_png(Path::new(path), width as u32, height as u32, &rgba)
-    })();
-
-    unsafe {
-        ReleaseDC(hwnd, hdc);
+    if blit_ok == 0 {
+        return Err("BitBlt failed".to_string());
+    }
+    if dib_lines == 0 {
+        return Err("GetDIBits failed".to_string());
     }
 
-    result
+    let rgba = bgra_to_rgba(&bgra);
+    write_rgba_png(Path::new(path), width as u32, height as u32, &rgba)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "windows-win32"))]
 fn bgra_to_rgba(bgra: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(bgra.len());
     for pixel in bgra.chunks_exact(4) {
@@ -1044,7 +1621,7 @@ fn bgra_to_rgba(bgra: &[u8]) -> Vec<u8> {
     rgba
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "windows-win32"))]
 fn write_rgba_png(
     path: &std::path::Path,
     width: u32,
@@ -1065,25 +1642,46 @@ fn write_rgba_png(
         .map_err(|err| err.to_string())
 }
 
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "macos",
-    all(target_os = "linux", not(target_env = "ohos"))
-)))]
-fn run_native_window_event_loop(_windows: Vec<WindowSpec>) -> ZsuiResult<()> {
+#[cfg(any(
+    not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )),
+    all(target_os = "macos", not(feature = "desktop-winit")),
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        not(feature = "desktop-winit")
+    )
+))]
+fn run_native_window_event_loop(
+    _windows: Vec<WindowSpec>,
+    _trays: Vec<TraySpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
+) -> ZsuiResult<()> {
     Err(ZsuiError::unsupported(
         "native_window",
         "desktop native windows are implemented for Windows, macOS and Linux; Android and Harmony need mobile runtime hosts",
     ))
 }
 
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "macos",
-    all(target_os = "linux", not(target_env = "ohos"))
-)))]
+#[cfg(any(
+    not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )),
+    all(target_os = "macos", not(feature = "desktop-winit")),
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        not(feature = "desktop-winit")
+    )
+))]
 fn run_native_window_smoke_event_loop(
     _windows: Vec<WindowSpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
     _options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     Err(ZsuiError::unsupported(
@@ -1113,6 +1711,31 @@ mod tests {
         assert!(app.windows[0].always_on_top);
     }
 
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_window_builder_projects_typed_view_into_draw_plan() {
+        #[derive(Clone)]
+        enum Msg {
+            Save,
+        }
+
+        let builder = native_window("View Example")
+            .size(360, 220)
+            .view(crate::column(vec![
+                crate::text::<Msg>("Settings"),
+                crate::button("Save")
+                    .id(crate::WidgetId::new(1))
+                    .on_click(Msg::Save),
+            ]));
+        let draw_plan = builder
+            .native_draw_plan()
+            .expect("typed view should become a native draw plan");
+
+        assert_eq!(builder.view_layout_node_count(), 1);
+        assert!(draw_plan.command_count() >= 3);
+        assert!(draw_plan.text_count() >= 2);
+    }
+
     #[test]
     fn native_window_smoke_options_have_short_default_runtime() {
         let options = NativeWindowSmokeRunOptions::quick();
@@ -1122,8 +1745,52 @@ mod tests {
         assert!(options.require_visible_window);
         assert_eq!(options.screenshot_file, None);
         assert!(!options.require_screenshot);
+        assert_eq!(options.status_item, None);
+        assert!(!options.require_status_item);
         assert_eq!(report.created_window_count, 0);
+        assert!(!report.status_item_requested);
+        assert_eq!(report.status_menu_native_command_count, 0);
+        assert!(!report.status_menu_command_routed);
+        assert!(!report.status_menu_popup_created);
+        assert!(!report.status_menu_popup_destroyed);
+        assert!(!report.draw_plan_requested);
+        assert_eq!(report.draw_plan_window_count, 0);
+        assert_eq!(report.draw_command_count, 0);
+        assert_eq!(report.text_command_count, 0);
         assert!(!report.visible_window_was_created());
+    }
+
+    #[test]
+    fn native_window_smoke_options_can_request_status_item() {
+        let status_item = crate::TraySpec::new()
+            .tooltip("ZSUI Smoke")
+            .item("Open", crate::Command::ShowMainWindow)
+            .item("Quit", crate::Command::Quit);
+        let options = NativeWindowSmokeRunOptions::quick()
+            .status_item(status_item)
+            .require_status_item(true);
+        let report = NativeWindowSmokeRunReport::empty(options.clone());
+
+        assert!(options.status_item.is_some());
+        assert!(options.require_status_item);
+        assert!(report.status_item_requested);
+        assert!(report.status_item_required);
+        assert_eq!(report.status_item_menu_item_count, 2);
+        assert_eq!(report.status_menu_native_command_count, 0);
+        assert_eq!(report.status_menu_popup_command_count, 0);
+        assert!(!report.status_item_created);
+    }
+
+    #[cfg(all(windows, feature = "windows-win32"))]
+    #[test]
+    fn win32_capture_resources_are_drop_backed() {
+        assert!(std::mem::needs_drop::<Win32WindowDeviceContext>());
+        assert!(std::mem::needs_drop::<Win32CompatibleDeviceContext>());
+        assert!(std::mem::needs_drop::<Win32CompatibleBitmap>());
+        assert!(std::mem::needs_drop::<Win32SelectedGdiObject>());
+        assert!(
+            Win32SelectedGdiObject::select(std::ptr::null_mut(), std::ptr::null_mut()).is_none()
+        );
     }
 
     #[test]
@@ -1137,6 +1804,7 @@ mod tests {
                 &Window::new("Example")
                     .size(640, 420)
                     .min_size(320, 240)
+                    .icon_path("assets/app.ico")
                     .decorations(false),
             ),
             status_item_tooltip: Some("Example".to_string()),
@@ -1155,6 +1823,10 @@ mod tests {
         assert_eq!(driver.window_specs()[0].title, "Example");
         assert_eq!(driver.window_specs()[0].width, 640);
         assert_eq!(driver.window_specs()[0].min_width, Some(320));
+        assert_eq!(
+            driver.window_specs()[0].icon_path.as_deref(),
+            Some("assets/app.ico")
+        );
         assert!(!driver.window_specs()[0].decorations);
         assert_eq!(driver.status_item_specs().len(), 1);
         assert_eq!(driver.status_item_specs()[0].menu.items.len(), 1);
@@ -1200,5 +1872,83 @@ mod tests {
             driver.poll_application_event(),
             Some(AppEvent::QuitRequested)
         );
+    }
+
+    #[test]
+    fn native_window_runtime_driver_dispatches_status_menu_commands() {
+        let mut driver = NativeWindowRuntimeDriver::new();
+        let presentation = driver.create_status_item(NativeStatusItemRequest {
+            tooltip: Some("Example".to_string()),
+            icon_path: None,
+            menu: MenuSpec::new()
+                .item("Open", crate::Command::ShowMainWindow)
+                .separator()
+                .item("Quit", crate::Command::Quit),
+        });
+
+        assert!(matches!(
+            presentation,
+            NativeStatusItemPresentation::Created(_)
+        ));
+        assert_eq!(
+            driver
+                .dispatch_status_menu_command(NativeStatusMenuCommandRequest::by_label(0, "Open")),
+            NativeStatusMenuCommandResult::Dispatched(crate::Command::ShowMainWindow)
+        );
+        assert_eq!(
+            driver.poll_application_event(),
+            Some(AppEvent::TrayCommand {
+                command: crate::Command::ShowMainWindow
+            })
+        );
+        assert_eq!(
+            driver.dispatch_status_menu_command(NativeStatusMenuCommandRequest::by_label(
+                0, "Missing"
+            )),
+            NativeStatusMenuCommandResult::NotFound
+        );
+        assert!(driver
+            .native_operation_names()
+            .contains(&"dispatch_status_menu_command"));
+    }
+
+    #[test]
+    fn native_window_runtime_driver_updates_bound_settings_items() {
+        let mut driver = NativeWindowRuntimeDriver::new();
+        assert_eq!(
+            driver.update_settings_item_value(NativeSettingsItemUpdateRequest::new(
+                "general",
+                "capture",
+                crate::SettingsValue::Bool(false),
+            )),
+            NativeSettingsItemUpdateResult::NotBound
+        );
+
+        driver.bind_settings_pages(NativeSettingsPageModelRequest::new(vec![
+            SettingsPageSpec::new("general", "General")
+                .item(crate::SettingsItemSpec::toggle("capture", "Capture", true)),
+        ]));
+        assert_eq!(
+            driver.update_settings_item_value(NativeSettingsItemUpdateRequest::new(
+                "general",
+                "capture",
+                crate::SettingsValue::Bool(false),
+            )),
+            NativeSettingsItemUpdateResult::Updated
+        );
+        assert_eq!(
+            driver.settings_page_specs()[0].items[0].default_value,
+            Some(crate::SettingsValue::Bool(false))
+        );
+        assert_eq!(
+            driver.poll_application_event(),
+            Some(AppEvent::SettingsChanged {
+                page: "general".to_string(),
+                item: "capture".to_string()
+            })
+        );
+        assert!(driver
+            .native_operation_names()
+            .contains(&"update_settings_item_value"));
     }
 }

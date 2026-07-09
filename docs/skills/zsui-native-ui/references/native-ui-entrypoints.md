@@ -15,10 +15,16 @@ If the AI cannot load a skill folder, send these files together:
 - `docs/skills/zsui-native-ui/references/native-ui-entrypoints.md`
 - `docs/ai-agent.md`
 - `docs/architecture.md`
+- `docs/framework-goals.md`
 - `docs/porting.md`
 - `docs/native-host-smoke.md`
+- `Cargo.toml`
 - `src/lib.rs`
 - `src/agent_context.rs`
+- `src/feature_manifest.rs`
+- `src/framework_goals.rs`
+- `src/style.rs`
+- `src/view.rs`
 - `src/components.rs`
 - `src/host.rs`
 - `src/host_protocol.rs`
@@ -32,12 +38,14 @@ If the AI cannot load a skill folder, send these files together:
 - `src/native_smoke.rs`
 - `src/product_adapter.rs`
 - `examples/declaration_audit.rs`
+- `examples/rust_first_view.rs`
 - `examples/native_smoke_manifest.rs`
 - `examples/native_smoke_record.rs`
 - `examples/native_smoke_run.rs`
 - `examples/native_smoke_review.rs`
 - `examples/mobile_scaffold_manifest.rs`
 - `examples/product_adapter.rs`
+- `examples/product_adapter_view.rs`
 - `examples/product_adapter_smoke.rs`
 - `examples/product_adapter_native_driver.rs`
 
@@ -46,6 +54,10 @@ If the AI cannot load a skill folder, send these files together:
 | Need | Start here |
 | --- | --- |
 | Public API and exports | `src/lib.rs` |
+| Cargo feature graph | `Cargo.toml`, `src/feature_manifest.rs` |
+| Rust-first framework goals | `src/framework_goals.rs`, `docs/framework-goals.md` |
+| Rust-first view API | `src/view.rs` |
+| Theme tokens and typed units | `src/style.rs`, `src/geometry.rs` |
 | AI/agent context | `src/agent_context.rs` |
 | Current standalone completion | `docs/ai-agent.md` |
 | Architecture boundary | `docs/architecture.md` |
@@ -57,10 +69,11 @@ If the AI cannot load a skill folder, send these files together:
 | Runtime/window/settings/search host contracts | `src/native_hosts.rs` |
 | Platform/toolkit capability metadata | `src/native_adapter_manifest.rs` |
 | Target launch planning | `src/native_host_launch.rs` |
-| Mobile host scaffolds | `src/mobile_host.rs`, `src/android_activity_host.rs`, `src/harmony_ability_host.rs` |
+| Mobile host scaffolds and bridge contracts | `src/mobile_host.rs`, `src/android_activity_host.rs`, `src/harmony_ability_host.rs` |
 | Target smoke artifacts | `src/native_smoke.rs`, `docs/native-host-smoke.md` |
 | Product adapter and runtime harness | `src/product_adapter.rs` |
 | Declarations and audit | `src/app.rs`, `src/window.rs`, `src/tray.rs`, `src/menu.rs`, `src/settings.rs`, `examples/declaration_audit.rs` |
+| Rust-first view example | `examples/rust_first_view.rs` |
 | Shared UI protocols | `src/geometry.rs`, `src/command_protocol.rs`, `src/event_protocol.rs`, `src/render_protocol.rs`, `src/control_protocol.rs`, `src/ui_surface_protocol.rs` |
 
 ## Feature Status Vocabulary
@@ -84,6 +97,8 @@ Already reusable at code level:
 
 - Declaration-first app, window, tray, menu, hotkey, clipboard and settings
   specs.
+- Window icon path declarations through `WindowSpec::icon_path(...)`, including
+  declaration audit and Win32 owned HICON loading.
 - Structured declaration audit through `AppBuilder::declaration_report()`,
   `AppBuilder::declaration_report_for(...)`, `ZsuiAppDeclarationReport` and
   `examples/declaration_audit.rs`.
@@ -93,15 +108,46 @@ Already reusable at code level:
 - `PlatformHost` scaffold and minimal `NativeWindowHost`.
 - One-line desktop entry:
   `zsui::native_window("Example").size(900, 620).run()?`.
-- Shared geometry, command, event, lifecycle, layout, component, render, host
-  surface and native control protocols.
+- Feature-gated build shape: default features are `window`, `button` and
+  `label`; optional dependency features include `clipboard`, `image`,
+  `desktop-winit` and `windows-gdi`; advanced widgets are opt-in. Cargo
+  features are unified across the dependency graph, so larger widget/backend
+  families should move toward split crates or modules as they stabilize.
+- Revised Rust-first target manifest through `zsui_rust_first_goals()`:
+  one-line native window entry points, composition and traits, typed messages,
+  RAII native resources, reusable ZSClip no-flicker rendering foundations,
+  typed units, compile-time builder constraints, explicit contexts, safe public
+  APIs, explicit state, theme tokens, declarative Rust builders, `Result`
+  errors, capability traits, Android/Harmony mobile host boundaries,
+  feature-gated platform backends, split-crate/module trimming, platform API
+  use on demand and strong typed IDs. The manifest records preferred and
+  avoided API shapes;
+  `docs/framework-goals.md` expands the target with examples and the
+  feature/crate trimming policy.
+- First-pass typed view API through `View<Msg>`, `ViewNode`, `WidgetId`,
+  `ViewEventCx`, `ViewPaintCx`, `AppCx`, typed view events, `Px`, `Dp`, `Dpi`,
+  `UiLength` and `ZsuiTheme`.
+- `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
+  `NativeDrawPlan`, with Windows smoke paint through the extracted no-flicker
+  Win32/GDI path.
+- Product adapter view smoke through `ProductViewAdapterHost`,
+  `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`.
+- Shared geometry, command, event, lifecycle, layout, component, render,
+  self-draw command, host surface and native control protocols.
 - Product-neutral native host contracts for dialogs, file pickers, shell-open,
   clipboard, popup/transient windows, IME, text caret, main/settings windows,
   search controls and runtime startup.
-- Native backend metadata for Windows, macOS and Linux through the current
-  `winit_desktop` runtime, plus Android and Harmony adapter scaffolds.
+- Native backend metadata for Windows through the extracted `win32_gdi`
+  runtime, macOS/Linux through the current `winit_desktop` runtime, plus
+  Android and Harmony adapter scaffolds.
 - Android Activity and Harmony Ability scaffold manifests with bridge entry
   points, lifecycle bindings, permissions and capability mappings.
+- Android/Harmony bridge contracts through `mobile_runtime_bridge_contract()`,
+  including FFI callback symbols, lifecycle/surface/input/command routes,
+  safety rules and required device-smoke artifact names.
+- Android/Harmony device-smoke plans and read-only review through
+  `mobile_runtime_device_smoke_plan()` and
+  `review_mobile_runtime_device_smoke_artifacts()`.
 - Machine-readable AI context through `zsui_agent_context()` and
   `zsui_agent_context_json()`.
 - Product adapter and reusable runtime harness contracts through
@@ -112,6 +158,24 @@ Already reusable at code level:
   and `examples/product_adapter_native_driver.rs`, including projected status
   item/menu and settings startup declarations routed through native host
   operations.
+- ZSClip self-draw paint-plan shape extracted as product-neutral
+  `NativeDrawPlan`, `NativeDrawCommand` and `NativeDrawCommandSink` contracts.
+- ZSClip Windows GDI renderer/text layout/draw sink extracted in
+  `src/windows_gdi_renderer.rs`.
+- Win32/GDI buffered paint, window HDC, compatible memory DC,
+  smoke-screenshot HBITMAP, owned main/quick HWND, owned HICON app-icon
+  resources loaded from icon paths, brush, pen, font and selected-object cleanup
+  now use internal RAII wrappers.
+- Win32 tray/status item RAII surface through `WindowsWin32OwnedTrayIcon` and
+  `WindowsWin32StatusItemHost`, backed by `Shell_NotifyIconW`, now wired into
+  the direct Windows `NativeWindowHost` path and optional `native_smoke_run
+  --tray` status-item smoke with native command-id table routing plus RAII
+  popup-menu creation/cleanup evidence and `TrackPopupMenu` selection routing.
+- ZSClip Win32 main/quick/transient window host style mapping, create-params,
+  message-loop wrapper and `NativeMainWindowHost`/`NativeTransientWindowHost`
+  implementations extracted in `src/windows_win32_host.rs`.
+- Win32 native paint can attach `NativeDrawPlan` content to an `HWND` and render
+  it through the ZSClip no-flicker buffered GDI path.
 - Native host smoke manifest planning through `native_host_smoke_plan()` and
   `examples/native_smoke_manifest.rs`.
 - Contract-level smoke artifact writing through
@@ -129,15 +193,24 @@ Already reusable at code level:
 
 Still requiring extraction or target proof before system-complete claims:
 
-- Full reusable Win32, AppKit and GTK host implementations split from ZSClip
-  product behavior.
-- Target screenshots and interaction artifacts under
+- Connecting richer input/menu events to the extracted Win32 main-window host.
+- Full reusable AppKit and GTK host implementations split from ZSClip product
+  behavior.
+- Moving heavier widgets into separate crates or fully gated modules and adding
+  feature-matrix CI.
+- Connecting the first-pass `View<Msg>` layer to native host input/paint
+  routing, keeping raw HWNDs out of higher-level APIs, completing Px/Dp/Dpi
+  migration and adding typestate builders while preserving the one-line native
+  window entry point. Native paint routing has a first pass; native input
+  dispatch into `ViewEventCx` is still pending.
+- Target screenshots, tray/menu proof and interaction artifacts under
   `target/native-host-smoke/<platform>/`.
 - Target artifact review on each OS/device through `native_smoke_review`.
 - Real tray/status, menu, dialog, file-picker, shell-open and clipboard monitor
   proof on each desktop target.
 - Android Activity and Harmony Ability runtime host implementations.
-- Android/Harmony FFI bridge code beyond the current scaffold manifests.
+- Android/Harmony FFI bridge implementations and real device artifacts beyond
+  the current bridge contracts/reviewers.
 - Target smoke proof that a real native host can run through
   `ZsuiReusableRuntimeHarness`.
 - Real product adapter smoke through a target native driver.

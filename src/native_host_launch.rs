@@ -77,16 +77,15 @@ pub fn native_host_launch_plan_for_platform(
             "mobile runtime host scaffold"
         },
         native_application_type: match platform {
-            NativeUiPlatform::Windows => "winit desktop event loop on Windows",
+            NativeUiPlatform::Windows => "Win32 message loop with GDI no-flicker paint on Windows",
             NativeUiPlatform::Macos => "winit desktop event loop on macOS",
             NativeUiPlatform::Linux => "winit desktop event loop on Linux",
             NativeUiPlatform::Android => "Android Activity host",
             NativeUiPlatform::Harmony => "Harmony Ability host",
         },
         native_window_type: match platform {
-            NativeUiPlatform::Windows | NativeUiPlatform::Macos | NativeUiPlatform::Linux => {
-                "winit::window::Window"
-            }
+            NativeUiPlatform::Windows => "Win32 HWND main/quick windows",
+            NativeUiPlatform::Macos | NativeUiPlatform::Linux => "winit::window::Window",
             NativeUiPlatform::Android => "android.app.Activity surface",
             NativeUiPlatform::Harmony => "OpenHarmony Ability window",
         },
@@ -115,9 +114,9 @@ mod tests {
             .expect("windows launch plan should exist");
 
         assert_eq!(plan.platform_name(), "windows");
-        assert_eq!(plan.toolkit_name(), "winit_desktop");
+        assert_eq!(plan.toolkit_name(), "win32_gdi");
         assert_eq!(plan.mode_name(), "real_native_host");
-        assert_eq!(plan.real_host_module_path, "src/native.rs");
+        assert_eq!(plan.real_host_module_path, "src/windows_win32_host.rs");
         assert!(plan.enters_real_event_loop());
         assert!(plan.needs_target_os_verification());
     }

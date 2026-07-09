@@ -355,6 +355,14 @@ fn validate_window(window: &WindowSpec, path: &str, issues: &mut Vec<ZsuiDeclara
             "window minimum size must be greater than zero",
         ));
     }
+    if let Some(icon_path) = &window.icon_path {
+        if icon_path.trim().is_empty() {
+            issues.push(ZsuiDeclarationIssue::error(
+                format!("{path}.icon_path"),
+                "window icon path cannot be empty",
+            ));
+        }
+    }
     if let Some(min_width) = window.min_width {
         if min_width > window.width {
             issues.push(ZsuiDeclarationIssue::warning(
@@ -396,6 +404,7 @@ fn validate_ui_node(
     }
 
     match &node.kind {
+        #[cfg(feature = "button")]
         UiNodeKind::Button { label, command } => {
             if label.trim().is_empty() {
                 issues.push(ZsuiDeclarationIssue::error(
@@ -405,6 +414,7 @@ fn validate_ui_node(
             }
             validate_command(command, &format!("{path}.command"), issues);
         }
+        #[cfg(feature = "textbox")]
         UiNodeKind::TextInput { label, .. } => {
             if label.trim().is_empty() {
                 issues.push(ZsuiDeclarationIssue::error(
@@ -413,6 +423,7 @@ fn validate_ui_node(
                 ));
             }
         }
+        #[cfg(feature = "checkbox")]
         UiNodeKind::Checkbox { label, command, .. } => {
             if label.trim().is_empty() {
                 issues.push(ZsuiDeclarationIssue::error(
@@ -910,11 +921,12 @@ fn used_degraded_capabilities(app: &ZsuiApp, capabilities: &HostCapabilities) ->
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+    #[cfg(all(feature = "label", feature = "button"))]
+    use crate::window::Window;
     use crate::{
         capability::{CapabilitySupport, PlatformName},
         menu::MenuItemSpec,
         settings::{SettingsItemSpec, SettingsValue},
-        window::Window,
     };
 
     #[test]
@@ -929,6 +941,7 @@ mod declaration_tests {
         );
     }
 
+    #[cfg(all(feature = "label", feature = "button"))]
     #[test]
     fn declaration_report_rejects_duplicate_ui_node_ids() {
         let content = UiNode::column("root")
@@ -959,6 +972,18 @@ mod declaration_tests {
 
         assert!(
             matches!(err, ZsuiError::InvalidSpec { field, message } if field == "hotkeys[1].accelerator" && message.contains("duplicate enabled hotkey"))
+        );
+    }
+
+    #[test]
+    fn declaration_report_rejects_empty_window_icon_path() {
+        let err = app("Example")
+            .window(WindowSpec::new("Example").icon_path(" "))
+            .build()
+            .expect_err("empty window icon paths must be invalid");
+
+        assert!(
+            matches!(err, ZsuiError::InvalidSpec { field, message } if field == "windows[0].icon_path" && message.contains("window icon path"))
         );
     }
 

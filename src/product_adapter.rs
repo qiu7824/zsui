@@ -1,9 +1,11 @@
 use serde::Serialize;
 
 use crate::{
-    app, AppEvent, CommandId, HostCapabilities, NativeMainWindowHandles, NativeMainWindowRequest,
-    NativeRuntimeDriver, NativeRuntimeStartupRequest, NativeRuntimeStartupResult, SettingsPageSpec,
-    TraySpec, UiCommand, WindowSpec, ZsuiAppDeclarationReport, ZsuiError, ZsuiResult,
+    app, AppCx, AppEvent, CommandId, Dpi, HostCapabilities, NativeDrawPlan,
+    NativeMainWindowHandles, NativeMainWindowRequest, NativeRuntimeDriver,
+    NativeRuntimeStartupRequest, NativeRuntimeStartupResult, Rect, SettingsPageSpec, TraySpec,
+    UiCommand, View, ViewEvent, ViewEventCx, ViewLayoutCx, ViewNode, ViewPaintCx, WindowSpec,
+    ZsuiAppDeclarationReport, ZsuiError, ZsuiResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -488,6 +490,11 @@ pub trait ProductAdapterHost {
     fn request_shutdown(&mut self) {}
 }
 
+pub trait ProductViewAdapterHost<Msg>: ProductAdapterHost {
+    fn project_view(&self) -> ViewNode<Msg>;
+    fn update_view_message(&mut self, message: Msg, cx: &mut AppCx) -> ZsuiResult<Vec<AppEvent>>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ZsuiReusableRuntimeHarnessStage {
     ProjectUi,
@@ -584,11 +591,61 @@ pub struct ProductAdapterRuntimeSmokeReport {
     pub harness_smoke_complete: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProductViewRuntimeSmokeRequest {
+    pub bounds: Rect,
+    pub dpi: Dpi,
+    pub events: Vec<ViewEvent>,
+}
+
+impl ProductViewRuntimeSmokeRequest {
+    pub fn new(bounds: Rect) -> Self {
+        Self {
+            bounds,
+            dpi: Dpi::standard(),
+            events: Vec::new(),
+        }
+    }
+
+    pub fn dpi(mut self, dpi: Dpi) -> Self {
+        self.dpi = dpi;
+        self
+    }
+
+    pub fn event(mut self, event: ViewEvent) -> Self {
+        self.events.push(event);
+        self
+    }
+
+    pub fn events(mut self, events: impl IntoIterator<Item = ViewEvent>) -> Self {
+        self.events.extend(events);
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProductViewRuntimeSmokeReport {
+    pub product: ProductAdapterIdentity,
+    pub view_projected: bool,
+    pub layout_node_count: usize,
+    pub view_event_count: usize,
+    pub view_message_count: usize,
+    pub app_command_count: usize,
+    pub ui_command_count: usize,
+    pub dispatched_ui_command_count: usize,
+    pub product_event_count: usize,
+    pub draw_command_count: usize,
+    pub text_command_count: usize,
+    pub errors: Vec<String>,
+    pub view_smoke_complete: bool,
+}
+
 pub fn product_adapter_runtime_smoke_example_names() -> Vec<&'static str> {
     vec![
         "product_adapter",
         "product_adapter_smoke",
         "product_adapter_native_driver",
+        "product_adapter_view",
     ]
 }
 
@@ -819,6 +876,71 @@ where
             harness_smoke_complete,
         }
     }
+
+    pub fn run_view_smoke<Msg>(
+        &mut self,
+        request: ProductViewRuntimeSmokeRequest,
+    ) -> ProductViewRuntimeSmokeReport
+    where
+        Product: ProductViewAdapterHost<Msg>,
+        Msg: Clone,
+    {
+        let product = self.product.identity();
+        let mut errors = Vec::new();
+        let mut view = self.product.project_view();
+        let mut layout_cx = ViewLayoutCx::new(request.bounds, request.dpi);
+        let layout = view.layout(&mut layout_cx);
+
+        let mut view_event_cx = ViewEventCx::new();
+        for event in &request.events {
+            view.event(&mut view_event_cx, event);
+        }
+        let messages = view_event_cx.into_messages();
+
+        let mut app_cx = AppCx::new();
+        let mut product_event_count = 0;
+        for message in messages.iter().cloned() {
+            match self.product.update_view_message(message, &mut app_cx) {
+                Ok(events) => product_event_count += events.len(),
+                Err(err) => errors.push(err.to_string()),
+            }
+        }
+
+        let ui_commands: Vec<_> = app_cx.ui_commands().to_vec();
+        let mut dispatched_ui_command_count = 0;
+        for command in &ui_commands {
+            match self.dispatch_ui_command(command.clone()) {
+                Ok(_) => dispatched_ui_command_count += 1,
+                Err(err) => errors.push(err.to_string()),
+            }
+        }
+
+        let mut paint_cx = ViewPaintCx::new(request.dpi);
+        view.paint(&mut paint_cx);
+        let draw_plan: NativeDrawPlan = paint_cx.into_plan();
+        let view_projected = true;
+        let view_smoke_complete = errors.is_empty()
+            && view_projected
+            && layout.children.len() > 0
+            && request.events.len() == messages.len()
+            && ui_commands.len() == dispatched_ui_command_count;
+
+        ProductViewRuntimeSmokeReport {
+            product,
+            view_projected,
+            layout_node_count: layout.children.len(),
+            view_event_count: request.events.len(),
+            view_message_count: messages.len(),
+            app_command_count: app_cx.commands().len(),
+            ui_command_count: ui_commands.len(),
+            dispatched_ui_command_count,
+            product_event_count,
+            draw_command_count: draw_plan.command_count(),
+            text_command_count: draw_plan.text_count(),
+            errors,
+            view_smoke_complete,
+        }
+    }
 }
 
 pub fn ui_command_id_name(command: &UiCommand) -> &'static str {
@@ -958,6 +1080,41 @@ mod tests {
 
         fn request_shutdown(&mut self) {
             self.shutdown = true;
+        }
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum DemoViewMsg {
+        SaveClicked,
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    impl ProductViewAdapterHost<DemoViewMsg> for DemoProduct {
+        fn project_view(&self) -> ViewNode<DemoViewMsg> {
+            crate::column(vec![
+                crate::text("Demo"),
+                crate::button("Save")
+                    .id(crate::WidgetId::new(11))
+                    .on_click(DemoViewMsg::SaveClicked),
+            ])
+        }
+
+        fn update_view_message(
+            &mut self,
+            message: DemoViewMsg,
+            cx: &mut AppCx,
+        ) -> ZsuiResult<Vec<AppEvent>> {
+            match message {
+                DemoViewMsg::SaveClicked => {
+                    cx.command(Command::custom("demo.view.save"));
+                    cx.ui_command(UiCommand::app(PRODUCT_ADAPTER_SMOKE_COMMAND));
+                    Ok(vec![AppEvent::Custom {
+                        id: "demo.view.save".to_string(),
+                        payload: None,
+                    }])
+                }
+            }
         }
     }
 
@@ -1107,5 +1264,41 @@ mod tests {
         assert_eq!(report.ai_emitted_event_count, 1);
         assert!(report.missing_stage_names.is_empty());
         assert!(report.errors.is_empty());
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[test]
+    fn runtime_harness_routes_typed_view_messages_through_product_adapter() {
+        let mut harness = ZsuiReusableRuntimeHarness::new(
+            RecordingDriver::default(),
+            DemoProduct::new(),
+            HostCapabilities::all_supported(PlatformName::Unknown),
+        );
+        let report = harness.run_view_smoke(
+            ProductViewRuntimeSmokeRequest::new(crate::Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 80,
+            })
+            .event(crate::ViewEvent::Click {
+                widget: crate::WidgetId::new(11),
+            }),
+        );
+
+        assert!(report.view_smoke_complete);
+        assert_eq!(report.view_event_count, 1);
+        assert_eq!(report.view_message_count, 1);
+        assert_eq!(report.app_command_count, 1);
+        assert_eq!(report.ui_command_count, 1);
+        assert_eq!(report.dispatched_ui_command_count, 1);
+        assert_eq!(report.product_event_count, 1);
+        assert_eq!(report.text_command_count, 2);
+        assert!(report.draw_command_count >= 3);
+        assert_eq!(harness.product().command_count, 1);
+        assert_eq!(
+            harness.driver().commands[0].id,
+            PRODUCT_ADAPTER_SMOKE_COMMAND
+        );
     }
 }

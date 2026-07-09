@@ -16,6 +16,8 @@ pub mod components;
 pub mod control_protocol;
 pub mod core;
 pub mod event_protocol;
+pub mod feature_manifest;
+pub mod framework_goals;
 pub mod geometry;
 pub mod harmony_ability_host;
 pub mod host;
@@ -26,16 +28,23 @@ pub mod menu;
 pub mod mobile_host;
 pub mod native;
 pub mod native_adapter_manifest;
+pub mod native_host_actions;
 pub mod native_host_launch;
 pub mod native_hosts;
 pub mod native_smoke;
 pub mod product_adapter;
 pub mod render_protocol;
 pub mod settings;
+pub mod style;
 pub mod timer_protocol;
 pub mod tray;
 pub mod ui_surface_protocol;
+pub mod view;
 pub mod window;
+#[cfg(all(windows, feature = "windows-gdi"))]
+pub mod windows_gdi_renderer;
+#[cfg(all(windows, feature = "windows-win32"))]
+pub mod windows_win32_host;
 
 pub use agent_context::{
     zsui_agent_context, zsui_agent_context_json, zsui_completion_areas,
@@ -46,9 +55,10 @@ pub use agent_context::{
     ZsuiReuseReadinessReport, ZSUI_AGENT_CONTEXT_VERSION, ZSUI_FRAMEWORK_NAME,
 };
 pub use android_activity_host::{
+    android_activity_bridge_callbacks, android_activity_bridge_contract,
     android_activity_bridge_entry_points, android_activity_capability_bindings,
-    android_activity_host_scaffold, android_activity_lifecycle_bindings,
-    android_activity_required_permissions,
+    android_activity_device_smoke_artifacts, android_activity_host_scaffold,
+    android_activity_lifecycle_bindings, android_activity_required_permissions,
 };
 pub use app::{
     app, audit_app_declaration, zsui_declaration_audit_surface_names, AppBuilder, ZsuiApp,
@@ -59,7 +69,9 @@ pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, Plat
 pub use clipboard::ClipboardData;
 pub use command_protocol::{CommandId, CommandPayload, CommandQueue, CommandScope, UiCommand};
 pub use component_protocol::Component;
-pub use components::{Label, UiNode, UiNodeKind, UiStackDirection, ZsTabSpec};
+#[cfg(feature = "label")]
+pub use components::Label;
+pub use components::{UiNode, UiNodeKind, UiStackDirection, ZsTabSpec};
 pub use control_protocol::{
     NativeControlFamily, NativeControlMapper, NativeControlMapperOperation,
     NativeSettingsControlHost, SettingsComponentKind, SettingsControlHostOperation,
@@ -73,15 +85,21 @@ pub use core::{
 pub use event_protocol::{
     ComponentPhase, KeyState, LifecycleEvent, LifecycleState, MouseButton, UiEvent,
 };
+pub use feature_manifest::{
+    zsui_default_feature_names, zsui_feature_manifest, zsui_optional_dependency_feature_names,
+    ZsuiCargoFeature, ZsuiFeatureCategory,
+};
+pub use framework_goals::{zsui_rust_first_goal_names, zsui_rust_first_goals, ZsuiRustFirstGoal};
 pub use geometry::{
-    clamp_window_pos_to_rect, dpi_compensated_size, ComponentId, DpiCompensationPlan,
-    DpiCompensationState, LayoutInput, LayoutNode, LayoutOutput, LayoutProtocol, Point, Rect,
-    SharedUiProtocol, Size, UiRect, SHARED_NON_HOST_UI_PROTOCOLS,
+    clamp_window_pos_to_rect, dpi_compensated_size, ComponentId, Dp, Dpi, DpiCompensationPlan,
+    DpiCompensationState, LayoutInput, LayoutNode, LayoutOutput, LayoutProtocol, Point, Px, Rect,
+    SharedUiProtocol, Size, UiLength, UiRect, SHARED_NON_HOST_UI_PROTOCOLS,
 };
 pub use harmony_ability_host::{
+    harmony_ability_bridge_callbacks, harmony_ability_bridge_contract,
     harmony_ability_bridge_entry_points, harmony_ability_capability_bindings,
-    harmony_ability_host_scaffold, harmony_ability_lifecycle_bindings,
-    harmony_ability_required_permissions,
+    harmony_ability_device_smoke_artifacts, harmony_ability_host_scaffold,
+    harmony_ability_lifecycle_bindings, harmony_ability_required_permissions,
 };
 pub use host::{MemoryHost, PlatformHost, TrayRecord, WindowRecord, ZsuiHost};
 pub use host_protocol::{
@@ -115,11 +133,21 @@ pub use hotkey::HotkeySpec;
 pub use icon::ZsIcon;
 pub use menu::{MenuItemSpec, MenuSpec};
 pub use mobile_host::{
-    mobile_runtime_host_scaffold, mobile_runtime_host_scaffold_json,
-    mobile_runtime_host_scaffold_module_paths, mobile_runtime_host_scaffolds,
-    mobile_runtime_host_scaffolds_json, MobileRuntimeBridgeEntryPoint,
-    MobileRuntimeCapabilityBinding, MobileRuntimeHostScaffold, MobileRuntimeLifecycleBinding,
-    MobileRuntimePermission,
+    mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,
+    mobile_runtime_bridge_contract_json, mobile_runtime_bridge_contract_module_paths,
+    mobile_runtime_bridge_contracts, mobile_runtime_bridge_contracts_json,
+    mobile_runtime_device_smoke_artifact_names, mobile_runtime_device_smoke_command_names,
+    mobile_runtime_device_smoke_plan, mobile_runtime_device_smoke_plan_json,
+    mobile_runtime_device_smoke_plan_with_artifact_root, mobile_runtime_device_smoke_plans,
+    mobile_runtime_device_smoke_plans_json, mobile_runtime_host_scaffold,
+    mobile_runtime_host_scaffold_json, mobile_runtime_host_scaffold_module_paths,
+    mobile_runtime_host_scaffolds, mobile_runtime_host_scaffolds_json,
+    review_mobile_runtime_device_smoke_artifacts, review_mobile_runtime_device_smoke_artifacts_at,
+    MobileRuntimeBridgeCallback, MobileRuntimeBridgeCallbackKind, MobileRuntimeBridgeContract,
+    MobileRuntimeBridgeEntryPoint, MobileRuntimeCapabilityBinding,
+    MobileRuntimeDeviceSmokeArtifact, MobileRuntimeDeviceSmokeArtifactStatus,
+    MobileRuntimeDeviceSmokePlan, MobileRuntimeDeviceSmokeReviewReport, MobileRuntimeHostScaffold,
+    MobileRuntimeLifecycleBinding, MobileRuntimePermission,
 };
 pub use native::{
     native_window, run_native_window, run_native_window_smoke, NativeWindowBuilder,
@@ -136,14 +164,33 @@ pub use native_adapter_manifest::{
     NativeUiPlatform, NativeUiToolkit, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
     SUPPORTED_NATIVE_UI_BACKENDS, SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
 };
+pub use native_host_actions::{
+    command_ids as native_command_ids, dispatch_settings_action, main_menu_command_for_id,
+    main_tray_action_plan, main_tray_menu_plan, menu_ids as native_menu_ids,
+    native_host_status_menu_entries, native_status_menu_action_icon_name,
+    required_native_host_settings_action_names, required_native_host_settings_control_action_names,
+    required_native_host_status_menu_action_names, settings_action_for_route,
+    settings_action_route, settings_command_for_control_role, settings_command_id_for_role,
+    MainTrayActionInput, MainTrayActionPlan, MainTrayMenuAction, MainTrayMenuInput,
+    MainTrayMenuItem, MainTrayMenuText, NativeHostSearchControlAction, NativeHostSearchTextAction,
+    NativeHostSettingsAction, NativeHostSettingsControlAction, NativeHostSettingsGroupAction,
+    NativeHostSettingsPlatformAction, NativeHostStatusMenuAction, NativeHostUiAction,
+    SettingsAction, SettingsActionExecutor, SettingsActionRoute, SettingsControlRole,
+    StatusMenuEntry, REQUIRED_NATIVE_HOST_SEARCH_CONTROL_ACTIONS,
+    REQUIRED_NATIVE_HOST_SETTINGS_ACTIONS, REQUIRED_NATIVE_HOST_SETTINGS_CONTROL_ACTIONS,
+    REQUIRED_NATIVE_HOST_SETTINGS_GROUP_ACTIONS, REQUIRED_NATIVE_HOST_SETTINGS_PLATFORM_ACTIONS,
+    REQUIRED_NATIVE_HOST_STATUS_MENU_ACTIONS, REQUIRED_NATIVE_HOST_UI_ACTIONS,
+};
 pub use native_host_launch::{
     native_host_launch_plan_for_current_target, native_host_launch_plan_for_platform,
     NativeHostLaunchMode, NativeHostLaunchPlan,
 };
 pub use native_hosts::{
-    required_native_runtime_driver_operation_names,
+    native_status_menu_command_from_menu, required_native_runtime_driver_operation_names,
+    required_native_settings_item_update_host_operation_names,
     required_native_settings_page_model_host_operation_names,
-    required_native_status_item_host_operation_names, NativeAppIconResource,
+    required_native_status_item_host_operation_names,
+    required_native_status_menu_command_host_operation_names, NativeAppIconResource,
     NativeMainSearchControlHost, NativeMainSearchControlHostOperation,
     NativeMainSearchControlPresentation, NativeMainSearchControlRequest,
     NativeMainSearchStylePresentation, NativeMainSearchStyleRequest, NativeMainWindowHandles,
@@ -151,16 +198,22 @@ pub use native_hosts::{
     NativeMainWindowPresentation, NativeMainWindowRequest, NativeRuntimeDriver,
     NativeRuntimeDriverOperation, NativeRuntimeStartupRequest, NativeRuntimeStartupResult,
     NativeSettingsDropdownHost, NativeSettingsDropdownHostOperation,
-    NativeSettingsDropdownPresentation, NativeSettingsDropdownRequest, NativeSettingsPageModelHost,
+    NativeSettingsDropdownPresentation, NativeSettingsDropdownRequest,
+    NativeSettingsItemUpdateHost, NativeSettingsItemUpdateHostOperation,
+    NativeSettingsItemUpdateRequest, NativeSettingsItemUpdateResult, NativeSettingsPageModelHost,
     NativeSettingsPageModelHostOperation, NativeSettingsPageModelPresentation,
     NativeSettingsPageModelRequest, NativeSettingsWindowHost, NativeSettingsWindowHostOperation,
     NativeSettingsWindowPresentation, NativeSettingsWindowRequest, NativeStatusItemHost,
     NativeStatusItemHostOperation, NativeStatusItemPresentation, NativeStatusItemRequest,
-    NativeWindowOptions, REQUIRED_NATIVE_MAIN_SEARCH_CONTROL_HOST_OPERATIONS,
+    NativeStatusMenuCommandHost, NativeStatusMenuCommandHostOperation,
+    NativeStatusMenuCommandRequest, NativeStatusMenuCommandResult, NativeWindowOptions,
+    REQUIRED_NATIVE_MAIN_SEARCH_CONTROL_HOST_OPERATIONS,
     REQUIRED_NATIVE_MAIN_WINDOW_HOST_OPERATIONS, REQUIRED_NATIVE_RUNTIME_DRIVER_OPERATIONS,
     REQUIRED_NATIVE_SETTINGS_DROPDOWN_HOST_OPERATIONS,
+    REQUIRED_NATIVE_SETTINGS_ITEM_UPDATE_HOST_OPERATIONS,
     REQUIRED_NATIVE_SETTINGS_PAGE_MODEL_HOST_OPERATIONS,
     REQUIRED_NATIVE_SETTINGS_WINDOW_HOST_OPERATIONS, REQUIRED_NATIVE_STATUS_ITEM_HOST_OPERATIONS,
+    REQUIRED_NATIVE_STATUS_MENU_COMMAND_HOST_OPERATIONS,
 };
 pub use native_smoke::{
     native_host_smoke_artifact_names, native_host_smoke_artifact_requirements,
@@ -182,24 +235,73 @@ pub use product_adapter::{
     ProductAdapterRuntimeSmokeRequest, ProductAdapterSurface, ProductAdapterTask,
     ProductAiCapabilityDescriptor, ProductAiExecutionPlan, ProductAiExecutorBoundary,
     ProductAiInvocation, ProductAiProviderFamily, ProductAiResult, ProductUiProjection,
+    ProductViewAdapterHost, ProductViewRuntimeSmokeReport, ProductViewRuntimeSmokeRequest,
     ZsuiReusableRuntimeHarness, ZsuiReusableRuntimeHarnessStage, PRODUCT_ADAPTER_SMOKE_COMMAND,
     REQUIRED_PRODUCT_ADAPTER_SURFACES, REQUIRED_PRODUCT_ADAPTER_TASKS,
     ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
 };
 pub use render_protocol::{
-    Color, ColorRole, HorizontalAlign, NativeStyleHostOperation, NativeStyleResolver, Renderer,
-    RendererHostOperation, SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole,
-    TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign, REQUIRED_NATIVE_STYLE_HOST_OPERATIONS,
-    REQUIRED_RENDERER_HOST_OPERATIONS, REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
+    required_native_draw_command_operation_names, Color, ColorRole, HorizontalAlign,
+    NativeDrawCommand, NativeDrawCommandOperation, NativeDrawCommandSink, NativeDrawFill,
+    NativeDrawIconCommand, NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode,
+    NativeStyleHostOperation, NativeStyleResolver, Renderer, RendererHostOperation,
+    SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole, TextRun, TextStyle,
+    TextWeight, TextWrap, VerticalAlign, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
+    REQUIRED_NATIVE_STYLE_HOST_OPERATIONS, REQUIRED_RENDERER_HOST_OPERATIONS,
+    REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};
+pub use style::{
+    RadiusToken, SpacingToken, ThemeColorToken, ZsuiColorTokens, ZsuiRadiusTokens,
+    ZsuiSpacingTokens, ZsuiTheme,
+};
 pub use timer_protocol::{
     main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
     SettingsTimerIds, SettingsTimerTask,
 };
 pub use tray::TraySpec;
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
+#[cfg(feature = "button")]
+pub use view::button;
+#[cfg(feature = "checkbox")]
+pub use view::checkbox;
+#[cfg(feature = "list")]
+pub use view::list;
+#[cfg(feature = "label")]
+pub use view::text;
+#[cfg(feature = "textbox")]
+pub use view::textbox;
+pub use view::{
+    column, row, spacer, AppCx, View, ViewEvent, ViewEventCx, ViewLayoutCx, ViewNode, ViewNodeKind,
+    ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
+};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
+#[cfg(all(windows, feature = "windows-gdi"))]
+pub use windows_gdi_renderer::{
+    windows_no_flicker_paint_strategy, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
+    WindowsGdiRenderer, WindowsGdiStyleResolver, WindowsGdiTextLayout,
+    WindowsNoFlickerPaintStrategy,
+};
+#[cfg(all(windows, feature = "windows-win32"))]
+pub use windows_win32_host::{
+    clear_windows_win32_window_draw_plan, clear_windows_win32_window_draw_plans,
+    create_owned_windows_for_specs as create_owned_windows_win32_for_specs,
+    create_owned_windows_for_specs_with_draw_plans as create_owned_windows_win32_for_specs_with_draw_plans,
+    create_windows_for_specs as create_windows_win32_for_specs,
+    create_windows_for_specs_with_draw_plans as create_windows_win32_for_specs_with_draw_plans,
+    run_windows_win32_native_window_event_loop,
+    run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items,
+    run_windows_win32_native_window_event_loop_with_status_items,
+    set_windows_win32_window_draw_plan, windows_win32_main_window_style_plan,
+    zsui_win32_default_window_proc, WindowsWin32ClassNames, WindowsWin32MainWindowHost,
+    WindowsWin32MessageLoop, WindowsWin32MessageLoopResult, WindowsWin32OwnedAppIconResource,
+    WindowsWin32OwnedIcon, WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu,
+    WindowsWin32OwnedTrayIcon, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
+    WindowsWin32StatusMenuCommandTable, WindowsWin32TransientWindowHost,
+    WindowsWin32WindowStylePlan, WindowsWindowCreateParams, WindowsWindowRole,
+    ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID, ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS,
+    ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+};
 
 #[cfg(test)]
 mod tests {
@@ -439,6 +541,7 @@ mod tests {
         assert!(json.contains("OpenSettings"));
     }
 
+    #[cfg(all(feature = "label", feature = "button"))]
     #[test]
     fn window_can_carry_a_declarative_component_tree() {
         let mut host = MemoryHost::new();

@@ -34,12 +34,37 @@ Run the first-pass native smoke window with:
 cargo run --example native_smoke_run -- windows
 ```
 
-This opens a real `winit_desktop` native window on the matching target, closes
-it automatically, then rewrites `interaction.json` and `launch.log` with the
-observed window lifecycle. On Windows it also captures `window.png` into the
-artifact directory through the Win32 window handle. macOS and Linux still need
-platform screenshot capture support before their target-smoke proof is
-complete.
+On Windows this opens the extracted Win32/GDI native window path, closes it
+automatically, then rewrites `interaction.json` and `launch.log` with the
+observed window lifecycle. It also captures `window.png` into the artifact
+directory through the direct Win32 `HWND`. macOS and Linux still use the
+`winit_desktop` first-pass runtime and need platform screenshot capture support
+before their target-smoke proof is complete.
+
+Windows can also request a real status item during the same smoke run:
+
+```powershell
+cargo run --example native_smoke_run -- windows --tray
+```
+
+That path uses the `Shell_NotifyIconW` backed `WindowsWin32StatusItemHost` and
+records status-item fields in `interaction.json`. It also exercises the
+native status-menu command table and records `status_menu_command_routed`.
+It creates and destroys a native popup menu and records
+`status_menu_popup_destroyed`. Real user popup menu clicks are still separate
+proof before the tray surface is system-complete; the Win32 host exposes the
+`TrackPopupMenu` selection route, but the auto-closing smoke runner does not
+block waiting for manual selection.
+
+Windows can also attach a typed Rust view draw plan during the smoke run:
+
+```powershell
+cargo run --example native_smoke_run -- windows --view
+```
+
+That path exercises `NativeWindowBuilder::view(...)`, records draw-plan command
+counts in `interaction.json`, and paints the resulting `NativeDrawPlan` through
+the extracted no-flicker Win32/GDI renderer.
 
 Review the artifact directory with:
 
@@ -61,9 +86,24 @@ Required target-smoke artifacts:
 - `capabilities.json`: observed host capability report.
 - `agent-context.json`: matching `zsui_agent_context_json()` output.
 
-Windows, macOS and Linux currently use the `winit_desktop` first-pass runtime
-and are ready to attempt target smoke. Android and Harmony are still scaffold
-plans until real Activity/Ability runtime hosts exist.
+Windows currently uses the extracted `win32_gdi` runtime and is ready to attempt
+target smoke. macOS and Linux use the `winit_desktop` first-pass runtime.
+Android and Harmony are still scaffold/bridge-contract plans until real
+Activity/Ability runtime hosts exist. Their current device-smoke contract can
+be inspected with:
+
+```powershell
+cargo run --example mobile_scaffold_manifest -- --bridge android
+cargo run --example mobile_scaffold_manifest -- --bridge harmony
+cargo run --example mobile_scaffold_manifest -- --smoke android
+cargo run --example mobile_scaffold_manifest -- --review android
+```
+
+The mobile contracts require device-side artifacts such as
+`device-launch.log`, `device-window.png`, `lifecycle.json`, `surface.json` and
+`input.json` before a mobile backend can move beyond scaffold status. The
+review command validates artifact presence, JSON files and PNG headers; it does
+not generate or fake device proof.
 
 Current Windows proof command sequence:
 

@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum ZsIcon {
     App,
     Search,

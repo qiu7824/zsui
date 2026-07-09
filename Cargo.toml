@@ -8,16 +8,68 @@ description = "Rust-first native system UI declarations and host contracts."
 readme = "README.md"
 
 [dependencies]
-arboard = "3.4"
-png = "0.18"
+arboard = { version = "3.4", optional = true }
+png = { version = "0.18", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
-winit = "0.30"
+winit = { version = "0.30", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[features]
+default = ["window", "button", "label"]
+window = ["windows-win32"]
+button = ["widgets-base"]
+label = ["widgets-base"]
+widgets-base = []
+widgets-input = []
+widgets-list = []
+scroll = []
+list = ["widgets-list", "scroll"]
+textbox = ["widgets-input"]
+checkbox = ["widgets-input"]
+table = ["list", "scroll"]
+dark-mode = []
+style = []
+shell = []
+tray = ["shell"]
+hotkey = ["shell"]
+settings = ["widgets-input", "widgets-list"]
+product-adapter = []
+android = []
+harmony = []
+mobile = ["android", "harmony"]
+clipboard = ["dep:arboard"]
+image = ["dep:png"]
+native-smoke = ["image"]
+desktop-winit = ["dep:winit"]
+windows-gdi = ["dep:windows-sys", "image"]
+windows-win32 = ["windows-gdi"]
+all-widgets = ["button", "label", "scroll", "list", "textbox", "checkbox", "table"]
+full = [
+    "all-widgets",
+    "clipboard",
+    "dark-mode",
+    "desktop-winit",
+    "hotkey",
+    "mobile",
+    "native-smoke",
+    "product-adapter",
+    "settings",
+    "style",
+    "tray",
+    "window",
+]
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
 
 [dev-dependencies]
 serde_json = "1"
@@ -25,3 +77,18 @@ serde_json = "1"
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
+
+[[example]]
+name = "declaration_audit"
+path = "examples/declaration_audit.rs"
+required-features = ["button", "label"]
+
+[[example]]
+name = "rust_first_view"
+path = "examples/rust_first_view.rs"
+required-features = ["button", "label", "textbox", "checkbox"]
+
+[[example]]
+name = "product_adapter_view"
+path = "examples/product_adapter_view.rs"
+required-features = ["button", "label"]

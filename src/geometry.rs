@@ -1,5 +1,71 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Px(pub f32);
+
+impl Px {
+    pub const fn new(value: f32) -> Self {
+        Self(value)
+    }
+
+    pub fn round_i32(self) -> i32 {
+        self.0.round() as i32
+    }
+
+    pub fn ceil_i32(self) -> i32 {
+        self.0.ceil() as i32
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Dp(pub f32);
+
+impl Dp {
+    pub const fn new(value: f32) -> Self {
+        Self(value)
+    }
+
+    pub fn to_px(self, dpi: Dpi) -> Px {
+        Px(self.0 * dpi.scale_factor())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Dpi(pub f32);
+
+impl Dpi {
+    pub fn new(value: f32) -> Self {
+        Self(value.max(1.0))
+    }
+
+    pub const fn standard() -> Self {
+        Self(96.0)
+    }
+
+    pub fn scale_factor(self) -> f32 {
+        self.0.max(1.0) / 96.0
+    }
+}
+
+impl Default for Dpi {
+    fn default() -> Self {
+        Self::standard()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum UiLength {
+    Auto,
+    Fill,
+    Fixed(Dp),
+}
+
+impl UiLength {
+    pub const fn fixed(value: Dp) -> Self {
+        Self::Fixed(value)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiRect {
     pub left: i32,
@@ -49,7 +115,7 @@ impl UiRect {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, any(feature = "windows-win32", feature = "windows-gdi")))]
 impl From<windows_sys::Win32::Foundation::RECT> for UiRect {
     fn from(value: windows_sys::Win32::Foundation::RECT) -> Self {
         Self {
@@ -61,14 +127,14 @@ impl From<windows_sys::Win32::Foundation::RECT> for UiRect {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, any(feature = "windows-win32", feature = "windows-gdi")))]
 impl From<&windows_sys::Win32::Foundation::RECT> for UiRect {
     fn from(value: &windows_sys::Win32::Foundation::RECT) -> Self {
         Self::from(*value)
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, any(feature = "windows-win32", feature = "windows-gdi")))]
 impl From<UiRect> for windows_sys::Win32::Foundation::RECT {
     fn from(value: UiRect) -> Self {
         Self {
@@ -331,5 +397,16 @@ mod tests {
         assert!(bounds.contains(plan.x, plan.y));
         assert!(plan.x + plan.width <= bounds.right);
         assert!(plan.y + plan.height <= bounds.bottom);
+    }
+
+    #[test]
+    fn dp_px_dpi_units_keep_scaling_explicit() {
+        let dpi = Dpi::new(144.0);
+        let padding = Dp::new(12.0);
+        let px = padding.to_px(dpi);
+
+        assert_eq!(dpi.scale_factor(), 1.5);
+        assert_eq!(px.round_i32(), 18);
+        assert_eq!(UiLength::fixed(padding), UiLength::Fixed(Dp::new(12.0)));
     }
 }

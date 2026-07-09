@@ -1,23 +1,38 @@
 use serde::Serialize;
 
 use crate::app::zsui_declaration_audit_surface_names;
+use crate::feature_manifest::{
+    zsui_default_feature_names, zsui_feature_manifest, zsui_optional_dependency_feature_names,
+};
+use crate::framework_goals::zsui_rust_first_goal_names;
 use crate::geometry::SHARED_NON_HOST_UI_PROTOCOLS;
-use crate::mobile_host::mobile_runtime_host_scaffold_module_paths;
+use crate::mobile_host::{
+    mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract_module_paths,
+    mobile_runtime_device_smoke_artifact_names, mobile_runtime_device_smoke_command_names,
+    mobile_runtime_host_scaffold_module_paths,
+};
 use crate::native_adapter_manifest::{
     native_ui_backend_capability_matrix, native_ui_backend_capability_matrix_for_platform,
     NativeUiBackendStatus, NativeUiPlatform, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
     SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
 };
+use crate::native_host_actions::{
+    required_native_host_settings_action_names, required_native_host_settings_control_action_names,
+    required_native_host_status_menu_action_names,
+};
 use crate::native_hosts::{
     required_native_runtime_driver_operation_names,
+    required_native_settings_item_update_host_operation_names,
     required_native_settings_page_model_host_operation_names,
     required_native_status_item_host_operation_names,
+    required_native_status_menu_command_host_operation_names,
 };
 use crate::native_smoke::{native_host_smoke_artifact_names, native_host_smoke_command_names};
 use crate::product_adapter::{
     product_adapter_reuse_checklist, product_adapter_runtime_smoke_example_names,
     zsui_reusable_runtime_harness_stage_names,
 };
+use crate::render_protocol::required_native_draw_command_operation_names;
 use crate::ui_surface_protocol::REQUIRED_UI_HOST_SURFACES;
 
 pub const ZSUI_FRAMEWORK_NAME: &str = "zsui";
@@ -70,6 +85,10 @@ pub struct ZsuiCompletionArea {
 pub struct ZsuiReuseReadinessReport {
     pub platform_names: Vec<&'static str>,
     pub toolkit_names: Vec<&'static str>,
+    pub default_feature_names: Vec<&'static str>,
+    pub cargo_feature_names: Vec<&'static str>,
+    pub optional_dependency_feature_names: Vec<&'static str>,
+    pub rust_first_goal_names: Vec<&'static str>,
     pub declaration_audit_surface_names: Vec<&'static str>,
     pub native_runtime_ready_platforms: Vec<&'static str>,
     pub first_pass_native_host_platforms: Vec<&'static str>,
@@ -79,7 +98,13 @@ pub struct ZsuiReuseReadinessReport {
     pub shared_non_host_protocol_names: Vec<&'static str>,
     pub native_runtime_driver_operation_names: Vec<&'static str>,
     pub native_status_item_host_operation_names: Vec<&'static str>,
+    pub native_status_menu_command_host_operation_names: Vec<&'static str>,
     pub native_settings_page_model_host_operation_names: Vec<&'static str>,
+    pub native_settings_item_update_host_operation_names: Vec<&'static str>,
+    pub native_host_status_menu_action_names: Vec<&'static str>,
+    pub native_host_settings_action_names: Vec<&'static str>,
+    pub native_host_settings_control_action_names: Vec<&'static str>,
+    pub native_draw_command_operation_names: Vec<&'static str>,
     pub runtime_harness_stage_names: Vec<&'static str>,
     pub product_adapter_surface_names: Vec<&'static str>,
     pub product_adapter_task_names: Vec<&'static str>,
@@ -89,6 +114,10 @@ pub struct ZsuiReuseReadinessReport {
     pub native_smoke_artifact_names: Vec<&'static str>,
     pub native_smoke_command_names: Vec<&'static str>,
     pub mobile_runtime_host_scaffold_module_paths: Vec<&'static str>,
+    pub mobile_runtime_bridge_contract_module_paths: Vec<&'static str>,
+    pub mobile_runtime_bridge_callback_symbol_names: Vec<&'static str>,
+    pub mobile_runtime_device_smoke_artifact_names: Vec<&'static str>,
+    pub mobile_runtime_device_smoke_command_names: Vec<&'static str>,
     pub agent_skill_path: &'static str,
     pub docs_paths: Vec<&'static str>,
 }
@@ -198,6 +227,7 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
             allowed_modules: vec![
                 "src/app.rs",
                 "src/window.rs",
+                "src/view.rs",
                 "src/tray.rs",
                 "src/menu.rs",
                 "src/hotkey.rs",
@@ -225,6 +255,7 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
                 "src/component_protocol.rs",
                 "src/control_protocol.rs",
                 "src/render_protocol.rs",
+                "src/style.rs",
                 "src/ui_surface_protocol.rs",
                 "src/timer_protocol.rs",
             ],
@@ -294,14 +325,14 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
     vec![
         ZsuiCompletionArea {
             area_name: "foundation_contracts",
-            percent_complete: 70,
-            status_name: "code_level_ready",
+            percent_complete: 74,
+            status_name: "self_draw_command_contract_ready",
             source_path: "src/core.rs",
             missing_before_complete: vec!["broader examples", "stable semver policy"],
         },
         ZsuiCompletionArea {
             area_name: "declaration_api",
-            percent_complete: 72,
+            percent_complete: 73,
             status_name: "declaration_audit_ready",
             source_path: "src/app.rs",
             missing_before_complete: vec![
@@ -313,59 +344,89 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "minimal_native_window_runtime",
-            percent_complete: 45,
-            status_name: "status_settings_operation_surface_ready",
+            percent_complete: 65,
+            status_name: "typed_view_draw_plan_smoke_ready",
             source_path: "src/native.rs",
             missing_before_complete: vec![
                 "real native menus",
                 "dialogs",
                 "clipboard",
-                "captured target smoke artifacts",
+                "macOS/Linux target smoke artifacts",
+            ],
+        },
+        ZsuiCompletionArea {
+            area_name: "feature_pruned_architecture",
+            percent_complete: 38,
+            status_name: "cargo_feature_manifest_ready",
+            source_path: "Cargo.toml",
+            missing_before_complete: vec![
+                "move heavier widgets into separate crates",
+                "split zsui-core/zsui-shell/zsui-render/zsui-style/widget-family crates when stable",
+                "gate every widget module with cfg(feature)",
+                "feature-matrix CI",
+            ],
+        },
+        ZsuiCompletionArea {
+            area_name: "rust_first_api_model",
+            percent_complete: 53,
+            status_name: "typed_view_native_draw_plan_ready",
+            source_path: "src/view.rs",
+            missing_before_complete: vec![
+                "preserve one-line native entrypoints across target hosts",
+                "keep raw HWNDs out of higher-level APIs",
+                "keep platform API bindings behind concrete backend needs",
+                "keep the public facade small while splitting heavier crates/modules",
+                "full typed message coverage across menus/lists/text input",
+                "connect View<Msg> native runtime input routing",
+                "complete Px/Dp/Dpi migration",
+                "typestate window/app builders",
             ],
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 15,
-            status_name: "extraction_in_progress",
-            source_path: "src/native_hosts.rs",
+            percent_complete: 46,
+            status_name: "win32_status_popup_menu_selection_ready",
+            source_path: "src/windows_win32_host.rs",
             missing_before_complete: vec![
-                "Win32 split",
                 "AppKit split",
                 "GTK split",
-                "target smoke artifacts",
+                "richer Win32 input events",
+                "target smoke artifact for real user popup menu selection",
+                "required tray/menu user-interaction artifacts",
             ],
         },
         ZsuiCompletionArea {
             area_name: "android_and_harmony",
-            percent_complete: 10,
-            status_name: "host_scaffold_manifest_ready",
+            percent_complete: 16,
+            status_name: "mobile_device_smoke_review_contract_ready",
             source_path: "src/mobile_host.rs",
             missing_before_complete: vec![
-                "Android Activity FFI bridge",
-                "Harmony Ability FFI bridge",
-                "device smoke artifacts",
+                "Android Activity FFI implementation",
+                "Harmony Ability FFI implementation",
+                "real device smoke artifacts",
             ],
         },
         ZsuiCompletionArea {
             area_name: "product_adapter_runtime_harness",
-            percent_complete: 57,
-            status_name: "native_operation_projection_ready",
+            percent_complete: 62,
+            status_name: "typed_view_smoke_ready",
             source_path: "src/product_adapter.rs",
             missing_before_complete: vec![
-                "real product integration",
+                "real product integration examples",
                 "target host smoke through harness",
                 "native driver target artifacts",
             ],
         },
         ZsuiCompletionArea {
             area_name: "native_smoke_verification",
-            percent_complete: 55,
-            status_name: "windows_target_smoke_verified",
+            percent_complete: 62,
+            status_name: "typed_view_native_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
+                "required tray/menu target smoke artifacts with user popup interaction",
                 "macOS/Linux screenshot capture",
                 "macOS/Linux target smoke artifacts",
-                "device artifact review",
+                "real Android/Harmony device artifact runs",
             ],
         },
     ]
@@ -374,6 +435,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
 pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
     let matrix = native_ui_backend_capability_matrix();
     let product_adapter = product_adapter_reuse_checklist();
+    let cargo_features = zsui_feature_manifest();
 
     ZsuiReuseReadinessReport {
         platform_names: SUPPORTED_NATIVE_UI_PLATFORMS
@@ -384,6 +446,10 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             .iter()
             .map(|toolkit| toolkit.toolkit_name())
             .collect(),
+        default_feature_names: zsui_default_feature_names(),
+        cargo_feature_names: cargo_features.iter().map(|feature| feature.name).collect(),
+        optional_dependency_feature_names: zsui_optional_dependency_feature_names(),
+        rust_first_goal_names: zsui_rust_first_goal_names(),
         declaration_audit_surface_names: zsui_declaration_audit_surface_names(),
         native_runtime_ready_platforms: matrix
             .iter()
@@ -414,8 +480,17 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             .collect(),
         native_runtime_driver_operation_names: required_native_runtime_driver_operation_names(),
         native_status_item_host_operation_names: required_native_status_item_host_operation_names(),
+        native_status_menu_command_host_operation_names:
+            required_native_status_menu_command_host_operation_names(),
         native_settings_page_model_host_operation_names:
             required_native_settings_page_model_host_operation_names(),
+        native_settings_item_update_host_operation_names:
+            required_native_settings_item_update_host_operation_names(),
+        native_host_status_menu_action_names: required_native_host_status_menu_action_names(),
+        native_host_settings_action_names: required_native_host_settings_action_names(),
+        native_host_settings_control_action_names:
+            required_native_host_settings_control_action_names(),
+        native_draw_command_operation_names: required_native_draw_command_operation_names(),
         runtime_harness_stage_names: zsui_reusable_runtime_harness_stage_names(),
         product_adapter_surface_names: product_adapter.surface_names,
         product_adapter_task_names: product_adapter.task_names,
@@ -425,18 +500,31 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
         native_smoke_artifact_names: native_host_smoke_artifact_names(),
         native_smoke_command_names: native_host_smoke_command_names(),
         mobile_runtime_host_scaffold_module_paths: mobile_runtime_host_scaffold_module_paths(),
+        mobile_runtime_bridge_contract_module_paths: mobile_runtime_bridge_contract_module_paths(),
+        mobile_runtime_bridge_callback_symbol_names: mobile_runtime_bridge_callback_symbol_names(),
+        mobile_runtime_device_smoke_artifact_names: mobile_runtime_device_smoke_artifact_names(),
+        mobile_runtime_device_smoke_command_names: mobile_runtime_device_smoke_command_names(),
         agent_skill_path: "docs/skills/zsui-native-ui/",
         docs_paths: vec![
             "README.md",
+            "Cargo.toml",
             "docs/ai-agent.md",
             "docs/architecture.md",
+            "docs/framework-goals.md",
             "docs/porting.md",
             "docs/native-host-smoke.md",
             "docs/skills/zsui-native-ui/SKILL.md",
             "docs/skills/zsui-native-ui/references/native-ui-entrypoints.md",
+            "src/feature_manifest.rs",
+            "src/framework_goals.rs",
+            "src/style.rs",
+            "src/view.rs",
+            "examples/rust_first_view.rs",
             "src/mobile_host.rs",
             "src/android_activity_host.rs",
             "src/harmony_ability_host.rs",
+            "src/windows_gdi_renderer.rs",
+            "src/windows_win32_host.rs",
         ],
     }
 }
@@ -656,13 +744,19 @@ fn platform_binding_name_for_capability(
     capability_name: &str,
 ) -> Option<&'static str> {
     match (platform, capability_name) {
-        (NativeUiPlatform::Windows, "main_window")
-        | (NativeUiPlatform::Macos, "main_window")
-        | (NativeUiPlatform::Linux, "main_window") => Some("winit_native_window"),
+        (NativeUiPlatform::Windows, "main_window") => Some("windows_win32_main_window_host"),
+        (NativeUiPlatform::Macos, "main_window") | (NativeUiPlatform::Linux, "main_window") => {
+            Some("winit_native_window")
+        }
         (NativeUiPlatform::Windows, "main_execution_plan_bridge")
         | (NativeUiPlatform::Macos, "main_execution_plan_bridge")
         | (NativeUiPlatform::Linux, "main_execution_plan_bridge") => {
             Some("zsui_native_window_builder")
+        }
+        (NativeUiPlatform::Windows, "renderer") => Some("windows_gdi_renderer"),
+        (NativeUiPlatform::Windows, "text_layout") => Some("windows_gdi_text_layout"),
+        (NativeUiPlatform::Windows, "transient_window") => {
+            Some("windows_win32_transient_window_host")
         }
         (NativeUiPlatform::Android, "main_window") => Some("android_activity_surface"),
         (NativeUiPlatform::Android, "settings_window") => Some("android_settings_fragment"),
@@ -722,6 +816,46 @@ mod tests {
             vec!["windows", "macos", "linux", "android", "harmony"]
         );
         assert_eq!(context.platform_bootstrap.len(), 5);
+        assert_eq!(
+            context.readiness.default_feature_names,
+            vec!["window", "button", "label"]
+        );
+        assert!(context
+            .readiness
+            .cargo_feature_names
+            .contains(&"windows-gdi"));
+        assert!(context
+            .readiness
+            .optional_dependency_feature_names
+            .contains(&"clipboard"));
+        assert!(context
+            .readiness
+            .optional_dependency_feature_names
+            .contains(&"desktop-winit"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"one_line_native_entrypoints"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"composition_and_traits"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"safe_public_api_isolated_unsafe"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"zsclip_extraction_foundation"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"mobile_native_hosts"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"crate_split_architecture"));
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert!(context.readiness.scaffold_platforms.contains(&"harmony"));
         assert!(context
@@ -742,6 +876,10 @@ mod tests {
             .contains(&"product_adapter_native_driver"));
         assert!(context
             .readiness
+            .product_adapter_smoke_example_names
+            .contains(&"product_adapter_view"));
+        assert!(context
+            .readiness
             .runtime_harness_stage_names
             .contains(&"start_native_runtime"));
         assert!(context
@@ -750,8 +888,28 @@ mod tests {
             .contains(&"create_status_item"));
         assert!(context
             .readiness
+            .native_status_menu_command_host_operation_names
+            .contains(&"dispatch_status_menu_command"));
+        assert!(context
+            .readiness
             .native_settings_page_model_host_operation_names
             .contains(&"bind_settings_pages"));
+        assert!(context
+            .readiness
+            .native_settings_item_update_host_operation_names
+            .contains(&"update_settings_item_value"));
+        assert!(context
+            .readiness
+            .native_host_status_menu_action_names
+            .contains(&"status_exit"));
+        assert!(context
+            .readiness
+            .native_host_settings_control_action_names
+            .contains(&"settings_toggle_clipboard_capture"));
+        assert!(context
+            .readiness
+            .native_draw_command_operation_names
+            .contains(&"draw_round_rect"));
         assert!(context
             .readiness
             .native_smoke_artifact_names
@@ -764,6 +922,30 @@ mod tests {
             .readiness
             .mobile_runtime_host_scaffold_module_paths
             .contains(&"src/android_activity_host.rs"));
+        assert!(context
+            .readiness
+            .mobile_runtime_bridge_contract_module_paths
+            .contains(&"src/harmony_ability_host.rs"));
+        assert!(context
+            .readiness
+            .mobile_runtime_bridge_callback_symbol_names
+            .contains(&"zsui_android_activity_surface_created"));
+        assert!(context
+            .readiness
+            .mobile_runtime_bridge_callback_symbol_names
+            .contains(&"zsui_harmony_ability_lifecycle"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_artifact_names
+            .contains(&"device-window.png"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --review"));
+        assert!(context
+            .readiness
+            .docs_paths
+            .contains(&"docs/framework-goals.md"));
     }
 
     #[test]
@@ -787,21 +969,27 @@ mod tests {
     }
 
     #[test]
-    fn desktop_bootstrap_reports_only_current_winit_bindings() {
+    fn desktop_bootstrap_reports_extracted_windows_win32_host_bindings() {
         let windows = zsui_reuse_bootstrap_plan(NativeUiPlatform::Windows)
             .expect("windows bootstrap should exist");
 
         assert!(!windows.native_runtime_ready());
-        assert_eq!(windows.toolkit_name, "winit_desktop");
+        assert_eq!(windows.toolkit_name, "win32_gdi");
         assert!(windows
             .platform_binding_names
-            .contains(&"winit_native_window"));
+            .contains(&"windows_win32_main_window_host"));
         assert!(windows
             .platform_binding_names
             .contains(&"zsui_native_window_builder"));
-        assert!(!windows
+        assert!(windows
             .platform_binding_names
-            .contains(&"win32_main_window"));
+            .contains(&"windows_gdi_renderer"));
+        assert!(windows
+            .platform_binding_names
+            .contains(&"windows_gdi_text_layout"));
+        assert!(windows
+            .platform_binding_names
+            .contains(&"windows_win32_transient_window_host"));
         assert!(windows
             .missing_native_runtime_gate_names
             .contains(&"native_service_bridges"));
@@ -812,10 +1000,20 @@ mod tests {
         let json = zsui_agent_context_json().expect("agent context should serialize");
 
         assert!(json.contains("\"framework_name\": \"zsui\""));
+        assert!(json.contains("\"default_feature_names\""));
+        assert!(json.contains("\"windows-gdi\""));
+        assert!(json.contains("\"rust_first_goal_names\""));
+        assert!(json.contains("one_line_native_entrypoints"));
+        assert!(json.contains("strong_typed_ids"));
+        assert!(json.contains("crate_split_architecture"));
+        assert!(json.contains("platform_api_on_demand"));
         assert!(json.contains("docs/skills/zsui-native-ui/"));
         assert!(json.contains("winit_desktop"));
         assert!(json.contains("android_activity"));
         assert!(json.contains("harmony_ability"));
+        assert!(json.contains("zsui_harmony_ability_surface_created"));
+        assert!(json.contains("device-window.png"));
+        assert!(json.contains("mobile_scaffold_manifest --review"));
         assert!(json.contains("src/harmony_ability_host.rs"));
     }
 }
