@@ -147,7 +147,9 @@ pub use mobile_host::{
     mobile_runtime_device_smoke_artifact_names, mobile_runtime_device_smoke_command_names,
     mobile_runtime_device_smoke_plan, mobile_runtime_device_smoke_plan_json,
     mobile_runtime_device_smoke_plan_with_artifact_root, mobile_runtime_device_smoke_plans,
-    mobile_runtime_device_smoke_plans_json, mobile_runtime_host_scaffold,
+    mobile_runtime_device_smoke_plans_json, mobile_runtime_device_smoke_trace_template,
+    mobile_runtime_device_smoke_trace_template_json, mobile_runtime_device_smoke_trace_templates,
+    mobile_runtime_device_smoke_trace_templates_json, mobile_runtime_host_scaffold,
     mobile_runtime_host_scaffold_json, mobile_runtime_host_scaffold_module_paths,
     mobile_runtime_host_scaffolds, mobile_runtime_host_scaffolds_json,
     mobile_runtime_required_bridge_callback_kind_names,
@@ -169,7 +171,8 @@ pub use mobile_host::{
     MobileRuntimeBridgeDispatchStep, MobileRuntimeBridgeEntryPoint,
     MobileRuntimeBridgeParityReport, MobileRuntimeCapabilityBinding,
     MobileRuntimeDeviceSmokeArtifact, MobileRuntimeDeviceSmokeArtifactStatus,
-    MobileRuntimeDeviceSmokePlan, MobileRuntimeDeviceSmokeReviewReport, MobileRuntimeHostScaffold,
+    MobileRuntimeDeviceSmokePlan, MobileRuntimeDeviceSmokeReviewReport,
+    MobileRuntimeDeviceSmokeTrace, MobileRuntimeDeviceSmokeTraceKind, MobileRuntimeHostScaffold,
     MobileRuntimeLifecycleBinding, MobileRuntimePermission,
 };
 pub use native::{

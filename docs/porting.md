@@ -24,15 +24,19 @@ operations before adding real FFI glue. Use
 contract smoke that replays the declared callback sequence. Use
 `write_mobile_runtime_bridge_contract_artifacts(platform)` or
 `examples/mobile_scaffold_manifest.rs --write-contract <platform>` to write
-local contract artifacts without generating device proof. Use
+local contract artifacts, device-smoke plan and agent context without
+generating device proof. Use
 `review_mobile_runtime_bridge_contract_artifacts(platform)` or
 `examples/mobile_scaffold_manifest.rs --review-contract <platform>` to validate
-those local contract artifacts separately from device-smoke proof. The
-write/review contract APIs also have `*_for_all` variants, and the CLI accepts
-`all` for both Android and Harmony. Use
+those local contract artifacts and expected JSON schemas separately from
+device-smoke proof. The write/review contract APIs also have `*_for_all`
+variants, and the CLI accepts `all` for both Android and Harmony. Use
 `examples/mobile_scaffold_manifest.rs --smoke <platform>` for the device
-artifact plan and `--review <platform>` for read-only validation of captured
-mobile artifacts.
+artifact plan, `--trace-template <platform>` for lifecycle/surface/input trace
+templates and `--review <platform>` for read-only validation of captured mobile
+artifacts. Device review requires device-sourced JSON schemas for lifecycle,
+surface and input traces, so local contract JSON is not enough for a
+device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
 `windows-gdi`, `windows-win32`, `android` and `harmony` are platform/backend

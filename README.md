@@ -175,14 +175,18 @@ assert!(report.is_valid());
   required bridge sequence without faking device proof
 - Android/Harmony contract artifact writing through
   `write_mobile_runtime_bridge_contract_artifacts()` without generating device
-  launch, screenshot, lifecycle, surface or input proof
+  launch, screenshot, lifecycle, surface or input proof; the local bundle also
+  includes `device-smoke-plan.json` and `agent-context.json` for AI handoff
 - Android/Harmony contract artifact review through
   `review_mobile_runtime_bridge_contract_artifacts()` so local bridge artifacts
-  can be validated separately from device smoke; the `for_all` variants and
-  CLI `all` target cover both Android and Harmony in one run
+  and expected JSON schemas can be validated separately from device smoke; the
+  `for_all` variants and CLI `all` target cover both Android and Harmony in one
+  run
 - Android/Harmony device-smoke plans and read-only artifact review through
   `mobile_runtime_device_smoke_plan()` and
-  `review_mobile_runtime_device_smoke_artifacts()`
+  `mobile_runtime_device_smoke_trace_templates()` plus
+  `review_mobile_runtime_device_smoke_artifacts()` with schema checks for
+  device-sourced lifecycle, surface and input traces
 - shared geometry, command, event, lifecycle, layout, component, render, host
   surface and native control protocols
 - Rust-first typed view builders and contexts through `View<Msg>`, `WidgetId`,
@@ -274,9 +278,11 @@ it falls back to in-memory clipboard storage.
   and Harmony Ability host scaffolds, bridge contracts with `--bridge`, parity
   reports with `--parity`, dispatch reports with `--dispatch`, contract
   dispatch smoke with `--dispatch-smoke`, local contract artifact writing with
-  `--write-contract`, local contract artifact review with `--review-contract`,
-  device smoke plans with `--smoke` and artifact review with `--review`; the
-  write/review contract commands also accept `all`.
+  `--write-contract` including device-smoke plans and agent context, local
+  contract artifact review with `--review-contract`, device smoke plans with
+  `--smoke`, device trace templates with `--trace-template` and artifact
+  review with `--review`; the write/review contract commands also accept
+  `all`.
 - `examples/product_adapter.rs`: product adapter plus reusable runtime harness
   wiring without ZSClip product code.
 - `examples/product_adapter_smoke.rs`: machine-readable runtime harness smoke

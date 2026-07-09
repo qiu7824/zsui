@@ -125,6 +125,7 @@ cargo run --example mobile_scaffold_manifest -- --review-contract android
 cargo run --example mobile_scaffold_manifest -- --write-contract all target/mobile-contract-smoke
 cargo run --example mobile_scaffold_manifest -- --review-contract all target/mobile-contract-smoke
 cargo run --example mobile_scaffold_manifest -- --smoke android
+cargo run --example mobile_scaffold_manifest -- --trace-template android
 cargo run --example mobile_scaffold_manifest -- --review android
 ```
 
@@ -135,12 +136,16 @@ parity command reports required callback route coverage and pending FFI symbols.
 The dispatch command maps the required callback symbols to lifecycle, surface,
 typed input and `NativeRuntimeDriver` operations. The dispatch-smoke command
 locally replays the required bridge sequence as a contract smoke only. The
-write-contract command writes local contract JSON artifacts, but intentionally
-does not create device launch logs, screenshots, lifecycle, surface or input
-traces. The review-contract command validates only those local contract JSON
-artifacts. Both contract artifact commands accept `all` to cover Android and
-Harmony. The review command validates device-smoke artifact presence, JSON files
-and PNG headers. None of these commands generates or fakes device proof.
+write-contract command writes local contract JSON artifacts, including
+`device-smoke-plan.json` and `agent-context.json`, but intentionally does not
+create device launch logs, screenshots, lifecycle, surface or input traces. The
+review-contract command validates only those local contract JSON artifacts and
+their expected schemas. Both contract artifact commands accept `all` to cover
+Android and Harmony. The review command validates device-smoke artifact
+presence, JSON files, PNG headers and device-sourced trace schemas. The
+trace-template command prints the lifecycle/surface/input JSON shape the
+device-side bridge must write. None of these commands generates or fakes device
+proof.
 
 Current Windows proof command sequence:
 

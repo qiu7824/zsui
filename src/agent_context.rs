@@ -7,9 +7,10 @@ use crate::feature_manifest::{
 use crate::framework_goals::zsui_rust_first_goal_names;
 use crate::geometry::SHARED_NON_HOST_UI_PROTOCOLS;
 use crate::mobile_host::{
-    mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract_module_paths,
-    mobile_runtime_device_smoke_artifact_names, mobile_runtime_device_smoke_command_names,
-    mobile_runtime_host_scaffold_module_paths,
+    mobile_runtime_bridge_callback_symbol_names,
+    mobile_runtime_bridge_contract_artifact_file_names,
+    mobile_runtime_bridge_contract_module_paths, mobile_runtime_device_smoke_artifact_names,
+    mobile_runtime_device_smoke_command_names, mobile_runtime_host_scaffold_module_paths,
 };
 use crate::native_adapter_manifest::{
     native_ui_backend_capability_matrix, native_ui_backend_capability_matrix_for_platform,
@@ -116,6 +117,7 @@ pub struct ZsuiReuseReadinessReport {
     pub mobile_runtime_host_scaffold_module_paths: Vec<&'static str>,
     pub mobile_runtime_bridge_contract_module_paths: Vec<&'static str>,
     pub mobile_runtime_bridge_callback_symbol_names: Vec<&'static str>,
+    pub mobile_runtime_bridge_contract_artifact_file_names: Vec<&'static str>,
     pub mobile_runtime_device_smoke_artifact_names: Vec<&'static str>,
     pub mobile_runtime_device_smoke_command_names: Vec<&'static str>,
     pub agent_skill_path: &'static str,
@@ -402,8 +404,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "android_and_harmony",
-            percent_complete: 27,
-            status_name: "mobile_bridge_contract_artifact_all_platform_review_ready",
+            percent_complete: 32,
+            status_name: "mobile_device_smoke_trace_template_ready",
             source_path: "src/mobile_host.rs",
             missing_before_complete: vec![
                 "Android Activity FFI implementation",
@@ -508,6 +510,8 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
         mobile_runtime_host_scaffold_module_paths: mobile_runtime_host_scaffold_module_paths(),
         mobile_runtime_bridge_contract_module_paths: mobile_runtime_bridge_contract_module_paths(),
         mobile_runtime_bridge_callback_symbol_names: mobile_runtime_bridge_callback_symbol_names(),
+        mobile_runtime_bridge_contract_artifact_file_names:
+            mobile_runtime_bridge_contract_artifact_file_names(),
         mobile_runtime_device_smoke_artifact_names: mobile_runtime_device_smoke_artifact_names(),
         mobile_runtime_device_smoke_command_names: mobile_runtime_device_smoke_command_names(),
         agent_skill_path: "docs/skills/zsui-native-ui/",
@@ -942,6 +946,14 @@ mod tests {
             .contains(&"zsui_harmony_ability_lifecycle"));
         assert!(context
             .readiness
+            .mobile_runtime_bridge_contract_artifact_file_names
+            .contains(&"device-smoke-plan.json"));
+        assert!(context
+            .readiness
+            .mobile_runtime_bridge_contract_artifact_file_names
+            .contains(&"agent-context.json"));
+        assert!(context
+            .readiness
             .mobile_runtime_device_smoke_artifact_names
             .contains(&"device-window.png"));
         assert!(context
@@ -964,6 +976,10 @@ mod tests {
             .readiness
             .mobile_runtime_device_smoke_command_names
             .contains(&"mobile_scaffold_manifest --review-contract"));
+        assert!(context
+            .readiness
+            .mobile_runtime_device_smoke_command_names
+            .contains(&"mobile_scaffold_manifest --trace-template"));
         assert!(context
             .readiness
             .mobile_runtime_device_smoke_command_names
@@ -1038,12 +1054,15 @@ mod tests {
         assert!(json.contains("android_activity"));
         assert!(json.contains("harmony_ability"));
         assert!(json.contains("zsui_harmony_ability_surface_created"));
+        assert!(json.contains("device-smoke-plan.json"));
+        assert!(json.contains("agent-context.json"));
         assert!(json.contains("device-window.png"));
         assert!(json.contains("mobile_scaffold_manifest --parity"));
         assert!(json.contains("mobile_scaffold_manifest --dispatch"));
         assert!(json.contains("mobile_scaffold_manifest --dispatch-smoke"));
         assert!(json.contains("mobile_scaffold_manifest --write-contract"));
         assert!(json.contains("mobile_scaffold_manifest --review-contract"));
+        assert!(json.contains("mobile_scaffold_manifest --trace-template"));
         assert!(json.contains("mobile_scaffold_manifest --review"));
         assert!(json.contains("src/harmony_ability_host.rs"));
     }

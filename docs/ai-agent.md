@@ -6,7 +6,7 @@ where agents should edit first.
 
 ## Current Completion
 
-ZSUI is about 84% complete as a standalone UI framework.
+ZSUI is about 85% complete as a standalone UI framework.
 
 - Foundation contracts: about 74% complete.
 - Declaration API: about 76% complete.
@@ -14,7 +14,7 @@ ZSUI is about 84% complete as a standalone UI framework.
 - Feature-pruned architecture: about 39% complete.
 - Rust-first API model: about 72% complete.
 - Full desktop native hosts: about 58% complete.
-- Android and Harmony: about 27% complete.
+- Android and Harmony: about 32% complete.
 - Product adapter/runtime harness: about 62% complete.
 - Native smoke verification: about 73% complete.
 
@@ -100,19 +100,26 @@ declared callback sequence and verifies required dispatch-operation coverage
 without pretending a device or FFI runtime exists.
 `write_mobile_runtime_bridge_contract_artifacts(platform)` and
 `examples/mobile_scaffold_manifest.rs --write-contract <platform>` write the
-local contract artifacts (`manifest.json`, bridge contract, parity, dispatch
-and dispatch-smoke reports) while deliberately leaving real device artifacts
-such as launch logs, screenshots and lifecycle traces missing.
+local contract artifacts (`manifest.json`, bridge contract, parity, dispatch,
+dispatch-smoke, `device-smoke-plan.json` and `agent-context.json`) while
+deliberately leaving real device artifacts such as launch logs, screenshots
+and lifecycle traces missing.
 `review_mobile_runtime_bridge_contract_artifacts(platform)` and
 `examples/mobile_scaffold_manifest.rs --review-contract <platform>` validate
-those local contract artifacts separately from real device smoke. Both
+those local contract artifacts and their expected JSON schema separately from
+real device smoke. Both
 `--write-contract all <root>` and `--review-contract all <root>` cover Android
 and Harmony in one command. It has
 device-smoke plans and read-only artifact review through
 `mobile_runtime_device_smoke_plan(platform)`,
+`mobile_runtime_device_smoke_trace_templates(platform)`,
 `review_mobile_runtime_device_smoke_artifacts(platform)` and
-`examples/mobile_scaffold_manifest.rs --review <platform>`. These are still
-contracts and verifiers, not native FFI implementations or device proof.
+`examples/mobile_scaffold_manifest.rs --trace-template <platform>` /
+`--review <platform>`. Device review now requires expected JSON schemas for
+manifest, lifecycle, surface and input traces so contract-only JSON cannot pass
+as real device proof, and the trace-template command gives mobile bridge code a
+machine-readable shape to write. These are still contracts and verifiers, not
+native FFI implementations or device proof.
 The Cargo feature boundary is now explicit in `Cargo.toml` and
 `src/feature_manifest.rs`: defaults are `window`, `button` and `label`;
 `clipboard`, `image`, `desktop-winit` and `windows-gdi` are optional dependency
@@ -313,18 +320,24 @@ stable context without reading prose:
 - `mobile_runtime_bridge_contract_smoke_reports_json()`: JSON form of both
   mobile contract dispatch smoke reports for AI/tool handoff.
 - `write_mobile_runtime_bridge_contract_artifacts(platform)`: writes local
-  Android/Harmony bridge contract artifacts without generating device launch,
-  screenshot, lifecycle, surface or input proof.
+  Android/Harmony bridge contract artifacts, the device-smoke plan and the
+  current ZSUI agent context without generating device launch, screenshot,
+  lifecycle, surface or input proof.
 - `review_mobile_runtime_bridge_contract_artifacts(platform)`: validates local
-  Android/Harmony bridge contract artifacts without claiming device proof.
+  Android/Harmony bridge contract artifacts and expected JSON schema without
+  claiming device proof.
 - `write_mobile_runtime_bridge_contract_artifacts_for_all()` and
   `review_mobile_runtime_bridge_contract_artifacts_for_all()`: write/review
   both Android and Harmony local contract artifacts in one call.
 - `mobile_runtime_device_smoke_plan(platform)`: required Android/Harmony device
   artifact plan without faking target proof.
+- `mobile_runtime_device_smoke_trace_templates(platform)`: lifecycle, surface,
+  input and optional clipboard/pasteboard trace JSON templates expected by
+  mobile device-smoke review.
 - `review_mobile_runtime_device_smoke_artifacts(platform)`: read-only verifier
   for mobile `manifest.json`, launch log, screenshot, lifecycle, surface and
-  input artifacts.
+  input artifacts, including schema checks that require device-sourced trace
+  JSON.
 - `product_adapter_reuse_checklist()`: surfaces, tasks and AI executor
   boundaries a product must provide.
 - `zsui_reusable_runtime_harness_stage_names()`: reusable startup, command,

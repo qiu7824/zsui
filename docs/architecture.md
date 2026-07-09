@@ -73,16 +73,21 @@ replay that dispatch sequence as contract smoke while still reporting that FFI
 and device proof are pending.
 `write_mobile_runtime_bridge_contract_artifacts(platform)` and
 `examples/mobile_scaffold_manifest.rs --write-contract <platform>` write the
-local contract JSON artifacts without fabricating launch logs, screenshots,
-lifecycle traces, surface traces or input traces.
+local contract JSON artifacts, including `device-smoke-plan.json` and
+`agent-context.json`, without fabricating launch logs, screenshots, lifecycle
+traces, surface traces or input traces.
 `review_mobile_runtime_bridge_contract_artifacts(platform)` and
 `examples/mobile_scaffold_manifest.rs --review-contract <platform>` validate
-those local contract artifacts without treating them as device proof. The
-`*_for_all` helpers and CLI `all` target can write/review Android and Harmony
-contract artifacts together.
+those local contract artifacts and expected JSON schemas without treating them
+as device proof. The `*_for_all` helpers and CLI `all` target can write/review
+Android and Harmony contract artifacts together.
 `mobile_runtime_device_smoke_plan(platform)` and
 `review_mobile_runtime_device_smoke_artifacts(platform)` provide the current
-read-only verification contract for those required device artifacts.
+read-only verification contract for those required device artifacts, including
+device-sourced JSON schema checks for lifecycle, surface and input traces.
+`mobile_runtime_device_smoke_trace_templates(platform)` and
+`examples/mobile_scaffold_manifest.rs --trace-template <platform>` expose the
+same trace shapes for the future Activity/Ability bridge implementation.
 The same desktop builder can now accept a typed view with
 `native_window("Example").view(view).run()?`. That first lays out and paints
 `ViewNode<Msg>` into `NativeDrawPlan`; on the direct Windows host the plan is

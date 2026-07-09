@@ -59,13 +59,19 @@ platform host into a copy of a product application.
    operations. Use `mobile_runtime_bridge_contract_smoke_report(platform)` for
    local contract dispatch smoke before claiming device proof. Use
    `write_mobile_runtime_bridge_contract_artifacts(platform)` to record local
-   contract artifacts without fabricating device evidence. Use
+   contract artifacts, device-smoke plan and agent context without fabricating
+   device evidence. Use
    `review_mobile_runtime_bridge_contract_artifacts(platform)` to validate
-   local contract artifacts separately from device proof. Use the `*_for_all`
-   variants or CLI `all` target when updating Android and Harmony together. Use
+   local contract artifacts and expected JSON schemas separately from device
+   proof. Use the `*_for_all` variants or CLI `all` target when updating
+   Android and Harmony together. Use
    `mobile_runtime_device_smoke_plan(platform)` and
    `review_mobile_runtime_device_smoke_artifacts(platform)` when changing
-   mobile device proof requirements.
+   mobile device proof requirements; device trace JSON must satisfy the
+   device-sourced lifecycle, surface and input schemas. Use
+   `mobile_runtime_device_smoke_trace_templates(platform)` or
+   `mobile_scaffold_manifest --trace-template` to inspect the exact trace shape
+   expected from a future Activity/Ability bridge.
 4. Edit platform code only for native presentation or OS service calls.
 5. Route behavior through public contracts such as `ZsuiHost`,
    `NativeRuntimeDriver`, `NativeMainWindowHost`, `NativeDialogHost`,

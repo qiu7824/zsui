@@ -148,6 +148,61 @@ impl MobileRuntimeDeviceSmokeArtifact {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MobileRuntimeDeviceSmokeTraceKind {
+    Lifecycle,
+    Surface,
+    Input,
+    Clipboard,
+    Pasteboard,
+}
+
+impl MobileRuntimeDeviceSmokeTraceKind {
+    pub const fn trace_kind_name(self) -> &'static str {
+        match self {
+            Self::Lifecycle => "lifecycle",
+            Self::Surface => "surface",
+            Self::Input => "input",
+            Self::Clipboard => "clipboard",
+            Self::Pasteboard => "pasteboard",
+        }
+    }
+
+    pub const fn artifact_name(self) -> &'static str {
+        match self {
+            Self::Lifecycle => "lifecycle_trace",
+            Self::Surface => "surface_trace",
+            Self::Input => "input_trace",
+            Self::Clipboard => "clipboard_trace",
+            Self::Pasteboard => "pasteboard_trace",
+        }
+    }
+
+    pub const fn file_name(self) -> &'static str {
+        match self {
+            Self::Lifecycle => "lifecycle.json",
+            Self::Surface => "surface.json",
+            Self::Input => "input.json",
+            Self::Clipboard => "clipboard.json",
+            Self::Pasteboard => "pasteboard.json",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MobileRuntimeDeviceSmokeTrace {
+    pub artifact_source: &'static str,
+    pub platform: NativeUiPlatform,
+    pub platform_name: &'static str,
+    pub trace_kind: MobileRuntimeDeviceSmokeTraceKind,
+    pub trace_kind_name: &'static str,
+    pub artifact_name: &'static str,
+    pub file_name: &'static str,
+    pub required_for_device_smoke: bool,
+    pub events: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MobileRuntimeBridgeContract {
     pub platform: NativeUiPlatform,
@@ -220,6 +275,7 @@ pub struct MobileRuntimeDeviceSmokeArtifactStatus {
     pub byte_len: Option<u64>,
     pub non_empty: bool,
     pub json_valid: Option<bool>,
+    pub schema_valid: Option<bool>,
     pub png_valid: Option<bool>,
     pub validation_error: Option<String>,
 }
@@ -231,6 +287,10 @@ impl MobileRuntimeDeviceSmokeArtifactStatus {
             && self
                 .json_valid
                 .map(|json_valid| json_valid && self.validation_error.is_none())
+                .unwrap_or_else(|| self.validation_error.is_none())
+            && self
+                .schema_valid
+                .map(|schema_valid| schema_valid && self.validation_error.is_none())
                 .unwrap_or_else(|| self.validation_error.is_none())
             && self
                 .png_valid
@@ -394,6 +454,7 @@ pub struct MobileRuntimeBridgeContractArtifactStatus {
     pub byte_len: Option<u64>,
     pub non_empty: bool,
     pub json_valid: Option<bool>,
+    pub schema_valid: Option<bool>,
     pub validation_error: Option<String>,
 }
 
@@ -404,6 +465,10 @@ impl MobileRuntimeBridgeContractArtifactStatus {
             && self
                 .json_valid
                 .map(|json_valid| json_valid && self.validation_error.is_none())
+                .unwrap_or_else(|| self.validation_error.is_none())
+            && self
+                .schema_valid
+                .map(|schema_valid| schema_valid && self.validation_error.is_none())
                 .unwrap_or_else(|| self.validation_error.is_none())
     }
 }
@@ -574,6 +639,7 @@ pub fn mobile_runtime_device_smoke_command_names() -> Vec<&'static str> {
         "mobile_scaffold_manifest --write-contract",
         "mobile_scaffold_manifest --review-contract",
         "mobile_scaffold_manifest --smoke",
+        "mobile_scaffold_manifest --trace-template",
         "mobile_scaffold_manifest --review",
     ]
 }
@@ -959,6 +1025,18 @@ pub fn mobile_runtime_bridge_contract_artifact_requirements(
             true,
             "local contract dispatch smoke report",
         ),
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "device_smoke_plan",
+            "device-smoke-plan.json",
+            true,
+            "device-smoke artifact plan for the mobile bridge",
+        ),
+        MobileRuntimeBridgeContractArtifactRequirement::new(
+            "agent_context",
+            "agent-context.json",
+            true,
+            "serialized ZSUI agent context captured with the mobile contract bundle",
+        ),
     ]
 }
 
@@ -1050,6 +1128,7 @@ pub fn write_mobile_runtime_bridge_contract_artifacts_to(
                 ),
             )
         })?;
+    let agent_context = crate::agent_context::zsui_agent_context();
 
     let artifact_dir = PathBuf::from(&plan.artifact_dir);
     fs::create_dir_all(&artifact_dir)
@@ -1086,6 +1165,18 @@ pub fn write_mobile_runtime_bridge_contract_artifacts_to(
         &dispatch_smoke,
         &mut written_files,
     )?;
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "device-smoke-plan.json",
+        &plan,
+        &mut written_files,
+    )?;
+    write_mobile_json_artifact(
+        &artifact_dir,
+        "agent-context.json",
+        &agent_context,
+        &mut written_files,
+    )?;
 
     let missing_required_device_artifacts: Vec<String> = plan
         .artifact_requirements
@@ -1099,7 +1190,8 @@ pub fn write_mobile_runtime_bridge_contract_artifacts_to(
         platform,
         platform_name: plan.platform_name,
         artifact_dir: plan.artifact_dir,
-        contract_artifacts_complete: written_files.len() == 5,
+        contract_artifacts_complete: written_files.len()
+            == mobile_runtime_bridge_contract_artifact_requirements().len(),
         device_smoke_complete: missing_required_device_artifacts.is_empty(),
         written_files,
         missing_required_device_artifacts,
@@ -1144,7 +1236,9 @@ pub fn review_mobile_runtime_bridge_contract_artifacts_at(
     let artifact_dir = PathBuf::from(&plan.artifact_dir);
     let artifact_statuses: Vec<_> = mobile_runtime_bridge_contract_artifact_requirements()
         .iter()
-        .map(|requirement| review_mobile_contract_artifact(&artifact_dir, requirement))
+        .map(|requirement| {
+            review_mobile_contract_artifact(&artifact_dir, requirement, plan.platform_name)
+        })
         .collect();
     let required_artifact_count = artifact_statuses
         .iter()
@@ -1260,6 +1354,69 @@ pub fn mobile_runtime_device_smoke_plans_json() -> Result<String, serde_json::Er
     serde_json::to_string_pretty(&mobile_runtime_device_smoke_plans())
 }
 
+pub fn mobile_runtime_device_smoke_trace_template(
+    platform: NativeUiPlatform,
+    trace_kind: MobileRuntimeDeviceSmokeTraceKind,
+) -> Option<MobileRuntimeDeviceSmokeTrace> {
+    let plan = mobile_runtime_device_smoke_plan(platform)?;
+    plan.artifact_requirements
+        .into_iter()
+        .find(|artifact| artifact.artifact_name == trace_kind.artifact_name())
+        .map(|artifact| MobileRuntimeDeviceSmokeTrace {
+            artifact_source: "device_smoke",
+            platform,
+            platform_name: plan.platform_name,
+            trace_kind,
+            trace_kind_name: trace_kind.trace_kind_name(),
+            artifact_name: artifact.artifact_name,
+            file_name: artifact.file_name,
+            required_for_device_smoke: artifact.required_for_device_smoke,
+            events: mobile_runtime_device_smoke_trace_example_events(platform, trace_kind),
+        })
+}
+
+pub fn mobile_runtime_device_smoke_trace_templates(
+    platform: NativeUiPlatform,
+) -> Option<Vec<MobileRuntimeDeviceSmokeTrace>> {
+    let plan = mobile_runtime_device_smoke_plan(platform)?;
+    Some(
+        plan.artifact_requirements
+            .into_iter()
+            .filter_map(|artifact| {
+                let trace_kind = mobile_runtime_device_smoke_trace_kind_for_artifact_name(
+                    artifact.artifact_name,
+                )?;
+                Some(MobileRuntimeDeviceSmokeTrace {
+                    artifact_source: "device_smoke",
+                    platform,
+                    platform_name: plan.platform_name,
+                    trace_kind,
+                    trace_kind_name: trace_kind.trace_kind_name(),
+                    artifact_name: artifact.artifact_name,
+                    file_name: artifact.file_name,
+                    required_for_device_smoke: artifact.required_for_device_smoke,
+                    events: mobile_runtime_device_smoke_trace_example_events(platform, trace_kind),
+                })
+            })
+            .collect(),
+    )
+}
+
+pub fn mobile_runtime_device_smoke_trace_templates_json(
+    platform: NativeUiPlatform,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_device_smoke_trace_templates(platform))
+}
+
+pub fn mobile_runtime_device_smoke_trace_template_json(
+    platform: NativeUiPlatform,
+    trace_kind: MobileRuntimeDeviceSmokeTraceKind,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&mobile_runtime_device_smoke_trace_template(
+        platform, trace_kind,
+    ))
+}
+
 pub fn review_mobile_runtime_device_smoke_artifacts(
     platform: NativeUiPlatform,
 ) -> ZsuiResult<MobileRuntimeDeviceSmokeReviewReport> {
@@ -1284,7 +1441,9 @@ pub fn review_mobile_runtime_device_smoke_artifacts_at(
     let artifact_statuses: Vec<_> = plan
         .artifact_requirements
         .iter()
-        .map(|requirement| review_mobile_smoke_artifact(&artifact_dir, requirement))
+        .map(|requirement| {
+            review_mobile_smoke_artifact(&artifact_dir, requirement, plan.platform_name)
+        })
         .collect();
     let required_artifact_count = artifact_statuses
         .iter()
@@ -1471,6 +1630,7 @@ fn write_mobile_json_artifact<T: Serialize>(
 fn review_mobile_contract_artifact(
     artifact_dir: &Path,
     requirement: &MobileRuntimeBridgeContractArtifactRequirement,
+    expected_platform_name: &str,
 ) -> MobileRuntimeBridgeContractArtifactStatus {
     let path = artifact_dir.join(requirement.file_name);
     let path_string = path_to_mobile_manifest_string(&path);
@@ -1479,6 +1639,7 @@ fn review_mobile_contract_artifact(
     let byte_len = metadata.ok().map(|metadata| metadata.len());
     let non_empty = byte_len.map(|len| len > 0).unwrap_or(false);
     let mut json_valid = None;
+    let mut schema_valid = None;
     let mut validation_error = None;
 
     if exists && !non_empty {
@@ -1488,14 +1649,29 @@ fn review_mobile_contract_artifact(
     if exists && requirement.file_name.ends_with(".json") {
         match fs::read_to_string(&path) {
             Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
-                Ok(_) => json_valid = Some(true),
+                Ok(value) => {
+                    json_valid = Some(true);
+                    match validate_mobile_contract_artifact_schema(
+                        requirement,
+                        expected_platform_name,
+                        &value,
+                    ) {
+                        Ok(()) => schema_valid = Some(true),
+                        Err(err) => {
+                            schema_valid = Some(false);
+                            validation_error = Some(format!("schema mismatch: {err}"));
+                        }
+                    }
+                }
                 Err(err) => {
                     json_valid = Some(false);
+                    schema_valid = Some(false);
                     validation_error = Some(format!("invalid json: {err}"));
                 }
             },
             Err(err) => {
                 json_valid = Some(false);
+                schema_valid = Some(false);
                 validation_error = Some(format!("read failed: {err}"));
             }
         }
@@ -1510,7 +1686,227 @@ fn review_mobile_contract_artifact(
         byte_len,
         non_empty,
         json_valid,
+        schema_valid,
         validation_error,
+    }
+}
+
+fn validate_mobile_contract_artifact_schema(
+    requirement: &MobileRuntimeBridgeContractArtifactRequirement,
+    expected_platform_name: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    match requirement.artifact_name {
+        "mobile_manifest" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_object(value, "bridge_contract")?;
+            require_json_array_non_empty(value, "bridge_entry_points")?;
+        }
+        "bridge_contract" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_array_non_empty(value, "callbacks")?;
+            require_json_array_contains_all_kind_names(
+                value,
+                "callbacks",
+                &mobile_runtime_required_bridge_callback_kind_names(),
+            )?;
+        }
+        "bridge_parity" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_bool(value, "scaffold_matches_contract", true)?;
+            require_json_bool(value, "contract_covers_required_runtime_routes", true)?;
+            require_json_array_non_empty(value, "required_callback_symbol_names")?;
+            require_json_array(value, "pending_ffi_callback_symbol_names")?;
+        }
+        "bridge_dispatch" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_bool(value, "dispatch_contract_ready", true)?;
+            require_json_array_contains_all_strings(
+                value,
+                "dispatch_operation_names",
+                &mobile_runtime_required_bridge_dispatch_operation_names(),
+            )?;
+        }
+        "dispatch_smoke" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_string(value, "smoke_kind_name", "contract_dispatch_smoke")?;
+            require_json_bool(value, "contract_smoke_complete", true)?;
+            require_json_array_contains_all_strings(
+                value,
+                "observed_dispatch_operation_names",
+                &mobile_runtime_required_bridge_dispatch_operation_names(),
+            )?;
+        }
+        "device_smoke_plan" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_bool_field(value, "device_smoke_ready")?;
+            require_json_array_non_empty(value, "artifact_requirements")?;
+            require_json_array_contains_file_name(
+                value,
+                "artifact_requirements",
+                "device-window.png",
+            )?;
+        }
+        "agent_context" => {
+            require_json_string(
+                value,
+                "framework_name",
+                crate::agent_context::ZSUI_FRAMEWORK_NAME,
+            )?;
+            let readiness = value
+                .get("readiness")
+                .ok_or_else(|| "missing `readiness` object".to_string())?;
+            require_json_array_contains_all_strings(
+                readiness,
+                "mobile_runtime_bridge_contract_artifact_file_names",
+                &["device-smoke-plan.json", "agent-context.json"],
+            )?;
+        }
+        artifact_name => {
+            return Err(format!("unknown contract artifact `{artifact_name}`"));
+        }
+    }
+    Ok(())
+}
+
+fn require_json_string(
+    value: &serde_json::Value,
+    field_name: &str,
+    expected: &str,
+) -> Result<(), String> {
+    match value.get(field_name).and_then(serde_json::Value::as_str) {
+        Some(actual) if actual == expected => Ok(()),
+        Some(actual) => Err(format!(
+            "`{field_name}` is `{actual}`, expected `{expected}`"
+        )),
+        None => Err(format!("missing string field `{field_name}`")),
+    }
+}
+
+fn require_json_bool(
+    value: &serde_json::Value,
+    field_name: &str,
+    expected: bool,
+) -> Result<(), String> {
+    match value.get(field_name).and_then(serde_json::Value::as_bool) {
+        Some(actual) if actual == expected => Ok(()),
+        Some(actual) => Err(format!(
+            "`{field_name}` is `{actual}`, expected `{expected}`"
+        )),
+        None => Err(format!("missing bool field `{field_name}`")),
+    }
+}
+
+fn require_json_bool_field(value: &serde_json::Value, field_name: &str) -> Result<(), String> {
+    value
+        .get(field_name)
+        .and_then(serde_json::Value::as_bool)
+        .map(|_| ())
+        .ok_or_else(|| format!("missing bool field `{field_name}`"))
+}
+
+fn require_json_object(value: &serde_json::Value, field_name: &str) -> Result<(), String> {
+    value
+        .get(field_name)
+        .and_then(serde_json::Value::as_object)
+        .map(|_| ())
+        .ok_or_else(|| format!("missing object field `{field_name}`"))
+}
+
+fn require_json_array(value: &serde_json::Value, field_name: &str) -> Result<(), String> {
+    value
+        .get(field_name)
+        .and_then(serde_json::Value::as_array)
+        .map(|_| ())
+        .ok_or_else(|| format!("missing array field `{field_name}`"))
+}
+
+fn require_json_array_non_empty(value: &serde_json::Value, field_name: &str) -> Result<(), String> {
+    let array = value
+        .get(field_name)
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("missing array field `{field_name}`"))?;
+    if array.is_empty() {
+        return Err(format!("array field `{field_name}` is empty"));
+    }
+    Ok(())
+}
+
+fn require_json_array_contains_all_strings(
+    value: &serde_json::Value,
+    field_name: &str,
+    expected_values: &[&str],
+) -> Result<(), String> {
+    let array = value
+        .get(field_name)
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("missing array field `{field_name}`"))?;
+    let actual_values = array
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+    let missing_values = expected_values
+        .iter()
+        .filter(|expected| !actual_values.contains(expected))
+        .copied()
+        .collect::<Vec<_>>();
+    if missing_values.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{field_name}` is missing values: {}",
+            missing_values.join(", ")
+        ))
+    }
+}
+
+fn require_json_array_contains_all_kind_names(
+    value: &serde_json::Value,
+    field_name: &str,
+    expected_kind_names: &[&str],
+) -> Result<(), String> {
+    let array = value
+        .get(field_name)
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("missing array field `{field_name}`"))?;
+    let actual_kind_names = array
+        .iter()
+        .filter_map(|entry| entry.get("kind_name"))
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+    let missing_kind_names = expected_kind_names
+        .iter()
+        .filter(|expected| !actual_kind_names.contains(expected))
+        .copied()
+        .collect::<Vec<_>>();
+    if missing_kind_names.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{field_name}` is missing kind names: {}",
+            missing_kind_names.join(", ")
+        ))
+    }
+}
+
+fn require_json_array_contains_file_name(
+    value: &serde_json::Value,
+    field_name: &str,
+    expected_file_name: &str,
+) -> Result<(), String> {
+    let array = value
+        .get(field_name)
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("missing array field `{field_name}`"))?;
+    let contains_file_name = array.iter().any(|entry| {
+        entry.get("file_name").and_then(serde_json::Value::as_str) == Some(expected_file_name)
+    });
+    if contains_file_name {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{field_name}` is missing file `{expected_file_name}`"
+        ))
     }
 }
 
@@ -1547,9 +1943,113 @@ fn missing_required_callback_kind_names(
         .collect()
 }
 
+fn mobile_runtime_device_smoke_trace_kind_for_artifact_name(
+    artifact_name: &str,
+) -> Option<MobileRuntimeDeviceSmokeTraceKind> {
+    match artifact_name {
+        "lifecycle_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Lifecycle),
+        "surface_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Surface),
+        "input_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Input),
+        "clipboard_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Clipboard),
+        "pasteboard_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Pasteboard),
+        _ => None,
+    }
+}
+
+fn mobile_runtime_device_smoke_trace_example_events(
+    platform: NativeUiPlatform,
+    trace_kind: MobileRuntimeDeviceSmokeTraceKind,
+) -> Vec<&'static str> {
+    match (platform, trace_kind) {
+        (NativeUiPlatform::Android, MobileRuntimeDeviceSmokeTraceKind::Lifecycle) => {
+            vec![
+                "onCreate",
+                "onStart",
+                "onResume",
+                "onPause",
+                "onStop",
+                "onDestroy",
+            ]
+        }
+        (NativeUiPlatform::Harmony, MobileRuntimeDeviceSmokeTraceKind::Lifecycle) => vec![
+            "onCreate",
+            "onWindowStageCreate",
+            "onForeground",
+            "onBackground",
+            "onWindowStageDestroy",
+            "onDestroy",
+        ],
+        (NativeUiPlatform::Android, MobileRuntimeDeviceSmokeTraceKind::Surface) => {
+            vec!["surfaceCreated", "surfaceChanged", "surfaceDestroyed"]
+        }
+        (NativeUiPlatform::Harmony, MobileRuntimeDeviceSmokeTraceKind::Surface) => {
+            vec![
+                "onWindowStageCreate",
+                "onAreaChange",
+                "onWindowStageDestroy",
+            ]
+        }
+        (_, MobileRuntimeDeviceSmokeTraceKind::Input) => {
+            vec!["focus", "pointer_down", "pointer_up", "key_input"]
+        }
+        (NativeUiPlatform::Android, MobileRuntimeDeviceSmokeTraceKind::Clipboard) => {
+            vec!["set_primary_clip", "read_primary_clip"]
+        }
+        (NativeUiPlatform::Harmony, MobileRuntimeDeviceSmokeTraceKind::Pasteboard) => {
+            vec!["set_data", "get_data"]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn validate_mobile_device_smoke_artifact_schema(
+    requirement: &MobileRuntimeDeviceSmokeArtifact,
+    expected_platform_name: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    match requirement.artifact_name {
+        "mobile_manifest" => {
+            require_json_string(value, "platform_name", expected_platform_name)?;
+            require_json_object(value, "bridge_contract")?;
+            require_json_array_non_empty(value, "bridge_entry_points")?;
+        }
+        "lifecycle_trace" => {
+            require_mobile_device_trace_schema(value, expected_platform_name, "lifecycle")?;
+        }
+        "surface_trace" => {
+            require_mobile_device_trace_schema(value, expected_platform_name, "surface")?;
+        }
+        "input_trace" => {
+            require_mobile_device_trace_schema(value, expected_platform_name, "input")?;
+        }
+        "clipboard_trace" => {
+            require_mobile_device_trace_schema(value, expected_platform_name, "clipboard")?;
+        }
+        "pasteboard_trace" => {
+            require_mobile_device_trace_schema(value, expected_platform_name, "pasteboard")?;
+        }
+        artifact_name => {
+            return Err(format!("unknown device smoke artifact `{artifact_name}`"));
+        }
+    }
+    Ok(())
+}
+
+fn require_mobile_device_trace_schema(
+    value: &serde_json::Value,
+    expected_platform_name: &str,
+    trace_kind: &str,
+) -> Result<(), String> {
+    require_json_string(value, "artifact_source", "device_smoke")?;
+    require_json_string(value, "platform_name", expected_platform_name)?;
+    require_json_string(value, "trace_kind", trace_kind)?;
+    require_json_array_non_empty(value, "events")
+}
+
 fn review_mobile_smoke_artifact(
     artifact_dir: &Path,
     requirement: &MobileRuntimeDeviceSmokeArtifact,
+    expected_platform_name: &str,
 ) -> MobileRuntimeDeviceSmokeArtifactStatus {
     let path = artifact_dir.join(requirement.file_name);
     let path_string = path_to_mobile_manifest_string(&path);
@@ -1558,6 +2058,7 @@ fn review_mobile_smoke_artifact(
     let byte_len = metadata.ok().map(|metadata| metadata.len());
     let non_empty = byte_len.map(|len| len > 0).unwrap_or(false);
     let mut json_valid = None;
+    let mut schema_valid = None;
     let mut png_valid = None;
     let mut validation_error = None;
 
@@ -1568,14 +2069,29 @@ fn review_mobile_smoke_artifact(
     if exists && requirement.file_name.ends_with(".json") {
         match fs::read_to_string(&path) {
             Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
-                Ok(_) => json_valid = Some(true),
+                Ok(value) => {
+                    json_valid = Some(true);
+                    match validate_mobile_device_smoke_artifact_schema(
+                        requirement,
+                        expected_platform_name,
+                        &value,
+                    ) {
+                        Ok(()) => schema_valid = Some(true),
+                        Err(err) => {
+                            schema_valid = Some(false);
+                            validation_error = Some(format!("schema mismatch: {err}"));
+                        }
+                    }
+                }
                 Err(err) => {
                     json_valid = Some(false);
+                    schema_valid = Some(false);
                     validation_error = Some(format!("invalid json: {err}"));
                 }
             },
             Err(err) => {
                 json_valid = Some(false);
+                schema_valid = Some(false);
                 validation_error = Some(format!("read failed: {err}"));
             }
         }
@@ -1606,6 +2122,7 @@ fn review_mobile_smoke_artifact(
         byte_len,
         non_empty,
         json_valid,
+        schema_valid,
         png_valid,
         validation_error,
     }
@@ -1819,7 +2336,7 @@ mod tests {
 
         assert!(report.contract_artifacts_complete);
         assert!(!report.device_smoke_complete);
-        assert_eq!(report.written_files.len(), 5);
+        assert_eq!(report.written_files.len(), 7);
         assert!(report
             .written_files
             .iter()
@@ -1828,6 +2345,14 @@ mod tests {
             .written_files
             .iter()
             .any(|path| path.ends_with("dispatch-smoke.json")));
+        assert!(report
+            .written_files
+            .iter()
+            .any(|path| path.ends_with("device-smoke-plan.json")));
+        assert!(report
+            .written_files
+            .iter()
+            .any(|path| path.ends_with("agent-context.json")));
         assert!(!report
             .missing_required_device_artifacts
             .contains(&"manifest.json".to_string()));
@@ -1844,6 +2369,9 @@ mod tests {
             contract_review.valid_required_artifact_count,
             contract_review.required_artifact_count
         );
+        assert!(contract_review.artifact_statuses.iter().all(|artifact| {
+            artifact.json_valid == Some(true) && artifact.schema_valid == Some(true)
+        }));
         assert!(contract_review.missing_required_artifacts.is_empty());
         assert!(contract_review.invalid_required_artifacts.is_empty());
 
@@ -1855,6 +2383,41 @@ mod tests {
         assert!(review
             .missing_required_artifacts
             .contains(&"device-window.png".to_string()));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mobile_bridge_contract_artifact_review_rejects_schema_mismatch() {
+        let root = unique_mobile_test_root("contract-schema-mismatch");
+        write_mobile_runtime_bridge_contract_artifacts_to(NativeUiPlatform::Android, &root)
+            .expect("contract artifacts should write");
+
+        let agent_context_path = root.join("android").join("agent-context.json");
+        fs::write(&agent_context_path, "{\"framework_name\":\"wrong\"}\n")
+            .expect("test should corrupt agent context artifact");
+
+        let report =
+            review_mobile_runtime_bridge_contract_artifacts_at(NativeUiPlatform::Android, &root)
+                .expect("contract review should inspect corrupted artifact");
+
+        assert!(!report.contract_artifacts_complete);
+        assert_eq!(
+            report.invalid_required_artifacts,
+            vec!["agent-context.json"]
+        );
+        let agent_context_status = report
+            .artifact_statuses
+            .iter()
+            .find(|artifact| artifact.file_name == "agent-context.json")
+            .expect("agent context artifact should be reviewed");
+        assert_eq!(agent_context_status.json_valid, Some(true));
+        assert_eq!(agent_context_status.schema_valid, Some(false));
+        assert!(agent_context_status
+            .validation_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("schema mismatch"));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1908,6 +2471,9 @@ mod tests {
         assert!(
             mobile_runtime_bridge_contract_artifact_file_names().contains(&"dispatch-smoke.json")
         );
+        assert!(
+            mobile_runtime_bridge_contract_artifact_file_names().contains(&"agent-context.json")
+        );
         assert!(mobile_runtime_device_smoke_command_names()
             .contains(&"mobile_scaffold_manifest --review-contract"));
 
@@ -1933,6 +2499,43 @@ mod tests {
     }
 
     #[test]
+    fn mobile_device_smoke_trace_templates_match_review_schema() {
+        let android_templates =
+            mobile_runtime_device_smoke_trace_templates(NativeUiPlatform::Android)
+                .expect("android trace templates should exist");
+        let harmony_lifecycle = mobile_runtime_device_smoke_trace_template(
+            NativeUiPlatform::Harmony,
+            MobileRuntimeDeviceSmokeTraceKind::Lifecycle,
+        )
+        .expect("harmony lifecycle template should exist");
+
+        assert!(android_templates.iter().any(|template| {
+            template.file_name == "lifecycle.json"
+                && template.artifact_source == "device_smoke"
+                && template.required_for_device_smoke
+                && template.events.contains(&"onCreate")
+        }));
+        assert!(android_templates.iter().any(|template| {
+            template.file_name == "clipboard.json" && !template.required_for_device_smoke
+        }));
+        assert_eq!(harmony_lifecycle.trace_kind_name, "lifecycle");
+        assert!(harmony_lifecycle.events.contains(&"onWindowStageCreate"));
+        assert!(
+            mobile_runtime_device_smoke_trace_templates_json(NativeUiPlatform::Harmony)
+                .expect("trace templates should serialize")
+                .contains("device_smoke")
+        );
+        assert!(mobile_runtime_device_smoke_trace_template_json(
+            NativeUiPlatform::Android,
+            MobileRuntimeDeviceSmokeTraceKind::Input,
+        )
+        .expect("trace template should serialize")
+        .contains("input.json"));
+        assert!(mobile_runtime_device_smoke_command_names()
+            .contains(&"mobile_scaffold_manifest --trace-template"));
+    }
+
+    #[test]
     fn mobile_device_smoke_review_reports_missing_device_artifacts() {
         let root = unique_mobile_test_root("missing");
         let report =
@@ -1953,12 +2556,27 @@ mod tests {
         let root = unique_mobile_test_root("valid");
         let dir = root.join("harmony");
         fs::create_dir_all(&dir).expect("test artifact dir should be creatable");
-        write_text(&dir.join("manifest.json"), "{}");
+        let manifest = serde_json::to_string_pretty(
+            &mobile_runtime_host_scaffold(NativeUiPlatform::Harmony)
+                .expect("harmony scaffold should exist"),
+        )
+        .expect("harmony scaffold should serialize");
+        write_text(&dir.join("manifest.json"), &manifest);
         write_text(&dir.join("device-launch.log"), "launched");
         write_png_header(&dir.join("device-window.png"));
-        write_text(&dir.join("lifecycle.json"), "{\"events\":[\"onCreate\"]}");
-        write_text(&dir.join("surface.json"), "{\"surface\":\"created\"}");
-        write_text(&dir.join("input.json"), "{\"input\":\"touch\"}");
+        write_device_trace(
+            &dir.join("lifecycle.json"),
+            "harmony",
+            "lifecycle",
+            "onCreate",
+        );
+        write_device_trace(
+            &dir.join("surface.json"),
+            "harmony",
+            "surface",
+            "onWindowStageCreate",
+        );
+        write_device_trace(&dir.join("input.json"), "harmony", "input", "touch");
 
         let report =
             review_mobile_runtime_device_smoke_artifacts_at(NativeUiPlatform::Harmony, &root)
@@ -1969,8 +2587,57 @@ mod tests {
             report.valid_required_artifact_count,
             report.required_artifact_count
         );
+        assert!(report.artifact_statuses.iter().all(|artifact| {
+            !artifact.exists
+                || !artifact.file_name.ends_with(".json")
+                || (artifact.json_valid == Some(true) && artifact.schema_valid == Some(true))
+        }));
         assert!(report.missing_required_artifacts.is_empty());
         assert!(report.invalid_required_artifacts.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mobile_device_smoke_review_rejects_contract_only_json_as_device_proof() {
+        let root = unique_mobile_test_root("device-schema-mismatch");
+        let dir = root.join("android");
+        fs::create_dir_all(&dir).expect("test artifact dir should be creatable");
+        let manifest = serde_json::to_string_pretty(
+            &mobile_runtime_host_scaffold(NativeUiPlatform::Android)
+                .expect("android scaffold should exist"),
+        )
+        .expect("android scaffold should serialize");
+        write_text(&dir.join("manifest.json"), &manifest);
+        write_text(&dir.join("device-launch.log"), "launched");
+        write_png_header(&dir.join("device-window.png"));
+        write_text(&dir.join("lifecycle.json"), "{\"events\":[\"onCreate\"]}");
+        write_device_trace(
+            &dir.join("surface.json"),
+            "android",
+            "surface",
+            "surfaceCreated",
+        );
+        write_device_trace(&dir.join("input.json"), "android", "input", "touch");
+
+        let report =
+            review_mobile_runtime_device_smoke_artifacts_at(NativeUiPlatform::Android, &root)
+                .expect("mobile device smoke review should inspect artifacts");
+
+        assert!(!report.device_smoke_complete);
+        assert_eq!(report.invalid_required_artifacts, vec!["lifecycle.json"]);
+        let lifecycle = report
+            .artifact_statuses
+            .iter()
+            .find(|artifact| artifact.file_name == "lifecycle.json")
+            .expect("lifecycle artifact should be reviewed");
+        assert_eq!(lifecycle.json_valid, Some(true));
+        assert_eq!(lifecycle.schema_valid, Some(false));
+        assert!(lifecycle
+            .validation_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("artifact_source"));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -2001,6 +2668,19 @@ mod tests {
 
     fn write_text(path: &Path, contents: &str) {
         fs::write(path, contents).expect("test text artifact should write");
+    }
+
+    fn write_device_trace(path: &Path, platform_name: &str, trace_kind: &str, event_name: &str) {
+        let json = serde_json::json!({
+            "artifact_source": "device_smoke",
+            "platform_name": platform_name,
+            "trace_kind": trace_kind,
+            "events": [event_name],
+        });
+        write_text(
+            path,
+            &serde_json::to_string_pretty(&json).expect("device trace should serialize"),
+        );
     }
 
     fn write_png_header(path: &Path) {

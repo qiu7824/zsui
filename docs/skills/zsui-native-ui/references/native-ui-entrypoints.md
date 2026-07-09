@@ -172,16 +172,22 @@ Already reusable at code level:
   sequence without faking device proof.
 - Android/Harmony local contract artifact writing through
   `write_mobile_runtime_bridge_contract_artifacts()` and
-  `mobile_scaffold_manifest --write-contract` without generating launch,
+  `mobile_scaffold_manifest --write-contract` to capture local bridge reports,
+  the device-smoke plan and agent context without generating launch,
   screenshot, lifecycle, surface or input proof.
 - Android/Harmony local contract artifact review through
   `review_mobile_runtime_bridge_contract_artifacts()` and
-  `mobile_scaffold_manifest --review-contract`, separate from device-smoke
-  proof review. The write/review contract paths support an `all` target for
-  Android and Harmony together.
+  `mobile_scaffold_manifest --review-contract`, including expected JSON schema
+  checks and separate from device-smoke proof review. The write/review contract
+  paths support an `all` target for Android and Harmony together.
 - Android/Harmony device-smoke plans and read-only review through
   `mobile_runtime_device_smoke_plan()` and
-  `review_mobile_runtime_device_smoke_artifacts()`.
+  `review_mobile_runtime_device_smoke_artifacts()`, including device-sourced
+  schema checks for lifecycle, surface and input traces.
+- Android/Harmony device trace templates through
+  `mobile_runtime_device_smoke_trace_templates()` and
+  `mobile_scaffold_manifest --trace-template`, so Activity/Ability bridge code
+  can write reviewable lifecycle, surface and input artifacts.
 - Machine-readable AI context through `zsui_agent_context()` and
   `zsui_agent_context_json()`.
 - Product adapter and reusable runtime harness contracts through

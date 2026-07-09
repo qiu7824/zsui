@@ -6,8 +6,9 @@ use zsui::{
     mobile_runtime_bridge_dispatch_report_json, mobile_runtime_bridge_dispatch_reports_json,
     mobile_runtime_bridge_parity_report_json, mobile_runtime_bridge_parity_reports_json,
     mobile_runtime_device_smoke_plan_json, mobile_runtime_device_smoke_plans_json,
-    mobile_runtime_host_scaffold_json, mobile_runtime_host_scaffolds_json,
-    review_mobile_runtime_bridge_contract_artifacts,
+    mobile_runtime_device_smoke_trace_template_json,
+    mobile_runtime_device_smoke_trace_templates_json, mobile_runtime_host_scaffold_json,
+    mobile_runtime_host_scaffolds_json, review_mobile_runtime_bridge_contract_artifacts,
     review_mobile_runtime_bridge_contract_artifacts_at,
     review_mobile_runtime_bridge_contract_artifacts_for_all,
     review_mobile_runtime_bridge_contract_artifacts_for_all_at,
@@ -15,7 +16,8 @@ use zsui::{
     write_mobile_runtime_bridge_contract_artifacts,
     write_mobile_runtime_bridge_contract_artifacts_for_all,
     write_mobile_runtime_bridge_contract_artifacts_for_all_to,
-    write_mobile_runtime_bridge_contract_artifacts_to, NativeUiPlatform,
+    write_mobile_runtime_bridge_contract_artifacts_to, MobileRuntimeDeviceSmokeTraceKind,
+    NativeUiPlatform,
 };
 
 fn main() -> ExitCode {
@@ -49,6 +51,10 @@ fn mobile_manifest_json(args: &[String]) -> Result<String, String> {
             args.get(2).map(String::as_str),
         ),
         Some("--smoke") => mobile_device_smoke_json(args.get(1).map(String::as_str)),
+        Some("--trace-template") => mobile_device_smoke_trace_template_json(
+            args.get(1).map(String::as_str),
+            args.get(2).map(String::as_str),
+        ),
         Some("--review") => mobile_device_smoke_review_json(
             args.get(1).map(String::as_str),
             args.get(2).map(String::as_str),
@@ -186,6 +192,22 @@ fn mobile_device_smoke_json(platform: Option<&str>) -> Result<String, String> {
     }
 }
 
+fn mobile_device_smoke_trace_template_json(
+    platform: Option<&str>,
+    trace_kind: Option<&str>,
+) -> Result<String, String> {
+    let platform = parse_mobile_platform(platform.unwrap_or("android"))?;
+    match trace_kind.unwrap_or("all") {
+        "all" => mobile_runtime_device_smoke_trace_templates_json(platform)
+            .map_err(|err| err.to_string()),
+        trace_kind => {
+            let trace_kind = parse_mobile_trace_kind(trace_kind)?;
+            mobile_runtime_device_smoke_trace_template_json(platform, trace_kind)
+                .map_err(|err| err.to_string())
+        }
+    }
+}
+
 fn mobile_device_smoke_review_json(
     platform: Option<&str>,
     artifact_root: Option<&str>,
@@ -198,6 +220,17 @@ fn mobile_device_smoke_review_json(
     .map_err(|err| err.to_string())?;
 
     serde_json::to_string_pretty(&report).map_err(|err| err.to_string())
+}
+
+fn parse_mobile_trace_kind(trace_kind: &str) -> Result<MobileRuntimeDeviceSmokeTraceKind, String> {
+    match trace_kind {
+        "lifecycle" => Ok(MobileRuntimeDeviceSmokeTraceKind::Lifecycle),
+        "surface" => Ok(MobileRuntimeDeviceSmokeTraceKind::Surface),
+        "input" => Ok(MobileRuntimeDeviceSmokeTraceKind::Input),
+        "clipboard" => Ok(MobileRuntimeDeviceSmokeTraceKind::Clipboard),
+        "pasteboard" => Ok(MobileRuntimeDeviceSmokeTraceKind::Pasteboard),
+        _ => Err(format!("unknown ZSUI mobile trace kind `{trace_kind}`")),
+    }
 }
 
 fn parse_mobile_platform(platform: &str) -> Result<NativeUiPlatform, String> {
