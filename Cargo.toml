@@ -89,6 +89,11 @@ path = "examples/rust_first_view.rs"
 required-features = ["button", "label", "textbox", "checkbox"]
 
 [[example]]
+name = "list_selection"
+path = "examples/list_selection.rs"
+required-features = ["list", "label"]
+
+[[example]]
 name = "product_adapter_view"
 path = "examples/product_adapter_view.rs"
 required-features = ["button", "label"]

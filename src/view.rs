@@ -68,6 +68,11 @@ pub enum ViewNodeKind<Msg> {
         checked: bool,
         on_toggle: Option<fn(bool) -> Msg>,
     },
+    #[cfg(feature = "list")]
+    List {
+        selected_index: Option<usize>,
+        on_select: Option<fn(usize) -> Msg>,
+    },
     Stack {
         direction: ViewStackDirection,
     },
@@ -162,6 +167,22 @@ impl<Msg: Clone> ViewNode<Msg> {
         }
         self
     }
+
+    #[cfg(feature = "list")]
+    pub fn selected_index(mut self, index: Option<usize>) -> Self {
+        if let ViewNodeKind::List { selected_index, .. } = &mut self.kind {
+            *selected_index = index;
+        }
+        self
+    }
+
+    #[cfg(feature = "list")]
+    pub fn on_select(mut self, message: fn(usize) -> Msg) -> Self {
+        if let ViewNodeKind::List { on_select, .. } = &mut self.kind {
+            *on_select = Some(message);
+        }
+        self
+    }
 }
 
 #[cfg(feature = "label")]
@@ -213,7 +234,11 @@ pub fn list<T, Msg>(
     items: impl IntoIterator<Item = T>,
     mut render: impl FnMut(T) -> ViewNode<Msg>,
 ) -> ViewNode<Msg> {
-    column(items.into_iter().map(|item| render(item)))
+    ViewNode::<Msg>::new(ViewNodeKind::List {
+        selected_index: None,
+        on_select: None,
+    })
+    .children(items.into_iter().map(|item| render(item)))
 }
 
 pub fn spacer<Msg>() -> ViewNode<Msg> {
@@ -299,6 +324,13 @@ impl ViewInteractionPlan {
             .rev()
             .copied()
             .find(|target| target.contains(point))
+    }
+
+    pub fn hit_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
+        self.hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.widget == widget)
     }
 
     pub fn target_kind_at(&self, point: Point) -> Option<ViewHitTargetKind> {
@@ -451,6 +483,27 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "list")]
+        if let (
+            ViewNodeKind::List {
+                selected_index,
+                on_select,
+            },
+            ViewEvent::Click { widget },
+        ) = (&mut self.kind, event)
+        {
+            if let Some(index) = self
+                .children
+                .iter()
+                .position(|child| child.contains_widget(*widget))
+            {
+                *selected_index = Some(index);
+                if let Some(message) = on_select {
+                    cx.emit(message(index));
+                }
+            }
+        }
+
         if self.event_targets_self(event) {
             match (&mut self.kind, event) {
                 #[cfg(feature = "button")]
@@ -577,6 +630,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     SemanticTextStyle::body(),
                 )));
             }
+            #[cfg(feature = "list")]
+            ViewNodeKind::List { selected_index, .. } => {
+                if let Some(bounds) = selected_index
+                    .and_then(|index| self.children.get(index))
+                    .and_then(ViewNode::bounds)
+                {
+                    cx.draw(NativeDrawCommand::RoundFill {
+                        rect: bounds,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::Accent,
+                            alpha: 36,
+                        },
+                        radius: radius_px(self.style.radius.or(Some(Dp::new(4.0))), cx.dpi),
+                    });
+                }
+            }
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
@@ -594,6 +663,15 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
             (None, _) => false,
         }
+    }
+
+    #[cfg(feature = "list")]
+    fn contains_widget(&self, widget: WidgetId) -> bool {
+        self.id == Some(widget)
+            || self
+                .children
+                .iter()
+                .any(|child| child.contains_widget(widget))
     }
 
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
@@ -626,6 +704,53 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_checked_value(widget))
+    }
+
+    #[cfg(feature = "list")]
+    pub fn widget_list_index(&self, widget: WidgetId) -> Option<usize> {
+        if matches!(self.kind, ViewNodeKind::List { .. }) {
+            return self
+                .children
+                .iter()
+                .position(|child| child.contains_widget(widget));
+        }
+
+        self.children
+            .iter()
+            .find_map(|child| child.widget_list_index(widget))
+    }
+
+    #[cfg(feature = "list")]
+    pub fn widget_list_relative_widget(
+        &self,
+        widget: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, usize)> {
+        if matches!(self.kind, ViewNodeKind::List { .. }) {
+            let current = self
+                .children
+                .iter()
+                .position(|child| child.contains_widget(widget))?;
+            let next = current
+                .saturating_add_signed(offset)
+                .min(self.children.len().saturating_sub(1));
+            if next == current {
+                return None;
+            }
+            return self.children[next]
+                .first_widget_id()
+                .map(|widget| (widget, next));
+        }
+
+        self.children
+            .iter()
+            .find_map(|child| child.widget_list_relative_widget(widget, offset))
+    }
+
+    #[cfg(feature = "list")]
+    fn first_widget_id(&self) -> Option<WidgetId> {
+        self.id
+            .or_else(|| self.children.iter().find_map(ViewNode::first_widget_id))
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>) {
@@ -680,19 +805,23 @@ fn split_child_bounds<Msg>(
         }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Column,
-        } => {
-            let height = bounds.height / child_count as i32;
-            (0..child_count)
-                .map(|index| Rect {
-                    x: bounds.x,
-                    y: bounds.y + height * index as i32,
-                    width: bounds.width,
-                    height,
-                })
-                .collect()
-        }
+        } => split_column_child_bounds(bounds, child_count),
+        #[cfg(feature = "list")]
+        ViewNodeKind::List { .. } => split_column_child_bounds(bounds, child_count),
         _ => vec![bounds; child_count],
     }
+}
+
+fn split_column_child_bounds(bounds: Rect, child_count: usize) -> Vec<Rect> {
+    let height = bounds.height / child_count as i32;
+    (0..child_count)
+        .map(|index| Rect {
+            x: bounds.x,
+            y: bounds.y + height * index as i32,
+            width: bounds.width,
+            height,
+        })
+        .collect()
 }
 
 #[cfg(any(
@@ -734,7 +863,12 @@ fn color_role_for_token(token: ThemeColorToken) -> ColorRole {
 mod tests {
     use super::*;
 
-    #[cfg(any(feature = "button", feature = "textbox", feature = "checkbox"))]
+    #[cfg(any(
+        feature = "button",
+        feature = "textbox",
+        feature = "checkbox",
+        feature = "list"
+    ))]
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Msg {
         SaveClicked,
@@ -742,6 +876,8 @@ mod tests {
         NameChanged(String),
         #[cfg(feature = "checkbox")]
         DarkModeChanged(bool),
+        #[cfg(feature = "list")]
+        RowSelected(usize),
     }
 
     #[test]
@@ -813,6 +949,11 @@ mod tests {
             Some(ViewHitTargetKind::Button)
         );
         assert_eq!(
+            plan.hit_target_for_widget(save_id)
+                .map(|target| target.kind),
+            Some(ViewHitTargetKind::Button)
+        );
+        assert_eq!(
             plan.click_event_at(Point { x: 150, y: 90 }),
             Some(ViewEvent::Click { widget: save_id })
         );
@@ -853,6 +994,45 @@ mod tests {
                 Msg::NameChanged("ZSUI".to_string()),
                 Msg::DarkModeChanged(true)
             ]
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "list", feature = "label"))]
+    fn list_view_routes_child_clicks_to_typed_selection_messages() {
+        let first = WidgetId::new(10);
+        let second = WidgetId::new(11);
+        let mut view = list([(first, "One"), (second, "Two")], |(id, label)| {
+            text(label).id(id)
+        })
+        .selected_index(Some(0))
+        .on_select(Msg::RowSelected);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 80,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut events = ViewEventCx::new();
+
+        view.event(&mut events, &ViewEvent::Click { widget: second });
+
+        assert_eq!(events.into_messages(), vec![Msg::RowSelected(1)]);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint
+            .plan()
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::RoundFill { .. })));
+        assert_eq!(view.widget_list_index(second), Some(1));
+        assert_eq!(
+            view.widget_list_relative_widget(second, -1),
+            Some((first, 0))
         );
     }
 

@@ -39,6 +39,7 @@ If the AI cannot load a skill folder, send these files together:
 - `src/product_adapter.rs`
 - `examples/declaration_audit.rs`
 - `examples/rust_first_view.rs`
+- `examples/list_selection.rs`
 - `examples/native_smoke_manifest.rs`
 - `examples/native_smoke_record.rs`
 - `examples/native_smoke_run.rs`
@@ -74,6 +75,7 @@ If the AI cannot load a skill folder, send these files together:
 | Product adapter and runtime harness | `src/product_adapter.rs` |
 | Declarations and audit | `src/app.rs`, `src/window.rs`, `src/tray.rs`, `src/menu.rs`, `src/settings.rs`, `examples/declaration_audit.rs` |
 | Rust-first view example | `examples/rust_first_view.rs` |
+| Typed list selection example | `examples/list_selection.rs` |
 | Shared UI protocols | `src/geometry.rs`, `src/command_protocol.rs`, `src/event_protocol.rs`, `src/render_protocol.rs`, `src/control_protocol.rs`, `src/ui_surface_protocol.rs` |
 
 ## Feature Status Vocabulary
@@ -126,14 +128,17 @@ Already reusable at code level:
   feature/crate trimming policy.
 - First-pass typed view API through `View<Msg>`, `ViewNode`, `WidgetId`,
   `ViewEventCx`, `ViewInteractionPlan`, `ViewPaintCx`, `AppCx`, typed view
-  events, `Px`, `Dp`, `Dpi`, `UiLength` and `ZsuiTheme`.
+  events, feature-gated typed list selection, `Px`, `Dp`, `Dpi`, `UiLength`
+  and `ZsuiTheme`.
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
   `NativeDrawPlan`, with Windows smoke paint through the extracted no-flicker
   Win32/GDI path.
 - `NativeWindowBuilder::ui_command_view(...)` routing from Win32
   `WM_LBUTTONUP` and focused `WM_CHAR` textbox input through
   `ViewEventCx<UiCommand>` into stable command ids, including checkbox
-  `Toggled` events when the checkbox feature is enabled.
+  `Toggled` events, list row selection, Up/Down keyboard list navigation and
+  focused `WM_KEYDOWN` Enter/Space activation when the relevant widget features
+  are enabled.
 - Product adapter view smoke through `ProductViewAdapterHost`,
   `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`.
 - Shared geometry, command, event, lifecycle, layout, component, render,
@@ -207,7 +212,9 @@ Still requiring extraction or target proof before system-complete claims:
   migration and adding typestate builders while preserving the one-line native
   window entry point. Native paint routing has a first pass; Win32
   `WM_LBUTTONUP` and focused `WM_CHAR` textbox routing into
-  `ViewEventCx<UiCommand>` exist, plus checkbox toggle routing; full keyboard/
+  `ViewEventCx<UiCommand>` exist, plus checkbox toggle routing and focused
+  `WM_KEYDOWN` keyboard activation; feature-gated list selection and Up/Down
+  keyboard list navigation can dispatch through the same route. Full
   pointer/IME coverage and non-Windows input dispatch are still pending.
 - Target screenshots, tray/menu proof and interaction artifacts under
   `target/native-host-smoke/<platform>/`.

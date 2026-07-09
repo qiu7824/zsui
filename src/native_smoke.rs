@@ -85,6 +85,11 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_focus_count: usize,
     pub native_view_text_input_count: usize,
     pub native_view_toggle_count: usize,
+    pub native_view_selection_count: usize,
+    pub native_view_keyboard_selection_count: usize,
+    pub native_view_key_down_count: usize,
+    pub native_view_keyboard_activation_count: usize,
+    pub native_view_unhandled_key_count: usize,
     pub status_item_requested: bool,
     pub status_item_created: bool,
     pub status_item_menu_item_count: usize,
@@ -125,6 +130,11 @@ impl NativeHostSmokeInteractionReport {
             native_view_focus_count: 0,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
+            native_view_selection_count: 0,
+            native_view_keyboard_selection_count: 0,
+            native_view_key_down_count: 0,
+            native_view_keyboard_activation_count: 0,
+            native_view_unhandled_key_count: 0,
             status_item_requested: false,
             status_item_created: false,
             status_item_menu_item_count: 0,
@@ -183,6 +193,24 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_toggle_count
             ));
         }
+        if report.native_view_selection_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} list selection event(s)",
+                report.native_view_selection_count
+            ));
+        }
+        if report.native_view_keyboard_selection_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} keyboard list selection event(s)",
+                report.native_view_keyboard_selection_count
+            ));
+        }
+        if report.native_view_keyboard_activation_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} keyboard activation(s)",
+                report.native_view_keyboard_activation_count
+            ));
+        }
         if report.status_item_requested && report.status_item_created {
             notes.push("status item was created by the native smoke runner".to_string());
             if report.status_menu_command_routed {
@@ -224,6 +252,11 @@ impl NativeHostSmokeInteractionReport {
             native_view_focus_count: report.native_view_focus_count,
             native_view_text_input_count: report.native_view_text_input_count,
             native_view_toggle_count: report.native_view_toggle_count,
+            native_view_selection_count: report.native_view_selection_count,
+            native_view_keyboard_selection_count: report.native_view_keyboard_selection_count,
+            native_view_key_down_count: report.native_view_key_down_count,
+            native_view_keyboard_activation_count: report.native_view_keyboard_activation_count,
+            native_view_unhandled_key_count: report.native_view_unhandled_key_count,
             status_item_requested: report.status_item_requested,
             status_item_created: report.status_item_created,
             status_item_menu_item_count: report.status_item_menu_item_count,
@@ -819,6 +852,11 @@ mod tests {
             native_view_focus_count: 0,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
+            native_view_selection_count: 0,
+            native_view_keyboard_selection_count: 0,
+            native_view_key_down_count: 0,
+            native_view_keyboard_activation_count: 0,
+            native_view_unhandled_key_count: 0,
             status_item_requested: true,
             status_item_required: false,
             status_item_created: true,

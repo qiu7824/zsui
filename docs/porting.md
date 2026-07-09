@@ -38,9 +38,13 @@ native input. The Win32 host already maps `WM_LBUTTONUP` through
 `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and records
 command ids during native smoke. It also routes focused `WM_CHAR` input into
 textbox `TextChanged` events when the textbox feature is enabled and checkbox
-clicks into typed `Toggled` events when the checkbox feature is enabled. Other
-backends should add their OS pointer/keyboard/IME routing back into
-`ViewEventCx` as distinct gates instead of coupling it to product state.
+clicks into typed `Toggled` events when the checkbox feature is enabled.
+`WM_KEYDOWN` Enter/Space activation is also routed for focused button and
+checkbox targets. Feature-gated list row selection uses child IDs and dispatches
+through the same `ViewEventCx` path; Win32 Up/Down keys can move focused list
+selection and emit the same typed message. Other backends should add their OS
+pointer/keyboard/IME routing back into `ViewEventCx` as distinct gates instead
+of coupling it to product state.
 For product integration, use `ProductViewAdapterHost` and
 `ZsuiReusableRuntimeHarness::run_view_smoke(...)` to verify typed view messages
 before wiring a native backend to real product state.

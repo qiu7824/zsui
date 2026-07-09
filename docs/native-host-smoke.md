@@ -70,8 +70,11 @@ records the emitted command ids. It also paints the resulting `NativeDrawPlan`
 through the extracted no-flicker Win32/GDI renderer. When built with the
 `textbox` feature, the same path focuses a textbox and routes `WM_CHAR` text
 input into `TextChanged`/`UiCommand` output. When built with the `checkbox`
-feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. Full
-keyboard/pointer/IME coverage and non-Windows native input remain later runtime
+feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. It also
+records typed row selection when built with the `list` feature, including
+Up/Down keyboard selection between focused rows. It also posts `WM_KEYDOWN`
+Enter to prove focused keyboard activation into the same `UiCommand` path.
+Full pointer/IME coverage and non-Windows native input remain later runtime
 gates.
 
 Review the artifact directory with:

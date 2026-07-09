@@ -150,9 +150,10 @@ pub use mobile_host::{
     MobileRuntimeLifecycleBinding, MobileRuntimePermission,
 };
 pub use native::{
-    native_window, run_native_window, run_native_window_smoke, NativeWindowBuilder,
-    NativeWindowHost, NativeWindowRuntimeDriver, NativeWindowRuntimeDriverReport,
-    NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
+    native_window, run_native_window, run_native_window_smoke, NativeViewKey, NativeViewSmokeInput,
+    NativeWindowBuilder, NativeWindowHost, NativeWindowRuntimeDriver,
+    NativeWindowRuntimeDriverReport, NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions,
+    NativeWindowSmokeRunReport,
 };
 pub use native_adapter_manifest::{
     native_ui_adapter_parity_report, native_ui_backend_capability_matrix,
@@ -293,8 +294,8 @@ pub use windows_win32_host::{
     create_windows_for_specs as create_windows_win32_for_specs,
     create_windows_for_specs_with_draw_plans as create_windows_win32_for_specs_with_draw_plans,
     create_windows_for_specs_with_draw_plans_and_input_routes as create_windows_win32_for_specs_with_draw_plans_and_input_routes,
-    dispatch_windows_win32_window_view_click, dispatch_windows_win32_window_view_text_input,
-    run_windows_win32_native_window_event_loop,
+    dispatch_windows_win32_window_view_click, dispatch_windows_win32_window_view_key_down,
+    dispatch_windows_win32_window_view_text_input, run_windows_win32_native_window_event_loop,
     run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items,
     run_windows_win32_native_window_event_loop_with_status_items,
     set_windows_win32_window_draw_plan, set_windows_win32_window_view_input_route,

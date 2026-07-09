@@ -398,6 +398,32 @@ impl NativeSettingsItemUpdateHost for NativeWindowRuntimeDriver {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum NativeViewKey {
+    Enter,
+    Space,
+    Up,
+    Down,
+}
+
+impl NativeViewKey {
+    pub const fn key_name(self) -> &'static str {
+        match self {
+            Self::Enter => "enter",
+            Self::Space => "space",
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum NativeViewSmokeInput {
+    Click(Point),
+    Text(String),
+    KeyDown(NativeViewKey),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeWindowSmokeRunOptions {
     pub auto_close_after_ms: u64,
@@ -408,6 +434,8 @@ pub struct NativeWindowSmokeRunOptions {
     pub require_status_item: bool,
     pub native_view_click_points: Vec<Point>,
     pub native_view_text_inputs: Vec<String>,
+    pub native_view_key_downs: Vec<NativeViewKey>,
+    pub native_view_inputs: Vec<NativeViewSmokeInput>,
 }
 
 impl NativeWindowSmokeRunOptions {
@@ -421,6 +449,8 @@ impl NativeWindowSmokeRunOptions {
             require_status_item: false,
             native_view_click_points: Vec::new(),
             native_view_text_inputs: Vec::new(),
+            native_view_key_downs: Vec::new(),
+            native_view_inputs: Vec::new(),
         }
     }
 
@@ -455,16 +485,23 @@ impl NativeWindowSmokeRunOptions {
 
     pub fn native_view_click(mut self, point: Point) -> Self {
         self.native_view_click_points.push(point);
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::Click(point));
         self
     }
 
     pub fn native_view_clicks(mut self, points: impl IntoIterator<Item = Point>) -> Self {
-        self.native_view_click_points.extend(points);
+        for point in points {
+            self = self.native_view_click(point);
+        }
         self
     }
 
     pub fn native_view_text_input(mut self, text: impl Into<String>) -> Self {
-        self.native_view_text_inputs.push(text.into());
+        let text = text.into();
+        self.native_view_text_inputs.push(text.clone());
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::Text(text));
         self
     }
 
@@ -473,8 +510,23 @@ impl NativeWindowSmokeRunOptions {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.native_view_text_inputs
-            .extend(texts.into_iter().map(Into::into));
+        for text in texts {
+            self = self.native_view_text_input(text);
+        }
+        self
+    }
+
+    pub fn native_view_key_down(mut self, key: NativeViewKey) -> Self {
+        self.native_view_key_downs.push(key);
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::KeyDown(key));
+        self
+    }
+
+    pub fn native_view_key_downs(mut self, keys: impl IntoIterator<Item = NativeViewKey>) -> Self {
+        for key in keys {
+            self = self.native_view_key_down(key);
+        }
         self
     }
 }
@@ -510,6 +562,11 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_focus_count: usize,
     pub native_view_text_input_count: usize,
     pub native_view_toggle_count: usize,
+    pub native_view_selection_count: usize,
+    pub native_view_keyboard_selection_count: usize,
+    pub native_view_key_down_count: usize,
+    pub native_view_keyboard_activation_count: usize,
+    pub native_view_unhandled_key_count: usize,
     pub status_item_requested: bool,
     pub status_item_required: bool,
     pub status_item_created: bool,
@@ -557,6 +614,11 @@ impl NativeWindowSmokeRunReport {
             native_view_focus_count: 0,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
+            native_view_selection_count: 0,
+            native_view_keyboard_selection_count: 0,
+            native_view_key_down_count: 0,
+            native_view_keyboard_activation_count: 0,
+            native_view_unhandled_key_count: 0,
             status_item_requested,
             status_item_required: options.require_status_item,
             status_item_created: false,
@@ -708,6 +770,11 @@ fn record_windows_win32_view_input_report(
     report.native_view_focus_count += input.focus_count;
     report.native_view_text_input_count += input.text_input_count;
     report.native_view_toggle_count += input.toggle_count;
+    report.native_view_selection_count += input.selection_count;
+    report.native_view_keyboard_selection_count += input.keyboard_selection_count;
+    report.native_view_key_down_count += input.key_down_count;
+    report.native_view_keyboard_activation_count += input.keyboard_activation_count;
+    report.native_view_unhandled_key_count += input.unhandled_key_count;
     report.events.extend(input.events.clone());
 }
 
@@ -716,6 +783,47 @@ fn windows_lparam_from_point(point: Point) -> isize {
     let x = point.x as i16 as u16 as u32;
     let y = point.y as i16 as u16 as u32;
     ((y << 16) | x) as isize
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn post_windows_native_view_input(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    input: &NativeViewSmokeInput,
+) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONUP,
+    };
+
+    match input {
+        NativeViewSmokeInput::Click(point) => unsafe {
+            PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*point));
+        },
+        NativeViewSmokeInput::Text(text) => {
+            for ch in text.chars() {
+                unsafe {
+                    PostMessageW(hwnd, WM_CHAR, ch as usize, 0);
+                }
+            }
+        }
+        NativeViewSmokeInput::KeyDown(key) => unsafe {
+            PostMessageW(
+                hwnd,
+                WM_KEYDOWN,
+                windows_wparam_from_native_view_key(*key),
+                0,
+            );
+        },
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn windows_wparam_from_native_view_key(key: NativeViewKey) -> usize {
+    match key {
+        NativeViewKey::Enter => 0x0d,
+        NativeViewKey::Space => 0x20,
+        NativeViewKey::Up => 0x26,
+        NativeViewKey::Down => 0x28,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1197,9 +1305,7 @@ fn run_native_window_smoke_event_loop(
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     use std::{thread, time::Duration};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_CLOSE, WM_LBUTTONUP,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
     if windows.is_empty() {
         return Ok(NativeWindowSmokeRunReport::empty(options));
@@ -1330,34 +1436,31 @@ fn run_native_window_smoke_event_loop(
         }
     }
 
-    let mut click_points = options.native_view_click_points.iter();
-    if !options.native_view_text_inputs.is_empty() {
-        if let Some(point) = click_points.next() {
-            unsafe {
-                PostMessageW(
+    if options.native_view_inputs.is_empty() {
+        let mut click_points = options.native_view_click_points.iter();
+        if !options.native_view_text_inputs.is_empty() {
+            if let Some(point) = click_points.next() {
+                post_windows_native_view_input(
                     handles[0].main(),
-                    WM_LBUTTONUP,
-                    0,
-                    windows_lparam_from_point(*point),
+                    &NativeViewSmokeInput::Click(*point),
                 );
             }
         }
-    }
-    for text in &options.native_view_text_inputs {
-        for ch in text.chars() {
-            unsafe {
-                PostMessageW(handles[0].main(), WM_CHAR, ch as usize, 0);
-            }
-        }
-    }
-    for point in click_points {
-        unsafe {
-            PostMessageW(
+        for text in &options.native_view_text_inputs {
+            post_windows_native_view_input(
                 handles[0].main(),
-                WM_LBUTTONUP,
-                0,
-                windows_lparam_from_point(*point),
+                &NativeViewSmokeInput::Text(text.clone()),
             );
+        }
+        for point in click_points {
+            post_windows_native_view_input(handles[0].main(), &NativeViewSmokeInput::Click(*point));
+        }
+        for key in &options.native_view_key_downs {
+            post_windows_native_view_input(handles[0].main(), &NativeViewSmokeInput::KeyDown(*key));
+        }
+    } else {
+        for input in &options.native_view_inputs {
+            post_windows_native_view_input(handles[0].main(), input);
         }
     }
 
@@ -2085,9 +2188,16 @@ mod tests {
         assert!(report.native_view_ui_command_ids.is_empty());
         assert_eq!(report.native_view_unhandled_click_count, 0);
         assert!(options.native_view_text_inputs.is_empty());
+        assert!(options.native_view_key_downs.is_empty());
+        assert!(options.native_view_inputs.is_empty());
         assert_eq!(report.native_view_focus_count, 0);
         assert_eq!(report.native_view_text_input_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
+        assert_eq!(report.native_view_selection_count, 0);
+        assert_eq!(report.native_view_keyboard_selection_count, 0);
+        assert_eq!(report.native_view_key_down_count, 0);
+        assert_eq!(report.native_view_keyboard_activation_count, 0);
+        assert_eq!(report.native_view_unhandled_key_count, 0);
         assert!(!report.visible_window_was_created());
     }
 

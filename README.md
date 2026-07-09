@@ -169,13 +169,15 @@ assert!(report.is_valid());
   surface and native control protocols
 - Rust-first typed view builders and contexts through `View<Msg>`, `WidgetId`,
   `AppCx`, `ViewEventCx`, `ViewPaintCx`, `column`, `row`, `text`, `button`,
-  `textbox` and `checkbox`
+  `textbox`, `checkbox` and feature-gated `list` selection
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
   `NativeDrawPlan` content used by the native smoke path
 - `NativeWindowBuilder::ui_command_view(...)` and `ViewInteractionPlan` routing
   for Win32 `WM_LBUTTONUP` clicks and focused `WM_CHAR` textbox input into
-  `ViewEventCx<UiCommand>` and reusable command ids; checkbox clicks route to
-  typed `Toggled` events when the checkbox feature is enabled
+  `ViewEventCx<UiCommand>` and reusable command ids; checkbox clicks and
+  focused `WM_KEYDOWN` keyboard activation route to typed events when the
+  relevant widget features are enabled, and list row selection can dispatch
+  through the same command-backed view tree
 - product adapter typed view smoke through `ProductViewAdapterHost`,
   `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`
 - typed units and theme token primitives through `Px`, `Dp`, `Dpi`,
@@ -237,6 +239,7 @@ it falls back to in-memory clipboard storage.
   readiness and AI/tooling checks.
 - `examples/rust_first_view.rs`: typed `View<Msg>`/`WidgetId`/`AppCx`
   example without string events or global state.
+- `examples/list_selection.rs`: feature-gated typed list row selection example.
 - `examples/native_smoke_manifest.rs`: JSON manifest for target native host
   smoke artifacts.
 - `examples/native_smoke_record.rs`: writes contract-level target smoke
@@ -295,3 +298,6 @@ When the `textbox` feature is enabled, the same example also routes focused
 `WM_CHAR` text input through `ViewEventCx<UiCommand>`.
 When the `checkbox` feature is enabled, it also routes checkbox toggles through
 typed `Toggled` events.
+When the `list` feature is enabled, it records typed list row selection through
+the same command route, including Up/Down keyboard selection between rows. It
+also records focused `WM_KEYDOWN` keyboard activation for the typed view.

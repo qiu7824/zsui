@@ -3,8 +3,12 @@ use std::{env, fs, path::PathBuf, process::ExitCode};
 use serde_json::json;
 #[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
 use zsui::checkbox;
+#[cfg(all(feature = "button", feature = "label", feature = "list"))]
+use zsui::list;
 #[cfg(all(feature = "button", feature = "label", feature = "textbox"))]
 use zsui::textbox;
+#[cfg(all(feature = "button", feature = "label"))]
+use zsui::NativeViewKey;
 #[cfg(all(feature = "button", feature = "label"))]
 use zsui::{button, column, text, CommandId, Point, UiCommand, WidgetId};
 use zsui::{
@@ -84,17 +88,45 @@ fn run_smoke(
                 .native_view_click(Point { x: 260, y: 120 })
                 .native_view_text_input("ZSUI");
         }
+        #[cfg(all(feature = "list", feature = "textbox", feature = "checkbox"))]
+        {
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 176 })
+                .native_view_key_down(NativeViewKey::Up);
+        }
+        #[cfg(all(feature = "list", feature = "textbox", not(feature = "checkbox")))]
+        {
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 220 })
+                .native_view_key_down(NativeViewKey::Up);
+        }
+        #[cfg(all(feature = "list", not(feature = "textbox"), feature = "checkbox"))]
+        {
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 140 })
+                .native_view_key_down(NativeViewKey::Up);
+        }
+        #[cfg(all(feature = "list", not(feature = "textbox"), not(feature = "checkbox")))]
+        {
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 180 })
+                .native_view_key_down(NativeViewKey::Up);
+        }
         #[cfg(feature = "checkbox")]
         {
             smoke_options = smoke_options.native_view_click(Point { x: 260, y: 200 });
         }
         #[cfg(any(feature = "textbox", feature = "checkbox"))]
         {
-            smoke_options = smoke_options.native_view_click(Point { x: 260, y: 280 });
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 280 })
+                .native_view_key_down(NativeViewKey::Enter);
         }
         #[cfg(not(any(feature = "textbox", feature = "checkbox")))]
         {
-            smoke_options = smoke_options.native_view_click(Point { x: 260, y: 240 });
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 240 })
+                .native_view_key_down(NativeViewKey::Enter);
         }
     }
 
@@ -134,6 +166,19 @@ fn attach_typed_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
                 .on_change(native_smoke_text_changed),
         );
     }
+    #[cfg(feature = "list")]
+    {
+        children.push(
+            list(
+                [
+                    (WidgetId::new(4), "Recent item"),
+                    (WidgetId::new(5), "Pinned item"),
+                ],
+                |(id, label)| text(label).id(id),
+            )
+            .on_select(native_smoke_list_selected),
+        );
+    }
     #[cfg(feature = "checkbox")]
     {
         children.push(
@@ -158,6 +203,11 @@ fn native_smoke_text_changed(_: String) -> UiCommand {
 #[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
 fn native_smoke_toggle_changed(_: bool) -> UiCommand {
     UiCommand::app(CommandId("zsui.native_smoke.toggle_changed"))
+}
+
+#[cfg(all(feature = "button", feature = "label", feature = "list"))]
+fn native_smoke_list_selected(_: usize) -> UiCommand {
+    UiCommand::app(CommandId("zsui.native_smoke.list_selected"))
 }
 
 #[cfg(not(all(feature = "button", feature = "label")))]
