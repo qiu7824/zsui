@@ -1,8 +1,12 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use serde_json::json;
+#[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
+use zsui::checkbox;
+#[cfg(all(feature = "button", feature = "label", feature = "textbox"))]
+use zsui::textbox;
 #[cfg(all(feature = "button", feature = "label"))]
-use zsui::{button, column, text, WidgetId};
+use zsui::{button, column, text, CommandId, Point, UiCommand, WidgetId};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command,
@@ -72,6 +76,27 @@ fn run_smoke(
             )
             .require_status_item(platform == NativeUiPlatform::Windows);
     }
+    #[cfg(all(feature = "button", feature = "label"))]
+    if include_typed_view {
+        #[cfg(feature = "textbox")]
+        {
+            smoke_options = smoke_options
+                .native_view_click(Point { x: 260, y: 120 })
+                .native_view_text_input("ZSUI");
+        }
+        #[cfg(feature = "checkbox")]
+        {
+            smoke_options = smoke_options.native_view_click(Point { x: 260, y: 200 });
+        }
+        #[cfg(any(feature = "textbox", feature = "checkbox"))]
+        {
+            smoke_options = smoke_options.native_view_click(Point { x: 260, y: 280 });
+        }
+        #[cfg(not(any(feature = "textbox", feature = "checkbox")))]
+        {
+            smoke_options = smoke_options.native_view_click(Point { x: 260, y: 240 });
+        }
+    }
 
     let builder = native_window("ZSUI Smoke").size(520, 320);
     let builder = if include_typed_view {
@@ -99,17 +124,40 @@ fn run_smoke(
 }
 
 #[cfg(all(feature = "button", feature = "label"))]
-#[derive(Clone)]
-enum SmokeMsg {
-    Save,
+fn attach_typed_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    let mut children = vec![text::<UiCommand>("ZSUI Native View Smoke")];
+    #[cfg(feature = "textbox")]
+    {
+        children.push(
+            textbox("")
+                .id(WidgetId::new(2))
+                .on_change(native_smoke_text_changed),
+        );
+    }
+    #[cfg(feature = "checkbox")]
+    {
+        children.push(
+            checkbox("Dark mode", false)
+                .id(WidgetId::new(3))
+                .on_toggle(native_smoke_toggle_changed),
+        );
+    }
+    children.push(
+        button("Save")
+            .id(WidgetId::new(1))
+            .on_click(UiCommand::app(CommandId("zsui.native_smoke.save"))),
+    );
+    builder.ui_command_view(column(children))
 }
 
-#[cfg(all(feature = "button", feature = "label"))]
-fn attach_typed_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
-    builder.view(column(vec![
-        text::<SmokeMsg>("ZSUI Native View Smoke"),
-        button("Save").id(WidgetId::new(1)).on_click(SmokeMsg::Save),
-    ]))
+#[cfg(all(feature = "button", feature = "label", feature = "textbox"))]
+fn native_smoke_text_changed(_: String) -> UiCommand {
+    UiCommand::app(CommandId("zsui.native_smoke.text_changed"))
+}
+
+#[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
+fn native_smoke_toggle_changed(_: bool) -> UiCommand {
+    UiCommand::app(CommandId("zsui.native_smoke.toggle_changed"))
 }
 
 #[cfg(not(all(feature = "button", feature = "label")))]

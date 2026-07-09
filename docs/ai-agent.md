@@ -6,17 +6,17 @@ where agents should edit first.
 
 ## Current Completion
 
-ZSUI is about 69% complete as a standalone UI framework.
+ZSUI is about 73% complete as a standalone UI framework.
 
 - Foundation contracts: about 74% complete.
 - Declaration API: about 73% complete.
-- Minimal native window runtime: about 65% complete.
+- Minimal native window runtime: about 71% complete.
 - Feature-pruned architecture: about 38% complete.
-- Rust-first API model: about 53% complete.
-- Full desktop native hosts: about 46% complete.
+- Rust-first API model: about 64% complete.
+- Full desktop native hosts: about 51% complete.
 - Android and Harmony: about 16% complete.
 - Product adapter/runtime harness: about 62% complete.
-- Native smoke verification: about 62% complete.
+- Native smoke verification: about 67% complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
 hotkeys, settings pages, host capabilities, shared geometry,
@@ -113,8 +113,8 @@ target records the preferred and avoided API shapes, such as `enum Msg` over
 string events and feature/crate based trimming over global widget registration.
 The first concrete Rust-first API pass now exists in `src/view.rs`,
 `src/style.rs` and `src/geometry.rs`: `View<Msg>`, typed event messages,
-`WidgetId`, `AppCx`, `ViewEventCx`, `ViewPaintCx`, `Px`, `Dp`, `Dpi`,
-`UiLength`, `ZsuiTheme` and theme tokens.
+`WidgetId`, `AppCx`, `ViewEventCx`, `ViewPaintCx`, `ViewInteractionPlan`,
+`Px`, `Dp`, `Dpi`, `UiLength`, `ZsuiTheme` and theme tokens.
 `ProductViewAdapterHost` and `ZsuiReusableRuntimeHarness::run_view_smoke(...)`
 now prove that typed view messages can flow through `AppCx` into product events
 and reusable `UiCommand` dispatch without a string event bus.
@@ -122,7 +122,15 @@ and reusable `UiCommand` dispatch without a string event bus.
 a product-neutral `NativeDrawPlan`, and the direct Win32 smoke path attaches
 that plan to the native `HWND` for no-flicker GDI painting. The smoke runner can
 exercise this with `cargo run --example native_smoke_run -- windows --view`;
-native input routing back into `ViewEventCx` is still pending.
+`NativeWindowBuilder::ui_command_view(...)` additionally keeps a command-backed
+view tree for native input routing. On Windows the direct Win32 host now handles
+`WM_LBUTTONUP`, hit-tests through `ViewInteractionPlan`, dispatches into
+`ViewEventCx<UiCommand>`, and handles focused `WM_CHAR` text input for textbox
+views. Native smoke records emitted command ids, focus counts and text character
+counts when the textbox feature is enabled. Checkbox clicks now route to typed
+`Toggled` events and reusable `UiCommand`s when the checkbox feature is
+enabled. Broader pointer/keyboard routing, IME/composition input and macOS/Linux
+input dispatch are still pending.
 
 ## Agent Entry Points
 
@@ -227,8 +235,9 @@ stable context without reading prose:
 - `zsui_completion_areas()`: current standalone completion estimate by area.
 - `zsui_rust_first_goals()`: the revised Rust-first design target list.
 - `zsui_rust_first_goal_names()`: compact names for the Rust-first target list.
-- `View<Msg>`, `ViewNode`, `WidgetId`, `AppCx`, `ViewEventCx` and
-  `ViewPaintCx`: first-pass typed view/message/context API.
+- `View<Msg>`, `ViewNode`, `WidgetId`, `AppCx`, `ViewEventCx`,
+  `ViewInteractionPlan` and `ViewPaintCx`: first-pass typed view/message/
+  hit-target/context API.
 - `Px`, `Dp`, `Dpi`, `UiLength` and `ZsuiTheme`: first-pass typed unit and
   theme-token API.
 - `ProductViewAdapterHost` and `ProductViewRuntimeSmokeRequest`: smoke path for
@@ -276,7 +285,8 @@ stable context without reading prose:
   auto-closes it and can capture `window.png` on Windows when
   `NativeWindowSmokeRunOptions::screenshot_file(...)` is set. The
   `native_smoke_run --view` example also records typed-view draw-plan command
-  counts in the smoke report.
+  counts plus Win32 click/text/toggle-to-`UiCommand` routing in the smoke
+  report.
 - `review_native_host_smoke_artifacts(platform)`: checks the artifact directory,
   validates JSON files and reports whether target smoke proof is complete.
 

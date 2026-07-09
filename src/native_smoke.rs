@@ -75,6 +75,16 @@ pub struct NativeHostSmokeInteractionReport {
     pub draw_plan_window_count: usize,
     pub draw_command_count: usize,
     pub text_command_count: usize,
+    pub native_view_hit_target_count: usize,
+    pub native_view_click_count: usize,
+    pub native_view_event_count: usize,
+    pub native_view_message_count: usize,
+    pub native_view_ui_command_count: usize,
+    pub native_view_ui_command_ids: Vec<&'static str>,
+    pub native_view_unhandled_click_count: usize,
+    pub native_view_focus_count: usize,
+    pub native_view_text_input_count: usize,
+    pub native_view_toggle_count: usize,
     pub status_item_requested: bool,
     pub status_item_created: bool,
     pub status_item_menu_item_count: usize,
@@ -105,6 +115,16 @@ impl NativeHostSmokeInteractionReport {
             draw_plan_window_count: 0,
             draw_command_count: 0,
             text_command_count: 0,
+            native_view_hit_target_count: 0,
+            native_view_click_count: 0,
+            native_view_event_count: 0,
+            native_view_message_count: 0,
+            native_view_ui_command_count: 0,
+            native_view_ui_command_ids: Vec::new(),
+            native_view_unhandled_click_count: 0,
+            native_view_focus_count: 0,
+            native_view_text_input_count: 0,
+            native_view_toggle_count: 0,
             status_item_requested: false,
             status_item_created: false,
             status_item_menu_item_count: 0,
@@ -145,6 +165,24 @@ impl NativeHostSmokeInteractionReport {
                 report.draw_plan_window_count, report.draw_command_count
             ));
         }
+        if report.native_view_click_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} click(s) into {} UI command(s)",
+                report.native_view_event_count, report.native_view_ui_command_count
+            ));
+        }
+        if report.native_view_text_input_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} text character(s)",
+                report.native_view_text_input_count
+            ));
+        }
+        if report.native_view_toggle_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} toggle event(s)",
+                report.native_view_toggle_count
+            ));
+        }
         if report.status_item_requested && report.status_item_created {
             notes.push("status item was created by the native smoke runner".to_string());
             if report.status_menu_command_routed {
@@ -176,6 +214,16 @@ impl NativeHostSmokeInteractionReport {
             draw_plan_window_count: report.draw_plan_window_count,
             draw_command_count: report.draw_command_count,
             text_command_count: report.text_command_count,
+            native_view_hit_target_count: report.native_view_hit_target_count,
+            native_view_click_count: report.native_view_click_count,
+            native_view_event_count: report.native_view_event_count,
+            native_view_message_count: report.native_view_message_count,
+            native_view_ui_command_count: report.native_view_ui_command_count,
+            native_view_ui_command_ids: report.native_view_ui_command_ids.clone(),
+            native_view_unhandled_click_count: report.native_view_unhandled_click_count,
+            native_view_focus_count: report.native_view_focus_count,
+            native_view_text_input_count: report.native_view_text_input_count,
+            native_view_toggle_count: report.native_view_toggle_count,
             status_item_requested: report.status_item_requested,
             status_item_created: report.status_item_created,
             status_item_menu_item_count: report.status_item_menu_item_count,
@@ -761,6 +809,16 @@ mod tests {
             draw_plan_window_count: 1,
             draw_command_count: 3,
             text_command_count: 1,
+            native_view_hit_target_count: 1,
+            native_view_click_count: 1,
+            native_view_event_count: 1,
+            native_view_message_count: 1,
+            native_view_ui_command_count: 1,
+            native_view_ui_command_ids: vec!["zsui.test.save"],
+            native_view_unhandled_click_count: 0,
+            native_view_focus_count: 0,
+            native_view_text_input_count: 0,
+            native_view_toggle_count: 0,
             status_item_requested: true,
             status_item_required: false,
             status_item_created: true,
@@ -804,6 +862,8 @@ mod tests {
         assert!(interaction_json.contains("\"status_item_created\": true"));
         assert!(interaction_json.contains("\"status_menu_command_routed\": true"));
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
+        assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
+        assert!(interaction_json.contains("zsui.test.save"));
         assert!(interaction_json.contains("auto_close_elapsed"));
     }
 

@@ -125,11 +125,15 @@ Already reusable at code level:
   `docs/framework-goals.md` expands the target with examples and the
   feature/crate trimming policy.
 - First-pass typed view API through `View<Msg>`, `ViewNode`, `WidgetId`,
-  `ViewEventCx`, `ViewPaintCx`, `AppCx`, typed view events, `Px`, `Dp`, `Dpi`,
-  `UiLength` and `ZsuiTheme`.
+  `ViewEventCx`, `ViewInteractionPlan`, `ViewPaintCx`, `AppCx`, typed view
+  events, `Px`, `Dp`, `Dpi`, `UiLength` and `ZsuiTheme`.
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
   `NativeDrawPlan`, with Windows smoke paint through the extracted no-flicker
   Win32/GDI path.
+- `NativeWindowBuilder::ui_command_view(...)` routing from Win32
+  `WM_LBUTTONUP` and focused `WM_CHAR` textbox input through
+  `ViewEventCx<UiCommand>` into stable command ids, including checkbox
+  `Toggled` events when the checkbox feature is enabled.
 - Product adapter view smoke through `ProductViewAdapterHost`,
   `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`.
 - Shared geometry, command, event, lifecycle, layout, component, render,
@@ -201,8 +205,10 @@ Still requiring extraction or target proof before system-complete claims:
 - Connecting the first-pass `View<Msg>` layer to native host input/paint
   routing, keeping raw HWNDs out of higher-level APIs, completing Px/Dp/Dpi
   migration and adding typestate builders while preserving the one-line native
-  window entry point. Native paint routing has a first pass; native input
-  dispatch into `ViewEventCx` is still pending.
+  window entry point. Native paint routing has a first pass; Win32
+  `WM_LBUTTONUP` and focused `WM_CHAR` textbox routing into
+  `ViewEventCx<UiCommand>` exist, plus checkbox toggle routing; full keyboard/
+  pointer/IME coverage and non-Windows input dispatch are still pending.
 - Target screenshots, tray/menu proof and interaction artifacts under
   `target/native-host-smoke/<platform>/`.
 - Target artifact review on each OS/device through `native_smoke_review`.

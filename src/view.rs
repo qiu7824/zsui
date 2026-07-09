@@ -10,13 +10,14 @@ use crate::render_protocol::TextRole;
 ))]
 use crate::render_protocol::{NativeDrawTextCommand, SemanticTextStyle};
 use crate::{
-    geometry::{ComponentId, Dp, Dpi, LayoutNode, LayoutOutput, Rect},
+    geometry::{ComponentId, Dp, Dpi, LayoutNode, LayoutOutput, Point, Rect},
     render_protocol::{ColorRole, NativeDrawCommand, NativeDrawFill, NativeDrawPlan},
     style::ThemeColorToken,
     Command, UiCommand,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct WidgetId(pub u64);
 
 impl WidgetId {
@@ -27,6 +28,12 @@ impl WidgetId {
 
 impl From<WidgetId> for ComponentId {
     fn from(value: WidgetId) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<ComponentId> for WidgetId {
+    fn from(value: ComponentId) -> Self {
         Self(value.0)
     }
 }
@@ -213,11 +220,95 @@ pub fn spacer<Msg>() -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Spacer)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewEvent {
     Click { widget: WidgetId },
     TextChanged { widget: WidgetId, value: String },
     Toggled { widget: WidgetId, checked: bool },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewHitTarget {
+    pub widget: WidgetId,
+    pub bounds: Rect,
+    pub kind: ViewHitTargetKind,
+}
+
+impl ViewHitTarget {
+    pub const fn new(widget: WidgetId, bounds: Rect) -> Self {
+        Self {
+            widget,
+            bounds,
+            kind: ViewHitTargetKind::Unknown,
+        }
+    }
+
+    pub const fn with_kind(widget: WidgetId, bounds: Rect, kind: ViewHitTargetKind) -> Self {
+        Self {
+            widget,
+            bounds,
+            kind,
+        }
+    }
+
+    pub const fn contains(self, point: Point) -> bool {
+        self.bounds.contains(point)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ViewHitTargetKind {
+    Unknown,
+    Button,
+    Textbox,
+    Checkbox,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewInteractionPlan {
+    pub hit_targets: Vec<ViewHitTarget>,
+}
+
+impl ViewInteractionPlan {
+    pub fn new(hit_targets: impl IntoIterator<Item = ViewHitTarget>) -> Self {
+        Self {
+            hit_targets: hit_targets.into_iter().collect(),
+        }
+    }
+
+    pub fn from_layout_output(layout: &LayoutOutput) -> Self {
+        Self::new(
+            layout
+                .children
+                .iter()
+                .map(|node| ViewHitTarget::new(node.component.into(), node.bounds)),
+        )
+    }
+
+    pub fn hit_target_count(&self) -> usize {
+        self.hit_targets.len()
+    }
+
+    pub fn target_at(&self, point: Point) -> Option<WidgetId> {
+        self.hit_target_at(point).map(|target| target.widget)
+    }
+
+    pub fn hit_target_at(&self, point: Point) -> Option<ViewHitTarget> {
+        self.hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.contains(point))
+    }
+
+    pub fn target_kind_at(&self, point: Point) -> Option<ViewHitTargetKind> {
+        self.hit_target_at(point).map(|target| target.kind)
+    }
+
+    pub fn click_event_at(&self, point: Point) -> Option<ViewEvent> {
+        self.target_at(point)
+            .map(|widget| ViewEvent::Click { widget })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -504,6 +595,64 @@ impl<Msg> ViewNode<Msg> {
             (None, _) => false,
         }
     }
+
+    pub fn interaction_plan(&self) -> ViewInteractionPlan {
+        let mut hit_targets = Vec::new();
+        self.collect_hit_targets(&mut hit_targets);
+        ViewInteractionPlan { hit_targets }
+    }
+
+    pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {
+        if self.id == Some(widget) {
+            #[cfg(feature = "textbox")]
+            if let ViewNodeKind::Textbox { value, .. } = &self.kind {
+                return Some(value);
+            }
+        }
+
+        self.children
+            .iter()
+            .find_map(|child| child.widget_text_value(widget))
+    }
+
+    pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
+        if self.id == Some(widget) {
+            #[cfg(feature = "checkbox")]
+            if let ViewNodeKind::Checkbox { checked, .. } = &self.kind {
+                return Some(*checked);
+            }
+        }
+
+        self.children
+            .iter()
+            .find_map(|child| child.widget_checked_value(widget))
+    }
+
+    fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>) {
+        if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
+            hit_targets.push(ViewHitTarget::with_kind(
+                widget,
+                bounds,
+                self.hit_target_kind(),
+            ));
+        }
+
+        for child in &self.children {
+            child.collect_hit_targets(hit_targets);
+        }
+    }
+
+    fn hit_target_kind(&self) -> ViewHitTargetKind {
+        match &self.kind {
+            #[cfg(feature = "button")]
+            ViewNodeKind::Button { .. } => ViewHitTargetKind::Button,
+            #[cfg(feature = "textbox")]
+            ViewNodeKind::Textbox { .. } => ViewHitTargetKind::Textbox,
+            #[cfg(feature = "checkbox")]
+            ViewNodeKind::Checkbox { .. } => ViewHitTargetKind::Checkbox,
+            _ => ViewHitTargetKind::Unknown,
+        }
+    }
 }
 
 fn split_child_bounds<Msg>(
@@ -636,6 +785,38 @@ mod tests {
         assert_eq!(output.bounds.width, 240);
         assert_eq!(paint.plan().text_count(), 2);
         assert!(paint.plan().command_count() >= 3);
+    }
+
+    #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn view_interaction_plan_maps_points_to_typed_click_events() {
+        let save_id = WidgetId::new(42);
+        let mut view: ViewNode<Msg> = column(vec![
+            text("Title"),
+            button("Save").id(save_id).on_click(Msg::SaveClicked),
+        ]);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 120,
+            },
+            Dpi::standard(),
+        );
+        let _output = view.layout(&mut layout);
+        let plan = view.interaction_plan();
+
+        assert_eq!(plan.hit_target_count(), 1);
+        assert_eq!(
+            plan.target_kind_at(Point { x: 150, y: 90 }),
+            Some(ViewHitTargetKind::Button)
+        );
+        assert_eq!(
+            plan.click_event_at(Point { x: 150, y: 90 }),
+            Some(ViewEvent::Click { widget: save_id })
+        );
+        assert_eq!(plan.click_event_at(Point { x: 150, y: 20 }), None);
     }
 
     #[test]

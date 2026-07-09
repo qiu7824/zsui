@@ -27,14 +27,20 @@ shape for ordinary apps, keep reusable ZSClip no-flicker self-draw behavior as
 the Windows baseline, and add wider bindings such as `windows-rs` only when a
 specific backend surface needs them.
 The first-pass typed view layer is `src/view.rs`: hosts should treat
-`View<Msg>`, `WidgetId`, `ViewEventCx` and `ViewPaintCx` as the direction for
-future event and paint routing instead of introducing string event buses or
-global widget registries.
+`View<Msg>`, `WidgetId`, `ViewEventCx`, `ViewInteractionPlan` and
+`ViewPaintCx` as the direction for future event and paint routing instead of
+introducing string event buses or global widget registries.
 `NativeWindowBuilder::view(...)` now converts a typed `ViewNode<Msg>` into a
 `NativeDrawPlan` for the desktop native-window path. Backends should consume
-that draw plan through their renderer/text layout sink, and should add input
-routing back into `ViewEventCx` as a distinct gate instead of coupling it to
-product state.
+that draw plan through their renderer/text layout sink.
+`NativeWindowBuilder::ui_command_view(...)` keeps a command-backed tree for
+native input. The Win32 host already maps `WM_LBUTTONUP` through
+`ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and records
+command ids during native smoke. It also routes focused `WM_CHAR` input into
+textbox `TextChanged` events when the textbox feature is enabled and checkbox
+clicks into typed `Toggled` events when the checkbox feature is enabled. Other
+backends should add their OS pointer/keyboard/IME routing back into
+`ViewEventCx` as distinct gates instead of coupling it to product state.
 For product integration, use `ProductViewAdapterHost` and
 `ZsuiReusableRuntimeHarness::run_view_smoke(...)` to verify typed view messages
 before wiring a native backend to real product state.

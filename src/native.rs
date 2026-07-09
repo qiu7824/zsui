@@ -9,7 +9,7 @@ use crate::{
         AppEvent, DialogResponse, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId,
         ZsuiError, ZsuiResult,
     },
-    geometry::{Dpi, Rect},
+    geometry::{Dpi, Point, Rect},
     host::{MemoryHost, TrayRecord, WindowRecord, ZsuiHost},
     hotkey::HotkeySpec,
     menu::{MenuItemSpec, MenuSpec},
@@ -25,7 +25,9 @@ use crate::{
     render_protocol::NativeDrawPlan,
     settings::SettingsPageSpec,
     tray::TraySpec,
-    view::{View, ViewLayoutCx, ViewNode, ViewPaintCx},
+    view::{
+        View, ViewEvent, ViewEventCx, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewPaintCx,
+    },
     window::{Window, WindowSpec},
 };
 
@@ -177,7 +179,12 @@ impl NativeWindowRuntimeDriver {
         &self,
         options: NativeWindowSmokeRunOptions,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
-        run_native_window_smoke_event_loop(self.windows.clone(), Vec::new(), options)
+        run_native_window_smoke_event_loop(
+            self.windows.clone(),
+            Vec::new(),
+            NativeViewInputRuntime::default(),
+            options,
+        )
     }
 }
 
@@ -399,6 +406,8 @@ pub struct NativeWindowSmokeRunOptions {
     pub require_screenshot: bool,
     pub status_item: Option<TraySpec>,
     pub require_status_item: bool,
+    pub native_view_click_points: Vec<Point>,
+    pub native_view_text_inputs: Vec<String>,
 }
 
 impl NativeWindowSmokeRunOptions {
@@ -410,6 +419,8 @@ impl NativeWindowSmokeRunOptions {
             require_screenshot: false,
             status_item: None,
             require_status_item: false,
+            native_view_click_points: Vec::new(),
+            native_view_text_inputs: Vec::new(),
         }
     }
 
@@ -441,6 +452,31 @@ impl NativeWindowSmokeRunOptions {
         self.require_status_item = require_status_item;
         self
     }
+
+    pub fn native_view_click(mut self, point: Point) -> Self {
+        self.native_view_click_points.push(point);
+        self
+    }
+
+    pub fn native_view_clicks(mut self, points: impl IntoIterator<Item = Point>) -> Self {
+        self.native_view_click_points.extend(points);
+        self
+    }
+
+    pub fn native_view_text_input(mut self, text: impl Into<String>) -> Self {
+        self.native_view_text_inputs.push(text.into());
+        self
+    }
+
+    pub fn native_view_text_inputs<I, S>(mut self, texts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.native_view_text_inputs
+            .extend(texts.into_iter().map(Into::into));
+        self
+    }
 }
 
 impl Default for NativeWindowSmokeRunOptions {
@@ -464,6 +500,16 @@ pub struct NativeWindowSmokeRunReport {
     pub draw_plan_window_count: usize,
     pub draw_command_count: usize,
     pub text_command_count: usize,
+    pub native_view_hit_target_count: usize,
+    pub native_view_click_count: usize,
+    pub native_view_event_count: usize,
+    pub native_view_message_count: usize,
+    pub native_view_ui_command_count: usize,
+    pub native_view_ui_command_ids: Vec<&'static str>,
+    pub native_view_unhandled_click_count: usize,
+    pub native_view_focus_count: usize,
+    pub native_view_text_input_count: usize,
+    pub native_view_toggle_count: usize,
     pub status_item_requested: bool,
     pub status_item_required: bool,
     pub status_item_created: bool,
@@ -501,6 +547,16 @@ impl NativeWindowSmokeRunReport {
             draw_plan_window_count: 0,
             draw_command_count: 0,
             text_command_count: 0,
+            native_view_hit_target_count: 0,
+            native_view_click_count: 0,
+            native_view_event_count: 0,
+            native_view_message_count: 0,
+            native_view_ui_command_count: 0,
+            native_view_ui_command_ids: Vec::new(),
+            native_view_unhandled_click_count: 0,
+            native_view_focus_count: 0,
+            native_view_text_input_count: 0,
+            native_view_toggle_count: 0,
             status_item_requested,
             status_item_required: options.require_status_item,
             status_item_created: false,
@@ -519,6 +575,41 @@ impl NativeWindowSmokeRunReport {
 
     pub fn visible_window_was_created(&self) -> bool {
         self.created_window_count > 0 && self.startup_error.is_none()
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+struct NativeViewInputRuntime {
+    interaction_plan: Option<ViewInteractionPlan>,
+    ui_command_view: Option<ViewNode<UiCommand>>,
+}
+
+#[allow(dead_code)]
+impl NativeViewInputRuntime {
+    fn new(
+        interaction_plan: Option<ViewInteractionPlan>,
+        ui_command_view: Option<ViewNode<UiCommand>>,
+    ) -> Self {
+        Self {
+            interaction_plan,
+            ui_command_view,
+        }
+    }
+
+    fn hit_target_count(&self) -> usize {
+        self.interaction_plan
+            .as_ref()
+            .map(ViewInteractionPlan::hit_target_count)
+            .unwrap_or(0)
+    }
+
+    #[cfg(all(windows, feature = "windows-win32"))]
+    fn windows_win32_route(&self) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
+        Some(crate::windows_win32_host::WindowsWin32ViewInputRoute::new(
+            self.interaction_plan.clone()?,
+            self.ui_command_view.clone()?,
+        ))
     }
 }
 
@@ -547,12 +638,105 @@ fn record_draw_plan_smoke(
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+fn record_native_view_input_smoke(
+    report: &mut NativeWindowSmokeRunReport,
+    runtime: &mut NativeViewInputRuntime,
+    options: &NativeWindowSmokeRunOptions,
+) {
+    report.native_view_hit_target_count = runtime.hit_target_count();
+    if options.native_view_click_points.is_empty() {
+        return;
+    }
+
+    for point in &options.native_view_click_points {
+        report.native_view_click_count += 1;
+        let Some(event) = runtime
+            .interaction_plan
+            .as_ref()
+            .and_then(|plan| plan.click_event_at(*point))
+        else {
+            report.native_view_unhandled_click_count += 1;
+            report
+                .events
+                .push(format!("native_view_click_missed:{}:{}", point.x, point.y));
+            continue;
+        };
+
+        report.native_view_event_count += 1;
+        if let ViewEvent::Click { widget } = &event {
+            report
+                .events
+                .push(format!("native_view_click:{}", widget.0));
+        }
+
+        let Some(view) = &mut runtime.ui_command_view else {
+            report
+                .events
+                .push("native_view_event_without_ui_command_view".to_string());
+            continue;
+        };
+
+        let mut event_cx = ViewEventCx::new();
+        view.event(&mut event_cx, &event);
+        let commands = event_cx.into_messages();
+        report.native_view_message_count += commands.len();
+        report.native_view_ui_command_count += commands.len();
+        for command in commands {
+            report.native_view_ui_command_ids.push(command.id.0);
+            report
+                .events
+                .push(format!("native_view_ui_command:{}", command.id.0));
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn record_windows_win32_view_input_report(
+    report: &mut NativeWindowSmokeRunReport,
+    input: &crate::windows_win32_host::WindowsWin32ViewInputDispatchReport,
+) {
+    report.native_view_hit_target_count = input.hit_target_count;
+    report.native_view_click_count += input.click_count;
+    report.native_view_event_count += input.event_count;
+    report.native_view_message_count += input.message_count;
+    report.native_view_ui_command_count += input.ui_command_count;
+    report
+        .native_view_ui_command_ids
+        .extend(input.ui_command_ids.iter().copied());
+    report.native_view_unhandled_click_count += input.unhandled_click_count;
+    report.native_view_focus_count += input.focus_count;
+    report.native_view_text_input_count += input.text_input_count;
+    report.native_view_toggle_count += input.toggle_count;
+    report.events.extend(input.events.clone());
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn windows_lparam_from_point(point: Point) -> isize {
+    let x = point.x as i16 as u16 as u32;
+    let y = point.y as i16 as u16 as u32;
+    ((y << 16) | x) as isize
+}
+
+#[derive(Debug, Clone)]
 pub struct NativeWindowBuilder {
     app_name: String,
     window: WindowSpec,
     draw_plan: Option<NativeDrawPlan>,
+    view_interaction_plan: Option<ViewInteractionPlan>,
+    view_ui_command_tree: Option<ViewNode<UiCommand>>,
     view_layout_node_count: usize,
+}
+
+impl PartialEq for NativeWindowBuilder {
+    fn eq(&self, other: &Self) -> bool {
+        self.app_name == other.app_name
+            && self.window == other.window
+            && self.draw_plan == other.draw_plan
+            && self.view_interaction_plan == other.view_interaction_plan
+            && self.view_ui_command_tree.is_some() == other.view_ui_command_tree.is_some()
+            && self.view_layout_node_count == other.view_layout_node_count
+    }
 }
 
 impl NativeWindowBuilder {
@@ -562,6 +746,8 @@ impl NativeWindowBuilder {
             app_name: title.clone(),
             window: Window::new(title),
             draw_plan: None,
+            view_interaction_plan: None,
+            view_ui_command_tree: None,
             view_layout_node_count: 0,
         }
     }
@@ -608,6 +794,8 @@ impl NativeWindowBuilder {
 
     pub fn draw_plan(mut self, draw_plan: NativeDrawPlan) -> Self {
         self.draw_plan = Some(draw_plan);
+        self.view_interaction_plan = None;
+        self.view_ui_command_tree = None;
         self.view_layout_node_count = 0;
         self
     }
@@ -625,8 +813,30 @@ impl NativeWindowBuilder {
         let layout = view.layout(&mut layout_cx);
         let mut paint_cx = ViewPaintCx::new(Dpi::standard());
         view.paint(&mut paint_cx);
+        self.view_interaction_plan = Some(view.interaction_plan());
+        self.view_ui_command_tree = None;
         self.view_layout_node_count = layout.children.len();
         self.draw_plan = Some(paint_cx.into_plan());
+        self
+    }
+
+    pub fn ui_command_view(mut self, mut view: ViewNode<UiCommand>) -> Self {
+        let mut layout_cx = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.window.width as i32,
+                height: self.window.height as i32,
+            },
+            Dpi::standard(),
+        );
+        let layout = view.layout(&mut layout_cx);
+        let mut paint_cx = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint_cx);
+        self.view_interaction_plan = Some(view.interaction_plan());
+        self.view_layout_node_count = layout.children.len();
+        self.draw_plan = Some(paint_cx.into_plan());
+        self.view_ui_command_tree = Some(view);
         self
     }
 
@@ -636,6 +846,14 @@ impl NativeWindowBuilder {
 
     pub fn native_draw_plan(&self) -> Option<&NativeDrawPlan> {
         self.draw_plan.as_ref()
+    }
+
+    pub fn native_view_interaction_plan(&self) -> Option<&ViewInteractionPlan> {
+        self.view_interaction_plan.as_ref()
+    }
+
+    pub const fn native_view_has_ui_command_routing(&self) -> bool {
+        self.view_ui_command_tree.is_some()
     }
 
     pub const fn view_layout_node_count(&self) -> usize {
@@ -659,13 +877,26 @@ impl NativeWindowBuilder {
         options: NativeWindowSmokeRunOptions,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
         let draw_plan = self.draw_plan.clone();
+        let view_runtime = self.native_view_input_runtime();
         let app = self.build()?;
         let mut host = NativeWindowHost::new();
         for window in &app.windows {
             host.create_main_window(window)?;
         }
         host.set_window_draw_plan(0, draw_plan);
-        run_native_window_smoke_event_loop(host.windows.clone(), host.draw_plans.clone(), options)
+        run_native_window_smoke_event_loop(
+            host.windows.clone(),
+            host.draw_plans.clone(),
+            view_runtime,
+            options,
+        )
+    }
+
+    fn native_view_input_runtime(&self) -> NativeViewInputRuntime {
+        NativeViewInputRuntime::new(
+            self.view_interaction_plan.clone(),
+            self.view_ui_command_tree.clone(),
+        )
     }
 }
 
@@ -962,10 +1193,13 @@ fn run_native_window_event_loop(
 fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
+    view_runtime: NativeViewInputRuntime,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     use std::{thread, time::Duration};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        PostMessageW, WM_CHAR, WM_CLOSE, WM_LBUTTONUP,
+    };
 
     if windows.is_empty() {
         return Ok(NativeWindowSmokeRunReport::empty(options));
@@ -977,15 +1211,22 @@ fn run_native_window_smoke_event_loop(
         ..NativeWindowSmokeRunReport::empty(options.clone())
     };
     record_draw_plan_smoke(&mut report, &draw_plans);
-    let handles = crate::windows_win32_host::create_owned_windows_for_specs_with_draw_plans(
-        &windows,
-        &draw_plans,
-    )
-    .map_err(|err| {
-        report.startup_error = Some(err.to_string());
-        report.events.push("startup_error".to_string());
-        err
-    })?;
+    report.native_view_hit_target_count = view_runtime.hit_target_count();
+    let input_routes = match view_runtime.windows_win32_route() {
+        Some(route) => vec![Some(route)],
+        None => Vec::new(),
+    };
+    let handles =
+        crate::windows_win32_host::create_owned_windows_for_specs_with_draw_plans_and_input_routes(
+            &windows,
+            &draw_plans,
+            &input_routes,
+        )
+        .map_err(|err| {
+            report.startup_error = Some(err.to_string());
+            report.events.push("startup_error".to_string());
+            err
+        })?;
 
     report.created_window_count = handles.len();
     report.events.extend(
@@ -1089,6 +1330,37 @@ fn run_native_window_smoke_event_loop(
         }
     }
 
+    let mut click_points = options.native_view_click_points.iter();
+    if !options.native_view_text_inputs.is_empty() {
+        if let Some(point) = click_points.next() {
+            unsafe {
+                PostMessageW(
+                    handles[0].main(),
+                    WM_LBUTTONUP,
+                    0,
+                    windows_lparam_from_point(*point),
+                );
+            }
+        }
+    }
+    for text in &options.native_view_text_inputs {
+        for ch in text.chars() {
+            unsafe {
+                PostMessageW(handles[0].main(), WM_CHAR, ch as usize, 0);
+            }
+        }
+    }
+    for point in click_points {
+        unsafe {
+            PostMessageW(
+                handles[0].main(),
+                WM_LBUTTONUP,
+                0,
+                windows_lparam_from_point(*point),
+            );
+        }
+    }
+
     let close_handles: Vec<isize> = handles
         .iter()
         .map(|handles| handles.main() as isize)
@@ -1112,6 +1384,14 @@ fn run_native_window_smoke_event_loop(
         crate::windows_win32_host::WindowsWin32MessageLoopResult::Failed => {
             report.startup_error = Some("GetMessageW failed".to_string());
             report.events.push("message_loop_error".to_string());
+        }
+    }
+
+    for handles in &handles {
+        if let Some(input_report) =
+            crate::windows_win32_host::windows_win32_window_view_input_report(handles.main())
+        {
+            record_windows_win32_view_input_report(&mut report, &input_report);
         }
     }
 
@@ -1154,6 +1434,7 @@ fn run_native_window_smoke_event_loop(
 fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
+    mut view_runtime: NativeViewInputRuntime,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     use std::{
@@ -1301,6 +1582,7 @@ fn run_native_window_smoke_event_loop(
         auto_close_reported: false,
     };
     record_draw_plan_smoke(&mut app.report, &draw_plans);
+    record_native_view_input_smoke(&mut app.report, &mut view_runtime, &options);
     event_loop
         .run_app(&mut app)
         .map_err(|err| ZsuiError::host("native_window_smoke_event_loop", err.to_string()))?;
@@ -1365,6 +1647,7 @@ fn capture_first_native_window_png(
 fn run_native_window_smoke_event_loop(
     _windows: Vec<WindowSpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtime: NativeViewInputRuntime,
     _options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     Err(ZsuiError::unsupported(
@@ -1682,6 +1965,7 @@ fn run_native_window_event_loop(
 fn run_native_window_smoke_event_loop(
     _windows: Vec<WindowSpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtime: NativeViewInputRuntime,
     _options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     Err(ZsuiError::unsupported(
@@ -1730,10 +2014,45 @@ mod tests {
         let draw_plan = builder
             .native_draw_plan()
             .expect("typed view should become a native draw plan");
+        let interaction_plan = builder
+            .native_view_interaction_plan()
+            .expect("typed view should expose hit targets");
 
         assert_eq!(builder.view_layout_node_count(), 1);
+        assert_eq!(interaction_plan.hit_target_count(), 1);
         assert!(draw_plan.command_count() >= 3);
         assert!(draw_plan.text_count() >= 2);
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_window_builder_routes_ui_command_view_clicks_for_smoke() {
+        let builder = native_window("View Command Example")
+            .size(360, 220)
+            .ui_command_view(crate::column(vec![
+                crate::text::<UiCommand>("Settings"),
+                crate::button("Save")
+                    .id(crate::WidgetId::new(7))
+                    .on_click(UiCommand::app(crate::CommandId("zsui.test.save"))),
+            ]));
+        let mut report = NativeWindowSmokeRunReport::empty(
+            NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 180, y: 170 }),
+        );
+
+        record_native_view_input_smoke(
+            &mut report,
+            &mut builder.native_view_input_runtime(),
+            &NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 180, y: 170 }),
+        );
+
+        assert!(builder.native_view_has_ui_command_routing());
+        assert_eq!(report.native_view_hit_target_count, 1);
+        assert_eq!(report.native_view_click_count, 1);
+        assert_eq!(report.native_view_event_count, 1);
+        assert_eq!(report.native_view_message_count, 1);
+        assert_eq!(report.native_view_ui_command_count, 1);
+        assert_eq!(report.native_view_ui_command_ids, vec!["zsui.test.save"]);
+        assert_eq!(report.native_view_unhandled_click_count, 0);
     }
 
     #[test]
@@ -1757,6 +2076,18 @@ mod tests {
         assert_eq!(report.draw_plan_window_count, 0);
         assert_eq!(report.draw_command_count, 0);
         assert_eq!(report.text_command_count, 0);
+        assert!(options.native_view_click_points.is_empty());
+        assert_eq!(report.native_view_hit_target_count, 0);
+        assert_eq!(report.native_view_click_count, 0);
+        assert_eq!(report.native_view_event_count, 0);
+        assert_eq!(report.native_view_message_count, 0);
+        assert_eq!(report.native_view_ui_command_count, 0);
+        assert!(report.native_view_ui_command_ids.is_empty());
+        assert_eq!(report.native_view_unhandled_click_count, 0);
+        assert!(options.native_view_text_inputs.is_empty());
+        assert_eq!(report.native_view_focus_count, 0);
+        assert_eq!(report.native_view_text_input_count, 0);
+        assert_eq!(report.native_view_toggle_count, 0);
         assert!(!report.visible_window_was_created());
     }
 

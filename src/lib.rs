@@ -272,8 +272,9 @@ pub use view::text;
 #[cfg(feature = "textbox")]
 pub use view::textbox;
 pub use view::{
-    column, row, spacer, AppCx, View, ViewEvent, ViewEventCx, ViewLayoutCx, ViewNode, ViewNodeKind,
-    ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
+    column, row, spacer, AppCx, View, ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind,
+    ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection,
+    ViewStyle, WidgetId,
 };
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
@@ -285,22 +286,27 @@ pub use windows_gdi_renderer::{
 #[cfg(all(windows, feature = "windows-win32"))]
 pub use windows_win32_host::{
     clear_windows_win32_window_draw_plan, clear_windows_win32_window_draw_plans,
+    clear_windows_win32_window_view_input_route, clear_windows_win32_window_view_input_routes,
     create_owned_windows_for_specs as create_owned_windows_win32_for_specs,
     create_owned_windows_for_specs_with_draw_plans as create_owned_windows_win32_for_specs_with_draw_plans,
+    create_owned_windows_for_specs_with_draw_plans_and_input_routes as create_owned_windows_win32_for_specs_with_draw_plans_and_input_routes,
     create_windows_for_specs as create_windows_win32_for_specs,
     create_windows_for_specs_with_draw_plans as create_windows_win32_for_specs_with_draw_plans,
+    create_windows_for_specs_with_draw_plans_and_input_routes as create_windows_win32_for_specs_with_draw_plans_and_input_routes,
+    dispatch_windows_win32_window_view_click, dispatch_windows_win32_window_view_text_input,
     run_windows_win32_native_window_event_loop,
     run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items,
     run_windows_win32_native_window_event_loop_with_status_items,
-    set_windows_win32_window_draw_plan, windows_win32_main_window_style_plan,
+    set_windows_win32_window_draw_plan, set_windows_win32_window_view_input_route,
+    windows_win32_main_window_style_plan, windows_win32_window_view_input_report,
     zsui_win32_default_window_proc, WindowsWin32ClassNames, WindowsWin32MainWindowHost,
     WindowsWin32MessageLoop, WindowsWin32MessageLoopResult, WindowsWin32OwnedAppIconResource,
     WindowsWin32OwnedIcon, WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu,
     WindowsWin32OwnedTrayIcon, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
     WindowsWin32StatusMenuCommandTable, WindowsWin32TransientWindowHost,
-    WindowsWin32WindowStylePlan, WindowsWindowCreateParams, WindowsWindowRole,
-    ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID, ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS,
-    ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+    WindowsWin32ViewInputDispatchReport, WindowsWin32ViewInputRoute, WindowsWin32WindowStylePlan,
+    WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,
+    ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS, ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
 };
 
 #[cfg(test)]

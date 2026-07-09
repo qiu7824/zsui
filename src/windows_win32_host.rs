@@ -20,7 +20,8 @@ use crate::{
     NativeStatusMenuCommandHostOperation, NativeStatusMenuCommandRequest,
     NativeStatusMenuCommandResult, NativeTransientWindowHost, NativeTransientWindowHostOperation,
     NativeTransientWindowPresentation, NativeTransientWindowRequest, NativeWindowOptions, Renderer,
-    Size, TraySpec, UiRect, WindowSpec, ZsuiError, ZsuiResult,
+    Size, TraySpec, UiCommand, UiRect, View, ViewEventCx, ViewInteractionPlan, ViewNode,
+    WindowSpec, ZsuiError, ZsuiResult,
 };
 use windows_sys::Win32::{
     Foundation::{
@@ -51,17 +52,19 @@ use windows_sys::Win32::{
             LR_LOADFROMFILE, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
             SC_MOVE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED,
             SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
-            SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CLOSE,
-            WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SYSCOMMAND,
-            WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-            WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU,
-            WS_THICKFRAME,
+            SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CHAR,
+            WM_CLOSE, WM_ERASEBKGND, WM_LBUTTONUP, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETICON,
+            WM_SYSCOMMAND, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_NOACTIVATE,
+            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED,
+            WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
 
 static ACTIVE_MAIN_WINDOW_COUNT: AtomicI32 = AtomicI32::new(0);
 static WINDOW_DRAW_PLANS: OnceLock<Mutex<Vec<WindowsWindowDrawPlanRecord>>> = OnceLock::new();
+static WINDOW_VIEW_INPUT_ROUTES: OnceLock<Mutex<Vec<WindowsWindowViewInputRouteRecord>>> =
+    OnceLock::new();
 
 const HOVER_DEFAULT: u32 = u32::MAX;
 const DEFAULT_MAIN_CLASS_NAME: &str = "ZsuiMainWindow";
@@ -74,6 +77,13 @@ pub const ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS: u32 = TPM_RETURNCMD | TPM_NONOTIFY
 struct WindowsWindowDrawPlanRecord {
     hwnd: isize,
     plan: NativeDrawPlan,
+}
+
+#[derive(Debug, Clone)]
+struct WindowsWindowViewInputRouteRecord {
+    hwnd: isize,
+    route: WindowsWin32ViewInputRoute,
+    report: WindowsWin32ViewInputDispatchReport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,7 +229,19 @@ pub fn create_windows_for_specs_with_draw_plans(
     specs: &[WindowSpec],
     draw_plans: &[Option<NativeDrawPlan>],
 ) -> ZsuiResult<Vec<NativeMainWindowHandles<HWND>>> {
-    let owned = create_owned_windows_for_specs_with_draw_plans(specs, draw_plans)?;
+    create_windows_for_specs_with_draw_plans_and_input_routes(specs, draw_plans, &[])
+}
+
+pub fn create_windows_for_specs_with_draw_plans_and_input_routes(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    input_routes: &[Option<WindowsWin32ViewInputRoute>],
+) -> ZsuiResult<Vec<NativeMainWindowHandles<HWND>>> {
+    let owned = create_owned_windows_for_specs_with_draw_plans_and_input_routes(
+        specs,
+        draw_plans,
+        input_routes,
+    )?;
     Ok(owned
         .into_iter()
         .map(WindowsWin32OwnedMainWindowHandles::into_handles)
@@ -236,8 +258,17 @@ pub fn create_owned_windows_for_specs_with_draw_plans(
     specs: &[WindowSpec],
     draw_plans: &[Option<NativeDrawPlan>],
 ) -> ZsuiResult<Vec<WindowsWin32OwnedMainWindowHandles>> {
+    create_owned_windows_for_specs_with_draw_plans_and_input_routes(specs, draw_plans, &[])
+}
+
+pub fn create_owned_windows_for_specs_with_draw_plans_and_input_routes(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    input_routes: &[Option<WindowsWin32ViewInputRoute>],
+) -> ZsuiResult<Vec<WindowsWin32OwnedMainWindowHandles>> {
     ACTIVE_MAIN_WINDOW_COUNT.store(0, Ordering::SeqCst);
     clear_windows_win32_window_draw_plans();
+    clear_windows_win32_window_view_input_routes();
     let capabilities = HostCapabilities::windows_native_window_host();
     let mut host = WindowsWin32MainWindowHost::new();
     let mut handles = Vec::new();
@@ -252,6 +283,9 @@ pub fn create_owned_windows_for_specs_with_draw_plans(
                     unsafe {
                         UpdateWindow(created.main);
                     }
+                }
+                if let Some(Some(route)) = input_routes.get(index) {
+                    set_windows_win32_window_view_input_route(created.main, route.clone());
                 }
                 host.apply_main_window_appearance(created.main);
                 host.apply_main_window_appearance(created.quick);
@@ -332,6 +366,7 @@ impl Drop for WindowsWin32OwnedMainWindowHandles {
                 continue;
             }
             clear_windows_win32_window_draw_plan(handle);
+            clear_windows_win32_window_view_input_route(handle);
             unsafe {
                 if IsWindow(handle) != 0 {
                     DestroyWindow(handle);
@@ -1158,6 +1193,268 @@ fn window_draw_plan(hwnd: HWND) -> Option<NativeDrawPlan> {
         .map(|record| record.plan.clone())
 }
 
+#[derive(Debug, Clone)]
+pub struct WindowsWin32ViewInputRoute {
+    interaction_plan: ViewInteractionPlan,
+    ui_command_view: ViewNode<UiCommand>,
+    focused_widget: Option<crate::WidgetId>,
+}
+
+impl WindowsWin32ViewInputRoute {
+    pub fn new(
+        interaction_plan: ViewInteractionPlan,
+        ui_command_view: ViewNode<UiCommand>,
+    ) -> Self {
+        Self {
+            interaction_plan,
+            ui_command_view,
+            focused_widget: None,
+        }
+    }
+
+    pub fn hit_target_count(&self) -> usize {
+        self.interaction_plan.hit_target_count()
+    }
+
+    fn dispatch_click(&mut self, point: crate::Point) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            click_count: 1,
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let Some(target) = self.interaction_plan.hit_target_at(point) else {
+            report.unhandled_click_count = 1;
+            report
+                .events
+                .push(format!("win32_view_click_missed:{}:{}", point.x, point.y));
+            return report;
+        };
+
+        if target.kind == crate::ViewHitTargetKind::Textbox {
+            self.focused_widget = Some(target.widget);
+            report.focus_count = 1;
+            report.focused_widget = Some(target.widget.0);
+            report
+                .events
+                .push(format!("win32_view_focus:{}", target.widget.0));
+            return report;
+        }
+
+        let event = if target.kind == crate::ViewHitTargetKind::Checkbox {
+            let checked = !self
+                .ui_command_view
+                .widget_checked_value(target.widget)
+                .unwrap_or(false);
+            report.toggle_count = 1;
+            report
+                .events
+                .push(format!("win32_view_toggle:{}:{checked}", target.widget.0));
+            crate::ViewEvent::Toggled {
+                widget: target.widget,
+                checked,
+            }
+        } else {
+            crate::ViewEvent::Click {
+                widget: target.widget,
+            }
+        };
+        report.event_count = 1;
+        if let crate::ViewEvent::Click { widget } = &event {
+            report.events.push(format!("win32_view_click:{}", widget.0));
+        }
+
+        self.dispatch_event(event, &mut report);
+        report
+    }
+
+    fn dispatch_text_input(&mut self, text: &str) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let Some(widget) = self.focused_widget else {
+            report
+                .events
+                .push("win32_view_text_without_focus".to_string());
+            return report;
+        };
+
+        let mut value = self
+            .ui_command_view
+            .widget_text_value(widget)
+            .unwrap_or_default()
+            .to_string();
+        for ch in text.chars() {
+            match ch {
+                '\u{8}' => {
+                    value.pop();
+                }
+                ch if !ch.is_control() => value.push(ch),
+                _ => {}
+            }
+        }
+
+        report.text_input_count = text.chars().count();
+        report.event_count = 1;
+        report
+            .events
+            .push(format!("win32_view_text_changed:{}", widget.0));
+        self.dispatch_event(crate::ViewEvent::TextChanged { widget, value }, &mut report);
+        report
+    }
+
+    fn dispatch_event(
+        &mut self,
+        event: crate::ViewEvent,
+        report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
+        let mut event_cx = ViewEventCx::new();
+        self.ui_command_view.event(&mut event_cx, &event);
+        let commands = event_cx.into_messages();
+        report.message_count = commands.len();
+        report.ui_command_count = commands.len();
+        for command in commands {
+            report.ui_command_ids.push(command.id.0);
+            report
+                .events
+                .push(format!("win32_view_ui_command:{}", command.id.0));
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WindowsWin32ViewInputDispatchReport {
+    pub hit_target_count: usize,
+    pub click_count: usize,
+    pub event_count: usize,
+    pub message_count: usize,
+    pub ui_command_count: usize,
+    pub ui_command_ids: Vec<&'static str>,
+    pub unhandled_click_count: usize,
+    pub focus_count: usize,
+    pub focused_widget: Option<u64>,
+    pub text_input_count: usize,
+    pub toggle_count: usize,
+    pub events: Vec<String>,
+}
+
+impl WindowsWin32ViewInputDispatchReport {
+    fn merge(&mut self, next: WindowsWin32ViewInputDispatchReport) {
+        self.hit_target_count = next.hit_target_count;
+        self.click_count += next.click_count;
+        self.event_count += next.event_count;
+        self.message_count += next.message_count;
+        self.ui_command_count += next.ui_command_count;
+        self.ui_command_ids.extend(next.ui_command_ids);
+        self.unhandled_click_count += next.unhandled_click_count;
+        self.focus_count += next.focus_count;
+        self.focused_widget = next.focused_widget.or(self.focused_widget);
+        self.text_input_count += next.text_input_count;
+        self.toggle_count += next.toggle_count;
+        self.events.extend(next.events);
+    }
+}
+
+pub fn set_windows_win32_window_view_input_route(
+    hwnd: HWND,
+    route: WindowsWin32ViewInputRoute,
+) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    let hwnd = hwnd as isize;
+    if let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd) {
+        record.route = route;
+        record.report = WindowsWin32ViewInputDispatchReport::default();
+    } else {
+        let report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: route.hit_target_count(),
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        routes.push(WindowsWindowViewInputRouteRecord {
+            hwnd,
+            route,
+            report,
+        });
+    }
+    true
+}
+
+pub fn clear_windows_win32_window_view_input_route(hwnd: HWND) {
+    if hwnd.is_null() {
+        return;
+    }
+    let hwnd = hwnd as isize;
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    routes.retain(|record| record.hwnd != hwnd);
+}
+
+pub fn clear_windows_win32_window_view_input_routes() {
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    routes.clear();
+}
+
+pub fn windows_win32_window_view_input_report(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    let routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    routes
+        .iter()
+        .find(|record| record.hwnd == hwnd)
+        .map(|record| record.report.clone())
+}
+
+pub fn dispatch_windows_win32_window_view_click(
+    hwnd: HWND,
+    point: crate::Point,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
+    let report = record.route.dispatch_click(point);
+    record.report.merge(report.clone());
+    Some(report)
+}
+
+pub fn dispatch_windows_win32_window_view_text_input(
+    hwnd: HWND,
+    text: &str,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
+    let report = record.route.dispatch_text_input(text);
+    record.report.merge(report.clone());
+    Some(report)
+}
+
+fn window_view_input_routes() -> &'static Mutex<Vec<WindowsWindowViewInputRouteRecord>> {
+    WINDOW_VIEW_INPUT_ROUTES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
 pub fn run_windows_win32_native_window_event_loop(specs: &[WindowSpec]) -> ZsuiResult<()> {
     run_windows_win32_native_window_event_loop_with_status_items(specs, &[])
 }
@@ -1775,8 +2072,42 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => 1,
+        WM_LBUTTONUP => {
+            if dispatch_windows_win32_window_view_click(hwnd, point_from_lparam(lparam)).is_some() {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_CHAR => {
+            if let Some(text) = text_from_char_wparam(wparam) {
+                if dispatch_windows_win32_window_view_text_input(hwnd, &text).is_some() {
+                    0
+                } else {
+                    DefWindowProcW(hwnd, msg, wparam, lparam)
+                }
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_PAINT => paint_no_flicker_background(hwnd),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+fn point_from_lparam(lparam: LPARAM) -> crate::Point {
+    let raw = lparam as u32;
+    crate::Point {
+        x: (raw & 0xffff) as i16 as i32,
+        y: ((raw >> 16) & 0xffff) as i16 as i32,
+    }
+}
+
+fn text_from_char_wparam(wparam: WPARAM) -> Option<String> {
+    match char::from_u32(wparam as u32) {
+        Some('\u{8}') => Some('\u{8}'.to_string()),
+        Some(ch) if !ch.is_control() => Some(ch.to_string()),
+        _ => None,
     }
 }
 
@@ -1909,6 +2240,133 @@ mod tests {
 
         clear_windows_win32_window_draw_plan(hwnd);
         assert_eq!(window_draw_plan(hwnd), None);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn window_view_input_route_dispatches_click_to_ui_command() {
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 77isize as HWND;
+        let widget = crate::WidgetId::new(9);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::new(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 120,
+                    height: 48,
+                },
+            )]),
+            crate::button("Save")
+                .id(widget)
+                .on_click(UiCommand::app(crate::CommandId("zsui.test.win32.save"))),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        let dispatched =
+            dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
+                .expect("registered route should dispatch click");
+        let aggregate = windows_win32_window_view_input_report(hwnd)
+            .expect("registered route should keep aggregate report");
+
+        assert_eq!(dispatched.hit_target_count, 1);
+        assert_eq!(dispatched.click_count, 1);
+        assert_eq!(dispatched.event_count, 1);
+        assert_eq!(dispatched.ui_command_count, 1);
+        assert_eq!(dispatched.ui_command_ids, vec!["zsui.test.win32.save"]);
+        assert_eq!(aggregate.click_count, 1);
+        assert_eq!(aggregate.ui_command_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
+        assert!(windows_win32_window_view_input_report(hwnd).is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_dispatches_text_input_to_ui_command() {
+        fn text_changed(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.text_changed"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 78isize as HWND;
+        let widget = crate::WidgetId::new(10);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox("").id(widget).on_change(text_changed),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        let focus = dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
+            .expect("registered route should focus textbox");
+        let text = dispatch_windows_win32_window_view_text_input(hwnd, "ZS")
+            .expect("focused textbox should dispatch text");
+        let aggregate = windows_win32_window_view_input_report(hwnd)
+            .expect("registered route should keep aggregate report");
+
+        assert_eq!(focus.focus_count, 1);
+        assert_eq!(focus.focused_widget, Some(widget.0));
+        assert_eq!(text.text_input_count, 2);
+        assert_eq!(text.event_count, 1);
+        assert_eq!(text.ui_command_count, 1);
+        assert_eq!(text.ui_command_ids, vec!["zsui.test.win32.text_changed"]);
+        assert_eq!(aggregate.focus_count, 1);
+        assert_eq!(aggregate.text_input_count, 2);
+        assert_eq!(aggregate.ui_command_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(feature = "checkbox")]
+    fn window_view_input_route_dispatches_checkbox_toggle_to_ui_command() {
+        fn toggled(_: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.toggle_changed"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 79isize as HWND;
+        let widget = crate::WidgetId::new(11);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Checkbox,
+            )]),
+            crate::checkbox("Dark mode", false)
+                .id(widget)
+                .on_toggle(toggled),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        let toggle = dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
+            .expect("registered route should toggle checkbox");
+        let aggregate = windows_win32_window_view_input_report(hwnd)
+            .expect("registered route should keep aggregate report");
+
+        assert_eq!(toggle.toggle_count, 1);
+        assert_eq!(toggle.event_count, 1);
+        assert_eq!(toggle.ui_command_count, 1);
+        assert_eq!(
+            toggle.ui_command_ids,
+            vec!["zsui.test.win32.toggle_changed"]
+        );
+        assert_eq!(aggregate.toggle_count, 1);
+        assert_eq!(aggregate.ui_command_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
     }
 
     #[test]

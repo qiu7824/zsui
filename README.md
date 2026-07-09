@@ -62,6 +62,24 @@ native_window("Example")
 # Ok::<(), zsui::ZsuiError>(())
 ```
 
+When a native smoke path needs direct UI command routing, use the command-view
+variant. It keeps widget input typed while emitting reusable `UiCommand`s:
+
+```rust,no_run
+use zsui::{button, column, native_window, text, CommandId, UiCommand, WidgetId};
+
+native_window("Example")
+    .size(900, 620)
+    .ui_command_view(column(vec![
+        text::<UiCommand>("Settings"),
+        button("Save")
+            .id(WidgetId::new(1))
+            .on_click(UiCommand::app(CommandId("app.save"))),
+    ]))
+    .run()?;
+# Ok::<(), zsui::ZsuiError>(())
+```
+
 Use a small feature set when embedding ZSUI into another Rust app:
 
 ```toml
@@ -103,8 +121,8 @@ The machine-readable target list is exposed through
 target narrative is in `docs/framework-goals.md`.
 The first concrete layer is now in `src/view.rs`, `src/style.rs` and
 `src/geometry.rs`: `View<Msg>`, `WidgetId`, `AppCx`, `ViewEventCx`,
-`ViewPaintCx`, `Px`, `Dp`, `Dpi`, `ZsuiTheme` and tokenized color/radius/
-spacing primitives.
+`ViewPaintCx`, `ViewInteractionPlan`, `Px`, `Dp`, `Dpi`, `ZsuiTheme` and
+tokenized color/radius/spacing primitives.
 
 Audit a declaration before attaching it to a host:
 
@@ -154,6 +172,10 @@ assert!(report.is_valid());
   `textbox` and `checkbox`
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
   `NativeDrawPlan` content used by the native smoke path
+- `NativeWindowBuilder::ui_command_view(...)` and `ViewInteractionPlan` routing
+  for Win32 `WM_LBUTTONUP` clicks and focused `WM_CHAR` textbox input into
+  `ViewEventCx<UiCommand>` and reusable command ids; checkbox clicks route to
+  typed `Toggled` events when the checkbox feature is enabled
 - product adapter typed view smoke through `ProductViewAdapterHost`,
   `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`
 - typed units and theme token primitives through `Px`, `Dp`, `Dpi`,
@@ -262,8 +284,14 @@ To additionally request a real Win32 status item during the smoke run:
 cargo run --example native_smoke_run -- windows --tray
 ```
 
-To attach a typed Rust view draw plan during the smoke run:
+To attach a typed Rust view draw plan and route Win32 input into `UiCommand`s
+during the smoke run:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --view
 ```
+
+When the `textbox` feature is enabled, the same example also routes focused
+`WM_CHAR` text input through `ViewEventCx<UiCommand>`.
+When the `checkbox` feature is enabled, it also routes checkbox toggles through
+typed `Toggled` events.

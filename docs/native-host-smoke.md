@@ -56,15 +56,23 @@ proof before the tray surface is system-complete; the Win32 host exposes the
 `TrackPopupMenu` selection route, but the auto-closing smoke runner does not
 block waiting for manual selection.
 
-Windows can also attach a typed Rust view draw plan during the smoke run:
+Windows can also attach a typed Rust view draw plan and route a Win32 native
+click message during the smoke run:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --view
 ```
 
-That path exercises `NativeWindowBuilder::view(...)`, records draw-plan command
-counts in `interaction.json`, and paints the resulting `NativeDrawPlan` through
-the extracted no-flicker Win32/GDI renderer.
+That path exercises `NativeWindowBuilder::ui_command_view(...)`, records
+draw-plan command counts in `interaction.json`, posts `WM_LBUTTONUP`, hit-tests
+through `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and
+records the emitted command ids. It also paints the resulting `NativeDrawPlan`
+through the extracted no-flicker Win32/GDI renderer. When built with the
+`textbox` feature, the same path focuses a textbox and routes `WM_CHAR` text
+input into `TextChanged`/`UiCommand` output. When built with the `checkbox`
+feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. Full
+keyboard/pointer/IME coverage and non-Windows native input remain later runtime
+gates.
 
 Review the artifact directory with:
 
