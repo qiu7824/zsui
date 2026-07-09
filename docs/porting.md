@@ -30,6 +30,12 @@ The first-pass typed view layer is `src/view.rs`: hosts should treat
 `View<Msg>`, `WidgetId`, `ViewEventCx`, `ViewInteractionPlan` and
 `ViewPaintCx` as the direction for future event and paint routing instead of
 introducing string event buses or global widget registries.
+The feature-gated `scroll` container offsets its child content, clips hit
+targets to the viewport and emits `PushClip`/`PopClip` draw commands; backend
+renderers should preserve that clipping boundary before adding wheel/touch
+scroll input. It now also accepts typed `ScrollBy` events and emits an optional
+typed `on_scroll(Dp)` message after clamping the offset to the declared content
+height.
 `NativeWindowBuilder::view(...)` now converts a typed `ViewNode<Msg>` into a
 `NativeDrawPlan` for the desktop native-window path. Backends should consume
 that draw plan through their renderer/text layout sink.
@@ -40,11 +46,16 @@ command ids during native smoke. It also routes focused `WM_CHAR` input into
 textbox `TextChanged` events when the textbox feature is enabled and checkbox
 clicks into typed `Toggled` events when the checkbox feature is enabled.
 `WM_KEYDOWN` Enter/Space activation is also routed for focused button and
-checkbox targets. Feature-gated list row selection uses child IDs and dispatches
-through the same `ViewEventCx` path; Win32 Up/Down keys can move focused list
-selection and emit the same typed message. Other backends should add their OS
-pointer/keyboard/IME routing back into `ViewEventCx` as distinct gates instead
-of coupling it to product state.
+checkbox targets, and Tab traverses the ordered `ViewInteractionPlan` focus
+targets. Feature-gated list row selection uses child IDs and dispatches through
+the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection
+and emit the same typed message. Win32 `WM_MOUSEWHEEL` can target the nearest
+scroll container and emit a typed scroll event. Other backends should add their
+OS pointer, wheel/touch scroll, keyboard focus, keyboard activation and IME
+routing back into `ViewEventCx` as distinct gates instead of coupling it to
+product state.
+Use `native_smoke_run --scroll-view` on Windows to exercise the command-backed
+scroll route before claiming parity in another backend.
 For product integration, use `ProductViewAdapterHost` and
 `ZsuiReusableRuntimeHarness::run_view_smoke(...)` to verify typed view messages
 before wiring a native backend to real product state.

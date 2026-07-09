@@ -73,6 +73,12 @@ pub enum ViewNodeKind<Msg> {
         selected_index: Option<usize>,
         on_select: Option<fn(usize) -> Msg>,
     },
+    #[cfg(feature = "scroll")]
+    Scroll {
+        offset_y: Dp,
+        content_height: Option<Dp>,
+        on_scroll: Option<fn(Dp) -> Msg>,
+    },
     Stack {
         direction: ViewStackDirection,
     },
@@ -183,6 +189,33 @@ impl<Msg: Clone> ViewNode<Msg> {
         }
         self
     }
+
+    #[cfg(feature = "scroll")]
+    pub fn scroll_y(mut self, offset_y: Dp) -> Self {
+        if let ViewNodeKind::Scroll {
+            offset_y: current, ..
+        } = &mut self.kind
+        {
+            *current = offset_y;
+        }
+        self
+    }
+
+    #[cfg(feature = "scroll")]
+    pub fn content_height(mut self, height: Dp) -> Self {
+        if let ViewNodeKind::Scroll { content_height, .. } = &mut self.kind {
+            *content_height = Some(height);
+        }
+        self
+    }
+
+    #[cfg(feature = "scroll")]
+    pub fn on_scroll(mut self, message: fn(Dp) -> Msg) -> Self {
+        if let ViewNodeKind::Scroll { on_scroll, .. } = &mut self.kind {
+            *on_scroll = Some(message);
+        }
+        self
+    }
 }
 
 #[cfg(feature = "label")]
@@ -241,15 +274,38 @@ pub fn list<T, Msg>(
     .children(items.into_iter().map(|item| render(item)))
 }
 
+#[cfg(feature = "scroll")]
+pub fn scroll<Msg>(child: ViewNode<Msg>) -> ViewNode<Msg> {
+    ViewNode::<Msg>::new(ViewNodeKind::Scroll {
+        offset_y: Dp::new(0.0),
+        content_height: None,
+        on_scroll: None,
+    })
+    .child(child)
+}
+
 pub fn spacer<Msg>() -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Spacer)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ViewEvent {
-    Click { widget: WidgetId },
-    TextChanged { widget: WidgetId, value: String },
-    Toggled { widget: WidgetId, checked: bool },
+    Click {
+        widget: WidgetId,
+    },
+    TextChanged {
+        widget: WidgetId,
+        value: String,
+    },
+    Toggled {
+        widget: WidgetId,
+        checked: bool,
+    },
+    #[cfg(feature = "scroll")]
+    ScrollBy {
+        widget: WidgetId,
+        delta_y: Dp,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,6 +343,8 @@ pub enum ViewHitTargetKind {
     Button,
     Textbox,
     Checkbox,
+    #[cfg(feature = "scroll")]
+    Scroll,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,6 +398,33 @@ impl ViewInteractionPlan {
     pub fn click_event_at(&self, point: Point) -> Option<ViewEvent> {
         self.target_at(point)
             .map(|widget| ViewEvent::Click { widget })
+    }
+
+    pub fn first_focus_target(&self) -> Option<ViewHitTarget> {
+        self.hit_targets.first().copied()
+    }
+
+    pub fn next_focus_target(
+        &self,
+        current: Option<WidgetId>,
+        offset: isize,
+    ) -> Option<ViewHitTarget> {
+        let len = self.hit_targets.len();
+        if len == 0 {
+            return None;
+        }
+
+        let current_index = current.and_then(|widget| {
+            self.hit_targets
+                .iter()
+                .position(|target| target.widget == widget)
+        });
+        let next_index = match current_index {
+            Some(index) => (index as isize + offset).rem_euclid(len as isize) as usize,
+            None if offset < 0 => len - 1,
+            None => 0,
+        };
+        self.hit_targets.get(next_index).copied()
     }
 }
 
@@ -467,7 +552,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             });
         }
 
-        let child_bounds = split_child_bounds(cx.bounds, &self.kind, self.children.len());
+        let child_bounds = split_child_bounds(cx.bounds, &self.kind, self.children.len(), cx.dpi);
         for (child, bounds) in self.children.iter_mut().zip(child_bounds) {
             let mut child_cx = ViewLayoutCx {
                 bounds,
@@ -537,6 +622,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *checked = *next_checked;
                     if let Some(message) = on_toggle {
                         cx.emit(message(*next_checked));
+                    }
+                }
+                #[cfg(feature = "scroll")]
+                (
+                    ViewNodeKind::Scroll {
+                        offset_y,
+                        content_height,
+                        on_scroll,
+                    },
+                    ViewEvent::ScrollBy { delta_y, .. },
+                ) => {
+                    let max_offset = scroll_max_offset_y(self.bounds, *content_height);
+                    let next = Dp::new((offset_y.0 + delta_y.0).clamp(0.0, max_offset.0));
+                    *offset_y = next;
+                    if let Some(message) = on_scroll {
+                        cx.emit(message(next));
                     }
                 }
                 _ => {}
@@ -646,6 +747,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     });
                 }
             }
+            #[cfg(feature = "scroll")]
+            ViewNodeKind::Scroll { .. } => {
+                cx.draw(NativeDrawCommand::PushClip { rect: bounds });
+                for child in &self.children {
+                    child.paint(cx);
+                }
+                cx.draw(NativeDrawCommand::PopClip);
+                return;
+            }
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
@@ -661,11 +771,13 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::Click { widget })
             | (Some(id), ViewEvent::TextChanged { widget, .. })
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
+            #[cfg(feature = "scroll")]
+            (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             (None, _) => false,
         }
     }
 
-    #[cfg(feature = "list")]
+    #[cfg(any(feature = "list", feature = "scroll"))]
     fn contains_widget(&self, widget: WidgetId) -> bool {
         self.id == Some(widget)
             || self
@@ -676,7 +788,7 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
         let mut hit_targets = Vec::new();
-        self.collect_hit_targets(&mut hit_targets);
+        self.collect_hit_targets(&mut hit_targets, None);
         ViewInteractionPlan { hit_targets }
     }
 
@@ -753,17 +865,45 @@ impl<Msg> ViewNode<Msg> {
             .or_else(|| self.children.iter().find_map(ViewNode::first_widget_id))
     }
 
-    fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>) {
-        if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
-            hit_targets.push(ViewHitTarget::with_kind(
-                widget,
-                bounds,
-                self.hit_target_kind(),
-            ));
+    #[cfg(feature = "scroll")]
+    pub fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId> {
+        if matches!(self.kind, ViewNodeKind::Scroll { .. }) && self.contains_widget(widget) {
+            return self.id.or_else(|| self.first_widget_id_any());
         }
 
+        self.children
+            .iter()
+            .find_map(|child| child.widget_scroll_target(widget))
+    }
+
+    #[cfg(feature = "scroll")]
+    fn first_widget_id_any(&self) -> Option<WidgetId> {
+        self.id
+            .or_else(|| self.children.iter().find_map(ViewNode::first_widget_id_any))
+    }
+
+    fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
+            if let Some(bounds) = clipped_rect(bounds, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    self.hit_target_kind(),
+                ));
+            }
+        }
+
+        #[cfg(feature = "scroll")]
+        let child_clip = if matches!(self.kind, ViewNodeKind::Scroll { .. }) {
+            self.bounds.and_then(|bounds| clipped_rect(bounds, clip))
+        } else {
+            clip
+        };
+        #[cfg(not(feature = "scroll"))]
+        let child_clip = clip;
+
         for child in &self.children {
-            child.collect_hit_targets(hit_targets);
+            child.collect_hit_targets(hit_targets, child_clip);
         }
     }
 
@@ -775,6 +915,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Textbox { .. } => ViewHitTargetKind::Textbox,
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { .. } => ViewHitTargetKind::Checkbox,
+            #[cfg(feature = "scroll")]
+            ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             _ => ViewHitTargetKind::Unknown,
         }
     }
@@ -784,6 +926,7 @@ fn split_child_bounds<Msg>(
     bounds: Rect,
     kind: &ViewNodeKind<Msg>,
     child_count: usize,
+    _dpi: Dpi,
 ) -> Vec<Rect> {
     if child_count == 0 {
         return Vec::new();
@@ -808,6 +951,27 @@ fn split_child_bounds<Msg>(
         } => split_column_child_bounds(bounds, child_count),
         #[cfg(feature = "list")]
         ViewNodeKind::List { .. } => split_column_child_bounds(bounds, child_count),
+        #[cfg(feature = "scroll")]
+        ViewNodeKind::Scroll {
+            offset_y,
+            content_height,
+            ..
+        } => {
+            let offset_y = offset_y.to_px(_dpi).round_i32().max(0);
+            let height = content_height
+                .map(|height| height.to_px(_dpi).round_i32())
+                .unwrap_or(bounds.height)
+                .max(bounds.height);
+            vec![
+                Rect {
+                    x: bounds.x,
+                    y: bounds.y - offset_y,
+                    width: bounds.width,
+                    height,
+                };
+                child_count
+            ]
+        }
         _ => vec![bounds; child_count],
     }
 }
@@ -848,6 +1012,17 @@ fn radius_px(radius: Option<Dp>, dpi: Dpi) -> i32 {
         .unwrap_or(0)
 }
 
+#[cfg(feature = "scroll")]
+fn scroll_max_offset_y(bounds: Option<Rect>, content_height: Option<Dp>) -> Dp {
+    let viewport_height = bounds
+        .map(|bounds| bounds.height.max(0) as f32)
+        .unwrap_or(0.0);
+    let content_height = content_height
+        .map(|height| height.0.max(0.0))
+        .unwrap_or(viewport_height);
+    Dp::new((content_height - viewport_height).max(0.0))
+}
+
 fn color_role_for_token(token: ThemeColorToken) -> ColorRole {
     match token {
         ThemeColorToken::Surface | ThemeColorToken::SurfaceRaised => ColorRole::Surface,
@@ -857,6 +1032,24 @@ fn color_role_for_token(token: ThemeColorToken) -> ColorRole {
         ThemeColorToken::Control => ColorRole::Control,
         ThemeColorToken::Danger => ColorRole::Danger,
     }
+}
+
+fn clipped_rect(rect: Rect, clip: Option<Rect>) -> Option<Rect> {
+    let Some(clip) = clip else {
+        return Some(rect);
+    };
+    let left = rect.x.max(clip.x);
+    let top = rect.y.max(clip.y);
+    let right = (rect.x + rect.width).min(clip.x + clip.width);
+    let bottom = (rect.y + rect.height).min(clip.y + clip.height);
+    let width = right - left;
+    let height = bottom - top;
+    (width > 0 && height > 0).then_some(Rect {
+        x: left,
+        y: top,
+        width,
+        height,
+    })
 }
 
 #[cfg(test)]
@@ -869,7 +1062,7 @@ mod tests {
         feature = "checkbox",
         feature = "list"
     ))]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq)]
     enum Msg {
         SaveClicked,
         #[cfg(feature = "textbox")]
@@ -878,6 +1071,8 @@ mod tests {
         DarkModeChanged(bool),
         #[cfg(feature = "list")]
         RowSelected(usize),
+        #[cfg(feature = "scroll")]
+        ScrollChanged(Dp),
     }
 
     #[test]
@@ -957,6 +1152,14 @@ mod tests {
             plan.click_event_at(Point { x: 150, y: 90 }),
             Some(ViewEvent::Click { widget: save_id })
         );
+        assert_eq!(
+            plan.first_focus_target().map(|target| target.widget),
+            Some(save_id)
+        );
+        assert_eq!(
+            plan.next_focus_target(None, 1).map(|target| target.widget),
+            Some(save_id)
+        );
         assert_eq!(plan.click_event_at(Point { x: 150, y: 20 }), None);
     }
 
@@ -1034,6 +1237,63 @@ mod tests {
             view.widget_list_relative_widget(second, -1),
             Some((first, 0))
         );
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn scroll_view_offsets_children_and_clips_hit_targets() {
+        let top = WidgetId::new(20);
+        let bottom = WidgetId::new(21);
+        let scroll_id = WidgetId::new(22);
+        let mut view: ViewNode<Msg> = scroll(column([
+            text("Top row").id(top),
+            text("Bottom row").id(bottom),
+        ]))
+        .id(scroll_id)
+        .content_height(Dp::new(120.0))
+        .scroll_y(Dp::new(60.0))
+        .on_scroll(Msg::ScrollChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 60,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+
+        let plan = view.interaction_plan();
+        let mut events = ViewEventCx::new();
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollBy {
+                widget: scroll_id,
+                delta_y: Dp::new(-20.0),
+            },
+        );
+        view.paint(&mut paint);
+
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ScrollChanged(Dp::new(40.0))]
+        );
+        assert_eq!(plan.target_at(Point { x: 20, y: 20 }), Some(bottom));
+        assert_eq!(plan.hit_target_for_widget(top), None);
+        assert_eq!(view.widget_scroll_target(bottom), Some(scroll_id));
+        assert!(paint
+            .plan()
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::PushClip { .. })));
+        assert!(paint
+            .plan()
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::PopClip)));
     }
 
     #[test]

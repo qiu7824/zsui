@@ -94,6 +94,11 @@ path = "examples/list_selection.rs"
 required-features = ["list", "label"]
 
 [[example]]
+name = "scroll_view"
+path = "examples/scroll_view.rs"
+required-features = ["scroll", "label"]
+
+[[example]]
 name = "product_adapter_view"
 path = "examples/product_adapter_view.rs"
 required-features = ["button", "label"]

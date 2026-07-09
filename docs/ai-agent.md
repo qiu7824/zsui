@@ -6,17 +6,17 @@ where agents should edit first.
 
 ## Current Completion
 
-ZSUI is about 77% complete as a standalone UI framework.
+ZSUI is about 81% complete as a standalone UI framework.
 
 - Foundation contracts: about 74% complete.
-- Declaration API: about 74% complete.
-- Minimal native window runtime: about 75% complete.
-- Feature-pruned architecture: about 38% complete.
-- Rust-first API model: about 68% complete.
-- Full desktop native hosts: about 55% complete.
+- Declaration API: about 76% complete.
+- Minimal native window runtime: about 78% complete.
+- Feature-pruned architecture: about 39% complete.
+- Rust-first API model: about 72% complete.
+- Full desktop native hosts: about 58% complete.
 - Android and Harmony: about 16% complete.
 - Product adapter/runtime harness: about 62% complete.
-- Native smoke verification: about 70% complete.
+- Native smoke verification: about 73% complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
 hotkeys, settings pages, host capabilities, shared geometry,
@@ -114,8 +114,9 @@ string events and feature/crate based trimming over global widget registration.
 The first concrete Rust-first API pass now exists in `src/view.rs`,
 `src/style.rs` and `src/geometry.rs`: `View<Msg>`, typed event messages,
 `WidgetId`, `AppCx`, `ViewEventCx`, `ViewPaintCx`, `ViewInteractionPlan`,
-typed list selection, `Px`, `Dp`, `Dpi`, `UiLength`, `ZsuiTheme` and theme
-tokens.
+typed list selection, a feature-gated `scroll` container with typed scroll
+events, clipped hit targets and `PushClip`/`PopClip` drawing, `Px`, `Dp`,
+`Dpi`, `UiLength`, `ZsuiTheme` and theme tokens.
 `ProductViewAdapterHost` and `ZsuiReusableRuntimeHarness::run_view_smoke(...)`
 now prove that typed view messages can flow through `AppCx` into product events
 and reusable `UiCommand` dispatch without a string event bus.
@@ -128,16 +129,19 @@ view tree for native input routing. On Windows the direct Win32 host now handles
 `WM_LBUTTONUP`, hit-tests through `ViewInteractionPlan`, dispatches into
 `ViewEventCx<UiCommand>`, and handles focused `WM_CHAR` text input for textbox
 views. It also handles `WM_KEYDOWN` keyboard activation for focused button and
-checkbox targets. Native smoke records emitted command ids, focus counts, text
-character counts, selection counts, keydown counts and keyboard activation
-counts. Checkbox clicks and Space-key activation route to typed `Toggled`
-events and reusable `UiCommand`s when the checkbox feature is enabled. The
-feature-gated `list` builder now supports typed row selection through child
-IDs, and `native_smoke_run --view` can dispatch those selection messages into
-reusable command IDs. Win32 Up/Down key routing can move selection between list
-rows and records keyboard list selection in native smoke. Broader pointer
-routing, IME/composition input and macOS/Linux input dispatch are still
-pending.
+checkbox targets, and Tab focus traversal through ordered
+`ViewInteractionPlan` targets. Native smoke records emitted command ids, focus
+counts, keyboard focus traversal counts, text character counts, selection
+counts, keydown counts and keyboard activation counts. Checkbox clicks and
+Space-key activation route to typed `Toggled` events and reusable `UiCommand`s
+when the checkbox feature is enabled. The feature-gated `list` builder now
+supports typed row selection through child IDs, and `native_smoke_run --view`
+can dispatch those selection messages into reusable command IDs. Win32 Up/Down
+key routing can move selection between list rows and records keyboard list
+selection in native smoke. Win32 `WM_MOUSEWHEEL` can route into typed
+`ScrollBy` events for `scroll` containers and reusable command IDs. Broader
+pointer routing, touch/inertial scroll, IME/composition input and macOS/Linux
+input dispatch are still pending.
 
 ## Agent Entry Points
 
@@ -245,7 +249,8 @@ stable context without reading prose:
 - `zsui_rust_first_goal_names()`: compact names for the Rust-first target list.
 - `View<Msg>`, `ViewNode`, `WidgetId`, `AppCx`, `ViewEventCx`,
   `ViewInteractionPlan` and `ViewPaintCx`: first-pass typed view/message/
-  hit-target/context API, including feature-gated list row selection.
+  hit-target/context API, including feature-gated scroll containers and list
+  row selection.
 - `Px`, `Dp`, `Dpi`, `UiLength` and `ZsuiTheme`: first-pass typed unit and
   theme-token API.
 - `ProductViewAdapterHost` and `ProductViewRuntimeSmokeRequest`: smoke path for
@@ -293,8 +298,11 @@ stable context without reading prose:
   auto-closes it and can capture `window.png` on Windows when
   `NativeWindowSmokeRunOptions::screenshot_file(...)` is set. The
   `native_smoke_run --view` example also records typed-view draw-plan command
-  counts plus Win32 click/text/toggle/list-selection/keyboard and keyboard-list
-  selection to `UiCommand` routing in the smoke report.
+  counts plus Win32 click/text/toggle/list-selection/keyboard, Tab focus
+  traversal and keyboard-list selection to `UiCommand` routing in the smoke
+  report. `NativeWindowSmokeRunOptions::native_view_scroll(...)` and the Win32
+  input route can also record scroll counters when a smoke path supplies a
+  scroll target; `native_smoke_run --scroll-view` exercises that path.
 - `review_native_host_smoke_artifacts(platform)`: checks the artifact directory,
   validates JSON files and reports whether target smoke proof is complete.
 

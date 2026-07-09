@@ -332,8 +332,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "declaration_api",
-            percent_complete: 74,
-            status_name: "typed_list_selection_ready",
+            percent_complete: 76,
+            status_name: "typed_scroll_event_and_list_selection_ready",
             source_path: "src/app.rs",
             missing_before_complete: vec![
                 "theming API",
@@ -344,14 +344,15 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "minimal_native_window_runtime",
-            percent_complete: 75,
-            status_name: "win32_view_click_text_toggle_keyboard_and_list_navigation_smoke_ready",
+            percent_complete: 78,
+            status_name: "win32_view_click_text_toggle_keyboard_focus_scroll_and_list_navigation_smoke_ready",
             source_path: "src/native.rs",
             missing_before_complete: vec![
                 "real native menus",
                 "dialogs",
                 "clipboard",
                 "broader pointer dispatch into ViewEventCx",
+                "touch and inertial scroll dispatch",
                 "IME/composition input routing",
                 "native input dispatch on macOS/Linux",
                 "macOS/Linux target smoke artifacts",
@@ -359,8 +360,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "feature_pruned_architecture",
-            percent_complete: 38,
-            status_name: "cargo_feature_manifest_ready",
+            percent_complete: 39,
+            status_name: "scroll_list_feature_gates_ready",
             source_path: "Cargo.toml",
             missing_before_complete: vec![
                 "move heavier widgets into separate crates",
@@ -371,8 +372,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "rust_first_api_model",
-            percent_complete: 68,
-            status_name: "typed_list_keyboard_selection_smoke_ready",
+            percent_complete: 72,
+            status_name: "typed_scroll_events_keyboard_focus_and_list_selection_smoke_ready",
             source_path: "src/view.rs",
             missing_before_complete: vec![
                 "preserve one-line native entrypoints across target hosts",
@@ -380,20 +381,21 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "keep platform API bindings behind concrete backend needs",
                 "keep the public facade small while splitting heavier crates/modules",
                 "full typed message coverage across menus and advanced text/list input",
-                "connect full pointer/IME input dispatch to ViewEventCx beyond Win32 click/text/toggle/keyboard routing",
+                "connect full pointer/scroll/IME input dispatch to ViewEventCx beyond Win32 click/text/toggle/keyboard routing",
                 "complete Px/Dp/Dpi migration",
                 "typestate window/app builders",
             ],
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 55,
-            status_name: "win32_view_keyboard_list_navigation_and_status_popup_routes_ready",
+            percent_complete: 58,
+            status_name: "win32_view_keyboard_focus_scroll_list_navigation_and_status_popup_smoke_ready",
             source_path: "src/windows_win32_host.rs",
             missing_before_complete: vec![
                 "AppKit split",
                 "GTK split",
                 "richer Win32 pointer/IME events",
+                "manual or touch scroll interaction proof",
                 "target smoke artifact for real user popup menu selection",
                 "required tray/menu user-interaction artifacts",
             ],
@@ -422,11 +424,12 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "native_smoke_verification",
-            percent_complete: 70,
-            status_name: "win32_typed_control_keyboard_list_navigation_native_smoke_recorded",
+            percent_complete: 73,
+            status_name: "win32_typed_control_keyboard_focus_scroll_list_navigation_native_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
                 "required tray/menu target smoke artifacts with user popup interaction",
+                "manual or touch scroll interaction proof",
                 "macOS/Linux screenshot capture",
                 "macOS/Linux target smoke artifacts",
                 "real Android/Harmony device artifact runs",

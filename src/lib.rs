@@ -268,6 +268,8 @@ pub use view::button;
 pub use view::checkbox;
 #[cfg(feature = "list")]
 pub use view::list;
+#[cfg(feature = "scroll")]
+pub use view::scroll;
 #[cfg(feature = "label")]
 pub use view::text;
 #[cfg(feature = "textbox")]
@@ -295,7 +297,8 @@ pub use windows_win32_host::{
     create_windows_for_specs_with_draw_plans as create_windows_win32_for_specs_with_draw_plans,
     create_windows_for_specs_with_draw_plans_and_input_routes as create_windows_win32_for_specs_with_draw_plans_and_input_routes,
     dispatch_windows_win32_window_view_click, dispatch_windows_win32_window_view_key_down,
-    dispatch_windows_win32_window_view_text_input, run_windows_win32_native_window_event_loop,
+    dispatch_windows_win32_window_view_scroll, dispatch_windows_win32_window_view_text_input,
+    run_windows_win32_native_window_event_loop,
     run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items,
     run_windows_win32_native_window_event_loop_with_status_items,
     set_windows_win32_window_draw_plan, set_windows_win32_window_view_input_route,

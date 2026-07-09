@@ -28,7 +28,9 @@ use windows_sys::Win32::{
         GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT,
         WPARAM,
     },
-    Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, UpdateWindow, PAINTSTRUCT},
+    Graphics::Gdi::{
+        BeginPaint, EndPaint, InvalidateRect, ScreenToClient, UpdateWindow, PAINTSTRUCT,
+    },
     System::LibraryLoader::GetModuleHandleW,
     UI::{
         HiDpi::GetDpiForWindow,
@@ -53,10 +55,10 @@ use windows_sys::Win32::{
             SC_MOVE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED,
             SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
             SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CHAR,
-            WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-            WM_SETICON, WM_SYSCOMMAND, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN,
-            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL, WM_NCCREATE,
+            WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SYSCOMMAND, WNDCLASSEXW, WNDPROC, WS_CAPTION,
+            WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX,
+            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -73,6 +75,7 @@ const DEFAULT_TRANSIENT_CLASS_NAME: &str = "ZsuiTransientWindow";
 pub const ZSUI_WIN32_TRAY_CALLBACK_MESSAGE: u32 = WM_APP + 0x0551;
 pub const ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS: u32 = TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON;
 const ZSUI_WIN32_VK_RETURN: u32 = 0x0d;
+const ZSUI_WIN32_VK_TAB: u32 = 0x09;
 const ZSUI_WIN32_VK_SPACE: u32 = 0x20;
 #[cfg(feature = "list")]
 const ZSUI_WIN32_VK_UP: u32 = 0x26;
@@ -1300,6 +1303,11 @@ impl WindowsWin32ViewInputRoute {
             key_down_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        if virtual_key == ZSUI_WIN32_VK_TAB {
+            self.dispatch_focus_traversal(1, &mut report);
+            return report;
+        }
+
         let Some(widget) = self.focused_widget else {
             report.unhandled_key_count = 1;
             report
@@ -1369,6 +1377,74 @@ impl WindowsWin32ViewInputRoute {
             }
         }
         report
+    }
+
+    fn dispatch_scroll(
+        &mut self,
+        point: crate::Point,
+        delta_y: crate::Dp,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            scroll_count: 1,
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let Some(target) = self.interaction_plan.hit_target_at(point) else {
+            report.unhandled_scroll_count = 1;
+            report
+                .events
+                .push(format!("win32_view_scroll_missed:{}:{}", point.x, point.y));
+            return report;
+        };
+
+        #[cfg(feature = "scroll")]
+        if let Some(scroll_widget) = self.ui_command_view.widget_scroll_target(target.widget) {
+            report.event_count = 1;
+            report.events.push(format!(
+                "win32_view_scroll:{}:{}",
+                scroll_widget.0, delta_y.0
+            ));
+            self.dispatch_event(
+                crate::ViewEvent::ScrollBy {
+                    widget: scroll_widget,
+                    delta_y,
+                },
+                &mut report,
+            );
+            return report;
+        }
+
+        let _ = delta_y;
+        report.unhandled_scroll_count = 1;
+        report.events.push(format!(
+            "win32_view_scroll_without_scroll_target:{}",
+            target.widget.0
+        ));
+        report
+    }
+
+    fn dispatch_focus_traversal(
+        &mut self,
+        offset: isize,
+        report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
+        let Some(target) = self
+            .interaction_plan
+            .next_focus_target(self.focused_widget, offset)
+        else {
+            report.unhandled_key_count = 1;
+            report
+                .events
+                .push(format!("win32_view_key_focus_unavailable:{offset}"));
+            return;
+        };
+
+        self.focus_target(target, report);
+        report.focus_traversal_count = 1;
+        report.events.push(format!(
+            "win32_view_key_focus:{}:{}",
+            target.widget.0, offset
+        ));
     }
 
     fn focus_target(
@@ -1455,6 +1531,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub unhandled_click_count: usize,
     pub focus_count: usize,
     pub focused_widget: Option<u64>,
+    pub focus_traversal_count: usize,
     pub text_input_count: usize,
     pub toggle_count: usize,
     pub selection_count: usize,
@@ -1462,6 +1539,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub key_down_count: usize,
     pub keyboard_activation_count: usize,
     pub unhandled_key_count: usize,
+    pub scroll_count: usize,
+    pub unhandled_scroll_count: usize,
     pub events: Vec<String>,
 }
 
@@ -1476,6 +1555,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
         self.focused_widget = next.focused_widget.or(self.focused_widget);
+        self.focus_traversal_count += next.focus_traversal_count;
         self.text_input_count += next.text_input_count;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
@@ -1483,6 +1563,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.key_down_count += next.key_down_count;
         self.keyboard_activation_count += next.keyboard_activation_count;
         self.unhandled_key_count += next.unhandled_key_count;
+        self.scroll_count += next.scroll_count;
+        self.unhandled_scroll_count += next.unhandled_scroll_count;
         self.events.extend(next.events);
     }
 }
@@ -1596,6 +1678,24 @@ pub fn dispatch_windows_win32_window_view_key_down(
         .expect("window view input route registry should not be poisoned");
     let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
     let report = record.route.dispatch_key_down(virtual_key);
+    record.report.merge(report.clone());
+    Some(report)
+}
+
+pub fn dispatch_windows_win32_window_view_scroll(
+    hwnd: HWND,
+    point: crate::Point,
+    delta_y: crate::Dp,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
+    let report = record.route.dispatch_scroll(point, delta_y);
     record.report.merge(report.clone());
     Some(report)
 }
@@ -2243,6 +2343,14 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             Some(report) if report.unhandled_key_count == 0 => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         },
+        WM_MOUSEWHEEL => {
+            let point = mouse_wheel_point_from_lparam(hwnd, lparam);
+            let delta_y = mouse_wheel_scroll_delta_from_wparam(wparam);
+            match dispatch_windows_win32_window_view_scroll(hwnd, point, delta_y) {
+                Some(report) if report.unhandled_scroll_count == 0 => 0,
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            }
+        }
         WM_PAINT => paint_no_flicker_background(hwnd),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
@@ -2254,6 +2362,24 @@ fn point_from_lparam(lparam: LPARAM) -> crate::Point {
         x: (raw & 0xffff) as i16 as i32,
         y: ((raw >> 16) & 0xffff) as i16 as i32,
     }
+}
+
+unsafe fn mouse_wheel_point_from_lparam(hwnd: HWND, lparam: LPARAM) -> crate::Point {
+    let raw = lparam as u32;
+    let mut point = POINT {
+        x: (raw & 0xffff) as i16 as i32,
+        y: ((raw >> 16) & 0xffff) as i16 as i32,
+    };
+    ScreenToClient(hwnd, &mut point);
+    crate::Point {
+        x: point.x,
+        y: point.y,
+    }
+}
+
+fn mouse_wheel_scroll_delta_from_wparam(wparam: WPARAM) -> crate::Dp {
+    let wheel_delta = ((wparam >> 16) & 0xffff) as u16 as i16 as f32;
+    crate::Dp::new(-(wheel_delta / 120.0) * 48.0)
 }
 
 fn text_from_char_wparam(wparam: WPARAM) -> Option<String> {
@@ -2492,6 +2618,69 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "button")]
+    fn window_view_input_route_dispatches_tab_focus_traversal() {
+        let _guard = view_input_route_test_lock();
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 82isize as HWND;
+        let first = crate::WidgetId::new(15);
+        let second = crate::WidgetId::new(16);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([
+                crate::ViewHitTarget::with_kind(
+                    first,
+                    crate::Rect {
+                        x: 0,
+                        y: 0,
+                        width: 120,
+                        height: 48,
+                    },
+                    crate::ViewHitTargetKind::Button,
+                ),
+                crate::ViewHitTarget::with_kind(
+                    second,
+                    crate::Rect {
+                        x: 0,
+                        y: 48,
+                        width: 120,
+                        height: 48,
+                    },
+                    crate::ViewHitTargetKind::Button,
+                ),
+            ]),
+            crate::column([
+                crate::button("First")
+                    .id(first)
+                    .on_click(UiCommand::app(crate::CommandId("zsui.test.win32.first"))),
+                crate::button("Second")
+                    .id(second)
+                    .on_click(UiCommand::app(crate::CommandId("zsui.test.win32.second"))),
+            ]),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        let first_focus = dispatch_windows_win32_window_view_key_down(hwnd, ZSUI_WIN32_VK_TAB)
+            .expect("registered route should focus first target from Tab");
+        let second_focus = dispatch_windows_win32_window_view_key_down(hwnd, ZSUI_WIN32_VK_TAB)
+            .expect("registered route should focus next target from Tab");
+        let key = dispatch_windows_win32_window_view_key_down(hwnd, ZSUI_WIN32_VK_RETURN)
+            .expect("focused second button should dispatch keyboard activation");
+        let aggregate = windows_win32_window_view_input_report(hwnd)
+            .expect("registered route should keep aggregate report");
+
+        assert_eq!(first_focus.focus_traversal_count, 1);
+        assert_eq!(first_focus.focused_widget, Some(first.0));
+        assert_eq!(second_focus.focus_traversal_count, 1);
+        assert_eq!(second_focus.focused_widget, Some(second.0));
+        assert_eq!(key.ui_command_ids, vec!["zsui.test.win32.second"]);
+        assert_eq!(aggregate.focus_traversal_count, 2);
+        assert_eq!(aggregate.key_down_count, 3);
+        assert_eq!(aggregate.focus_count, 2);
+        assert_eq!(aggregate.keyboard_activation_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
     #[cfg(all(feature = "list", feature = "label"))]
     fn window_view_input_route_dispatches_list_selection_to_ui_command() {
         let _guard = view_input_route_test_lock();
@@ -2559,6 +2748,54 @@ mod tests {
         assert_eq!(aggregate.selection_count, 2);
         assert_eq!(aggregate.keyboard_selection_count, 1);
         assert_eq!(aggregate.ui_command_count, 2);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn window_view_input_route_dispatches_scroll_to_ui_command() {
+        let _guard = view_input_route_test_lock();
+        fn scrolled(_: crate::Dp) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.scrolled"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 83isize as HWND;
+        let scroll_id = crate::WidgetId::new(17);
+        let row = crate::WidgetId::new(18);
+        let mut view = crate::scroll(crate::text("Row").id(row))
+            .id(scroll_id)
+            .content_height(crate::Dp::new(120.0))
+            .on_scroll(scrolled);
+        let mut layout = crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 40,
+            },
+            crate::Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let route = WindowsWin32ViewInputRoute::new(view.interaction_plan(), view);
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        let scroll = dispatch_windows_win32_window_view_scroll(
+            hwnd,
+            crate::Point { x: 20, y: 20 },
+            crate::Dp::new(48.0),
+        )
+        .expect("registered route should dispatch scroll");
+        let aggregate = windows_win32_window_view_input_report(hwnd)
+            .expect("registered route should keep aggregate report");
+
+        assert_eq!(scroll.scroll_count, 1);
+        assert_eq!(scroll.unhandled_scroll_count, 0);
+        assert_eq!(scroll.event_count, 1);
+        assert_eq!(scroll.ui_command_count, 1);
+        assert_eq!(scroll.ui_command_ids, vec!["zsui.test.win32.scrolled"]);
+        assert_eq!(aggregate.scroll_count, 1);
+        assert_eq!(aggregate.ui_command_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
     }
 

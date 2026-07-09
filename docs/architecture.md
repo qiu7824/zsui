@@ -73,10 +73,15 @@ native smoke. Focused `WM_CHAR` input is also routed into textbox
 `TextChanged` events when the textbox feature is enabled, and checkbox clicks
 route to typed `Toggled` events when the checkbox feature is enabled. The Win32
 host also routes `WM_KEYDOWN` Enter/Space activation for focused button and
-checkbox targets. Feature-gated list row selection uses child IDs and can flow
-through the same command-backed view tree; Win32 Up/Down keys can move focused
-selection between list rows. Broader pointer dispatch, IME/composition input
-and non-Windows input routing are still separate runtime gates.
+checkbox targets, and Tab traverses ordered focus targets from
+`ViewInteractionPlan`. Feature-gated list row selection uses child IDs and can
+flow through the same command-backed view tree; Win32 Up/Down keys can move
+focused selection between list rows. Feature-gated scroll containers can
+consume typed `ScrollBy` events, and Win32 `WM_MOUSEWHEEL` can route to the
+nearest scroll container; `native_smoke_run --scroll-view` exercises that
+command-backed route. Broader pointer dispatch, touch/inertial scroll,
+IME/composition input and non-Windows input routing are still separate runtime
+gates.
 
 The reusable desktop bridge for product adapters is `NativeWindowRuntimeDriver`.
 It maps `ProductUiProjection` startup requests into ZSUI window, status
@@ -162,8 +167,8 @@ Android/Harmony as explicit Activity/Ability hosts, and introduce wider
 platform API bindings only when a concrete backend needs them.
 The first implementation layer lives in `src/view.rs`, `src/style.rs` and
 `src/geometry.rs`: typed `View<Msg>` trees, `WidgetId`, explicit app/event/paint
-contexts, `ViewInteractionPlan`, feature-gated typed list selection,
-`Px`/`Dp`/`Dpi`, `UiLength` and theme tokens.
+contexts, `ViewInteractionPlan`, feature-gated scroll containers, typed list
+selection, `Px`/`Dp`/`Dpi`, `UiLength` and theme tokens.
 `ProductViewAdapterHost` connects that typed view layer to product adapters, and
 `ZsuiReusableRuntimeHarness::run_view_smoke(...)` verifies the flow from native
 view events to typed messages, `AppCx`, product events and reusable

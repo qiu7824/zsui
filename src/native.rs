@@ -401,6 +401,7 @@ impl NativeSettingsItemUpdateHost for NativeWindowRuntimeDriver {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NativeViewKey {
     Enter,
+    Tab,
     Space,
     Up,
     Down,
@@ -410,6 +411,7 @@ impl NativeViewKey {
     pub const fn key_name(self) -> &'static str {
         match self {
             Self::Enter => "enter",
+            Self::Tab => "tab",
             Self::Space => "space",
             Self::Up => "up",
             Self::Down => "down",
@@ -422,6 +424,7 @@ pub enum NativeViewSmokeInput {
     Click(Point),
     Text(String),
     KeyDown(NativeViewKey),
+    Scroll { point: Point, delta_y: i32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -435,6 +438,7 @@ pub struct NativeWindowSmokeRunOptions {
     pub native_view_click_points: Vec<Point>,
     pub native_view_text_inputs: Vec<String>,
     pub native_view_key_downs: Vec<NativeViewKey>,
+    pub native_view_scroll_inputs: Vec<(Point, i32)>,
     pub native_view_inputs: Vec<NativeViewSmokeInput>,
 }
 
@@ -450,6 +454,7 @@ impl NativeWindowSmokeRunOptions {
             native_view_click_points: Vec::new(),
             native_view_text_inputs: Vec::new(),
             native_view_key_downs: Vec::new(),
+            native_view_scroll_inputs: Vec::new(),
             native_view_inputs: Vec::new(),
         }
     }
@@ -529,6 +534,20 @@ impl NativeWindowSmokeRunOptions {
         }
         self
     }
+
+    pub fn native_view_scroll(mut self, point: Point, delta_y: i32) -> Self {
+        self.native_view_scroll_inputs.push((point, delta_y));
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::Scroll { point, delta_y });
+        self
+    }
+
+    pub fn native_view_scrolls(mut self, inputs: impl IntoIterator<Item = (Point, i32)>) -> Self {
+        for (point, delta_y) in inputs {
+            self = self.native_view_scroll(point, delta_y);
+        }
+        self
+    }
 }
 
 impl Default for NativeWindowSmokeRunOptions {
@@ -560,6 +579,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_ui_command_ids: Vec<&'static str>,
     pub native_view_unhandled_click_count: usize,
     pub native_view_focus_count: usize,
+    pub native_view_focus_traversal_count: usize,
     pub native_view_text_input_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
@@ -567,6 +587,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_key_down_count: usize,
     pub native_view_keyboard_activation_count: usize,
     pub native_view_unhandled_key_count: usize,
+    pub native_view_scroll_count: usize,
+    pub native_view_unhandled_scroll_count: usize,
     pub status_item_requested: bool,
     pub status_item_required: bool,
     pub status_item_created: bool,
@@ -612,6 +634,7 @@ impl NativeWindowSmokeRunReport {
             native_view_ui_command_ids: Vec::new(),
             native_view_unhandled_click_count: 0,
             native_view_focus_count: 0,
+            native_view_focus_traversal_count: 0,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
@@ -619,6 +642,8 @@ impl NativeWindowSmokeRunReport {
             native_view_key_down_count: 0,
             native_view_keyboard_activation_count: 0,
             native_view_unhandled_key_count: 0,
+            native_view_scroll_count: 0,
+            native_view_unhandled_scroll_count: 0,
             status_item_requested,
             status_item_required: options.require_status_item,
             status_item_created: false,
@@ -768,6 +793,7 @@ fn record_windows_win32_view_input_report(
         .extend(input.ui_command_ids.iter().copied());
     report.native_view_unhandled_click_count += input.unhandled_click_count;
     report.native_view_focus_count += input.focus_count;
+    report.native_view_focus_traversal_count += input.focus_traversal_count;
     report.native_view_text_input_count += input.text_input_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
@@ -775,6 +801,8 @@ fn record_windows_win32_view_input_report(
     report.native_view_key_down_count += input.key_down_count;
     report.native_view_keyboard_activation_count += input.keyboard_activation_count;
     report.native_view_unhandled_key_count += input.unhandled_key_count;
+    report.native_view_scroll_count += input.scroll_count;
+    report.native_view_unhandled_scroll_count += input.unhandled_scroll_count;
     report.events.extend(input.events.clone());
 }
 
@@ -790,8 +818,9 @@ fn post_windows_native_view_input(
     hwnd: windows_sys::Win32::Foundation::HWND,
     input: &NativeViewSmokeInput,
 ) {
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONUP,
+        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL,
     };
 
     match input {
@@ -813,13 +842,36 @@ fn post_windows_native_view_input(
                 0,
             );
         },
+        NativeViewSmokeInput::Scroll { point, delta_y } => unsafe {
+            let mut screen_point = windows_sys::Win32::Foundation::POINT {
+                x: point.x,
+                y: point.y,
+            };
+            ClientToScreen(hwnd, &mut screen_point);
+            PostMessageW(
+                hwnd,
+                WM_MOUSEWHEEL,
+                windows_wparam_from_scroll_delta_y(*delta_y),
+                windows_lparam_from_point(Point {
+                    x: screen_point.x,
+                    y: screen_point.y,
+                }),
+            );
+        },
     }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn windows_wparam_from_scroll_delta_y(delta_y: i32) -> usize {
+    let wheel_delta = ((-(delta_y as f32) / 48.0) * 120.0).round() as i16;
+    ((wheel_delta as u16 as usize) << 16) & 0xffff_0000
 }
 
 #[cfg(all(windows, feature = "windows-win32"))]
 fn windows_wparam_from_native_view_key(key: NativeViewKey) -> usize {
     match key {
         NativeViewKey::Enter => 0x0d,
+        NativeViewKey::Tab => 0x09,
         NativeViewKey::Space => 0x20,
         NativeViewKey::Up => 0x26,
         NativeViewKey::Down => 0x28,
@@ -1457,6 +1509,15 @@ fn run_native_window_smoke_event_loop(
         }
         for key in &options.native_view_key_downs {
             post_windows_native_view_input(handles[0].main(), &NativeViewSmokeInput::KeyDown(*key));
+        }
+        for (point, delta_y) in &options.native_view_scroll_inputs {
+            post_windows_native_view_input(
+                handles[0].main(),
+                &NativeViewSmokeInput::Scroll {
+                    point: *point,
+                    delta_y: *delta_y,
+                },
+            );
         }
     } else {
         for input in &options.native_view_inputs {
@@ -2189,8 +2250,10 @@ mod tests {
         assert_eq!(report.native_view_unhandled_click_count, 0);
         assert!(options.native_view_text_inputs.is_empty());
         assert!(options.native_view_key_downs.is_empty());
+        assert!(options.native_view_scroll_inputs.is_empty());
         assert!(options.native_view_inputs.is_empty());
         assert_eq!(report.native_view_focus_count, 0);
+        assert_eq!(report.native_view_focus_traversal_count, 0);
         assert_eq!(report.native_view_text_input_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);
@@ -2198,6 +2261,8 @@ mod tests {
         assert_eq!(report.native_view_key_down_count, 0);
         assert_eq!(report.native_view_keyboard_activation_count, 0);
         assert_eq!(report.native_view_unhandled_key_count, 0);
+        assert_eq!(report.native_view_scroll_count, 0);
+        assert_eq!(report.native_view_unhandled_scroll_count, 0);
         assert!(!report.visible_window_was_created());
     }
 

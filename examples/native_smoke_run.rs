@@ -5,6 +5,8 @@ use serde_json::json;
 use zsui::checkbox;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
+#[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
+use zsui::scroll;
 #[cfg(all(feature = "button", feature = "label", feature = "textbox"))]
 use zsui::textbox;
 #[cfg(all(feature = "button", feature = "label"))]
@@ -30,6 +32,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--tray" || arg == "--status-item"),
         args.iter().any(|arg| arg == "--view"),
+        args.iter()
+            .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
     ) {
         Ok(json) => {
             println!("{json}");
@@ -47,6 +51,7 @@ fn run_smoke(
     artifact_root: Option<&str>,
     include_status_item: bool,
     include_typed_view: bool,
+    include_scroll_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -81,7 +86,8 @@ fn run_smoke(
             .require_status_item(platform == NativeUiPlatform::Windows);
     }
     #[cfg(all(feature = "button", feature = "label"))]
-    if include_typed_view {
+    if include_typed_view && !include_scroll_view {
+        smoke_options = smoke_options.native_view_key_down(NativeViewKey::Tab);
         #[cfg(feature = "textbox")]
         {
             smoke_options = smoke_options
@@ -129,9 +135,15 @@ fn run_smoke(
                 .native_view_key_down(NativeViewKey::Enter);
         }
     }
+    #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
+    if include_scroll_view {
+        smoke_options = smoke_options.native_view_scroll(Point { x: 260, y: 220 }, 48);
+    }
 
     let builder = native_window("ZSUI Smoke").size(520, 320);
-    let builder = if include_typed_view {
+    let builder = if include_scroll_view {
+        attach_scroll_view(builder)
+    } else if include_typed_view {
         attach_typed_view(builder)
     } else {
         builder
@@ -208,6 +220,34 @@ fn native_smoke_toggle_changed(_: bool) -> UiCommand {
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 fn native_smoke_list_selected(_: usize) -> UiCommand {
     UiCommand::app(CommandId("zsui.native_smoke.list_selected"))
+}
+
+#[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
+fn attach_scroll_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.ui_command_view(column([
+        text::<UiCommand>("ZSUI Scroll Smoke"),
+        scroll(
+            column([
+                text("Pinned row").id(WidgetId::new(7)),
+                text("Recent row").id(WidgetId::new(8)),
+                text("Archive row").id(WidgetId::new(9)),
+            ])
+            .content_height(zsui::Dp::new(240.0)),
+        )
+        .id(WidgetId::new(6))
+        .content_height(zsui::Dp::new(240.0))
+        .on_scroll(native_smoke_scrolled),
+    ]))
+}
+
+#[cfg(not(all(feature = "button", feature = "label", feature = "scroll")))]
+fn attach_scroll_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
+fn native_smoke_scrolled(_: zsui::Dp) -> UiCommand {
+    UiCommand::app(CommandId("zsui.native_smoke.scrolled"))
 }
 
 #[cfg(not(all(feature = "button", feature = "label")))]

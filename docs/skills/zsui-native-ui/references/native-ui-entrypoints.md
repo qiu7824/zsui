@@ -40,6 +40,7 @@ If the AI cannot load a skill folder, send these files together:
 - `examples/declaration_audit.rs`
 - `examples/rust_first_view.rs`
 - `examples/list_selection.rs`
+- `examples/scroll_view.rs`
 - `examples/native_smoke_manifest.rs`
 - `examples/native_smoke_record.rs`
 - `examples/native_smoke_run.rs`
@@ -76,6 +77,7 @@ If the AI cannot load a skill folder, send these files together:
 | Declarations and audit | `src/app.rs`, `src/window.rs`, `src/tray.rs`, `src/menu.rs`, `src/settings.rs`, `examples/declaration_audit.rs` |
 | Rust-first view example | `examples/rust_first_view.rs` |
 | Typed list selection example | `examples/list_selection.rs` |
+| Scroll container example | `examples/scroll_view.rs` |
 | Shared UI protocols | `src/geometry.rs`, `src/command_protocol.rs`, `src/event_protocol.rs`, `src/render_protocol.rs`, `src/control_protocol.rs`, `src/ui_surface_protocol.rs` |
 
 ## Feature Status Vocabulary
@@ -128,17 +130,18 @@ Already reusable at code level:
   feature/crate trimming policy.
 - First-pass typed view API through `View<Msg>`, `ViewNode`, `WidgetId`,
   `ViewEventCx`, `ViewInteractionPlan`, `ViewPaintCx`, `AppCx`, typed view
-  events, feature-gated typed list selection, `Px`, `Dp`, `Dpi`, `UiLength`
-  and `ZsuiTheme`.
+  events, feature-gated scroll containers with typed `ScrollBy`/`on_scroll`
+  routing, typed list selection, `Px`, `Dp`, `Dpi`, `UiLength` and
+  `ZsuiTheme`.
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
   `NativeDrawPlan`, with Windows smoke paint through the extracted no-flicker
   Win32/GDI path.
 - `NativeWindowBuilder::ui_command_view(...)` routing from Win32
   `WM_LBUTTONUP` and focused `WM_CHAR` textbox input through
   `ViewEventCx<UiCommand>` into stable command ids, including checkbox
-  `Toggled` events, list row selection, Up/Down keyboard list navigation and
-  focused `WM_KEYDOWN` Enter/Space activation when the relevant widget features
-  are enabled.
+  `Toggled` events, Tab focus traversal, list row selection, Up/Down keyboard
+  list navigation and focused `WM_KEYDOWN` Enter/Space activation when the
+  relevant widget features are enabled.
 - Product adapter view smoke through `ProductViewAdapterHost`,
   `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`.
 - Shared geometry, command, event, lifecycle, layout, component, render,
@@ -191,6 +194,8 @@ Already reusable at code level:
   `write_native_host_smoke_artifacts()` and `examples/native_smoke_record.rs`.
 - Auto-closing first-pass native smoke windows through
   `native_window(...).run_smoke(...)` and `examples/native_smoke_run.rs`.
+- Dedicated Win32 typed scroll smoke through
+  `cargo run --features "scroll,label" --example native_smoke_run -- windows --scroll-view`.
 - Windows native smoke screenshot capture through
   `NativeWindowSmokeRunOptions::screenshot_file(...)`.
 - Windows first-pass target smoke proof through
@@ -213,9 +218,14 @@ Still requiring extraction or target proof before system-complete claims:
   window entry point. Native paint routing has a first pass; Win32
   `WM_LBUTTONUP` and focused `WM_CHAR` textbox routing into
   `ViewEventCx<UiCommand>` exist, plus checkbox toggle routing and focused
-  `WM_KEYDOWN` keyboard activation; feature-gated list selection and Up/Down
-  keyboard list navigation can dispatch through the same route. Full
-  pointer/IME coverage and non-Windows input dispatch are still pending.
+  `WM_KEYDOWN` keyboard activation; Tab focus traversal, feature-gated list
+  selection and Up/Down keyboard list navigation can dispatch through the same
+  route. Full pointer/IME coverage and non-Windows input dispatch are still
+  pending.
+- Scroll containers now offset child layout, clip hit targets to the viewport
+  and emit `PushClip`/`PopClip` draw commands. Win32 mouse-wheel input can
+  route to a scroll target at code level and is covered by the dedicated
+  `--scroll-view` smoke path; touch/inertial scroll is still pending.
 - Target screenshots, tray/menu proof and interaction artifacts under
   `target/native-host-smoke/<platform>/`.
 - Target artifact review on each OS/device through `native_smoke_review`.

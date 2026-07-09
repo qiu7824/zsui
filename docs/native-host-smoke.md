@@ -63,6 +63,12 @@ click message during the smoke run:
 cargo run --example native_smoke_run -- windows --view
 ```
 
+The dedicated typed scroll smoke path is:
+
+```powershell
+cargo run --features "scroll,label" --example native_smoke_run -- windows --scroll-view
+```
+
 That path exercises `NativeWindowBuilder::ui_command_view(...)`, records
 draw-plan command counts in `interaction.json`, posts `WM_LBUTTONUP`, hit-tests
 through `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and
@@ -73,9 +79,14 @@ input into `TextChanged`/`UiCommand` output. When built with the `checkbox`
 feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. It also
 records typed row selection when built with the `list` feature, including
 Up/Down keyboard selection between focused rows. It also posts `WM_KEYDOWN`
-Enter to prove focused keyboard activation into the same `UiCommand` path.
-Full pointer/IME coverage and non-Windows native input remain later runtime
-gates.
+Tab to prove ordered focus traversal and Enter to prove focused keyboard
+activation into the same `UiCommand` path. Full pointer/IME coverage and
+non-Windows native input remain later runtime gates.
+When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`
+and a command-backed scroll target, Win32 also records mouse-wheel scroll
+counters and the emitted scroll `UiCommand`. The default `--view` example does
+not yet include a scroll target because it keeps the existing button/textbox/
+checkbox/list geometry stable; `--scroll-view` supplies that target.
 
 Review the artifact directory with:
 
