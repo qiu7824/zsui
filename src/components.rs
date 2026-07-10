@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature = "button", feature = "checkbox"))]
+#[cfg(any(feature = "button", feature = "checkbox", feature = "toggle"))]
 use crate::core::Command;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,6 +40,11 @@ pub enum UiNodeKind {
     #[cfg(feature = "checkbox")]
     Checkbox {
         label: String,
+        checked: bool,
+        command: Option<Command>,
+    },
+    #[cfg(feature = "toggle")]
+    Toggle {
         checked: bool,
         command: Option<Command>,
     },
@@ -114,6 +119,11 @@ impl UiNode {
                 command,
             },
         )
+    }
+
+    #[cfg(feature = "toggle")]
+    pub fn toggle(id: impl Into<String>, checked: bool, command: Option<Command>) -> Self {
+        Self::new(id, UiNodeKind::Toggle { checked, command })
     }
 
     pub fn stack(id: impl Into<String>, direction: UiStackDirection) -> Self {

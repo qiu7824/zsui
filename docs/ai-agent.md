@@ -6,17 +6,35 @@ where agents should edit first.
 
 ## Current Completion
 
-ZSUI is about 85% complete as a standalone UI framework.
+ZSUI is roughly 59% complete as a standalone framework product. Component-level
+milestones must not be used as overall framework readiness.
 
-- Foundation contracts: about 74% complete.
-- Declaration API: about 76% complete.
-- Minimal native window runtime: about 78% complete.
-- Feature-pruned architecture: about 39% complete.
-- Rust-first API model: about 72% complete.
-- Full desktop native hosts: about 58% complete.
+- Foundation contracts: about 78% complete.
+- Declaration API: about 80% complete.
+- Minimal native window runtime: about 86% complete.
+- Feature-pruned architecture: about 49% complete.
+- Rust-first API model: about 85% complete.
+- Full desktop native hosts: about 65% complete.
 - Android and Harmony: about 32% complete.
-- Product adapter/runtime harness: about 62% complete.
-- Native smoke verification: about 73% complete.
+- Product adapter/runtime harness: about 67% complete.
+- Native smoke verification: about 81% complete.
+
+The Windows implementation is further ahead than the overall
+framework: its window, draw-plan, stateful View and shell-layout foundation is
+roughly 75%
+ready. macOS/Linux native product hosts and real Android/Harmony runtimes keep
+cross-platform product readiness substantially lower. Report these separately.
+
+The machine-readable audit tracks 18 required native capabilities per platform:
+
+- Windows: 2 ready, 6 first-pass runtime implementations, 10 contract-only.
+- macOS: 0 ready, 2 first-pass runtime implementations, 16 contract-only.
+- Linux: 0 ready, 2 first-pass runtime implementations, 16 contract-only.
+- Android: 0 runtime implementations, 18 contract-only.
+- Harmony: 0 runtime implementations, 18 contract-only.
+
+Use `native_ui_platform_readiness_reports()` for current capability-level
+evidence instead of inferring platform completeness from backend registration.
 
 The crate can already describe and audit windows, tray/status menus, commands,
 hotkeys, settings pages, host capabilities, shared geometry,
@@ -31,30 +49,26 @@ The current machine-readable handoff is `zsui::zsui_agent_context()`; tools can
 also call `zsui::zsui_agent_context_json()` to read the same platform, gate and
 completion data as JSON.
 
-It is not yet a complete application UI runtime. The full Win32, AppKit and GTK
-product hosts are still being split out of ZSClip because those implementations
-currently mix reusable host behavior with clipboard-product behavior.
-The current Windows backend metadata points to the extracted `win32_gdi`
-runtime. ZSClip's reusable Win32 main/quick window style, transient-window host,
-create-params, message-loop and `NativeMainWindowHost` implementation are now
-extracted in `src/windows_win32_host.rs` and wired into the default
-`native_window(...).run()` path on Windows. AppKit/GTK files are not represented
-as implemented ZSUI modules until they are really extracted.
-`src/native_host_actions.rs` is directly split from the reusable ZSClip native
-host action/status/settings command contracts and adapted to standalone ZSUI
-types. `ProductUiProjection` now carries the main window, status item/tray menu
+It is not yet a complete application UI runtime. Complete AppKit and GTK hosts
+are not implemented. The current Windows backend metadata points to the
+`win32_gdi` runtime. Win32 main/quick window style, transient-window host,
+create-params, message-loop and `NativeMainWindowHost` implementation live in
+`src/windows_win32_host.rs` and are wired into the default
+`native_window(...).run()` path on Windows.
+`src/native_host_actions.rs` defines the native host action/status/settings
+command contracts. `ProductUiProjection` now carries the main window, status item/tray menu
 and settings pages into `NativeRuntimeStartupRequest`; `NativeWindowRuntimeDriver`
 routes those declarations through `NativeStatusItemHost` and
 `NativeSettingsPageModelHost`, dispatches status menu commands through
 `NativeStatusMenuCommandHost`, updates bound settings item values through
 `NativeSettingsItemUpdateHost`, then reports operation names, status menu counts
 and settings page counts.
-ZSClip's self-drawn window code also used a reusable command-plan shape
-(`FillRect`, `RoundRect`, `RoundFill`, text commands and icon commands). ZSUI
-now exposes the product-neutral version in `src/render_protocol.rs` as
+The self-drawn runtime uses a reusable command-plan shape (`FillRect`,
+`RoundRect`, `RoundFill`, text commands and icon commands). ZSUI exposes it in
+`src/render_protocol.rs` as
 `NativeDrawPlan`, `NativeDrawCommand` and `NativeDrawCommandSink`, and
-`src/windows_gdi_renderer.rs` contains the extracted Windows GDI renderer/text
-layout/draw sink and the ZSClip no-flicker buffered paint foundation.
+`src/windows_gdi_renderer.rs` contains the Windows GDI renderer, text-layout
+sink and buffered no-flicker paint pipeline.
 `src/windows_win32_host.rs` can attach a `NativeDrawPlan` to an `HWND`, then
 paint it through the buffered Win32/GDI path. GDI brushes, pens, fonts,
 selected-object restoration, buffered-paint handles, window HDC acquisition,
@@ -135,9 +149,9 @@ messages, RAII native resources, typed units, compile-time builder constraints
 where useful, explicit contexts, isolated unsafe, explicit app state, theme
 tokens, declarative Rust builders, `Result<T, ZsuiError>`, capability traits,
 feature-gated platform backends, split-crate/module trimming and strong typed
-IDs. It also records the larger extraction target: keep
+IDs. It also records the larger framework target: keep
 `zsui::native_window(...).run()?` as the normal native-window entry, make
-ZSClip's reusable no-flicker self-draw path the Windows baseline, treat Android
+buffered no-flicker self-draw the Windows baseline, treat Android
 and Harmony as real Activity/Ability host targets, and add `windows-rs` or
 other broader platform bindings only for specific backend work. The source
 target records the preferred and avoided API shapes, such as `enum Msg` over
@@ -148,6 +162,15 @@ The first concrete Rust-first API pass now exists in `src/view.rs`,
 typed list selection, a feature-gated `scroll` container with typed scroll
 events, clipped hit targets and `PushClip`/`PopClip` drawing, `Px`, `Dp`,
 `Dpi`, `UiLength`, `ZsuiTheme` and theme tokens.
+The generic WinUI-style self-drawn layout contract now lives in
+`src/shell_layout.rs`. It owns the shared nav width, content offsets, card
+spacing, viewport mask, scrollbar metrics and form-row geometry. It is
+not tied to settings storage: agents can declare a left navigation pane, right
+content header, grouped cards, content rows, description text, row accessories
+such as values/toggles/buttons/dropdowns and an action-button area through
+`ZsShellLayoutSpec` or `ZsNavigationScaffoldSpec`. The module audits the
+layout, computes stable regions and projects the result into a product-neutral
+`NativeDrawPlan` for the same no-flicker native painting path.
 `ProductViewAdapterHost` and `ZsuiReusableRuntimeHarness::run_view_smoke(...)`
 now prove that typed view messages can flow through `AppCx` into product events
 and reusable `UiCommand` dispatch without a string event bus.
@@ -159,8 +182,8 @@ exercise this with `cargo run --example native_smoke_run -- windows --view`;
 view tree for native input routing. On Windows the direct Win32 host now handles
 `WM_LBUTTONUP`, hit-tests through `ViewInteractionPlan`, dispatches into
 `ViewEventCx<UiCommand>`, and handles focused `WM_CHAR` text input for textbox
-views. It also handles `WM_KEYDOWN` keyboard activation for focused button and
-checkbox targets, and Tab focus traversal through ordered
+views. It also handles `WM_KEYDOWN` keyboard activation for focused button,
+checkbox and toggle targets, and Tab focus traversal through ordered
 `ViewInteractionPlan` targets. Native smoke records emitted command ids, focus
 counts, keyboard focus traversal counts, text character counts, selection
 counts, keydown counts and keyboard activation counts. Checkbox clicks and
@@ -173,6 +196,26 @@ selection in native smoke. Win32 `WM_MOUSEWHEEL` can route into typed
 `ScrollBy` events for `scroll` containers and reusable command IDs. Broader
 pointer routing, touch/inertial scroll, IME/composition input and macOS/Linux
 input dispatch are still pending.
+The feature-gated `toggle(...)` widget reuses `ZsToggleRenderPlan`. The same track/knob/DPI
+geometry drives Shell accessories and normal View painting, while Win32 click
+and Space activation emit typed `Toggled` messages. The stateful native smoke
+captures the checked rendering after a real click.
+`NativeWindowBuilder::stateful_view(...)` now owns the first real typed
+application loop. It stores user state behind a safe shared runtime, turns
+native input into `Msg`, calls the user `update(&mut State, Msg, &mut AppCx)`,
+rebuilds the View and replaces the Win32 buffered draw plan. Native smoke now
+records live revisions and application-command results;
+`SharedAppCommandExecutor` now hands `AppCx::command(...)` to an explicitly
+composed executor, and `NativeWindowRuntimeDriver` implements that contract.
+`SharedUiCommandExecutor` does the same for both static command Views and
+`AppCx::ui_command(...)`; `ProductAdapterUiCommandExecutor` is the standard
+product bridge. `examples/rust_first_view.rs` proves one app command and one UI
+command execute successfully with emitted events and zero unhandled commands in
+a real interactive Win32 run.
+`typed_native_window(...)` adds the first compile-time builder constraint:
+content attachment changes `NativeWindowContentMissing` into
+`NativeWindowContentReady`, and a compile-fail doctest proves that the missing
+state cannot call `run`. The original one-line builder remains unchanged.
 
 ## Agent Entry Points
 
@@ -181,16 +224,22 @@ input dispatch are still pending.
 - Rust-first goals: `src/framework_goals.rs`
 - Rust-first goal narrative: `docs/framework-goals.md`
 - Rust-first view API: `src/view.rs`
+- Reusable widget geometry: `src/widget_render.rs`
+- AppCx/UI command executor boundaries: `src/app_command.rs`,
+  `src/command_protocol.rs`
+- WinUI-style navigation/card shell layout API: `src/shell_layout.rs`
 - Theme tokens and typed units: `src/style.rs`, `src/geometry.rs`
 - Cargo features: `Cargo.toml`, `src/feature_manifest.rs`
+- Feature matrix gate: `scripts/check-feature-matrix.ps1`,
+  `.github/workflows/ci.yml`
 - App declarations and declaration audit: `src/app.rs`, `src/window.rs`,
   `src/tray.rs`, `src/menu.rs`
 - Component tree declarations: `src/components.rs`
 - Capability model: `src/capability.rs`
 - AI/agent context: `src/agent_context.rs`
 - Minimal real native window: `src/native.rs`
-- Extracted Windows self-draw sink: `src/windows_gdi_renderer.rs`
-- Extracted Windows Win32 main/transient window host:
+- Windows self-draw sink: `src/windows_gdi_renderer.rs`
+- Windows Win32 main/transient window host:
   `src/windows_win32_host.rs`
 - Host contracts: `src/host.rs`, `src/host_protocol.rs`, `src/native_hosts.rs`,
   `src/native_host_actions.rs`
@@ -210,6 +259,7 @@ input dispatch are still pending.
   `examples/product_adapter_view.rs`
 - Rust-first API example: `examples/rust_first_view.rs`
 - Typed list selection example: `examples/list_selection.rs`
+- Navigation/card shell layout example: `examples/navigation_shell_layout.rs`
 - Native smoke manifests: `src/native_smoke.rs`,
   `examples/native_smoke_manifest.rs`, `examples/native_smoke_record.rs`,
   `examples/native_smoke_run.rs`, `examples/native_smoke_review.rs`,
@@ -217,11 +267,9 @@ input dispatch are still pending.
 - Architecture docs: `docs/architecture.md`
 - Porting docs: `docs/porting.md`
 
-## Source Material From ZSClip
+## Agent Handoff
 
-The original AI handoff material in ZSClip lives under
-`docs/skills/zsclip-native-ui/`. The standalone ZSUI copy keeps the same intent
-but removes ZSClip product behavior from the instructions:
+The standalone AI handoff package is maintained at:
 
 - `docs/skills/zsui-native-ui/SKILL.md`
 - `docs/skills/zsui-native-ui/references/native-ui-entrypoints.md`
@@ -230,8 +278,8 @@ but removes ZSClip product behavior from the instructions:
 ## Agent Rules
 
 Keep ZSUI product-neutral. Do not add clipboard history storage, sync logic,
-AI provider clients, prompt templates for a product, database schemas or ZSClip
-window procedures to this crate.
+AI provider clients, prompt templates for a product, database schemas or
+application window procedures to this crate.
 
 Prefer adding reusable contracts and host adapters in ZSUI, then let products
 bind their own data and behavior through adapters. Platform handles and native
@@ -242,7 +290,9 @@ When adding a feature, update tests in the same crate. ZSUI should be verifiable
 with:
 
 ```powershell
-cargo test
+.\scripts\check-feature-matrix.ps1 -Locked
+cargo test --features full
+cargo test --no-default-features
 ```
 
 ## Runtime Roadmap
@@ -255,9 +305,8 @@ cargo test
 3. Keep the default facade small and split heavier widget/backend families into
    feature-gated crates or modules as their contracts stabilize.
 4. Make `NativeRuntimeDriver` and launch plans drive real host event loops.
-5. Connect the extracted Win32 main-window/GDI/tray pieces to the default
-   runtime, then continue AppKit/GTK extraction around status item, menu,
-   dialog and clipboard contracts.
+5. Complete Win32 main-window/GDI/tray integration, then implement AppKit/GTK
+   status item, menu, dialog, clipboard, rendering and input capabilities.
 6. Turn the Android Activity and Harmony Ability bridge contracts into real
    FFI/runtime implementations with device smoke artifacts.
 7. Expand the non-clipboard product adapter example into a target native smoke
@@ -271,6 +320,8 @@ Use these public functions when another AI, tool or product adapter needs a
 stable context without reading prose:
 
 - `zsui_agent_context()`: full framework, platform, completion and gate context.
+- `native_ui_platform_readiness_reports()`: capability-level runtime evidence
+  and contract-only gaps for all five target platforms.
 - `zsui_agent_context_json()`: JSON form of the same context.
 - `zsui_reuse_readiness_report()`: compact platform/toolkit readiness summary.
 - `zsui_reuse_bootstrap_plan(platform)`: one platform's adapter boundary,
@@ -282,8 +333,16 @@ stable context without reading prose:
   `ViewInteractionPlan` and `ViewPaintCx`: first-pass typed view/message/
   hit-target/context API, including feature-gated scroll containers and list
   row selection.
+- `SharedLiveViewRuntime`, `LiveViewUpdate` and
+  `NativeWindowBuilder::stateful_view(...)`: typed application state/update/
+  repaint loop for the direct Win32 host.
 - `Px`, `Dp`, `Dpi`, `UiLength` and `ZsuiTheme`: first-pass typed unit and
   theme-token API.
+- `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`: product-neutral
+  WinUI-style left-nav/right-content layout with grouped cards, content rows,
+  description text, row
+  accessories, action buttons, audit output, stable layout regions, viewport
+  masks, scrollbar plans and `NativeDrawPlan` projection.
 - `ProductViewAdapterHost` and `ProductViewRuntimeSmokeRequest`: smoke path for
   typed view messages through a product adapter and reusable runtime harness.
 - `zsui_feature_manifest()`: Cargo feature graph for default, widget, service,
@@ -292,7 +351,7 @@ stable context without reading prose:
 - `zsui_optional_dependency_feature_names()`: feature gates that pull optional
   dependencies into the build.
 - `required_native_draw_command_operation_names()`: stable self-draw command
-  sink operation names extracted from ZSClip's native painting plan shape.
+  sink operation names used by native renderers.
 - `AppBuilder::declaration_report()` and
   `AppBuilder::declaration_report_for(capabilities)`: structural declaration
   audit with errors, warnings and host degradation details.
@@ -347,7 +406,7 @@ stable context without reading prose:
 - `NativeWindowRuntimeDriver`: current desktop native-window driver bridge for
   running a product adapter through `ZsuiReusableRuntimeHarness`; it records
   projected main window, status item/menu and settings declarations through
-  native host contract operations, including extracted status-menu command and
+  native host contract operations, including status-menu command and
   settings-item update contracts.
 - `native_host_smoke_plan(platform)`: target artifact manifest for proving a
   native backend beyond code-level readiness.
@@ -372,7 +431,7 @@ Treat a module as complete only when all of the following are true:
 
 - It is public or intentionally internal through `src/lib.rs`.
 - It has unit tests or examples covering the public behavior.
-- It does not depend on ZSClip modules.
+- It does not depend on application modules.
 - It can be used from a standalone crate with `zsui` as the only UI dependency.
 - Optional dependencies and advanced widgets are behind explicit Cargo features.
 - It reports unsupported or partial platform behavior honestly instead of

@@ -1,6 +1,8 @@
+use std::{env, fs};
+
 use zsui::{
-    button, checkbox, column, text, textbox, AppCx, Command, Dp, Dpi, Rect, View, ViewEvent,
-    ViewEventCx, ViewLayoutCx, ViewNode, ViewPaintCx, WidgetId,
+    button, column, native_window, row, text, textbox, toggle, AppCx, Command, CommandId, Dp,
+    NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, Point, UiCommand, ViewNode, WidgetId,
 };
 
 const SAVE: WidgetId = WidgetId::new(1);
@@ -14,75 +16,90 @@ enum Msg {
     DarkModeChanged(bool),
 }
 
-fn settings_view(name: &str, dark_mode: bool) -> ViewNode<Msg> {
-    column(vec![
-        text("ZSUI settings"),
-        textbox(name).id(NAME).on_change(Msg::NameChanged),
-        checkbox("Dark mode", dark_mode)
-            .id(DARK_MODE)
-            .on_toggle(Msg::DarkModeChanged),
+struct AppState {
+    name: String,
+    dark_mode: bool,
+    save_count: u32,
+}
+
+fn view(state: &AppState) -> ViewNode<Msg> {
+    column([
+        text(format!("Hello, {}", state.name)),
+        textbox(&state.name).id(NAME).on_change(Msg::NameChanged),
+        row([
+            text("Dark mode"),
+            toggle(state.dark_mode)
+                .id(DARK_MODE)
+                .on_toggle(Msg::DarkModeChanged),
+        ]),
         button("Save")
             .id(SAVE)
             .padding(Dp::new(12.0))
             .radius(Dp::new(8.0))
             .on_click(Msg::SaveClicked),
+        text(format!("Saved {} time(s)", state.save_count)),
     ])
 }
 
-fn update(msg: Msg, cx: &mut AppCx) {
+fn update(state: &mut AppState, msg: Msg, cx: &mut AppCx) {
     match msg {
-        Msg::SaveClicked => cx.command(Command::custom("settings.save")),
-        Msg::NameChanged(_) | Msg::DarkModeChanged(_) => {}
+        Msg::SaveClicked => {
+            state.save_count += 1;
+            cx.command(Command::custom("settings.save"));
+            cx.ui_command(UiCommand::app(CommandId("settings.persist")));
+        }
+        Msg::NameChanged(name) => state.name = name,
+        Msg::DarkModeChanged(dark_mode) => state.dark_mode = dark_mode,
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut view = settings_view("ZSUI", false);
-    let mut layout = ViewLayoutCx::new(
-        Rect {
-            x: 0,
-            y: 0,
-            width: 360,
-            height: 180,
-        },
-        Dpi::standard(),
-    );
-    view.layout(&mut layout);
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    let builder = native_window("ZSUI Stateful View")
+        .size(520, 360)
+        .stateful_view(
+            AppState {
+                name: "ZSUI".to_string(),
+                dark_mode: false,
+                save_count: 0,
+            },
+            view,
+            update,
+        )
+        .app_command_executor(NativeWindowRuntimeDriver::new())
+        .ui_command_executor(NativeWindowRuntimeDriver::new());
 
-    let mut events = ViewEventCx::new();
-    view.event(
-        &mut events,
-        &ViewEvent::TextChanged {
-            widget: NAME,
-            value: "ZSUI Native".to_string(),
-        },
-    );
-    view.event(
-        &mut events,
-        &ViewEvent::Toggled {
-            widget: DARK_MODE,
-            checked: true,
-        },
-    );
-    view.event(&mut events, &ViewEvent::Click { widget: SAVE });
-
-    let mut app_cx = AppCx::new();
-    let messages = events.into_messages();
-    for msg in messages.iter().cloned() {
-        update(msg, &mut app_cx);
+    if args.iter().any(|arg| arg == "--smoke") {
+        let artifact_dir = "target/zsui-stateful-view";
+        fs::create_dir_all(artifact_dir)?;
+        let report = builder.run_smoke(
+            NativeWindowSmokeRunOptions::new(1200)
+                .screenshot_file(format!("{artifact_dir}/window.png"))
+                .require_screenshot(cfg!(windows))
+                .native_view_click(Point { x: 260, y: 108 })
+                .native_view_text_input(" Native")
+                .native_view_click(Point { x: 260, y: 180 })
+                .native_view_click(Point { x: 260, y: 252 }),
+        )?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
     }
 
-    let mut paint = ViewPaintCx::new(Dpi::standard());
-    view.paint(&mut paint);
+    if args.iter().any(|arg| arg == "--manifest") {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "draw_command_count": builder.native_draw_plan().map(|plan| plan.command_count()),
+                "hit_target_count": builder.native_view_interaction_plan().map(|plan| plan.hit_target_count()),
+                "live_runtime": builder.native_live_view_runtime().is_some(),
+                "app_command_executor": builder.native_app_command_executor().is_some(),
+                "ui_command_executor": builder.native_ui_command_executor().is_some(),
+                "revision": builder.native_live_view_runtime().map(|runtime| runtime.revision()),
+            }))?
+        );
+        return Ok(());
+    }
 
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&serde_json::json!({
-            "message_count": messages.len(),
-            "command_count": app_cx.commands().len(),
-            "draw_command_count": paint.plan().command_count(),
-            "text_command_count": paint.plan().text_count()
-        }))?
-    );
+    builder.run()?;
     Ok(())
 }

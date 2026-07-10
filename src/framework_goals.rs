@@ -40,6 +40,14 @@ pub fn zsui_rust_first_goal_names() -> Vec<&'static str> {
 pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
     vec![
         ZsuiRustFirstGoal::new(
+            "runnable_vertical_slices",
+            "Measure progress by standalone input-state-paint loops on real hosts, not by declaration or contract count.",
+            "a ZSUI-only control gallery with native interaction, repaint and target smoke proof",
+            "raising overall completion from manifests, AI metadata or mobile scaffolds that do not run on a target",
+            "examples/navigation_shell_layout.rs, src/shell_layout.rs, src/native.rs",
+            "finish the Windows gallery loop, DPI/IME/accessibility proof and then apply the same gate to AppKit, GTK, Android and Harmony",
+        ),
+        ZsuiRustFirstGoal::new(
             "one_line_native_entrypoints",
             "Keep the ordinary native-window entry point short, safe and target-selected by the framework.",
             "zsui::native_window(\"Example\").size(900, 620).run()? for desktop now and mobile once Activity/Ability hosts are real",
@@ -72,12 +80,12 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "add required tray/menu popup interaction and cleanup target smoke proof while keeping raw HWNDs out of higher-level APIs",
         ),
         ZsuiRustFirstGoal::new(
-            "zsclip_extraction_foundation",
-            "Use reusable ZSClip native UI code as the extraction baseline while leaving product behavior behind.",
+            "production_native_foundation",
+            "Use proven native host and rendering behavior as the framework baseline while keeping product behavior outside ZSUI.",
             "NativeDrawPlan, buffered no-flicker Win32/GDI painting, status/menu/settings contracts and owned native resources",
-            "rewriting equivalent reusable host behavior from scratch or copying clipboard-product storage/sync logic into ZSUI",
+            "duplicating established host behavior or placing application storage and sync logic inside ZSUI",
             "src/render_protocol.rs, src/native_host_actions.rs, src/windows_gdi_renderer.rs, src/windows_win32_host.rs",
-            "finish extracting reusable tray/menu/input host routes and keep the latest no-flicker self-draw path as the Windows baseline",
+            "finish tray/menu/input host routes and keep buffered no-flicker self-draw as the Windows baseline",
         ),
         ZsuiRustFirstGoal::new(
             "typed_units",
@@ -85,15 +93,15 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Px, Dp, Dpi and UiLength conversions at layout/render boundaries",
             "raw i32/f32 values flowing through DPI, spacing and size APIs",
             "src/geometry.rs",
-            "migrate remaining geometry/layout APIs from raw numeric DPI and spacing values",
+            "convert remaining geometry/layout APIs from raw numeric DPI and spacing values",
         ),
         ZsuiRustFirstGoal::new(
             "compile_time_builders",
             "Push invalid app/window states toward compile-time builder constraints where practical.",
             "typestate builders for required title/content/runtime surfaces where they pay for themselves",
             "runtime-only missing-field failures for states the type system can express cleanly",
-            "src/window.rs, src/app.rs",
-            "introduce typestate builders for required title/content surfaces without breaking simple APIs",
+            "src/native.rs",
+            "keep the opt-in native content typestate stable and add AppBuilder lifecycle typestate only if it prevents a demonstrated invalid state",
         ),
         ZsuiRustFirstGoal::new(
             "explicit_context_no_globals",
@@ -116,8 +124,8 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Keep control state in explicit application state and derive UI from that state.",
             "view(&AppState) -> impl View<Msg> plus update(msg, &mut AppCx)",
             "controls hiding product state or mutating invisible framework-owned application data",
-            "src/product_adapter.rs",
-            "add examples for view(state) -> impl View<Msg> and update(msg, cx)",
+            "src/view.rs, src/native.rs, examples/rust_first_view.rs",
+            "extend the live state and dual command-executor loop to AppKit and GTK, then connect asynchronous product events back into state updates",
         ),
         ZsuiRustFirstGoal::new(
             "theme_tokens",
@@ -164,8 +172,8 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Use Cargo features for widgets, services, platform backends and heavy dependencies.",
             "default-features = false with selected widget/backend features and optional dependencies",
             "eager global registration that makes every widget and backend enter every build",
-            "Cargo.toml, src/feature_manifest.rs",
-            "add feature-matrix CI and move heavy widgets into feature modules or crates",
+            "Cargo.toml, src/feature_manifest.rs, scripts/check-feature-matrix.ps1, .github/workflows/ci.yml",
+            "move heavy widgets into feature modules or crates while keeping every new public feature in the matrix gate",
         ),
         ZsuiRustFirstGoal::new(
             "crate_split_architecture",
@@ -202,12 +210,13 @@ mod tests {
     fn rust_first_goal_manifest_tracks_core_direction() {
         let names = zsui_rust_first_goal_names();
 
-        assert_eq!(names.len(), 19);
+        assert_eq!(names.len(), 20);
+        assert!(names.contains(&"runnable_vertical_slices"));
         assert!(names.contains(&"one_line_native_entrypoints"));
         assert!(names.contains(&"composition_and_traits"));
         assert!(names.contains(&"typed_messages"));
         assert!(names.contains(&"raii_native_resources"));
-        assert!(names.contains(&"zsclip_extraction_foundation"));
+        assert!(names.contains(&"production_native_foundation"));
         assert!(names.contains(&"mobile_native_hosts"));
         assert!(names.contains(&"feature_gated_platform_capabilities"));
         assert!(names.contains(&"crate_split_architecture"));

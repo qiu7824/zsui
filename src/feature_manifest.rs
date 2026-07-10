@@ -84,8 +84,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Shell,
             true,
             Vec::new(),
-            vec!["windows-win32"],
-            "window declarations and the current Windows direct native host path",
+            vec!["windows-win32", "desktop-winit"],
+            "window declarations and the target-native Win32 or Winit desktop host path",
         ),
         ZsuiCargoFeature::new(
             "button",
@@ -157,7 +157,15 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["widgets-input"],
-            "checkbox/toggle component declarations",
+            "checkbox component declarations",
+        ),
+        ZsuiCargoFeature::new(
+            "toggle",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "owner-drawn toggle declarations and typed View input",
         ),
         ZsuiCargoFeature::new(
             "table",
@@ -345,6 +353,12 @@ mod tests {
             .map(|feature| feature.name)
             .collect();
         assert_eq!(defaults, zsui_default_feature_names());
+
+        let window = zsui_feature_manifest()
+            .into_iter()
+            .find(|feature| feature.name == "window")
+            .expect("window feature should be listed");
+        assert_eq!(window.enables, vec!["windows-win32", "desktop-winit"]);
     }
 
     #[test]

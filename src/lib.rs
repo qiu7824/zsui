@@ -1,13 +1,15 @@
 //! ZSUI public framework surface.
 //!
-//! ZSUI is a Rust-first native system UI framework shape. It is not a self
-//! drawing widget kit: applications declare windows, tray/status menus,
-//! shortcuts, settings pages and commands in Rust, while platform hosts map
-//! those declarations to Win32, AppKit or GTK/libadwaita backends.
+//! ZSUI is a Rust-first native system UI framework shape. It is not yet a full
+//! self-drawing widget kit: applications declare windows, tray/status menus,
+//! shortcuts, settings pages, reusable navigation/card shell layouts and
+//! commands in Rust, while platform hosts map those declarations to Win32,
+//! AppKit or GTK/libadwaita backends.
 
 pub mod agent_context;
 pub mod android_activity_host;
 pub mod app;
+pub mod app_command;
 pub mod capability;
 pub mod clipboard;
 pub mod command_protocol;
@@ -35,11 +37,13 @@ pub mod native_smoke;
 pub mod product_adapter;
 pub mod render_protocol;
 pub mod settings;
+pub mod shell_layout;
 pub mod style;
 pub mod timer_protocol;
 pub mod tray;
 pub mod ui_surface_protocol;
 pub mod view;
+pub mod widget_render;
 pub mod window;
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub mod windows_gdi_renderer;
@@ -65,9 +69,15 @@ pub use app::{
     ZsuiAppDeclarationReport, ZsuiAppRuntime, ZsuiDeclarationIssue, ZsuiDeclarationIssueLevel,
     ZSUI_DECLARATION_AUDIT_SURFACES,
 };
+pub use app_command::{
+    app_command_name, AppCommandDispatchReport, AppCommandExecutor, SharedAppCommandExecutor,
+};
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
 pub use clipboard::ClipboardData;
-pub use command_protocol::{CommandId, CommandPayload, CommandQueue, CommandScope, UiCommand};
+pub use command_protocol::{
+    CommandId, CommandPayload, CommandQueue, CommandScope, SharedUiCommandExecutor, UiCommand,
+    UiCommandDispatchReport, UiCommandExecutor,
+};
 pub use component_protocol::Component;
 #[cfg(feature = "label")]
 pub use components::Label;
@@ -176,19 +186,22 @@ pub use mobile_host::{
     MobileRuntimeLifecycleBinding, MobileRuntimePermission,
 };
 pub use native::{
-    native_window, run_native_window, run_native_window_smoke, NativeViewKey, NativeViewSmokeInput,
-    NativeWindowBuilder, NativeWindowHost, NativeWindowRuntimeDriver,
+    native_window, run_native_window, run_native_window_smoke, typed_native_window, NativeViewKey,
+    NativeViewSmokeInput, NativeWindowBuilder, NativeWindowContentMissing,
+    NativeWindowContentReady, NativeWindowHost, NativeWindowRuntimeDriver,
     NativeWindowRuntimeDriverReport, NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions,
-    NativeWindowSmokeRunReport,
+    NativeWindowSmokeRunReport, TypedNativeWindowBuilder,
 };
 pub use native_adapter_manifest::{
     native_ui_adapter_parity_report, native_ui_backend_capability_matrix,
     native_ui_backend_capability_matrix_for_platform, native_ui_backend_for_current_target,
     native_ui_backend_for_platform, native_ui_backend_for_toolkit,
-    native_ui_platform_for_current_target, NativeUiAdapterBindingPlan, NativeUiAdapterCapability,
+    native_ui_platform_for_current_target, native_ui_platform_readiness,
+    native_ui_platform_readiness_reports, NativeUiAdapterBindingPlan, NativeUiAdapterCapability,
     NativeUiAdapterManifest, NativeUiAdapterParityReport, NativeUiAdapterReusePackage,
     NativeUiBackendCapabilityMatrix, NativeUiBackendDescriptor, NativeUiBackendStatus,
-    NativeUiPlatform, NativeUiToolkit, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
+    NativeUiCapabilityReadiness, NativeUiCapabilityReadinessLevel, NativeUiPlatform,
+    NativeUiPlatformReadinessReport, NativeUiToolkit, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
     SUPPORTED_NATIVE_UI_BACKENDS, SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
 };
 pub use native_host_actions::{
@@ -260,12 +273,12 @@ pub use product_adapter::{
     ui_command_id_name, zsui_reusable_runtime_harness_stage_names, ProductAdapterHost,
     ProductAdapterIdentity, ProductAdapterReuseChecklist, ProductAdapterRuntimeSmokeReport,
     ProductAdapterRuntimeSmokeRequest, ProductAdapterSurface, ProductAdapterTask,
-    ProductAiCapabilityDescriptor, ProductAiExecutionPlan, ProductAiExecutorBoundary,
-    ProductAiInvocation, ProductAiProviderFamily, ProductAiResult, ProductUiProjection,
-    ProductViewAdapterHost, ProductViewRuntimeSmokeReport, ProductViewRuntimeSmokeRequest,
-    ZsuiReusableRuntimeHarness, ZsuiReusableRuntimeHarnessStage, PRODUCT_ADAPTER_SMOKE_COMMAND,
-    REQUIRED_PRODUCT_ADAPTER_SURFACES, REQUIRED_PRODUCT_ADAPTER_TASKS,
-    ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
+    ProductAdapterUiCommandExecutor, ProductAiCapabilityDescriptor, ProductAiExecutionPlan,
+    ProductAiExecutorBoundary, ProductAiInvocation, ProductAiProviderFamily, ProductAiResult,
+    ProductUiProjection, ProductViewAdapterHost, ProductViewRuntimeSmokeReport,
+    ProductViewRuntimeSmokeRequest, ZsuiReusableRuntimeHarness, ZsuiReusableRuntimeHarnessStage,
+    PRODUCT_ADAPTER_SMOKE_COMMAND, REQUIRED_PRODUCT_ADAPTER_SURFACES,
+    REQUIRED_PRODUCT_ADAPTER_TASKS, ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
 };
 pub use render_protocol::{
     required_native_draw_command_operation_names, Color, ColorRole, HorizontalAlign,
@@ -278,6 +291,16 @@ pub use render_protocol::{
     REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};
+pub use shell_layout::{
+    ZsActionAreaSpec, ZsActionButtonKind, ZsActionButtonSpec, ZsContentRowSpec, ZsGroupCardSpec,
+    ZsNavItemSpec, ZsNavigationLayoutMetrics, ZsNavigationLayoutPlan, ZsNavigationLayoutRegion,
+    ZsNavigationLayoutRegionKind, ZsNavigationScaffoldAudit, ZsNavigationScaffoldSpec,
+    ZsRowAccessory, ZsShellActionAreaSpec, ZsShellActionButtonKind, ZsShellActionButtonSpec,
+    ZsShellContentRowSpec, ZsShellGroupCardSpec, ZsShellInteractionEvent, ZsShellInteractionUpdate,
+    ZsShellLayoutAudit, ZsShellLayoutMetrics, ZsShellLayoutPlan, ZsShellLayoutRegion,
+    ZsShellLayoutRegionKind, ZsShellLayoutSpec, ZsShellNavHoverTransition, ZsShellNavItemSpec,
+    ZsShellPointerDownTarget, ZsShellPointerMoveTransition, ZsShellRowAccessory, ZsShellRuntime,
+};
 pub use style::{
     RadiusToken, SpacingToken, ThemeColorToken, ZsuiColorTokens, ZsuiRadiusTokens,
     ZsuiSpacingTokens, ZsuiTheme,
@@ -300,11 +323,14 @@ pub use view::scroll;
 pub use view::text;
 #[cfg(feature = "textbox")]
 pub use view::textbox;
+#[cfg(feature = "toggle")]
+pub use view::toggle;
 pub use view::{
-    column, row, spacer, AppCx, View, ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind,
-    ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection,
-    ViewStyle, WidgetId,
+    column, live_view_runtime, row, spacer, AppCx, LiveViewUpdate, SharedLiveViewRuntime, View,
+    ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
+    ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
+pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub use windows_gdi_renderer::{

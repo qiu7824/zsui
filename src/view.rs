@@ -1,4 +1,8 @@
-use std::marker::PhantomData;
+use std::{
+    fmt,
+    marker::PhantomData,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 #[cfg(feature = "button")]
 use crate::render_protocol::TextRole;
@@ -65,6 +69,11 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "checkbox")]
     Checkbox {
         label: String,
+        checked: bool,
+        on_toggle: Option<fn(bool) -> Msg>,
+    },
+    #[cfg(feature = "toggle")]
+    Toggle {
         checked: bool,
         on_toggle: Option<fn(bool) -> Msg>,
     },
@@ -166,10 +175,14 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(feature = "checkbox")]
+    #[cfg(any(feature = "checkbox", feature = "toggle"))]
     pub fn on_toggle(mut self, message: fn(bool) -> Msg) -> Self {
-        if let ViewNodeKind::Checkbox { on_toggle, .. } = &mut self.kind {
-            *on_toggle = Some(message);
+        match &mut self.kind {
+            #[cfg(feature = "checkbox")]
+            ViewNodeKind::Checkbox { on_toggle, .. } => *on_toggle = Some(message),
+            #[cfg(feature = "toggle")]
+            ViewNodeKind::Toggle { on_toggle, .. } => *on_toggle = Some(message),
+            _ => {}
         }
         self
     }
@@ -243,6 +256,14 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
 pub fn checkbox<Msg>(label: impl Into<String>, checked: bool) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Checkbox {
         label: label.into(),
+        checked,
+        on_toggle: None,
+    })
+}
+
+#[cfg(feature = "toggle")]
+pub fn toggle<Msg>(checked: bool) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::Toggle {
         checked,
         on_toggle: None,
     })
@@ -343,6 +364,7 @@ pub enum ViewHitTargetKind {
     Button,
     Textbox,
     Checkbox,
+    Toggle,
     #[cfg(feature = "scroll")]
     Scroll,
 }
@@ -508,6 +530,262 @@ impl AppCx {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LiveViewUpdate {
+    pub redraw: bool,
+    pub message_count: usize,
+    pub commands: Vec<Command>,
+    pub ui_commands: Vec<UiCommand>,
+    pub quit_requested: bool,
+    pub revision: u64,
+}
+
+trait LiveViewDriver: Send {
+    fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
+    fn draw_plan(&self) -> NativeDrawPlan;
+    fn interaction_plan(&self) -> ViewInteractionPlan;
+    fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
+    fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
+    fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
+    #[cfg(feature = "list")]
+    fn widget_list_relative_widget(
+        &self,
+        widget: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, usize)>;
+    #[cfg(feature = "list")]
+    fn widget_list_index(&self, widget: WidgetId) -> Option<usize>;
+    #[cfg(feature = "scroll")]
+    fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId>;
+    fn revision(&self) -> u64;
+}
+
+#[derive(Clone)]
+pub struct SharedLiveViewRuntime {
+    inner: Arc<Mutex<Box<dyn LiveViewDriver>>>,
+}
+
+impl SharedLiveViewRuntime {
+    pub fn set_surface(&self, bounds: Rect, dpi: Dpi) -> bool {
+        self.lock().set_surface(bounds, dpi)
+    }
+
+    pub fn draw_plan(&self) -> NativeDrawPlan {
+        self.lock().draw_plan()
+    }
+
+    pub fn interaction_plan(&self) -> ViewInteractionPlan {
+        self.lock().interaction_plan()
+    }
+
+    pub fn dispatch_event(&self, event: &ViewEvent) -> LiveViewUpdate {
+        self.lock().dispatch_event(event)
+    }
+
+    pub fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
+        self.lock().widget_text_value(widget)
+    }
+
+    pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
+        self.lock().widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "list")]
+    pub fn widget_list_relative_widget(
+        &self,
+        widget: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, usize)> {
+        self.lock().widget_list_relative_widget(widget, offset)
+    }
+
+    #[cfg(feature = "list")]
+    pub fn widget_list_index(&self, widget: WidgetId) -> Option<usize> {
+        self.lock().widget_list_index(widget)
+    }
+
+    #[cfg(feature = "scroll")]
+    pub fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId> {
+        self.lock().widget_scroll_target(widget)
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.lock().revision()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Box<dyn LiveViewDriver>> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl fmt::Debug for SharedLiveViewRuntime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SharedLiveViewRuntime")
+            .field("revision", &self.revision())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for SharedLiveViewRuntime {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+struct TypedLiveViewDriver<State, Msg, ViewFn, UpdateFn>
+where
+    Msg: Clone,
+    ViewFn: Fn(&State) -> ViewNode<Msg>,
+    UpdateFn: Fn(&mut State, Msg, &mut AppCx),
+{
+    state: State,
+    view_fn: ViewFn,
+    update_fn: UpdateFn,
+    view: ViewNode<Msg>,
+    bounds: Rect,
+    dpi: Dpi,
+    revision: u64,
+}
+
+impl<State, Msg, ViewFn, UpdateFn> TypedLiveViewDriver<State, Msg, ViewFn, UpdateFn>
+where
+    Msg: Clone,
+    ViewFn: Fn(&State) -> ViewNode<Msg>,
+    UpdateFn: Fn(&mut State, Msg, &mut AppCx),
+{
+    fn new(state: State, view_fn: ViewFn, update_fn: UpdateFn, bounds: Rect, dpi: Dpi) -> Self {
+        let view = view_fn(&state);
+        let mut driver = Self {
+            state,
+            view_fn,
+            update_fn,
+            view,
+            bounds,
+            dpi,
+            revision: 0,
+        };
+        driver.layout();
+        driver
+    }
+
+    fn layout(&mut self) {
+        self.view = (self.view_fn)(&self.state);
+        let mut cx = ViewLayoutCx::new(self.bounds, self.dpi);
+        self.view.layout(&mut cx);
+    }
+}
+
+impl<State, Msg, ViewFn, UpdateFn> LiveViewDriver
+    for TypedLiveViewDriver<State, Msg, ViewFn, UpdateFn>
+where
+    State: Send + 'static,
+    Msg: Clone + Send + 'static,
+    ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+    UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+{
+    fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool {
+        if self.bounds == bounds && self.dpi == dpi {
+            return false;
+        }
+        self.bounds = bounds;
+        self.dpi = dpi;
+        self.layout();
+        self.revision = self.revision.saturating_add(1);
+        true
+    }
+
+    fn draw_plan(&self) -> NativeDrawPlan {
+        let mut cx = ViewPaintCx::new(self.dpi);
+        self.view.paint(&mut cx);
+        cx.into_plan()
+    }
+
+    fn interaction_plan(&self) -> ViewInteractionPlan {
+        self.view.interaction_plan()
+    }
+
+    fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate {
+        let mut event_cx = ViewEventCx::new();
+        self.view.event(&mut event_cx, event);
+        let messages = event_cx.into_messages();
+        if messages.is_empty() {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        }
+
+        let message_count = messages.len();
+        let mut app_cx = AppCx::new();
+        for message in messages {
+            (self.update_fn)(&mut self.state, message, &mut app_cx);
+        }
+        self.layout();
+        self.revision = self.revision.saturating_add(1);
+        LiveViewUpdate {
+            redraw: true,
+            message_count,
+            commands: app_cx.commands().to_vec(),
+            ui_commands: app_cx.ui_commands().to_vec(),
+            quit_requested: app_cx.quit_requested(),
+            revision: self.revision,
+        }
+    }
+
+    fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
+        self.view.widget_text_value(widget).map(str::to_string)
+    }
+
+    fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
+        self.view.widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "list")]
+    fn widget_list_relative_widget(
+        &self,
+        widget: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, usize)> {
+        self.view.widget_list_relative_widget(widget, offset)
+    }
+
+    #[cfg(feature = "list")]
+    fn widget_list_index(&self, widget: WidgetId) -> Option<usize> {
+        self.view.widget_list_index(widget)
+    }
+
+    #[cfg(feature = "scroll")]
+    fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId> {
+        self.view.widget_scroll_target(widget)
+    }
+
+    fn revision(&self) -> u64 {
+        self.revision
+    }
+}
+
+pub fn live_view_runtime<State, Msg, ViewFn, UpdateFn>(
+    state: State,
+    view_fn: ViewFn,
+    update_fn: UpdateFn,
+    bounds: Rect,
+    dpi: Dpi,
+) -> SharedLiveViewRuntime
+where
+    State: Send + 'static,
+    Msg: Clone + Send + 'static,
+    ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+    UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+{
+    SharedLiveViewRuntime {
+        inner: Arc::new(Mutex::new(Box::new(TypedLiveViewDriver::new(
+            state, view_fn, update_fn, bounds, dpi,
+        )))),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ViewPaintCx {
     pub dpi: Dpi,
@@ -614,6 +892,19 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     ViewNodeKind::Checkbox {
                         checked, on_toggle, ..
                     },
+                    ViewEvent::Toggled {
+                        checked: next_checked,
+                        ..
+                    },
+                ) => {
+                    *checked = *next_checked;
+                    if let Some(message) = on_toggle {
+                        cx.emit(message(*next_checked));
+                    }
+                }
+                #[cfg(feature = "toggle")]
+                (
+                    ViewNodeKind::Toggle { checked, on_toggle },
                     ViewEvent::Toggled {
                         checked: next_checked,
                         ..
@@ -731,6 +1022,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     SemanticTextStyle::body(),
                 )));
             }
+            #[cfg(feature = "toggle")]
+            ViewNodeKind::Toggle { checked, .. } => {
+                let plan = crate::zs_toggle_render_plan(bounds, false, *checked, cx.dpi);
+                for command in crate::zs_toggle_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "list")]
             ViewNodeKind::List { selected_index, .. } => {
                 if let Some(bounds) = selected_index
@@ -809,6 +1107,10 @@ impl<Msg> ViewNode<Msg> {
         if self.id == Some(widget) {
             #[cfg(feature = "checkbox")]
             if let ViewNodeKind::Checkbox { checked, .. } = &self.kind {
+                return Some(*checked);
+            }
+            #[cfg(feature = "toggle")]
+            if let ViewNodeKind::Toggle { checked, .. } = &self.kind {
                 return Some(*checked);
             }
         }
@@ -915,6 +1217,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Textbox { .. } => ViewHitTargetKind::Textbox,
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { .. } => ViewHitTargetKind::Checkbox,
+            #[cfg(feature = "toggle")]
+            ViewNodeKind::Toggle { .. } => ViewHitTargetKind::Toggle,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             _ => ViewHitTargetKind::Unknown,
@@ -988,12 +1292,7 @@ fn split_column_child_bounds(bounds: Rect, child_count: usize) -> Vec<Rect> {
         .collect()
 }
 
-#[cfg(any(
-    feature = "label",
-    feature = "button",
-    feature = "textbox",
-    feature = "checkbox"
-))]
+#[cfg(any(feature = "label", feature = "button", feature = "textbox"))]
 fn padded_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     let padding = padding
         .map(|value| value.to_px(dpi).round_i32())
@@ -1060,14 +1359,16 @@ mod tests {
         feature = "button",
         feature = "textbox",
         feature = "checkbox",
+        feature = "toggle",
         feature = "list"
     ))]
     #[derive(Debug, Clone, PartialEq)]
     enum Msg {
+        #[cfg(feature = "button")]
         SaveClicked,
         #[cfg(feature = "textbox")]
         NameChanged(String),
-        #[cfg(feature = "checkbox")]
+        #[cfg(any(feature = "checkbox", feature = "toggle"))]
         DarkModeChanged(bool),
         #[cfg(feature = "list")]
         RowSelected(usize),
@@ -1201,6 +1502,38 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "toggle")]
+    fn toggle_routes_typed_state_and_paints_shared_geometry() {
+        let toggle_id = WidgetId::new(4);
+        let mut view = toggle(false).id(toggle_id).on_toggle(Msg::DarkModeChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 32,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::Toggled {
+                widget: toggle_id,
+                checked: true,
+            },
+        );
+
+        assert_eq!(view.widget_checked_value(toggle_id), Some(true));
+        assert_eq!(view.hit_target_kind(), ViewHitTargetKind::Toggle);
+        assert_eq!(paint.plan().command_count(), 2);
+        assert_eq!(events.into_messages(), vec![Msg::DarkModeChanged(true)]);
+    }
+
+    #[test]
     #[cfg(all(feature = "list", feature = "label"))]
     fn list_view_routes_child_clicks_to_typed_selection_messages() {
         let first = WidgetId::new(10);
@@ -1307,5 +1640,64 @@ mod tests {
         assert_eq!(cx.commands(), &[Command::OpenSettings]);
         assert_eq!(cx.ui_commands()[0].id, crate::CommandId("view.save"));
         assert!(cx.quit_requested());
+    }
+
+    #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn live_view_runtime_rebuilds_from_state_after_typed_message() {
+        #[derive(Clone)]
+        enum CounterMsg {
+            Increment,
+        }
+
+        struct CounterState {
+            value: u32,
+        }
+
+        let button_id = WidgetId::new(90);
+        let runtime = live_view_runtime(
+            CounterState { value: 0 },
+            move |state| {
+                column([
+                    text(format!("Count: {}", state.value)),
+                    button("Increment")
+                        .id(button_id)
+                        .on_click(CounterMsg::Increment),
+                ])
+            },
+            |state, message, cx| match message {
+                CounterMsg::Increment => {
+                    state.value += 1;
+                    cx.ui_command(UiCommand::app(crate::CommandId("counter.incremented")));
+                }
+            },
+            Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 160,
+            },
+            Dpi::standard(),
+        );
+
+        let before = runtime.draw_plan();
+        assert!(before.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "Count: 0"
+        )));
+
+        let update = runtime.dispatch_event(&ViewEvent::Click { widget: button_id });
+
+        assert!(update.redraw);
+        assert_eq!(update.message_count, 1);
+        assert_eq!(update.revision, 1);
+        assert_eq!(
+            update.ui_commands[0].id,
+            crate::CommandId("counter.incremented")
+        );
+        assert!(runtime.draw_plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "Count: 1"
+        )));
     }
 }

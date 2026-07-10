@@ -435,6 +435,12 @@ fn validate_ui_node(
                 validate_command(command, &format!("{path}.command"), issues);
             }
         }
+        #[cfg(feature = "toggle")]
+        UiNodeKind::Toggle { command, .. } => {
+            if let Some(command) = command {
+                validate_command(command, &format!("{path}.command"), issues);
+            }
+        }
         UiNodeKind::Spacer { size } if *size == 0 => {
             issues.push(ZsuiDeclarationIssue::warning(
                 format!("{path}.size"),

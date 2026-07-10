@@ -8,8 +8,8 @@ ZSUI should feel like Rust, not like a C++ or C# control hierarchy ported into
 Rust. The public API should be safe, typed, explicit and easy to trim at build
 time. Native platform details belong behind host traits and backend modules.
 
-The revised target is: extract ZSClip's reusable native UI foundation into a
-standalone Rust-first framework, keep product behavior outside the crate, and
+The revised target is: build a standalone Rust-first native UI framework, keep
+product behavior outside the crate, and
 make the ordinary app path as small as:
 
 ```rust,no_run
@@ -22,7 +22,29 @@ and Harmony remain first-class platform targets, but they need real
 Activity/Ability runtime hosts and device smoke proof before this same public
 shape can create mobile native surfaces.
 
-ZSClip's latest no-flicker self-draw work is the Windows rendering baseline:
+## Delivery Order
+
+ZSUI is delivered through runnable vertical slices rather than contract count.
+The current priority order is:
+
+1. Complete one standalone Windows control gallery that uses only ZSUI and
+   exercises navigation, grouped cards, row accessories, action buttons,
+   scrolling, DPI changes and the buffered no-flicker renderer.
+2. Stabilize the Rust-first application loop so typed messages update explicit
+   state and repaint the live window, then cover IME, accessibility, focus,
+   menus and dialogs required by native utility applications.
+3. Tighten Cargo feature boundaries and split crates only after the public
+   widget/runtime boundaries are proven by real applications.
+4. Implement and verify real AppKit and GTK hosts.
+5. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
+   and device smoke artifacts.
+
+Protocol manifests, AI handoff metadata and mobile bridge contracts support
+these slices, but they do not advance product readiness by themselves. New
+contract-only work should be deferred when a runnable slice still has an
+unclosed input, state, paint or target-verification gap.
+
+Buffered no-flicker self-draw is the Windows rendering baseline:
 avoid background erase, paint into an owned buffer when possible, then present
 once to the target surface. Wider platform APIs such as `windows-rs` should be
 introduced only when a concrete backend surface needs them; core declarations
@@ -96,7 +118,7 @@ struct AppState {
 fn view(state: &AppState) -> impl View<Msg> {
     column((
         textbox(&state.input).on_change(Msg::NameChanged),
-        checkbox("Dark mode", state.dark_mode).on_toggle(Msg::ToggleDark),
+        row([text("Dark mode"), toggle(state.dark_mode).on_toggle(Msg::ToggleDark)]),
     ))
 }
 ```
@@ -104,6 +126,10 @@ fn view(state: &AppState) -> impl View<Msg> {
 Do not hide product state inside controls or global registries. State changes
 should flow through typed messages and explicit contexts such as `AppCx`,
 `ViewEventCx`, `ViewLayoutCx` and `ViewPaintCx`.
+`AppCx::command(...)` and `AppCx::ui_command(...)` must leave the View runtime
+through explicit shared executors. Native hosts execute them after releasing
+internal route locks, and product `UiCommand` values delegate through
+`ProductAdapterUiCommandExecutor` rather than a global event bus.
 
 ## Typed Data
 
@@ -125,9 +151,12 @@ let input_id = WidgetId::new();
 let settings_id = WindowId::new();
 ```
 
-As the API matures, required app/window states should move toward typestate
-builders where that improves compile-time safety without making the simple
-path noisy.
+`typed_native_window(...)` now provides an opt-in content typestate:
+`NativeWindowContentMissing` can be configured but cannot build or run, while
+attaching a View, live View, draw plan or shell layout produces
+`NativeWindowContentReady`. Keep `native_window(...)` as the concise path for
+legitimate empty native surfaces; add more typestate only when it prevents a
+real invalid state.
 
 ## Styling
 
@@ -142,6 +171,15 @@ theme.spacing.md;
 
 This keeps Windows 11 styling, dark mode, high contrast and brand themes
 replaceable without rewriting widgets.
+
+Reusable self-drawn layout patterns should stay product-neutral and preserve
+their verified interaction and rendering invariants. A WinUI-style left-nav/
+right-content shell should be expressed as
+layout data and typed draw commands, not as a product settings screen. Grouped
+cards, row titles, description text, row accessories, viewport masks,
+scrollbars and action-button areas belong in reusable contracts such as
+`ZsShellLayoutSpec`; the product crate owns the actual data and command
+behavior.
 
 ## Error And Platform Boundaries
 
@@ -195,6 +233,9 @@ The goal is feature/crate based trimming, not a claim that Cargo automatically
 removes every unused symbol from an enabled crate. Keep optional dependencies
 behind feature gates, keep defaults small, and move large widget families or
 backend integrations into modules or crates that users opt into.
+Every public feature and the supported family combinations must compile through
+`scripts/check-feature-matrix.ps1`; `.github/workflows/ci.yml` keeps this gate on
+Windows and also checks the default/full surfaces on Linux and macOS.
 
 Cargo features are additive across a dependency graph. If another crate enables
 `zsui/textbox`, the final build of the shared `zsui` dependency includes that
@@ -253,3 +294,14 @@ covered by tests or examples, backed by a real host implementation when claimed
 as native, and has target smoke artifacts for the OS or device. Until then,
 report code-level readiness, target-smoke readiness and system-complete status
 separately.
+
+Progress must be reported on three separate scales:
+
+- implementation readiness: framework code has been implemented and tested;
+- runnable-platform readiness: a real host can create, interact with and
+  repaint the surface on the target OS;
+- framework product readiness: an external application can build and ship the
+  workflow without depending on application internals.
+
+An overall percentage must refer to framework product readiness. Internal
+implementation milestones must not be presented as overall framework completion.

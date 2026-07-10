@@ -8,6 +8,7 @@ use std::{
     },
 };
 
+use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
 };
@@ -20,8 +21,9 @@ use crate::{
     NativeStatusMenuCommandHostOperation, NativeStatusMenuCommandRequest,
     NativeStatusMenuCommandResult, NativeTransientWindowHost, NativeTransientWindowHostOperation,
     NativeTransientWindowPresentation, NativeTransientWindowRequest, NativeWindowOptions, Renderer,
-    Size, TraySpec, UiCommand, UiRect, View, ViewEventCx, ViewInteractionPlan, ViewNode,
-    WindowSpec, ZsuiError, ZsuiResult,
+    SharedAppCommandExecutor, SharedUiCommandExecutor, Size, TraySpec, UiCommand, UiRect, View,
+    ViewEventCx, ViewInteractionPlan, ViewNode, WindowSpec, ZsShellInteractionEvent,
+    ZsShellInteractionUpdate, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
 use windows_sys::Win32::{
     Foundation::{
@@ -54,11 +56,12 @@ use windows_sys::Win32::{
             LR_LOADFROMFILE, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
             SC_MOVE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED,
             SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
-            SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CHAR,
-            WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL, WM_NCCREATE,
-            WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SYSCOMMAND, WNDCLASSEXW, WNDPROC, WS_CAPTION,
-            WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX,
-            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP,
+            WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN,
+            WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+            WM_SETICON, WM_SIZE, WM_SYSCOMMAND, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN,
+            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -67,8 +70,14 @@ static ACTIVE_MAIN_WINDOW_COUNT: AtomicI32 = AtomicI32::new(0);
 static WINDOW_DRAW_PLANS: OnceLock<Mutex<Vec<WindowsWindowDrawPlanRecord>>> = OnceLock::new();
 static WINDOW_VIEW_INPUT_ROUTES: OnceLock<Mutex<Vec<WindowsWindowViewInputRouteRecord>>> =
     OnceLock::new();
+static WINDOW_COMPLETED_VIEW_INPUT_REPORTS: OnceLock<
+    Mutex<Vec<WindowsCompletedViewInputReportRecord>>,
+> = OnceLock::new();
+static WINDOW_SHELL_INPUT_ROUTES: OnceLock<Mutex<Vec<WindowsWindowShellInputRouteRecord>>> =
+    OnceLock::new();
 
 const HOVER_DEFAULT: u32 = u32::MAX;
+const WM_MOUSELEAVE: u32 = 0x02A3;
 const DEFAULT_MAIN_CLASS_NAME: &str = "ZsuiMainWindow";
 const DEFAULT_QUICK_CLASS_NAME: &str = "ZsuiQuickWindow";
 const DEFAULT_TRANSIENT_CLASS_NAME: &str = "ZsuiTransientWindow";
@@ -93,6 +102,18 @@ struct WindowsWindowViewInputRouteRecord {
     hwnd: isize,
     route: WindowsWin32ViewInputRoute,
     report: WindowsWin32ViewInputDispatchReport,
+}
+
+#[derive(Debug, Clone)]
+struct WindowsCompletedViewInputReportRecord {
+    hwnd: isize,
+    report: WindowsWin32ViewInputDispatchReport,
+}
+
+#[derive(Debug, Clone)]
+struct WindowsWindowShellInputRouteRecord {
+    hwnd: isize,
+    route: WindowsWin32ShellInputRoute,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,11 +267,17 @@ pub fn create_windows_for_specs_with_draw_plans_and_input_routes(
     draw_plans: &[Option<NativeDrawPlan>],
     input_routes: &[Option<WindowsWin32ViewInputRoute>],
 ) -> ZsuiResult<Vec<NativeMainWindowHandles<HWND>>> {
-    let owned = create_owned_windows_for_specs_with_draw_plans_and_input_routes(
-        specs,
-        draw_plans,
-        input_routes,
-    )?;
+    create_windows_for_specs_with_routes(specs, draw_plans, input_routes, &[])
+}
+
+pub fn create_windows_for_specs_with_routes(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    input_routes: &[Option<WindowsWin32ViewInputRoute>],
+    shell_routes: &[Option<WindowsWin32ShellInputRoute>],
+) -> ZsuiResult<Vec<NativeMainWindowHandles<HWND>>> {
+    let owned =
+        create_owned_windows_for_specs_with_routes(specs, draw_plans, input_routes, shell_routes)?;
     Ok(owned
         .into_iter()
         .map(WindowsWin32OwnedMainWindowHandles::into_handles)
@@ -275,9 +302,19 @@ pub fn create_owned_windows_for_specs_with_draw_plans_and_input_routes(
     draw_plans: &[Option<NativeDrawPlan>],
     input_routes: &[Option<WindowsWin32ViewInputRoute>],
 ) -> ZsuiResult<Vec<WindowsWin32OwnedMainWindowHandles>> {
+    create_owned_windows_for_specs_with_routes(specs, draw_plans, input_routes, &[])
+}
+
+pub fn create_owned_windows_for_specs_with_routes(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    input_routes: &[Option<WindowsWin32ViewInputRoute>],
+    shell_routes: &[Option<WindowsWin32ShellInputRoute>],
+) -> ZsuiResult<Vec<WindowsWin32OwnedMainWindowHandles>> {
     ACTIVE_MAIN_WINDOW_COUNT.store(0, Ordering::SeqCst);
     clear_windows_win32_window_draw_plans();
     clear_windows_win32_window_view_input_routes();
+    clear_windows_win32_window_shell_input_routes();
     let capabilities = HostCapabilities::windows_native_window_host();
     let mut host = WindowsWin32MainWindowHost::new();
     let mut handles = Vec::new();
@@ -295,6 +332,9 @@ pub fn create_owned_windows_for_specs_with_draw_plans_and_input_routes(
                 }
                 if let Some(Some(route)) = input_routes.get(index) {
                     set_windows_win32_window_view_input_route(created.main, route.clone());
+                }
+                if let Some(Some(route)) = shell_routes.get(index) {
+                    set_windows_win32_window_shell_input_route(created.main, route.clone());
                 }
                 host.apply_main_window_appearance(created.main);
                 host.apply_main_window_appearance(created.quick);
@@ -376,6 +416,7 @@ impl Drop for WindowsWin32OwnedMainWindowHandles {
             }
             clear_windows_win32_window_draw_plan(handle);
             clear_windows_win32_window_view_input_route(handle);
+            clear_windows_win32_window_shell_input_route(handle);
             unsafe {
                 if IsWindow(handle) != 0 {
                     DestroyWindow(handle);
@@ -1205,8 +1246,15 @@ fn window_draw_plan(hwnd: HWND) -> Option<NativeDrawPlan> {
 #[derive(Debug, Clone)]
 pub struct WindowsWin32ViewInputRoute {
     interaction_plan: ViewInteractionPlan,
-    ui_command_view: ViewNode<UiCommand>,
+    ui_command_view: Option<ViewNode<UiCommand>>,
+    live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
+    pending_draw_plan: Option<NativeDrawPlan>,
+    quit_requested: bool,
+    app_command_executor: Option<SharedAppCommandExecutor>,
+    pending_app_commands: Vec<Command>,
+    ui_command_executor: Option<SharedUiCommandExecutor>,
+    pending_ui_commands: Vec<UiCommand>,
 }
 
 impl WindowsWin32ViewInputRoute {
@@ -1216,9 +1264,41 @@ impl WindowsWin32ViewInputRoute {
     ) -> Self {
         Self {
             interaction_plan,
-            ui_command_view,
+            ui_command_view: Some(ui_command_view),
+            live_view: None,
             focused_widget: None,
+            pending_draw_plan: None,
+            quit_requested: false,
+            app_command_executor: None,
+            pending_app_commands: Vec::new(),
+            ui_command_executor: None,
+            pending_ui_commands: Vec::new(),
         }
+    }
+
+    pub fn from_live_view(live_view: SharedLiveViewRuntime) -> Self {
+        Self {
+            interaction_plan: live_view.interaction_plan(),
+            ui_command_view: None,
+            live_view: Some(live_view),
+            focused_widget: None,
+            pending_draw_plan: None,
+            quit_requested: false,
+            app_command_executor: None,
+            pending_app_commands: Vec::new(),
+            ui_command_executor: None,
+            pending_ui_commands: Vec::new(),
+        }
+    }
+
+    pub fn app_command_executor(mut self, executor: SharedAppCommandExecutor) -> Self {
+        self.app_command_executor = Some(executor);
+        self
+    }
+
+    pub fn ui_command_executor(mut self, executor: SharedUiCommandExecutor) -> Self {
+        self.ui_command_executor = Some(executor);
+        self
     }
 
     pub fn hit_target_count(&self) -> usize {
@@ -1273,11 +1353,7 @@ impl WindowsWin32ViewInputRoute {
             return report;
         }
 
-        let mut value = self
-            .ui_command_view
-            .widget_text_value(widget)
-            .unwrap_or_default()
-            .to_string();
+        let mut value = self.widget_text_value(widget).unwrap_or_default();
         for ch in text.chars() {
             match ch {
                 '\u{8}' => {
@@ -1330,9 +1406,8 @@ impl WindowsWin32ViewInputRoute {
             } else {
                 1
             };
-            if let Some((next_widget, index)) = self
-                .ui_command_view
-                .widget_list_relative_widget(target.widget, offset)
+            if let Some((next_widget, index)) =
+                self.widget_list_relative_widget(target.widget, offset)
             {
                 if let Some(next_target) = self.interaction_plan.hit_target_for_widget(next_widget)
                 {
@@ -1360,7 +1435,10 @@ impl WindowsWin32ViewInputRoute {
                 crate::ViewHitTargetKind::Button | crate::ViewHitTargetKind::Unknown,
                 ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE,
             )
-            | (crate::ViewHitTargetKind::Checkbox, ZSUI_WIN32_VK_SPACE) => {
+            | (
+                crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle,
+                ZSUI_WIN32_VK_SPACE,
+            ) => {
                 report.keyboard_activation_count = 1;
                 report.events.push(format!(
                     "win32_view_key_activate:{}:{virtual_key}",
@@ -1398,7 +1476,7 @@ impl WindowsWin32ViewInputRoute {
         };
 
         #[cfg(feature = "scroll")]
-        if let Some(scroll_widget) = self.ui_command_view.widget_scroll_target(target.widget) {
+        if let Some(scroll_widget) = self.widget_scroll_target(target.widget) {
             report.event_count = 1;
             report.events.push(format!(
                 "win32_view_scroll:{}:{}",
@@ -1469,11 +1547,11 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
-        let event = if target.kind == crate::ViewHitTargetKind::Checkbox {
-            let checked = !self
-                .ui_command_view
-                .widget_checked_value(target.widget)
-                .unwrap_or(false);
+        let event = if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
+        ) {
+            let checked = !self.widget_checked_value(target.widget).unwrap_or(false);
             report.toggle_count = 1;
             report
                 .events
@@ -1487,7 +1565,7 @@ impl WindowsWin32ViewInputRoute {
                 .events
                 .push(format!("win32_view_click:{}", target.widget.0));
             #[cfg(feature = "list")]
-            if let Some(index) = self.ui_command_view.widget_list_index(target.widget) {
+            if let Some(index) = self.widget_list_index(target.widget) {
                 report.selection_count = 1;
                 report
                     .events
@@ -1506,8 +1584,50 @@ impl WindowsWin32ViewInputRoute {
         event: crate::ViewEvent,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        if let Some(live_view) = &self.live_view {
+            let update = live_view.dispatch_event(&event);
+            report.message_count = update.message_count;
+            report.ui_command_count = update.ui_commands.len();
+            report.app_command_count = update.commands.len();
+            report.live_view_revision = update.revision;
+            report.quit_requested = update.quit_requested;
+            for command in update.commands {
+                report
+                    .app_command_names
+                    .push(crate::app_command_name(&command));
+                report
+                    .events
+                    .push(format!("win32_live_view_command:{command:?}"));
+                if command == Command::Quit {
+                    report.quit_requested = true;
+                    self.quit_requested = true;
+                }
+                self.pending_app_commands.push(command);
+            }
+            for command in update.ui_commands {
+                report.ui_command_ids.push(command.id.0);
+                report
+                    .events
+                    .push(format!("win32_live_view_ui_command:{}", command.id.0));
+                self.pending_ui_commands.push(command);
+            }
+            if update.redraw {
+                self.interaction_plan = live_view.interaction_plan();
+                self.pending_draw_plan = Some(live_view.draw_plan());
+                report.hit_target_count = self.hit_target_count();
+                report
+                    .events
+                    .push(format!("win32_live_view_repaint:{}", update.revision));
+            }
+            self.quit_requested |= update.quit_requested;
+            return;
+        }
+
         let mut event_cx = ViewEventCx::new();
-        self.ui_command_view.event(&mut event_cx, &event);
+        let Some(view) = &mut self.ui_command_view else {
+            return;
+        };
+        view.event(&mut event_cx, &event);
         let commands = event_cx.into_messages();
         report.message_count = commands.len();
         report.ui_command_count = commands.len();
@@ -1516,7 +1636,108 @@ impl WindowsWin32ViewInputRoute {
             report
                 .events
                 .push(format!("win32_view_ui_command:{}", command.id.0));
+            self.pending_ui_commands.push(command);
         }
+    }
+
+    fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_text_value(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_text_value(widget).map(str::to_string))
+            })
+    }
+
+    fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_checked_value(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_checked_value(widget))
+            })
+    }
+
+    #[cfg(feature = "list")]
+    fn widget_list_relative_widget(
+        &self,
+        widget: crate::WidgetId,
+        offset: isize,
+    ) -> Option<(crate::WidgetId, usize)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_list_relative_widget(widget, offset))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_list_relative_widget(widget, offset))
+            })
+    }
+
+    #[cfg(feature = "list")]
+    fn widget_list_index(&self, widget: crate::WidgetId) -> Option<usize> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_list_index(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_list_index(widget))
+            })
+    }
+
+    #[cfg(feature = "scroll")]
+    fn widget_scroll_target(&self, widget: crate::WidgetId) -> Option<crate::WidgetId> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_scroll_target(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_scroll_target(widget))
+            })
+    }
+
+    fn take_pending_draw_plan(&mut self) -> Option<NativeDrawPlan> {
+        self.pending_draw_plan.take()
+    }
+
+    fn take_quit_requested(&mut self) -> bool {
+        std::mem::take(&mut self.quit_requested)
+    }
+
+    fn take_pending_app_command_dispatch(
+        &mut self,
+    ) -> (Option<SharedAppCommandExecutor>, Vec<Command>) {
+        (
+            self.app_command_executor.clone(),
+            std::mem::take(&mut self.pending_app_commands),
+        )
+    }
+
+    fn take_pending_ui_command_dispatch(
+        &mut self,
+    ) -> (Option<SharedUiCommandExecutor>, Vec<UiCommand>) {
+        (
+            self.ui_command_executor.clone(),
+            std::mem::take(&mut self.pending_ui_commands),
+        )
+    }
+
+    fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
+        let Some(live_view) = &self.live_view else {
+            return false;
+        };
+        if !live_view.set_surface(bounds, dpi) {
+            return false;
+        }
+        self.interaction_plan = live_view.interaction_plan();
+        self.pending_draw_plan = Some(live_view.draw_plan());
+        true
     }
 }
 
@@ -1527,7 +1748,21 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub event_count: usize,
     pub message_count: usize,
     pub ui_command_count: usize,
+    pub ui_command_executed_count: usize,
+    pub ui_command_failed_count: usize,
+    pub ui_command_unhandled_count: usize,
+    pub ui_command_event_count: usize,
+    pub ui_command_errors: Vec<String>,
+    pub app_command_count: usize,
+    pub app_command_executed_count: usize,
+    pub app_command_failed_count: usize,
+    pub app_command_unhandled_count: usize,
+    pub app_command_event_count: usize,
+    pub app_command_names: Vec<&'static str>,
+    pub app_command_errors: Vec<String>,
     pub ui_command_ids: Vec<&'static str>,
+    pub live_view_revision: u64,
+    pub quit_requested: bool,
     pub unhandled_click_count: usize,
     pub focus_count: usize,
     pub focused_widget: Option<u64>,
@@ -1551,7 +1786,21 @@ impl WindowsWin32ViewInputDispatchReport {
         self.event_count += next.event_count;
         self.message_count += next.message_count;
         self.ui_command_count += next.ui_command_count;
+        self.ui_command_executed_count += next.ui_command_executed_count;
+        self.ui_command_failed_count += next.ui_command_failed_count;
+        self.ui_command_unhandled_count += next.ui_command_unhandled_count;
+        self.ui_command_event_count += next.ui_command_event_count;
+        self.ui_command_errors.extend(next.ui_command_errors);
+        self.app_command_count += next.app_command_count;
+        self.app_command_executed_count += next.app_command_executed_count;
+        self.app_command_failed_count += next.app_command_failed_count;
+        self.app_command_unhandled_count += next.app_command_unhandled_count;
+        self.app_command_event_count += next.app_command_event_count;
+        self.app_command_names.extend(next.app_command_names);
+        self.app_command_errors.extend(next.app_command_errors);
         self.ui_command_ids.extend(next.ui_command_ids);
+        self.live_view_revision = self.live_view_revision.max(next.live_view_revision);
+        self.quit_requested |= next.quit_requested;
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
         self.focused_widget = next.focused_widget.or(self.focused_widget);
@@ -1571,16 +1820,24 @@ impl WindowsWin32ViewInputDispatchReport {
 
 pub fn set_windows_win32_window_view_input_route(
     hwnd: HWND,
-    route: WindowsWin32ViewInputRoute,
+    mut route: WindowsWin32ViewInputRoute,
 ) -> bool {
     if hwnd.is_null() {
         return false;
     }
+    if let Some((bounds, dpi)) = windows_win32_shell_surface(hwnd) {
+        route.set_surface(bounds, dpi);
+    }
+    let draw_plan = route.take_pending_draw_plan();
+    let hwnd_value = hwnd as isize;
+    completed_window_view_input_reports()
+        .lock()
+        .expect("completed window view input report registry should not be poisoned")
+        .retain(|record| record.hwnd != hwnd_value);
     let mut routes = window_view_input_routes()
         .lock()
         .expect("window view input route registry should not be poisoned");
-    let hwnd = hwnd as isize;
-    if let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd) {
+    if let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) {
         record.route = route;
         record.report = WindowsWin32ViewInputDispatchReport::default();
     } else {
@@ -1589,10 +1846,17 @@ pub fn set_windows_win32_window_view_input_route(
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         routes.push(WindowsWindowViewInputRouteRecord {
-            hwnd,
+            hwnd: hwnd_value,
             route,
             report,
         });
+    }
+    drop(routes);
+    if let Some(draw_plan) = draw_plan {
+        set_windows_win32_window_draw_plan(hwnd, draw_plan);
+        unsafe {
+            InvalidateRect(hwnd, null(), 0);
+        }
     }
     true
 }
@@ -1606,6 +1870,33 @@ pub fn clear_windows_win32_window_view_input_route(hwnd: HWND) {
         .lock()
         .expect("window view input route registry should not be poisoned");
     routes.retain(|record| record.hwnd != hwnd);
+    completed_window_view_input_reports()
+        .lock()
+        .expect("completed window view input report registry should not be poisoned")
+        .retain(|record| record.hwnd != hwnd);
+}
+
+fn archive_windows_win32_window_view_input_report(hwnd: HWND) {
+    if hwnd.is_null() {
+        return;
+    }
+    let hwnd = hwnd as isize;
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    let Some(index) = routes.iter().position(|record| record.hwnd == hwnd) else {
+        return;
+    };
+    let record = routes.remove(index);
+    drop(routes);
+    let mut completed = completed_window_view_input_reports()
+        .lock()
+        .expect("completed window view input report registry should not be poisoned");
+    completed.retain(|record| record.hwnd != hwnd);
+    completed.push(WindowsCompletedViewInputReportRecord {
+        hwnd,
+        report: record.report,
+    });
 }
 
 pub fn clear_windows_win32_window_view_input_routes() {
@@ -1613,6 +1904,10 @@ pub fn clear_windows_win32_window_view_input_routes() {
         .lock()
         .expect("window view input route registry should not be poisoned");
     routes.clear();
+    completed_window_view_input_reports()
+        .lock()
+        .expect("completed window view input report registry should not be poisoned")
+        .clear();
 }
 
 pub fn windows_win32_window_view_input_report(
@@ -1625,61 +1920,67 @@ pub fn windows_win32_window_view_input_report(
     let routes = window_view_input_routes()
         .lock()
         .expect("window view input route registry should not be poisoned");
-    routes
+    if let Some(report) = routes
         .iter()
         .find(|record| record.hwnd == hwnd)
         .map(|record| record.report.clone())
+    {
+        return Some(report);
+    }
+    drop(routes);
+    completed_window_view_input_reports()
+        .lock()
+        .expect("completed window view input report registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd)
+        .map(|record| record.report.clone())
+}
+
+pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
+    let Some((bounds, dpi)) = windows_win32_shell_surface(hwnd) else {
+        return false;
+    };
+    let hwnd_value = hwnd as isize;
+    let draw_plan = {
+        let mut routes = window_view_input_routes()
+            .lock()
+            .expect("window view input route registry should not be poisoned");
+        let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) else {
+            return false;
+        };
+        if !record.route.set_surface(bounds, dpi) {
+            return true;
+        }
+        record.route.take_pending_draw_plan()
+    };
+    if let Some(draw_plan) = draw_plan {
+        set_windows_win32_window_draw_plan(hwnd, draw_plan);
+        unsafe {
+            InvalidateRect(hwnd, null(), 0);
+        }
+    }
+    true
 }
 
 pub fn dispatch_windows_win32_window_view_click(
     hwnd: HWND,
     point: crate::Point,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
-    if hwnd.is_null() {
-        return None;
-    }
-    let hwnd = hwnd as isize;
-    let mut routes = window_view_input_routes()
-        .lock()
-        .expect("window view input route registry should not be poisoned");
-    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
-    let report = record.route.dispatch_click(point);
-    record.report.merge(report.clone());
-    Some(report)
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_click(point))
 }
 
 pub fn dispatch_windows_win32_window_view_text_input(
     hwnd: HWND,
     text: &str,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
-    if hwnd.is_null() {
-        return None;
-    }
-    let hwnd = hwnd as isize;
-    let mut routes = window_view_input_routes()
-        .lock()
-        .expect("window view input route registry should not be poisoned");
-    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
-    let report = record.route.dispatch_text_input(text);
-    record.report.merge(report.clone());
-    Some(report)
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_text_input(text))
 }
 
 pub fn dispatch_windows_win32_window_view_key_down(
     hwnd: HWND,
     virtual_key: u32,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
-    if hwnd.is_null() {
-        return None;
-    }
-    let hwnd = hwnd as isize;
-    let mut routes = window_view_input_routes()
-        .lock()
-        .expect("window view input route registry should not be poisoned");
-    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
-    let report = record.route.dispatch_key_down(virtual_key);
-    record.report.merge(report.clone());
-    Some(report)
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_key_down(virtual_key))
 }
 
 pub fn dispatch_windows_win32_window_view_scroll(
@@ -1687,21 +1988,317 @@ pub fn dispatch_windows_win32_window_view_scroll(
     point: crate::Point,
     delta_y: crate::Dp,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_scroll(point, delta_y))
+}
+
+fn dispatch_windows_win32_window_view_input(
+    hwnd: HWND,
+    dispatch: impl FnOnce(&mut WindowsWin32ViewInputRoute) -> WindowsWin32ViewInputDispatchReport,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
     if hwnd.is_null() {
         return None;
     }
-    let hwnd = hwnd as isize;
-    let mut routes = window_view_input_routes()
+    let hwnd_value = hwnd as isize;
+    let (
+        mut report,
+        draw_plan,
+        quit_requested,
+        app_executor,
+        app_commands,
+        ui_executor,
+        ui_commands,
+    ) = {
+        let mut routes = window_view_input_routes()
+            .lock()
+            .expect("window view input route registry should not be poisoned");
+        let record = routes.iter_mut().find(|record| record.hwnd == hwnd_value)?;
+        let report = dispatch(&mut record.route);
+        let draw_plan = record.route.take_pending_draw_plan();
+        let quit_requested = record.route.take_quit_requested();
+        let (app_executor, app_commands) = record.route.take_pending_app_command_dispatch();
+        let (ui_executor, ui_commands) = record.route.take_pending_ui_command_dispatch();
+        (
+            report,
+            draw_plan,
+            quit_requested,
+            app_executor,
+            app_commands,
+            ui_executor,
+            ui_commands,
+        )
+    };
+
+    dispatch_windows_win32_app_commands(&mut report, app_executor, app_commands);
+    dispatch_windows_win32_ui_commands(&mut report, ui_executor, ui_commands);
+    if let Some(record) = window_view_input_routes()
         .lock()
-        .expect("window view input route registry should not be poisoned");
-    let record = routes.iter_mut().find(|record| record.hwnd == hwnd)?;
-    let report = record.route.dispatch_scroll(point, delta_y);
-    record.report.merge(report.clone());
+        .expect("window view input route registry should not be poisoned")
+        .iter_mut()
+        .find(|record| record.hwnd == hwnd_value)
+    {
+        record.report.merge(report.clone());
+    }
+
+    if let Some(draw_plan) = draw_plan {
+        set_windows_win32_window_draw_plan(hwnd, draw_plan);
+        unsafe {
+            InvalidateRect(hwnd, null(), 0);
+        }
+    }
+    if quit_requested {
+        unsafe {
+            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        }
+    }
     Some(report)
+}
+
+fn dispatch_windows_win32_app_commands(
+    report: &mut WindowsWin32ViewInputDispatchReport,
+    executor: Option<SharedAppCommandExecutor>,
+    commands: Vec<Command>,
+) {
+    let Some(executor) = executor else {
+        report.app_command_unhandled_count += commands.len();
+        return;
+    };
+    for command in commands {
+        match executor.dispatch(command) {
+            Ok(events) => {
+                report.app_command_executed_count += 1;
+                report.app_command_event_count += events.len();
+            }
+            Err(err) => {
+                report.app_command_failed_count += 1;
+                report.app_command_errors.push(err.to_string());
+            }
+        }
+    }
+}
+
+fn dispatch_windows_win32_ui_commands(
+    report: &mut WindowsWin32ViewInputDispatchReport,
+    executor: Option<SharedUiCommandExecutor>,
+    commands: Vec<UiCommand>,
+) {
+    let Some(executor) = executor else {
+        report.ui_command_unhandled_count += commands.len();
+        return;
+    };
+    for command in commands {
+        match executor.dispatch(command) {
+            Ok(events) => {
+                report.ui_command_executed_count += 1;
+                report.ui_command_event_count += events.len();
+            }
+            Err(err) => {
+                report.ui_command_failed_count += 1;
+                report.ui_command_errors.push(err.to_string());
+            }
+        }
+    }
 }
 
 fn window_view_input_routes() -> &'static Mutex<Vec<WindowsWindowViewInputRouteRecord>> {
     WINDOW_VIEW_INPUT_ROUTES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn completed_window_view_input_reports(
+) -> &'static Mutex<Vec<WindowsCompletedViewInputReportRecord>> {
+    WINDOW_COMPLETED_VIEW_INPUT_REPORTS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+#[derive(Debug, Clone)]
+pub struct WindowsWin32ShellInputRoute {
+    runtime: ZsShellRuntime,
+    events: Vec<ZsShellInteractionEvent>,
+}
+
+impl WindowsWin32ShellInputRoute {
+    pub fn new(runtime: ZsShellRuntime) -> Self {
+        Self {
+            runtime,
+            events: Vec::new(),
+        }
+    }
+
+    pub fn runtime(&self) -> &ZsShellRuntime {
+        &self.runtime
+    }
+
+    pub fn events(&self) -> &[ZsShellInteractionEvent] {
+        &self.events
+    }
+}
+
+pub fn set_windows_win32_window_shell_input_route(
+    hwnd: HWND,
+    mut route: WindowsWin32ShellInputRoute,
+) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    if let Some((bounds, dpi)) = windows_win32_shell_surface(hwnd) {
+        route.runtime.set_surface(bounds, dpi);
+    }
+    let plan = route.runtime.draw_plan();
+    let hwnd_value = hwnd as isize;
+    let mut routes = window_shell_input_routes()
+        .lock()
+        .expect("window shell input route registry should not be poisoned");
+    if let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) {
+        record.route = route;
+    } else {
+        routes.push(WindowsWindowShellInputRouteRecord {
+            hwnd: hwnd_value,
+            route,
+        });
+    }
+    drop(routes);
+    set_windows_win32_window_draw_plan(hwnd, plan);
+    unsafe {
+        InvalidateRect(hwnd, null(), 0);
+    }
+    true
+}
+
+pub fn clear_windows_win32_window_shell_input_route(hwnd: HWND) {
+    if hwnd.is_null() {
+        return;
+    }
+    let hwnd = hwnd as isize;
+    let mut routes = window_shell_input_routes()
+        .lock()
+        .expect("window shell input route registry should not be poisoned");
+    routes.retain(|record| record.hwnd != hwnd);
+}
+
+pub fn clear_windows_win32_window_shell_input_routes() {
+    let mut routes = window_shell_input_routes()
+        .lock()
+        .expect("window shell input route registry should not be poisoned");
+    routes.clear();
+}
+
+pub fn windows_win32_window_shell_input_events(hwnd: HWND) -> Option<Vec<ZsShellInteractionEvent>> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    let routes = window_shell_input_routes()
+        .lock()
+        .expect("window shell input route registry should not be poisoned");
+    routes
+        .iter()
+        .find(|record| record.hwnd == hwnd)
+        .map(|record| record.route.events.clone())
+}
+
+pub fn dispatch_windows_win32_window_shell_pointer_move(
+    hwnd: HWND,
+    point: crate::Point,
+) -> Option<ZsShellInteractionUpdate> {
+    track_windows_win32_shell_pointer_leave(hwnd);
+    dispatch_windows_win32_window_shell_update(hwnd, |runtime| runtime.pointer_move(point))
+}
+
+pub fn dispatch_windows_win32_window_shell_pointer_leave(
+    hwnd: HWND,
+) -> Option<ZsShellInteractionUpdate> {
+    dispatch_windows_win32_window_shell_update(hwnd, ZsShellRuntime::pointer_leave)
+}
+
+pub fn dispatch_windows_win32_window_shell_pointer_down(
+    hwnd: HWND,
+    point: crate::Point,
+) -> Option<ZsShellInteractionUpdate> {
+    dispatch_windows_win32_window_shell_update(hwnd, |runtime| runtime.pointer_down(point))
+}
+
+pub fn dispatch_windows_win32_window_shell_pointer_up(
+    hwnd: HWND,
+) -> Option<ZsShellInteractionUpdate> {
+    dispatch_windows_win32_window_shell_update(hwnd, ZsShellRuntime::pointer_up)
+}
+
+pub fn dispatch_windows_win32_window_shell_pointer_cancel(
+    hwnd: HWND,
+) -> Option<ZsShellInteractionUpdate> {
+    dispatch_windows_win32_window_shell_update(hwnd, ZsShellRuntime::pointer_cancel)
+}
+
+pub fn dispatch_windows_win32_window_shell_scroll(
+    hwnd: HWND,
+    delta_y: i32,
+) -> Option<ZsShellInteractionUpdate> {
+    dispatch_windows_win32_window_shell_update(hwnd, |runtime| runtime.scroll_by(delta_y))
+}
+
+pub fn refresh_windows_win32_window_shell_surface(hwnd: HWND) -> Option<ZsShellInteractionUpdate> {
+    dispatch_windows_win32_window_shell_update(hwnd, |_| ZsShellInteractionUpdate::default())
+}
+
+fn dispatch_windows_win32_window_shell_update(
+    hwnd: HWND,
+    update: impl FnOnce(&mut ZsShellRuntime) -> ZsShellInteractionUpdate,
+) -> Option<ZsShellInteractionUpdate> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let surface = windows_win32_shell_surface(hwnd);
+    let hwnd_value = hwnd as isize;
+    let (result, plan) = {
+        let mut routes = window_shell_input_routes()
+            .lock()
+            .expect("window shell input route registry should not be poisoned");
+        let record = routes.iter_mut().find(|record| record.hwnd == hwnd_value)?;
+        let surface_changed = surface
+            .map(|(bounds, dpi)| record.route.runtime.set_surface(bounds, dpi))
+            .unwrap_or(false);
+        let mut result = update(&mut record.route.runtime);
+        if surface_changed {
+            result.redraw = true;
+        }
+        record.route.events.extend(result.events.iter().cloned());
+        let plan = result.redraw.then(|| record.route.runtime.draw_plan());
+        (result, plan)
+    };
+
+    if let Some(plan) = plan {
+        set_windows_win32_window_draw_plan(hwnd, plan);
+        unsafe {
+            InvalidateRect(hwnd, null(), 0);
+        }
+    }
+    Some(result)
+}
+
+fn window_shell_input_routes() -> &'static Mutex<Vec<WindowsWindowShellInputRouteRecord>> {
+    WINDOW_SHELL_INPUT_ROUTES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn windows_win32_shell_surface(hwnd: HWND) -> Option<(crate::Rect, crate::Dpi)> {
+    let mut rect: RECT = unsafe { zeroed() };
+    if unsafe { GetClientRect(hwnd, &mut rect) } == 0 {
+        return None;
+    }
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96) as f32;
+    Some((rect_from_win(rect), crate::Dpi(dpi)))
+}
+
+fn track_windows_win32_shell_pointer_leave(hwnd: HWND) {
+    if hwnd.is_null() {
+        return;
+    }
+    let mut event = TRACKMOUSEEVENT {
+        cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+        dwFlags: TME_LEAVE,
+        hwndTrack: hwnd,
+        dwHoverTime: HOVER_DEFAULT,
+    };
+    unsafe {
+        TrackMouseEvent(&mut event);
+    }
 }
 
 pub fn run_windows_win32_native_window_event_loop(specs: &[WindowSpec]) -> ZsuiResult<()> {
@@ -1724,10 +2321,41 @@ pub fn run_windows_win32_native_window_event_loop_with_draw_plans_and_status_ite
     draw_plans: &[Option<NativeDrawPlan>],
     status_items: &[TraySpec],
 ) -> ZsuiResult<()> {
+    run_windows_win32_native_window_event_loop_with_draw_plans_input_routes_and_status_items(
+        specs,
+        draw_plans,
+        &[],
+        status_items,
+    )
+}
+
+pub fn run_windows_win32_native_window_event_loop_with_draw_plans_input_routes_and_status_items(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    input_routes: &[Option<WindowsWin32ViewInputRoute>],
+    status_items: &[TraySpec],
+) -> ZsuiResult<()> {
+    run_windows_win32_native_window_event_loop_with_routes_and_status_items(
+        specs,
+        draw_plans,
+        input_routes,
+        &[],
+        status_items,
+    )
+}
+
+pub fn run_windows_win32_native_window_event_loop_with_routes_and_status_items(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    input_routes: &[Option<WindowsWin32ViewInputRoute>],
+    shell_routes: &[Option<WindowsWin32ShellInputRoute>],
+    status_items: &[TraySpec],
+) -> ZsuiResult<()> {
     if specs.is_empty() {
         return Ok(());
     }
-    let _handles = create_owned_windows_for_specs_with_draw_plans(specs, draw_plans)?;
+    let _handles =
+        create_owned_windows_for_specs_with_routes(specs, draw_plans, input_routes, shell_routes)?;
     let mut _status_item_host = None;
     if !status_items.is_empty() {
         let mut host = WindowsWin32StatusItemHost::new(_handles[0].main());
@@ -2313,6 +2941,8 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         WM_NCDESTROY => {
             let role = WindowsWindowRole::from_create_param(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             clear_windows_win32_window_draw_plan(hwnd);
+            archive_windows_win32_window_view_input_report(hwnd);
+            clear_windows_win32_window_shell_input_route(hwnd);
             if matches!(role, WindowsWindowRole::Main)
                 && ACTIVE_MAIN_WINDOW_COUNT.fetch_sub(1, Ordering::SeqCst) <= 1
             {
@@ -2321,8 +2951,56 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => 1,
+        WM_SIZE => {
+            let shell_handled = refresh_windows_win32_window_shell_surface(hwnd).is_some();
+            let live_view_handled = refresh_windows_win32_window_live_view_surface(hwnd);
+            if shell_handled || live_view_handled {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_MOUSEMOVE => {
+            if dispatch_windows_win32_window_shell_pointer_move(hwnd, point_from_lparam(lparam))
+                .is_some()
+            {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_MOUSELEAVE => {
+            if dispatch_windows_win32_window_shell_pointer_leave(hwnd).is_some() {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_LBUTTONDOWN => {
+            if dispatch_windows_win32_window_shell_pointer_down(hwnd, point_from_lparam(lparam))
+                .is_some()
+            {
+                SetCapture(hwnd);
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_LBUTTONUP => {
-            if dispatch_windows_win32_window_view_click(hwnd, point_from_lparam(lparam)).is_some() {
+            if dispatch_windows_win32_window_shell_pointer_up(hwnd).is_some() {
+                ReleaseCapture();
+                0
+            } else if dispatch_windows_win32_window_view_click(hwnd, point_from_lparam(lparam))
+                .is_some()
+            {
+                SetFocus(hwnd);
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_CAPTURECHANGED => {
+            if dispatch_windows_win32_window_shell_pointer_cancel(hwnd).is_some() {
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -2346,9 +3024,14 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         WM_MOUSEWHEEL => {
             let point = mouse_wheel_point_from_lparam(hwnd, lparam);
             let delta_y = mouse_wheel_scroll_delta_from_wparam(wparam);
-            match dispatch_windows_win32_window_view_scroll(hwnd, point, delta_y) {
-                Some(report) if report.unhandled_scroll_count == 0 => 0,
-                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            if dispatch_windows_win32_window_shell_scroll(hwnd, delta_y.0.round() as i32).is_some()
+            {
+                0
+            } else {
+                match dispatch_windows_win32_window_view_scroll(hwnd, point, delta_y) {
+                    Some(report) if report.unhandled_scroll_count == 0 => 0,
+                    _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+                }
             }
         }
         WM_PAINT => paint_no_flicker_background(hwnd),
@@ -2451,7 +3134,7 @@ mod tests {
     }
 
     #[test]
-    fn zsclip_main_window_styles_map_to_win32_flags() {
+    fn main_window_styles_map_to_win32_flags() {
         let plan = windows_win32_main_window_style_plan(
             WindowsWindowRole::Main,
             &NativeWindowOptions::standard(),
@@ -2466,7 +3149,7 @@ mod tests {
     }
 
     #[test]
-    fn zsclip_tool_window_shape_maps_to_popup_topmost_flags() {
+    fn tool_window_shape_maps_to_popup_topmost_flags() {
         let plan = windows_win32_main_window_style_plan(
             WindowsWindowRole::Main,
             &NativeWindowOptions::tool_window(),
@@ -2511,6 +3194,7 @@ mod tests {
 
     #[test]
     fn window_draw_plan_registry_tracks_native_paint_content() {
+        let _guard = view_input_route_test_lock();
         let hwnd = 1isize as HWND;
         let plan = NativeDrawPlan::new([crate::NativeDrawCommand::FillRect {
             rect: crate::Rect {
@@ -2536,6 +3220,12 @@ mod tests {
         clear_windows_win32_window_view_input_routes();
         let hwnd = 77isize as HWND;
         let widget = crate::WidgetId::new(9);
+        let executor = crate::SharedUiCommandExecutor::new(|command: UiCommand| {
+            Ok(vec![crate::AppEvent::Custom {
+                id: command.id.0.to_string(),
+                payload: None,
+            }])
+        });
         let route = WindowsWin32ViewInputRoute::new(
             crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
                 widget,
@@ -2550,7 +3240,8 @@ mod tests {
             crate::button("Save")
                 .id(widget)
                 .on_click(UiCommand::app(crate::CommandId("zsui.test.win32.save"))),
-        );
+        )
+        .ui_command_executor(executor.clone());
 
         assert!(set_windows_win32_window_view_input_route(hwnd, route));
         let dispatched =
@@ -2563,6 +3254,9 @@ mod tests {
         assert_eq!(dispatched.click_count, 1);
         assert_eq!(dispatched.event_count, 1);
         assert_eq!(dispatched.ui_command_count, 1);
+        assert_eq!(dispatched.ui_command_executed_count, 1);
+        assert_eq!(dispatched.ui_command_event_count, 1);
+        assert_eq!(executor.report().executed_count, 1);
         assert_eq!(dispatched.ui_command_ids, vec!["zsui.test.win32.save"]);
         assert_eq!(dispatched.focus_count, 1);
         assert_eq!(dispatched.focused_widget, Some(widget.0));
@@ -2571,6 +3265,139 @@ mod tests {
         assert_eq!(aggregate.ui_command_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
         assert!(windows_win32_window_view_input_report(hwnd).is_none());
+    }
+
+    #[test]
+    fn window_shell_route_updates_navigation_and_draw_plan() {
+        let _guard = view_input_route_test_lock();
+        clear_windows_win32_window_draw_plans();
+        clear_windows_win32_window_shell_input_routes();
+        let hwnd = 0x5252isize as HWND;
+        let spec = crate::ZsShellLayoutSpec::new("gallery", "Gallery")
+            .selected_nav("general")
+            .nav_item(crate::ZsShellNavItemSpec::new("general", "General"))
+            .nav_item(crate::ZsShellNavItemSpec::new("controls", "Controls"));
+        let runtime = crate::ZsShellRuntime::new(
+            spec,
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 1100,
+                height: 740,
+            },
+            crate::Dpi::standard(),
+        );
+
+        assert!(set_windows_win32_window_shell_input_route(
+            hwnd,
+            WindowsWin32ShellInputRoute::new(runtime),
+        ));
+        let update =
+            dispatch_windows_win32_window_shell_pointer_down(hwnd, crate::Point { x: 40, y: 140 })
+                .expect("shell route should handle pointer input");
+
+        assert_eq!(
+            update.events,
+            vec![crate::ZsShellInteractionEvent::NavigationSelected {
+                id: "controls".to_string(),
+            }]
+        );
+        assert!(window_draw_plan(hwnd).is_some());
+        assert_eq!(
+            windows_win32_window_shell_input_events(hwnd).unwrap(),
+            update.events
+        );
+
+        clear_windows_win32_window_shell_input_route(hwnd);
+        clear_windows_win32_window_draw_plan(hwnd);
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[test]
+    fn window_live_view_route_updates_state_and_repaints_draw_plan() {
+        let _guard = view_input_route_test_lock();
+        clear_windows_win32_window_draw_plans();
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 0x5353isize as HWND;
+        let button_id = crate::WidgetId::new(501);
+
+        #[derive(Clone)]
+        enum Msg {
+            Increment,
+        }
+        struct State {
+            count: u32,
+        }
+
+        let runtime = crate::live_view_runtime(
+            State { count: 0 },
+            move |state| {
+                crate::column([
+                    crate::text(format!("Count: {}", state.count)),
+                    crate::button("Increment")
+                        .id(button_id)
+                        .on_click(Msg::Increment),
+                ])
+            },
+            |state, message, cx| match message {
+                Msg::Increment => {
+                    state.count += 1;
+                    cx.command(crate::Command::custom("counter.incremented"));
+                    cx.ui_command(UiCommand::app(crate::CommandId("counter.persist")));
+                }
+            },
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 120,
+            },
+            crate::Dpi::standard(),
+        );
+        let executor = crate::SharedAppCommandExecutor::new(|command| {
+            Ok(vec![crate::AppEvent::MenuCommand { command }])
+        });
+        let ui_executor = crate::SharedUiCommandExecutor::new(|command: UiCommand| {
+            Ok(vec![crate::AppEvent::Custom {
+                id: command.id.0.to_string(),
+                payload: None,
+            }])
+        });
+        assert!(set_windows_win32_window_view_input_route(
+            hwnd,
+            WindowsWin32ViewInputRoute::from_live_view(runtime)
+                .app_command_executor(executor.clone())
+                .ui_command_executor(ui_executor.clone()),
+        ));
+
+        let report = dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 150, y: 90 })
+            .expect("live view route should handle click");
+
+        assert_eq!(report.message_count, 1);
+        assert_eq!(report.app_command_count, 1);
+        assert_eq!(report.app_command_executed_count, 1);
+        assert_eq!(report.app_command_event_count, 1);
+        assert_eq!(executor.report().executed_count, 1);
+        assert_eq!(report.ui_command_count, 1);
+        assert_eq!(report.ui_command_executed_count, 1);
+        assert_eq!(report.ui_command_event_count, 1);
+        assert_eq!(ui_executor.report().executed_count, 1);
+        assert_eq!(report.live_view_revision, 1);
+        assert!(report
+            .events
+            .iter()
+            .any(|event| event == "win32_live_view_repaint:1"));
+        assert!(window_draw_plan(hwnd)
+            .unwrap()
+            .commands
+            .iter()
+            .any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
+            )));
+
+        clear_windows_win32_window_view_input_route(hwnd);
+        clear_windows_win32_window_draw_plan(hwnd);
     }
 
     #[test]
@@ -3056,7 +3883,7 @@ mod tests {
     }
 
     #[test]
-    fn transient_host_preserves_zsclip_topmost_noactivate_window_shape() {
+    fn transient_host_preserves_topmost_noactivate_window_shape() {
         let mut host = WindowsWin32TransientWindowHost::new();
 
         host.present_transient_window(

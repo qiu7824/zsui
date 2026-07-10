@@ -2,12 +2,13 @@ use serde::Serialize;
 
 use crate::{
     app::{app, ZsuiApp, ZsuiAppRuntime},
+    app_command::{app_command_name, AppCommandExecutor, SharedAppCommandExecutor},
     capability::HostCapabilities,
     clipboard::ClipboardData,
-    command_protocol::UiCommand,
+    command_protocol::{SharedUiCommandExecutor, UiCommand, UiCommandExecutor},
     core::{
-        AppEvent, DialogResponse, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId,
-        ZsuiError, ZsuiResult,
+        AppEvent, Command, DialogResponse, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId,
+        WindowId, ZsuiError, ZsuiResult,
     },
     geometry::{Dpi, Point, Rect},
     host::{MemoryHost, TrayRecord, WindowRecord, ZsuiHost},
@@ -24,15 +25,29 @@ use crate::{
     },
     render_protocol::NativeDrawPlan,
     settings::SettingsPageSpec,
+    shell_layout::{ZsShellLayoutSpec, ZsShellRuntime},
     tray::TraySpec,
     view::{
-        View, ViewEvent, ViewEventCx, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewPaintCx,
+        live_view_runtime, AppCx, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx,
+        ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewPaintCx,
     },
     window::{Window, WindowSpec},
 };
 
 pub fn native_window(title: impl Into<String>) -> NativeWindowBuilder {
     NativeWindowBuilder::new(title)
+}
+
+/// Starts the opt-in typestate builder. Content must be attached before
+/// `build`, `run` or `run_smoke` becomes available.
+///
+/// ```compile_fail
+/// zsui::typed_native_window("Missing content").run().unwrap();
+/// ```
+pub fn typed_native_window(
+    title: impl Into<String>,
+) -> TypedNativeWindowBuilder<NativeWindowContentMissing> {
+    TypedNativeWindowBuilder::new(title)
 }
 
 pub fn run_native_window(title: impl Into<String>) -> ZsuiResult<ZsuiAppRuntime> {
@@ -62,6 +77,8 @@ pub struct NativeWindowRuntimeDriverReport {
     pub settings_model_bound: bool,
     pub native_operation_names: Vec<&'static str>,
     pub command_ids: Vec<&'static str>,
+    pub app_command_count: usize,
+    pub app_command_names: Vec<&'static str>,
     pub pending_event_count: usize,
     pub shutdown_requested: bool,
     pub handles_created: bool,
@@ -78,10 +95,12 @@ pub struct NativeWindowRuntimeDriver {
     settings_model_bound: bool,
     native_operation_names: Vec<&'static str>,
     command_ids: Vec<&'static str>,
+    app_commands: Vec<Command>,
     events: Vec<AppEvent>,
     handles: Option<NativeMainWindowHandles<NativeWindowRuntimeHandle>>,
     next_handle: u64,
     shutdown_requested: bool,
+    main_window_visible: bool,
 }
 
 impl NativeWindowRuntimeDriver {
@@ -100,10 +119,12 @@ impl NativeWindowRuntimeDriver {
             settings_model_bound: false,
             native_operation_names: Vec::new(),
             command_ids: Vec::new(),
+            app_commands: Vec::new(),
             events: Vec::new(),
             handles: None,
             next_handle: 1,
             shutdown_requested: false,
+            main_window_visible: false,
         }
     }
 
@@ -143,6 +164,10 @@ impl NativeWindowRuntimeDriver {
         &self.command_ids
     }
 
+    pub fn app_commands(&self) -> &[Command] {
+        &self.app_commands
+    }
+
     pub const fn handles(&self) -> Option<NativeMainWindowHandles<NativeWindowRuntimeHandle>> {
         self.handles
     }
@@ -169,6 +194,8 @@ impl NativeWindowRuntimeDriver {
             settings_model_bound: self.settings_model_bound,
             native_operation_names: self.native_operation_names.clone(),
             command_ids: self.command_ids.clone(),
+            app_command_count: self.app_commands.len(),
+            app_command_names: self.app_commands.iter().map(app_command_name).collect(),
             pending_event_count: self.events.len(),
             shutdown_requested: self.shutdown_requested,
             handles_created,
@@ -183,6 +210,7 @@ impl NativeWindowRuntimeDriver {
             self.windows.clone(),
             Vec::new(),
             NativeViewInputRuntime::default(),
+            None,
             options,
         )
     }
@@ -202,6 +230,7 @@ impl NativeRuntimeDriver<UiCommand, AppEvent> for NativeWindowRuntimeDriver {
         request: NativeRuntimeStartupRequest,
     ) -> NativeRuntimeStartupResult<Self::WindowHandle> {
         let window = window_spec_from_startup_request(&request);
+        let main_window_visible = window.visible;
         let status_item = request.status_item.clone();
         let settings_pages = request.settings_pages.clone();
         let handles = NativeMainWindowHandles {
@@ -226,6 +255,7 @@ impl NativeRuntimeDriver<UiCommand, AppEvent> for NativeWindowRuntimeDriver {
         }
         self.handles = Some(handles);
         self.shutdown_requested = false;
+        self.main_window_visible = main_window_visible;
         self.events.push(AppEvent::Started);
         self.events.push(AppEvent::WindowCreated {
             window: WindowId(handles.main.0),
@@ -257,6 +287,60 @@ impl NativeRuntimeDriver<UiCommand, AppEvent> for NativeWindowRuntimeDriver {
     }
 }
 
+impl AppCommandExecutor for NativeWindowRuntimeDriver {
+    fn execute_app_command(&mut self, command: Command) -> ZsuiResult<Vec<AppEvent>> {
+        self.app_commands.push(command.clone());
+        let events = match command {
+            Command::ShowMainWindow => {
+                self.main_window_visible = true;
+                vec![AppEvent::WindowShown {
+                    window: self.main_window_id()?,
+                }]
+            }
+            Command::HideMainWindow => {
+                self.main_window_visible = false;
+                vec![AppEvent::WindowHidden {
+                    window: self.main_window_id()?,
+                }]
+            }
+            Command::ToggleMainWindow => {
+                self.main_window_visible = !self.main_window_visible;
+                let window = self.main_window_id()?;
+                if self.main_window_visible {
+                    vec![AppEvent::WindowShown { window }]
+                } else {
+                    vec![AppEvent::WindowHidden { window }]
+                }
+            }
+            Command::OpenQuickPanel => vec![AppEvent::WindowShown {
+                window: self.quick_window_id()?,
+            }],
+            Command::Quit => {
+                self.request_shutdown();
+                return Ok(vec![AppEvent::QuitRequested]);
+            }
+            Command::Custom { id, payload } => vec![AppEvent::Custom { id, payload }],
+            command => vec![AppEvent::Custom {
+                id: format!("zsui.command.{}", app_command_name(&command)),
+                payload: None,
+            }],
+        };
+        self.events.extend(events.iter().cloned());
+        Ok(events)
+    }
+}
+
+impl UiCommandExecutor for NativeWindowRuntimeDriver {
+    fn execute_ui_command(&mut self, command: UiCommand) -> ZsuiResult<Vec<AppEvent>> {
+        let event = AppEvent::Custom {
+            id: command.id.0.to_string(),
+            payload: None,
+        };
+        <Self as NativeRuntimeDriver<UiCommand, AppEvent>>::dispatch_ui_command(self, command);
+        Ok(vec![event])
+    }
+}
+
 impl NativeWindowRuntimeDriver {
     fn allocate_handle(&mut self) -> NativeWindowRuntimeHandle {
         let handle = NativeWindowRuntimeHandle(self.next_handle);
@@ -266,6 +350,18 @@ impl NativeWindowRuntimeDriver {
 
     fn record_native_operation(&mut self, operation_name: &'static str) {
         self.native_operation_names.push(operation_name);
+    }
+
+    fn main_window_id(&self) -> ZsuiResult<WindowId> {
+        self.handles
+            .map(|handles| WindowId(handles.main.0))
+            .ok_or_else(|| ZsuiError::host("execute_app_command", "native runtime is not started"))
+    }
+
+    fn quick_window_id(&self) -> ZsuiResult<WindowId> {
+        self.handles
+            .map(|handles| WindowId(handles.quick.0))
+            .ok_or_else(|| ZsuiError::host("execute_app_command", "native runtime is not started"))
     }
 }
 
@@ -576,7 +672,21 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_event_count: usize,
     pub native_view_message_count: usize,
     pub native_view_ui_command_count: usize,
+    pub native_view_ui_command_executed_count: usize,
+    pub native_view_ui_command_failed_count: usize,
+    pub native_view_ui_command_unhandled_count: usize,
+    pub native_view_ui_command_event_count: usize,
+    pub native_view_ui_command_errors: Vec<String>,
+    pub native_view_app_command_count: usize,
+    pub native_view_app_command_executed_count: usize,
+    pub native_view_app_command_failed_count: usize,
+    pub native_view_app_command_unhandled_count: usize,
+    pub native_view_app_command_event_count: usize,
+    pub native_view_app_command_names: Vec<&'static str>,
+    pub native_view_app_command_errors: Vec<String>,
     pub native_view_ui_command_ids: Vec<&'static str>,
+    pub native_view_live_revision: u64,
+    pub native_view_quit_requested: bool,
     pub native_view_unhandled_click_count: usize,
     pub native_view_focus_count: usize,
     pub native_view_focus_traversal_count: usize,
@@ -631,7 +741,21 @@ impl NativeWindowSmokeRunReport {
             native_view_event_count: 0,
             native_view_message_count: 0,
             native_view_ui_command_count: 0,
+            native_view_ui_command_executed_count: 0,
+            native_view_ui_command_failed_count: 0,
+            native_view_ui_command_unhandled_count: 0,
+            native_view_ui_command_event_count: 0,
+            native_view_ui_command_errors: Vec::new(),
+            native_view_app_command_count: 0,
+            native_view_app_command_executed_count: 0,
+            native_view_app_command_failed_count: 0,
+            native_view_app_command_unhandled_count: 0,
+            native_view_app_command_event_count: 0,
+            native_view_app_command_names: Vec::new(),
+            native_view_app_command_errors: Vec::new(),
             native_view_ui_command_ids: Vec::new(),
+            native_view_live_revision: 0,
+            native_view_quit_requested: false,
             native_view_unhandled_click_count: 0,
             native_view_focus_count: 0,
             native_view_focus_traversal_count: 0,
@@ -670,6 +794,9 @@ impl NativeWindowSmokeRunReport {
 struct NativeViewInputRuntime {
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
+    live_view: Option<SharedLiveViewRuntime>,
+    app_command_executor: Option<SharedAppCommandExecutor>,
+    ui_command_executor: Option<SharedUiCommandExecutor>,
 }
 
 #[allow(dead_code)]
@@ -677,26 +804,49 @@ impl NativeViewInputRuntime {
     fn new(
         interaction_plan: Option<ViewInteractionPlan>,
         ui_command_view: Option<ViewNode<UiCommand>>,
+        live_view: Option<SharedLiveViewRuntime>,
+        app_command_executor: Option<SharedAppCommandExecutor>,
+        ui_command_executor: Option<SharedUiCommandExecutor>,
     ) -> Self {
         Self {
             interaction_plan,
             ui_command_view,
+            live_view,
+            app_command_executor,
+            ui_command_executor,
         }
     }
 
     fn hit_target_count(&self) -> usize {
-        self.interaction_plan
+        self.live_view
             .as_ref()
-            .map(ViewInteractionPlan::hit_target_count)
+            .map(|runtime| runtime.interaction_plan().hit_target_count())
+            .or_else(|| {
+                self.interaction_plan
+                    .as_ref()
+                    .map(ViewInteractionPlan::hit_target_count)
+            })
             .unwrap_or(0)
     }
 
     #[cfg(all(windows, feature = "windows-win32"))]
     fn windows_win32_route(&self) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
-        Some(crate::windows_win32_host::WindowsWin32ViewInputRoute::new(
-            self.interaction_plan.clone()?,
-            self.ui_command_view.clone()?,
-        ))
+        let route = if let Some(runtime) = &self.live_view {
+            crate::windows_win32_host::WindowsWin32ViewInputRoute::from_live_view(runtime.clone())
+        } else {
+            crate::windows_win32_host::WindowsWin32ViewInputRoute::new(
+                self.interaction_plan.clone()?,
+                self.ui_command_view.clone()?,
+            )
+        };
+        let route = match &self.app_command_executor {
+            Some(executor) => route.app_command_executor(executor.clone()),
+            None => route,
+        };
+        Some(match &self.ui_command_executor {
+            Some(executor) => route.ui_command_executor(executor.clone()),
+            None => route,
+        })
     }
 }
 
@@ -732,6 +882,7 @@ fn record_native_view_input_smoke(
     options: &NativeWindowSmokeRunOptions,
 ) {
     report.native_view_hit_target_count = runtime.hit_target_count();
+    let ui_command_executor = runtime.ui_command_executor.clone();
     if options.native_view_click_points.is_empty() {
         return;
     }
@@ -774,6 +925,19 @@ fn record_native_view_input_smoke(
             report
                 .events
                 .push(format!("native_view_ui_command:{}", command.id.0));
+            match &ui_command_executor {
+                Some(executor) => match executor.dispatch(command) {
+                    Ok(events) => {
+                        report.native_view_ui_command_executed_count += 1;
+                        report.native_view_ui_command_event_count += events.len();
+                    }
+                    Err(err) => {
+                        report.native_view_ui_command_failed_count += 1;
+                        report.native_view_ui_command_errors.push(err.to_string());
+                    }
+                },
+                None => report.native_view_ui_command_unhandled_count += 1,
+            }
         }
     }
 }
@@ -788,9 +952,31 @@ fn record_windows_win32_view_input_report(
     report.native_view_event_count += input.event_count;
     report.native_view_message_count += input.message_count;
     report.native_view_ui_command_count += input.ui_command_count;
+    report.native_view_ui_command_executed_count += input.ui_command_executed_count;
+    report.native_view_ui_command_failed_count += input.ui_command_failed_count;
+    report.native_view_ui_command_unhandled_count += input.ui_command_unhandled_count;
+    report.native_view_ui_command_event_count += input.ui_command_event_count;
+    report
+        .native_view_ui_command_errors
+        .extend(input.ui_command_errors.iter().cloned());
+    report.native_view_app_command_count += input.app_command_count;
+    report.native_view_app_command_executed_count += input.app_command_executed_count;
+    report.native_view_app_command_failed_count += input.app_command_failed_count;
+    report.native_view_app_command_unhandled_count += input.app_command_unhandled_count;
+    report.native_view_app_command_event_count += input.app_command_event_count;
+    report
+        .native_view_app_command_names
+        .extend(input.app_command_names.iter().copied());
+    report
+        .native_view_app_command_errors
+        .extend(input.app_command_errors.iter().cloned());
     report
         .native_view_ui_command_ids
         .extend(input.ui_command_ids.iter().copied());
+    report.native_view_live_revision = report
+        .native_view_live_revision
+        .max(input.live_view_revision);
+    report.native_view_quit_requested |= input.quit_requested;
     report.native_view_unhandled_click_count += input.unhandled_click_count;
     report.native_view_focus_count += input.focus_count;
     report.native_view_focus_traversal_count += input.focus_traversal_count;
@@ -820,12 +1006,14 @@ fn post_windows_native_view_input(
 ) {
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL,
+        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL,
     };
 
     match input {
         NativeViewSmokeInput::Click(point) => unsafe {
-            PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*point));
+            let lparam = windows_lparam_from_point(*point);
+            PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
+            PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam);
         },
         NativeViewSmokeInput::Text(text) => {
             for ch in text.chars() {
@@ -886,6 +1074,10 @@ pub struct NativeWindowBuilder {
     view_interaction_plan: Option<ViewInteractionPlan>,
     view_ui_command_tree: Option<ViewNode<UiCommand>>,
     view_layout_node_count: usize,
+    shell_runtime: Option<ZsShellRuntime>,
+    live_view_runtime: Option<SharedLiveViewRuntime>,
+    app_command_executor: Option<SharedAppCommandExecutor>,
+    ui_command_executor: Option<SharedUiCommandExecutor>,
 }
 
 impl PartialEq for NativeWindowBuilder {
@@ -896,6 +1088,10 @@ impl PartialEq for NativeWindowBuilder {
             && self.view_interaction_plan == other.view_interaction_plan
             && self.view_ui_command_tree.is_some() == other.view_ui_command_tree.is_some()
             && self.view_layout_node_count == other.view_layout_node_count
+            && self.shell_runtime == other.shell_runtime
+            && self.live_view_runtime == other.live_view_runtime
+            && self.app_command_executor == other.app_command_executor
+            && self.ui_command_executor == other.ui_command_executor
     }
 }
 
@@ -909,6 +1105,10 @@ impl NativeWindowBuilder {
             view_interaction_plan: None,
             view_ui_command_tree: None,
             view_layout_node_count: 0,
+            shell_runtime: None,
+            live_view_runtime: None,
+            app_command_executor: None,
+            ui_command_executor: None,
         }
     }
 
@@ -919,6 +1119,31 @@ impl NativeWindowBuilder {
 
     pub fn size(mut self, width: u32, height: u32) -> Self {
         self.window = self.window.size(width, height);
+        if let Some(runtime) = &mut self.shell_runtime {
+            runtime.set_surface(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: width as i32,
+                    height: height as i32,
+                },
+                Dpi::standard(),
+            );
+            self.draw_plan = Some(runtime.draw_plan());
+        }
+        if let Some(runtime) = &self.live_view_runtime {
+            runtime.set_surface(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: width as i32,
+                    height: height as i32,
+                },
+                Dpi::standard(),
+            );
+            self.view_interaction_plan = Some(runtime.interaction_plan());
+            self.draw_plan = Some(runtime.draw_plan());
+        }
         self
     }
 
@@ -957,6 +1182,8 @@ impl NativeWindowBuilder {
         self.view_interaction_plan = None;
         self.view_ui_command_tree = None;
         self.view_layout_node_count = 0;
+        self.shell_runtime = None;
+        self.live_view_runtime = None;
         self
     }
 
@@ -977,6 +1204,8 @@ impl NativeWindowBuilder {
         self.view_ui_command_tree = None;
         self.view_layout_node_count = layout.children.len();
         self.draw_plan = Some(paint_cx.into_plan());
+        self.shell_runtime = None;
+        self.live_view_runtime = None;
         self
     }
 
@@ -997,6 +1226,82 @@ impl NativeWindowBuilder {
         self.view_layout_node_count = layout.children.len();
         self.draw_plan = Some(paint_cx.into_plan());
         self.view_ui_command_tree = Some(view);
+        self.shell_runtime = None;
+        self.live_view_runtime = None;
+        self
+    }
+
+    pub fn stateful_view<State, Msg, ViewFn, UpdateFn>(
+        mut self,
+        state: State,
+        view_fn: ViewFn,
+        update_fn: UpdateFn,
+    ) -> Self
+    where
+        State: Send + 'static,
+        Msg: Clone + Send + 'static,
+        ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+        UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+    {
+        let runtime = live_view_runtime(
+            state,
+            view_fn,
+            update_fn,
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.window.width as i32,
+                height: self.window.height as i32,
+            },
+            Dpi::standard(),
+        );
+        let interaction_plan = runtime.interaction_plan();
+        self.view_layout_node_count = interaction_plan.hit_target_count();
+        self.view_interaction_plan = Some(interaction_plan);
+        self.draw_plan = Some(runtime.draw_plan());
+        self.view_ui_command_tree = None;
+        self.shell_runtime = None;
+        self.live_view_runtime = Some(runtime);
+        self
+    }
+
+    pub fn app_command_executor(mut self, executor: impl AppCommandExecutor + 'static) -> Self {
+        self.app_command_executor = Some(SharedAppCommandExecutor::new(executor));
+        self
+    }
+
+    pub fn shared_app_command_executor(mut self, executor: SharedAppCommandExecutor) -> Self {
+        self.app_command_executor = Some(executor);
+        self
+    }
+
+    pub fn ui_command_executor(mut self, executor: impl UiCommandExecutor + 'static) -> Self {
+        self.ui_command_executor = Some(SharedUiCommandExecutor::new(executor));
+        self
+    }
+
+    pub fn shared_ui_command_executor(mut self, executor: SharedUiCommandExecutor) -> Self {
+        self.ui_command_executor = Some(executor);
+        self
+    }
+
+    pub fn shell_layout(mut self, spec: ZsShellLayoutSpec) -> Self {
+        let runtime = ZsShellRuntime::new(
+            spec,
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.window.width as i32,
+                height: self.window.height as i32,
+            },
+            Dpi::standard(),
+        );
+        self.draw_plan = Some(runtime.draw_plan());
+        self.view_interaction_plan = None;
+        self.view_ui_command_tree = None;
+        self.view_layout_node_count = 0;
+        self.shell_runtime = Some(runtime);
+        self.live_view_runtime = None;
         self
     }
 
@@ -1020,15 +1325,35 @@ impl NativeWindowBuilder {
         self.view_layout_node_count
     }
 
+    pub fn native_shell_runtime(&self) -> Option<&ZsShellRuntime> {
+        self.shell_runtime.as_ref()
+    }
+
+    pub fn native_live_view_runtime(&self) -> Option<&SharedLiveViewRuntime> {
+        self.live_view_runtime.as_ref()
+    }
+
+    pub fn native_app_command_executor(&self) -> Option<&SharedAppCommandExecutor> {
+        self.app_command_executor.as_ref()
+    }
+
+    pub fn native_ui_command_executor(&self) -> Option<&SharedUiCommandExecutor> {
+        self.ui_command_executor.as_ref()
+    }
+
     pub fn build(self) -> ZsuiResult<ZsuiApp> {
         app(self.app_name).window(self.window).build()
     }
 
     pub fn run(self) -> ZsuiResult<ZsuiAppRuntime> {
         let draw_plan = self.draw_plan.clone();
+        let view_runtime = self.native_view_input_runtime();
+        let shell_runtime = self.shell_runtime.clone();
         let app = self.build()?;
         let mut host = NativeWindowHost::new();
         host.set_next_window_draw_plan(draw_plan);
+        host.set_next_window_view_runtime(view_runtime);
+        host.set_next_window_shell_runtime(shell_runtime);
         app.run_with_host(&mut host)
     }
 
@@ -1038,6 +1363,7 @@ impl NativeWindowBuilder {
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
         let draw_plan = self.draw_plan.clone();
         let view_runtime = self.native_view_input_runtime();
+        let shell_runtime = self.shell_runtime.clone();
         let app = self.build()?;
         let mut host = NativeWindowHost::new();
         for window in &app.windows {
@@ -1048,6 +1374,7 @@ impl NativeWindowBuilder {
             host.windows.clone(),
             host.draw_plans.clone(),
             view_runtime,
+            shell_runtime,
             options,
         )
     }
@@ -1056,7 +1383,174 @@ impl NativeWindowBuilder {
         NativeViewInputRuntime::new(
             self.view_interaction_plan.clone(),
             self.view_ui_command_tree.clone(),
+            self.live_view_runtime.clone(),
+            self.app_command_executor.clone(),
+            self.ui_command_executor.clone(),
         )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NativeWindowContentMissing;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NativeWindowContentReady;
+
+#[derive(Debug, Clone)]
+pub struct TypedNativeWindowBuilder<ContentState> {
+    inner: NativeWindowBuilder,
+    content_state: std::marker::PhantomData<fn() -> ContentState>,
+}
+
+impl<ContentState> PartialEq for TypedNativeWindowBuilder<ContentState> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl TypedNativeWindowBuilder<NativeWindowContentMissing> {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            inner: NativeWindowBuilder::new(title),
+            content_state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<ContentState> TypedNativeWindowBuilder<ContentState> {
+    pub fn app_name(mut self, app_name: impl Into<String>) -> Self {
+        self.inner = self.inner.app_name(app_name);
+        self
+    }
+
+    pub fn size(mut self, width: u32, height: u32) -> Self {
+        self.inner = self.inner.size(width, height);
+        self
+    }
+
+    pub fn min_size(mut self, width: u32, height: u32) -> Self {
+        self.inner = self.inner.min_size(width, height);
+        self
+    }
+
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.inner = self.inner.visible(visible);
+        self
+    }
+
+    pub fn resizable(mut self, resizable: bool) -> Self {
+        self.inner = self.inner.resizable(resizable);
+        self
+    }
+
+    pub fn decorations(mut self, decorations: bool) -> Self {
+        self.inner = self.inner.decorations(decorations);
+        self
+    }
+
+    pub fn always_on_top(mut self, always_on_top: bool) -> Self {
+        self.inner = self.inner.always_on_top(always_on_top);
+        self
+    }
+
+    pub fn transparent(mut self, transparent: bool) -> Self {
+        self.inner = self.inner.transparent(transparent);
+        self
+    }
+
+    pub fn app_command_executor(mut self, executor: impl AppCommandExecutor + 'static) -> Self {
+        self.inner = self.inner.app_command_executor(executor);
+        self
+    }
+
+    pub fn shared_app_command_executor(mut self, executor: SharedAppCommandExecutor) -> Self {
+        self.inner = self.inner.shared_app_command_executor(executor);
+        self
+    }
+
+    pub fn ui_command_executor(mut self, executor: impl UiCommandExecutor + 'static) -> Self {
+        self.inner = self.inner.ui_command_executor(executor);
+        self
+    }
+
+    pub fn shared_ui_command_executor(mut self, executor: SharedUiCommandExecutor) -> Self {
+        self.inner = self.inner.shared_ui_command_executor(executor);
+        self
+    }
+
+    pub fn draw_plan(
+        self,
+        draw_plan: NativeDrawPlan,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
+        TypedNativeWindowBuilder::ready(self.inner.draw_plan(draw_plan))
+    }
+
+    pub fn view<Msg: Clone>(
+        self,
+        view: ViewNode<Msg>,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
+        TypedNativeWindowBuilder::ready(self.inner.view(view))
+    }
+
+    pub fn ui_command_view(
+        self,
+        view: ViewNode<UiCommand>,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
+        TypedNativeWindowBuilder::ready(self.inner.ui_command_view(view))
+    }
+
+    pub fn stateful_view<State, Msg, ViewFn, UpdateFn>(
+        self,
+        state: State,
+        view_fn: ViewFn,
+        update_fn: UpdateFn,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady>
+    where
+        State: Send + 'static,
+        Msg: Clone + Send + 'static,
+        ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+        UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+    {
+        TypedNativeWindowBuilder::ready(self.inner.stateful_view(state, view_fn, update_fn))
+    }
+
+    pub fn shell_layout(
+        self,
+        spec: ZsShellLayoutSpec,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
+        TypedNativeWindowBuilder::ready(self.inner.shell_layout(spec))
+    }
+
+    pub fn window_spec(&self) -> &WindowSpec {
+        self.inner.window_spec()
+    }
+}
+
+impl TypedNativeWindowBuilder<NativeWindowContentReady> {
+    fn ready(inner: NativeWindowBuilder) -> Self {
+        Self {
+            inner,
+            content_state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn build(self) -> ZsuiResult<ZsuiApp> {
+        self.inner.build()
+    }
+
+    pub fn run(self) -> ZsuiResult<ZsuiAppRuntime> {
+        self.inner.run()
+    }
+
+    pub fn run_smoke(
+        self,
+        options: NativeWindowSmokeRunOptions,
+    ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        self.inner.run_smoke(options)
+    }
+
+    pub fn into_builder(self) -> NativeWindowBuilder {
+        self.inner
     }
 }
 
@@ -1067,6 +1561,10 @@ pub struct NativeWindowHost {
     trays: Vec<TraySpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
     next_window_draw_plan: Option<NativeDrawPlan>,
+    view_runtimes: Vec<NativeViewInputRuntime>,
+    next_window_view_runtime: NativeViewInputRuntime,
+    shell_runtimes: Vec<Option<ZsShellRuntime>>,
+    next_window_shell_runtime: Option<ZsShellRuntime>,
 }
 
 impl NativeWindowHost {
@@ -1077,6 +1575,10 @@ impl NativeWindowHost {
             trays: Vec::new(),
             draw_plans: Vec::new(),
             next_window_draw_plan: None,
+            view_runtimes: Vec::new(),
+            next_window_view_runtime: NativeViewInputRuntime::default(),
+            shell_runtimes: Vec::new(),
+            next_window_shell_runtime: None,
         }
     }
 
@@ -1094,6 +1596,14 @@ impl NativeWindowHost {
 
     pub fn set_next_window_draw_plan(&mut self, draw_plan: Option<NativeDrawPlan>) {
         self.next_window_draw_plan = draw_plan;
+    }
+
+    fn set_next_window_view_runtime(&mut self, runtime: NativeViewInputRuntime) {
+        self.next_window_view_runtime = runtime;
+    }
+
+    fn set_next_window_shell_runtime(&mut self, runtime: Option<ZsShellRuntime>) {
+        self.next_window_shell_runtime = runtime;
     }
 
     pub fn set_window_draw_plan(
@@ -1166,6 +1676,10 @@ impl ZsuiHost for NativeWindowHost {
         let capabilities = self.capabilities();
         self.windows.push(spec.resolve_for(&capabilities).effective);
         self.draw_plans.push(self.next_window_draw_plan.take());
+        self.view_runtimes
+            .push(std::mem::take(&mut self.next_window_view_runtime));
+        self.shell_runtimes
+            .push(self.next_window_shell_runtime.take());
         Ok(id)
     }
 
@@ -1208,6 +1722,8 @@ impl ZsuiHost for NativeWindowHost {
             self.windows.clone(),
             self.trays.clone(),
             self.draw_plans.clone(),
+            self.view_runtimes.clone(),
+            self.shell_runtimes.clone(),
         )
     }
 }
@@ -1217,10 +1733,22 @@ fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
     trays: Vec<TraySpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
+    view_runtimes: Vec<NativeViewInputRuntime>,
+    shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
-    crate::windows_win32_host::run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items(
+    let input_routes = view_runtimes
+        .iter()
+        .map(NativeViewInputRuntime::windows_win32_route)
+        .collect::<Vec<_>>();
+    let shell_routes = shell_runtimes
+        .into_iter()
+        .map(|runtime| runtime.map(crate::windows_win32_host::WindowsWin32ShellInputRoute::new))
+        .collect::<Vec<_>>();
+    crate::windows_win32_host::run_windows_win32_native_window_event_loop_with_routes_and_status_items(
         &windows,
         &draw_plans,
+        &input_routes,
+        &shell_routes,
         &trays,
     )
 }
@@ -1230,6 +1758,8 @@ fn run_native_window_event_loop(
     _windows: Vec<WindowSpec>,
     _trays: Vec<TraySpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtimes: Vec<NativeViewInputRuntime>,
+    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
     Err(ZsuiError::unsupported(
         "native_window",
@@ -1247,8 +1777,10 @@ fn run_native_window_event_loop(
 ))]
 fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
-    _trays: Vec<TraySpec>,
+    trays: Vec<TraySpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtimes: Vec<NativeViewInputRuntime>,
+    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
     use std::collections::HashMap;
     use winit::{
@@ -1354,6 +1886,7 @@ fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
     view_runtime: NativeViewInputRuntime,
+    shell_runtime: Option<ZsShellRuntime>,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     use std::{thread, time::Duration};
@@ -1374,17 +1907,23 @@ fn run_native_window_smoke_event_loop(
         Some(route) => vec![Some(route)],
         None => Vec::new(),
     };
-    let handles =
-        crate::windows_win32_host::create_owned_windows_for_specs_with_draw_plans_and_input_routes(
-            &windows,
-            &draw_plans,
-            &input_routes,
-        )
-        .map_err(|err| {
-            report.startup_error = Some(err.to_string());
-            report.events.push("startup_error".to_string());
-            err
-        })?;
+    let shell_routes = match shell_runtime {
+        Some(runtime) => vec![Some(
+            crate::windows_win32_host::WindowsWin32ShellInputRoute::new(runtime),
+        )],
+        None => Vec::new(),
+    };
+    let handles = crate::windows_win32_host::create_owned_windows_for_specs_with_routes(
+        &windows,
+        &draw_plans,
+        &input_routes,
+        &shell_routes,
+    )
+    .map_err(|err| {
+        report.startup_error = Some(err.to_string());
+        report.events.push("startup_error".to_string());
+        err
+    })?;
 
     report.created_window_count = handles.len();
     report.events.extend(
@@ -1475,19 +2014,6 @@ fn run_native_window_smoke_event_loop(
         _status_item_host = Some(host);
     }
 
-    if let Some(path) = report.screenshot_file.clone() {
-        match capture_win32_hwnd_png(handles[0].main(), &path) {
-            Ok(()) => {
-                report.screenshot_captured = true;
-                report.events.push(format!("screenshot_captured:{path}"));
-            }
-            Err(err) => {
-                report.screenshot_error = Some(err);
-                report.events.push("screenshot_error".to_string());
-            }
-        }
-    }
-
     if options.native_view_inputs.is_empty() {
         let mut click_points = options.native_view_click_points.iter();
         if !options.native_view_text_inputs.is_empty() {
@@ -1530,13 +2056,30 @@ fn run_native_window_smoke_event_loop(
         .map(|handles| handles.main() as isize)
         .collect();
     let auto_close_after = Duration::from_millis(options.auto_close_after_ms.max(1));
-    thread::spawn(move || {
-        thread::sleep(auto_close_after);
+    let screenshot_file = report.screenshot_file.clone();
+    let screenshot_handle = handles[0].main() as isize;
+    let capture_delay = screenshot_file
+        .as_ref()
+        .map(|_| Duration::from_millis(options.auto_close_after_ms.clamp(1, 250)))
+        .unwrap_or_default();
+    let worker = thread::spawn(move || {
+        if !capture_delay.is_zero() {
+            thread::sleep(capture_delay);
+        }
+        let screenshot_result = screenshot_file.map(|path| {
+            let result = capture_win32_hwnd_png(screenshot_handle as _, &path);
+            (path, result)
+        });
+        let remaining = auto_close_after.saturating_sub(capture_delay);
+        if !remaining.is_zero() {
+            thread::sleep(remaining);
+        }
         for handle in close_handles {
             unsafe {
                 PostMessageW(handle as _, WM_CLOSE, 0, 0);
             }
         }
+        screenshot_result
     });
 
     match crate::windows_win32_host::WindowsWin32MessageLoop::run() {
@@ -1548,6 +2091,22 @@ fn run_native_window_smoke_event_loop(
         crate::windows_win32_host::WindowsWin32MessageLoopResult::Failed => {
             report.startup_error = Some("GetMessageW failed".to_string());
             report.events.push("message_loop_error".to_string());
+        }
+    }
+
+    match worker.join() {
+        Ok(Some((path, Ok(())))) => {
+            report.screenshot_captured = true;
+            report.events.push(format!("screenshot_captured:{path}"));
+        }
+        Ok(Some((_path, Err(err)))) => {
+            report.screenshot_error = Some(err);
+            report.events.push("screenshot_error".to_string());
+        }
+        Ok(None) => {}
+        Err(_) => {
+            report.screenshot_error = Some("native smoke worker panicked".to_string());
+            report.events.push("smoke_worker_error".to_string());
         }
     }
 
@@ -1599,6 +2158,7 @@ fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
     mut view_runtime: NativeViewInputRuntime,
+    _shell_runtime: Option<ZsShellRuntime>,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     use std::{
@@ -1812,6 +2372,7 @@ fn run_native_window_smoke_event_loop(
     _windows: Vec<WindowSpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
     _view_runtime: NativeViewInputRuntime,
+    _shell_runtime: Option<ZsShellRuntime>,
     _options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     Err(ZsuiError::unsupported(
@@ -2106,6 +2667,8 @@ fn run_native_window_event_loop(
     _windows: Vec<WindowSpec>,
     _trays: Vec<TraySpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtimes: Vec<NativeViewInputRuntime>,
+    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
     Err(ZsuiError::unsupported(
         "native_window",
@@ -2130,6 +2693,7 @@ fn run_native_window_smoke_event_loop(
     _windows: Vec<WindowSpec>,
     _draw_plans: Vec<Option<NativeDrawPlan>>,
     _view_runtime: NativeViewInputRuntime,
+    _shell_runtime: Option<ZsShellRuntime>,
     _options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
     Err(ZsuiError::unsupported(
@@ -2157,6 +2721,20 @@ mod tests {
         assert_eq!(app.windows[0].width, 800);
         assert_eq!(app.windows[0].min_width, Some(480));
         assert!(app.windows[0].always_on_top);
+    }
+
+    #[cfg(feature = "label")]
+    #[test]
+    fn typed_native_window_builder_requires_content_transition() {
+        let missing: TypedNativeWindowBuilder<NativeWindowContentMissing> =
+            typed_native_window("Typed Window").size(640, 420);
+        let ready: TypedNativeWindowBuilder<NativeWindowContentReady> =
+            missing.view(crate::text::<()>("Ready"));
+
+        assert_eq!(ready.window_spec().width, 640);
+        let app = ready.build().unwrap();
+        assert_eq!(app.windows.len(), 1);
+        assert_eq!(app.windows[0].title, "Typed Window");
     }
 
     #[cfg(all(feature = "label", feature = "button"))]
@@ -2190,7 +2768,53 @@ mod tests {
 
     #[cfg(all(feature = "label", feature = "button"))]
     #[test]
+    fn native_window_builder_stateful_view_rebuilds_after_update() {
+        #[derive(Clone)]
+        enum Msg {
+            Increment,
+        }
+        struct State {
+            count: u32,
+        }
+
+        let button_id = crate::WidgetId::new(70);
+        let builder = native_window("Stateful View").size(360, 220).stateful_view(
+            State { count: 0 },
+            move |state| {
+                crate::column([
+                    crate::text(format!("Count: {}", state.count)),
+                    crate::button("Increment")
+                        .id(button_id)
+                        .on_click(Msg::Increment),
+                ])
+            },
+            |state, message, _cx| match message {
+                Msg::Increment => state.count += 1,
+            },
+        );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("stateful view should keep a live runtime");
+
+        let update = runtime.dispatch_event(&ViewEvent::Click { widget: button_id });
+
+        assert!(update.redraw);
+        assert_eq!(update.revision, 1);
+        assert!(runtime.draw_plan().commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
+        )));
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
     fn native_window_builder_routes_ui_command_view_clicks_for_smoke() {
+        let executor = SharedUiCommandExecutor::new(|command: UiCommand| {
+            Ok(vec![AppEvent::Custom {
+                id: command.id.0.to_string(),
+                payload: None,
+            }])
+        });
         let builder = native_window("View Command Example")
             .size(360, 220)
             .ui_command_view(crate::column(vec![
@@ -2198,7 +2822,8 @@ mod tests {
                 crate::button("Save")
                     .id(crate::WidgetId::new(7))
                     .on_click(UiCommand::app(crate::CommandId("zsui.test.save"))),
-            ]));
+            ]))
+            .shared_ui_command_executor(executor.clone());
         let mut report = NativeWindowSmokeRunReport::empty(
             NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 180, y: 170 }),
         );
@@ -2215,6 +2840,9 @@ mod tests {
         assert_eq!(report.native_view_event_count, 1);
         assert_eq!(report.native_view_message_count, 1);
         assert_eq!(report.native_view_ui_command_count, 1);
+        assert_eq!(report.native_view_ui_command_executed_count, 1);
+        assert_eq!(report.native_view_ui_command_event_count, 1);
+        assert_eq!(executor.report().executed_count, 1);
         assert_eq!(report.native_view_ui_command_ids, vec!["zsui.test.save"]);
         assert_eq!(report.native_view_unhandled_click_count, 0);
     }
@@ -2378,6 +3006,36 @@ mod tests {
             driver.poll_application_event(),
             Some(AppEvent::QuitRequested)
         );
+    }
+
+    #[test]
+    fn native_window_runtime_driver_executes_typed_app_commands() {
+        let mut driver = NativeWindowRuntimeDriver::new();
+        let startup = NativeRuntimeStartupRequest {
+            app_name: "Command Example".to_string(),
+            main_window: crate::NativeMainWindowRequest::from_zsui_window(&Window::new(
+                "Command Example",
+            )),
+            status_item_tooltip: None,
+            status_item: None,
+            settings_pages: Vec::new(),
+        };
+        assert!(matches!(
+            driver.start_runtime(startup),
+            NativeRuntimeStartupResult::Started(_)
+        ));
+
+        let events = driver.execute_app_command(Command::HideMainWindow).unwrap();
+
+        assert_eq!(
+            events,
+            vec![AppEvent::WindowHidden {
+                window: WindowId(1)
+            }]
+        );
+        assert_eq!(driver.app_commands(), &[Command::HideMainWindow]);
+        assert_eq!(driver.report().app_command_count, 1);
+        assert_eq!(driver.report().app_command_names, vec!["hide_main_window"]);
     }
 
     #[test]

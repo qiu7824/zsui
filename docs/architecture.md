@@ -5,7 +5,8 @@ ZSUI is a reusable Rust UI foundation for native desktop tools.
 The framework layers are:
 
 - Core contracts: stable ids, commands, events, errors and host traits.
-- Declaration models: windows, menus, tray/status items, hotkeys, clipboard and settings specs.
+- Declaration models: windows, menus, tray/status items, hotkeys, clipboard,
+  settings specs and product-neutral navigation/card shell layouts.
 - Shared protocols: geometry, layout, command queues, lifecycle/events, components, renderer/text layout traits and self-draw command plans.
 - Capability model: honest support, partial support and degradation reporting per host.
 - Native host boundary: platform code creates windows, controls, menus, dialogs and clipboard bridges.
@@ -91,15 +92,16 @@ same trace shapes for the future Activity/Ability bridge implementation.
 The same desktop builder can now accept a typed view with
 `native_window("Example").view(view).run()?`. That first lays out and paints
 `ViewNode<Msg>` into `NativeDrawPlan`; on the direct Windows host the plan is
-attached to the created `HWND` and rendered through the extracted no-flicker
+attached to the created `HWND` and rendered through the buffered no-flicker
 GDI path. `ui_command_view(...)` keeps a command-backed view tree for native
 input. On Windows, `WM_LBUTTONUP` is routed through `ViewInteractionPlan`,
-dispatched into `ViewEventCx<UiCommand>` and recorded as stable command ids in
-native smoke. Focused `WM_CHAR` input is also routed into textbox
+  dispatched into `ViewEventCx<UiCommand>`, handed to an optional
+  `SharedUiCommandExecutor` outside the Win32 route registry lock and recorded
+  with success/failure/event evidence in native smoke. Focused `WM_CHAR` input is also routed into textbox
 `TextChanged` events when the textbox feature is enabled, and checkbox clicks
 route to typed `Toggled` events when the checkbox feature is enabled. The Win32
-host also routes `WM_KEYDOWN` Enter/Space activation for focused button and
-checkbox targets, and Tab traverses ordered focus targets from
+host also routes `WM_KEYDOWN` Enter/Space activation for focused button,
+checkbox and toggle targets, and Tab traverses ordered focus targets from
 `ViewInteractionPlan`. Feature-gated list row selection uses child IDs and can
 flow through the same command-backed view tree; Win32 Up/Down keys can move
 focused selection between list rows. Feature-gated scroll containers can
@@ -108,32 +110,60 @@ nearest scroll container; `native_smoke_run --scroll-view` exercises that
 command-backed route. Broader pointer dispatch, touch/inertial scroll,
 IME/composition input and non-Windows input routing are still separate runtime
 gates.
+The standalone `toggle(...)` View widget and Shell toggle accessories both use
+`ZsToggleRenderPlan` from `src/widget_render.rs`. Its track/knob sizing and DPI
+math are shared by both surfaces, so the framework does not maintain competing
+implementations.
+`NativeWindowBuilder::stateful_view(state, view, update)` now provides the
+normal application loop: Win32 input emits typed messages, `update` mutates the
+application-owned state through `AppCx`, the framework rebuilds and lays out the
+View, replaces the native draw plan and invalidates the HWND. Resize and DPI
+surface changes rebuild the same live View. `AppCx::quit()` closes the native
+window. `AppCx::command(...)` values are handed to the explicitly composed
+`SharedAppCommandExecutor`, with success, failure and emitted-event evidence in
+native smoke reports. `NativeWindowRuntimeDriver` implements this executor
+contract. Product-owned `UiCommand` values use the parallel
+`SharedUiCommandExecutor`; `ProductAdapterUiCommandExecutor` delegates directly
+to `ProductAdapterHost` rather than hiding product behavior inside View state.
+
+For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
+`ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
+surface contract, not a settings-storage model: it describes a left navigation
+pane, right content header, grouped cards, rows, description text, row
+accessories and action buttons, then emits stable layout regions and a
+product-neutral `NativeDrawPlan` for host renderers. The layout math is
+centralized here, including the fixed card spacing, viewport mask and scrollbar
+formulas.
+`NativeWindowBuilder::shell_layout(...)` now keeps that shell as live runtime
+state on the direct Win32 path. The normal event loop routes
+navigation hover/selection and scrollbar pointer math, plus product-neutral row
+accessory/action events, then replaces the buffered draw plan and invalidates
+the window. This closes the first visible input-state-paint loop while keeping
+application settings outside the framework.
 
 The reusable desktop bridge for product adapters is `NativeWindowRuntimeDriver`.
 It maps `ProductUiProjection` startup requests into ZSUI window, status
 item/menu and settings declarations and can be used by
 `ZsuiReusableRuntimeHarness`. Status item and settings startup declarations now
 pass through `NativeStatusItemHost` and `NativeSettingsPageModelHost`, and the
-reusable ZSClip status/settings action contracts now live in
-`src/native_host_actions.rs`. `NativeWindowRuntimeDriver` also implements
+status/settings action contracts live in `src/native_host_actions.rs`.
+`NativeWindowRuntimeDriver` also implements
 status-menu command dispatch and bound settings-item updates so native backends
 have a concrete operation surface instead of only a stored startup snapshot.
-The reusable self-draw command shape from ZSClip's owner-drawn windows is now
-represented in `src/render_protocol.rs` as `NativeDrawPlan` and
-`NativeDrawCommandSink`. The Windows GDI implementation extracted from ZSClip
-now lives in `src/windows_gdi_renderer.rs`; future platform renderers should
+The reusable self-draw command shape is represented in
+`src/render_protocol.rs` as `NativeDrawPlan` and `NativeDrawCommandSink`. The
+Windows GDI implementation lives in `src/windows_gdi_renderer.rs`; future platform renderers should
 translate the same commands to Direct2D, AppKit, GTK snapshot APIs, Android
 Canvas or Harmony Canvas only when that backend needs it, without leaking
 product state into the drawing layer.
-ZSClip's reusable Win32 main/quick window style mapping, transient-window host,
-create-params, message-loop wrapper and `NativeMainWindowHost` implementation
-now live in `src/windows_win32_host.rs`. That direct host is available as
+Win32 main/quick window style mapping, transient-window host, create-params,
+message-loop wrapper and `NativeMainWindowHost` implementation live in
+`src/windows_win32_host.rs`. That direct host is available as
 framework code and the one-line `native_window(...).run()` convenience path uses
-it on Windows. The Win32 paint path treats ZSClip's latest anti-flicker approach
-as a baseline: suppress background erase and render through buffered paint
+it on Windows. The Win32 paint path suppresses background erase and renders through buffered paint
 before presenting to the target HDC. It can now also attach a product-neutral
-`NativeDrawPlan` to an `HWND`, so the extracted GDI sink paints real framework
-draw commands instead of only a background fill. The extracted GDI path now
+`NativeDrawPlan` to an `HWND`, so the GDI sink paints real framework draw
+commands instead of only a background fill. The GDI path
 uses internal RAII wrappers for buffered paint, window HDC acquisition,
 compatible memory DCs, smoke-screenshot HBITMAPs, owned main/quick HWND cleanup,
 owned HICON app-icon resources, brushes, pens, fonts and selected-object
@@ -174,7 +204,9 @@ enables `arboard`, `image` enables `png`, `desktop-winit` enables `winit`, and
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control
 type at startup; public examples should import and build only the controls they
-use. Cargo features are unified across the dependency graph, so the long-term
+use. The default `window` umbrella enables both desktop backend features while
+target-specific dependency sections ensure only the current platform library is
+compiled. Cargo features are unified across the dependency graph, so the long-term
 shape should prefer a small default `zsui` facade plus split crates or modules:
 `zsui-core`, `zsui-shell`, `zsui-render`, `zsui-style`,
 `zsui-widgets-base`, `zsui-widgets-input`, `zsui-widgets-list` and
@@ -186,27 +218,35 @@ The revised long-term target is a Rust-native UI framework, not an inheritance
 based control hierarchy. The canonical machine-readable list lives in
 `src/framework_goals.rs` and is exposed as `zsui_rust_first_goals()`. The
 longer narrative is `docs/framework-goals.md`.
-The target also captures the product direction from the extraction work: keep
+The target also captures the product direction: keep
 the one-line `zsui::native_window(...).run()?` path as the normal native-window
-entry point, use reusable ZSClip host/rendering code as the baseline, add
+entry point, use stable host/rendering behavior as the baseline, add
 Android/Harmony as explicit Activity/Ability hosts, and introduce wider
 platform API bindings only when a concrete backend needs them.
 The first implementation layer lives in `src/view.rs`, `src/style.rs` and
 `src/geometry.rs`: typed `View<Msg>` trees, `WidgetId`, explicit app/event/paint
 contexts, `ViewInteractionPlan`, feature-gated scroll containers, typed list
 selection, `Px`/`Dp`/`Dpi`, `UiLength` and theme tokens.
+`src/shell_layout.rs` adds the generic navigation/card shell layout contract on
+top of those typed units and draw commands with one shared spacing model.
 `ProductViewAdapterHost` connects that typed view layer to product adapters, and
 `ZsuiReusableRuntimeHarness::run_view_smoke(...)` verifies the flow from native
 view events to typed messages, `AppCx`, product events and reusable
 `UiCommand` dispatch.
+`typed_native_window(...)` is the opt-in compile-time builder surface. Its
+`NativeWindowContentMissing` state exposes configuration and content transition
+methods but not `build`/`run`; attaching a View, live View, draw plan or shell
+layout returns `NativeWindowContentReady`. The unconstrained
+`native_window(...)` entry point remains for legitimate empty native surfaces.
 
 - Use composition and traits for views/components instead of base classes.
 - Preserve one-line native window creation for ordinary desktop apps.
 - Use typed messages such as `enum Msg` instead of string event names.
 - Own windows, fonts, bitmaps, icons and tray handles with RAII wrappers.
-- Use ZSClip's reusable no-flicker self-draw path as the Windows baseline.
+- Use buffered no-flicker self-draw as the Windows rendering baseline.
 - Use typed units such as `Px`, `Dp` and `Dpi` instead of loose numeric sizes.
-- Move invalid builder states toward compile-time constraints where practical.
+- Use the opt-in native-window content typestate when compile-time constraints
+  are more valuable than an intentionally empty native surface.
 - Avoid global mutable registries; pass explicit app/event/layout/paint contexts.
 - Keep public APIs safe and isolate `unsafe` inside backend modules.
 - Keep control state explicit in application state and derive UI from state.

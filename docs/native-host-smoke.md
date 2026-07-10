@@ -34,7 +34,7 @@ Run the first-pass native smoke window with:
 cargo run --example native_smoke_run -- windows
 ```
 
-On Windows this opens the extracted Win32/GDI native window path, closes it
+On Windows this opens the Win32/GDI native window path, closes it
 automatically, then rewrites `interaction.json` and `launch.log` with the
 observed window lifecycle. It also captures `window.png` into the artifact
 directory through the direct Win32 `HWND`. macOS and Linux still use the
@@ -72,8 +72,10 @@ cargo run --features "scroll,label" --example native_smoke_run -- windows --scro
 That path exercises `NativeWindowBuilder::ui_command_view(...)`, records
 draw-plan command counts in `interaction.json`, posts `WM_LBUTTONUP`, hit-tests
 through `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and
-records the emitted command ids. It also paints the resulting `NativeDrawPlan`
-through the extracted no-flicker Win32/GDI renderer. When built with the
+records the emitted command ids. When an executor is attached it also records
+executed, failed, unhandled and emitted-event counts instead of treating command
+generation as execution proof. It also paints the resulting `NativeDrawPlan`
+through the buffered no-flicker Win32/GDI renderer. When built with the
 `textbox` feature, the same path focuses a textbox and routes `WM_CHAR` text
 input into `TextChanged`/`UiCommand` output. When built with the `checkbox`
 feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. It also
@@ -108,7 +110,7 @@ Required target-smoke artifacts:
 - `capabilities.json`: observed host capability report.
 - `agent-context.json`: matching `zsui_agent_context_json()` output.
 
-Windows currently uses the extracted `win32_gdi` runtime and is ready to attempt
+Windows currently uses the `win32_gdi` runtime and is ready to attempt
 target smoke. macOS and Linux use the `winit_desktop` first-pass runtime.
 Android and Harmony are still scaffold/bridge-contract plans until real
 Activity/Ability runtime hosts exist. Their current device-smoke contract can

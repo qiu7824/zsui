@@ -262,6 +262,196 @@ pub const REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES: [NativeUiAdapterCapability; 1
     NativeUiAdapterCapability::MainExecutionPlanBridge,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NativeUiCapabilityReadinessLevel {
+    Ready,
+    FirstPass,
+    ContractOnly,
+}
+
+impl NativeUiCapabilityReadinessLevel {
+    pub const fn level_name(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::FirstPass => "first_pass",
+            Self::ContractOnly => "contract_only",
+        }
+    }
+
+    pub const fn has_runtime_implementation(self) -> bool {
+        matches!(self, Self::Ready | Self::FirstPass)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct NativeUiCapabilityReadiness {
+    pub capability: NativeUiAdapterCapability,
+    pub level: NativeUiCapabilityReadinessLevel,
+    pub evidence_path: &'static str,
+    pub detail: &'static str,
+}
+
+impl NativeUiCapabilityReadiness {
+    pub const fn capability_name(self) -> &'static str {
+        self.capability.capability_name()
+    }
+
+    pub const fn level_name(self) -> &'static str {
+        self.level.level_name()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NativeUiPlatformReadinessReport {
+    pub platform: NativeUiPlatform,
+    pub toolkit: NativeUiToolkit,
+    pub capabilities: Vec<NativeUiCapabilityReadiness>,
+    pub ready_count: usize,
+    pub first_pass_count: usize,
+    pub contract_only_count: usize,
+}
+
+impl NativeUiPlatformReadinessReport {
+    pub const fn platform_name(&self) -> &'static str {
+        self.platform.platform_name()
+    }
+
+    pub const fn toolkit_name(&self) -> &'static str {
+        self.toolkit.toolkit_name()
+    }
+
+    pub const fn runtime_implementation_count(&self) -> usize {
+        self.ready_count + self.first_pass_count
+    }
+
+    pub fn contract_only_capability_names(&self) -> Vec<&'static str> {
+        self.capabilities
+            .iter()
+            .filter(|entry| entry.level == NativeUiCapabilityReadinessLevel::ContractOnly)
+            .map(|entry| entry.capability_name())
+            .collect()
+    }
+}
+
+pub fn native_ui_platform_readiness(
+    platform: NativeUiPlatform,
+) -> Option<NativeUiPlatformReadinessReport> {
+    let backend = native_ui_backend_for_platform(platform)?;
+    let capabilities: Vec<_> = REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES
+        .iter()
+        .copied()
+        .map(|capability| native_ui_capability_readiness(platform, capability))
+        .collect();
+    let ready_count = capabilities
+        .iter()
+        .filter(|entry| entry.level == NativeUiCapabilityReadinessLevel::Ready)
+        .count();
+    let first_pass_count = capabilities
+        .iter()
+        .filter(|entry| entry.level == NativeUiCapabilityReadinessLevel::FirstPass)
+        .count();
+    let contract_only_count = capabilities
+        .iter()
+        .filter(|entry| entry.level == NativeUiCapabilityReadinessLevel::ContractOnly)
+        .count();
+
+    Some(NativeUiPlatformReadinessReport {
+        platform,
+        toolkit: backend.toolkit,
+        capabilities,
+        ready_count,
+        first_pass_count,
+        contract_only_count,
+    })
+}
+
+pub fn native_ui_platform_readiness_reports() -> Vec<NativeUiPlatformReadinessReport> {
+    SUPPORTED_NATIVE_UI_PLATFORMS
+        .iter()
+        .filter_map(|platform| native_ui_platform_readiness(*platform))
+        .collect()
+}
+
+fn native_ui_capability_readiness(
+    platform: NativeUiPlatform,
+    capability: NativeUiAdapterCapability,
+) -> NativeUiCapabilityReadiness {
+    use NativeUiAdapterCapability::{
+        Clipboard, MainExecutionPlanBridge, MainWindow, PopupMenu, Renderer, StatusItem,
+        TextLayout, TransientWindow,
+    };
+    use NativeUiCapabilityReadinessLevel::{ContractOnly, FirstPass, Ready};
+
+    let (level, evidence_path, detail) = match platform {
+        NativeUiPlatform::Windows => match capability {
+            Renderer | TextLayout => (
+                Ready,
+                "src/windows_gdi_renderer.rs",
+                "Win32 draw commands and text layout are connected to the buffered GDI renderer",
+            ),
+            MainWindow | TransientWindow => (
+                FirstPass,
+                "src/windows_win32_host.rs",
+                "the Win32 host has a working native implementation with remaining interaction gaps",
+            ),
+            PopupMenu | StatusItem => (
+                FirstPass,
+                "src/windows_win32_host.rs",
+                "status-item menus are implemented; the general popup-menu surface is not complete",
+            ),
+            Clipboard => (
+                FirstPass,
+                "src/host.rs",
+                "feature-gated text clipboard access is available; files and images are not complete",
+            ),
+            MainExecutionPlanBridge => (
+                FirstPass,
+                "src/native.rs",
+                "the runtime driver dispatches typed commands and state updates on the Windows host",
+            ),
+            _ => (
+                ContractOnly,
+                "src/host_protocol.rs",
+                "the public contract exists but no complete Windows runtime binding is connected",
+            ),
+        },
+        NativeUiPlatform::Macos | NativeUiPlatform::Linux => match capability {
+            MainWindow => (
+                FirstPass,
+                "src/native.rs",
+                "Winit creates and closes a native window; framework rendering and input are not connected",
+            ),
+            Clipboard => (
+                FirstPass,
+                "src/host.rs",
+                "feature-gated text clipboard access is available; files and images are not complete",
+            ),
+            _ => (
+                ContractOnly,
+                "src/host_protocol.rs",
+                "the public contract exists but the platform runtime binding is not connected",
+            ),
+        },
+        NativeUiPlatform::Android => (
+            ContractOnly,
+            "src/android_activity_host.rs",
+            "the Activity bridge contract exists but no Android runtime implementation is connected",
+        ),
+        NativeUiPlatform::Harmony => (
+            ContractOnly,
+            "src/harmony_ability_host.rs",
+            "the Ability bridge contract exists but no Harmony runtime implementation is connected",
+        ),
+    };
+
+    NativeUiCapabilityReadiness {
+        capability,
+        level,
+        evidence_path,
+        detail,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeUiBackendCapabilityMatrix {
     pub backend: NativeUiBackendDescriptor,
@@ -592,5 +782,42 @@ mod tests {
         assert!(report.all_binding_counts_match_manifest);
         assert!(report.all_main_execution_plan_counts_match);
         assert!(report.all_shared_non_host_protocol_counts_match);
+    }
+
+    #[test]
+    fn platform_readiness_reports_runtime_implementations_separately_from_contracts() {
+        let windows = native_ui_platform_readiness(NativeUiPlatform::Windows)
+            .expect("windows readiness should be declared");
+        assert_eq!(windows.ready_count, 2);
+        assert_eq!(windows.first_pass_count, 6);
+        assert_eq!(windows.contract_only_count, 10);
+        assert_eq!(windows.runtime_implementation_count(), 8);
+        assert!(windows
+            .contract_only_capability_names()
+            .contains(&"settings_window"));
+
+        let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
+            .expect("macOS readiness should be declared");
+        assert_eq!(macos.ready_count, 0);
+        assert_eq!(macos.first_pass_count, 2);
+        assert_eq!(macos.contract_only_count, 16);
+        assert!(macos.contract_only_capability_names().contains(&"renderer"));
+
+        let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
+            .expect("Linux readiness should be declared");
+        assert_eq!(linux.ready_count, 0);
+        assert_eq!(linux.first_pass_count, 2);
+        assert_eq!(linux.contract_only_count, 16);
+
+        let android = native_ui_platform_readiness(NativeUiPlatform::Android)
+            .expect("Android readiness should be declared");
+        assert_eq!(android.runtime_implementation_count(), 0);
+        assert_eq!(android.contract_only_count, 18);
+
+        let reports = native_ui_platform_readiness_reports();
+        assert_eq!(reports.len(), SUPPORTED_NATIVE_UI_PLATFORMS.len());
+        assert!(reports.iter().all(
+            |report| report.capabilities.len() == REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES.len()
+        ));
     }
 }

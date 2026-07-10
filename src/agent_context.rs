@@ -14,7 +14,8 @@ use crate::mobile_host::{
 };
 use crate::native_adapter_manifest::{
     native_ui_backend_capability_matrix, native_ui_backend_capability_matrix_for_platform,
-    NativeUiBackendStatus, NativeUiPlatform, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
+    native_ui_platform_readiness_reports, NativeUiBackendStatus, NativeUiPlatform,
+    NativeUiPlatformReadinessReport, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
     SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
 };
 use crate::native_host_actions::{
@@ -94,6 +95,7 @@ pub struct ZsuiReuseReadinessReport {
     pub native_runtime_ready_platforms: Vec<&'static str>,
     pub first_pass_native_host_platforms: Vec<&'static str>,
     pub scaffold_platforms: Vec<&'static str>,
+    pub platform_capability_readiness: Vec<NativeUiPlatformReadinessReport>,
     pub native_adapter_capability_names: Vec<&'static str>,
     pub required_host_surface_names: Vec<&'static str>,
     pub shared_non_host_protocol_names: Vec<&'static str>,
@@ -234,6 +236,7 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
                 "src/menu.rs",
                 "src/hotkey.rs",
                 "src/settings.rs",
+                "src/shell_layout.rs",
                 "src/clipboard.rs",
             ],
             owns: vec![
@@ -242,6 +245,7 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
                 "menus",
                 "hotkeys",
                 "settings specs",
+                "navigation/card shell layout specs",
             ],
             must_not_own: vec!["native widgets", "message loops", "product side effects"],
             handoff_to: vec!["native_host", "product_adapter_boundary"],
@@ -327,27 +331,27 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
     vec![
         ZsuiCompletionArea {
             area_name: "foundation_contracts",
-            percent_complete: 74,
-            status_name: "self_draw_command_contract_ready",
-            source_path: "src/core.rs",
+            percent_complete: 78,
+            status_name: "shared_command_executors_and_content_typestate_ready",
+            source_path: "src/command_protocol.rs",
             missing_before_complete: vec!["broader examples", "stable semver policy"],
         },
         ZsuiCompletionArea {
             area_name: "declaration_api",
-            percent_complete: 76,
-            status_name: "typed_scroll_event_and_list_selection_ready",
-            source_path: "src/app.rs",
+            percent_complete: 80,
+            status_name: "navigation_cards_and_toggle_widget_ready",
+            source_path: "src/widget_render.rs",
             missing_before_complete: vec![
-                "theming API",
                 "native component bindings",
+                "theme-token style variants for shell layouts",
                 "layout measurement",
                 "full menu/settings native binding",
             ],
         },
         ZsuiCompletionArea {
             area_name: "minimal_native_window_runtime",
-            percent_complete: 78,
-            status_name: "win32_view_click_text_toggle_keyboard_focus_scroll_and_list_navigation_smoke_ready",
+            percent_complete: 86,
+            status_name: "win32_stateful_view_toggle_dual_command_and_live_shell_ready",
             source_path: "src/native.rs",
             missing_before_complete: vec![
                 "real native menus",
@@ -362,21 +366,20 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "feature_pruned_architecture",
-            percent_complete: 39,
-            status_name: "scroll_list_feature_gates_ready",
+            percent_complete: 49,
+            status_name: "toggle_widget_and_feature_matrix_ci_ready",
             source_path: "Cargo.toml",
             missing_before_complete: vec![
                 "move heavier widgets into separate crates",
                 "split zsui-core/zsui-shell/zsui-render/zsui-style/widget-family crates when stable",
                 "gate every widget module with cfg(feature)",
-                "feature-matrix CI",
             ],
         },
         ZsuiCompletionArea {
             area_name: "rust_first_api_model",
-            percent_complete: 72,
-            status_name: "typed_scroll_events_keyboard_focus_and_list_selection_smoke_ready",
-            source_path: "src/view.rs",
+            percent_complete: 85,
+            status_name: "typed_state_toggle_commands_and_content_typestate_ready",
+            source_path: "src/shell_layout.rs",
             missing_before_complete: vec![
                 "preserve one-line native entrypoints across target hosts",
                 "keep raw HWNDs out of higher-level APIs",
@@ -384,14 +387,14 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "keep the public facade small while splitting heavier crates/modules",
                 "full typed message coverage across menus and advanced text/list input",
                 "connect full pointer/scroll/IME input dispatch to ViewEventCx beyond Win32 click/text/toggle/keyboard routing",
-                "complete Px/Dp/Dpi migration",
-                "typestate window/app builders",
+                "complete Px/Dp/Dpi coverage",
+                "typestate AppBuilder lifecycle constraints only where they prevent real invalid states",
             ],
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 58,
-            status_name: "win32_view_keyboard_focus_scroll_list_navigation_and_status_popup_smoke_ready",
+            percent_complete: 65,
+            status_name: "win32_stateful_toggle_dual_command_shell_and_status_popup_ready",
             source_path: "src/windows_win32_host.rs",
             missing_before_complete: vec![
                 "AppKit split",
@@ -415,8 +418,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "product_adapter_runtime_harness",
-            percent_complete: 62,
-            status_name: "typed_view_smoke_ready",
+            percent_complete: 67,
+            status_name: "typed_view_app_and_ui_command_executors_ready",
             source_path: "src/product_adapter.rs",
             missing_before_complete: vec![
                 "real product integration examples",
@@ -426,8 +429,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "native_smoke_verification",
-            percent_complete: 73,
-            status_name: "win32_typed_control_keyboard_focus_scroll_list_navigation_native_smoke_recorded",
+            percent_complete: 81,
+            status_name: "win32_stateful_toggle_and_dual_command_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
                 "required tray/menu target smoke artifacts with user popup interaction",
@@ -474,6 +477,7 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             .filter(|entry| entry.backend.status.is_scaffold())
             .map(|entry| entry.backend.platform_name())
             .collect(),
+        platform_capability_readiness: native_ui_platform_readiness_reports(),
         native_adapter_capability_names: REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES
             .iter()
             .map(|capability| capability.capability_name())
@@ -529,7 +533,10 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             "src/framework_goals.rs",
             "src/style.rs",
             "src/view.rs",
+            "src/widget_render.rs",
+            "src/shell_layout.rs",
             "examples/rust_first_view.rs",
+            "examples/navigation_shell_layout.rs",
             "src/mobile_host.rs",
             "src/android_activity_host.rs",
             "src/harmony_ability_host.rs",
@@ -857,7 +864,7 @@ mod tests {
         assert!(context
             .readiness
             .rust_first_goal_names
-            .contains(&"zsclip_extraction_foundation"));
+            .contains(&"production_native_foundation"));
         assert!(context
             .readiness
             .rust_first_goal_names
@@ -868,6 +875,15 @@ mod tests {
             .contains(&"crate_split_architecture"));
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert!(context.readiness.scaffold_platforms.contains(&"harmony"));
+        assert_eq!(context.readiness.platform_capability_readiness.len(), 5);
+        let macos = context
+            .readiness
+            .platform_capability_readiness
+            .iter()
+            .find(|report| report.platform == NativeUiPlatform::Macos)
+            .expect("macOS capability readiness should be included");
+        assert_eq!(macos.runtime_implementation_count(), 2);
+        assert_eq!(macos.contract_only_count, 16);
         assert!(context
             .readiness
             .declaration_audit_surface_names
@@ -988,6 +1004,10 @@ mod tests {
             .readiness
             .docs_paths
             .contains(&"docs/framework-goals.md"));
+        assert!(context
+            .readiness
+            .docs_paths
+            .contains(&"src/shell_layout.rs"));
     }
 
     #[test]
@@ -1011,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn desktop_bootstrap_reports_extracted_windows_win32_host_bindings() {
+    fn desktop_bootstrap_reports_windows_win32_host_bindings() {
         let windows = zsui_reuse_bootstrap_plan(NativeUiPlatform::Windows)
             .expect("windows bootstrap should exist");
 
@@ -1065,5 +1085,7 @@ mod tests {
         assert!(json.contains("mobile_scaffold_manifest --trace-template"));
         assert!(json.contains("mobile_scaffold_manifest --review"));
         assert!(json.contains("src/harmony_ability_host.rs"));
+        assert!(json.contains("src/shell_layout.rs"));
+        assert!(json.contains("examples/navigation_shell_layout.rs"));
     }
 }

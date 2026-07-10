@@ -13,7 +13,7 @@ png = { version = "0.18", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-[target.'cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
+[target.'cfg(any(target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
 winit = { version = "0.30", optional = true }
 
 [target.'cfg(windows)'.dependencies]
@@ -21,7 +21,7 @@ windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation
 
 [features]
 default = ["window", "button", "label"]
-window = ["windows-win32"]
+window = ["windows-win32", "desktop-winit"]
 button = ["widgets-base"]
 label = ["widgets-base"]
 widgets-base = []
@@ -31,13 +31,14 @@ scroll = []
 list = ["widgets-list", "scroll"]
 textbox = ["widgets-input"]
 checkbox = ["widgets-input"]
+toggle = ["widgets-input"]
 table = ["list", "scroll"]
 dark-mode = []
 style = []
 shell = []
 tray = ["shell"]
 hotkey = ["shell"]
-settings = ["widgets-input", "widgets-list"]
+settings = ["widgets-input", "widgets-list", "toggle"]
 product-adapter = []
 android = []
 harmony = []
@@ -48,7 +49,7 @@ native-smoke = ["image"]
 desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
-all-widgets = ["button", "label", "scroll", "list", "textbox", "checkbox", "table"]
+all-widgets = ["button", "label", "scroll", "list", "textbox", "checkbox", "toggle", "table"]
 full = [
     "all-widgets",
     "clipboard",
@@ -86,7 +87,7 @@ required-features = ["button", "label"]
 [[example]]
 name = "rust_first_view"
 path = "examples/rust_first_view.rs"
-required-features = ["button", "label", "textbox", "checkbox"]
+required-features = ["button", "label", "textbox", "toggle"]
 
 [[example]]
 name = "list_selection"

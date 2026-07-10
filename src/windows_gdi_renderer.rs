@@ -32,6 +32,7 @@ struct BpPaintParams {
 
 const BPBF_TOPDOWNDIB: u32 = 2;
 static BUFFERED_PAINT_INIT: OnceLock<()> = OnceLock::new();
+static GDIP_TOKEN: OnceLock<Option<usize>> = OnceLock::new();
 
 #[link(name = "uxtheme")]
 unsafe extern "system" {
@@ -58,6 +59,47 @@ const DT_CALCRECT: u32 = 0x0400;
 const DT_NOPREFIX: u32 = 0x0800;
 const DT_END_ELLIPSIS: u32 = 0x0000_8000;
 const CLEARTYPE_QUALITY: u32 = 5;
+const GDIP_SMOOTHING_MODE_ANTI_ALIAS: i32 = 4;
+const GDIP_UNIT_PIXEL: i32 = 2;
+const GDIP_FILL_MODE_ALTERNATE: i32 = 0;
+
+#[repr(C)]
+struct GdiplusStartupInput {
+    gdiplus_version: u32,
+    debug_event_callback: *const c_void,
+    suppress_background_thread: i32,
+    suppress_external_codecs: i32,
+}
+
+#[link(name = "gdiplus")]
+unsafe extern "system" {
+    fn GdiplusStartup(
+        token: *mut usize,
+        input: *const GdiplusStartupInput,
+        output: *mut c_void,
+    ) -> i32;
+    fn GdipCreateFromHDC(hdc: HDC, graphics: *mut *mut c_void) -> i32;
+    fn GdipDeleteGraphics(graphics: *mut c_void) -> i32;
+    fn GdipSetSmoothingMode(graphics: *mut c_void, smoothing_mode: i32) -> i32;
+    fn GdipCreateSolidFill(color: u32, brush: *mut *mut c_void) -> i32;
+    fn GdipDeleteBrush(brush: *mut c_void) -> i32;
+    fn GdipCreatePen1(color: u32, width: f32, unit: i32, pen: *mut *mut c_void) -> i32;
+    fn GdipDeletePen(pen: *mut c_void) -> i32;
+    fn GdipCreatePath(fill_mode: i32, path: *mut *mut c_void) -> i32;
+    fn GdipDeletePath(path: *mut c_void) -> i32;
+    fn GdipAddPathArcI(
+        path: *mut c_void,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        start_angle: f32,
+        sweep_angle: f32,
+    ) -> i32;
+    fn GdipClosePathFigure(path: *mut c_void) -> i32;
+    fn GdipFillPath(graphics: *mut c_void, brush: *mut c_void, path: *mut c_void) -> i32;
+    fn GdipDrawPath(graphics: *mut c_void, pen: *mut c_void, path: *mut c_void) -> i32;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowsNoFlickerPaintStrategy {
@@ -121,6 +163,101 @@ unsafe fn ensure_buffered_paint() {
     BUFFERED_PAINT_INIT.get_or_init(|| {
         let _ = BufferedPaintInit();
     });
+}
+
+fn ensure_gdiplus_startup() -> Option<usize> {
+    *GDIP_TOKEN.get_or_init(|| unsafe {
+        let mut token = 0usize;
+        let input = GdiplusStartupInput {
+            gdiplus_version: 1,
+            debug_event_callback: null(),
+            suppress_background_thread: 0,
+            suppress_external_codecs: 0,
+        };
+        if GdiplusStartup(&mut token, &input, std::ptr::null_mut()) == 0 {
+            Some(token)
+        } else {
+            None
+        }
+    })
+}
+
+fn color_to_argb(color: Color) -> u32 {
+    ((color.a as u32) << 24) | ((color.r as u32) << 16) | ((color.g as u32) << 8) | color.b as u32
+}
+
+unsafe fn build_gdiplus_round_path(
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    radius: i32,
+) -> *mut c_void {
+    let mut path = std::ptr::null_mut();
+    if GdipCreatePath(GDIP_FILL_MODE_ALTERNATE, &mut path) != 0 || path.is_null() {
+        return std::ptr::null_mut();
+    }
+    let w = right - left;
+    let h = bottom - top;
+    let r = radius.min(w / 2).min(h / 2).max(1);
+    let d = r * 2;
+    let ok = GdipAddPathArcI(path, left, top, d, d, 180.0, 90.0) == 0
+        && GdipAddPathArcI(path, right - d, top, d, d, 270.0, 90.0) == 0
+        && GdipAddPathArcI(path, right - d, bottom - d, d, d, 0.0, 90.0) == 0
+        && GdipAddPathArcI(path, left, bottom - d, d, d, 90.0, 90.0) == 0
+        && GdipClosePathFigure(path) == 0;
+    if !ok {
+        let _ = GdipDeletePath(path);
+        return std::ptr::null_mut();
+    }
+    path
+}
+
+unsafe fn draw_round_rect_antialiased(
+    hdc: HDC,
+    rect: RECT,
+    fill: Color,
+    stroke: Option<Color>,
+    radius: i32,
+) -> bool {
+    if ensure_gdiplus_startup().is_none() {
+        return false;
+    }
+    if hdc.is_null() || rect.right <= rect.left || rect.bottom <= rect.top {
+        return true;
+    }
+    let mut graphics = std::ptr::null_mut();
+    if GdipCreateFromHDC(hdc, &mut graphics) != 0 || graphics.is_null() {
+        return false;
+    }
+    let _ = GdipSetSmoothingMode(graphics, GDIP_SMOOTHING_MODE_ANTI_ALIAS);
+    let path =
+        build_gdiplus_round_path(rect.left, rect.top, rect.right, rect.bottom, radius.max(1));
+    if path.is_null() {
+        let _ = GdipDeleteGraphics(graphics);
+        return false;
+    }
+
+    let mut ok = true;
+    let mut brush = std::ptr::null_mut();
+    if GdipCreateSolidFill(color_to_argb(fill), &mut brush) == 0 && !brush.is_null() {
+        ok &= GdipFillPath(graphics, brush, path) == 0;
+        let _ = GdipDeleteBrush(brush);
+    } else {
+        ok = false;
+    }
+    if let Some(stroke) = stroke.filter(|stroke| *stroke != fill) {
+        let mut pen = std::ptr::null_mut();
+        if GdipCreatePen1(color_to_argb(stroke), 1.0, GDIP_UNIT_PIXEL, &mut pen) == 0
+            && !pen.is_null()
+        {
+            ok &= GdipDrawPath(graphics, pen, path) == 0;
+            let _ = GdipDeletePen(pen);
+        }
+    }
+    let _ = GdipDeletePath(path);
+    let _ = GdipDeleteGraphics(graphics);
+    ok
 }
 
 struct WindowsGdiOwnedObject {
@@ -475,13 +612,14 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
             crate::TextRole::Caption => 12.0,
             crate::TextRole::Title => 18.0,
             crate::TextRole::Button => 14.0,
+            crate::TextRole::Icon => 16.0,
             crate::TextRole::Monospace => 13.0,
         };
         TextStyle {
-            font_family: if style.role == crate::TextRole::Monospace {
-                "Consolas".to_string()
-            } else {
-                self.font_family.clone()
+            font_family: match style.role {
+                crate::TextRole::Monospace => "Consolas".to_string(),
+                crate::TextRole::Icon => "Segoe MDL2 Assets".to_string(),
+                _ => self.font_family.clone(),
             },
             size,
             weight: style.weight,
@@ -539,11 +677,16 @@ impl WindowsGdiDrawSink {
         }
         let rect = to_win_rect(rect);
         let fill = self.palette.resolve_fill(fill);
+        let stroke_color = stroke.map(|stroke| self.palette.resolve_fill(stroke));
+        if unsafe {
+            draw_round_rect_antialiased(self.renderer.hdc(), rect, fill, stroke_color, radius)
+        } {
+            return;
+        }
         let Some(fill_brush) = WindowsGdiOwnedObject::solid_brush(fill) else {
             return;
         };
-        let stroke_pen =
-            stroke.and_then(|stroke| WindowsGdiOwnedObject::pen(self.palette.resolve_fill(stroke)));
+        let stroke_pen = stroke_color.and_then(WindowsGdiOwnedObject::pen);
         let pen = stroke_pen
             .as_ref()
             .map(WindowsGdiOwnedObject::object)
@@ -845,7 +988,23 @@ mod tests {
     }
 
     #[test]
-    fn no_flicker_strategy_matches_zsclip_buffered_paint_foundation() {
+    fn icon_text_role_uses_mdl2_fallback_font() {
+        let style = WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle {
+            role: crate::TextRole::Icon,
+            color: ColorRole::PrimaryText,
+            weight: TextWeight::Regular,
+            horizontal_align: HorizontalAlign::Center,
+            vertical_align: VerticalAlign::Center,
+            wrap: TextWrap::NoWrap,
+            ellipsis: false,
+        });
+
+        assert_eq!(style.font_family, "Segoe MDL2 Assets");
+        assert_eq!(style.size, 16.0);
+    }
+
+    #[test]
+    fn no_flicker_strategy_uses_buffered_paint_foundation() {
         let strategy = windows_no_flicker_paint_strategy();
 
         assert!(strategy.suppress_erase_background);

@@ -4,8 +4,8 @@ use crate::{
     app, AppCx, AppEvent, CommandId, Dpi, HostCapabilities, NativeDrawPlan,
     NativeMainWindowHandles, NativeMainWindowRequest, NativeRuntimeDriver,
     NativeRuntimeStartupRequest, NativeRuntimeStartupResult, Rect, SettingsPageSpec, TraySpec,
-    UiCommand, View, ViewEvent, ViewEventCx, ViewLayoutCx, ViewNode, ViewPaintCx, WindowSpec,
-    ZsuiAppDeclarationReport, ZsuiError, ZsuiResult,
+    UiCommand, UiCommandExecutor, View, ViewEvent, ViewEventCx, ViewLayoutCx, ViewNode,
+    ViewPaintCx, WindowSpec, ZsuiAppDeclarationReport, ZsuiError, ZsuiResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -488,6 +488,37 @@ pub trait ProductAdapterHost {
     }
 
     fn request_shutdown(&mut self) {}
+}
+
+pub struct ProductAdapterUiCommandExecutor<Product> {
+    product: Product,
+}
+
+impl<Product> ProductAdapterUiCommandExecutor<Product> {
+    pub const fn new(product: Product) -> Self {
+        Self { product }
+    }
+
+    pub const fn product(&self) -> &Product {
+        &self.product
+    }
+
+    pub fn product_mut(&mut self) -> &mut Product {
+        &mut self.product
+    }
+
+    pub fn into_product(self) -> Product {
+        self.product
+    }
+}
+
+impl<Product> UiCommandExecutor for ProductAdapterUiCommandExecutor<Product>
+where
+    Product: ProductAdapterHost + Send,
+{
+    fn execute_ui_command(&mut self, command: UiCommand) -> ZsuiResult<Vec<AppEvent>> {
+        self.product.execute_ui_command(command)
+    }
 }
 
 pub trait ProductViewAdapterHost<Msg>: ProductAdapterHost {
@@ -1116,6 +1147,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn product_ui_command_executor_delegates_to_product_adapter() {
+        let mut executor = ProductAdapterUiCommandExecutor::new(DemoProduct::new());
+
+        let events = executor
+            .execute_ui_command(UiCommand::app(CommandId("demo.save")))
+            .unwrap();
+
+        assert_eq!(executor.product().command_count, 1);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            AppEvent::Custom {
+                id: "demo.save".to_string(),
+                payload: None
+            }
+        );
     }
 
     #[test]

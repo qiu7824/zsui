@@ -40,13 +40,15 @@ device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
 `windows-gdi`, `windows-win32`, `android` and `harmony` are platform/backend
-gates, while `clipboard` and `image` own their optional dependencies.
+gates, while `clipboard` and `image` own their optional dependencies. The
+default `window` umbrella must keep the one-line desktop entry working and rely
+on target-specific dependencies to compile only the active platform backend.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error
 reporting, explicit context/state flow and typed capability traits.
 It should also preserve the one-line `zsui::native_window(...).run()?` entry
-shape for ordinary apps, keep reusable ZSClip no-flicker self-draw behavior as
+shape for ordinary apps, keep buffered no-flicker self-draw behavior as
 the Windows baseline, and add wider bindings such as `windows-rs` only when a
 specific backend surface needs them.
 The first-pass typed view layer is `src/view.rs`: hosts should treat
@@ -65,11 +67,14 @@ that draw plan through their renderer/text layout sink.
 `NativeWindowBuilder::ui_command_view(...)` keeps a command-backed tree for
 native input. The Win32 host already maps `WM_LBUTTONUP` through
 `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and records
-command ids during native smoke. It also routes focused `WM_CHAR` input into
+command ids during native smoke. Backends must hand those commands to
+`SharedUiCommandExecutor` after releasing internal route locks; use
+`ProductAdapterUiCommandExecutor` for the standard product boundary. It also
+routes focused `WM_CHAR` input into
 textbox `TextChanged` events when the textbox feature is enabled and checkbox
 clicks into typed `Toggled` events when the checkbox feature is enabled.
 `WM_KEYDOWN` Enter/Space activation is also routed for focused button and
-checkbox targets, and Tab traverses the ordered `ViewInteractionPlan` focus
+checkbox/toggle targets, and Tab traverses the ordered `ViewInteractionPlan` focus
 targets. Feature-gated list row selection uses child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection
 and emit the same typed message. Win32 `WM_MOUSEWHEEL` can target the nearest
@@ -77,6 +82,8 @@ scroll container and emit a typed scroll event. Other backends should add their
 OS pointer, wheel/touch scroll, keyboard focus, keyboard activation and IME
 routing back into `ViewEventCx` as distinct gates instead of coupling it to
 product state.
+Render `ViewHitTargetKind::Toggle` from the shared `ZsToggleRenderPlan`; do not
+replace its track/knob geometry with a backend-specific approximation.
 Use `native_smoke_run --scroll-view` on Windows to exercise the command-backed
 scroll route before claiming parity in another backend.
 For product integration, use `ProductViewAdapterHost` and
@@ -103,8 +110,8 @@ native host responsibilities while command execution and product state remain
 behind `ProductAdapterHost`.
 
 For self-drawn surfaces, translate `NativeDrawPlan` / `NativeDrawCommand` into
-the target drawing API through `NativeDrawCommandSink`. Windows already has the
-ZSClip-extracted `WindowsGdiRenderer`, `WindowsGdiTextLayout` and
+the target drawing API through `NativeDrawCommandSink`. Windows has the
+`WindowsGdiRenderer`, `WindowsGdiTextLayout` and
 `WindowsGdiDrawSink`; other backends should keep the same command contract and
 only swap the native drawing implementation.
 
@@ -113,9 +120,9 @@ For direct desktop window hosts, keep the product-neutral shape from
 `NativeWindowOptions` to platform styles, preserve create-params for the window
 procedure, expose a small message-loop wrapper, and implement
 `NativeMainWindowHost` without product callbacks. Transient window hosts should
-follow the extracted `WindowsWin32TransientWindowHost` shape: topmost,
+follow the `WindowsWin32TransientWindowHost` shape: topmost,
 tool-window and no-activate presentation with product behavior outside the
-host. The extracted Windows version lives in `src/windows_win32_host.rs`.
+host. The Windows version lives in `src/windows_win32_host.rs`.
 When a backend has a self-drawn surface, attach or store `NativeDrawPlan`
 content beside the native window handle and render it through the backend sink;
 the Win32 host now does this with `set_windows_win32_window_draw_plan(...)` and

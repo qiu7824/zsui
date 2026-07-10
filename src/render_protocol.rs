@@ -56,6 +56,7 @@ pub enum TextRole {
     Caption,
     Title,
     Button,
+    Icon,
     Monospace,
 }
 
@@ -413,7 +414,7 @@ mod draw_command_tests {
     }
 
     #[test]
-    fn native_draw_plan_keeps_zsclip_self_draw_command_shape() {
+    fn native_draw_plan_keeps_self_draw_command_shape() {
         let rect = Rect {
             x: 8,
             y: 12,
