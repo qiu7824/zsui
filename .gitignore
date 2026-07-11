@@ -1,5 +1,4 @@
 /target
-Cargo.lock
 /comparisons/egui_notepad/target
 !/comparisons/egui_notepad/Cargo.lock
 *.pdb
