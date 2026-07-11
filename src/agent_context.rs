@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 use crate::app::zsui_declaration_audit_surface_names;
+use crate::component_catalog::{zsui_component_catalog_summary, ZsuiComponentCatalogSummary};
 use crate::feature_manifest::{
     zsui_default_feature_names, zsui_feature_manifest, zsui_optional_dependency_feature_names,
 };
@@ -90,6 +91,7 @@ pub struct ZsuiReuseReadinessReport {
     pub default_feature_names: Vec<&'static str>,
     pub cargo_feature_names: Vec<&'static str>,
     pub optional_dependency_feature_names: Vec<&'static str>,
+    pub component_catalog: ZsuiComponentCatalogSummary,
     pub rust_first_goal_names: Vec<&'static str>,
     pub declaration_audit_surface_names: Vec<&'static str>,
     pub native_runtime_ready_platforms: Vec<&'static str>,
@@ -237,6 +239,7 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
                 "src/hotkey.rs",
                 "src/settings.rs",
                 "src/shell_layout.rs",
+                "src/document_shell.rs",
                 "src/clipboard.rs",
             ],
             owns: vec![
@@ -338,14 +341,28 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "declaration_api",
-            percent_complete: 80,
-            status_name: "navigation_cards_and_toggle_widget_ready",
-            source_path: "src/widget_render.rs",
+            percent_complete: 84,
+            status_name: "fluent_tokens_semantic_icons_workbench_and_calculator_declarations_ready",
+            source_path: "src/workbench.rs",
             missing_before_complete: vec![
                 "native component bindings",
-                "theme-token style variants for shell layouts",
+                "system theme accent and high-contrast binding",
                 "layout measurement",
                 "full menu/settings native binding",
+            ],
+        },
+        ZsuiCompletionArea {
+            area_name: "component_library",
+            percent_complete: 42,
+            status_name: "twenty_first_pass_surfaces_out_of_forty_eight_catalogued_components",
+            source_path: "src/component_catalog.rs",
+            missing_before_complete: vec![
+                "grid and repeater layout",
+                "tree and data grid runtime",
+                "slider number picker and selection inputs",
+                "progress info bar tooltip and teaching tip",
+                "content dialog flyout and command palette runtime",
+                "workbench native input and live composer routing",
             ],
         },
         ZsuiCompletionArea {
@@ -360,14 +377,15 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "broader pointer dispatch into ViewEventCx",
                 "touch and inertial scroll dispatch",
                 "IME/composition input routing",
+                "generic calculator runtime route",
                 "native input dispatch on macOS/Linux",
                 "macOS/Linux target smoke artifacts",
             ],
         },
         ZsuiCompletionArea {
             area_name: "feature_pruned_architecture",
-            percent_complete: 49,
-            status_name: "toggle_widget_and_feature_matrix_ci_ready",
+            percent_complete: 51,
+            status_name: "workbench_calculator_and_feature_matrix_ci_ready",
             source_path: "Cargo.toml",
             missing_before_complete: vec![
                 "move heavier widgets into separate crates",
@@ -377,9 +395,9 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "rust_first_api_model",
-            percent_complete: 85,
-            status_name: "typed_state_toggle_commands_and_content_typestate_ready",
-            source_path: "src/shell_layout.rs",
+            percent_complete: 88,
+            status_name: "typed_state_semantic_icons_composite_shells_and_content_typestate_ready",
+            source_path: "src/workbench.rs",
             missing_before_complete: vec![
                 "preserve one-line native entrypoints across target hosts",
                 "keep raw HWNDs out of higher-level APIs",
@@ -393,8 +411,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 65,
-            status_name: "win32_stateful_toggle_dual_command_shell_and_status_popup_ready",
+            percent_complete: 66,
+            status_name: "win32_client_sized_workbench_shell_and_status_popup_ready",
             source_path: "src/windows_win32_host.rs",
             missing_before_complete: vec![
                 "AppKit split",
@@ -429,8 +447,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "native_smoke_verification",
-            percent_complete: 81,
-            status_name: "win32_stateful_toggle_and_dual_command_smoke_recorded",
+            percent_complete: 82,
+            status_name: "win32_workbench_and_stateful_view_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
                 "required tray/menu target smoke artifacts with user popup interaction",
@@ -460,6 +478,7 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
         default_feature_names: zsui_default_feature_names(),
         cargo_feature_names: cargo_features.iter().map(|feature| feature.name).collect(),
         optional_dependency_feature_names: zsui_optional_dependency_feature_names(),
+        component_catalog: zsui_component_catalog_summary(),
         rust_first_goal_names: zsui_rust_first_goal_names(),
         declaration_audit_surface_names: zsui_declaration_audit_surface_names(),
         native_runtime_ready_platforms: matrix
@@ -520,23 +539,39 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
         mobile_runtime_device_smoke_command_names: mobile_runtime_device_smoke_command_names(),
         agent_skill_path: "docs/skills/zsui-native-ui/",
         docs_paths: vec![
+            "AGENTS.md",
             "README.md",
+            "README.en.md",
             "Cargo.toml",
             "docs/ai-agent.md",
+            "docs/ai/context-packs.json",
+            "docs/ai/reference.md",
             "docs/architecture.md",
             "docs/framework-goals.md",
+            "docs/gallery.md",
             "docs/porting.md",
             "docs/native-host-smoke.md",
+            "docs/notepad-demo.md",
+            "docs/calculator-demo.md",
             "docs/skills/zsui-native-ui/SKILL.md",
             "docs/skills/zsui-native-ui/references/native-ui-entrypoints.md",
             "src/feature_manifest.rs",
+            "src/component_catalog.rs",
             "src/framework_goals.rs",
             "src/style.rs",
             "src/view.rs",
             "src/widget_render.rs",
             "src/shell_layout.rs",
+            "src/workbench.rs",
+            "src/document_shell.rs",
+            "src/calculator.rs",
             "examples/rust_first_view.rs",
             "examples/navigation_shell_layout.rs",
+            "examples/zsui_notepad.rs",
+            "scripts/measure-notepad-comparison.ps1",
+            "examples/zsui_calculator.rs",
+            "scripts/measure-calculator-comparison.ps1",
+            "scripts/ai-context.ps1",
             "src/mobile_host.rs",
             "src/android_activity_host.rs",
             "src/harmony_ability_host.rs",
@@ -849,6 +884,10 @@ mod tests {
             .readiness
             .optional_dependency_feature_names
             .contains(&"desktop-winit"));
+        assert_eq!(context.readiness.component_catalog.total_count, 48);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 20);
+        assert_eq!(context.readiness.component_catalog.contract_only_count, 8);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 20);
         assert!(context
             .readiness
             .rust_first_goal_names
@@ -1008,6 +1047,19 @@ mod tests {
             .readiness
             .docs_paths
             .contains(&"src/shell_layout.rs"));
+        assert!(context
+            .readiness
+            .docs_paths
+            .contains(&"docs/calculator-demo.md"));
+        assert!(context
+            .readiness
+            .docs_paths
+            .contains(&"docs/ai/context-packs.json"));
+        assert!(context
+            .readiness
+            .docs_paths
+            .contains(&"scripts/ai-context.ps1"));
+        assert!(context.readiness.docs_paths.contains(&"src/calculator.rs"));
     }
 
     #[test]
@@ -1087,5 +1139,53 @@ mod tests {
         assert!(json.contains("src/harmony_ability_host.rs"));
         assert!(json.contains("src/shell_layout.rs"));
         assert!(json.contains("examples/navigation_shell_layout.rs"));
+    }
+
+    #[test]
+    fn ai_context_packs_stay_small_and_reference_existing_paths() {
+        use std::{collections::HashSet, path::Path};
+
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../docs/ai/context-packs.json"))
+                .expect("AI context pack manifest should be valid JSON");
+        assert_eq!(manifest["schema_version"], 1);
+        assert_eq!(manifest["bootstrap"], "docs/ai-agent.md");
+
+        let packs = manifest["packs"]
+            .as_array()
+            .expect("AI context packs should be an array");
+        assert_eq!(packs.len(), 13);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut ids = HashSet::new();
+        for pack in packs {
+            let id = pack["id"]
+                .as_str()
+                .expect("AI context pack should have an id");
+            assert!(ids.insert(id), "duplicate AI context pack id: {id}");
+            let required = pack["required"]
+                .as_array()
+                .expect("AI context pack should have required paths");
+            assert!(!required.is_empty());
+            assert!(required.len() <= 5, "AI context pack is too broad: {id}");
+            for key in ["required", "optional"] {
+                for path in pack[key]
+                    .as_array()
+                    .expect("AI context paths should be arrays")
+                {
+                    let relative = path.as_str().expect("AI context path should be text");
+                    assert!(
+                        root.join(relative).exists(),
+                        "AI context path does not exist: {relative}"
+                    );
+                }
+            }
+            assert!(
+                !pack["verify"]
+                    .as_array()
+                    .expect("AI context checks should be an array")
+                    .is_empty(),
+                "AI context pack has no verification command: {id}"
+            );
+        }
     }
 }

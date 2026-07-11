@@ -1,458 +1,297 @@
+<div align="center">
+
 # ZSUI
 
-ZSUI is a Rust-first native system UI framework.
-It is intentionally declaration-first: application code describes windows,
-tray/status menus, commands, hotkeys, settings pages and host capabilities in
-Rust, while each platform host translates those declarations to Win32, AppKit,
-GTK/libadwaita or mobile hosts.
+**Rust-first 的轻量原生 UI 框架**
 
-ZSUI is not a browser shell and not yet a full self-drawn widget kit. Product
-behavior stays in the product crate; ZSUI owns portable UI specs,
-WinUI-like navigation/card layout contracts, command/event ids, capability
-reporting and host traits.
-Today the concrete runtime in this crate is the minimal `NativeWindowHost`.
-On Windows it enters the Win32/GDI path from
-`src/windows_win32_host.rs` and uses a buffered no-flicker paint pipeline:
-`WM_ERASEBKGND` is suppressed and paint goes through a buffered top-down DIB
-when available. macOS and Linux still use the `winit_desktop` first-pass
-runtime. Complete AppKit and GTK host implementations are still pending.
+用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
-```rust
-use zsui::{app, Command, MemoryHost, TraySpec, Window};
+[![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
+![Version](https://img.shields.io/badge/version-0.1.0-2f6fdf)
+[![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
+![Core](https://img.shields.io/badge/core-Rust-dea584)
+![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
+![Build](https://img.shields.io/badge/build-feature--gated-0f7b0f)
 
-let mut host = MemoryHost::new();
-let runtime = app("Example")
-    .window(Window::new("Example").size(900, 620))
-    .tray(
-        TraySpec::new()
-            .tooltip("Example")
-            .item("Open", Command::ShowMainWindow)
-            .separator()
-            .item("Quit", Command::Quit),
-    )
-    .global_hotkey("Alt+V", Command::OpenQuickPanel)
-    .run_with_host(&mut host)?;
-# Ok::<(), zsui::ZsuiError>(())
-```
+**简体中文** | [English](README.en.md)
 
-Create a real native OS window with one line:
+</div>
+
+<p align="center">
+  <img src="docs/images/workbench.png" alt="ZSUI 工作台" width="100%">
+</p>
+
+<table>
+  <tr>
+    <td width="68%"><img src="docs/images/notepad.png" alt="ZSUI 记事本"></td>
+    <td width="32%"><img src="docs/images/calculator.png" alt="ZSUI 计算器"></td>
+  </tr>
+  <tr>
+    <td align="center">现代文档外壳 + 原生文本服务</td>
+    <td align="center">现代标准计算器</td>
+  </tr>
+</table>
+
+<p align="center"><a href="docs/gallery.md"><b>查看完整 Demo 与对比图库</b></a></p>
+
+<details>
+<summary><b>展开 ZSUI / egui / Windows 对比图</b></summary>
+
+<h4>记事本</h4>
+<table>
+  <tr><th>ZSUI</th><th>eframe / egui</th><th>Windows Notepad</th></tr>
+  <tr>
+    <td><img src="docs/images/notepad.png" alt="ZSUI Notepad"></td>
+    <td><img src="docs/images/notepad-egui.png" alt="egui Notepad"></td>
+    <td><img src="docs/images/notepad-windows.png" alt="Windows Notepad"></td>
+  </tr>
+</table>
+
+<h4>计算器</h4>
+<table>
+  <tr><th>ZSUI</th><th>Windows Calculator</th></tr>
+  <tr>
+    <td><img src="docs/images/calculator.png" alt="ZSUI Calculator"></td>
+    <td><img src="docs/images/calculator-windows.png" alt="Windows Calculator"></td>
+  </tr>
+</table>
+
+</details>
+
+## 项目定位
+
+ZSUI 不是浏览器壳，也不是对 WinUI 3 的运行时封装。它的目标是用 Rust
+建立一套轻量、可组合、可裁剪的原生 UI 能力：
+
+- 公共 API 安全，平台 `unsafe` 留在后端内部
+- 组合和 trait 代替控件继承树
+- 枚举和强类型 ID 代替字符串事件与全局注册表
+- `State -> View -> Msg -> update` 显式状态循环
+- `Dp`、`Px`、`Dpi` 和主题 token 管理布局与视觉
+- 窗口、图标、位图和托盘资源由 RAII 管理
+- 控件、服务、渲染器和平台能力通过 Cargo feature 按需编译
+- 平台差异通过 capability/host trait 表达，不制造虚假的完全统一
+
+Windows 是当前最完整的真实运行路径，包含 Win32 原生窗口、缓冲无闪屏绘制、
+GDI+ 抗锯齿圆角、DPI、语义图标、输入路由和应用外壳。macOS/Linux 当前是
+第一阶段桌面运行路径；Android/Harmony 仍处于宿主与设备验证建设阶段。
+
+## 一句话创建原生窗口
 
 ```rust,no_run
-zsui::native_window("Example").size(900, 620).run()?;
-# Ok::<(), zsui::ZsuiError>(())
+fn main() -> zsui::ZsuiResult<()> {
+    zsui::native_window("Example")
+        .size(900, 620)
+        .run()?;
+    Ok(())
+}
 ```
 
-Attach a typed Rust view to the same native window path:
+普通应用不需要接触 `HWND`、消息循环或 GDI 句柄。
+
+## 强类型状态与消息
 
 ```rust,no_run
-use zsui::{button, column, native_window, text, WidgetId};
+use zsui::{button, column, native_window, text, AppCx, ViewNode, WidgetId};
+
+struct State {
+    count: u32,
+}
 
 #[derive(Clone)]
 enum Msg {
-    Save,
+    Increment,
 }
-
-native_window("Example")
-    .size(900, 620)
-    .view(column(vec![
-        text::<Msg>("Settings"),
-        button("Save").id(WidgetId::new(1)).on_click(Msg::Save),
-    ]))
-    .run()?;
-# Ok::<(), zsui::ZsuiError>(())
-```
-
-For an application-owned state loop, use `stateful_view`. Every native input is
-converted to `Msg`, passed through `update`, then the view is rebuilt and the
-window is repainted:
-
-```rust,no_run
-use zsui::{
-    button, column, native_window, text, AppCx, Command, NativeWindowRuntimeDriver,
-    ViewNode, WidgetId,
-};
-
-struct State { count: u32 }
-#[derive(Clone)]
-enum Msg { Increment }
 
 fn view(state: &State) -> ViewNode<Msg> {
     column([
         text(format!("Count: {}", state.count)),
-        button("Increment").id(WidgetId::new(1)).on_click(Msg::Increment),
+        button("Increment")
+            .id(WidgetId::new(1))
+            .on_click(Msg::Increment),
     ])
 }
 
-fn update(state: &mut State, msg: Msg, cx: &mut AppCx) {
+fn update(state: &mut State, msg: Msg, _cx: &mut AppCx) {
     match msg {
-        Msg::Increment => {
-            state.count += 1;
-            cx.command(Command::custom("counter.incremented"));
-        }
+        Msg::Increment => state.count += 1,
     }
 }
 
-native_window("Counter")
-    .stateful_view(State { count: 0 }, view, update)
-    .app_command_executor(NativeWindowRuntimeDriver::new())
-    .run()?;
-# Ok::<(), zsui::ZsuiError>(())
+fn main() -> zsui::ZsuiResult<()> {
+    native_window("Counter")
+        .size(480, 320)
+        .stateful_view(State { count: 0 }, view, update)
+        .run()?;
+    Ok(())
+}
 ```
 
-For codebases that want compile-time content enforcement, use the opt-in
-typestate entry point. `build`, `run` and `run_smoke` do not exist until one of
-the content methods changes the builder to `NativeWindowContentReady`:
+状态所有权、消息来源和修改入口都可以被 Rust 与 rust-analyzer 检查。
 
-```rust,no_run
-use zsui::{text, typed_native_window};
+## 按需编译
 
-typed_native_window("Strict Window")
-    .size(640, 420)
-    .view(text::<()>("Ready"))
-    .run()?;
-# Ok::<(), zsui::ZsuiError>(())
-```
-
-When a native smoke path needs direct UI command routing, use the command-view
-variant. It keeps widget input typed while emitting reusable `UiCommand`s:
-
-```rust,no_run
-use zsui::{
-    button, column, native_window, text, CommandId, NativeWindowRuntimeDriver, UiCommand,
-    WidgetId,
-};
-
-native_window("Example")
-    .size(900, 620)
-    .ui_command_view(column(vec![
-        text::<UiCommand>("Settings"),
-        button("Save")
-            .id(WidgetId::new(1))
-            .on_click(UiCommand::app(CommandId("app.save"))),
-    ]))
-    .ui_command_executor(NativeWindowRuntimeDriver::new())
-    .run()?;
-# Ok::<(), zsui::ZsuiError>(())
-```
-
-Use a small feature set when embedding ZSUI into another Rust app:
+直接从 GitHub 使用：
 
 ```toml
 [dependencies]
-zsui = { version = "0.1", default-features = false, features = [
+zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, features = [
     "window",
     "button",
-    "toggle",
-    "list",
+    "label",
     "scroll",
+    "list",
     "dark-mode",
 ] }
 ```
 
-The intended shape is Rust-style compile-on-demand: default features stay small
-(`window`, `button`, `label`), heavy backend dependencies are optional, and
-advanced widgets are behind explicit feature gates. This is feature/crate based
-trimming, not a promise that Cargo magically removes every unused symbol inside
-an enabled crate. The `window` feature selects Win32 on Windows and Winit on
-macOS/Linux through target-specific dependencies, so the one-line window entry
-does not require an extra backend feature on supported desktop targets. Cargo
-features are additive across the dependency graph, so
-large widgets and heavy native backends should move toward split crates or
-feature modules such as `zsui-core`, `zsui-shell`, `zsui-render`,
-`zsui-style`, `zsui-widgets-base`, `zsui-widgets-input`,
-`zsui-widgets-list` and `zsui-widgets-extra`.
+高级能力独立开启：
 
-## Rust-First Target
-
-ZSUI's long-term API target is not a C++/C# style inheritance tree. The
-framework should be built around trait surfaces, typed messages, explicit state,
-RAII-owned native resources, safe public APIs, `Result<T, ZsuiError>` failures,
-capability traits, feature-gated backends, theme tokens, typed units and strong
-IDs. It also preserves the simple `zsui::native_window(...).run()?` entry point
-for native desktop windows, treats Android and Harmony as explicit future
-Activity/Ability hosts, uses buffered no-flicker native rendering as the
-Windows baseline, and only adds wider platform API crates such as
-`windows-rs` when a concrete backend surface needs them. The modular target is
-a small facade with feature-gated crates/modules, not a monolithic always-on
-control registry.
-The machine-readable target list is exposed through
-`zsui_rust_first_goals()` and `zsui_rust_first_goal_names()`; the longer
-target narrative is in `docs/framework-goals.md`.
-The first concrete layer is now in `src/view.rs`, `src/app_command.rs`,
-`src/style.rs` and `src/geometry.rs`: `View<Msg>`, `WidgetId`, `AppCx`,
-`SharedAppCommandExecutor`, `ViewEventCx`,
-`ViewPaintCx`, `ViewInteractionPlan`, `Px`, `Dp`, `Dpi`, `ZsuiTheme` and
-tokenized color/radius/spacing primitives.
-For the WinUI-style self-drawn surface, `src/shell_layout.rs` now provides a
-product-neutral `ZsShellLayoutSpec`/`ZsNavigationScaffoldSpec` contract for
-left navigation, right content, grouped cards, content rows with description
-text, row accessories and action buttons. Its dimensions, card spacing,
-viewport mask and scrollbar math are maintained as shared framework behavior.
-The shell can also be attached as a live runtime with
-`NativeWindowBuilder::shell_layout(...)`. On Windows, navigation hover and
-selection, row accessories, wheel scrolling, scrollbar track clicks and thumb
-dragging update the buffered draw plan in the normal event loop. Run the
-standalone gallery with:
-
-```text
-cargo run --example navigation_shell_layout --features full
+```toml
+zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, features = [
+    "workbench",
+    "document-shell",
+    "calculator",
+    "windows-gdi",
+] }
 ```
 
-Use `--smoke` for an auto-closing native screenshot check or `--manifest` for
-the non-window JSON summary.
+未开启的可选依赖不会进入构建；同一依赖图中的 Cargo feature 会取并集，因此
+ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定后继续拆分较大的
+控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
+删除已启用 crate 中的每一个未调用符号。
 
-Audit a declaration before attaching it to a host:
+## 已有应用外壳
+
+| 能力 | 当前内容 | Feature |
+| --- | --- | --- |
+| 导航/卡片外壳 | 左侧导航、右侧内容、分组卡片、设置项、说明、操作区、滚动条 | `settings` / `full` |
+| 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
+| 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
+| 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
+| 基础 View | 文本、按钮、输入、复选、开关、列表、滚动和强类型事件 | 对应 widget feature |
+
+组件目录当前记录 48 个 WinUI 风格家族：20 个已有第一阶段运行面，8 个只有
+契约，20 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
+TreeView、DataGrid、WebView 等尚未完成的独立控件。
+
+查看机器可读目录：
 
 ```rust
-use zsui::{app, HostCapabilities, Window};
-
-let report = app("Example")
-    .window(Window::new("Example"))
-    .declaration_report_for(&HostCapabilities::windows_scaffold());
-
-assert!(report.is_valid());
-# Ok::<(), zsui::ZsuiError>(())
+let summary = zsui::zsui_component_catalog_summary();
+println!("{summary:#?}");
 ```
 
-## Current Scope
+## 真实示例
 
-- `WindowSpec` / `Window`
-- `WindowSpec::icon_path(...)` declaration validation and Win32 owned HICON
-  loading for window app icons
-- `TraySpec`
-- `MenuSpec` / `MenuItemSpec`
-- `HotkeySpec`
-- `ClipboardData`
-- `SettingsPageSpec` / `SettingsItemSpec`
-- `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec` for product-neutral
-  WinUI-style navigation/card layouts with grouped cards, content rows,
-  description text, row accessories and action-button areas
-- `Command` / `AppEvent`
-- `UiNode` / `UiNodeKind` declarative component trees
-- `HostCapabilities`
-- `ZsuiAppDeclarationReport` for structural declaration audits and host
-  degradation warnings
-- `ZsuiHost`, `MemoryHost` and `PlatformHost`
-- `NativeWindowHost` for a minimal real Windows/macOS/Linux window event loop
-- `NativeWindowRuntimeDriver` for wiring product adapters into the current
-  desktop native-window runtime boundary, including projected status menu and
-  settings declarations, status-menu command dispatch and settings-item updates
-  through native host operations
-- Android and Harmony capability scaffolds for future mobile runtime hosts
-- Android Activity and Harmony Ability scaffold manifests plus FFI/lifecycle/
-  surface/input bridge contracts through `mobile_runtime_host_scaffold()` and
-  `mobile_runtime_bridge_contract()`
-- Android/Harmony bridge parity reports through
-  `mobile_runtime_bridge_parity_report()` for checking scaffold/contract
-  metadata, required callback route kinds and pending FFI symbols without
-  claiming device runtime readiness
-- Android/Harmony bridge dispatch reports through
-  `mobile_runtime_bridge_dispatch_report()` for mapping required callback
-  symbols to lifecycle, surface, typed input and `NativeRuntimeDriver`
-  operations before real FFI code is added
-- Android/Harmony contract dispatch smoke through
-  `mobile_runtime_bridge_contract_smoke_report()` for locally replaying the
-  required bridge sequence without faking device proof
-- Android/Harmony contract artifact writing through
-  `write_mobile_runtime_bridge_contract_artifacts()` without generating device
-  launch, screenshot, lifecycle, surface or input proof; the local bundle also
-  includes `device-smoke-plan.json` and `agent-context.json` for AI handoff
-- Android/Harmony contract artifact review through
-  `review_mobile_runtime_bridge_contract_artifacts()` so local bridge artifacts
-  and expected JSON schemas can be validated separately from device smoke; the
-  `for_all` variants and CLI `all` target cover both Android and Harmony in one
-  run
-- Android/Harmony device-smoke plans and read-only artifact review through
-  `mobile_runtime_device_smoke_plan()` and
-  `mobile_runtime_device_smoke_trace_templates()` plus
-  `review_mobile_runtime_device_smoke_artifacts()` with schema checks for
-  device-sourced lifecycle, surface and input traces
-- shared geometry, command, event, lifecycle, layout, component, render, host
-  surface and native control protocols
-- Rust-first typed view builders and contexts through `View<Msg>`, `WidgetId`,
-  `AppCx`, `ViewEventCx`, `ViewPaintCx`, `column`, `row`, `text`, `button`,
-  `textbox`, `checkbox`, the owner-drawn `toggle`, feature-gated `scroll`
-  containers and `list`
-  selection
-- `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
-  `NativeDrawPlan` content used by the native smoke path
-- opt-in `typed_native_window(...)` typestate construction, where content is a
-  compile-time requirement before `build`, `run` or `run_smoke`; the ordinary
-  `native_window(...)` path remains available for empty native surfaces
-- `NativeWindowBuilder::stateful_view(...)` and `SharedLiveViewRuntime` for a
-  real `State -> Msg -> update -> rebuild/layout/paint` loop on Win32, including
-  resize/DPI surface refresh, native repaint, `AppCx::quit()` window closure
-  and `AppCx::command(...)` handoff through `SharedAppCommandExecutor`; attach a
-  handler with `NativeWindowBuilder::app_command_executor(...)`
-- `NativeWindowBuilder::ui_command_view(...)` and `ViewInteractionPlan` routing
-  for Win32 `WM_LBUTTONUP` clicks and focused `WM_CHAR` textbox input into
-  `ViewEventCx<UiCommand>` and reusable command ids; attach
-  `SharedUiCommandExecutor` through `ui_command_executor(...)` to execute them
-  through `NativeWindowRuntimeDriver`, a closure or
-  `ProductAdapterUiCommandExecutor`; checkbox clicks and
-  focused `WM_KEYDOWN` keyboard activation route to typed events when the
-  relevant widget features are enabled, Tab can traverse native focus targets,
-  list row selection can dispatch through the same command-backed view tree,
-  and `WM_MOUSEWHEEL` can route into typed scroll events for scroll containers
-- reusable `ZsToggleRenderPlan` geometry for the owner-drawn settings toggle;
-  the same plan drives Shell accessories and the
-  standalone feature-gated `toggle(...)` View widget
-- product adapter typed view smoke through `ProductViewAdapterHost`,
-  `ProductViewRuntimeSmokeRequest` and `examples/product_adapter_view.rs`
-- typed units and theme token primitives through `Px`, `Dp`, `Dpi`,
-  `UiLength`, `ZsuiTheme`, `ThemeColorToken`, `RadiusToken` and `SpacingToken`
-- product-neutral self-draw command plans (`NativeDrawPlan`,
-  `NativeDrawCommand`, `NativeDrawCommandSink`) and the Windows GDI
-  renderer/text layout sink in `src/windows_gdi_renderer.rs`
-- product-neutral WinUI-style shell layout plans in `src/shell_layout.rs`,
-  including left navigation, right content headers, grouped cards, rows,
-  descriptions, inline controls, action areas, viewport masks and scrollbars
-  projected to `NativeDrawPlan`
-- internal RAII wrappers for Win32/GDI buffered paint, window HDCs, compatible
-  memory DCs, smoke-screenshot HBITMAPs, owned main/quick HWND cleanup,
-  owned HICON app-icon resources loaded from icon paths, brushes, pens, fonts
-  and selected-object restoration
-- Win32 owned tray icon resources and `WindowsWin32StatusItemHost` backed by
-  `Shell_NotifyIconW`, wired into the direct Windows `NativeWindowHost` path
-  and optional `native_smoke_run --tray` status-item smoke, with native
-  command-id table routing, RAII popup-menu creation/cleanup and
-  `TrackPopupMenu` selection routing for status menus; target smoke for real
-  user popup selection is still pending
-- Win32 main/quick/transient window style, create-params,
-  message-loop and `NativeMainWindowHost`/`NativeTransientWindowHost`
-  implementations in `src/windows_win32_host.rs`
-- Win32 no-flicker paint can now consume product-neutral `NativeDrawPlan`
-  content through `create_windows_win32_for_specs_with_draw_plans(...)` and
-  `set_windows_win32_window_draw_plan(...)`
-- native host action/status/settings command contracts in
-  `src/native_host_actions.rs`
-- native adapter manifest, timer routing and reusable platform service host
-  contracts
-- machine-readable AI/agent context through `zsui_agent_context()` and
-  `zsui_agent_context_json()`
-- native target-smoke manifest planning through `native_host_smoke_plan()` and
-  `examples/native_smoke_manifest.rs`
-- target-smoke artifact writing through `write_native_host_smoke_artifacts()`
-  and `examples/native_smoke_record.rs`
-- first-pass auto-closing native smoke windows through
-  `NativeWindowSmokeRunOptions` and `examples/native_smoke_run.rs`
-- Windows `window.png` capture for native smoke artifacts through the direct
-  Win32 `HWND`
-- target-smoke artifact review through
-  `review_native_host_smoke_artifacts()` and `examples/native_smoke_review.rs`
-- product adapter and reusable runtime harness contracts for keeping product
-  state, settings, async events and AI/tool execution outside native hosts
-- product adapter runtime smoke reports through
-  `ProductAdapterRuntimeSmokeRequest` and `examples/product_adapter_smoke.rs`
-- Cargo feature manifest helpers through `zsui_feature_manifest()`,
-  `zsui_default_feature_names()` and `zsui_optional_dependency_feature_names()`
-- Rust-first framework goal helpers through `zsui_rust_first_goals()` and
-  `zsui_rust_first_goal_names()`
-
-`MemoryHost` is the deterministic test backend. `PlatformHost` is a small
-scaffold for the current target that records declarations and bridges text
-clipboard access when the `clipboard` feature is enabled. Without that feature
-it falls back to in-memory clipboard storage.
-
-## Repository Shape
-
-- `src/`: public framework API and host contracts.
-- `examples/basic.rs`: minimal declaration and memory-host run.
-- `examples/declaration_audit.rs`: JSON declaration audit report for host
-  readiness and AI/tooling checks.
-- `examples/rust_first_view.rs`: runnable typed `State`/`View<Msg>`/`AppCx`
-  update-and-repaint example with `--smoke` and `--manifest` modes.
-- `examples/list_selection.rs`: feature-gated typed list row selection example.
-- `examples/scroll_view.rs`: feature-gated scroll container layout, typed
-  scroll event, clipping and draw-plan example.
-- `examples/navigation_shell_layout.rs`: product-neutral WinUI-style
-  navigation/card shell layout projected to a native draw plan.
-- `examples/native_smoke_manifest.rs`: JSON manifest for target native host
-  smoke artifacts.
-- `examples/native_smoke_record.rs`: writes contract-level target smoke
-  artifacts without faking screenshots.
-- `examples/native_smoke_run.rs`: opens a real native smoke window, auto-closes
-  it, and records interaction artifacts.
-- `examples/native_smoke_review.rs`: reviews target smoke artifacts and reports
-  missing or invalid required proof files.
-- `examples/mobile_scaffold_manifest.rs`: JSON manifest for Android Activity
-  and Harmony Ability host scaffolds, bridge contracts with `--bridge`, parity
-  reports with `--parity`, dispatch reports with `--dispatch`, contract
-  dispatch smoke with `--dispatch-smoke`, local contract artifact writing with
-  `--write-contract` including device-smoke plans and agent context, local
-  contract artifact review with `--review-contract`, device smoke plans with
-  `--smoke`, device trace templates with `--trace-template` and artifact
-  review with `--review`; the write/review contract commands also accept
-  `all`.
-- `examples/product_adapter.rs`: product adapter plus reusable runtime harness
-  wiring without application-specific product code.
-- `examples/product_adapter_smoke.rs`: machine-readable runtime harness smoke
-  report covering startup, command dispatch, event polling, AI routing and
-  shutdown.
-- `examples/product_adapter_native_driver.rs`: product adapter smoke using
-  `NativeWindowRuntimeDriver` as the reusable native driver bridge.
-- `examples/product_adapter_view.rs`: product adapter smoke for typed
-  `View<Msg>` messages flowing through `AppCx` into reusable UI commands.
-- `docs/architecture.md`: framework boundary and layering rules.
-- `docs/framework-goals.md`: long-range Rust-first API and trimming target.
-- `docs/porting.md`: host implementation contract for new platform backends.
-- `docs/native-host-smoke.md`: target artifact contract before platform
-  completion claims.
-- `docs/ai-agent.md`: standalone guide for AI agents working on ZSUI.
-- `docs/skills/zsui-native-ui/`: skill-style AI handoff package for standalone
-  ZSUI development.
-
-ZSUI is designed so another Rust application can provide its own product
-adapter and choose a native host without placing storage, sync or business
-logic inside the framework.
-
-Verify every public single feature and the supported widget/backend
-combinations with:
+### 工作台
 
 ```powershell
+cargo run --example workbench_shell --features full
+```
+
+### 现代记事本
+
+```powershell
+cargo run --example zsui_notepad --features notepad-demo
+```
+
+它组合自绘文档外壳和 Windows 原生多行文本服务，保留 IME 与原生编辑行为。
+[测量说明](docs/notepad-demo.md)记录了代码量、包体和运行内存。
+
+### 现代计算器
+
+```powershell
+cargo run --example zsui_calculator --no-default-features --features calculator-demo
+```
+
+标准模式包含四则运算、上下文百分比、连续等号、倒数、平方、开方、内存、
+历史和键盘输入。一次本机 release 测量中，可执行文件为 0.28 MiB，任务管理器
+私有工作集为 1.24 MiB；这只是可复现的单机观测，不是所有设备上的固定值。
+[完整对比](docs/calculator-demo.md)同时记录了本机 Windows 计算器的独立进程与
+窗口宿主进程，避免混用不同内存指标。
+
+## 平台状态
+
+| 平台 | 当前状态 | 说明 |
+| --- | --- | --- |
+| Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
+| macOS | 第一阶段桌面路径 | 当前通过 Winit 启动；完整 AppKit 绑定与目标机证据仍待完成 |
+| Linux | 第一阶段桌面路径 | 当前通过 Winit 启动；完整 GTK/libadwaita 绑定仍待完成 |
+| Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
+| Harmony | 宿主契约 | Ability/FFI 与真实设备运行仍待完成 |
+
+平台能力必须经过代码、目标机 smoke 和系统集成三层证据。仅有声明或脚手架时，
+不会标记为完成。
+
+## 为 AI 节约上下文
+
+AI 不应该每次先读取整个仓库。ZSUI 提供了一个小型入口和按任务选择的上下文包：
+
+1. 首次只读 [`docs/ai-agent.md`](docs/ai-agent.md)。
+2. 查看可选任务包：
+
+   ```powershell
+   .\scripts\ai-context.ps1 -List
+   ```
+
+3. 选择当前任务，例如：
+
+   ```powershell
+   .\scripts\ai-context.ps1 -Pack calculator
+   .\scripts\ai-context.ps1 -Pack windows-renderer -IncludeOptional
+   ```
+
+4. 只读取脚本返回的 required 文件；遇到阻塞再读取 optional 文件。
+
+任务包清单位于 [`docs/ai/context-packs.json`](docs/ai/context-packs.json)。完整进度、
+平台与接口参考被放在按需文档中，不再塞进默认 AI 首读文件。这与控件 feature
+的思路一致：先加载最小核心，再按任务组合需要的上下文。
+
+## 目录
+
+- `src/`：公共 API、运行时、布局、协议和平台后端
+- `examples/`：可运行的窗口、控件、工作台、记事本和计算器
+- `docs/`：架构、目标机验证、应用测量和 AI 文档
+- `docs/ai-agent.md`：AI 最小首读入口
+- `docs/ai/context-packs.json`：AI 按需上下文包
+- `scripts/check-feature-matrix.ps1`：全部公开 feature 检查
+- `scripts/ai-context.ps1`：按任务输出最小文件集合
+
+核心边界请阅读：
+
+- [架构](docs/architecture.md)
+- [Rust-first 目标](docs/framework-goals.md)
+- [平台宿主约束](docs/porting.md)
+- [目标机验证](docs/native-host-smoke.md)
+
+## 验证
+
+```powershell
+cargo fmt --check
+cargo test --no-default-features
+cargo test --features full
+.\scripts\ai-context.ps1 -Validate
 .\scripts\check-feature-matrix.ps1 -Locked
 ```
 
-The same matrix runs in `.github/workflows/ci.yml`, together with default,
-no-default, full Windows and Linux/macOS desktop checks.
+CI 同时检查默认/无默认 feature、Windows 全功能构建、feature 矩阵，以及
+Linux/macOS 桌面目标。
 
-On Windows, the current first-pass native smoke run can produce the full target
-artifact set:
+## 当前边界
 
-```powershell
-cargo run --example native_smoke_run -- windows
-cargo run --example native_smoke_review -- windows
-```
+- Windows 仍需更完整的 UI Automation、暗色/高对比度和高级输入证据
+- 通用文本编辑器、文件对话框和文档生命周期服务仍需继续收口
+- DatePicker、TreeView、DataGrid、WebView 等高级控件尚未完整实现
+- macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
+- 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块
 
-To additionally request a real Win32 status item during the smoke run:
+## 赞赏支持
 
-```powershell
-cargo run --example native_smoke_run -- windows --tray
-```
+如果这个项目对你有帮助，欢迎支持我继续完善 Rust 原生 UI 能力。
 
-To attach a typed Rust view draw plan and route Win32 input into `UiCommand`s
-during the smoke run:
+![赞赏支持](docs/images/donate.png)
 
-```powershell
-cargo run --example native_smoke_run -- windows --view
-```
+## 许可证
 
-To run the dedicated typed scroll smoke path:
-
-```powershell
-cargo run --features "scroll,label" --example native_smoke_run -- windows --scroll-view
-```
-
-When the `textbox` feature is enabled, the same example also routes focused
-`WM_CHAR` text input through `ViewEventCx<UiCommand>`.
-When the `checkbox` feature is enabled, it also routes checkbox toggles through
-typed `Toggled` events.
-When the `toggle` feature is enabled, the standalone owner-drawn switch uses the
-same geometry as the settings Shell and routes click/Space activation
-through typed `Toggled` events.
-When the `list` feature is enabled, it records typed list row selection through
-the same command route, including Up/Down keyboard selection between rows. It
-also records Tab focus traversal and focused `WM_KEYDOWN` keyboard activation
-for the typed view.
-The `--scroll-view` path records `WM_MOUSEWHEEL` to typed `ScrollBy` event
-routing and a reusable scroll `UiCommand`.
+本项目使用 [GPL-3.0-only](LICENSE) 许可证。

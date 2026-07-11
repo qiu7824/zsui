@@ -1324,11 +1324,16 @@ fn scroll_max_offset_y(bounds: Option<Rect>, content_height: Option<Dp>) -> Dp {
 
 fn color_role_for_token(token: ThemeColorToken) -> ColorRole {
     match token {
-        ThemeColorToken::Surface | ThemeColorToken::SurfaceRaised => ColorRole::Surface,
+        ThemeColorToken::Surface => ColorRole::Surface,
+        ThemeColorToken::SurfaceRaised => ColorRole::SurfaceRaised,
         ThemeColorToken::TextPrimary => ColorRole::PrimaryText,
         ThemeColorToken::TextSecondary => ColorRole::SecondaryText,
         ThemeColorToken::Accent => ColorRole::Accent,
+        ThemeColorToken::AccentText => ColorRole::AccentText,
         ThemeColorToken::Control => ColorRole::Control,
+        ThemeColorToken::Border => ColorRole::Border,
+        ThemeColorToken::Success => ColorRole::Success,
+        ThemeColorToken::Warning => ColorRole::Warning,
         ThemeColorToken::Danger => ColorRole::Danger,
     }
 }
@@ -1498,6 +1503,27 @@ mod tests {
                 Msg::NameChanged("ZSUI".to_string()),
                 Msg::DarkModeChanged(true)
             ]
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "textbox", not(feature = "checkbox")))]
+    fn textbox_maps_runtime_value_without_other_input_features() {
+        let name_id = WidgetId::new(2);
+        let mut view = textbox("").id(name_id).on_change(Msg::NameChanged);
+        let mut events = ViewEventCx::new();
+
+        view.event(
+            &mut events,
+            &ViewEvent::TextChanged {
+                widget: name_id,
+                value: "ZSUI".to_string(),
+            },
+        );
+
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameChanged("ZSUI".to_string())]
         );
     }
 

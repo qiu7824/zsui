@@ -1,5 +1,8 @@
 use serde::Serialize;
 
+#[cfg(feature = "workbench")]
+use crate::workbench::ZsWorkbenchSpec;
+
 use crate::{
     app::{app, ZsuiApp, ZsuiAppRuntime},
     app_command::{app_command_name, AppCommandExecutor, SharedAppCommandExecutor},
@@ -1305,6 +1308,17 @@ impl NativeWindowBuilder {
         self
     }
 
+    #[cfg(feature = "workbench")]
+    pub fn workbench(self, spec: ZsWorkbenchSpec) -> Self {
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: self.window.width as i32,
+            height: self.window.height as i32,
+        };
+        self.draw_plan(spec.native_draw_plan(surface, Dpi::standard()))
+    }
+
     pub fn window_spec(&self) -> &WindowSpec {
         &self.window
     }
@@ -1519,6 +1533,14 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
         spec: ZsShellLayoutSpec,
     ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
         TypedNativeWindowBuilder::ready(self.inner.shell_layout(spec))
+    }
+
+    #[cfg(feature = "workbench")]
+    pub fn workbench(
+        self,
+        spec: ZsWorkbenchSpec,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
+        TypedNativeWindowBuilder::ready(self.inner.workbench(spec))
     }
 
     pub fn window_spec(&self) -> &WindowSpec {

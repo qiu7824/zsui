@@ -10,13 +10,18 @@ pub mod agent_context;
 pub mod android_activity_host;
 pub mod app;
 pub mod app_command;
+#[cfg(feature = "calculator")]
+pub mod calculator;
 pub mod capability;
 pub mod clipboard;
 pub mod command_protocol;
+pub mod component_catalog;
 pub mod component_protocol;
 pub mod components;
 pub mod control_protocol;
 pub mod core;
+#[cfg(feature = "document-shell")]
+pub mod document_shell;
 pub mod event_protocol;
 pub mod feature_manifest;
 pub mod framework_goals;
@@ -49,6 +54,8 @@ pub mod window;
 pub mod windows_gdi_renderer;
 #[cfg(all(windows, feature = "windows-win32"))]
 pub mod windows_win32_host;
+#[cfg(feature = "workbench")]
+pub mod workbench;
 
 pub use agent_context::{
     zsui_agent_context, zsui_agent_context_json, zsui_completion_areas,
@@ -72,11 +79,21 @@ pub use app::{
 pub use app_command::{
     app_command_name, AppCommandDispatchReport, AppCommandExecutor, SharedAppCommandExecutor,
 };
+#[cfg(feature = "calculator")]
+pub use calculator::{
+    ZsCalculatorAction, ZsCalculatorBinaryOperator, ZsCalculatorButtonKind,
+    ZsCalculatorButtonRegion, ZsCalculatorEngine, ZsCalculatorHistoryEntry,
+    ZsCalculatorInteraction, ZsCalculatorLayout, ZsCalculatorShellSpec,
+};
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
 pub use clipboard::ClipboardData;
 pub use command_protocol::{
     CommandId, CommandPayload, CommandQueue, CommandScope, SharedUiCommandExecutor, UiCommand,
     UiCommandDispatchReport, UiCommandExecutor,
+};
+pub use component_catalog::{
+    zsui_component_catalog, zsui_component_catalog_summary, ZsuiComponentCatalogSummary,
+    ZsuiComponentCategory, ZsuiComponentDescriptor, ZsuiComponentStatus, ZSUI_COMPONENT_CATALOG,
 };
 pub use component_protocol::Component;
 #[cfg(feature = "label")]
@@ -91,6 +108,11 @@ pub use control_protocol::{
 pub use core::{
     AppEvent, Command, DialogButtons, DialogLevel, DialogResponse, FileDialogFilter,
     FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId, ZsuiError, ZsuiResult,
+};
+#[cfg(feature = "document-shell")]
+pub use document_shell::{
+    ZsDocumentShellCommand, ZsDocumentShellCommandRegion, ZsDocumentShellInteraction,
+    ZsDocumentShellLayout, ZsDocumentShellSpec,
 };
 pub use event_protocol::{
     ComponentPhase, KeyState, LifecycleEvent, LifecycleState, MouseButton, UiEvent,
@@ -302,8 +324,12 @@ pub use shell_layout::{
     ZsShellPointerDownTarget, ZsShellPointerMoveTransition, ZsShellRowAccessory, ZsShellRuntime,
 };
 pub use style::{
-    RadiusToken, SpacingToken, ThemeColorToken, ZsuiColorTokens, ZsuiRadiusTokens,
-    ZsuiSpacingTokens, ZsuiTheme,
+    ControlMetricToken, RadiusToken, SpacingToken, ThemeColorToken, TypographyToken,
+    ZsuiColorTokens, ZsuiControlMetrics, ZsuiRadiusTokens, ZsuiSpacingTokens, ZsuiTheme,
+    ZsuiTypographyStyle, ZsuiTypographyTokens, ZSUI_FLUENT_CARD_RADIUS,
+    ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT, ZSUI_FLUENT_CONTROL_RADIUS, ZSUI_FLUENT_GRID_UNIT,
+    ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, ZSUI_FLUENT_SMALL_ICON_SIZE,
+    ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
 };
 pub use timer_protocol::{
     main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
@@ -363,6 +389,20 @@ pub use windows_win32_host::{
     WindowsWin32ViewInputDispatchReport, WindowsWin32ViewInputRoute, WindowsWin32WindowStylePlan,
     WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,
     ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS, ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+};
+#[cfg(feature = "workbench")]
+pub use workbench::{
+    zs_workbench_event_for_region, zs_workbench_layout, zs_workbench_native_draw_plan,
+    ZsWorkbenchActionSpec, ZsWorkbenchBlockLayout, ZsWorkbenchComposerSpec,
+    ZsWorkbenchContentBlock, ZsWorkbenchConversationGroupSpec, ZsWorkbenchConversationSpec,
+    ZsWorkbenchIcon, ZsWorkbenchInspectorSpec, ZsWorkbenchInteractionEvent,
+    ZsWorkbenchInteractionUpdate, ZsWorkbenchLayoutMetrics, ZsWorkbenchLayoutPlan,
+    ZsWorkbenchLayoutRegion, ZsWorkbenchMessageLayout, ZsWorkbenchMessageRole,
+    ZsWorkbenchMessageSpec, ZsWorkbenchNoticeLevel, ZsWorkbenchRegionKind, ZsWorkbenchRuntime,
+    ZsWorkbenchSidebarSpec, ZsWorkbenchSpec, ZsWorkbenchToolStatus,
+    ZS_WORKBENCH_BASE_SIDEBAR_WIDTH, ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH,
+    ZS_WORKBENCH_COMPOSER_HEIGHT, ZS_WORKBENCH_CONTENT_MAX_WIDTH, ZS_WORKBENCH_INSPECTOR_WIDTH,
+    ZS_WORKBENCH_TOP_BAR_HEIGHT,
 };
 
 #[cfg(test)]

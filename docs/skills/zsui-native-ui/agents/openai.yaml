@@ -1,4 +1,4 @@
 interface:
   display_name: "ZSUI Native UI"
   short_description: "Work on standalone ZSUI native UI contracts and hosts."
-  default_prompt: "Use this skill to modify or verify ZSUI native UI framework surfaces without adding product behavior."
+  default_prompt: "Read docs/ai-agent.md, select one task context pack, then modify or verify ZSUI without adding product behavior."

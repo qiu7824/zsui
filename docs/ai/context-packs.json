@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "bootstrap": "docs/ai-agent.md",
+  "policy": {
+    "read_required_first": true,
+    "read_optional_only_when_blocked": true,
+    "exclude_by_default": [
+      "target/",
+      "comparisons/*/target/",
+      ".git/"
+    ]
+  },
+  "packs": [
+    {
+      "id": "quickstart",
+      "purpose": "Public API, one-line native windows and basic declarations",
+      "required": [
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/native.rs"
+      ],
+      "optional": [
+        "examples/basic.rs",
+        "examples/rust_first_view.rs",
+        "README.md"
+      ],
+      "verify": [
+        "cargo test --no-default-features --quiet",
+        "cargo test --quiet"
+      ]
+    },
+    {
+      "id": "features",
+      "purpose": "Cargo features, optional dependencies and compile-time trimming",
+      "required": [
+        "Cargo.toml",
+        "src/feature_manifest.rs",
+        "scripts/check-feature-matrix.ps1"
+      ],
+      "optional": [
+        ".github/workflows/ci.yml",
+        "docs/architecture.md",
+        "docs/framework-goals.md"
+      ],
+      "verify": [
+        ".\\scripts\\check-feature-matrix.ps1 -Locked",
+        "cargo test --features full --quiet"
+      ]
+    },
+    {
+      "id": "view-widgets",
+      "purpose": "Typed View, State/Msg/update and basic widget behavior",
+      "required": [
+        "src/view.rs",
+        "src/components.rs",
+        "src/widget_render.rs",
+        "src/component_catalog.rs"
+      ],
+      "optional": [
+        "src/native.rs",
+        "examples/rust_first_view.rs",
+        "examples/list_selection.rs",
+        "examples/scroll_view.rs"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo run --example rust_first_view --features full -- --smoke"
+      ]
+    },
+    {
+      "id": "navigation-shell",
+      "purpose": "Navigation, grouped cards, settings rows and scrolling",
+      "required": [
+        "src/shell_layout.rs",
+        "examples/navigation_shell_layout.rs"
+      ],
+      "optional": [
+        "src/style.rs",
+        "src/icon.rs",
+        "src/windows_win32_host.rs"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo run --example navigation_shell_layout --features full -- --smoke"
+      ]
+    },
+    {
+      "id": "workbench",
+      "purpose": "Conversation/task workbench, composer and inspector shell",
+      "required": [
+        "src/workbench.rs",
+        "examples/workbench_shell.rs"
+      ],
+      "optional": [
+        "src/style.rs",
+        "src/icon.rs",
+        "src/component_catalog.rs",
+        "src/windows_win32_host.rs"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo run --example workbench_shell --features full -- --smoke"
+      ]
+    },
+    {
+      "id": "document-shell",
+      "purpose": "Document chrome, native editor inset and notepad benchmark",
+      "required": [
+        "src/document_shell.rs",
+        "examples/zsui_notepad.rs",
+        "examples/zsui_notepad/windows.rs",
+        "docs/notepad-demo.md"
+      ],
+      "optional": [
+        "src/windows_gdi_renderer.rs",
+        "src/icon.rs",
+        "scripts/measure-notepad-comparison.ps1"
+      ],
+      "verify": [
+        "cargo test --example zsui_notepad --no-default-features --features notepad-demo --quiet",
+        "cargo run --example zsui_notepad --no-default-features --features notepad-demo -- --smoke"
+      ]
+    },
+    {
+      "id": "calculator",
+      "purpose": "Decimal engine, calculator shell and local comparison",
+      "required": [
+        "src/calculator.rs",
+        "examples/zsui_calculator.rs",
+        "examples/zsui_calculator/windows.rs",
+        "docs/calculator-demo.md"
+      ],
+      "optional": [
+        "src/windows_gdi_renderer.rs",
+        "src/icon.rs",
+        "scripts/measure-calculator-comparison.ps1"
+      ],
+      "verify": [
+        "cargo test --lib --no-default-features --features calculator calculator --quiet",
+        "cargo run --example zsui_calculator --no-default-features --features calculator-demo -- --smoke"
+      ]
+    },
+    {
+      "id": "windows-renderer",
+      "purpose": "Win32 host, GDI+ renderer, no-flicker paint, DPI and input",
+      "required": [
+        "src/windows_gdi_renderer.rs",
+        "src/windows_win32_host.rs",
+        "src/render_protocol.rs",
+        "src/native.rs"
+      ],
+      "optional": [
+        "src/style.rs",
+        "src/icon.rs",
+        "src/native_smoke.rs",
+        "docs/native-host-smoke.md"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo run --example native_smoke_run --features full -- windows",
+        "cargo run --example native_smoke_review --features full -- windows"
+      ]
+    },
+    {
+      "id": "desktop-hosts",
+      "purpose": "Windows, macOS and Linux host/capability boundaries",
+      "required": [
+        "src/native_hosts.rs",
+        "src/native_host_launch.rs",
+        "src/native_adapter_manifest.rs",
+        "docs/porting.md"
+      ],
+      "optional": [
+        "src/windows_win32_host.rs",
+        "Cargo.toml",
+        "docs/native-host-smoke.md"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo check --features full"
+      ]
+    },
+    {
+      "id": "mobile-hosts",
+      "purpose": "Android Activity and Harmony Ability host contracts and proof",
+      "required": [
+        "src/mobile_host.rs",
+        "src/android_activity_host.rs",
+        "src/harmony_ability_host.rs",
+        "examples/mobile_scaffold_manifest.rs"
+      ],
+      "optional": [
+        "docs/native-host-smoke.md",
+        "src/agent_context.rs"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo run --example mobile_scaffold_manifest --features full -- all --review-contract"
+      ]
+    },
+    {
+      "id": "product-adapter",
+      "purpose": "Product boundary, runtime harness and command executors",
+      "required": [
+        "src/product_adapter.rs",
+        "src/app_command.rs",
+        "src/command_protocol.rs",
+        "examples/product_adapter.rs"
+      ],
+      "optional": [
+        "examples/product_adapter_smoke.rs",
+        "examples/product_adapter_view.rs",
+        "examples/product_adapter_native_driver.rs"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        "cargo run --example product_adapter_smoke --features full"
+      ]
+    },
+    {
+      "id": "completion-audit",
+      "purpose": "Full framework readiness, component counts and platform evidence",
+      "required": [
+        "docs/ai/reference.md",
+        "src/agent_context.rs",
+        "src/component_catalog.rs",
+        "src/feature_manifest.rs"
+      ],
+      "optional": [
+        "docs/architecture.md",
+        "docs/framework-goals.md",
+        "docs/native-host-smoke.md",
+        "src/native_adapter_manifest.rs"
+      ],
+      "verify": [
+        "cargo test --features full --quiet",
+        ".\\scripts\\check-feature-matrix.ps1 -Locked"
+      ]
+    },
+    {
+      "id": "release",
+      "purpose": "Repository-wide formatting, tests, docs and release checks",
+      "required": [
+        "Cargo.toml",
+        ".github/workflows/ci.yml",
+        "scripts/check-feature-matrix.ps1",
+        "README.md",
+        "README.en.md"
+      ],
+      "optional": [
+        "AGENTS.md",
+        "docs/ai-agent.md",
+        "docs/ai/context-packs.json",
+        "docs/gallery.md",
+        "docs/images",
+        "docs/native-host-smoke.md"
+      ],
+      "verify": [
+        "cargo fmt --all -- --check",
+        "cargo test --no-default-features --quiet",
+        "cargo test --features full --quiet",
+        ".\\scripts\\check-feature-matrix.ps1 -Locked",
+        "git diff --check"
+      ]
+    }
+  ]
+}

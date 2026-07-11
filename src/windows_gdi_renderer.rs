@@ -511,9 +511,15 @@ impl TextLayout for WindowsGdiTextLayout {
 pub struct WindowsGdiPalette {
     pub primary_text: Color,
     pub secondary_text: Color,
+    pub disabled_text: Color,
     pub accent: Color,
+    pub accent_text: Color,
     pub surface: Color,
+    pub surface_raised: Color,
     pub control: Color,
+    pub border: Color,
+    pub success: Color,
+    pub warning: Color,
     pub danger: Color,
 }
 
@@ -522,9 +528,15 @@ impl WindowsGdiPalette {
         match role {
             ColorRole::PrimaryText => self.primary_text,
             ColorRole::SecondaryText => self.secondary_text,
+            ColorRole::DisabledText => self.disabled_text,
             ColorRole::Accent => self.accent,
+            ColorRole::AccentText => self.accent_text,
             ColorRole::Surface => self.surface,
+            ColorRole::SurfaceRaised => self.surface_raised,
             ColorRole::Control => self.control,
+            ColorRole::Border => self.border,
+            ColorRole::Success => self.success,
+            ColorRole::Warning => self.warning,
             ColorRole::Danger => self.danger,
         }
     }
@@ -533,53 +545,48 @@ impl WindowsGdiPalette {
         match fill {
             NativeDrawFill::Color(color) => color,
             NativeDrawFill::Role(role) => self.resolve(role),
-            NativeDrawFill::RoleWithAlpha { role, alpha } => Color {
-                a: alpha,
-                ..self.resolve(role)
-            },
+            NativeDrawFill::RoleWithAlpha { role, alpha } => {
+                blend_color(self.resolve(role), self.surface, alpha)
+            }
         }
+    }
+}
+
+const fn blend_color(foreground: Color, background: Color, alpha: u8) -> Color {
+    const fn channel(foreground: u8, background: u8, alpha: u8) -> u8 {
+        let alpha = alpha as u32;
+        (((foreground as u32 * alpha) + (background as u32 * (255 - alpha)) + 127) / 255) as u8
+    }
+
+    Color {
+        r: channel(foreground.r, background.r, alpha),
+        g: channel(foreground.g, background.g, alpha),
+        b: channel(foreground.b, background.b, alpha),
+        a: 255,
     }
 }
 
 impl Default for WindowsGdiPalette {
     fn default() -> Self {
+        Self::from_theme(&crate::ZsuiTheme::light())
+    }
+}
+
+impl WindowsGdiPalette {
+    pub fn from_theme(theme: &crate::ZsuiTheme) -> Self {
         Self {
-            primary_text: Color {
-                r: 32,
-                g: 32,
-                b: 32,
-                a: 255,
-            },
-            secondary_text: Color {
-                r: 96,
-                g: 96,
-                b: 96,
-                a: 255,
-            },
-            accent: Color {
-                r: 0,
-                g: 120,
-                b: 212,
-                a: 255,
-            },
-            surface: Color {
-                r: 248,
-                g: 248,
-                b: 248,
-                a: 255,
-            },
-            control: Color {
-                r: 238,
-                g: 238,
-                b: 238,
-                a: 255,
-            },
-            danger: Color {
-                r: 196,
-                g: 43,
-                b: 28,
-                a: 255,
-            },
+            primary_text: theme.colors.text_primary,
+            secondary_text: theme.colors.text_secondary,
+            disabled_text: blend_color(theme.colors.text_secondary, theme.colors.surface, 96),
+            accent: theme.colors.accent,
+            accent_text: theme.colors.accent_text,
+            surface: theme.colors.surface,
+            surface_raised: theme.colors.surface_raised,
+            control: theme.colors.control,
+            border: theme.colors.border,
+            success: theme.colors.success,
+            warning: theme.colors.warning,
+            danger: theme.colors.danger,
         }
     }
 }
@@ -601,7 +608,7 @@ impl WindowsGdiStyleResolver {
 
 impl Default for WindowsGdiStyleResolver {
     fn default() -> Self {
-        Self::new("Segoe UI", WindowsGdiPalette::default())
+        Self::new("Segoe UI Variable Text", WindowsGdiPalette::default())
     }
 }
 
@@ -610,7 +617,10 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
         let size = match style.role {
             crate::TextRole::Body => 14.0,
             crate::TextRole::Caption => 12.0,
-            crate::TextRole::Title => 18.0,
+            crate::TextRole::BodyLarge => 18.0,
+            crate::TextRole::Subtitle => 20.0,
+            crate::TextRole::Title => 28.0,
+            crate::TextRole::Display => 44.0,
             crate::TextRole::Button => 14.0,
             crate::TextRole::Icon => 16.0,
             crate::TextRole::Monospace => 13.0,
@@ -618,7 +628,7 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
         TextStyle {
             font_family: match style.role {
                 crate::TextRole::Monospace => "Consolas".to_string(),
-                crate::TextRole::Icon => "Segoe MDL2 Assets".to_string(),
+                crate::TextRole::Icon => "Segoe Fluent Icons".to_string(),
                 _ => self.font_family.clone(),
             },
             size,
@@ -648,7 +658,7 @@ impl WindowsGdiDrawSink {
         Self {
             renderer: WindowsGdiRenderer::new(dc),
             palette,
-            style_resolver: WindowsGdiStyleResolver::new("Segoe UI", palette),
+            style_resolver: WindowsGdiStyleResolver::new("Segoe UI Variable Text", palette),
             operation_log: Vec::new(),
         }
     }
@@ -720,16 +730,42 @@ impl WindowsGdiDrawSink {
         if self.renderer.hdc().is_null() {
             return;
         }
-        let _mode = match command.color_mode {
-            NativeIconColorMode::ThemeAware | NativeIconColorMode::Original => command.color_mode,
-        };
-        let Some(bytes) = command.icon.png_24_bytes() else {
+        if command.color_mode == NativeIconColorMode::Original && self.draw_original_icon(command) {
             return;
+        }
+        self.draw_fluent_icon(command);
+    }
+
+    fn draw_original_icon(&mut self, command: &NativeDrawIconCommand) -> bool {
+        let Some(bytes) = command.icon.png_24_bytes() else {
+            return false;
         };
         let Some((width, height, bgra)) = decode_png_to_bgra(bytes) else {
-            return;
+            return false;
         };
         stretch_top_down_32bpp(self.renderer.hdc(), command.bounds, width, height, &bgra);
+        true
+    }
+
+    fn draw_fluent_icon(&mut self, command: &NativeDrawIconCommand) {
+        let size = command.bounds.width.min(command.bounds.height).max(1) as f32;
+        let style = TextStyle {
+            font_family: "Segoe Fluent Icons".to_string(),
+            size,
+            weight: TextWeight::Regular,
+            color: self.palette.resolve(command.color),
+            horizontal_align: HorizontalAlign::Center,
+            vertical_align: VerticalAlign::Center,
+            wrap: TextWrap::NoWrap,
+            ellipsis: false,
+        };
+        self.renderer.draw_text(
+            &TextRun {
+                text: command.icon.windows_fluent_glyph().to_string(),
+                bounds: command.bounds,
+            },
+            &style,
+        );
     }
 }
 
@@ -778,6 +814,7 @@ fn font_weight(weight: TextWeight) -> i32 {
     match weight {
         TextWeight::Regular => 400,
         TextWeight::Medium => 500,
+        TextWeight::Semibold => 600,
         TextWeight::Bold => 700,
     }
 }
@@ -988,7 +1025,7 @@ mod tests {
     }
 
     #[test]
-    fn icon_text_role_uses_mdl2_fallback_font() {
+    fn icon_text_role_uses_fluent_icon_font() {
         let style = WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle {
             role: crate::TextRole::Icon,
             color: ColorRole::PrimaryText,
@@ -999,8 +1036,60 @@ mod tests {
             ellipsis: false,
         });
 
-        assert_eq!(style.font_family, "Segoe MDL2 Assets");
+        assert_eq!(style.font_family, "Segoe Fluent Icons");
         assert_eq!(style.size, 16.0);
+    }
+
+    #[test]
+    fn fluent_type_ramp_uses_windows_11_sizes() {
+        let resolver = WindowsGdiStyleResolver::default();
+        let mut semantic = SemanticTextStyle::body();
+
+        assert_eq!(resolver.resolve_text_style(semantic).size, 14.0);
+        semantic.role = crate::TextRole::Caption;
+        assert_eq!(resolver.resolve_text_style(semantic).size, 12.0);
+        semantic.role = crate::TextRole::Subtitle;
+        assert_eq!(resolver.resolve_text_style(semantic).size, 20.0);
+        semantic.role = crate::TextRole::Title;
+        assert_eq!(resolver.resolve_text_style(semantic).size, 28.0);
+    }
+
+    #[test]
+    fn gdi_palette_is_resolved_from_shared_theme_tokens() {
+        let theme = crate::ZsuiTheme::light();
+        let palette = WindowsGdiPalette::from_theme(&theme);
+
+        assert_eq!(palette.surface, theme.colors.surface);
+        assert_eq!(palette.surface_raised, theme.colors.surface_raised);
+        assert_eq!(palette.border, theme.colors.border);
+        assert_eq!(palette.accent_text, theme.colors.accent_text);
+    }
+
+    #[test]
+    fn role_alpha_is_composited_before_gdi_drops_alpha() {
+        let palette = WindowsGdiPalette::default();
+
+        assert_eq!(
+            palette.resolve_fill(NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 0,
+            }),
+            palette.surface
+        );
+        assert_eq!(
+            palette.resolve_fill(NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 255,
+            }),
+            palette.accent
+        );
+        let subtle = palette.resolve_fill(NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Accent,
+            alpha: 32,
+        });
+        assert!(subtle.r < palette.surface.r);
+        assert!(subtle.b > palette.surface.b - 12);
+        assert_eq!(subtle.a, 255);
     }
 
     #[test]

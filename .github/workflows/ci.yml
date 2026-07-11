@@ -25,6 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - shell: pwsh
+        run: ./scripts/ai-context.ps1 -Validate
+      - shell: pwsh
         run: ./scripts/check-feature-matrix.ps1 -Locked
 
   full-windows:

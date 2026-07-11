@@ -47,6 +47,10 @@ The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error
 reporting, explicit context/state flow and typed capability traits.
+Before claiming component parity, compare the backend against
+`zsui_component_catalog()`. A contract-only component or a composite
+`workbench` draw plan does not prove native input, accessibility or target
+interaction support for its underlying WinUI analogue.
 It should also preserve the one-line `zsui::native_window(...).run()?` entry
 shape for ordinary apps, keep buffered no-flicker self-draw behavior as
 the Windows baseline, and add wider bindings such as `windows-rs` only when a

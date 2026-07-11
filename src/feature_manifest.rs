@@ -200,6 +200,30 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "desktop shell integration boundary",
         ),
         ZsuiCargoFeature::new(
+            "workbench",
+            Shell,
+            false,
+            Vec::new(),
+            vec!["button", "label", "scroll", "textbox", "style"],
+            "conversation and task workbench shell with navigation, timeline, composer and inspector",
+        ),
+        ZsuiCargoFeature::new(
+            "document-shell",
+            Shell,
+            false,
+            Vec::new(),
+            vec!["style"],
+            "self-drawn document tab, command bar, editor frame and status layout",
+        ),
+        ZsuiCargoFeature::new(
+            "calculator",
+            Shell,
+            false,
+            vec!["rust_decimal"],
+            vec!["style"],
+            "decimal calculator engine, Fluent shell layout, semantic draw plan and typed actions",
+        ),
+        ZsuiCargoFeature::new(
             "tray",
             Shell,
             false,
@@ -220,7 +244,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Shell,
             false,
             Vec::new(),
-            vec!["widgets-input", "widgets-list"],
+            vec!["widgets-input", "widgets-list", "toggle"],
             "settings page model and settings control declarations",
         ),
         ZsuiCargoFeature::new(
@@ -280,6 +304,22 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "native target-smoke artifact writing and review helpers",
         ),
         ZsuiCargoFeature::new(
+            "notepad-demo",
+            Tooling,
+            false,
+            Vec::new(),
+            vec!["windows-win32", "document-shell"],
+            "Windows native text-service benchmark and notepad application example",
+        ),
+        ZsuiCargoFeature::new(
+            "calculator-demo",
+            Tooling,
+            false,
+            Vec::new(),
+            vec!["windows-gdi", "calculator"],
+            "interactive Windows calculator example and local comparison target",
+        ),
+        ZsuiCargoFeature::new(
             "desktop-winit",
             Backend,
             false,
@@ -309,7 +349,15 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec![
-                "button", "label", "scroll", "list", "textbox", "checkbox", "table",
+                "button",
+                "label",
+                "scroll",
+                "list",
+                "textbox",
+                "checkbox",
+                "toggle",
+                "table",
+                "workbench",
             ],
             "explicit opt-in profile for all current widget feature gates",
         ),
@@ -321,7 +369,9 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             vec![
                 "all-widgets",
                 "clipboard",
+                "calculator",
                 "dark-mode",
+                "document-shell",
                 "desktop-winit",
                 "hotkey",
                 "mobile",
@@ -366,6 +416,7 @@ mod tests {
         let names = zsui_optional_dependency_feature_names();
 
         assert!(names.contains(&"clipboard"));
+        assert!(names.contains(&"calculator"));
         assert!(names.contains(&"image"));
         assert!(names.contains(&"desktop-winit"));
         assert!(names.contains(&"windows-gdi"));
@@ -383,6 +434,8 @@ mod tests {
 
         assert!(!all_widgets.default_enabled);
         assert!(all_widgets.enables.contains(&"textbox"));
+        assert!(all_widgets.enables.contains(&"toggle"));
         assert!(all_widgets.enables.contains(&"table"));
+        assert!(all_widgets.enables.contains(&"workbench"));
     }
 }

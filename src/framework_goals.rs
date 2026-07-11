@@ -44,8 +44,8 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Measure progress by standalone input-state-paint loops on real hosts, not by declaration or contract count.",
             "a ZSUI-only control gallery with native interaction, repaint and target smoke proof",
             "raising overall completion from manifests, AI metadata or mobile scaffolds that do not run on a target",
-            "examples/navigation_shell_layout.rs, src/shell_layout.rs, src/native.rs",
-            "finish the Windows gallery loop, DPI/IME/accessibility proof and then apply the same gate to AppKit, GTK, Android and Harmony",
+            "examples/navigation_shell_layout.rs, examples/workbench_shell.rs, examples/zsui_notepad.rs, examples/zsui_calculator.rs, src/shell_layout.rs, src/workbench.rs, src/document_shell.rs, src/calculator.rs, src/native.rs",
+            "attach the calculator runtime to the generic native builder, turn the notepad's native editor/file-dialog/lifecycle plumbing into reusable services, connect the workbench composer loop, then apply the same runtime gate to AppKit, GTK, Android and Harmony",
         ),
         ZsuiRustFirstGoal::new(
             "one_line_native_entrypoints",
@@ -82,7 +82,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
         ZsuiRustFirstGoal::new(
             "production_native_foundation",
             "Use proven native host and rendering behavior as the framework baseline while keeping product behavior outside ZSUI.",
-            "NativeDrawPlan, buffered no-flicker Win32/GDI painting, status/menu/settings contracts and owned native resources",
+            "NativeDrawPlan, buffered no-flicker Win32/GDI painting, reusable document/workbench/calculator shells, status/menu/settings contracts and owned native resources",
             "duplicating established host behavior or placing application storage and sync logic inside ZSUI",
             "src/render_protocol.rs, src/native_host_actions.rs, src/windows_gdi_renderer.rs, src/windows_win32_host.rs",
             "finish tray/menu/input host routes and keep buffered no-flicker self-draw as the Windows baseline",
@@ -176,6 +176,14 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "move heavy widgets into feature modules or crates while keeping every new public feature in the matrix gate",
         ),
         ZsuiRustFirstGoal::new(
+            "task_scoped_ai_context",
+            "Keep AI bootstrap context small and load implementation knowledge by task instead of reading the repository as one prompt.",
+            "docs/ai-agent.md plus one validated context pack with required paths, optional paths and focused checks",
+            "bulk-loading all source, documentation, examples, generated artifacts and readiness metadata before every task",
+            "AGENTS.md, docs/ai-agent.md, docs/ai/context-packs.json, scripts/ai-context.ps1",
+            "keep pack paths valid in CI, measure bootstrap size and split any pack that grows beyond one ownership boundary",
+        ),
+        ZsuiRustFirstGoal::new(
             "crate_split_architecture",
             "Let the framework grow through small feature-gated crates or modules instead of one untrimmed mega-crate.",
             "zsui-core, zsui-shell, zsui-render, zsui-style and widget-family crates such as zsui-widgets-input/list/extra",
@@ -210,7 +218,7 @@ mod tests {
     fn rust_first_goal_manifest_tracks_core_direction() {
         let names = zsui_rust_first_goal_names();
 
-        assert_eq!(names.len(), 20);
+        assert_eq!(names.len(), 21);
         assert!(names.contains(&"runnable_vertical_slices"));
         assert!(names.contains(&"one_line_native_entrypoints"));
         assert!(names.contains(&"composition_and_traits"));
@@ -219,6 +227,7 @@ mod tests {
         assert!(names.contains(&"production_native_foundation"));
         assert!(names.contains(&"mobile_native_hosts"));
         assert!(names.contains(&"feature_gated_platform_capabilities"));
+        assert!(names.contains(&"task_scoped_ai_context"));
         assert!(names.contains(&"crate_split_architecture"));
         assert!(names.contains(&"platform_api_on_demand"));
         assert!(names.contains(&"strong_typed_ids"));

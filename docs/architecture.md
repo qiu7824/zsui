@@ -141,6 +141,44 @@ accessory/action events, then replaces the buffered draw plan and invalidates
 the window. This closes the first visible input-state-paint loop while keeping
 application settings outside the framework.
 
+`src/workbench.rs` defines the higher-level desktop workbench family. Its
+declaration separates navigation history, message content blocks, composer
+actions and inspector content from application commands and persistence. The
+layout produces stable DPI-aware regions and a product-neutral
+`NativeDrawPlan`; `ZsWorkbenchRuntime` adds hit testing, bounded timeline
+scrolling, conversation selection, sidebar collapse and inspector-tab state.
+`NativeWindowBuilder::workbench(...)` is the compact static native-window entry
+while direct native event-loop routing remains a separate completion gate.
+
+`src/document_shell.rs` defines a smaller document-editor composite. It owns
+the DPI-aware tab strip, command bar, editor-frame inset, status surface,
+semantic icon commands and pointer hit regions. A host can place a native text
+service inside `ZsDocumentShellLayout::editor_content`, preserving IME and
+accessibility while the surrounding surface uses the buffered self-draw path.
+The shell does not own files, encodings, accelerator dispatch or platform
+handles; those remain host/application services.
+
+`src/calculator.rs` defines a feature-gated standard-calculator slice.
+`ZsCalculatorEngine` owns decimal values, pending operations, repeated equals,
+memory and history through typed actions. `ZsCalculatorShellSpec` owns the
+DPI-aware header, display, memory row, keypad, history panel, semantic draw
+plan and hit regions. The reusable layer has no raw HWND ownership; the Windows
+example currently supplies the mouse, keyboard and lifecycle loop. Scientific,
+programmer, graphing and conversion modes remain separate future surfaces.
+
+The workbench does not own private glyph strings or an independent visual
+palette. `src/style.rs` defines the shared Fluent grid, control/card radii,
+control metrics, type ramp and semantic colors. `src/icon.rs` defines semantic
+`ZsIcon` values and platform symbol names. A workbench draw plan emits
+`NativeDrawCommand::Icon`; the Windows GDI sink resolves that command with
+Segoe Fluent Icons and uses a raster asset only when `Original` color mode is
+requested. This mirrors the IconElement/IconSource boundary without exposing a
+Windows font code point in component code.
+
+`src/component_catalog.rs` is the authoritative component readiness inventory.
+It distinguishes first-pass runtime surfaces from contract-only and not-started
+components, so a WinUI analogue name is never sufficient evidence by itself.
+
 The reusable desktop bridge for product adapters is `NativeWindowRuntimeDriver`.
 It maps `ProductUiProjection` startup requests into ZSUI window, status
 item/menu and settings declarations and can be used by
@@ -199,18 +237,46 @@ zsui = { version = "0.1", default-features = false, features = [
 ```
 
 Optional dependencies must stay behind explicit feature gates: `clipboard`
-enables `arboard`, `image` enables `png`, `desktop-winit` enables `winit`, and
-`windows-gdi` enables `windows-sys`. Advanced controls should be gated by
+enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
+`desktop-winit` enables `winit`, and `windows-gdi` enables `windows-sys`.
+Advanced controls should be gated by
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control
 type at startup; public examples should import and build only the controls they
-use. The default `window` umbrella enables both desktop backend features while
+use. Composite conversation/task surfaces remain behind the `workbench`
+feature, document-editor chrome remains behind `document-shell`, and the
+decimal calculator slice remains behind `calculator`. The
+default `window` umbrella enables both desktop backend features while
 target-specific dependency sections ensure only the current platform library is
 compiled. Cargo features are unified across the dependency graph, so the long-term
 shape should prefer a small default `zsui` facade plus split crates or modules:
 `zsui-core`, `zsui-shell`, `zsui-render`, `zsui-style`,
 `zsui-widgets-base`, `zsui-widgets-input`, `zsui-widgets-list` and
 `zsui-widgets-extra`.
+
+## AI Context-Gated Reading
+
+AI documentation follows the same small-core principle as Cargo features.
+`docs/ai-agent.md` is the only bootstrap document. It contains stable boundary
+rules and a task router, not the full implementation/readiness narrative.
+
+`docs/ai/context-packs.json` maps each task family to:
+
+- a small required file set;
+- optional files that are loaded only after a concrete blocker;
+- focused verification commands.
+
+`scripts/ai-context.ps1` validates the manifest and prints one selected pack.
+`AGENTS.md` makes this sequence the default repository workflow. Detailed
+completion material stays in `docs/ai/reference.md`, while
+`src/agent_context.rs` remains available for tools that explicitly need the
+full machine-readable readiness model.
+
+Context packs are routing metadata, not ownership shortcuts. An agent still
+uses `rg` inside required files and can add another pack when a task genuinely
+crosses modules. Pack definitions should remain focused, use relative paths,
+avoid generated output and be validated in CI. New implementation history must
+not accumulate in the bootstrap document.
 
 ## Rust-First API Target
 

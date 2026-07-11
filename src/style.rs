@@ -1,6 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{render_protocol::Color, Dp};
+use crate::{render_protocol::Color, Dp, TextWeight};
+
+pub const ZSUI_FLUENT_GRID_UNIT: i32 = 4;
+pub const ZSUI_FLUENT_CONTROL_RADIUS: i32 = 4;
+pub const ZSUI_FLUENT_CARD_RADIUS: i32 = 8;
+pub const ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT: i32 = 28;
+pub const ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT: i32 = 32;
+pub const ZSUI_FLUENT_TOUCH_TARGET: i32 = 40;
+pub const ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT: i32 = 40;
+pub const ZSUI_FLUENT_SMALL_ICON_SIZE: i32 = 16;
+pub const ZSUI_FLUENT_STANDARD_ICON_SIZE: i32 = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeColorToken {
@@ -10,7 +20,31 @@ pub enum ThemeColorToken {
     TextSecondary,
     Accent,
     Control,
+    Border,
+    AccentText,
+    Success,
+    Warning,
     Danger,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TypographyToken {
+    Caption,
+    Body,
+    BodyStrong,
+    BodyLarge,
+    Subtitle,
+    Title,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ControlMetricToken {
+    CompactHeight,
+    StandardHeight,
+    TouchTarget,
+    NavigationRowHeight,
+    SmallIcon,
+    StandardIcon,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +73,38 @@ pub struct ZsuiColorTokens {
     pub text_secondary: Color,
     pub accent: Color,
     pub control: Color,
+    pub border: Color,
+    pub accent_text: Color,
+    pub success: Color,
+    pub warning: Color,
     pub danger: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsuiTypographyStyle {
+    pub size: Dp,
+    pub line_height: Dp,
+    pub weight: TextWeight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsuiTypographyTokens {
+    pub caption: ZsuiTypographyStyle,
+    pub body: ZsuiTypographyStyle,
+    pub body_strong: ZsuiTypographyStyle,
+    pub body_large: ZsuiTypographyStyle,
+    pub subtitle: ZsuiTypographyStyle,
+    pub title: ZsuiTypographyStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsuiControlMetrics {
+    pub compact_height: Dp,
+    pub standard_height: Dp,
+    pub touch_target: Dp,
+    pub navigation_row_height: Dp,
+    pub small_icon: Dp,
+    pub standard_icon: Dp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -64,22 +129,30 @@ pub struct ZsuiTheme {
     pub colors: ZsuiColorTokens,
     pub radius: ZsuiRadiusTokens,
     pub spacing: ZsuiSpacingTokens,
+    pub typography: ZsuiTypographyTokens,
+    pub controls: ZsuiControlMetrics,
 }
 
 impl ZsuiTheme {
     pub fn light() -> Self {
         Self {
             colors: ZsuiColorTokens {
-                surface: Color::rgb(248, 249, 250),
+                surface: Color::rgb(243, 243, 243),
                 surface_raised: Color::rgb(255, 255, 255),
-                text_primary: Color::rgb(24, 27, 31),
-                text_secondary: Color::rgb(91, 99, 110),
-                accent: Color::rgb(28, 98, 220),
-                control: Color::rgb(235, 238, 243),
-                danger: Color::rgb(196, 39, 53),
+                text_primary: Color::rgb(27, 27, 27),
+                text_secondary: Color::rgb(97, 97, 97),
+                accent: Color::rgb(0, 103, 192),
+                control: Color::rgb(255, 255, 255),
+                border: Color::rgb(209, 209, 209),
+                accent_text: Color::rgb(255, 255, 255),
+                success: Color::rgb(15, 123, 15),
+                warning: Color::rgb(157, 93, 0),
+                danger: Color::rgb(196, 43, 28),
             },
             radius: ZsuiRadiusTokens::default(),
             spacing: ZsuiSpacingTokens::default(),
+            typography: ZsuiTypographyTokens::default(),
+            controls: ZsuiControlMetrics::default(),
         }
     }
 
@@ -92,10 +165,16 @@ impl ZsuiTheme {
                 text_secondary: Color::rgb(177, 184, 194),
                 accent: Color::rgb(84, 150, 255),
                 control: Color::rgb(54, 58, 66),
+                border: Color::rgb(77, 77, 77),
+                accent_text: Color::rgb(0, 0, 0),
+                success: Color::rgb(108, 203, 95),
+                warning: Color::rgb(255, 200, 61),
                 danger: Color::rgb(255, 98, 116),
             },
             radius: ZsuiRadiusTokens::default(),
             spacing: ZsuiSpacingTokens::default(),
+            typography: ZsuiTypographyTokens::default(),
+            controls: ZsuiControlMetrics::default(),
         }
     }
 
@@ -107,7 +186,33 @@ impl ZsuiTheme {
             ThemeColorToken::TextSecondary => self.colors.text_secondary,
             ThemeColorToken::Accent => self.colors.accent,
             ThemeColorToken::Control => self.colors.control,
+            ThemeColorToken::Border => self.colors.border,
+            ThemeColorToken::AccentText => self.colors.accent_text,
+            ThemeColorToken::Success => self.colors.success,
+            ThemeColorToken::Warning => self.colors.warning,
             ThemeColorToken::Danger => self.colors.danger,
+        }
+    }
+
+    pub fn typography(&self, token: TypographyToken) -> ZsuiTypographyStyle {
+        match token {
+            TypographyToken::Caption => self.typography.caption,
+            TypographyToken::Body => self.typography.body,
+            TypographyToken::BodyStrong => self.typography.body_strong,
+            TypographyToken::BodyLarge => self.typography.body_large,
+            TypographyToken::Subtitle => self.typography.subtitle,
+            TypographyToken::Title => self.typography.title,
+        }
+    }
+
+    pub fn control_metric(&self, token: ControlMetricToken) -> Dp {
+        match token {
+            ControlMetricToken::CompactHeight => self.controls.compact_height,
+            ControlMetricToken::StandardHeight => self.controls.standard_height,
+            ControlMetricToken::TouchTarget => self.controls.touch_target,
+            ControlMetricToken::NavigationRowHeight => self.controls.navigation_row_height,
+            ControlMetricToken::SmallIcon => self.controls.small_icon,
+            ControlMetricToken::StandardIcon => self.controls.standard_icon,
         }
     }
 
@@ -141,8 +246,8 @@ impl Default for ZsuiTheme {
 impl Default for ZsuiRadiusTokens {
     fn default() -> Self {
         Self {
-            small: Dp::new(4.0),
-            medium: Dp::new(8.0),
+            small: Dp::new(ZSUI_FLUENT_CONTROL_RADIUS as f32),
+            medium: Dp::new(ZSUI_FLUENT_CARD_RADIUS as f32),
             large: Dp::new(12.0),
             pill: Dp::new(999.0),
         }
@@ -152,11 +257,47 @@ impl Default for ZsuiRadiusTokens {
 impl Default for ZsuiSpacingTokens {
     fn default() -> Self {
         Self {
-            xs: Dp::new(4.0),
-            sm: Dp::new(8.0),
-            md: Dp::new(12.0),
-            lg: Dp::new(16.0),
-            xl: Dp::new(24.0),
+            xs: Dp::new(ZSUI_FLUENT_GRID_UNIT as f32),
+            sm: Dp::new((ZSUI_FLUENT_GRID_UNIT * 2) as f32),
+            md: Dp::new((ZSUI_FLUENT_GRID_UNIT * 3) as f32),
+            lg: Dp::new((ZSUI_FLUENT_GRID_UNIT * 4) as f32),
+            xl: Dp::new((ZSUI_FLUENT_GRID_UNIT * 6) as f32),
+        }
+    }
+}
+
+impl Default for ZsuiTypographyTokens {
+    fn default() -> Self {
+        Self {
+            caption: ZsuiTypographyStyle::new(12.0, 16.0, TextWeight::Regular),
+            body: ZsuiTypographyStyle::new(14.0, 20.0, TextWeight::Regular),
+            body_strong: ZsuiTypographyStyle::new(14.0, 20.0, TextWeight::Semibold),
+            body_large: ZsuiTypographyStyle::new(18.0, 24.0, TextWeight::Regular),
+            subtitle: ZsuiTypographyStyle::new(20.0, 28.0, TextWeight::Semibold),
+            title: ZsuiTypographyStyle::new(28.0, 36.0, TextWeight::Semibold),
+        }
+    }
+}
+
+impl ZsuiTypographyStyle {
+    pub const fn new(size: f32, line_height: f32, weight: TextWeight) -> Self {
+        Self {
+            size: Dp::new(size),
+            line_height: Dp::new(line_height),
+            weight,
+        }
+    }
+}
+
+impl Default for ZsuiControlMetrics {
+    fn default() -> Self {
+        Self {
+            compact_height: Dp::new(ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT as f32),
+            standard_height: Dp::new(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT as f32),
+            touch_target: Dp::new(ZSUI_FLUENT_TOUCH_TARGET as f32),
+            navigation_row_height: Dp::new(ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT as f32),
+            small_icon: Dp::new(ZSUI_FLUENT_SMALL_ICON_SIZE as f32),
+            standard_icon: Dp::new(ZSUI_FLUENT_STANDARD_ICON_SIZE as f32),
         }
     }
 }
@@ -172,5 +313,13 @@ mod tests {
         assert_eq!(theme.spacing(SpacingToken::Md), Dp::new(12.0));
         assert_eq!(theme.radius(RadiusToken::Medium), Dp::new(8.0));
         assert_eq!(theme.color(ThemeColorToken::Accent).a, 255);
+        assert_eq!(
+            theme.typography(TypographyToken::BodyStrong).weight,
+            TextWeight::Semibold
+        );
+        assert_eq!(
+            theme.control_metric(ControlMetricToken::StandardHeight),
+            Dp::new(32.0)
+        );
     }
 }

@@ -35,7 +35,7 @@ use windows_sys::Win32::{
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::{
-        HiDpi::GetDpiForWindow,
+        HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow},
         Input::KeyboardAndMouse::{
             ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER, TME_LEAVE,
             TRACKMOUSEEVENT,
@@ -2459,6 +2459,12 @@ impl WindowsWin32MainWindowHost {
         options: &NativeWindowOptions,
     ) -> HWND {
         let style_plan = windows_win32_main_window_style_plan(role, options);
+        let (outer_width, outer_height) = windows_win32_outer_size_for_client(
+            width,
+            height,
+            style_plan.style,
+            style_plan.ex_style,
+        );
         let class_name = wide_null(role.class_name(self.class_names));
         let create_params = WindowsWindowCreateParams::new(role, options.min_size);
         CreateWindowExW(
@@ -2468,12 +2474,37 @@ impl WindowsWin32MainWindowHost {
             style_plan.style,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            width,
-            height,
+            outer_width,
+            outer_height,
             null_mut(),
             null_mut(),
             module,
             &create_params as *const WindowsWindowCreateParams as _,
+        )
+    }
+}
+
+unsafe fn windows_win32_outer_size_for_client(
+    width: i32,
+    height: i32,
+    style: u32,
+    ex_style: u32,
+) -> (i32, i32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: width,
+        bottom: height,
+    };
+    let dpi = GetDpiForSystem().max(96);
+    if AdjustWindowRectExForDpi(&mut rect, style, 0, ex_style, dpi) == 0 {
+        (width, height)
+    } else {
+        (
+            (rect.right - rect.left).max(width),
+            (rect.bottom - rect.top).max(height),
         )
     }
 }
@@ -3160,6 +3191,19 @@ mod tests {
         assert_ne!(plan.style & WS_POPUP, 0);
         assert_eq!(plan.style & WS_CAPTION, 0);
         assert_eq!(plan.style & WS_THICKFRAME, 0);
+    }
+
+    #[test]
+    fn decorated_window_converts_requested_client_size_to_outer_size() {
+        let plan = windows_win32_main_window_style_plan(
+            WindowsWindowRole::Main,
+            &NativeWindowOptions::standard(),
+        );
+        let (width, height) =
+            unsafe { windows_win32_outer_size_for_client(1280, 800, plan.style, plan.ex_style) };
+
+        assert!(width >= 1280);
+        assert!(height > 800);
     }
 
     #[test]

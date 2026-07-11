@@ -1,61 +1,21 @@
 # Native UI Entrypoints
 
-This reference is the short map an AI agent should use before changing or
-judging standalone ZSUI native UI work.
+This is an optional deep map for native-host and completion-audit packs. Normal
+tasks start with `docs/ai-agent.md` and do not load this file by default.
 
 ## What To Send Another AI
 
-If the AI has repository access, send this skill folder:
+Send only `docs/ai-agent.md` first. Let the receiving AI select one pack from
+`docs/ai/context-packs.json`, or provide the output of:
 
-- `docs/skills/zsui-native-ui/`
+```powershell
+.\scripts\ai-context.ps1 -Pack <id> -Format Paths
+```
 
-If the AI cannot load a skill folder, send these files together:
-
-- `docs/skills/zsui-native-ui/SKILL.md`
-- `docs/skills/zsui-native-ui/references/native-ui-entrypoints.md`
-- `docs/ai-agent.md`
-- `docs/architecture.md`
-- `docs/framework-goals.md`
-- `docs/porting.md`
-- `docs/native-host-smoke.md`
-- `Cargo.toml`
-- `src/lib.rs`
-- `src/agent_context.rs`
-- `src/feature_manifest.rs`
-- `src/framework_goals.rs`
-- `src/style.rs`
-- `src/view.rs`
-- `src/shell_layout.rs`
-- `src/components.rs`
-- `src/host.rs`
-- `src/host_protocol.rs`
-- `src/native.rs`
-- `src/native_hosts.rs`
-- `src/native_adapter_manifest.rs`
-- `src/native_host_launch.rs`
-- `src/mobile_host.rs`
-- `src/android_activity_host.rs`
-- `src/harmony_ability_host.rs`
-- `src/native_smoke.rs`
-- `src/product_adapter.rs`
-- `examples/declaration_audit.rs`
-- `examples/rust_first_view.rs`
-  - The default command opens the typed State/Msg/update/repaint example.
-  - `--smoke` verifies Win32 text, toggle, button, revision and successful AppCx app/UI command execution.
-- `examples/list_selection.rs`
-- `examples/scroll_view.rs`
-- `examples/navigation_shell_layout.rs`
-  - The default command opens the standalone interactive Windows shell gallery.
-  - `--smoke` captures an auto-closing native gallery screenshot.
-- `examples/native_smoke_manifest.rs`
-- `examples/native_smoke_record.rs`
-- `examples/native_smoke_run.rs`
-- `examples/native_smoke_review.rs`
-- `examples/mobile_scaffold_manifest.rs`
-- `examples/product_adapter.rs`
-- `examples/product_adapter_view.rs`
-- `examples/product_adapter_smoke.rs`
-- `examples/product_adapter_native_driver.rs`
+Do not send this entire reference, all platform files or the machine-readable
+readiness model unless the selected pack requests them. For a complete progress
+audit, use the `completion-audit` pack. For ordinary UI work, one focused pack
+is enough.
 
 ## Main Source Entrypoints
 
@@ -66,9 +26,17 @@ If the AI cannot load a skill folder, send these files together:
 | Rust-first framework goals | `src/framework_goals.rs`, `docs/framework-goals.md` |
 | Rust-first view and live state runtime API | `src/view.rs`, `src/native.rs` |
 | WinUI-style navigation/card shell layout API | `src/shell_layout.rs` |
+| Conversation/task workbench API | `src/workbench.rs` |
+| Document editor shell API | `src/document_shell.rs` |
+| Calculator engine and shell API | `src/calculator.rs` |
+| Component readiness catalog | `src/component_catalog.rs` |
+| Notepad integration benchmark | `docs/notepad-demo.md`, `examples/zsui_notepad.rs` |
+| Calculator integration benchmark | `docs/calculator-demo.md`, `examples/zsui_calculator.rs` |
 | Theme tokens and typed units | `src/style.rs`, `src/geometry.rs` |
-| AI/agent context | `src/agent_context.rs` |
-| Current standalone completion | `docs/ai-agent.md` |
+| Semantic icon catalog and platform symbol names | `src/icon.rs` |
+| AI task routing | `docs/ai-agent.md`, `docs/ai/context-packs.json` |
+| Machine-readable agent context | `src/agent_context.rs` |
+| Current standalone completion | `docs/ai/reference.md` |
 | Architecture boundary | `docs/architecture.md` |
 | Host porting contract | `docs/porting.md` |
 | Component tree declarations | `src/components.rs` |
@@ -122,7 +90,7 @@ Already reusable at code level:
   `zsui::native_window("Example").size(900, 620).run()?`.
 - Feature-gated build shape: default features are `window`, `button` and
   `label`; optional dependency features include `clipboard`, `image`,
-  `desktop-winit` and `windows-gdi`; advanced widgets are opt-in. Cargo
+  `calculator`, `desktop-winit` and `windows-gdi`; advanced widgets are opt-in. Cargo
   features are unified across the dependency graph, so larger widget/backend
   families should move toward split crates or modules as they stabilize.
 - Revised Rust-first target manifest through `zsui_rust_first_goals()`:
@@ -146,6 +114,17 @@ Already reusable at code level:
   cards, row titles, description text, row accessories, action buttons,
   viewport masks, scrollbars, audit output, layout regions and
   `NativeDrawPlan` projection. This is not a product settings schema.
+- Optional `workbench` composite surface through `ZsWorkbenchSpec` and
+  `ZsWorkbenchRuntime`, with collapsible navigation, grouped history, message
+  blocks, composer actions, inspector tabs, DPI-aware layout and hit regions.
+- Optional `document-shell` composite through `ZsDocumentShellSpec`, with a
+  document tab, command bar, editor content inset, status surface, semantic
+  icons, compact layout and stable command hit regions.
+- Optional `calculator` slice through `ZsCalculatorEngine` and
+  `ZsCalculatorShellSpec`, with decimal arithmetic, typed operations, memory,
+  history, Fluent keypad drawing and stable action hit regions.
+- Machine-readable 48-family component coverage through
+  `zsui_component_catalog()` and `zsui_component_catalog_summary()`.
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into
   `NativeDrawPlan`, with Windows smoke paint through the buffered no-flicker
   Win32/GDI path.
@@ -287,5 +266,6 @@ Still requiring implementation or target proof before system-complete claims:
   introducing a new abstraction.
 - Add or update tests for shared routing and source guards when a new native
   host surface is introduced.
-- Update `docs/ai-agent.md` when standalone completion or AI handoff guidance
-  changes.
+- Update `docs/ai/reference.md` when standalone completion changes. Update
+  `docs/ai-agent.md` or `docs/ai/context-packs.json` only when bootstrap or
+  task routing changes.

@@ -27,6 +27,7 @@ impl Color {
 pub enum TextWeight {
     Regular,
     Medium,
+    Semibold,
     Bold,
 }
 
@@ -54,7 +55,10 @@ pub enum TextWrap {
 pub enum TextRole {
     Body,
     Caption,
+    BodyLarge,
+    Subtitle,
     Title,
+    Display,
     Button,
     Icon,
     Monospace,
@@ -64,9 +68,15 @@ pub enum TextRole {
 pub enum ColorRole {
     PrimaryText,
     SecondaryText,
+    DisabledText,
     Accent,
+    AccentText,
     Surface,
+    SurfaceRaised,
     Control,
+    Border,
+    Success,
+    Warning,
     Danger,
 }
 
@@ -251,6 +261,7 @@ pub struct NativeDrawIconCommand {
     pub icon: ZsIcon,
     pub bounds: Rect,
     pub color_mode: NativeIconColorMode,
+    pub color: ColorRole,
 }
 
 impl NativeDrawIconCommand {
@@ -259,7 +270,13 @@ impl NativeDrawIconCommand {
             icon,
             bounds,
             color_mode,
+            color: ColorRole::PrimaryText,
         }
+    }
+
+    pub const fn with_color(mut self, color: ColorRole) -> Self {
+        self.color = color;
+        self
     }
 }
 

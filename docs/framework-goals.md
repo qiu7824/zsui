@@ -30,13 +30,15 @@ The current priority order is:
 1. Complete one standalone Windows control gallery that uses only ZSUI and
    exercises navigation, grouped cards, row accessories, action buttons,
    scrolling, DPI changes and the buffered no-flicker renderer.
-2. Stabilize the Rust-first application loop so typed messages update explicit
+2. Complete the reusable conversation/task workbench loop: navigation,
+   timeline scrolling, composer input, tool/message actions and inspector state.
+3. Stabilize the Rust-first application loop so typed messages update explicit
    state and repaint the live window, then cover IME, accessibility, focus,
    menus and dialogs required by native utility applications.
-3. Tighten Cargo feature boundaries and split crates only after the public
+4. Tighten Cargo feature boundaries and split crates only after the public
    widget/runtime boundaries are proven by real applications.
-4. Implement and verify real AppKit and GTK hosts.
-5. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
+5. Implement and verify real AppKit and GTK hosts.
+6. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
    and device smoke artifacts.
 
 Protocol manifests, AI handoff metadata and mobile bridge contracts support
@@ -49,6 +51,41 @@ avoid background erase, paint into an owned buffer when possible, then present
 once to the target surface. Wider platform APIs such as `windows-rs` should be
 introduced only when a concrete backend surface needs them; core declarations
 must stay independent of raw platform handles and broad native dependencies.
+
+## Component Coverage
+
+`zsui_component_catalog()` is the component-level source of truth. The current
+catalog covers 48 WinUI-style families: 20 have a first-pass runtime surface, 8
+have contracts only and 20 are not started. Composite shells can combine
+working primitives, but they must not be used to claim that missing Grid,
+TreeView, DataGrid, picker, progress, tooltip, flyout or WebView families are
+complete.
+
+`workbench` is the first reusable application-shell feature. It provides
+navigation history, a message timeline, paragraph/code/tool/notice blocks,
+composer controls and an optional inspector while leaving persistence, model
+execution and product commands outside the framework.
+
+`document-shell` provides the same product-neutral boundary for text-oriented
+utilities: a document tab, command bar, rounded editor frame, status surface,
+semantic icons and stable hit regions. The Windows notepad benchmark proves the
+hybrid route with a native text service, but it does not make multi-tab state,
+file dialogs or a reusable rich-text engine complete.
+
+`calculator` provides a complete standard-mode vertical slice at the framework
+level: typed decimal operations, memory, history, a DPI-aware Fluent keypad,
+semantic icons and stable hit regions. Its Windows example proves the real
+input-state-paint loop and records a local system comparison. This composite
+does not increase the component-catalog count or imply scientific, programmer,
+graphing, conversion, localization or accessibility parity.
+
+First-pass component status is not Fluent conformance. A built-in component
+may advance toward ready only when it uses the shared typography, spacing,
+radius, control-metric and semantic-color tokens; emits semantic icons instead
+of private glyph text; and has hover, pressed, disabled, focus-visible, dark
+theme and high-contrast evidence. The Windows workbench now satisfies the
+token and semantic-icon parts. Its complete state matrix and non-Windows native
+bindings remain open gates.
 
 ## Rust-First API Shape
 
@@ -285,6 +322,24 @@ fn app() -> impl View<Msg> {
 Release builds can add size-focused profiles such as `opt-level = "z"`, thin
 LTO, `codegen-units = 1`, symbol stripping and `panic = "abort"`, but those are
 secondary to clean Cargo feature boundaries.
+
+## AI Context Trimming
+
+AI context should be composable in the same way as Cargo features. The default
+prompt starts with `docs/ai-agent.md`, then selects one task pack from
+`docs/ai/context-packs.json`. A pack names a bounded required set, optional
+follow-up files and focused verification commands.
+
+Avoid making every agent load the complete readiness report, every platform
+backend, all examples and generated artifacts before a local change. Use `rg`
+inside the selected files, read focused ranges and add another pack only when
+the task crosses a real ownership boundary. `scripts/ai-context.ps1 -Validate`
+must keep pack paths valid; CI should reject stale routing metadata.
+
+The long-range target is measurable: keep the bootstrap small, keep normal
+required packs within one module family, and move detailed status/history into
+optional references. This reduces repeated prompt tokens without hiding
+architecture rules or weakening verification.
 
 ## Completion Definition
 

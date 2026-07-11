@@ -25,6 +25,9 @@ $singleFeatures = @(
     "dark-mode",
     "style",
     "shell",
+    "workbench",
+    "document-shell",
+    "calculator",
     "tray",
     "hotkey",
     "settings",
@@ -35,6 +38,8 @@ $singleFeatures = @(
     "clipboard",
     "image",
     "native-smoke",
+    "notepad-demo",
+    "calculator-demo",
     "desktop-winit",
     "windows-gdi",
     "windows-win32",
@@ -48,7 +53,11 @@ $featureSets = @(
     "list,table",
     "window,shell,tray,hotkey",
     "window,product-adapter,button,label",
-    "all-widgets,style,dark-mode"
+    "all-widgets,style,dark-mode",
+    "workbench,window",
+    "document-shell,windows-win32",
+    "notepad-demo,style",
+    "calculator,windows-gdi"
 )
 
 function Invoke-CargoFeatureCheck {

@@ -10,17 +10,16 @@ platform host into a copy of a product application.
 
 ## Quick Start
 
-1. Read `references/native-ui-entrypoints.md` first for the file map and
-   completion vocabulary.
-2. Read `docs/ai-agent.md` for the current standalone completion estimate.
-3. Read `docs/architecture.md` for the framework boundary.
-4. Inspect `src/framework_goals.rs`, `docs/framework-goals.md`, `src/view.rs`,
-   `src/shell_layout.rs` and `src/style.rs` before changing user-facing API
-   shape.
-5. Read `docs/porting.md` before adding or changing host surfaces.
-6. Read `docs/native-host-smoke.md` before claiming target-smoke or
-   system-complete status.
-7. Inspect the relevant Rust entry points instead of guessing from UI labels.
+1. Read `docs/ai-agent.md` only.
+2. Select one task pack with `scripts/ai-context.ps1 -Pack <id>`.
+3. Read only the pack's required paths and use `rg` inside them.
+4. Load optional paths only when a concrete question remains unanswered.
+5. Use `completion-audit` for framework-wide progress and
+   `windows-renderer`/`desktop-hosts`/`mobile-hosts` for platform work.
+6. Read `docs/native-host-smoke.md` only before a target-smoke or
+   system-complete claim.
+7. Do not bulk-load `references/native-ui-entrypoints.md`,
+   `docs/ai/reference.md` or `src/agent_context.rs` for ordinary feature work.
 
 ## Layer Rules
 
@@ -47,8 +46,9 @@ platform host into a copy of a product application.
 
 1. Identify the feature surface: app declaration audit, Cargo feature gate,
    window, tray/status menu, menu, hotkey, clipboard, settings, generic
-   navigation/card shell layout, dialog, shell-open, file picker, runtime
-   launch, adapter metadata or mobile host.
+   navigation/card shell layout, conversation/task workbench, document-editor
+   shell, calculator engine/shell, component catalog, dialog, shell-open, file
+   picker, runtime launch, adapter metadata or mobile host.
 2. Check the shared contract in `src/` before editing platform code.
    Use `AppBuilder::declaration_report_for(...)` when changing app, window,
    menu, tray, hotkey or settings declaration shapes.
@@ -62,6 +62,20 @@ platform host into a copy of a product application.
    product implements `ProductAdapterHost`.
    For switch-style input, reuse `zs_toggle_render_plan(...)` from
    `src/widget_render.rs`; its geometry must stay shared with shell accessories.
+   For desktop conversation/task applications, compose
+   `ZsWorkbenchSpec` instead of creating product-specific navigation, message,
+   tool-output, composer and inspector layout code. Keep product commands and
+   persistence outside the workbench runtime.
+   Built-in visuals must consume the shared Fluent tokens and semantic
+   `ZsIcon` catalog. Do not add private PUA glyph strings, local palettes or
+   duplicate control metrics to component modules.
+   Reuse `ZsDocumentShellSpec` for text-oriented application chrome. Treat
+   `examples/zsui_notepad/windows.rs` as benchmark application plumbing, not as
+   proof that reusable native editor, file-dialog, accelerator or
+   document-lifecycle services exist in the framework.
+   Reuse `ZsCalculatorEngine` and `ZsCalculatorShellSpec` for standard decimal
+   calculator behavior and presentation. Keep scientific/conversion modes and
+   product-specific commands outside that shell until their contracts exist.
 3. For Android or Harmony, inspect `mobile_runtime_host_scaffold(platform)` and
    `mobile_runtime_bridge_contract(platform)` before editing Activity/Ability
    bridge code. Use `mobile_runtime_bridge_parity_report(platform)` to check
@@ -116,8 +130,8 @@ Use `native_ui_backend_capability_matrix()`,
 `mobile_runtime_bridge_contract_smoke_report()`,
 `write_mobile_runtime_bridge_contract_artifacts()`,
 `review_mobile_runtime_bridge_contract_artifacts()`,
-`native_host_smoke_plan()` and `docs/ai-agent.md` as the current ZSUI source of
-truth for progress. If the
+`native_host_smoke_plan()` and `docs/ai/reference.md` as the detailed ZSUI
+source of truth for progress. If the
 current machine is Windows, say that macOS, Linux, Android and Harmony runtime
 proof still requires target artifacts.
 
@@ -127,11 +141,21 @@ Local checks:
 
 ```powershell
 cargo fmt --check
+cargo run --quiet --example basic
+.\scripts\ai-context.ps1 -Validate
 cargo check
 .\scripts\check-feature-matrix.ps1 -Locked
 cargo test --features full
 cargo test --no-default-features
+cargo test --example zsui_notepad --no-default-features --features notepad-demo
+cargo test --lib --no-default-features --features calculator calculator
+cargo run --example zsui_calculator --no-default-features --features calculator-demo -- --smoke
 ```
+
+On Windows, run `scripts/measure-notepad-comparison.ps1` only when changing the
+notepad benchmark or making a size, memory or implementation-effort claim.
+Run `scripts/measure-calculator-comparison.ps1` under the same conditions for
+the calculator benchmark.
 
 Target smoke checks are platform-specific and should store inspectable artifacts
 under `target/native-host-smoke/<platform>/` before a platform is called

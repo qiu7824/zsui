@@ -1,0 +1,16 @@
+[package]
+name = "egui-notepad-baseline"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+eframe = { version = "=0.35.0", default-features = false, features = ["default_fonts", "glow"] }
+rfd = "=0.17.2"
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
