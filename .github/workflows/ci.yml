@@ -53,6 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install GTK4 development files
+        if: matrix.backend == 'linux-gtk'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
       - run: cargo test --locked --features full
       - run: cargo check --locked --no-default-features --features ${{ matrix.backend }}
       - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style

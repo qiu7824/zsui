@@ -425,21 +425,48 @@ fn native_ui_capability_readiness(
                 "the public contract exists but no complete Windows runtime binding is connected",
             ),
         },
-        NativeUiPlatform::Macos | NativeUiPlatform::Linux => match capability {
-            MainWindow => (
-                FirstPass,
-                "src/native.rs",
-                "Winit creates and closes a native window; framework rendering and input are not connected",
-            ),
+        NativeUiPlatform::Macos => match capability {
             Clipboard => (
                 FirstPass,
                 "src/host.rs",
                 "feature-gated text clipboard access is available; files and images are not complete",
             ),
+            FileDialog => (
+                FirstPass,
+                "src/macos_appkit_services.rs",
+                "NSOpenPanel and NSSavePanel are connected through the safe FileDialogService; target interaction proof is pending",
+            ),
+            MainWindow => (
+                ContractOnly,
+                "src/native.rs",
+                "the Winit transport is not credited as an AppKit host; shared rendering and input remain unconnected",
+            ),
             _ => (
                 ContractOnly,
                 "src/host_protocol.rs",
-                "the public contract exists but the platform runtime binding is not connected",
+                "the public contract exists but the AppKit runtime binding is not connected",
+            ),
+        },
+        NativeUiPlatform::Linux => match capability {
+            Clipboard => (
+                FirstPass,
+                "src/host.rs",
+                "feature-gated text clipboard access is available; files and images are not complete",
+            ),
+            FileDialog => (
+                FirstPass,
+                "src/linux_gtk_services.rs",
+                "GTK4 FileChooserNative open/save is connected through the safe FileDialogService; target interaction proof is pending",
+            ),
+            MainWindow => (
+                ContractOnly,
+                "src/native.rs",
+                "the Winit transport is not credited as a GTK4 host; shared rendering and input remain unconnected",
+            ),
+            _ => (
+                ContractOnly,
+                "src/host_protocol.rs",
+                "the public contract exists but the GTK4 runtime binding is not connected",
             ),
         },
         NativeUiPlatform::Android => (
@@ -812,12 +839,26 @@ mod tests {
         assert_eq!(macos.first_pass_count, 2);
         assert_eq!(macos.contract_only_count, 16);
         assert!(macos.contract_only_capability_names().contains(&"renderer"));
+        assert!(macos
+            .contract_only_capability_names()
+            .contains(&"main_window"));
+        assert_eq!(
+            macos
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::FileDialog)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
 
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
         assert_eq!(linux.first_pass_count, 2);
         assert_eq!(linux.contract_only_count, 16);
+        assert!(linux
+            .contract_only_capability_names()
+            .contains(&"main_window"));
 
         let android = native_ui_platform_readiness(NativeUiPlatform::Android)
             .expect("Android readiness should be declared");

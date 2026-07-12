@@ -318,10 +318,16 @@ impl HostCapabilities {
 
     pub fn macos_native_window_host() -> Self {
         let mut capabilities = Self::macos_scaffold();
-        capabilities.windows = CapabilitySupport::supported(
-            "the first-pass Winit host creates and closes a native macOS window",
-        );
         capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.file_picker = if cfg!(feature = "macos-appkit") {
+            CapabilitySupport::partial(
+                "NSOpenPanel and NSSavePanel are connected; target interaction proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable macos-appkit to compile NSOpenPanel and NSSavePanel services",
+            )
+        };
         capabilities
     }
 
@@ -370,10 +376,16 @@ impl HostCapabilities {
 
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
-        capabilities.windows = CapabilitySupport::supported(
-            "the first-pass Winit host creates and closes a native Linux window",
-        );
         capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.file_picker = if cfg!(feature = "linux-gtk") {
+            CapabilitySupport::partial(
+                "GTK4 FileChooserNative open/save services are connected; Wayland/X11 interaction proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable linux-gtk to compile GTK4 FileChooserNative services",
+            )
+        };
         capabilities
     }
 

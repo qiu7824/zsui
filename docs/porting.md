@@ -39,10 +39,18 @@ surface and input traces, so local contract JSON is not enough for a
 device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
-`windows-gdi`, `windows-win32`, `android` and `harmony` are platform/backend
-gates, while `clipboard` and `image` own their optional dependencies. The
+`windows-gdi`, `windows-win32`, `macos-appkit`, `linux-gtk`, `android` and
+`harmony` are platform/backend gates, while `clipboard` and `image` own their
+optional dependencies. The
 default `window` umbrella must keep the one-line desktop entry working and rely
 on target-specific dependencies to compile only the active platform backend.
+
+The AppKit and GTK4 backend features provide the first target-native desktop
+service slice through the safe `FileDialogService`. macOS maps open and save
+requests to `NSOpenPanel` and `NSSavePanel`; Linux maps them to GTK4
+`FileChooserNative`. Both remain incomplete native hosts until the shared View
+renderer, input path, menu, clipboard and target smoke evidence are connected.
+The Winit transport is not AppKit or GTK4 completion evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

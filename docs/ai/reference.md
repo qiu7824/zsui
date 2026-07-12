@@ -141,7 +141,8 @@ machine-readable shape to write. These are still contracts and verifiers, not
 native FFI implementations or device proof.
 The Cargo feature boundary is now explicit in `Cargo.toml` and
 `src/feature_manifest.rs`: defaults are `window`, `button` and `label`;
-`clipboard`, `image`, `desktop-winit` and `windows-gdi` are optional dependency
+`clipboard`, `image`, `desktop-winit`, `windows-gdi`, `macos-appkit` and
+`linux-gtk` are optional dependency
 features; advanced widgets remain opt-in. This is feature/crate based
 trimming, not automatic unused-widget pruning inside an enabled crate. Cargo
 features are unified across the dependency graph, so the long-range shape is a

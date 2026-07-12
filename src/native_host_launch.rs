@@ -8,6 +8,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NativeHostLaunchMode {
     RealNativeHost,
+    DesktopTransportFallback,
     ContractScaffoldFallback,
 }
 
@@ -15,6 +16,7 @@ impl NativeHostLaunchMode {
     pub const fn mode_name(self) -> &'static str {
         match self {
             Self::RealNativeHost => "real_native_host",
+            Self::DesktopTransportFallback => "desktop_transport_fallback",
             Self::ContractScaffoldFallback => "contract_scaffold_fallback",
         }
     }
@@ -91,10 +93,14 @@ pub fn native_host_launch_plan_for_platform(
         },
         real_host_module_path: backend.module_path,
         fallback_module_path: "src/host.rs",
-        mode: if desktop {
-            NativeHostLaunchMode::RealNativeHost
-        } else {
-            NativeHostLaunchMode::ContractScaffoldFallback
+        mode: match platform {
+            NativeUiPlatform::Windows => NativeHostLaunchMode::RealNativeHost,
+            NativeUiPlatform::Macos | NativeUiPlatform::Linux => {
+                NativeHostLaunchMode::DesktopTransportFallback
+            }
+            NativeUiPlatform::Android | NativeUiPlatform::Harmony => {
+                NativeHostLaunchMode::ContractScaffoldFallback
+            }
         },
         target_os_verification_required: true,
     })
@@ -133,5 +139,18 @@ mod tests {
         assert!(!android.enters_real_event_loop());
         assert_eq!(harmony.toolkit, NativeUiToolkit::HarmonyAbility);
         assert_eq!(harmony.mode_name(), "contract_scaffold_fallback");
+    }
+
+    #[test]
+    fn winit_desktop_transport_is_not_reported_as_appkit_or_gtk_completion() {
+        let macos = native_host_launch_plan_for_platform(NativeUiPlatform::Macos)
+            .expect("macOS launch plan should exist");
+        let linux = native_host_launch_plan_for_platform(NativeUiPlatform::Linux)
+            .expect("Linux launch plan should exist");
+
+        assert_eq!(macos.mode, NativeHostLaunchMode::DesktopTransportFallback);
+        assert_eq!(linux.mode_name(), "desktop_transport_fallback");
+        assert!(!macos.enters_real_event_loop());
+        assert!(!linux.enters_real_event_loop());
     }
 }

@@ -238,7 +238,10 @@ zsui = { version = "0.1", default-features = false, features = [
 
 Optional dependencies must stay behind explicit feature gates: `clipboard`
 enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
-`desktop-winit` enables `winit`, and `windows-gdi` enables `windows-sys`.
+`desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
+`macos-appkit` enables optional `objc2` AppKit bindings, and `linux-gtk`
+enables optional GTK4 bindings. Platform-native file dialogs therefore do not
+enter builds that omit their backend feature.
 Advanced controls should be gated by
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control

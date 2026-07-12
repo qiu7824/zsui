@@ -371,17 +371,17 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "macos-appkit",
             Backend,
             false,
+            vec!["objc2", "objc2-app-kit", "objc2-foundation"],
             Vec::new(),
-            Vec::new(),
-            "macOS AppKit backend selection boundary; runtime integration remains incomplete",
+            "macOS AppKit backend boundary with native open/save file-dialog services",
         ),
         ZsuiCargoFeature::new(
             "linux-gtk",
             Backend,
             false,
+            vec!["gtk4"],
             Vec::new(),
-            Vec::new(),
-            "Linux GTK4 backend selection boundary; runtime integration remains incomplete",
+            "Linux GTK4 backend boundary with native open/save file-dialog services",
         ),
         ZsuiCargoFeature::new(
             "desktop-native",
@@ -471,6 +471,8 @@ mod tests {
         assert!(names.contains(&"image"));
         assert!(names.contains(&"desktop-winit"));
         assert!(names.contains(&"windows-gdi"));
+        assert!(names.contains(&"macos-appkit"));
+        assert!(names.contains(&"linux-gtk"));
         assert!(!names.contains(&"button"));
         assert!(!names.contains(&"label"));
     }

@@ -810,6 +810,8 @@ fn platform_binding_name_for_capability(
         (NativeUiPlatform::Windows, "transient_window") => {
             Some("windows_win32_transient_window_host")
         }
+        (NativeUiPlatform::Macos, "file_dialog") => Some("appkit_open_save_panel_service"),
+        (NativeUiPlatform::Linux, "file_dialog") => Some("gtk_file_chooser_native_service"),
         (NativeUiPlatform::Android, "main_window") => Some("android_activity_surface"),
         (NativeUiPlatform::Android, "settings_window") => Some("android_settings_fragment"),
         (NativeUiPlatform::Android, "settings_dropdown") => Some("android_spinner_or_menu"),
@@ -884,6 +886,14 @@ mod tests {
             .readiness
             .optional_dependency_feature_names
             .contains(&"desktop-winit"));
+        assert!(context
+            .readiness
+            .optional_dependency_feature_names
+            .contains(&"macos-appkit"));
+        assert!(context
+            .readiness
+            .optional_dependency_feature_names
+            .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
         assert_eq!(context.readiness.component_catalog.first_pass_count, 21);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 8);

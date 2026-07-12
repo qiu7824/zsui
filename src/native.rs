@@ -1833,7 +1833,37 @@ impl ZsuiHost for NativeWindowHost {
             );
         }
 
-        #[cfg(not(all(windows, feature = "windows-win32")))]
+        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+        {
+            return crate::macos_appkit_services::macos_appkit_open_file_dialog(spec).map(
+                |selection| {
+                    selection.map(|paths| {
+                        paths
+                            .into_iter()
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .collect()
+                    })
+                },
+            );
+        }
+
+        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        {
+            return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec).map(|selection| {
+                selection.map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect()
+                })
+            });
+        }
+
+        #[cfg(not(any(
+            all(windows, feature = "windows-win32"),
+            all(target_os = "macos", feature = "macos-appkit"),
+            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+        )))]
         {
             self.inner.open_file_picker(spec)
         }
@@ -1887,7 +1917,21 @@ impl crate::FileDialogService for NativeWindowHost {
             return crate::windows_win32_host::windows_win32_save_file_dialog(spec);
         }
 
-        #[cfg(not(all(windows, feature = "windows-win32")))]
+        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+        {
+            return crate::macos_appkit_services::macos_appkit_save_file_dialog(spec);
+        }
+
+        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        {
+            return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
+        }
+
+        #[cfg(not(any(
+            all(windows, feature = "windows-win32"),
+            all(target_os = "macos", feature = "macos-appkit"),
+            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+        )))]
         {
             let _ = spec;
             Err(ZsuiError::unsupported(

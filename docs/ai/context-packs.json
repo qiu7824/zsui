@@ -215,6 +215,9 @@
       ],
       "optional": [
         "src/windows_win32_host.rs",
+        "src/macos_appkit_services.rs",
+        "src/linux_gtk_services.rs",
+        "src/native_file_dialog.rs",
         "Cargo.toml",
         "docs/native-host-smoke.md",
         "docs/v0.2-desktop-native.md",

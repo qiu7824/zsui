@@ -32,10 +32,20 @@ pub mod host;
 pub mod host_protocol;
 pub mod hotkey;
 pub mod icon;
+#[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+pub mod linux_gtk_services;
+#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+pub mod macos_appkit_services;
 pub mod menu;
 pub mod mobile_host;
 pub mod native;
 pub mod native_adapter_manifest;
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+mod native_file_dialog;
 pub mod native_host_actions;
 pub mod native_host_launch;
 pub mod native_hosts;
@@ -544,7 +554,7 @@ mod tests {
         );
 
         let macos = HostCapabilities::macos_native_window_host();
-        assert_eq!(macos.windows.status, CapabilityStatus::Supported);
+        assert_eq!(macos.windows.status, CapabilityStatus::Partial);
         assert_eq!(macos.window_resizing.status, CapabilityStatus::Partial);
         assert_eq!(macos.window_decorations.status, CapabilityStatus::Partial);
         assert_eq!(macos.window_always_on_top.status, CapabilityStatus::Partial);
@@ -553,9 +563,17 @@ mod tests {
             CapabilityStatus::Unsupported
         );
         assert_eq!(macos.menus.status, CapabilityStatus::Unsupported);
+        assert_eq!(
+            macos.file_picker.status,
+            if cfg!(feature = "macos-appkit") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
 
         let linux = HostCapabilities::linux_native_window_host();
-        assert_eq!(linux.windows.status, CapabilityStatus::Supported);
+        assert_eq!(linux.windows.status, CapabilityStatus::Partial);
         assert_eq!(linux.window_resizing.status, CapabilityStatus::Partial);
         assert_eq!(linux.window_decorations.status, CapabilityStatus::Partial);
         assert_eq!(
@@ -567,6 +585,14 @@ mod tests {
             CapabilityStatus::Unsupported
         );
         assert_eq!(linux.menus.status, CapabilityStatus::Unsupported);
+        assert_eq!(
+            linux.file_picker.status,
+            if cfg!(feature = "linux-gtk") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
 
         for capabilities in [
             HostCapabilities::windows_native_window_host(),

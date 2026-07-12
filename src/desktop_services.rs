@@ -222,21 +222,71 @@ impl DesktopCapabilities {
     }
 
     pub fn macos_appkit_current() -> Self {
-        Self::all_unsupported(PlatformName::Macos).with_support(
-            DesktopCapability::NativeIcons,
-            CapabilitySupport::partial(
-                "SF Symbols are mapped; AppKit image lookup and fallback rendering are not connected",
-            ),
-        )
+        Self::all_unsupported(PlatformName::Macos)
+            .with_support(
+                DesktopCapability::OpenFileDialog,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSOpenPanel is connected; target interaction proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile NSOpenPanel",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::SaveFileDialog,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSSavePanel is connected; target interaction proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile NSSavePanel",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::NativeIcons,
+                CapabilitySupport::partial(
+                    "SF Symbols are mapped; AppKit image lookup and fallback rendering are not connected",
+                ),
+            )
     }
 
     pub fn linux_gtk_current() -> Self {
-        Self::all_unsupported(PlatformName::Linux).with_support(
-            DesktopCapability::NativeIcons,
-            CapabilitySupport::partial(
-                "GTK symbolic icon names are mapped; GtkIconTheme lookup and fallback rendering are not connected",
-            ),
-        )
+        Self::all_unsupported(PlatformName::Linux)
+            .with_support(
+                DesktopCapability::OpenFileDialog,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK4 FileChooserNative open is connected; Wayland/X11 interaction proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 FileChooserNative",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::SaveFileDialog,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK4 FileChooserNative save is connected; Wayland/X11 interaction proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 FileChooserNative",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::NativeIcons,
+                CapabilitySupport::partial(
+                    "GTK symbolic icon names are mapped; GtkIconTheme lookup and fallback rendering are not connected",
+                ),
+            )
     }
 
     pub fn current_native_backend() -> Self {

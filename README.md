@@ -214,7 +214,7 @@ cargo run --example desktop_native_showcase --features full
 
 同一个 `State`、`Msg`、`view` 和 `update` 包含左侧导航、命令栏、单行/多行
 输入、列表滚动、主题开关与原生菜单声明。Windows 已有真实 Win32 smoke 截图；
-AppKit 与 GTK4 仍需按 [v0.2 三桌面原生闭环](docs/v0.2-desktop-native.md)
+AppKit 与 GTK4 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
 完成后端和目标机证据，当前不会把 Winit 路径标记成二者已完成。
 
 ### 十万行分页虚拟列表
