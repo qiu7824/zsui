@@ -1,7 +1,7 @@
 use crate::native_text_edit::{char_count, NativeTextSelection};
 use crate::{
-    ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect, ViewHitTarget,
-    ViewHitTargetKind, ViewInteractionPlan, WidgetId,
+    ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Point, Rect,
+    ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, WidgetId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,23 +17,10 @@ pub(crate) fn native_text_visual_geometry(
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
-    let inset = Dp::new(8.0).to_px(dpi).round_i32().max(1);
-    let character_width = Dp::new(8.0).to_px(dpi).round_i32().max(1);
-    let line_height = Dp::new(18.0).to_px(dpi).round_i32().max(1);
-    let text_bounds = Rect {
-        x: target.bounds.x.saturating_add(inset),
-        y: target.bounds.y.saturating_add(inset),
-        width: target
-            .bounds
-            .width
-            .saturating_sub(inset.saturating_mul(2))
-            .max(1),
-        height: target
-            .bounds
-            .height
-            .saturating_sub(inset.saturating_mul(2))
-            .max(1),
-    };
+    let metrics = native_text_visual_metrics(target, dpi);
+    let text_bounds = metrics.text_bounds;
+    let character_width = metrics.character_width;
+    let line_height = metrics.line_height;
     let selection = selection.clamp(value);
     let (caret_row, caret_column) = text_position(value, selection.caret, multiline);
     let caret_x = text_bounds
@@ -116,6 +103,40 @@ pub(crate) fn native_text_visual_geometry(
     NativeTextVisualGeometry { caret, selections }
 }
 
+pub(crate) fn native_text_index_for_point(
+    target: ViewHitTarget,
+    value: &str,
+    point: Point,
+    dpi: Dpi,
+) -> usize {
+    let multiline = target.kind == ViewHitTargetKind::TextEditor;
+    let metrics = native_text_visual_metrics(target, dpi);
+    let lines = text_lines(value, multiline);
+    let row = if multiline {
+        point
+            .y
+            .saturating_sub(metrics.text_bounds.y)
+            .max(0)
+            .checked_div(metrics.line_height)
+            .unwrap_or(0) as usize
+    } else {
+        0
+    }
+    .min(lines.len().saturating_sub(1));
+    let line = lines[row];
+    let relative_x = point.x.saturating_sub(metrics.text_bounds.x);
+    let column = if relative_x <= 0 {
+        0
+    } else {
+        relative_x
+            .saturating_add(metrics.character_width / 2)
+            .checked_div(metrics.character_width)
+            .unwrap_or(0) as usize
+    }
+    .min(line.end.saturating_sub(line.start));
+    line.start.saturating_add(column)
+}
+
 pub(crate) fn decorate_native_text_edit_visuals(
     plan: &mut NativeDrawPlan,
     target: ViewHitTarget,
@@ -179,6 +200,35 @@ pub(crate) fn decorate_native_focus_ring(
 struct NativeTextLine {
     start: usize,
     end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NativeTextVisualMetrics {
+    text_bounds: Rect,
+    character_width: i32,
+    line_height: i32,
+}
+
+fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisualMetrics {
+    let inset = Dp::new(8.0).to_px(dpi).round_i32().max(1);
+    NativeTextVisualMetrics {
+        text_bounds: Rect {
+            x: target.bounds.x.saturating_add(inset),
+            y: target.bounds.y.saturating_add(inset),
+            width: target
+                .bounds
+                .width
+                .saturating_sub(inset.saturating_mul(2))
+                .max(1),
+            height: target
+                .bounds
+                .height
+                .saturating_sub(inset.saturating_mul(2))
+                .max(1),
+        },
+        character_width: Dp::new(8.0).to_px(dpi).round_i32().max(1),
+        line_height: Dp::new(18.0).to_px(dpi).round_i32().max(1),
+    }
 }
 
 fn text_lines(value: &str, multiline: bool) -> Vec<NativeTextLine> {
@@ -320,5 +370,56 @@ mod tests {
                 }
             ]
         ));
+    }
+
+    #[test]
+    fn text_pointer_hit_testing_uses_unicode_indices_and_clamps_multiline_rows() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(93),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 80,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+
+        assert_eq!(
+            native_text_index_for_point(
+                target,
+                "A中\n🙂Z",
+                Point { x: 20, y: 10 },
+                Dpi::standard()
+            ),
+            2
+        );
+        assert_eq!(
+            native_text_index_for_point(
+                target,
+                "A中\n🙂Z",
+                Point { x: 16, y: 30 },
+                Dpi::standard()
+            ),
+            4
+        );
+        assert_eq!(
+            native_text_index_for_point(
+                target,
+                "A中\n🙂Z",
+                Point { x: 500, y: 500 },
+                Dpi::standard()
+            ),
+            5
+        );
+        assert_eq!(
+            native_text_index_for_point(
+                target,
+                "A中\n🙂Z",
+                Point { x: -20, y: -20 },
+                Dpi::standard()
+            ),
+            0
+        );
     }
 }

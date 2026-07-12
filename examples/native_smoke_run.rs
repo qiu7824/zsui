@@ -95,6 +95,7 @@ fn run_smoke(
         {
             smoke_options = smoke_options
                 .native_view_click(Point { x: 260, y: 120 })
+                .native_view_drag(Point { x: 16, y: 120 }, Point { x: 32, y: 120 })
                 .native_view_text_input("ZSUI");
         }
         #[cfg(all(feature = "list", feature = "textbox", feature = "checkbox"))]
@@ -198,7 +199,7 @@ fn attach_typed_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     #[cfg(feature = "textbox")]
     {
         children.push(
-            textbox("")
+            textbox("A中文Z")
                 .id(WidgetId::new(2))
                 .on_change(native_smoke_text_changed),
         );

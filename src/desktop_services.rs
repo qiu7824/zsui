@@ -169,7 +169,9 @@ impl DesktopCapabilities {
             )
             .with_support(
                 DesktopCapability::PointerInput,
-                CapabilitySupport::supported("pointer click and wheel routing are connected"),
+                CapabilitySupport::supported(
+                    "pointer click, wheel and capture-backed logical text drag selection are connected",
+                ),
             )
             .with_support(
                 DesktopCapability::TextInput,
@@ -180,7 +182,7 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::InputMethod,
                 CapabilitySupport::partial(
-                    "IMM32 result commit and logical-caret candidate placement are connected; shaped-glyph hit testing, drag selection and CJK target proof are pending",
+                    "IMM32 result commit and logical-caret candidate placement are connected; shaped-glyph/bidirectional geometry and CJK target proof are pending",
                 ),
             )
             .with_support(
@@ -255,7 +257,7 @@ impl DesktopCapabilities {
                 DesktopCapability::PointerInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSView mouse activation and scrollWheel routing are connected; richer pointer gestures and target proof are pending",
+                        "NSView mouse activation, mouseDragged logical text selection and scrollWheel routing are connected; richer gestures and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -267,7 +269,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "focused UTF-8 input, Unicode caret navigation, Shift range selection/replacement and multiline deletion are connected; shaped-glyph hit testing, drag selection and target proof are pending",
+                        "focused UTF-8 input, Unicode caret navigation, Shift and pointer range selection/replacement and multiline deletion are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -385,7 +387,7 @@ impl DesktopCapabilities {
                 DesktopCapability::PointerInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GTK4 GestureClick and EventControllerScroll routing are connected; richer pointer gestures and target proof are pending",
+                        "GTK4 GestureClick, EventControllerMotion logical text selection and scroll routing are connected; richer gestures and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -397,7 +399,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "focused UTF-8 input, Unicode caret navigation, Shift range selection/replacement and multiline deletion are connected; shaped-glyph hit testing, drag selection and target proof are pending",
+                        "focused UTF-8 input, Unicode caret navigation, Shift and pointer range selection/replacement and multiline deletion are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

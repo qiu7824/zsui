@@ -4,11 +4,13 @@ use serde::Serialize;
 use crate::workbench::ZsWorkbenchSpec;
 
 use crate::native_input_visuals::{
-    decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_visual_geometry,
+    decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
+    native_text_visual_geometry,
 };
 use crate::native_text_edit::{
     char_to_byte_index, delete_backward, delete_forward, insert_text, move_selection,
-    NativeTextEditState, NativeTextMovement, NativeTextSelection,
+    set_pointer_selection, NativeTextDragState, NativeTextEditState, NativeTextMovement,
+    NativeTextSelection,
 };
 use crate::{
     app::{app, ZsuiApp, ZsuiAppRuntime},
@@ -536,6 +538,7 @@ impl NativeViewKey {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum NativeViewSmokeInput {
     Click(Point),
+    Drag { start: Point, end: Point },
     Text(String),
     KeyDown(NativeViewKey),
     Scroll { point: Point, delta_y: i32 },
@@ -613,6 +616,12 @@ impl NativeWindowSmokeRunOptions {
         for point in points {
             self = self.native_view_click(point);
         }
+        self
+    }
+
+    pub fn native_view_drag(mut self, start: Point, end: Point) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::Drag { start, end });
         self
     }
 
@@ -718,6 +727,10 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_text_navigation_count: usize,
     pub native_view_text_selection_change_count: usize,
     pub native_view_text_caret: Option<usize>,
+    pub native_view_pointer_down_count: usize,
+    pub native_view_pointer_move_count: usize,
+    pub native_view_pointer_up_count: usize,
+    pub native_view_text_drag_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -796,6 +809,10 @@ impl NativeWindowSmokeRunReport {
             native_view_text_navigation_count: 0,
             native_view_text_selection_change_count: 0,
             native_view_text_caret: None,
+            native_view_pointer_down_count: 0,
+            native_view_pointer_move_count: 0,
+            native_view_pointer_up_count: 0,
+            native_view_text_drag_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -835,6 +852,7 @@ pub(crate) struct NativeViewInputRuntime {
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
     text_edit: Option<NativeTextEditState>,
+    text_drag: Option<NativeTextDragState>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
@@ -862,6 +880,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub text_selection: Option<(usize, usize)>,
     pub text_caret: Option<usize>,
     pub text_selection_changed: bool,
+    pub text_drag_active: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -888,6 +907,7 @@ impl NativeViewInputRuntime {
             live_view,
             focused_widget: None,
             text_edit: None,
+            text_drag: None,
             ime_preedit: None,
             app_command_executor,
             ui_command_executor,
@@ -957,6 +977,7 @@ impl NativeViewInputRuntime {
         }) {
             self.focused_widget = None;
             self.text_edit = None;
+            self.text_drag = None;
             self.ime_preedit = None;
             report.focus_visual_changed = true;
         }
@@ -1000,6 +1021,102 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        let report = self.dispatch_pointer_down(point, false);
+        if self.text_drag.take().is_some() {
+            return report;
+        }
+        self.dispatch_pointer_up(point)
+    }
+
+    pub(crate) fn dispatch_pointer_down(
+        &mut self,
+        point: Point,
+        shift: bool,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let interaction_plan = self.current_interaction_plan();
+        let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
+            return report;
+        };
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            self.text_drag = None;
+            return report;
+        }
+
+        report.handled = true;
+        self.ime_preedit = None;
+        self.focus_target(target, &mut report);
+        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let anchor = if shift { state.selection.anchor } else { index };
+        let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
+        self.text_edit = Some(state);
+        self.text_drag = Some(NativeTextDragState {
+            widget: target.widget,
+            anchor,
+        });
+        report.text_selection_changed = edit.selection_changed;
+        report.text_drag_active = true;
+        report.redraw_plan = self.current_composed_draw_plan();
+        report.ime_caret_rect = self.text_input_caret_rect();
+        self.populate_text_report(&mut report);
+        report
+    }
+
+    pub(crate) fn dispatch_pointer_move(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let Some(drag) = self.text_drag else {
+            return report;
+        };
+        let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(drag.widget))
+        else {
+            self.text_drag = None;
+            return report;
+        };
+        let value = self.widget_text_value(drag.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == drag.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
+        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
+        self.text_edit = Some(state);
+        report.handled = true;
+        report.text_selection_changed = edit.selection_changed;
+        report.text_drag_active = true;
+        if edit.selection_changed {
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
+        report.ime_caret_rect = self.text_input_caret_rect();
+        self.populate_text_report(&mut report);
+        report
+    }
+
+    pub(crate) fn dispatch_pointer_up(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        if self.text_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            self.text_drag = None;
+            report.handled = true;
+            report.text_drag_active = false;
+            return report;
+        }
+
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..NativeViewInputDispatchReport::default()
@@ -1020,6 +1137,19 @@ impl NativeViewInputRuntime {
         let event = self.activation_event(target);
 
         self.dispatch_view_event(event, report)
+    }
+
+    pub(crate) fn cancel_pointer_drag(&mut self) -> NativeViewInputDispatchReport {
+        let had_drag = self.text_drag.take().is_some();
+        let mut report = NativeViewInputDispatchReport {
+            handled: had_drag,
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            text_drag_active: false,
+            ..NativeViewInputDispatchReport::default()
+        };
+        self.populate_text_report(&mut report);
+        report
     }
 
     pub(crate) fn dispatch_key(&mut self, key: NativeViewKey) -> NativeViewInputDispatchReport {
@@ -1054,6 +1184,7 @@ impl NativeViewInputRuntime {
         let Some(target) = interaction_plan.hit_target_for_widget(widget) else {
             self.focused_widget = None;
             self.text_edit = None;
+            self.text_drag = None;
             report.focused_widget = None;
             return report;
         };
@@ -1141,6 +1272,7 @@ impl NativeViewInputRuntime {
         else {
             self.focused_widget = None;
             self.text_edit = None;
+            self.text_drag = None;
             report.focused_widget = None;
             return report;
         };
@@ -1298,6 +1430,7 @@ impl NativeViewInputRuntime {
     pub(crate) fn blur_focus(&mut self) -> NativeViewInputDispatchReport {
         let had_focus = self.focused_widget.take().is_some();
         self.text_edit = None;
+        self.text_drag = None;
         let had_preedit = self.ime_preedit.take().is_some();
         NativeViewInputDispatchReport {
             handled: had_focus || had_preedit,
@@ -1363,6 +1496,7 @@ impl NativeViewInputRuntime {
             return;
         }
         self.ime_preedit = None;
+        self.text_drag = None;
         self.focused_widget = Some(target.widget);
         self.ensure_text_edit_for_target(target);
         report.focused_widget = Some(target.widget.0);
@@ -1454,6 +1588,7 @@ impl NativeViewInputRuntime {
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
         ) {
             self.text_edit = None;
+            self.text_drag = None;
             return;
         }
         let value = self.widget_text_value(target.widget).unwrap_or_default();
@@ -1468,6 +1603,7 @@ impl NativeViewInputRuntime {
     fn sync_text_edit(&mut self) {
         let Some(widget) = self.focused_widget else {
             self.text_edit = None;
+            self.text_drag = None;
             return;
         };
         let Some(target) = self
@@ -1475,6 +1611,7 @@ impl NativeViewInputRuntime {
             .and_then(|plan| plan.hit_target_for_widget(widget))
         else {
             self.text_edit = None;
+            self.text_drag = None;
             return;
         };
         self.ensure_text_edit_for_target(target);
@@ -1603,6 +1740,7 @@ impl NativeViewInputRuntime {
         }) {
             self.focused_widget = None;
             self.text_edit = None;
+            self.text_drag = None;
             self.ime_preedit = None;
             report.focus_visual_changed = true;
         }
@@ -1781,6 +1919,10 @@ fn record_windows_win32_view_input_report(
     report.native_view_text_navigation_count += input.text_navigation_count;
     report.native_view_text_selection_change_count += input.text_selection_change_count;
     report.native_view_text_caret = input.text_caret.or(report.native_view_text_caret);
+    report.native_view_pointer_down_count += input.pointer_down_count;
+    report.native_view_pointer_move_count += input.pointer_move_count;
+    report.native_view_pointer_up_count += input.pointer_up_count;
+    report.native_view_text_drag_count += input.text_drag_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -1806,7 +1948,8 @@ fn post_windows_native_view_input(
 ) {
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL,
+        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+        WM_MOUSEWHEEL,
     };
 
     match input {
@@ -1814,6 +1957,11 @@ fn post_windows_native_view_input(
             let lparam = windows_lparam_from_point(*point);
             PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
             PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam);
+        },
+        NativeViewSmokeInput::Drag { start, end } => unsafe {
+            PostMessageW(hwnd, WM_LBUTTONDOWN, 0, windows_lparam_from_point(*start));
+            PostMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*end));
+            PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*end));
         },
         NativeViewSmokeInput::Text(text) => {
             for ch in text.chars() {
@@ -4358,6 +4506,74 @@ mod tests {
 
     #[cfg(all(feature = "label", feature = "textbox"))]
     #[test]
+    fn native_view_runtime_drags_unicode_text_selection_and_replaces_it() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(String),
+        }
+
+        let textbox_id = crate::WidgetId::new(80);
+        let builder = native_window("Platform Pointer Selection")
+            .size(360, 220)
+            .stateful_view(
+                "A中文Z".to_string(),
+                move |value| crate::textbox(value).id(textbox_id).on_change(Msg::Changed),
+                |value, message, _cx| match message {
+                    Msg::Changed(next) => *value = next,
+                },
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(textbox_id))
+            .expect("textbox should have pointer selection geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pressed = runtime.dispatch_pointer_down(
+            Point {
+                x: target.bounds.x + 16,
+                y: target.bounds.y + 12,
+            },
+            false,
+        );
+        let dragged = runtime.dispatch_pointer_move(Point {
+            x: target.bounds.x + 32,
+            y: target.bounds.y + 12,
+        });
+        let released = runtime.dispatch_pointer_up(Point {
+            x: target.bounds.x + 32,
+            y: target.bounds.y + 12,
+        });
+
+        assert_eq!(pressed.text_selection, Some((1, 1)));
+        assert!(pressed.text_drag_active);
+        assert_eq!(dragged.text_selection, Some((1, 3)));
+        assert!(dragged.text_selection_changed);
+        assert!(dragged.text_drag_active);
+        assert_eq!(released.text_selection, Some((1, 3)));
+        assert!(!released.text_drag_active);
+        assert!(dragged.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    NativeDrawCommand::FillRect {
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: crate::ColorRole::Accent,
+                            alpha: 64,
+                        },
+                        ..
+                    }
+                )
+            })
+        }));
+
+        let replaced = runtime.dispatch_text_input("🙂");
+
+        assert_eq!(replaced.text_selection, Some((2, 2)));
+        assert_eq!(runtime.focused_text_input_value().as_deref(), Some("A🙂Z"));
+    }
+
+    #[cfg(all(feature = "label", feature = "textbox"))]
+    #[test]
     fn native_view_runtime_keeps_ime_preedit_provisional_until_commit() {
         #[derive(Clone)]
         enum Msg {
@@ -4615,6 +4831,10 @@ mod tests {
         assert_eq!(report.native_view_text_navigation_count, 0);
         assert_eq!(report.native_view_text_selection_change_count, 0);
         assert_eq!(report.native_view_text_caret, None);
+        assert_eq!(report.native_view_pointer_down_count, 0);
+        assert_eq!(report.native_view_pointer_move_count, 0);
+        assert_eq!(report.native_view_pointer_up_count, 0);
+        assert_eq!(report.native_view_text_drag_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);
         assert_eq!(report.native_view_keyboard_selection_count, 0);
@@ -4624,6 +4844,19 @@ mod tests {
         assert_eq!(report.native_view_scroll_count, 0);
         assert_eq!(report.native_view_unhandled_scroll_count, 0);
         assert!(!report.visible_window_was_created());
+    }
+
+    #[test]
+    fn native_window_smoke_options_preserve_pointer_drag_sequence() {
+        let start = Point { x: 16, y: 24 };
+        let end = Point { x: 48, y: 24 };
+
+        let options = NativeWindowSmokeRunOptions::quick().native_view_drag(start, end);
+
+        assert_eq!(
+            options.native_view_inputs,
+            vec![NativeViewSmokeInput::Drag { start, end }]
+        );
     }
 
     #[test]

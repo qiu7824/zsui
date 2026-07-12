@@ -238,6 +238,44 @@ define_class!(
             sink.draw_plan(&plan);
         }
 
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            let location = self.convertPoint_fromView(event.locationInWindow(), None);
+            let report = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_pointer_down(
+                    crate::Point {
+                        x: appkit_coordinate(location.x),
+                        y: appkit_coordinate(location.y),
+                    },
+                    event
+                        .modifierFlags()
+                        .contains(NSEventModifierFlags::Shift),
+                );
+            if report.handled {
+                if let Some(window) = self.window() {
+                    window.makeFirstResponder(Some(self));
+                }
+            }
+            self.apply_input_report(report);
+        }
+
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged(&self, event: &NSEvent) {
+            let location = self.convertPoint_fromView(event.locationInWindow(), None);
+            let report = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_pointer_move(crate::Point {
+                    x: appkit_coordinate(location.x),
+                    y: appkit_coordinate(location.y),
+                });
+            self.apply_input_report(report);
+        }
+
         #[unsafe(method(mouseUp:))]
         fn mouse_up(&self, event: &NSEvent) {
             let location = self.convertPoint_fromView(event.locationInWindow(), None);
@@ -245,7 +283,7 @@ define_class!(
                 .ivars()
                 .runtime
                 .borrow_mut()
-                .dispatch_pointer_click(crate::Point {
+                .dispatch_pointer_up(crate::Point {
                     x: appkit_coordinate(location.x),
                     y: appkit_coordinate(location.y),
                 });

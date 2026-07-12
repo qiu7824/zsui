@@ -66,6 +66,36 @@ pub(crate) fn install_linux_gtk_draw_plan(
     });
     let gesture = gtk::GestureClick::new();
     gesture.set_button(gtk::gdk::BUTTON_PRIMARY);
+    gesture.connect_pressed({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |gesture, _press_count, x, y| {
+            let shift = gesture
+                .current_event_state()
+                .contains(gtk::gdk::ModifierType::SHIFT_MASK);
+            let report = runtime.borrow_mut().dispatch_pointer_down(
+                crate::Point {
+                    x: gtk_coordinate(x),
+                    y: gtk_coordinate(y),
+                },
+                shift,
+            );
+            if report.handled {
+                area.grab_focus();
+            }
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+        }
+    });
     gesture.connect_released({
         let application = window.application();
         let area = drawing_area.clone();
@@ -73,7 +103,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
         move |_gesture, _press_count, x, y| {
-            let report = runtime.borrow_mut().dispatch_pointer_click(crate::Point {
+            let report = runtime.borrow_mut().dispatch_pointer_up(crate::Point {
                 x: gtk_coordinate(x),
                 y: gtk_coordinate(y),
             });
@@ -91,7 +121,38 @@ pub(crate) fn install_linux_gtk_draw_plan(
             reset_linux_gtk_ime_if_no_text_target(&runtime, &ime);
         }
     });
+    gesture.connect_cancel({
+        let runtime = Rc::clone(&runtime);
+        move |_gesture, _sequence| {
+            runtime.borrow_mut().cancel_pointer_drag();
+        }
+    });
     drawing_area.add_controller(gesture);
+    let motion = gtk::EventControllerMotion::new();
+    motion.connect_motion({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |_motion, x, y| {
+            let report = runtime.borrow_mut().dispatch_pointer_move(crate::Point {
+                x: gtk_coordinate(x),
+                y: gtk_coordinate(y),
+            });
+            if report.handled {
+                apply_linux_gtk_input_report(
+                    report,
+                    &area,
+                    &plan,
+                    &runtime,
+                    &ime,
+                    application.as_ref(),
+                );
+            }
+        }
+    });
+    drawing_area.add_controller(motion);
     let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     scroll.connect_scroll({
         let application = window.application();

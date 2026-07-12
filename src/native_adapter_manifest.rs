@@ -413,12 +413,12 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/windows_win32_host.rs",
-                "IMM32 result commit, Unicode selection replacement and logical-caret candidate placement are connected; shaped-glyph geometry and CJK target proof are pending",
+                "IMM32 result commit, Unicode keyboard/pointer selection replacement and logical-caret candidate placement are connected; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/native.rs",
-                "the runtime driver dispatches typed commands and state updates on the Windows host",
+                "the runtime driver dispatches typed commands, state updates and capture-backed Unicode text drag selection on the Windows host",
             ),
             _ => (
                 ContractOnly,
@@ -460,7 +460,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView bounds plus mouse/scroll/key and NSTextInputClient callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
+                "NSView bounds plus mouse down/drag/up, scroll/key and NSTextInputClient callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
             ),
             _ => (
                 ContractOnly,
@@ -502,7 +502,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 allocation plus click/scroll/key controllers and GtkIMContext callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
+                "GTK4 allocation plus pressed/motion/released, scroll/key controllers and GtkIMContext callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
             ),
             _ => (
                 ContractOnly,

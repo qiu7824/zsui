@@ -10,10 +10,12 @@ use std::{
     },
 };
 
-use crate::native_input_visuals::{decorate_native_focus_ring, decorate_native_text_edit_visuals};
+use crate::native_input_visuals::{
+    decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
+};
 use crate::native_text_edit::{
-    delete_backward, delete_forward, insert_text, move_selection, NativeTextEditState,
-    NativeTextMovement,
+    delete_backward, delete_forward, insert_text, move_selection, set_pointer_selection,
+    NativeTextDragState, NativeTextEditState, NativeTextMovement,
 };
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
@@ -1775,6 +1777,7 @@ pub struct WindowsWin32ViewInputRoute {
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
     text_edit: Option<NativeTextEditState>,
+    text_drag: Option<NativeTextDragState>,
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
@@ -1795,6 +1798,7 @@ impl WindowsWin32ViewInputRoute {
             live_view: None,
             focused_widget: None,
             text_edit: None,
+            text_drag: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1812,6 +1816,7 @@ impl WindowsWin32ViewInputRoute {
             live_view: Some(live_view),
             focused_widget: None,
             text_edit: None,
+            text_drag: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1850,6 +1855,7 @@ impl WindowsWin32ViewInputRoute {
             return report;
         };
 
+        report.handled = true;
         self.focus_target(target, &mut report);
         if matches!(
             target.kind,
@@ -1860,6 +1866,124 @@ impl WindowsWin32ViewInputRoute {
 
         self.dispatch_activation(target, &mut report);
         report
+    }
+
+    fn dispatch_pointer_down(
+        &mut self,
+        point: crate::Point,
+        shift: bool,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            pointer_down_count: 1,
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let Some(target) = self.interaction_plan.hit_target_at(point) else {
+            return report;
+        };
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            self.text_drag = None;
+            return report;
+        }
+
+        self.focus_target(target, &mut report);
+        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let anchor = if shift { state.selection.anchor } else { index };
+        let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
+        self.text_edit = Some(state);
+        self.text_drag = Some(NativeTextDragState {
+            widget: target.widget,
+            anchor,
+        });
+        report.handled = true;
+        report.text_selection_change_count = usize::from(edit.selection_changed);
+        report.text_caret = Some(state.selection.caret);
+        report.text_drag_active = true;
+        report.events.push(format!(
+            "win32_view_text_pointer_down:{}:{}",
+            target.widget.0, index
+        ));
+        self.rebuild_pending_draw_plan();
+        report
+    }
+
+    fn dispatch_pointer_move(
+        &mut self,
+        point: crate::Point,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let Some(drag) = self.text_drag else {
+            return report;
+        };
+        let Some(target) = self.interaction_plan.hit_target_for_widget(drag.widget) else {
+            self.text_drag = None;
+            return report;
+        };
+        let value = self.widget_text_value(drag.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == drag.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
+        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
+        self.text_edit = Some(state);
+        report.handled = true;
+        report.pointer_move_count = 1;
+        report.text_selection_change_count = usize::from(edit.selection_changed);
+        report.text_caret = Some(state.selection.caret);
+        report.text_drag_active = true;
+        if edit.selection_changed {
+            self.rebuild_pending_draw_plan();
+        }
+        report.events.push(format!(
+            "win32_view_text_pointer_move:{}:{}",
+            drag.widget.0, index
+        ));
+        report
+    }
+
+    fn dispatch_pointer_up(&mut self, point: crate::Point) -> WindowsWin32ViewInputDispatchReport {
+        if self.text_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            report.pointer_move_count = 0;
+            let completed_selection = self
+                .text_edit
+                .is_some_and(|state| !state.selection.is_collapsed());
+            self.text_drag = None;
+            report.handled = true;
+            report.pointer_up_count = 1;
+            report.text_drag_count = usize::from(completed_selection);
+            report.text_drag_active = false;
+            report.events.push("win32_view_text_pointer_up".to_string());
+            return report;
+        }
+        let mut report = self.dispatch_click(point);
+        report.pointer_up_count = 1;
+        report
+    }
+
+    fn cancel_pointer_drag(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let had_drag = self.text_drag.take().is_some();
+        WindowsWin32ViewInputDispatchReport {
+            handled: had_drag,
+            hit_target_count: self.hit_target_count(),
+            events: had_drag
+                .then(|| "win32_view_text_pointer_cancel".to_string())
+                .into_iter()
+                .collect(),
+            ..WindowsWin32ViewInputDispatchReport::default()
+        }
     }
 
     fn dispatch_text_input(&mut self, text: &str) -> WindowsWin32ViewInputDispatchReport {
@@ -2183,6 +2307,7 @@ impl WindowsWin32ViewInputRoute {
             report.text_caret = self.text_edit.map(|state| state.selection.caret);
             return;
         }
+        self.text_drag = None;
         self.focused_widget = Some(target.widget);
         self.ensure_text_edit_for_target(target);
         report.focus_count = 1;
@@ -2208,6 +2333,7 @@ impl WindowsWin32ViewInputRoute {
             return report;
         };
         self.text_edit = None;
+        self.text_drag = None;
         if self.rebuild_pending_draw_plan() {
             report.focus_visual_count = 1;
         }
@@ -2228,6 +2354,7 @@ impl WindowsWin32ViewInputRoute {
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
         ) {
             self.text_edit = None;
+            self.text_drag = None;
             return;
         }
         let value = self.widget_text_value(target.widget).unwrap_or_default();
@@ -2498,8 +2625,12 @@ impl WindowsWin32ViewInputRoute {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WindowsWin32ViewInputDispatchReport {
+    pub handled: bool,
     pub hit_target_count: usize,
     pub click_count: usize,
+    pub pointer_down_count: usize,
+    pub pointer_move_count: usize,
+    pub pointer_up_count: usize,
     pub event_count: usize,
     pub message_count: usize,
     pub ui_command_count: usize,
@@ -2528,6 +2659,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub text_navigation_count: usize,
     pub text_selection_change_count: usize,
     pub text_caret: Option<usize>,
+    pub text_drag_count: usize,
+    pub text_drag_active: bool,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -2541,8 +2674,12 @@ pub struct WindowsWin32ViewInputDispatchReport {
 
 impl WindowsWin32ViewInputDispatchReport {
     fn merge(&mut self, next: WindowsWin32ViewInputDispatchReport) {
+        self.handled |= next.handled;
         self.hit_target_count = next.hit_target_count;
         self.click_count += next.click_count;
+        self.pointer_down_count += next.pointer_down_count;
+        self.pointer_move_count += next.pointer_move_count;
+        self.pointer_up_count += next.pointer_up_count;
         self.event_count += next.event_count;
         self.message_count += next.message_count;
         self.ui_command_count += next.ui_command_count;
@@ -2571,6 +2708,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.text_navigation_count += next.text_navigation_count;
         self.text_selection_change_count += next.text_selection_change_count;
         self.text_caret = next.text_caret.or(self.text_caret);
+        self.text_drag_count += next.text_drag_count;
+        self.text_drag_active = next.text_drag_active;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -2737,6 +2876,36 @@ pub fn dispatch_windows_win32_window_view_click(
     point: crate::Point,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_click(point))
+}
+
+pub fn dispatch_windows_win32_window_view_pointer_down(
+    hwnd: HWND,
+    point: crate::Point,
+    shift: bool,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_pointer_down(point, shift)
+    })
+}
+
+pub fn dispatch_windows_win32_window_view_pointer_move(
+    hwnd: HWND,
+    point: crate::Point,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_pointer_move(point))
+}
+
+pub fn dispatch_windows_win32_window_view_pointer_up(
+    hwnd: HWND,
+    point: crate::Point,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_pointer_up(point))
+}
+
+pub fn cancel_windows_win32_window_view_pointer_drag(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.cancel_pointer_drag())
 }
 
 pub fn dispatch_windows_win32_window_view_text_input(
@@ -3856,6 +4025,13 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 .is_some()
             {
                 0
+            } else if dispatch_windows_win32_window_view_pointer_move(
+                hwnd,
+                point_from_lparam(lparam),
+            )
+            .is_some_and(|report| report.handled)
+            {
+                0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -3873,6 +4049,16 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             {
                 SetCapture(hwnd);
                 0
+            } else if dispatch_windows_win32_window_view_pointer_down(
+                hwnd,
+                point_from_lparam(lparam),
+                (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
+            )
+            .is_some_and(|report| report.handled)
+            {
+                SetFocus(hwnd);
+                SetCapture(hwnd);
+                0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -3881,10 +4067,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             if dispatch_windows_win32_window_shell_pointer_up(hwnd).is_some() {
                 ReleaseCapture();
                 0
-            } else if dispatch_windows_win32_window_view_click(hwnd, point_from_lparam(lparam))
-                .is_some()
+            } else if dispatch_windows_win32_window_view_pointer_up(hwnd, point_from_lparam(lparam))
+                .is_some_and(|report| report.handled)
             {
                 SetFocus(hwnd);
+                ReleaseCapture();
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -3892,6 +4079,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         }
         WM_CAPTURECHANGED => {
             if dispatch_windows_win32_window_shell_pointer_cancel(hwnd).is_some() {
+                0
+            } else if cancel_windows_win32_window_view_pointer_drag(hwnd)
+                .is_some_and(|report| report.handled)
+            {
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -4838,6 +5029,46 @@ mod tests {
                 }
             )
         }));
+        assert_eq!(replaced.text_caret, Some(2));
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_captures_unicode_pointer_drag_selection() {
+        let widget = crate::WidgetId::new(33);
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox("A中文Z").id(widget),
+        );
+
+        let pressed = route.dispatch_pointer_down(crate::Point { x: 16, y: 12 }, false);
+        let dragged = route.dispatch_pointer_move(crate::Point { x: 32, y: 12 });
+        let released = route.dispatch_pointer_up(crate::Point { x: 32, y: 12 });
+
+        assert!(pressed.handled);
+        assert_eq!(pressed.pointer_down_count, 1);
+        assert_eq!(pressed.text_caret, Some(1));
+        assert!(pressed.text_drag_active);
+        assert_eq!(dragged.pointer_move_count, 1);
+        assert_eq!(dragged.text_caret, Some(3));
+        assert_eq!(dragged.text_selection_change_count, 1);
+        assert!(dragged.text_drag_active);
+        assert_eq!(released.pointer_up_count, 1);
+        assert_eq!(released.text_drag_count, 1);
+        assert!(!released.text_drag_active);
+
+        let replaced = route.dispatch_text_input("🙂");
+
         assert_eq!(replaced.text_caret, Some(2));
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
     }

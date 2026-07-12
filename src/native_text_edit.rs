@@ -43,6 +43,12 @@ pub(crate) struct NativeTextEditState {
     pub selection: NativeTextSelection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeTextDragState {
+    pub widget: WidgetId,
+    pub anchor: usize,
+}
+
 impl NativeTextEditState {
     pub(crate) fn at_end(widget: WidgetId, value: &str) -> Self {
         Self {
@@ -145,6 +151,21 @@ pub(crate) fn move_selection(
     } else {
         *selection = NativeTextSelection::collapsed(target);
     }
+    NativeTextEditResult {
+        handled: true,
+        selection_changed: *selection != before,
+        ..NativeTextEditResult::default()
+    }
+}
+
+pub(crate) fn set_pointer_selection(
+    value: &str,
+    selection: &mut NativeTextSelection,
+    anchor: usize,
+    caret: usize,
+) -> NativeTextEditResult {
+    let before = selection.clamp(value);
+    *selection = NativeTextSelection { anchor, caret }.clamp(value);
     NativeTextEditResult {
         handled: true,
         selection_changed: *selection != before,
@@ -273,5 +294,22 @@ mod tests {
 
         move_selection(value, &mut selection, NativeTextMovement::End, false, true);
         assert_eq!(selection, NativeTextSelection::collapsed(5));
+    }
+
+    #[test]
+    fn pointer_selection_preserves_anchor_and_clamps_outside_text() {
+        let mut selection = NativeTextSelection::collapsed(1);
+
+        let extended = set_pointer_selection("A中文", &mut selection, 1, 99);
+
+        assert!(extended.handled);
+        assert!(extended.selection_changed);
+        assert_eq!(
+            selection,
+            NativeTextSelection {
+                anchor: 1,
+                caret: 3
+            }
+        );
     }
 }

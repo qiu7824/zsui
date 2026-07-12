@@ -74,8 +74,9 @@ hosts.
 All three direct desktop hosts attach a typed Rust view draw plan to their
 native content surface. Win32 paints through its buffered GDI sink, AppKit
 through a custom `NSView`, and GTK4 through `DrawingArea`/Cairo/Pango. Windows
-posts a native click message during the smoke run. AppKit `mouseUp:` and GTK4
-`GestureClick` are connected to the same typed hit-test/message/executor path,
+posts native pointer messages during the smoke run. AppKit mouse down/drag/up and
+GTK4 gesture/motion controllers are connected to the same typed
+hit-test/message/executor path,
 while AppKit `scrollWheel:` and GTK4 `EventControllerScroll` emit the same
 typed `ScrollBy` path. Their focusable content views also route Tab/Shift+Tab,
 keyboard activation and direct UTF-8 edits. AppKit `NSTextInputClient` and GTK4
@@ -112,9 +113,12 @@ records typed row selection when built with the `list` feature, including
 Up/Down keyboard selection between focused rows. It also posts `WM_KEYDOWN`
 Tab to prove ordered focus traversal and Enter to prove focused keyboard
 activation into the same `UiCommand` path; the resulting focus-ring repaint is
-counted independently from logical focus changes. Richer pointer coverage, precise
-caret/selection editing, non-Windows target input evidence and resize screenshot
-artifacts remain later runtime gates.
+counted independently from logical focus changes. The textbox smoke also posts a
+down/move/up drag sequence, verifies Unicode range replacement and records
+`native_view_pointer_*`, `native_view_text_drag_count` and
+`native_view_text_selection_change_count`. Shaped-glyph/grapheme/bidirectional
+hit testing, non-Windows target input evidence and resize screenshot artifacts
+remain later runtime gates.
 When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`
 and a command-backed scroll target, Win32 also records mouse-wheel scroll
 counters and the emitted scroll `UiCommand`. The default `--view` example does
