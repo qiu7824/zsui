@@ -289,7 +289,7 @@ impl DesktopCapabilities {
                 DesktopCapability::WindowResize,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSWindow resizable and minimum-size declarations are connected; resize event routing is pending",
+                        "actual NSView bounds relayout and repaint shared live/static views and refresh input geometry; target resize artifacts and public WindowResized event routing are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -419,7 +419,7 @@ impl DesktopCapabilities {
                 DesktopCapability::WindowResize,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GTK4 resizable and minimum-size declarations are connected; resize event routing is pending",
+                        "actual DrawingArea allocation relayouts and repaints shared live/static views and refreshes input geometry; Wayland/X11 resize artifacts and public WindowResized event routing are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

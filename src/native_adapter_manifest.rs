@@ -435,7 +435,7 @@ fn native_ui_capability_readiness(
             MainWindow => (
                 FirstPass,
                 "src/macos_appkit_services.rs",
-                "NSApplication/NSWindow creation, visibility, redraw, owned close, draw-plan content views and typed pointer/keyboard routing are connected; richer input and target proof are pending",
+                "NSApplication/NSWindow creation, visibility, redraw, owned close, resize-driven content relayout and typed pointer/keyboard routing are connected; richer input and target proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -460,7 +460,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView mouse/scroll/key and NSTextInputClient callbacks route focus, activation, provisional preedit and committed UTF-8 editing, then repaint rebuilt draw plans; target proof is pending",
+                "NSView bounds plus mouse/scroll/key and NSTextInputClient callbacks relayout shared views, rebuild hit geometry, route typed input and repaint rebuilt draw plans; target proof is pending",
             ),
             _ => (
                 ContractOnly,
@@ -477,7 +477,7 @@ fn native_ui_capability_readiness(
             MainWindow => (
                 FirstPass,
                 "src/linux_gtk_services.rs",
-                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close, draw-plan child surfaces and typed pointer/keyboard routing are connected; richer input and Wayland/X11 proof are pending",
+                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close, allocation-driven content relayout and typed pointer/keyboard routing are connected; richer input and Wayland/X11 proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -502,7 +502,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 click/scroll/key controllers and GtkIMContext callbacks route focus, activation, provisional preedit and committed UTF-8 editing, then repaint rebuilt draw plans; target proof is pending",
+                "GTK4 allocation plus click/scroll/key controllers and GtkIMContext callbacks relayout shared views, rebuild hit geometry, route typed input and repaint rebuilt draw plans; target proof is pending",
             ),
             _ => (
                 ContractOnly,

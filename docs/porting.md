@@ -75,7 +75,12 @@ AppKit now implements `NSTextInputClient`; GTK4 owns a focused
 runtime, render it without mutating application state, commit UTF-8 through
 the normal typed `TextChanged` path and anchor the native candidate window to
 the focused editor. Precise cursor/selection editing, target CJK interaction
-artifacts, resize-driven relayout and accessibility remain separate gates.
+artifacts and accessibility remain separate gates. During native resize,
+actual `NSView` bounds and GTK4 `DrawingArea` allocations flow back through
+`NativeViewInputRuntime::set_surface(...)`, rebuilding the shared layout, draw
+plan, hit targets and candidate-window geometry before the current frame is
+painted. Target resize screenshots and explicit public `WindowResized` service
+events remain incomplete evidence gates.
 
 These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and

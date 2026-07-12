@@ -80,7 +80,10 @@ while AppKit `scrollWheel:` and GTK4 `EventControllerScroll` emit the same
 typed `ScrollBy` path. Their focusable content views also route Tab/Shift+Tab,
 keyboard activation and direct UTF-8 edits. AppKit `NSTextInputClient` and GTK4
 `GtkIMMulticontext` now route provisional preedit, committed UTF-8 and candidate
-window anchors through the same shared runtime.
+window anchors through the same shared runtime. Each renderer also feeds its
+actual content bounds back into shared layout before painting, so resize updates
+draw commands, hit targets and text-input geometry rather than stretching a
+startup snapshot.
 Both still require target-machine interaction artifacts:
 
 ```powershell
@@ -107,8 +110,8 @@ records typed row selection when built with the `list` feature, including
 Up/Down keyboard selection between focused rows. It also posts `WM_KEYDOWN`
 Tab to prove ordered focus traversal and Enter to prove focused keyboard
 activation into the same `UiCommand` path. Richer pointer coverage, precise
-caret/selection editing and non-Windows target input evidence remain later
-runtime gates.
+caret/selection editing, non-Windows target input evidence and resize screenshot
+artifacts remain later runtime gates.
 When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`
 and a command-backed scroll target, Win32 also records mouse-wheel scroll
 counters and the emitted scroll `UiCommand`. The default `--view` example does

@@ -411,8 +411,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 85,
-            status_name: "three_native_event_loops_renderers_and_first_pass_typed_input",
+            percent_complete: 87,
+            status_name: "three_native_event_loops_renderers_first_pass_input_and_resize_relayout",
             source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
                 "AppKit precise caret/selection editing, focus visuals and richer pointer dispatch",

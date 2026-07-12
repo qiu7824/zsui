@@ -826,6 +826,7 @@ struct NativeViewImePreedit {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
+    pub surface_changed: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
     pub app_command_count: usize,
@@ -879,6 +880,62 @@ impl NativeViewInputRuntime {
 
     pub(crate) fn has_focused_text_input(&self) -> bool {
         self.focused_text_input_target().is_some()
+    }
+
+    pub(crate) fn set_surface(&mut self, surface: Rect, dpi: Dpi) -> NativeViewInputDispatchReport {
+        let surface = Rect {
+            x: surface.x,
+            y: surface.y,
+            width: surface.width.max(0),
+            height: surface.height.max(0),
+        };
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ime_preedit_text: self.ime_preedit.as_ref().map(|state| state.text.clone()),
+            ime_selection: self.ime_preedit.as_ref().and_then(|state| state.selection),
+            ..NativeViewInputDispatchReport::default()
+        };
+        if self.surface == Some(surface) && self.dpi == dpi {
+            report.ime_caret_rect = self.text_input_caret_rect();
+            return report;
+        }
+
+        self.surface = Some(surface);
+        self.dpi = dpi;
+        report.surface_changed = true;
+        report.handled = true;
+        if let Some(runtime) = &self.live_view {
+            runtime.set_surface(surface, dpi);
+            self.interaction_plan = Some(runtime.interaction_plan());
+            report.redraw_plan = Some(runtime.draw_plan());
+        } else if let Some(view) = &mut self.ui_command_view {
+            let mut layout_cx = ViewLayoutCx::new(surface, dpi);
+            view.layout(&mut layout_cx);
+            let interaction_plan = view.interaction_plan();
+            report.hit_target_count = interaction_plan.hit_target_count();
+            self.interaction_plan = Some(interaction_plan);
+            let mut paint_cx = ViewPaintCx::new(dpi);
+            view.paint(&mut paint_cx);
+            report.redraw_plan = Some(paint_cx.into_plan());
+        }
+
+        if self.focused_widget.is_some_and(|widget| {
+            self.current_interaction_plan()
+                .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
+        }) {
+            self.focused_widget = None;
+            self.ime_preedit = None;
+        }
+        if let Some(plan) = report.redraw_plan.take() {
+            report.redraw_plan = Some(self.compose_ime_preedit(plan));
+        }
+        report.hit_target_count = self.hit_target_count();
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.ime_preedit_text = self.ime_preedit.as_ref().map(|state| state.text.clone());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        report.ime_caret_rect = self.text_input_caret_rect();
+        report
     }
 
     pub(crate) fn focused_text_input_value(&self) -> Option<String> {
@@ -4085,6 +4142,109 @@ mod tests {
                 matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. } if *rect == target.bounds)
             })
         }));
+    }
+
+    #[cfg(all(feature = "label", feature = "textbox"))]
+    #[test]
+    fn native_view_runtime_relayouts_live_view_and_input_geometry_on_resize() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(String),
+        }
+
+        let textbox_id = crate::WidgetId::new(78);
+        let builder = native_window("Platform Resize")
+            .size(240, 120)
+            .stateful_view(
+                String::new(),
+                move |value| crate::textbox(value).id(textbox_id).on_change(Msg::Changed),
+                |value, message, _cx| match message {
+                    Msg::Changed(next) => *value = next,
+                },
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        let initial = runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(textbox_id))
+            .expect("textbox should have initial resize geometry");
+        runtime.dispatch_pointer_click(Point {
+            x: initial.bounds.x + 1,
+            y: initial.bounds.y + 1,
+        });
+        runtime.dispatch_ime_preedit("中", Some((1, 1)));
+
+        let resized = runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 360,
+            },
+            Dpi::standard(),
+        );
+        let resized_target = runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(textbox_id))
+            .expect("textbox should have resized geometry");
+
+        assert!(resized.handled);
+        assert!(resized.surface_changed);
+        assert_ne!(initial.bounds, resized_target.bounds);
+        assert_eq!(resized.ime_preedit_text.as_deref(), Some("中"));
+        assert_eq!(resized.focused_widget, Some(textbox_id.0));
+        assert!(resized.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(
+                |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "中"),
+            )
+        }));
+
+        let unchanged = runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 360,
+            },
+            Dpi::standard(),
+        );
+        assert!(!unchanged.surface_changed);
+        assert!(unchanged.redraw_plan.is_none());
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[test]
+    fn native_view_runtime_relayouts_static_command_view_on_resize() {
+        let button_id = crate::WidgetId::new(79);
+        let builder = native_window("Static Resize")
+            .size(200, 100)
+            .ui_command_view(
+                crate::button("Resize")
+                    .id(button_id)
+                    .on_click(UiCommand::app(crate::CommandId("zsui.resize.static"))),
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        let initial = runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(button_id))
+            .expect("button should have initial static geometry");
+
+        let report = runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 520,
+                height: 240,
+            },
+            Dpi::standard(),
+        );
+        let resized = runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(button_id))
+            .expect("button should have resized static geometry");
+
+        assert!(report.surface_changed);
+        assert!(report.redraw_plan.is_some());
+        assert_ne!(initial.bounds, resized.bounds);
     }
 
     #[test]

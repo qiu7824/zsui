@@ -37,7 +37,24 @@ pub(crate) fn install_linux_gtk_draw_plan(
     ime.set_use_preedit(true);
     drawing_area.set_draw_func({
         let plan = Rc::clone(&plan);
-        move |area, context, _width, _height| {
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |area, context, width, height| {
+            let resize = runtime.borrow_mut().set_surface(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: width.max(0),
+                    height: height.max(0),
+                },
+                crate::Dpi::standard(),
+            );
+            if let Some(updated) = resize.redraw_plan {
+                *plan.borrow_mut() = updated;
+            }
+            if resize.surface_changed {
+                sync_linux_gtk_ime(area, &runtime, &ime);
+            }
             let plan = plan.borrow();
             let system_prefers_dark = gtk::Settings::default()
                 .map(|settings| settings.is_gtk_application_prefer_dark_theme())

@@ -208,6 +208,24 @@ define_class!(
 
         #[unsafe(method(drawRect:))]
         fn draw_rect(&self, _dirty_rect: NSRect) {
+            let bounds = self.bounds();
+            let resize = self.ivars().runtime.borrow_mut().set_surface(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: appkit_coordinate(bounds.size.width).max(0),
+                    height: appkit_coordinate(bounds.size.height).max(0),
+                },
+                crate::Dpi::standard(),
+            );
+            if let Some(plan) = resize.redraw_plan {
+                *self.ivars().plan.borrow_mut() = plan;
+            }
+            if resize.surface_changed {
+                if let Some(context) = self.inputContext() {
+                    context.invalidateCharacterCoordinates();
+                }
+            }
             let system_prefers_dark = appkit_system_prefers_dark(self.mtm());
             let plan = self.ivars().plan.borrow();
             let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);

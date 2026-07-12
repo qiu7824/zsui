@@ -320,10 +320,10 @@ impl HostCapabilities {
         let mut capabilities = Self::macos_scaffold();
         if cfg!(feature = "macos-appkit") {
             capabilities.windows = CapabilitySupport::partial(
-                "NSApplication/NSWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
+                "NSApplication/NSWindow lifecycle, draw-plan rendering, typed input and resize relayout are connected; target proof is pending",
             );
             capabilities.window_resizing = CapabilitySupport::partial(
-                "NSWindow resizable and minimum-size declarations are connected; resize event routing is pending",
+                "actual NSView bounds rebuild shared layout, draw plans and input geometry; target resize artifacts are pending",
             );
             capabilities.window_decorations = CapabilitySupport::partial(
                 "NSWindow titled and borderless style declarations are connected; target proof is pending",
@@ -409,10 +409,10 @@ impl HostCapabilities {
         let mut capabilities = Self::linux_scaffold();
         if cfg!(feature = "linux-gtk") {
             capabilities.windows = CapabilitySupport::partial(
-                "GtkApplication/ApplicationWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
+                "GtkApplication/ApplicationWindow lifecycle, draw-plan rendering, typed input and allocation relayout are connected; target proof is pending",
             );
             capabilities.window_resizing = CapabilitySupport::partial(
-                "GTK4 resizable and minimum-size declarations are connected; resize event routing is pending",
+                "actual DrawingArea allocation rebuilds shared layout, draw plans and input geometry; Wayland/X11 resize artifacts are pending",
             );
             capabilities.window_decorations = CapabilitySupport::partial(
                 "GTK4 decorated and undecorated window declarations are connected; compositor proof is pending",
