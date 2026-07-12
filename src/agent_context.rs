@@ -411,12 +411,12 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 82,
-            status_name: "three_native_event_loops_renderers_and_basic_typed_input_with_win32_ime_lead",
+            percent_complete: 85,
+            status_name: "three_native_event_loops_renderers_and_first_pass_typed_input",
             source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
-                "AppKit NSTextInputClient preedit/IME, focus visuals and richer pointer dispatch",
-                "GTK4 GtkIMContext preedit/IME, focus visuals and richer pointer dispatch",
+                "AppKit precise caret/selection editing, focus visuals and richer pointer dispatch",
+                "GTK4 precise caret/selection editing, focus visuals and richer pointer dispatch",
                 "macOS target screenshot and interaction artifacts",
                 "Linux Wayland/X11 screenshot and interaction artifacts",
                 "richer Win32 pointer/IME events",
@@ -936,8 +936,8 @@ mod tests {
             .iter()
             .find(|report| report.platform == NativeUiPlatform::Macos)
             .expect("macOS capability readiness should be included");
-        assert_eq!(macos.runtime_implementation_count(), 7);
-        assert_eq!(macos.contract_only_count, 11);
+        assert_eq!(macos.runtime_implementation_count(), 8);
+        assert_eq!(macos.contract_only_count, 10);
         assert!(context
             .readiness
             .declaration_audit_surface_names

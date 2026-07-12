@@ -78,7 +78,9 @@ posts a native click message during the smoke run. AppKit `mouseUp:` and GTK4
 `GestureClick` are connected to the same typed hit-test/message/executor path,
 while AppKit `scrollWheel:` and GTK4 `EventControllerScroll` emit the same
 typed `ScrollBy` path. Their focusable content views also route Tab/Shift+Tab,
-keyboard activation and direct UTF-8 edits, while IME/preedit remains pending.
+keyboard activation and direct UTF-8 edits. AppKit `NSTextInputClient` and GTK4
+`GtkIMMulticontext` now route provisional preedit, committed UTF-8 and candidate
+window anchors through the same shared runtime.
 Both still require target-machine interaction artifacts:
 
 ```powershell
@@ -104,8 +106,9 @@ feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. It also
 records typed row selection when built with the `list` feature, including
 Up/Down keyboard selection between focused rows. It also posts `WM_KEYDOWN`
 Tab to prove ordered focus traversal and Enter to prove focused keyboard
-activation into the same `UiCommand` path. Full pointer/IME coverage and
-non-Windows native input remain later runtime gates.
+activation into the same `UiCommand` path. Richer pointer coverage, precise
+caret/selection editing and non-Windows target input evidence remain later
+runtime gates.
 When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`
 and a command-backed scroll target, Win32 also records mouse-wheel scroll
 counters and the emitted scroll `UiCommand`. The default `--view` example does

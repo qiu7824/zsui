@@ -26,7 +26,7 @@ use crate::{
         NativeStatusItemRequest, NativeStatusMenuCommandHost, NativeStatusMenuCommandRequest,
         NativeStatusMenuCommandResult,
     },
-    render_protocol::NativeDrawPlan,
+    render_protocol::{NativeDrawCommand, NativeDrawFill, NativeDrawPlan},
     settings::SettingsPageSpec,
     shell_layout::{ZsShellLayoutSpec, ZsShellRuntime},
     tray::TraySpec,
@@ -811,8 +811,16 @@ pub(crate) struct NativeViewInputRuntime {
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
+    ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeViewImePreedit {
+    widget: crate::WidgetId,
+    text: String,
+    selection: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -824,6 +832,9 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub ui_command_count: usize,
     pub ui_command_ids: Vec<&'static str>,
     pub focused_widget: Option<u64>,
+    pub ime_preedit_text: Option<String>,
+    pub ime_selection: Option<(usize, usize)>,
+    pub ime_caret_rect: Option<Rect>,
     pub redraw_plan: Option<NativeDrawPlan>,
     pub quit_requested: bool,
     pub errors: Vec<String>,
@@ -846,6 +857,7 @@ impl NativeViewInputRuntime {
             ui_command_view,
             live_view,
             focused_widget: None,
+            ime_preedit: None,
             app_command_executor,
             ui_command_executor,
         }
@@ -863,6 +875,27 @@ impl NativeViewInputRuntime {
             .as_ref()
             .map(SharedLiveViewRuntime::interaction_plan)
             .or_else(|| self.interaction_plan.clone())
+    }
+
+    pub(crate) fn has_focused_text_input(&self) -> bool {
+        self.focused_text_input_target().is_some()
+    }
+
+    pub(crate) fn focused_text_input_value(&self) -> Option<String> {
+        let target = self.focused_text_input_target()?;
+        self.widget_text_value(target.widget)
+    }
+
+    pub(crate) fn text_input_caret_rect(&self) -> Option<Rect> {
+        let target = self.focused_text_input_target()?;
+        let inset = Dp::new(8.0).to_px(self.dpi).round_i32().max(1);
+        let available_height = (target.bounds.height - inset * 2).max(1);
+        Some(Rect {
+            x: target.bounds.x.saturating_add(inset),
+            y: target.bounds.y.saturating_add(inset),
+            width: 1,
+            height: available_height.min(24),
+        })
     }
 
     pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewInputDispatchReport {
@@ -958,6 +991,7 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_text_input(&mut self, text: &str) -> NativeViewInputDispatchReport {
+        self.ime_preedit = None;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
@@ -1018,6 +1052,70 @@ impl NativeViewInputRuntime {
         self.dispatch_view_event(ViewEvent::TextChanged { widget, value }, report)
     }
 
+    pub(crate) fn dispatch_ime_preedit(
+        &mut self,
+        text: &str,
+        selection: Option<(usize, usize)>,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ime_caret_rect: self.text_input_caret_rect(),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let Some(target) = self.focused_text_input_target() else {
+            self.ime_preedit = None;
+            return report;
+        };
+        if text.is_empty() {
+            return self.cancel_ime_preedit();
+        }
+
+        let char_count = text.chars().count();
+        let selection = selection.map(|(start, end)| {
+            let start = start.min(char_count);
+            let end = end.min(char_count);
+            (start.min(end), start.max(end))
+        });
+        self.ime_preedit = Some(NativeViewImePreedit {
+            widget: target.widget,
+            text: text.to_string(),
+            selection,
+        });
+        report.handled = true;
+        report.ime_preedit_text = Some(text.to_string());
+        report.ime_selection = selection;
+        report.redraw_plan = self.current_composed_draw_plan();
+        report
+    }
+
+    pub(crate) fn dispatch_ime_commit(&mut self, text: &str) -> NativeViewInputDispatchReport {
+        let had_preedit = self.ime_preedit.take().is_some();
+        let mut report = self.dispatch_text_input(text);
+        if had_preedit && !report.handled {
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
+        report.ime_preedit_text = None;
+        report.ime_selection = None;
+        report.ime_caret_rect = self.text_input_caret_rect();
+        report
+    }
+
+    pub(crate) fn cancel_ime_preedit(&mut self) -> NativeViewInputDispatchReport {
+        let had_preedit = self.ime_preedit.take().is_some();
+        NativeViewInputDispatchReport {
+            handled: had_preedit,
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ime_caret_rect: self.text_input_caret_rect(),
+            redraw_plan: had_preedit
+                .then(|| self.current_composed_draw_plan())
+                .flatten(),
+            ..NativeViewInputDispatchReport::default()
+        }
+    }
+
     pub(crate) fn dispatch_pointer_scroll(
         &mut self,
         point: Point,
@@ -1063,8 +1161,68 @@ impl NativeViewInputRuntime {
         target: crate::ViewHitTarget,
         report: &mut NativeViewInputDispatchReport,
     ) {
+        if self.focused_widget != Some(target.widget) && self.ime_preedit.take().is_some() {
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         self.focused_widget = Some(target.widget);
         report.focused_widget = Some(target.widget.0);
+        report.ime_caret_rect = self.text_input_caret_rect();
+    }
+
+    fn focused_text_input_target(&self) -> Option<crate::ViewHitTarget> {
+        let widget = self.focused_widget?;
+        self.current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .filter(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+                )
+            })
+    }
+
+    fn current_composed_draw_plan(&self) -> Option<NativeDrawPlan> {
+        let plan = if let Some(runtime) = &self.live_view {
+            runtime.draw_plan()
+        } else {
+            let view = self.ui_command_view.as_ref()?;
+            let mut paint_cx = ViewPaintCx::new(self.dpi);
+            view.paint(&mut paint_cx);
+            paint_cx.into_plan()
+        };
+        Some(self.compose_ime_preedit(plan))
+    }
+
+    fn compose_ime_preedit(&self, mut plan: NativeDrawPlan) -> NativeDrawPlan {
+        let Some(preedit) = &self.ime_preedit else {
+            return plan;
+        };
+        let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|interaction| interaction.hit_target_for_widget(preedit.widget))
+        else {
+            return plan;
+        };
+        let committed = self.widget_text_value(preedit.widget).unwrap_or_default();
+        let mut decorated = false;
+        for command in plan.commands.iter_mut().rev() {
+            let NativeDrawCommand::Text(text) = command else {
+                continue;
+            };
+            if text.text == committed && rect_contains_rect(target.bounds, text.bounds) {
+                text.text.push_str(&preedit.text);
+                decorated = true;
+                break;
+            }
+        }
+        if decorated {
+            plan.push(NativeDrawCommand::StrokeRect {
+                rect: target.bounds,
+                stroke: NativeDrawFill::Role(crate::ColorRole::Accent),
+                width: 2,
+            });
+        }
+        plan
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
@@ -1179,8 +1337,15 @@ impl NativeViewInputRuntime {
                 .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
         }) {
             self.focused_widget = None;
+            self.ime_preedit = None;
+        }
+        if let Some(plan) = report.redraw_plan.take() {
+            report.redraw_plan = Some(self.compose_ime_preedit(plan));
         }
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.ime_preedit_text = self.ime_preedit.as_ref().map(|state| state.text.clone());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        report.ime_caret_rect = self.text_input_caret_rect();
         report
     }
 
@@ -1203,6 +1368,13 @@ impl NativeViewInputRuntime {
             None => route,
         })
     }
+}
+
+fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x.saturating_add(inner.width) <= outer.x.saturating_add(outer.width)
+        && inner.y.saturating_add(inner.height) <= outer.y.saturating_add(outer.height)
 }
 
 #[allow(dead_code)]
@@ -3845,6 +4017,72 @@ mod tests {
                     command,
                     crate::NativeDrawCommand::Text(text) if text.text == "中文"
                 )
+            })
+        }));
+    }
+
+    #[cfg(all(feature = "label", feature = "textbox"))]
+    #[test]
+    fn native_view_runtime_keeps_ime_preedit_provisional_until_commit() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(String),
+        }
+        struct State {
+            value: String,
+        }
+
+        let textbox_id = crate::WidgetId::new(77);
+        let builder = native_window("Platform IME").size(360, 220).stateful_view(
+            State {
+                value: "A".to_string(),
+            },
+            move |state| {
+                crate::textbox(&state.value)
+                    .id(textbox_id)
+                    .on_change(Msg::Changed)
+            },
+            |state, message, _cx| match message {
+                Msg::Changed(value) => state.value = value,
+            },
+        );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(textbox_id))
+            .expect("textbox should have an IME target");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+
+        let preedit = runtime.dispatch_ime_preedit("中文", Some((1, 1)));
+
+        assert!(preedit.handled);
+        assert_eq!(preedit.message_count, 0);
+        assert_eq!(preedit.ime_preedit_text.as_deref(), Some("中文"));
+        assert_eq!(preedit.ime_selection, Some((1, 1)));
+        assert!(preedit.ime_caret_rect.is_some());
+        assert_eq!(runtime.focused_text_input_value().as_deref(), Some("A"));
+        assert!(preedit.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::Text(text) if text.text == "A中文")
+            }) && plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. } if *rect == target.bounds)
+            })
+        }));
+
+        let committed = runtime.dispatch_ime_commit("中文");
+
+        assert!(committed.handled);
+        assert_eq!(committed.message_count, 1);
+        assert_eq!(committed.ime_preedit_text, None);
+        assert_eq!(runtime.focused_text_input_value().as_deref(), Some("A中文"));
+        assert!(committed.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::Text(text) if text.text == "A中文")
+            }) && !plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. } if *rect == target.bounds)
             })
         }));
     }

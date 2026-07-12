@@ -1,7 +1,7 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, ProtocolObject};
+use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
@@ -10,11 +10,11 @@ use objc2_app_kit::{
     NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGraphicsContext,
     NSImage, NSLineBreakMode, NSMutableParagraphStyle, NSParagraphStyleAttributeName,
     NSStringDrawing, NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter,
-    NSTextAlignment, NSUpArrowFunctionKey, NSView,
+    NSTextAlignment, NSTextInputClient, NSUpArrowFunctionKey, NSView,
 };
 use objc2_foundation::{
-    NSAttributedStringKey, NSDictionary, NSMutableDictionary, NSObjectProtocol, NSPoint, NSRect,
-    NSSize, NSString,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
+    NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
 };
 
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
@@ -27,6 +27,9 @@ use crate::{
 struct ZsuiAppKitDrawViewIvars {
     plan: RefCell<NativeDrawPlan>,
     runtime: RefCell<crate::native::NativeViewInputRuntime>,
+    marked_text: RefCell<String>,
+    marked_selection: Cell<Option<(usize, usize)>>,
+    ime_dispatched: Cell<bool>,
 }
 
 define_class!(
@@ -37,6 +40,149 @@ define_class!(
 
     unsafe impl NSObjectProtocol for ZsuiAppKitDrawView {}
 
+    unsafe impl NSTextInputClient for ZsuiAppKitDrawView {
+        #[unsafe(method(insertText:replacementRange:))]
+        unsafe fn insert_text(&self, string: &AnyObject, _replacement_range: NSRange) {
+            let text = appkit_input_string(string);
+            self.ivars().marked_text.borrow_mut().clear();
+            self.ivars().marked_selection.set(None);
+            let report = self.ivars().runtime.borrow_mut().dispatch_ime_commit(&text);
+            self.ivars().ime_dispatched.set(report.handled);
+            self.apply_input_report(report);
+        }
+
+        #[unsafe(method(doCommandBySelector:))]
+        unsafe fn do_command_by_selector(&self, _selector: Sel) {
+            self.ivars().ime_dispatched.set(false);
+        }
+
+        #[unsafe(method(setMarkedText:selectedRange:replacementRange:))]
+        unsafe fn set_marked_text(
+            &self,
+            string: &AnyObject,
+            selected_range: NSRange,
+            _replacement_range: NSRange,
+        ) {
+            let text = appkit_input_string(string);
+            let selection = utf16_range_to_char_range(&text, selected_range);
+            *self.ivars().marked_text.borrow_mut() = text.clone();
+            self.ivars().marked_selection.set(selection);
+            let report = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_ime_preedit(&text, selection);
+            self.ivars().ime_dispatched.set(report.handled);
+            self.apply_input_report(report);
+        }
+
+        #[unsafe(method(unmarkText))]
+        fn unmark_text(&self) {
+            self.ivars().marked_text.borrow_mut().clear();
+            self.ivars().marked_selection.set(None);
+            let report = self.ivars().runtime.borrow_mut().cancel_ime_preedit();
+            self.ivars().ime_dispatched.set(report.handled);
+            self.apply_input_report(report);
+        }
+
+        #[unsafe(method(selectedRange))]
+        fn selected_range(&self) -> NSRange {
+            let committed_utf16 = self
+                .ivars()
+                .runtime
+                .borrow()
+                .focused_text_input_value()
+                .map(|value| value.encode_utf16().count());
+            let Some(committed_utf16) = committed_utf16 else {
+                return NSRange::new(NSNotFound as usize, 0);
+            };
+            if let Some((start, end)) = self.ivars().marked_selection.get() {
+                let marked = self.ivars().marked_text.borrow();
+                let start = char_index_to_utf16_offset(&marked, start);
+                let end = char_index_to_utf16_offset(&marked, end);
+                NSRange::new(
+                    committed_utf16.saturating_add(start),
+                    end.saturating_sub(start),
+                )
+            } else {
+                NSRange::new(committed_utf16, 0)
+            }
+        }
+
+        #[unsafe(method(markedRange))]
+        fn marked_range(&self) -> NSRange {
+            let marked = self.ivars().marked_text.borrow();
+            if marked.is_empty() {
+                return NSRange::new(NSNotFound as usize, 0);
+            }
+            let start = self
+                .ivars()
+                .runtime
+                .borrow()
+                .focused_text_input_value()
+                .map(|value| value.encode_utf16().count())
+                .unwrap_or(0);
+            NSRange::new(start, marked.encode_utf16().count())
+        }
+
+        #[unsafe(method(hasMarkedText))]
+        fn has_marked_text(&self) -> bool {
+            !self.ivars().marked_text.borrow().is_empty()
+        }
+
+        #[unsafe(method_id(attributedSubstringForProposedRange:actualRange:))]
+        unsafe fn attributed_substring_for_proposed_range(
+            &self,
+            _range: NSRange,
+            actual_range: *mut NSRange,
+        ) -> Option<Retained<NSAttributedString>> {
+            if !actual_range.is_null() {
+                unsafe { actual_range.write(NSRange::new(NSNotFound as usize, 0)) };
+            }
+            None
+        }
+
+        #[unsafe(method_id(validAttributesForMarkedText))]
+        fn valid_attributes_for_marked_text(
+            &self,
+        ) -> Retained<NSArray<NSAttributedStringKey>> {
+            NSArray::new()
+        }
+
+        #[unsafe(method(firstRectForCharacterRange:actualRange:))]
+        unsafe fn first_rect_for_character_range(
+            &self,
+            range: NSRange,
+            actual_range: *mut NSRange,
+        ) -> NSRect {
+            if !actual_range.is_null() {
+                unsafe { actual_range.write(range) };
+            }
+            let local = self
+                .ivars()
+                .runtime
+                .borrow()
+                .text_input_caret_rect()
+                .map(appkit_rect)
+                .unwrap_or_else(|| {
+                    NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1.0, 1.0))
+                });
+            self.window()
+                .map(|window| window.convertRectToScreen(self.convertRect_toView(local, None)))
+                .unwrap_or(local)
+        }
+
+        #[unsafe(method(characterIndexForPoint:))]
+        fn character_index_for_point(&self, _point: NSPoint) -> usize {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_input_value()
+                .map(|value| value.encode_utf16().count())
+                .unwrap_or(0)
+        }
+    }
+
     impl ZsuiAppKitDrawView {
         #[unsafe(method(isFlipped))]
         fn is_flipped(&self) -> bool {
@@ -46,6 +192,18 @@ define_class!(
         #[unsafe(method(acceptsFirstResponder))]
         fn accepts_first_responder(&self) -> bool {
             true
+        }
+
+        #[unsafe(method(resignFirstResponder))]
+        fn resign_first_responder(&self) -> bool {
+            self.ivars().marked_text.borrow_mut().clear();
+            self.ivars().marked_selection.set(None);
+            let report = self.ivars().runtime.borrow_mut().cancel_ime_preedit();
+            self.apply_input_report(report);
+            if let Some(context) = self.inputContext() {
+                context.discardMarkedText();
+            }
+            unsafe { msg_send![super(self), resignFirstResponder] }
         }
 
         #[unsafe(method(drawRect:))]
@@ -87,6 +245,14 @@ define_class!(
                 .map(|text| text.to_string())
                 .unwrap_or_default();
             let code = unmodified.chars().next().map(u32::from);
+            if !command_or_control && self.ivars().runtime.borrow().has_focused_text_input() {
+                self.ivars().ime_dispatched.set(false);
+                let events = NSArray::from_slice(&[event]);
+                self.interpretKeyEvents(&events);
+                if self.ivars().ime_dispatched.get() {
+                    return;
+                }
+            }
             let mut runtime = self.ivars().runtime.borrow_mut();
             let report = match code {
                 Some(code) if code == NSTabCharacter => {
@@ -172,6 +338,15 @@ impl ZsuiAppKitDrawView {
         if report.quit_requested {
             objc2_app_kit::NSApplication::sharedApplication(self.mtm()).stop(None);
         }
+        let should_discard_marked_text = !self.ivars().runtime.borrow().has_focused_text_input()
+            && !self.ivars().marked_text.borrow().is_empty();
+        if should_discard_marked_text {
+            self.ivars().marked_text.borrow_mut().clear();
+            self.ivars().marked_selection.set(None);
+            if let Some(context) = self.inputContext() {
+                context.discardMarkedText();
+            }
+        }
     }
 
     fn new(
@@ -183,6 +358,9 @@ impl ZsuiAppKitDrawView {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars {
             plan: RefCell::new(plan),
             runtime: RefCell::new(runtime),
+            marked_text: RefCell::new(String::new()),
+            marked_selection: Cell::new(None),
+            ime_dispatched: Cell::new(false),
         });
         unsafe { msg_send![super(this), initWithFrame: frame] }
     }
@@ -467,6 +645,40 @@ fn appkit_coordinate(value: f64) -> i32 {
     value
         .round()
         .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+}
+
+fn appkit_input_string(value: &AnyObject) -> String {
+    if let Some(string) = value.downcast_ref::<NSString>() {
+        string.to_string()
+    } else if let Some(attributed) = value.downcast_ref::<NSAttributedString>() {
+        attributed.string().to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn utf16_range_to_char_range(text: &str, range: NSRange) -> Option<(usize, usize)> {
+    if text.is_empty() {
+        return None;
+    }
+    let start = utf16_offset_to_char_index(text, range.location);
+    let end = utf16_offset_to_char_index(text, range.location.saturating_add(range.length));
+    Some((start.min(end), start.max(end)))
+}
+
+fn utf16_offset_to_char_index(text: &str, offset: usize) -> usize {
+    let mut utf16_units = 0_usize;
+    for (index, character) in text.chars().enumerate() {
+        if utf16_units >= offset {
+            return index;
+        }
+        utf16_units = utf16_units.saturating_add(character.len_utf16());
+    }
+    text.chars().count()
+}
+
+fn char_index_to_utf16_offset(text: &str, index: usize) -> usize {
+    text.chars().take(index).map(char::len_utf16).sum()
 }
 
 fn appkit_system_prefers_dark(mtm: MainThreadMarker) -> bool {

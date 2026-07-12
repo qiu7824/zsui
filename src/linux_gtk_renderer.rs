@@ -32,6 +32,9 @@ pub(crate) fn install_linux_gtk_draw_plan(
     drawing_area.set_focusable(true);
     let plan = Rc::new(RefCell::new(plan));
     let runtime = Rc::new(RefCell::new(runtime));
+    let ime = gtk::IMMulticontext::new();
+    ime.set_client_widget(Some(&drawing_area));
+    ime.set_use_preedit(true);
     drawing_area.set_draw_func({
         let plan = Rc::clone(&plan);
         move |area, context, _width, _height| {
@@ -51,6 +54,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let area = drawing_area.clone();
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
         move |_gesture, _press_count, x, y| {
             let report = runtime.borrow_mut().dispatch_pointer_click(crate::Point {
                 x: gtk_coordinate(x),
@@ -59,15 +63,15 @@ pub(crate) fn install_linux_gtk_draw_plan(
             if report.handled {
                 area.grab_focus();
             }
-            if let Some(updated) = report.redraw_plan {
-                *plan.borrow_mut() = updated;
-                area.queue_draw();
-            }
-            if report.quit_requested {
-                if let Some(application) = &application {
-                    application.quit();
-                }
-            }
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+            reset_linux_gtk_ime_if_no_text_target(&runtime, &ime);
         }
     });
     drawing_area.add_controller(gesture);
@@ -109,12 +113,56 @@ pub(crate) fn install_linux_gtk_draw_plan(
         }
     });
     drawing_area.add_controller(scroll);
+    ime.connect_preedit_changed({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |context| {
+            let (text, _attributes, cursor) = context.preedit_string();
+            let cursor = cursor.max(0) as usize;
+            let report = runtime.borrow_mut().dispatch_ime_preedit(
+                text.as_str(),
+                (!text.is_empty()).then_some((cursor, cursor)),
+            );
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+        }
+    });
+    ime.connect_commit({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |_context, text| {
+            let report = runtime.borrow_mut().dispatch_ime_commit(text);
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+            reset_linux_gtk_ime_if_no_text_target(&runtime, &ime);
+        }
+    });
     let keyboard = gtk::EventControllerKey::new();
+    keyboard.set_im_context(Some(&ime));
     keyboard.connect_key_pressed({
         let application = window.application();
         let area = drawing_area.clone();
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
         move |_controller, key, _keycode, modifiers| {
             let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
             let command_or_control = modifiers.intersects(
@@ -122,53 +170,54 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     | gtk::gdk::ModifierType::SUPER_MASK
                     | gtk::gdk::ModifierType::META_MASK,
             );
-            let mut runtime = runtime.borrow_mut();
+            let mut runtime_state = runtime.borrow_mut();
             let report = match key {
                 gtk::gdk::Key::Tab => {
-                    runtime.dispatch_key_with_shift(crate::NativeViewKey::Tab, shift)
+                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Tab, shift)
                 }
                 gtk::gdk::Key::ISO_Left_Tab => {
-                    runtime.dispatch_key_with_shift(crate::NativeViewKey::Tab, true)
+                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Tab, true)
                 }
                 gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
-                    let report = runtime.dispatch_key(crate::NativeViewKey::Enter);
+                    let report = runtime_state.dispatch_key(crate::NativeViewKey::Enter);
                     if report.handled {
                         report
                     } else {
-                        runtime.dispatch_text_input("\r")
+                        runtime_state.dispatch_text_input("\r")
                     }
                 }
                 gtk::gdk::Key::space => {
-                    let report = runtime.dispatch_key(crate::NativeViewKey::Space);
+                    let report = runtime_state.dispatch_key(crate::NativeViewKey::Space);
                     if report.handled || command_or_control {
                         report
                     } else {
-                        runtime.dispatch_text_input(" ")
+                        runtime_state.dispatch_text_input(" ")
                     }
                 }
-                gtk::gdk::Key::Up => runtime.dispatch_key(crate::NativeViewKey::Up),
-                gtk::gdk::Key::Down => runtime.dispatch_key(crate::NativeViewKey::Down),
+                gtk::gdk::Key::Up => runtime_state.dispatch_key(crate::NativeViewKey::Up),
+                gtk::gdk::Key::Down => runtime_state.dispatch_key(crate::NativeViewKey::Down),
                 gtk::gdk::Key::BackSpace | gtk::gdk::Key::Delete => {
-                    runtime.dispatch_text_input("\u{8}")
+                    runtime_state.dispatch_text_input("\u{8}")
                 }
                 _ if !command_or_control => key
                     .to_unicode()
                     .filter(|character| !character.is_control())
-                    .map(|character| runtime.dispatch_text_input(&character.to_string()))
+                    .map(|character| runtime_state.dispatch_text_input(&character.to_string()))
                     .unwrap_or_default(),
                 _ => crate::native::NativeViewInputDispatchReport::default(),
             };
-            drop(runtime);
-            if let Some(updated) = report.redraw_plan {
-                *plan.borrow_mut() = updated;
-                area.queue_draw();
-            }
-            if report.quit_requested {
-                if let Some(application) = &application {
-                    application.quit();
-                }
-            }
-            if report.handled {
+            drop(runtime_state);
+            let handled = report.handled;
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+            reset_linux_gtk_ime_if_no_text_target(&runtime, &ime);
+            if handled {
                 gtk::glib::Propagation::Stop
             } else {
                 gtk::glib::Propagation::Proceed
@@ -176,7 +225,87 @@ pub(crate) fn install_linux_gtk_draw_plan(
         }
     });
     drawing_area.add_controller(keyboard);
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_enter({
+        let area = drawing_area.clone();
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |_focus| sync_linux_gtk_ime(&area, &runtime, &ime)
+    });
+    focus.connect_leave({
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |_focus| {
+            let report = runtime.borrow_mut().cancel_ime_preedit();
+            if let Some(updated) = report.redraw_plan {
+                *plan.borrow_mut() = updated;
+                area.queue_draw();
+            }
+            ime.reset();
+            ime.focus_out();
+        }
+    });
+    drawing_area.add_controller(focus);
     window.set_child(Some(&drawing_area));
+}
+
+fn apply_linux_gtk_input_report(
+    report: crate::native::NativeViewInputDispatchReport,
+    area: &gtk::DrawingArea,
+    plan: &Rc<RefCell<NativeDrawPlan>>,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: &gtk::IMMulticontext,
+    application: Option<&gtk::Application>,
+) {
+    if let Some(updated) = report.redraw_plan {
+        *plan.borrow_mut() = updated;
+        area.queue_draw();
+    }
+    if report.quit_requested {
+        if let Some(application) = application {
+            application.quit();
+        }
+    }
+    sync_linux_gtk_ime(area, runtime, ime);
+}
+
+fn sync_linux_gtk_ime(
+    area: &gtk::DrawingArea,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: &gtk::IMMulticontext,
+) {
+    let (has_text_input, caret_rect) = {
+        let runtime = runtime.borrow();
+        (
+            runtime.has_focused_text_input(),
+            runtime.text_input_caret_rect(),
+        )
+    };
+    if area.has_focus() && has_text_input {
+        if let Some(rect) = caret_rect {
+            ime.set_cursor_location(&gtk::gdk::Rectangle::new(
+                rect.x,
+                rect.y,
+                rect.width.max(1),
+                rect.height.max(1),
+            ));
+        }
+        ime.focus_in();
+    } else {
+        ime.focus_out();
+    }
+}
+
+fn reset_linux_gtk_ime_if_no_text_target(
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: &gtk::IMMulticontext,
+) {
+    let has_text_input = runtime.borrow().has_focused_text_input();
+    if !has_text_input {
+        ime.reset();
+    }
 }
 
 fn gtk_coordinate(value: f64) -> i32 {

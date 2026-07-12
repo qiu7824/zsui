@@ -70,19 +70,21 @@ shared `ViewInteractionPlan`, dispatch typed static/live view messages, hand
 emitted commands to shared executors and replace the draw plan after stateful
 updates. The content views are focusable and also route Tab/Shift+Tab, Enter/Space,
 list Up/Down, direct UTF-8 character input, multiline return and deletion.
-This remains first-pass input evidence: target screenshots, resize-driven
-relayout and accessibility remain separate gates.
-Composition/preedit still requires `NSTextInputClient` and `GtkIMContext`, so
-CJK IME remains a distinct incomplete gate.
+AppKit now implements `NSTextInputClient`; GTK4 owns a focused
+`GtkIMMulticontext`. Both keep marked text provisional in the shared input
+runtime, render it without mutating application state, commit UTF-8 through
+the normal typed `TextChanged` path and anchor the native candidate window to
+the focused editor. Precise cursor/selection editing, target CJK interaction
+artifacts, resize-driven relayout and accessibility remain separate gates.
 
 These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
 fallback transport. Shared View rendering, click/scroll, keyboard focus,
-activation and direct text editing now reach all three native window surfaces,
-but AppKit/GTK4 IME/preedit, target screenshot capture and interaction evidence
-remain required; entering or painting a native event loop alone is not
-system-complete evidence.
+activation, direct text editing and first-pass IME composition now reach all
+three native window surfaces, but target screenshot capture, CJK interaction
+evidence and precise caret/selection behavior remain required; entering or
+painting a native event loop alone is not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

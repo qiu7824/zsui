@@ -452,10 +452,15 @@ fn native_ui_capability_readiness(
                 "src/macos_appkit_menu.rs",
                 "NSMenu and NSMenuItem preserve nested state and return typed commands through a safe queue; AppKit host proof is pending",
             ),
+            Ime => (
+                FirstPass,
+                "src/macos_appkit_renderer.rs",
+                "NSTextInputClient routes marked-text preedit, UTF-8 commit and candidate-window anchoring through provisional shared input state; precise caret geometry and CJK target proof are pending",
+            ),
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView mouse/scroll/key events hit-test the shared ViewInteractionPlan, route focus, activation and direct UTF-8 editing, then repaint rebuilt draw plans; IME/preedit and target proof are pending",
+                "NSView mouse/scroll/key and NSTextInputClient callbacks route focus, activation, provisional preedit and committed UTF-8 editing, then repaint rebuilt draw plans; target proof is pending",
             ),
             _ => (
                 ContractOnly,
@@ -489,10 +494,15 @@ fn native_ui_capability_readiness(
                 "src/linux_gtk_menu.rs",
                 "GMenu and SimpleAction preserve nested state and return typed commands through a safe queue; GTK host proof is pending",
             ),
+            Ime => (
+                FirstPass,
+                "src/linux_gtk_renderer.rs",
+                "GtkIMMulticontext routes preedit, UTF-8 commit, focus lifecycle and candidate-window anchoring through provisional shared input state; precise caret geometry and CJK target proof are pending",
+            ),
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 click/scroll/key controllers hit-test the shared ViewInteractionPlan, route focus, activation and direct UTF-8 editing, then repaint rebuilt draw plans; IME/preedit and target proof are pending",
+                "GTK4 click/scroll/key controllers and GtkIMContext callbacks route focus, activation, provisional preedit and committed UTF-8 editing, then repaint rebuilt draw plans; target proof is pending",
             ),
             _ => (
                 ContractOnly,
@@ -873,14 +883,22 @@ mod tests {
         let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
             .expect("macOS readiness should be declared");
         assert_eq!(macos.ready_count, 0);
-        assert_eq!(macos.first_pass_count, 7);
-        assert_eq!(macos.contract_only_count, 11);
+        assert_eq!(macos.first_pass_count, 8);
+        assert_eq!(macos.contract_only_count, 10);
         assert!(!macos.contract_only_capability_names().contains(&"renderer"));
         assert_eq!(
             macos
                 .capabilities
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::Renderer)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
+        assert_eq!(
+            macos
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::Ime)
                 .map(|entry| entry.level),
             Some(NativeUiCapabilityReadinessLevel::FirstPass)
         );
@@ -912,13 +930,21 @@ mod tests {
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 7);
-        assert_eq!(linux.contract_only_count, 11);
+        assert_eq!(linux.first_pass_count, 8);
+        assert_eq!(linux.contract_only_count, 10);
         assert_eq!(
             linux
                 .capabilities
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::TextLayout)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
+        assert_eq!(
+            linux
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::Ime)
                 .map(|entry| entry.level),
             Some(NativeUiCapabilityReadinessLevel::FirstPass)
         );

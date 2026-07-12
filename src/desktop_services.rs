@@ -265,11 +265,23 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "focused direct UTF-8 key input, multiline return and deletion are connected; NSTextInputClient preedit/IME is pending",
+                        "focused direct and IME-committed UTF-8 input, multiline return and deletion are connected; precise selection editing and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
                         "enable macos-appkit to compile AppKit text input routing",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::InputMethod,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSTextInputClient preedit, commit, marked ranges and candidate-window anchoring are connected; precise caret geometry and CJK target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile NSTextInputClient composition routing",
                     )
                 },
             )
@@ -383,11 +395,23 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "focused direct UTF-8 key input, multiline return and deletion are connected; GtkIMContext preedit/IME is pending",
+                        "focused direct and IME-committed UTF-8 input, multiline return and deletion are connected; precise selection editing and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
                         "enable linux-gtk to compile GTK4 text input routing",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::InputMethod,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GtkIMMulticontext preedit, commit, focus lifecycle and candidate-window anchoring are connected; precise caret geometry and CJK target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GtkIMContext composition routing",
                     )
                 },
             )
@@ -901,6 +925,7 @@ mod tests {
             DesktopCapability::KeyboardFocus,
             DesktopCapability::PointerInput,
             DesktopCapability::TextInput,
+            DesktopCapability::InputMethod,
         ] {
             assert_eq!(
                 macos.support(capability).map(|support| support.status),
