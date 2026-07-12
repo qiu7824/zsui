@@ -120,6 +120,11 @@ pub fn zsui_component_catalog_summary() -> ZsuiComponentCatalogSummary {
 }
 
 const INPUT_GAPS: &[&str] = &["complete IME", "accessibility", "non-Windows native input"];
+const VIRTUAL_LIST_GAPS: &[&str] = &[
+    "variable-height row metrics",
+    "scrollbar thumb dragging",
+    "non-Windows runtime smoke",
+];
 const PLATFORM_GAPS: &[&str] = &["native platform binding", "target interaction smoke"];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
@@ -419,10 +424,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "items_repeater",
         "ItemsRepeater",
         Collection,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("virtual-list"),
+        "src/view.rs + src/paged_list.rs",
+        VIRTUAL_LIST_GAPS
     ),
     component!(
         "badge",

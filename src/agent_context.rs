@@ -885,9 +885,9 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"desktop-winit"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 20);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 21);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 8);
-        assert_eq!(context.readiness.component_catalog.not_started_count, 20);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 19);
         assert!(context
             .readiness
             .rust_first_goal_names
@@ -1154,7 +1154,7 @@ mod tests {
         let packs = manifest["packs"]
             .as_array()
             .expect("AI context packs should be an array");
-        assert_eq!(packs.len(), 13);
+        assert_eq!(packs.len(), 14);
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut ids = HashSet::new();
         for pack in packs {

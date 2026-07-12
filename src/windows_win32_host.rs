@@ -1,6 +1,8 @@
 use std::{
+    ffi::OsString,
     mem::{size_of, zeroed},
-    path::Path,
+    os::windows::ffi::{OsStrExt, OsStringExt},
+    path::{Path, PathBuf},
     ptr::{null, null_mut},
     sync::{
         atomic::{AtomicI32, Ordering},
@@ -13,14 +15,15 @@ use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
 };
 use crate::{
-    native_status_menu_command_from_menu, Command, HostCapabilities, MenuItemSpec, MenuSpec,
-    NativeAppIconResource, NativeDrawPlan, NativeMainWindowHandles, NativeMainWindowHost,
-    NativeMainWindowHostOperation, NativeMainWindowPresentMode, NativeMainWindowPresentation,
-    NativeMainWindowRequest, NativeStatusItemHost, NativeStatusItemHostOperation,
-    NativeStatusItemPresentation, NativeStatusItemRequest, NativeStatusMenuCommandHost,
-    NativeStatusMenuCommandHostOperation, NativeStatusMenuCommandRequest,
-    NativeStatusMenuCommandResult, NativeTransientWindowHost, NativeTransientWindowHostOperation,
-    NativeTransientWindowPresentation, NativeTransientWindowRequest, NativeWindowOptions, Renderer,
+    native_status_menu_command_from_menu, Command, FileDialogService, FileDialogSpec,
+    HostCapabilities, MenuItemSpec, MenuSpec, NativeAppIconResource, NativeDrawPlan,
+    NativeMainWindowHandles, NativeMainWindowHost, NativeMainWindowHostOperation,
+    NativeMainWindowPresentMode, NativeMainWindowPresentation, NativeMainWindowRequest,
+    NativeStatusItemHost, NativeStatusItemHostOperation, NativeStatusItemPresentation,
+    NativeStatusItemRequest, NativeStatusMenuCommandHost, NativeStatusMenuCommandHostOperation,
+    NativeStatusMenuCommandRequest, NativeStatusMenuCommandResult, NativeTransientWindowHost,
+    NativeTransientWindowHostOperation, NativeTransientWindowPresentation,
+    NativeTransientWindowRequest, NativeWindowOptions, Renderer, SaveFileDialogSpec,
     SharedAppCommandExecutor, SharedUiCommandExecutor, Size, TraySpec, UiCommand, UiRect, View,
     ViewEventCx, ViewInteractionPlan, ViewNode, WindowSpec, ZsShellInteractionEvent,
     ZsShellInteractionUpdate, ZsShellRuntime, ZsuiError, ZsuiResult,
@@ -30,38 +33,53 @@ use windows_sys::Win32::{
         GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT,
         WPARAM,
     },
-    Graphics::Gdi::{
-        BeginPaint, EndPaint, InvalidateRect, ScreenToClient, UpdateWindow, PAINTSTRUCT,
+    Graphics::{
+        Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE},
+        Gdi::{BeginPaint, EndPaint, InvalidateRect, ScreenToClient, UpdateWindow, PAINTSTRUCT},
     },
     System::LibraryLoader::GetModuleHandleW,
+    System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD},
     UI::{
+        Controls::Dialogs::{
+            CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_ALLOWMULTISELECT,
+            OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT,
+            OFN_PATHMUSTEXIST, OPENFILENAMEW,
+        },
         HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow},
-        Input::KeyboardAndMouse::{
-            ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER, TME_LEAVE,
-            TRACKMOUSEEVENT,
+        Input::{
+            Ime::{
+                ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, ImmSetCandidateWindow,
+                CANDIDATEFORM, CFS_EXCLUDE, GCS_RESULTSTR,
+            },
+            KeyboardAndMouse::{
+                ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER, TME_LEAVE,
+                TRACKMOUSEEVENT,
+            },
         },
         Shell::{
             Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
             NOTIFYICONDATAW,
         },
         WindowsAndMessaging::{
-            AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
-            DestroyMenu, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos, GetMessageW,
-            GetSystemMetrics, GetWindowLongPtrW, GetWindowLongW, GetWindowRect, IsWindow,
-            LoadCursorW, LoadImageW, PostMessageW, PostQuitMessage, RegisterClassExW, SendMessageW,
-            SetForegroundWindow, SetWindowLongPtrW, SetWindowLongW, SetWindowPos, ShowWindow,
-            TrackPopupMenu, TranslateMessage, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW,
-            CW_USEDEFAULT, GWLP_USERDATA, GWL_EXSTYLE, HCURSOR, HICON, HMENU, HTCAPTION,
-            HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, IMAGE_ICON, LR_DEFAULTCOLOR,
-            LR_LOADFROMFILE, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
-            SC_MOVE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED,
-            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
-            SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP,
-            WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN,
-            WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-            WM_SETICON, WM_SIZE, WM_SYSCOMMAND, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN,
-            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            AppendMenuW, CreateMenu, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
+            DestroyMenu, DestroyWindow, DispatchMessageW, DrawMenuBar, GetClientRect, GetCursorPos,
+            GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowLongW, GetWindowRect,
+            IsWindow, KillTimer, LoadCursorW, LoadImageW, PostMessageW, PostQuitMessage,
+            RegisterClassExW, SendMessageW, SetForegroundWindow, SetMenu, SetTimer,
+            SetWindowLongPtrW, SetWindowLongW, SetWindowPos, ShowWindow, TrackPopupMenu,
+            TranslateMessage, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+            GWLP_USERDATA, GWL_EXSTYLE, HCURSOR, HICON, HMENU, HTCAPTION, HWND_TOPMOST, ICON_BIG,
+            ICON_SMALL, IDC_ARROW, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MF_CHECKED,
+            MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, SC_MOVE, SM_CXICON, SM_CXSMICON,
+            SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, TPM_NONOTIFY,
+            TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
+            WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+            WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+            WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SETTINGCHANGE,
+            WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION,
+            WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX,
+            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -75,6 +93,8 @@ static WINDOW_COMPLETED_VIEW_INPUT_REPORTS: OnceLock<
 > = OnceLock::new();
 static WINDOW_SHELL_INPUT_ROUTES: OnceLock<Mutex<Vec<WindowsWindowShellInputRouteRecord>>> =
     OnceLock::new();
+static WINDOW_MENU_COMMAND_TABLES: OnceLock<Mutex<Vec<WindowsWindowMenuCommandTableRecord>>> =
+    OnceLock::new();
 
 const HOVER_DEFAULT: u32 = u32::MAX;
 const WM_MOUSELEAVE: u32 = 0x02A3;
@@ -86,6 +106,7 @@ pub const ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS: u32 = TPM_RETURNCMD | TPM_NONOTIFY
 const ZSUI_WIN32_VK_RETURN: u32 = 0x0d;
 const ZSUI_WIN32_VK_TAB: u32 = 0x09;
 const ZSUI_WIN32_VK_SPACE: u32 = 0x20;
+const ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID: usize = 0x5a51;
 #[cfg(feature = "list")]
 const ZSUI_WIN32_VK_UP: u32 = 0x26;
 #[cfg(feature = "list")]
@@ -114,6 +135,12 @@ struct WindowsCompletedViewInputReportRecord {
 struct WindowsWindowShellInputRouteRecord {
     hwnd: isize,
     route: WindowsWin32ShellInputRoute,
+}
+
+#[derive(Debug, Clone)]
+struct WindowsWindowMenuCommandTableRecord {
+    hwnd: isize,
+    command_table: WindowsWin32StatusMenuCommandTable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +342,7 @@ pub fn create_owned_windows_for_specs_with_routes(
     clear_windows_win32_window_draw_plans();
     clear_windows_win32_window_view_input_routes();
     clear_windows_win32_window_shell_input_routes();
+    clear_windows_win32_window_menu_command_tables();
     let capabilities = HostCapabilities::windows_native_window_host();
     let mut host = WindowsWin32MainWindowHost::new();
     let mut handles = Vec::new();
@@ -343,6 +371,12 @@ pub fn create_owned_windows_for_specs_with_routes(
                     let icon = WindowsWin32OwnedAppIconResource::from_icon_path(icon_path)?;
                     owned.set_main_owned_app_icon(&mut host, icon);
                 }
+                if let Some(menu) = spec.menu.as_ref() {
+                    owned.set_main_owned_menu(WindowsWin32OwnedWindowMenu::attach(
+                        created.main,
+                        menu,
+                    )?);
+                }
                 handles.push(owned);
             }
             NativeMainWindowPresentation::Failed => {
@@ -360,6 +394,7 @@ pub fn create_owned_windows_for_specs_with_routes(
 pub struct WindowsWin32OwnedMainWindowHandles {
     handles: NativeMainWindowHandles<HWND>,
     app_icons: Vec<WindowsWin32OwnedAppIconResource>,
+    window_menu: Option<WindowsWin32OwnedWindowMenu>,
     destroy_on_drop: bool,
 }
 
@@ -368,6 +403,7 @@ impl WindowsWin32OwnedMainWindowHandles {
         Self {
             handles,
             app_icons: Vec::new(),
+            window_menu: None,
             destroy_on_drop: true,
         }
     }
@@ -397,6 +433,10 @@ impl WindowsWin32OwnedMainWindowHandles {
         self.app_icons.push(icon);
     }
 
+    pub fn set_main_owned_menu(&mut self, menu: WindowsWin32OwnedWindowMenu) {
+        self.window_menu = Some(menu);
+    }
+
     pub fn into_handles(mut self) -> NativeMainWindowHandles<HWND> {
         self.destroy_on_drop = false;
         let handles = self.handles;
@@ -409,6 +449,9 @@ impl Drop for WindowsWin32OwnedMainWindowHandles {
     fn drop(&mut self) {
         if !self.destroy_on_drop {
             return;
+        }
+        if let Some(menu) = self.window_menu.take() {
+            let _ = menu.detach_and_destroy();
         }
         for handle in [self.handles.quick, self.handles.main] {
             if handle.is_null() {
@@ -733,6 +776,318 @@ impl Drop for WindowsWin32OwnedPopupMenu {
     fn drop(&mut self) {
         let _ = self.destroy_active();
     }
+}
+
+#[derive(Debug)]
+pub struct WindowsWin32OwnedWindowMenu {
+    owner: HWND,
+    menu: HMENU,
+    active: bool,
+}
+
+impl WindowsWin32OwnedWindowMenu {
+    pub fn attach(owner: HWND, menu: &MenuSpec) -> ZsuiResult<Self> {
+        if owner.is_null() {
+            return Err(ZsuiError::invalid_spec(
+                "window.menu.owner",
+                "Win32 window menu owner cannot be null",
+            ));
+        }
+        let command_table = WindowsWin32StatusMenuCommandTable::from_menu(menu);
+        let handle = create_empty_window_menu()?;
+        let mut command_index = 0;
+        if let Err(err) =
+            append_status_popup_menu_items(menu, handle, &command_table, &mut command_index)
+        {
+            unsafe {
+                DestroyMenu(handle);
+            }
+            return Err(err);
+        }
+        if unsafe { SetMenu(owner, handle) } == 0 {
+            unsafe {
+                DestroyMenu(handle);
+            }
+            return Err(ZsuiError::host(
+                "windows_win32_set_window_menu",
+                "SetMenu failed",
+            ));
+        }
+        unsafe {
+            DrawMenuBar(owner);
+        }
+        set_windows_win32_window_menu_command_table(owner, command_table);
+        Ok(Self {
+            owner,
+            menu: handle,
+            active: true,
+        })
+    }
+
+    pub const fn handle(&self) -> HMENU {
+        self.menu
+    }
+
+    pub fn detach_and_destroy(mut self) -> bool {
+        self.detach_and_destroy_active()
+    }
+
+    fn detach_and_destroy_active(&mut self) -> bool {
+        if !self.active {
+            return true;
+        }
+        clear_windows_win32_window_menu_command_table(self.owner);
+        if !self.owner.is_null() && unsafe { IsWindow(self.owner) } != 0 {
+            unsafe {
+                SetMenu(self.owner, null_mut());
+                DrawMenuBar(self.owner);
+            }
+        }
+        let destroyed = unsafe { DestroyMenu(self.menu) != 0 };
+        if destroyed {
+            self.active = false;
+        }
+        destroyed
+    }
+}
+
+impl Drop for WindowsWin32OwnedWindowMenu {
+    fn drop(&mut self) {
+        let _ = self.detach_and_destroy_active();
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct WindowsWin32FileDialogService;
+
+impl FileDialogService for WindowsWin32FileDialogService {
+    fn open_file_dialog(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
+        windows_win32_open_file_dialog(spec)
+    }
+
+    fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+        windows_win32_save_file_dialog(spec)
+    }
+}
+
+pub fn windows_win32_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
+    const FILE_BUFFER_LEN: usize = 32_768;
+    let mut file_buffer = vec![0u16; FILE_BUFFER_LEN];
+    let title = wide_null(&spec.title);
+    let filter = windows_file_dialog_filter(&spec.filters);
+    let initial_dir = spec.current_path.as_deref().map(wide_null);
+    let mut dialog: OPENFILENAMEW = unsafe { zeroed() };
+    dialog.lStructSize = size_of::<OPENFILENAMEW>() as u32;
+    dialog.hwndOwner = null_mut();
+    dialog.lpstrFilter = filter.as_ptr();
+    dialog.lpstrFile = file_buffer.as_mut_ptr();
+    dialog.nMaxFile = file_buffer.len() as u32;
+    dialog.lpstrInitialDir = initial_dir
+        .as_ref()
+        .map(|path| path.as_ptr())
+        .unwrap_or(null());
+    dialog.lpstrTitle = title.as_ptr();
+    dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if spec.allow_multiple {
+        dialog.Flags |= OFN_ALLOWMULTISELECT;
+    }
+
+    if unsafe { GetOpenFileNameW(&mut dialog) } == 0 {
+        return windows_common_dialog_cancel_or_error("windows_open_file_dialog");
+    }
+    Ok(Some(parse_windows_open_file_buffer(&file_buffer)))
+}
+
+pub fn windows_win32_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+    const FILE_BUFFER_LEN: usize = 32_768;
+    let mut file_buffer = vec![0u16; FILE_BUFFER_LEN];
+    if let Some(name) = spec.suggested_name.as_deref() {
+        let encoded = name.encode_utf16().collect::<Vec<_>>();
+        if encoded.len() + 1 > file_buffer.len() {
+            return Err(ZsuiError::invalid_spec(
+                "save_file_dialog.suggested_name",
+                "suggested file name is too long",
+            ));
+        }
+        file_buffer[..encoded.len()].copy_from_slice(&encoded);
+    }
+    let title = wide_null(&spec.title);
+    let filter = windows_file_dialog_filter(&spec.filters);
+    let initial_dir = spec.current_path.as_ref().map(|path| {
+        path.as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>()
+    });
+    let default_extension = windows_file_dialog_default_extension(&spec.filters);
+    let mut dialog: OPENFILENAMEW = unsafe { zeroed() };
+    dialog.lStructSize = size_of::<OPENFILENAMEW>() as u32;
+    dialog.hwndOwner = null_mut();
+    dialog.lpstrFilter = filter.as_ptr();
+    dialog.lpstrFile = file_buffer.as_mut_ptr();
+    dialog.nMaxFile = file_buffer.len() as u32;
+    dialog.lpstrInitialDir = initial_dir
+        .as_ref()
+        .map(|path| path.as_ptr())
+        .unwrap_or(null());
+    dialog.lpstrTitle = title.as_ptr();
+    dialog.lpstrDefExt = default_extension
+        .as_ref()
+        .map(|extension| extension.as_ptr())
+        .unwrap_or(null());
+    dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if unsafe { GetSaveFileNameW(&mut dialog) } == 0 {
+        return windows_common_dialog_cancel_or_error("windows_save_file_dialog");
+    }
+    Ok(parse_windows_utf16_segments(&file_buffer)
+        .into_iter()
+        .next()
+        .map(PathBuf::from))
+}
+
+fn windows_common_dialog_cancel_or_error<T>(operation: &'static str) -> ZsuiResult<Option<T>> {
+    let error = unsafe { CommDlgExtendedError() };
+    if error == 0 {
+        Ok(None)
+    } else {
+        Err(ZsuiError::host(
+            operation,
+            format!("common dialog error 0x{error:08x}"),
+        ))
+    }
+}
+
+fn windows_file_dialog_filter(filters: &[crate::FileDialogFilter]) -> Vec<u16> {
+    let mut output = Vec::new();
+    if filters.is_empty() {
+        append_windows_filter_part(&mut output, "All files");
+        append_windows_filter_part(&mut output, "*.*");
+    } else {
+        for filter in filters {
+            append_windows_filter_part(&mut output, &filter.name);
+            let patterns = if filter.patterns.is_empty() {
+                "*.*".to_string()
+            } else {
+                filter.patterns.join(";")
+            };
+            append_windows_filter_part(&mut output, &patterns);
+        }
+    }
+    output.push(0);
+    output
+}
+
+fn append_windows_filter_part(output: &mut Vec<u16>, value: &str) {
+    output.extend(value.encode_utf16());
+    output.push(0);
+}
+
+fn windows_file_dialog_default_extension(filters: &[crate::FileDialogFilter]) -> Option<Vec<u16>> {
+    filters
+        .iter()
+        .flat_map(|filter| &filter.patterns)
+        .find_map(|pattern| {
+            pattern
+                .strip_prefix("*.")
+                .filter(|extension| !extension.is_empty() && !extension.contains(['*', '?', ';']))
+        })
+        .map(|extension| extension.encode_utf16().chain(Some(0)).collect())
+}
+
+fn parse_windows_open_file_buffer(buffer: &[u16]) -> Vec<PathBuf> {
+    let parts = parse_windows_utf16_segments(buffer);
+    match parts.as_slice() {
+        [] => Vec::new(),
+        [path] => vec![PathBuf::from(path)],
+        [directory, names @ ..] => names
+            .iter()
+            .map(|name| PathBuf::from(directory).join(name))
+            .collect(),
+    }
+}
+
+fn parse_windows_utf16_segments(buffer: &[u16]) -> Vec<OsString> {
+    buffer
+        .split(|unit| *unit == 0)
+        .take_while(|segment| !segment.is_empty())
+        .map(OsString::from_wide)
+        .collect()
+}
+
+fn create_empty_window_menu() -> ZsuiResult<HMENU> {
+    let handle = unsafe { CreateMenu() };
+    if handle.is_null() {
+        Err(ZsuiError::host(
+            "windows_win32_create_window_menu",
+            "CreateMenu failed",
+        ))
+    } else {
+        Ok(handle)
+    }
+}
+
+fn set_windows_win32_window_menu_command_table(
+    hwnd: HWND,
+    command_table: WindowsWin32StatusMenuCommandTable,
+) {
+    let hwnd = hwnd as isize;
+    let mut records = window_menu_command_tables()
+        .lock()
+        .expect("window menu command table registry should not be poisoned");
+    records.retain(|record| record.hwnd != hwnd);
+    records.push(WindowsWindowMenuCommandTableRecord {
+        hwnd,
+        command_table,
+    });
+}
+
+fn clear_windows_win32_window_menu_command_table(hwnd: HWND) {
+    let hwnd = hwnd as isize;
+    window_menu_command_tables()
+        .lock()
+        .expect("window menu command table registry should not be poisoned")
+        .retain(|record| record.hwnd != hwnd);
+}
+
+fn clear_windows_win32_window_menu_command_tables() {
+    window_menu_command_tables()
+        .lock()
+        .expect("window menu command table registry should not be poisoned")
+        .clear();
+}
+
+fn window_menu_command_tables() -> &'static Mutex<Vec<WindowsWindowMenuCommandTableRecord>> {
+    WINDOW_MENU_COMMAND_TABLES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+pub fn dispatch_windows_win32_window_menu_command(
+    hwnd: HWND,
+    native_id: u32,
+) -> Option<NativeStatusMenuCommandResult> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let result = window_menu_command_tables()
+        .lock()
+        .expect("window menu command table registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .map(|record| record.command_table.resolve_native_command_id(native_id))?;
+
+    if let NativeStatusMenuCommandResult::Dispatched(command) = &result {
+        if dispatch_windows_win32_window_view_input(hwnd, |route| {
+            route.dispatch_app_command(command.clone())
+        })
+        .is_none()
+            && *command == Command::Quit
+        {
+            unsafe {
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+            }
+        }
+    }
+    Some(result)
 }
 
 fn create_status_popup_menu(
@@ -1195,6 +1550,7 @@ pub fn set_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) -> b
     if hwnd.is_null() {
         return false;
     }
+    apply_windows_win32_window_theme(hwnd, plan.theme_mode);
     let mut plans = window_draw_plans()
         .lock()
         .expect("window draw plan registry should not be poisoned");
@@ -1320,7 +1676,10 @@ impl WindowsWin32ViewInputRoute {
         };
 
         self.focus_target(target, &mut report);
-        if target.kind == crate::ViewHitTargetKind::Textbox {
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
             return report;
         }
 
@@ -1345,7 +1704,10 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_text_without_target:{}", widget.0));
             return report;
         };
-        if target.kind != crate::ViewHitTargetKind::Textbox {
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
             report.events.push(format!(
                 "win32_view_text_without_textbox_focus:{}",
                 widget.0
@@ -1354,17 +1716,40 @@ impl WindowsWin32ViewInputRoute {
         }
 
         let mut value = self.widget_text_value(widget).unwrap_or_default();
+        let mut accepted = 0;
+        let mut previous_was_carriage_return = false;
         for ch in text.chars() {
             match ch {
                 '\u{8}' => {
-                    value.pop();
+                    if value.pop().is_some() {
+                        accepted += 1;
+                    }
                 }
-                ch if !ch.is_control() => value.push(ch),
+                '\r' if target.kind == crate::ViewHitTargetKind::TextEditor => {
+                    value.push('\n');
+                    accepted += 1;
+                    previous_was_carriage_return = true;
+                    continue;
+                }
+                '\n' if target.kind == crate::ViewHitTargetKind::TextEditor
+                    && !previous_was_carriage_return =>
+                {
+                    value.push('\n');
+                    accepted += 1;
+                }
+                ch if !ch.is_control() => {
+                    value.push(ch);
+                    accepted += 1;
+                }
                 _ => {}
             }
+            previous_was_carriage_return = false;
+        }
+        if accepted == 0 {
+            return report;
         }
 
-        report.text_input_count = text.chars().count();
+        report.text_input_count = accepted;
         report.event_count = 1;
         report
             .events
@@ -1501,6 +1886,26 @@ impl WindowsWin32ViewInputRoute {
         report
     }
 
+    fn dispatch_app_command(&mut self, command: Command) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            app_command_count: 1,
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        report
+            .app_command_names
+            .push(crate::app_command_name(&command));
+        report
+            .events
+            .push(format!("win32_window_menu_command:{command:?}"));
+        if command == Command::Quit {
+            report.quit_requested = true;
+            self.quit_requested = true;
+        }
+        self.pending_app_commands.push(command);
+        report
+    }
+
     fn dispatch_focus_traversal(
         &mut self,
         offset: isize,
@@ -1540,6 +1945,11 @@ impl WindowsWin32ViewInputRoute {
         report
             .events
             .push(format!("win32_view_focus:{}", target.widget.0));
+    }
+
+    fn focused_target(&self) -> Option<crate::ViewHitTarget> {
+        self.focused_widget
+            .and_then(|widget| self.interaction_plan.hit_target_for_widget(widget))
     }
 
     fn dispatch_activation(
@@ -1728,6 +2138,31 @@ impl WindowsWin32ViewInputRoute {
         )
     }
 
+    fn background_poll_interval_ms(&self) -> Option<u64> {
+        self.live_view
+            .as_ref()
+            .and_then(SharedLiveViewRuntime::background_poll_interval_ms)
+    }
+
+    fn refresh_background_view(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let Some(live_view) = &self.live_view else {
+            return WindowsWin32ViewInputDispatchReport::default();
+        };
+        let update = live_view.refresh();
+        self.interaction_plan = live_view.interaction_plan();
+        self.pending_draw_plan = Some(live_view.draw_plan());
+        WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            background_refresh_count: 1,
+            live_view_revision: update.revision,
+            events: vec![format!(
+                "win32_live_view_background_refresh:{}",
+                update.revision
+            )],
+            ..WindowsWin32ViewInputDispatchReport::default()
+        }
+    }
+
     fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
         let Some(live_view) = &self.live_view else {
             return false;
@@ -1762,6 +2197,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub app_command_errors: Vec<String>,
     pub ui_command_ids: Vec<&'static str>,
     pub live_view_revision: u64,
+    pub background_refresh_count: usize,
     pub quit_requested: bool,
     pub unhandled_click_count: usize,
     pub focus_count: usize,
@@ -1800,6 +2236,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.app_command_errors.extend(next.app_command_errors);
         self.ui_command_ids.extend(next.ui_command_ids);
         self.live_view_revision = self.live_view_revision.max(next.live_view_revision);
+        self.background_refresh_count += next.background_refresh_count;
         self.quit_requested |= next.quit_requested;
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
@@ -1829,6 +2266,7 @@ pub fn set_windows_win32_window_view_input_route(
         route.set_surface(bounds, dpi);
     }
     let draw_plan = route.take_pending_draw_plan();
+    let poll_interval_ms = route.background_poll_interval_ms();
     let hwnd_value = hwnd as isize;
     completed_window_view_input_reports()
         .lock()
@@ -1858,12 +2296,16 @@ pub fn set_windows_win32_window_view_input_route(
             InvalidateRect(hwnd, null(), 0);
         }
     }
+    sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     true
 }
 
 pub fn clear_windows_win32_window_view_input_route(hwnd: HWND) {
     if hwnd.is_null() {
         return;
+    }
+    unsafe {
+        KillTimer(hwnd, ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID);
     }
     let hwnd = hwnd as isize;
     let mut routes = window_view_input_routes()
@@ -1991,6 +2433,24 @@ pub fn dispatch_windows_win32_window_view_scroll(
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_scroll(point, delta_y))
 }
 
+pub fn refresh_windows_win32_window_background_view(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.refresh_background_view())
+}
+
+fn windows_win32_window_focused_target(hwnd: HWND) -> Option<crate::ViewHitTarget> {
+    if hwnd.is_null() {
+        return None;
+    }
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .and_then(|record| record.route.focused_target())
+}
+
 fn dispatch_windows_win32_window_view_input(
     hwnd: HWND,
     dispatch: impl FnOnce(&mut WindowsWin32ViewInputRoute) -> WindowsWin32ViewInputDispatchReport,
@@ -2007,6 +2467,7 @@ fn dispatch_windows_win32_window_view_input(
         app_commands,
         ui_executor,
         ui_commands,
+        poll_interval_ms,
     ) = {
         let mut routes = window_view_input_routes()
             .lock()
@@ -2017,6 +2478,7 @@ fn dispatch_windows_win32_window_view_input(
         let quit_requested = record.route.take_quit_requested();
         let (app_executor, app_commands) = record.route.take_pending_app_command_dispatch();
         let (ui_executor, ui_commands) = record.route.take_pending_ui_command_dispatch();
+        let poll_interval_ms = record.route.background_poll_interval_ms();
         (
             report,
             draw_plan,
@@ -2025,6 +2487,7 @@ fn dispatch_windows_win32_window_view_input(
             app_commands,
             ui_executor,
             ui_commands,
+            poll_interval_ms,
         )
     };
 
@@ -2050,7 +2513,26 @@ fn dispatch_windows_win32_window_view_input(
             PostMessageW(hwnd, WM_CLOSE, 0, 0);
         }
     }
+    sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     Some(report)
+}
+
+fn sync_windows_win32_live_view_poll_timer(hwnd: HWND, interval_ms: Option<u64>) {
+    if hwnd.is_null() {
+        return;
+    }
+    unsafe {
+        if let Some(interval_ms) = interval_ms {
+            SetTimer(
+                hwnd,
+                ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID,
+                interval_ms.clamp(1, u32::MAX as u64) as u32,
+                None,
+            );
+        } else {
+            KillTimer(hwnd, ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID);
+        }
+    }
 }
 
 fn dispatch_windows_win32_app_commands(
@@ -2974,6 +3456,7 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             clear_windows_win32_window_draw_plan(hwnd);
             archive_windows_win32_window_view_input_report(hwnd);
             clear_windows_win32_window_shell_input_route(hwnd);
+            clear_windows_win32_window_menu_command_table(hwnd);
             if matches!(role, WindowsWindowRole::Main)
                 && ACTIVE_MAIN_WINDOW_COUNT.fetch_sub(1, Ordering::SeqCst) <= 1
             {
@@ -2982,6 +3465,29 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => 1,
+        WM_DPICHANGED => {
+            let suggested = lparam as *const RECT;
+            if !suggested.is_null() {
+                let suggested = *suggested;
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    suggested.left,
+                    suggested.top,
+                    (suggested.right - suggested.left).max(1),
+                    (suggested.bottom - suggested.top).max(1),
+                    SWP_NOACTIVATE | SWP_NOZORDER,
+                );
+            }
+            let shell_handled = refresh_windows_win32_window_shell_surface(hwnd).is_some();
+            let live_view_handled = refresh_windows_win32_window_live_view_surface(hwnd);
+            if shell_handled || live_view_handled {
+                InvalidateRect(hwnd, null(), 0);
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_SIZE => {
             let shell_handled = refresh_windows_win32_window_shell_surface(hwnd).is_some();
             let live_view_handled = refresh_windows_win32_window_live_view_surface(hwnd);
@@ -2990,6 +3496,16 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
+        }
+        WM_SETTINGCHANGE | WM_THEMECHANGED => {
+            if let Some(plan) = window_draw_plan(hwnd) {
+                if plan.theme_mode == crate::ZsuiThemeMode::System {
+                    apply_windows_win32_window_theme(hwnd, plan.theme_mode);
+                    InvalidateRect(hwnd, null(), 0);
+                    return 0;
+                }
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_MOUSEMOVE => {
             if dispatch_windows_win32_window_shell_pointer_move(hwnd, point_from_lparam(lparam))
@@ -3037,6 +3553,21 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
+        WM_IME_STARTCOMPOSITION => {
+            position_windows_ime_candidate(hwnd);
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_IME_COMPOSITION => {
+            if (lparam as u32 & GCS_RESULTSTR) != 0 {
+                if let Some(text) = windows_ime_composition_text(hwnd, GCS_RESULTSTR) {
+                    if dispatch_windows_win32_window_view_text_input(hwnd, &text).is_some() {
+                        return 0;
+                    }
+                }
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_IME_ENDCOMPOSITION => DefWindowProcW(hwnd, msg, wparam, lparam),
         WM_CHAR => {
             if let Some(text) = text_from_char_wparam(wparam) {
                 if dispatch_windows_win32_window_view_text_input(hwnd, &text).is_some() {
@@ -3044,6 +3575,14 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 } else {
                     DefWindowProcW(hwnd, msg, wparam, lparam)
                 }
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_COMMAND => {
+            let native_id = (wparam & 0xffff) as u32;
+            if dispatch_windows_win32_window_menu_command(hwnd, native_id).is_some() {
+                0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -3063,6 +3602,13 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                     Some(report) if report.unhandled_scroll_count == 0 => 0,
                     _ => DefWindowProcW(hwnd, msg, wparam, lparam),
                 }
+            }
+        }
+        WM_TIMER if wparam == ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID => {
+            if refresh_windows_win32_window_background_view(hwnd).is_some() {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
         WM_PAINT => paint_no_flicker_background(hwnd),
@@ -3098,10 +3644,67 @@ fn mouse_wheel_scroll_delta_from_wparam(wparam: WPARAM) -> crate::Dp {
 
 fn text_from_char_wparam(wparam: WPARAM) -> Option<String> {
     match char::from_u32(wparam as u32) {
-        Some('\u{8}') => Some('\u{8}'.to_string()),
+        Some(ch @ ('\u{8}' | '\r' | '\n')) => Some(ch.to_string()),
         Some(ch) if !ch.is_control() => Some(ch.to_string()),
         _ => None,
     }
+}
+
+unsafe fn windows_ime_composition_text(
+    hwnd: HWND,
+    kind: windows_sys::Win32::UI::Input::Ime::IME_COMPOSITION_STRING,
+) -> Option<String> {
+    let context = ImmGetContext(hwnd);
+    if context.is_null() {
+        return None;
+    }
+    let byte_len = ImmGetCompositionStringW(context, kind, null_mut(), 0);
+    if byte_len <= 0 {
+        ImmReleaseContext(hwnd, context);
+        return None;
+    }
+    let mut utf16 = vec![0u16; byte_len as usize / size_of::<u16>()];
+    let copied = ImmGetCompositionStringW(context, kind, utf16.as_mut_ptr() as _, byte_len as u32);
+    ImmReleaseContext(hwnd, context);
+    if copied <= 0 {
+        None
+    } else {
+        Some(String::from_utf16_lossy(
+            &utf16[..copied as usize / size_of::<u16>()],
+        ))
+    }
+}
+
+unsafe fn position_windows_ime_candidate(hwnd: HWND) {
+    let Some(target) = windows_win32_window_focused_target(hwnd) else {
+        return;
+    };
+    if !matches!(
+        target.kind,
+        crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+    ) {
+        return;
+    }
+    let context = ImmGetContext(hwnd);
+    if context.is_null() {
+        return;
+    }
+    let form = CANDIDATEFORM {
+        dwIndex: 0,
+        dwStyle: CFS_EXCLUDE,
+        ptCurrentPos: POINT {
+            x: target.bounds.x,
+            y: target.bounds.y + target.bounds.height,
+        },
+        rcArea: RECT {
+            left: target.bounds.x,
+            top: target.bounds.y,
+            right: target.bounds.x + target.bounds.width,
+            bottom: target.bounds.y + target.bounds.height,
+        },
+    };
+    ImmSetCandidateWindow(context, &form);
+    ImmReleaseContext(hwnd, context);
 }
 
 unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
@@ -3113,8 +3716,8 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
 
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
-        let palette = WindowsGdiPalette::default();
         let draw_plan = window_draw_plan(hwnd);
+        let palette = windows_palette_for_draw_plan(draw_plan.as_ref());
         if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
             paint_win32_surface(buffered.hdc(), rect, palette, draw_plan.as_ref());
         } else {
@@ -3124,6 +3727,65 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
 
     EndPaint(hwnd, &ps);
     0
+}
+
+fn windows_palette_for_draw_plan(draw_plan: Option<&NativeDrawPlan>) -> WindowsGdiPalette {
+    match resolved_windows_theme_mode(
+        draw_plan
+            .map(|plan| plan.theme_mode)
+            .unwrap_or(crate::ZsuiThemeMode::System),
+    ) {
+        crate::ZsuiThemeMode::Dark => WindowsGdiPalette::from_theme(&crate::ZsuiTheme::dark()),
+        _ => WindowsGdiPalette::default(),
+    }
+}
+
+fn resolved_windows_theme_mode(theme_mode: crate::ZsuiThemeMode) -> crate::ZsuiThemeMode {
+    match theme_mode {
+        crate::ZsuiThemeMode::System => windows_system_theme_mode(),
+        mode => mode,
+    }
+}
+
+pub fn windows_system_theme_mode() -> crate::ZsuiThemeMode {
+    let subkey = wide_null("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+    let value_name = wide_null("AppsUseLightTheme");
+    let mut value = 1u32;
+    let mut value_size = size_of::<u32>() as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            value_name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            null_mut(),
+            &mut value as *mut u32 as _,
+            &mut value_size,
+        )
+    };
+    if status == 0 && value == 0 {
+        crate::ZsuiThemeMode::Dark
+    } else {
+        crate::ZsuiThemeMode::Light
+    }
+}
+
+fn apply_windows_win32_window_theme(hwnd: HWND, theme_mode: crate::ZsuiThemeMode) {
+    if hwnd.is_null() {
+        return;
+    }
+    let dark = i32::from(matches!(
+        resolved_windows_theme_mode(theme_mode),
+        crate::ZsuiThemeMode::Dark
+    ));
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+            &dark as *const i32 as _,
+            size_of::<i32>() as u32,
+        );
+    }
 }
 
 unsafe fn paint_win32_surface(
@@ -3155,6 +3817,56 @@ fn wide_path_null(path: &Path) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draw_plan_theme_mode_selects_shared_dark_palette() {
+        let plan = NativeDrawPlan::default().theme_mode(crate::ZsuiThemeMode::Dark);
+        let palette = windows_palette_for_draw_plan(Some(&plan));
+
+        assert_eq!(palette.surface, crate::ZsuiTheme::dark().colors.surface);
+        assert_eq!(
+            palette.primary_text,
+            crate::ZsuiTheme::dark().colors.text_primary
+        );
+    }
+
+    #[test]
+    fn file_dialog_filter_and_multi_select_buffer_are_structured_utf16() {
+        let filters = vec![
+            crate::FileDialogFilter::new("Text", ["*.txt", "*.md"]),
+            crate::FileDialogFilter::new("All", ["*.*"]),
+        ];
+        let filter_buffer = windows_file_dialog_filter(&filters);
+        let filter_parts = parse_windows_utf16_segments(&filter_buffer);
+
+        assert_eq!(
+            filter_parts,
+            vec![
+                OsString::from("Text"),
+                OsString::from("*.txt;*.md"),
+                OsString::from("All"),
+                OsString::from("*.*"),
+            ]
+        );
+        assert_eq!(
+            windows_file_dialog_default_extension(&filters),
+            Some(vec!['t' as u16, 'x' as u16, 't' as u16, 0])
+        );
+
+        let mut selection = Vec::new();
+        for part in ["C:\\docs", "one.txt", "two.md"] {
+            selection.extend(part.encode_utf16());
+            selection.push(0);
+        }
+        selection.push(0);
+        assert_eq!(
+            parse_windows_open_file_buffer(&selection),
+            vec![
+                PathBuf::from("C:\\docs\\one.txt"),
+                PathBuf::from("C:\\docs\\two.md")
+            ]
+        );
+    }
 
     fn view_input_route_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static VIEW_INPUT_ROUTE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -3713,6 +4425,57 @@ mod tests {
         assert_eq!(aggregate.text_input_count, 2);
         assert_eq!(aggregate.ui_command_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_normalizes_multiline_text_and_ignores_single_line_enter() {
+        let editor = crate::WidgetId::new(30);
+        let mut editor_route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                editor,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 120,
+                },
+                crate::ViewHitTargetKind::TextEditor,
+            )]),
+            crate::text_editor("").id(editor),
+        );
+        editor_route.dispatch_click(crate::Point { x: 20, y: 20 });
+
+        let editor_report = editor_route.dispatch_text_input("A\r\nB\n\nC");
+
+        assert_eq!(editor_report.text_input_count, 6);
+        assert_eq!(
+            editor_route.widget_text_value(editor).as_deref(),
+            Some("A\nB\n\nC")
+        );
+
+        let input = crate::WidgetId::new(31);
+        let mut input_route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                input,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox("").id(input),
+        );
+        input_route.dispatch_click(crate::Point { x: 20, y: 20 });
+
+        let input_report = input_route.dispatch_text_input("\r");
+
+        assert_eq!(input_report.text_input_count, 0);
+        assert_eq!(input_report.event_count, 0);
+        assert_eq!(input_route.widget_text_value(input).as_deref(), Some(""));
+        assert_eq!(text_from_char_wparam('\r' as usize).as_deref(), Some("\r"));
     }
 
     #[test]

@@ -261,43 +261,56 @@ impl HostCapabilities {
         capabilities.tray_or_status_menu = CapabilitySupport::partial(
             "Win32 status items can be created by the direct native host; target tray/menu command proof is still pending",
         );
+        capabilities.menus = CapabilitySupport::supported(
+            "Win32 window menus are owned by the host and route typed Command values",
+        );
+        capabilities.file_picker = CapabilitySupport::supported(
+            "Win32 common open-file dialog is connected through the native host",
+        );
+        capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.clipboard_image =
+            CapabilitySupport::unsupported("the native image clipboard service is not connected");
+        capabilities.clipboard_files =
+            CapabilitySupport::unsupported("the native file clipboard service is not connected");
         capabilities
     }
 
     pub fn macos_scaffold() -> Self {
         Self {
             platform: PlatformName::Macos,
-            windows: CapabilitySupport::partial("AppKit host exists; ZsuiHost adapter is stubbed"),
+            windows: CapabilitySupport::partial(
+                "the first-pass Winit window path exists; the AppKit backend is not connected",
+            ),
             window_resizing: CapabilitySupport::partial(
-                "NSWindow supports resizable and fixed-size windows; ZsuiHost adapter is stubbed",
+                "the Winit path maps basic resize policy; AppKit verification is pending",
             ),
             window_decorations: CapabilitySupport::partial(
-                "NSWindow style masks support native chrome; ZsuiHost adapter is stubbed",
+                "the Winit path maps native decorations; AppKit verification is pending",
             ),
             window_always_on_top: CapabilitySupport::partial(
-                "NSWindow levels support floating windows; ZsuiHost adapter is stubbed",
+                "the Winit path maps floating level; AppKit verification is pending",
             ),
-            window_transparency: CapabilitySupport::partial(
-                "transparent AppKit windows need host-specific material/backing configuration",
+            window_transparency: CapabilitySupport::unsupported(
+                "transparent AppKit windows are not connected",
             ),
-            tray_or_status_menu: CapabilitySupport::partial(
-                "NSStatusItem host exists; ZsuiHost adapter is stubbed",
-            ),
-            menus: CapabilitySupport::partial("NSMenu host exists; ZsuiHost adapter is stubbed"),
+            tray_or_status_menu: CapabilitySupport::unsupported("NSStatusItem is not connected"),
+            menus: CapabilitySupport::unsupported("NSMenu is not connected"),
             global_hotkeys: CapabilitySupport::unsupported(
                 "global shortcut service is not wired in ZsuiHost",
             ),
             clipboard_text: CapabilitySupport::partial(
-                "pasteboard host exists; generic ZsuiHost is not fully wired",
+                "text clipboard requires the optional clipboard service; AppKit pasteboard is pending",
             ),
-            clipboard_image: CapabilitySupport::partial(
-                "pasteboard image support is backend dependent",
+            clipboard_image: CapabilitySupport::unsupported(
+                "AppKit image pasteboard support is not connected",
             ),
-            clipboard_files: CapabilitySupport::partial(
-                "pasteboard file support is backend dependent",
+            clipboard_files: CapabilitySupport::unsupported(
+                "AppKit file pasteboard support is not connected",
             ),
-            file_picker: CapabilitySupport::partial("NSOpenPanel host exists in native scaffold"),
-            native_dialogs: CapabilitySupport::partial("NSAlert host exists in native scaffold"),
+            file_picker: CapabilitySupport::unsupported(
+                "NSOpenPanel and NSSavePanel are not connected",
+            ),
+            native_dialogs: CapabilitySupport::unsupported("NSAlert is not connected"),
             settings_pages: CapabilitySupport::partial("settings page specs are declarative"),
             auto_paste: CapabilitySupport::unsupported("auto paste requires accessibility trust"),
         }
@@ -305,53 +318,49 @@ impl HostCapabilities {
 
     pub fn macos_native_window_host() -> Self {
         let mut capabilities = Self::macos_scaffold();
-        capabilities.windows = CapabilitySupport::supported("AppKit native host creates NSWindow");
-        capabilities.window_resizing =
-            CapabilitySupport::supported("NSWindow style masks honor resizable and fixed windows");
-        capabilities.window_decorations =
-            CapabilitySupport::supported("NSWindow style masks honor native chrome");
-        capabilities.window_always_on_top =
-            CapabilitySupport::supported("NSWindow levels honor floating always-on-top windows");
-        capabilities.window_transparency = CapabilitySupport::unsupported(
-            "AppKit main window transparency is not mapped by the native window host yet",
+        capabilities.windows = CapabilitySupport::supported(
+            "the first-pass Winit host creates and closes a native macOS window",
         );
+        capabilities.clipboard_text = native_text_clipboard_support();
         capabilities
     }
 
     pub fn linux_scaffold() -> Self {
         Self {
             platform: PlatformName::Linux,
-            windows: CapabilitySupport::partial("GTK host exists; ZsuiHost adapter is stubbed"),
+            windows: CapabilitySupport::partial(
+                "the first-pass Winit window path exists; the GTK4 backend is not connected",
+            ),
             window_resizing: CapabilitySupport::partial(
-                "GTK can request default and fixed sizes; compositor behavior may vary",
+                "the Winit path maps basic resize policy; GTK4 verification is pending",
             ),
             window_decorations: CapabilitySupport::partial(
-                "GTK can request decorations, but server-side/client-side chrome varies by desktop",
+                "the Winit path maps decorations; GTK4 and compositor verification are pending",
             ),
-            window_always_on_top: CapabilitySupport::partial(
-                "always-on-top requires backend/session support such as X11 helpers or layer shell",
+            window_always_on_top: CapabilitySupport::unsupported(
+                "GTK4 always-on-top behavior is not connected and differs between Wayland and X11",
             ),
-            window_transparency: CapabilitySupport::partial(
-                "transparent GTK windows depend on compositor and backend support",
+            window_transparency: CapabilitySupport::unsupported(
+                "transparent GTK4 windows are not connected",
             ),
-            tray_or_status_menu: CapabilitySupport::partial(
-                "StatusNotifier host exists; desktop support may vary",
+            tray_or_status_menu: CapabilitySupport::unsupported(
+                "a Linux status-item service is not connected",
             ),
-            menus: CapabilitySupport::partial("GTK/GIO menu host exists; adapter is stubbed"),
+            menus: CapabilitySupport::unsupported("GTK/GIO menus are not connected"),
             global_hotkeys: CapabilitySupport::unsupported(
                 "global shortcut support varies by display server",
             ),
             clipboard_text: CapabilitySupport::partial(
-                "GTK clipboard host exists; generic ZsuiHost is not fully wired",
+                "text clipboard requires the optional clipboard service; GTK clipboard is pending",
             ),
-            clipboard_image: CapabilitySupport::partial(
-                "image clipboard depends on GTK backend integration",
+            clipboard_image: CapabilitySupport::unsupported(
+                "GTK image clipboard support is not connected",
             ),
-            clipboard_files: CapabilitySupport::partial(
-                "file clipboard depends on portal/GTK backend integration",
+            clipboard_files: CapabilitySupport::unsupported(
+                "GTK file clipboard support is not connected",
             ),
-            file_picker: CapabilitySupport::partial("GTK file picker host exists in scaffold"),
-            native_dialogs: CapabilitySupport::partial("GTK dialog host exists in scaffold"),
+            file_picker: CapabilitySupport::unsupported("GTK file chooser is not connected"),
+            native_dialogs: CapabilitySupport::unsupported("GTK native dialogs are not connected"),
             settings_pages: CapabilitySupport::partial("settings page specs are declarative"),
             auto_paste: CapabilitySupport::partial(
                 "xdotool/keytap path is backend and session dependent",
@@ -361,20 +370,10 @@ impl HostCapabilities {
 
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
-        capabilities.windows =
-            CapabilitySupport::supported("GTK native host creates ApplicationWindow");
-        capabilities.window_resizing = CapabilitySupport::partial(
-            "GTK can request resizable and fixed windows; compositor behavior may vary",
+        capabilities.windows = CapabilitySupport::supported(
+            "the first-pass Winit host creates and closes a native Linux window",
         );
-        capabilities.window_decorations = CapabilitySupport::partial(
-            "GTK can request decorations; server-side and client-side chrome vary by desktop",
-        );
-        capabilities.window_always_on_top = CapabilitySupport::partial(
-            "GTK always-on-top requires backend/session support such as X11 helpers or layer shell",
-        );
-        capabilities.window_transparency = CapabilitySupport::unsupported(
-            "GTK main window transparency is not mapped by the native window host yet",
-        );
+        capabilities.clipboard_text = native_text_clipboard_support();
         capabilities
     }
 
@@ -494,5 +493,15 @@ impl HostCapabilities {
             "NativeWindowHost does not yet own a Harmony Ability event loop",
         );
         capabilities
+    }
+}
+
+fn native_text_clipboard_support() -> CapabilitySupport {
+    if cfg!(feature = "clipboard") {
+        CapabilitySupport::supported("the optional native text clipboard service is compiled")
+    } else {
+        CapabilitySupport::unsupported(
+            "enable the clipboard feature to compile the native text clipboard service",
+        )
     }
 }

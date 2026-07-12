@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     geometry::{Rect, Size},
+    style::ZsuiThemeMode,
     ZsIcon,
 };
 
@@ -370,16 +371,32 @@ pub fn required_native_draw_command_operation_names() -> Vec<&'static str> {
         .collect()
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeDrawPlan {
     pub commands: Vec<NativeDrawCommand>,
+    pub theme_mode: ZsuiThemeMode,
+}
+
+impl Default for NativeDrawPlan {
+    fn default() -> Self {
+        Self {
+            commands: Vec::new(),
+            theme_mode: ZsuiThemeMode::System,
+        }
+    }
 }
 
 impl NativeDrawPlan {
     pub fn new(commands: impl IntoIterator<Item = NativeDrawCommand>) -> Self {
         Self {
             commands: commands.into_iter().collect(),
+            theme_mode: ZsuiThemeMode::System,
         }
+    }
+
+    pub fn theme_mode(mut self, theme_mode: ZsuiThemeMode) -> Self {
+        self.theme_mode = theme_mode;
+        self
     }
 
     pub fn push(&mut self, command: NativeDrawCommand) {

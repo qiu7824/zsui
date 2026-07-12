@@ -170,9 +170,10 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
 | 基础 View | 文本、按钮、输入、复选、开关、列表、滚动和强类型事件 | 对应 widget feature |
+| 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个 WinUI 风格家族：20 个已有第一阶段运行面，8 个只有
-契约，20 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
+组件目录当前记录 48 个 WinUI 风格家族：21 个已有第一阶段运行面，8 个只有
+契约，19 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
 TreeView、DataGrid、WebView 等尚未完成的独立控件。
 
 查看机器可读目录：
@@ -183,6 +184,27 @@ println!("{summary:#?}");
 ```
 
 ## 真实示例
+
+### 三桌面统一示例
+
+```powershell
+cargo run --example desktop_native_showcase --features full
+```
+
+同一个 `State`、`Msg`、`view` 和 `update` 包含左侧导航、命令栏、单行/多行
+输入、列表滚动、主题开关与原生菜单声明。Windows 已有真实 Win32 smoke 截图；
+AppKit 与 GTK4 仍需按 [v0.2 三桌面原生闭环](docs/v0.2-desktop-native.md)
+完成后端和目标机证据，当前不会把 Winit 路径标记成二者已完成。
+
+### 十万行分页虚拟列表
+
+```powershell
+cargo run --example paged_virtual_list --no-default-features --features window,button,label,paged-list
+```
+
+示例只声明分页数据源、行视图和强类型消息。可见范围计算、后台连续预取、请求
+去重、过期结果隔离和 5 页 LRU 缓存均由框架处理，详见
+[分页虚拟列表](docs/paged-virtual-list.md)。
 
 ### 工作台
 

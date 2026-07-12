@@ -27,6 +27,8 @@ jobs:
       - shell: pwsh
         run: ./scripts/ai-context.ps1 -Validate
       - shell: pwsh
+        run: ./scripts/check-desktop-proof.ps1
+      - shell: pwsh
         run: ./scripts/check-feature-matrix.ps1 -Locked
 
   full-windows:
@@ -36,13 +38,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --features full
       - run: cargo test --locked --examples --features full
+      - run: cargo check --locked --no-default-features --features windows-win32
+      - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style
 
   desktop-target-checks:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: macos-latest
+            backend: macos-appkit
+          - os: ubuntu-latest
+            backend: linux-gtk
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check --locked --features full
+      - run: cargo test --locked --features full
+      - run: cargo check --locked --no-default-features --features ${{ matrix.backend }}
+      - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style

@@ -25,7 +25,7 @@ impl NativeUiPlatform {
 pub enum NativeUiToolkit {
     WinitDesktop,
     Win32Gdi,
-    AppKitSwiftUI,
+    AppKit,
     Gtk4Libadwaita,
     AndroidActivity,
     HarmonyAbility,
@@ -36,7 +36,7 @@ impl NativeUiToolkit {
         match self {
             Self::WinitDesktop => "winit_desktop",
             Self::Win32Gdi => "win32_gdi",
-            Self::AppKitSwiftUI => "appkit_swiftui",
+            Self::AppKit => "appkit",
             Self::Gtk4Libadwaita => "gtk4_libadwaita",
             Self::AndroidActivity => "android_activity",
             Self::HarmonyAbility => "harmony_ability",
@@ -377,8 +377,8 @@ fn native_ui_capability_readiness(
     capability: NativeUiAdapterCapability,
 ) -> NativeUiCapabilityReadiness {
     use NativeUiAdapterCapability::{
-        Clipboard, MainExecutionPlanBridge, MainWindow, PopupMenu, Renderer, StatusItem,
-        TextLayout, TransientWindow,
+        Clipboard, FileDialog, Ime, MainExecutionPlanBridge, MainWindow, PopupMenu, Renderer,
+        StatusItem, TextLayout, TransientWindow,
     };
     use NativeUiCapabilityReadinessLevel::{ContractOnly, FirstPass, Ready};
 
@@ -403,6 +403,16 @@ fn native_ui_capability_readiness(
                 FirstPass,
                 "src/host.rs",
                 "feature-gated text clipboard access is available; files and images are not complete",
+            ),
+            FileDialog => (
+                FirstPass,
+                "src/windows_win32_host.rs",
+                "safe Win32 common open/save dialog services are connected; target interaction proof is pending",
+            ),
+            Ime => (
+                FirstPass,
+                "src/windows_win32_host.rs",
+                "IMM32 result commit and candidate placement are connected; CJK target interaction proof is pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
@@ -789,9 +799,9 @@ mod tests {
         let windows = native_ui_platform_readiness(NativeUiPlatform::Windows)
             .expect("windows readiness should be declared");
         assert_eq!(windows.ready_count, 2);
-        assert_eq!(windows.first_pass_count, 6);
-        assert_eq!(windows.contract_only_count, 10);
-        assert_eq!(windows.runtime_implementation_count(), 8);
+        assert_eq!(windows.first_pass_count, 8);
+        assert_eq!(windows.contract_only_count, 8);
+        assert_eq!(windows.runtime_implementation_count(), 10);
         assert!(windows
             .contract_only_capability_names()
             .contains(&"settings_window"));

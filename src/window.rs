@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::capability::{CapabilityStatus, CapabilitySupport, HostCapabilities};
 use crate::components::UiNode;
+use crate::menu::MenuSpec;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowSpec {
@@ -16,6 +17,7 @@ pub struct WindowSpec {
     pub always_on_top: bool,
     pub transparent: bool,
     pub icon_path: Option<String>,
+    pub menu: Option<MenuSpec>,
     pub content: Option<UiNode>,
 }
 
@@ -52,6 +54,7 @@ impl WindowSpec {
             always_on_top: false,
             transparent: false,
             icon_path: None,
+            menu: None,
             content: None,
         }
     }
@@ -95,6 +98,11 @@ impl WindowSpec {
 
     pub fn icon_path(mut self, icon_path: impl Into<String>) -> Self {
         self.icon_path = Some(icon_path.into());
+        self
+    }
+
+    pub fn menu(mut self, menu: MenuSpec) -> Self {
+        self.menu = Some(menu);
         self
     }
 

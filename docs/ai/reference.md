@@ -11,7 +11,7 @@ milestones must not be used as overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 84% complete.
-- Component library: about 42% complete (20 first-pass runtime surfaces out of
+- Component library: about 44% complete (21 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 86% complete.
 - Feature-pruned architecture: about 51% complete.
@@ -29,7 +29,7 @@ cross-platform product readiness substantially lower. Report these separately.
 
 The machine-readable audit tracks 18 required native capabilities per platform:
 
-- Windows: 2 ready, 6 first-pass runtime implementations, 10 contract-only.
+- Windows: 2 ready, 8 first-pass runtime implementations, 8 contract-only.
 - macOS: 0 ready, 2 first-pass runtime implementations, 16 contract-only.
 - Linux: 0 ready, 2 first-pass runtime implementations, 16 contract-only.
 - Android: 0 runtime implementations, 18 contract-only.
@@ -37,8 +37,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 20 families have
-a first-pass runtime surface, 8 are contract-only and 20 are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: 21 families have
+a first-pass runtime surface, 8 are contract-only and 19 are not started. A
 composite workbench does not make its underlying missing controls complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
@@ -191,8 +191,8 @@ module. Windows resolves semantic icons through Segoe Fluent Icons; GTK theme
 names and SF Symbol names are catalogued for future native bindings. Dark/high
 contrast smoke and complete hover/pressed/focus-visible state coverage are not
 yet complete.
-`src/component_catalog.rs` tracks 48 WinUI-style component families: 20 have a
-first-pass runtime surface, 8 are contract-only and 20 are not started.
+`src/component_catalog.rs` tracks 48 WinUI-style component families: 21 have a
+first-pass runtime surface, 8 are contract-only and 19 are not started.
 `src/document_shell.rs` is the reusable visual boundary used by the Windows
 notepad benchmark. It provides a document tab, command bar, editor frame,
 status layout, semantic draw plan and hit regions without owning product state

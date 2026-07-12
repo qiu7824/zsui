@@ -20,6 +20,7 @@ pub mod component_protocol;
 pub mod components;
 pub mod control_protocol;
 pub mod core;
+pub mod desktop_services;
 #[cfg(feature = "document-shell")]
 pub mod document_shell;
 pub mod event_protocol;
@@ -39,6 +40,8 @@ pub mod native_host_actions;
 pub mod native_host_launch;
 pub mod native_hosts;
 pub mod native_smoke;
+#[cfg(feature = "paged-list")]
+pub mod paged_list;
 pub mod product_adapter;
 pub mod render_protocol;
 pub mod settings;
@@ -108,6 +111,12 @@ pub use control_protocol::{
 pub use core::{
     AppEvent, Command, DialogButtons, DialogLevel, DialogResponse, FileDialogFilter,
     FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId, ZsuiError, ZsuiResult,
+};
+pub use desktop_services::{
+    ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
+    DesktopHost, DesktopKey, DesktopTheme, FileDialogService, KeyModifiers, MenuService,
+    SaveFileDialogSpec, TextInputRequest, TextInputService, ThemePreference, ThemeService,
+    WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 pub use document_shell::{
@@ -289,6 +298,11 @@ pub use native_smoke::{
     NativeHostSmokeInteractionReport, NativeHostSmokePlan, NativeHostSmokeReviewReport,
     NativeHostSmokeWriteReport,
 };
+#[cfg(feature = "paged-list")]
+pub use paged_list::{
+    paged_list, Page, PageIndex, PageLoadError, PageRequest, PagedDataSource, PagedItem,
+    PagedListAnchor, PagedListConfig, PagedListSnapshot, PagedListState,
+};
 pub use product_adapter::{
     product_adapter_reuse_checklist, product_adapter_runtime_smoke_example_names,
     required_product_adapter_surface_names, required_product_adapter_task_names,
@@ -326,7 +340,7 @@ pub use shell_layout::{
 pub use style::{
     ControlMetricToken, RadiusToken, SpacingToken, ThemeColorToken, TypographyToken,
     ZsuiColorTokens, ZsuiControlMetrics, ZsuiRadiusTokens, ZsuiSpacingTokens, ZsuiTheme,
-    ZsuiTypographyStyle, ZsuiTypographyTokens, ZSUI_FLUENT_CARD_RADIUS,
+    ZsuiThemeMode, ZsuiTypographyStyle, ZsuiTypographyTokens, ZSUI_FLUENT_CARD_RADIUS,
     ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT, ZSUI_FLUENT_CONTROL_RADIUS, ZSUI_FLUENT_GRID_UNIT,
     ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, ZSUI_FLUENT_SMALL_ICON_SIZE,
     ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
@@ -348,6 +362,8 @@ pub use view::scroll;
 #[cfg(feature = "label")]
 pub use view::text;
 #[cfg(feature = "textbox")]
+pub use view::text_editor;
+#[cfg(feature = "textbox")]
 pub use view::textbox;
 #[cfg(feature = "toggle")]
 pub use view::toggle;
@@ -356,6 +372,10 @@ pub use view::{
     ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
     ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
+#[cfg(feature = "virtual-list")]
+pub use view::{virtual_list, virtual_list_viewport};
+#[cfg(feature = "virtual-list")]
+pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
@@ -374,17 +394,20 @@ pub use windows_win32_host::{
     create_windows_for_specs as create_windows_win32_for_specs,
     create_windows_for_specs_with_draw_plans as create_windows_win32_for_specs_with_draw_plans,
     create_windows_for_specs_with_draw_plans_and_input_routes as create_windows_win32_for_specs_with_draw_plans_and_input_routes,
-    dispatch_windows_win32_window_view_click, dispatch_windows_win32_window_view_key_down,
-    dispatch_windows_win32_window_view_scroll, dispatch_windows_win32_window_view_text_input,
+    dispatch_windows_win32_window_menu_command, dispatch_windows_win32_window_view_click,
+    dispatch_windows_win32_window_view_key_down, dispatch_windows_win32_window_view_scroll,
+    dispatch_windows_win32_window_view_text_input, refresh_windows_win32_window_background_view,
     run_windows_win32_native_window_event_loop,
     run_windows_win32_native_window_event_loop_with_draw_plans_and_status_items,
     run_windows_win32_native_window_event_loop_with_status_items,
     set_windows_win32_window_draw_plan, set_windows_win32_window_view_input_route,
-    windows_win32_main_window_style_plan, windows_win32_window_view_input_report,
-    zsui_win32_default_window_proc, WindowsWin32ClassNames, WindowsWin32MainWindowHost,
-    WindowsWin32MessageLoop, WindowsWin32MessageLoopResult, WindowsWin32OwnedAppIconResource,
-    WindowsWin32OwnedIcon, WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu,
-    WindowsWin32OwnedTrayIcon, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
+    windows_system_theme_mode, windows_win32_main_window_style_plan,
+    windows_win32_open_file_dialog, windows_win32_save_file_dialog,
+    windows_win32_window_view_input_report, zsui_win32_default_window_proc, WindowsWin32ClassNames,
+    WindowsWin32FileDialogService, WindowsWin32MainWindowHost, WindowsWin32MessageLoop,
+    WindowsWin32MessageLoopResult, WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon,
+    WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon,
+    WindowsWin32OwnedWindowMenu, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
     WindowsWin32StatusMenuCommandTable, WindowsWin32TransientWindowHost,
     WindowsWin32ViewInputDispatchReport, WindowsWin32ViewInputRoute, WindowsWin32WindowStylePlan,
     WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,
@@ -481,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn native_window_host_capabilities_describe_real_window_mapping() {
+    fn native_window_host_capabilities_do_not_overstate_backend_completion() {
         let windows = HostCapabilities::windows_native_window_host();
         assert_eq!(windows.windows.status, CapabilityStatus::Supported);
         assert_eq!(windows.window_resizing.status, CapabilityStatus::Supported);
@@ -497,29 +520,40 @@ mod tests {
             windows.window_transparency.status,
             CapabilityStatus::Unsupported
         );
+        assert_eq!(windows.menus.status, CapabilityStatus::Supported);
+        assert_eq!(
+            windows.clipboard_text.status,
+            if cfg!(feature = "clipboard") {
+                CapabilityStatus::Supported
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
 
         let macos = HostCapabilities::macos_native_window_host();
         assert_eq!(macos.windows.status, CapabilityStatus::Supported);
-        assert_eq!(macos.window_resizing.status, CapabilityStatus::Supported);
-        assert_eq!(macos.window_decorations.status, CapabilityStatus::Supported);
-        assert_eq!(
-            macos.window_always_on_top.status,
-            CapabilityStatus::Supported
-        );
+        assert_eq!(macos.window_resizing.status, CapabilityStatus::Partial);
+        assert_eq!(macos.window_decorations.status, CapabilityStatus::Partial);
+        assert_eq!(macos.window_always_on_top.status, CapabilityStatus::Partial);
         assert_eq!(
             macos.window_transparency.status,
             CapabilityStatus::Unsupported
         );
+        assert_eq!(macos.menus.status, CapabilityStatus::Unsupported);
 
         let linux = HostCapabilities::linux_native_window_host();
         assert_eq!(linux.windows.status, CapabilityStatus::Supported);
         assert_eq!(linux.window_resizing.status, CapabilityStatus::Partial);
         assert_eq!(linux.window_decorations.status, CapabilityStatus::Partial);
-        assert_eq!(linux.window_always_on_top.status, CapabilityStatus::Partial);
+        assert_eq!(
+            linux.window_always_on_top.status,
+            CapabilityStatus::Unsupported
+        );
         assert_eq!(
             linux.window_transparency.status,
             CapabilityStatus::Unsupported
         );
+        assert_eq!(linux.menus.status, CapabilityStatus::Unsupported);
 
         for capabilities in [
             HostCapabilities::windows_native_window_host(),

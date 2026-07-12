@@ -18,6 +18,8 @@ $singleFeatures = @(
     "widgets-list",
     "scroll",
     "list",
+    "virtual-list",
+    "paged-list",
     "textbox",
     "checkbox",
     "toggle",
@@ -43,6 +45,9 @@ $singleFeatures = @(
     "desktop-winit",
     "windows-gdi",
     "windows-win32",
+    "macos-appkit",
+    "linux-gtk",
+    "desktop-native",
     "all-widgets",
     "full"
 )
@@ -51,13 +56,15 @@ $featureSets = @(
     "button,label",
     "textbox,checkbox,toggle",
     "list,table",
+    "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",
     "window,product-adapter,button,label",
     "all-widgets,style,dark-mode",
     "workbench,window",
     "document-shell,windows-win32",
     "notepad-demo,style",
-    "calculator,windows-gdi"
+    "calculator,windows-gdi",
+    "desktop-native,all-widgets,style,dark-mode"
 )
 
 function Invoke-CargoFeatureCheck {

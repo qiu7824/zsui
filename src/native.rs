@@ -659,6 +659,11 @@ impl Default for NativeWindowSmokeRunOptions {
 pub struct NativeWindowSmokeRunReport {
     pub requested_window_count: usize,
     pub created_window_count: usize,
+    pub window_menu_requested_count: usize,
+    pub window_menu_attached_count: usize,
+    pub window_menu_native_command_count: usize,
+    pub window_menu_command_routed: bool,
+    pub window_menu_command_error: Option<String>,
     pub close_requested_count: usize,
     pub auto_close_after_ms: u64,
     pub exited_by_auto_close: bool,
@@ -728,6 +733,11 @@ impl NativeWindowSmokeRunReport {
         Self {
             requested_window_count: 0,
             created_window_count: 0,
+            window_menu_requested_count: 0,
+            window_menu_attached_count: 0,
+            window_menu_native_command_count: 0,
+            window_menu_command_routed: false,
+            window_menu_command_error: None,
             close_requested_count: 0,
             auto_close_after_ms: options.auto_close_after_ms,
             exited_by_auto_close: false,
@@ -1180,6 +1190,16 @@ impl NativeWindowBuilder {
         self
     }
 
+    pub fn icon_path(mut self, icon_path: impl Into<String>) -> Self {
+        self.window = self.window.icon_path(icon_path);
+        self
+    }
+
+    pub fn menu(mut self, menu: MenuSpec) -> Self {
+        self.window = self.window.menu(menu);
+        self
+    }
+
     pub fn draw_plan(mut self, draw_plan: NativeDrawPlan) -> Self {
         self.draw_plan = Some(draw_plan);
         self.view_interaction_plan = None;
@@ -1472,6 +1492,16 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
         self
     }
 
+    pub fn icon_path(mut self, icon_path: impl Into<String>) -> Self {
+        self.inner = self.inner.icon_path(icon_path);
+        self
+    }
+
+    pub fn menu(mut self, menu: MenuSpec) -> Self {
+        self.inner = self.inner.menu(menu);
+        self
+    }
+
     pub fn app_command_executor(mut self, executor: impl AppCommandExecutor + 'static) -> Self {
         self.inner = self.inner.app_command_executor(executor);
         self
@@ -1688,6 +1718,18 @@ fn menu_entry_count(menu: &MenuSpec) -> usize {
         .sum()
 }
 
+#[cfg(all(windows, feature = "windows-win32"))]
+fn menu_command_count(menu: &MenuSpec) -> usize {
+    menu.items
+        .iter()
+        .map(|item| match item {
+            MenuItemSpec::Command { .. } => 1,
+            MenuItemSpec::Separator => 0,
+            MenuItemSpec::Submenu { menu, .. } => menu_command_count(menu),
+        })
+        .sum()
+}
+
 impl ZsuiHost for NativeWindowHost {
     fn capabilities(&self) -> HostCapabilities {
         self.inner.capabilities()
@@ -1720,15 +1762,81 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
-        self.inner.read_clipboard()
+        #[cfg(feature = "clipboard")]
+        {
+            let mut clipboard = arboard::Clipboard::new()
+                .map_err(|err| ZsuiError::host("read_clipboard", err.to_string()))?;
+            return match clipboard.get_text() {
+                Ok(text) => Ok(Some(ClipboardData::Text(text))),
+                Err(arboard::Error::ContentNotAvailable) => Ok(None),
+                Err(err) => Err(ZsuiError::host("read_clipboard", err.to_string())),
+            };
+        }
+
+        #[cfg(not(feature = "clipboard"))]
+        {
+            Err(ZsuiError::unsupported(
+                "clipboard_text",
+                "enable the clipboard feature to compile the native text clipboard service",
+            ))
+        }
     }
 
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
-        self.inner.write_clipboard(data)
+        #[cfg(feature = "clipboard")]
+        {
+            let text = match data {
+                ClipboardData::Text(text) => text.clone(),
+                ClipboardData::Empty => String::new(),
+                ClipboardData::ImageRgba { .. } => {
+                    return Err(ZsuiError::unsupported(
+                        "clipboard_image",
+                        "the native image clipboard service is not connected",
+                    ));
+                }
+                ClipboardData::Files(_) => {
+                    return Err(ZsuiError::unsupported(
+                        "clipboard_files",
+                        "the native file clipboard service is not connected",
+                    ));
+                }
+            };
+            let mut clipboard = arboard::Clipboard::new()
+                .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()))?;
+            return clipboard
+                .set_text(text)
+                .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()));
+        }
+
+        #[cfg(not(feature = "clipboard"))]
+        {
+            let _ = data;
+            Err(ZsuiError::unsupported(
+                "clipboard_text",
+                "enable the clipboard feature to compile the native text clipboard service",
+            ))
+        }
     }
 
     fn open_file_picker(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<String>>> {
-        self.inner.open_file_picker(spec)
+        #[cfg(all(windows, feature = "windows-win32"))]
+        {
+            return crate::windows_win32_host::windows_win32_open_file_dialog(spec).map(
+                |selection| {
+                    selection.map(|paths| {
+                        paths
+                            .into_iter()
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .collect()
+                    })
+                },
+            );
+        }
+
+        #[cfg(not(all(windows, feature = "windows-win32")))]
+        {
+            self.inner.open_file_picker(spec)
+        }
     }
 
     fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
@@ -1747,6 +1855,46 @@ impl ZsuiHost for NativeWindowHost {
             self.view_runtimes.clone(),
             self.shell_runtimes.clone(),
         )
+    }
+}
+
+impl crate::ClipboardService for NativeWindowHost {
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
+        <Self as ZsuiHost>::read_clipboard(self)
+    }
+
+    fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
+        <Self as ZsuiHost>::write_clipboard(self, data)
+    }
+}
+
+impl crate::FileDialogService for NativeWindowHost {
+    fn open_file_dialog(
+        &mut self,
+        spec: &FileDialogSpec,
+    ) -> ZsuiResult<Option<Vec<std::path::PathBuf>>> {
+        <Self as ZsuiHost>::open_file_picker(self, spec).map(|selection| {
+            selection.map(|paths| paths.into_iter().map(std::path::PathBuf::from).collect())
+        })
+    }
+
+    fn save_file_dialog(
+        &mut self,
+        spec: &crate::SaveFileDialogSpec,
+    ) -> ZsuiResult<Option<std::path::PathBuf>> {
+        #[cfg(all(windows, feature = "windows-win32"))]
+        {
+            return crate::windows_win32_host::windows_win32_save_file_dialog(spec);
+        }
+
+        #[cfg(not(all(windows, feature = "windows-win32")))]
+        {
+            let _ = spec;
+            Err(ZsuiError::unsupported(
+                "save_file_dialog",
+                "the selected desktop backend does not implement a native save dialog",
+            ))
+        }
     }
 }
 
@@ -1878,6 +2026,12 @@ fn run_native_window_event_loop(
     if windows.is_empty() {
         return Ok(());
     }
+    if windows.iter().any(|window| window.menu.is_some()) {
+        return Err(ZsuiError::unsupported(
+            "native_menu",
+            "the first-pass Winit host does not implement a native application menu",
+        ));
+    }
     if !trays.is_empty() {
         return Err(ZsuiError::unsupported(
             "native_window_status_item",
@@ -1920,6 +2074,15 @@ fn run_native_window_smoke_event_loop(
 
     let mut report = NativeWindowSmokeRunReport {
         requested_window_count: windows.len(),
+        window_menu_requested_count: windows
+            .iter()
+            .filter(|window| window.menu.is_some())
+            .count(),
+        window_menu_native_command_count: windows
+            .iter()
+            .filter_map(|window| window.menu.as_ref())
+            .map(menu_command_count)
+            .sum(),
         auto_close_after_ms: options.auto_close_after_ms,
         ..NativeWindowSmokeRunReport::empty(options.clone())
     };
@@ -1948,11 +2111,37 @@ fn run_native_window_smoke_event_loop(
     })?;
 
     report.created_window_count = handles.len();
+    report.window_menu_attached_count = report.window_menu_requested_count;
     report.events.extend(
         windows
             .iter()
             .map(|spec| format!("window_created:{}", spec.title)),
     );
+
+    if let Some(menu) = windows.first().and_then(|window| window.menu.as_ref()) {
+        let table = crate::windows_win32_host::WindowsWin32StatusMenuCommandTable::from_menu(menu);
+        if let Some(native_id) = table.first_native_id() {
+            match crate::windows_win32_host::dispatch_windows_win32_window_menu_command(
+                handles[0].main(),
+                native_id,
+            ) {
+                Some(NativeStatusMenuCommandResult::Dispatched(command)) => {
+                    report.window_menu_command_routed = true;
+                    report
+                        .events
+                        .push(format!("window_menu_command_dispatched:{command:?}"));
+                }
+                Some(NativeStatusMenuCommandResult::Disabled) => {
+                    report.window_menu_command_error =
+                        Some("first window menu command is disabled".to_string());
+                }
+                Some(NativeStatusMenuCommandResult::NotFound) | None => {
+                    report.window_menu_command_error =
+                        Some("first window menu command was not found".to_string());
+                }
+            }
+        }
+    }
 
     let mut _status_item_host = None;
     if let Some(status_item) = options.status_item.clone() {

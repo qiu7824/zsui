@@ -75,6 +75,11 @@ pub struct NativeHostSmokeInteractionReport {
     pub draw_plan_window_count: usize,
     pub draw_command_count: usize,
     pub text_command_count: usize,
+    pub window_menu_requested_count: usize,
+    pub window_menu_attached_count: usize,
+    pub window_menu_native_command_count: usize,
+    pub window_menu_command_routed: bool,
+    pub window_menu_command_error: Option<String>,
     pub native_view_hit_target_count: usize,
     pub native_view_click_count: usize,
     pub native_view_event_count: usize,
@@ -123,6 +128,11 @@ impl NativeHostSmokeInteractionReport {
             draw_plan_window_count: 0,
             draw_command_count: 0,
             text_command_count: 0,
+            window_menu_requested_count: 0,
+            window_menu_attached_count: 0,
+            window_menu_native_command_count: 0,
+            window_menu_command_routed: false,
+            window_menu_command_error: None,
             native_view_hit_target_count: 0,
             native_view_click_count: 0,
             native_view_event_count: 0,
@@ -180,6 +190,15 @@ impl NativeHostSmokeInteractionReport {
                 "native draw plan attached to {} window(s) with {} command(s)",
                 report.draw_plan_window_count, report.draw_command_count
             ));
+        }
+        if report.window_menu_requested_count > 0 {
+            notes.push(format!(
+                "native window menu attached to {} window(s) with {} command(s)",
+                report.window_menu_attached_count, report.window_menu_native_command_count
+            ));
+            if report.window_menu_command_routed {
+                notes.push("window menu command routing was exercised".to_string());
+            }
         }
         if report.native_view_click_count > 0 {
             notes.push(format!(
@@ -260,6 +279,11 @@ impl NativeHostSmokeInteractionReport {
             draw_plan_window_count: report.draw_plan_window_count,
             draw_command_count: report.draw_command_count,
             text_command_count: report.text_command_count,
+            window_menu_requested_count: report.window_menu_requested_count,
+            window_menu_attached_count: report.window_menu_attached_count,
+            window_menu_native_command_count: report.window_menu_native_command_count,
+            window_menu_command_routed: report.window_menu_command_routed,
+            window_menu_command_error: report.window_menu_command_error.clone(),
             native_view_hit_target_count: report.native_view_hit_target_count,
             native_view_click_count: report.native_view_click_count,
             native_view_event_count: report.native_view_event_count,
@@ -852,6 +876,11 @@ mod tests {
         let run = NativeWindowSmokeRunReport {
             requested_window_count: 1,
             created_window_count: 1,
+            window_menu_requested_count: 0,
+            window_menu_attached_count: 0,
+            window_menu_native_command_count: 0,
+            window_menu_command_routed: false,
+            window_menu_command_error: None,
             close_requested_count: 0,
             auto_close_after_ms: 10,
             exited_by_auto_close: true,

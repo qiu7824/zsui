@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "required_artifacts": [
+    "startup.png",
+    "dark-theme.png",
+    "file-dialog.png",
+    "text-input.png",
+    "menu.png",
+    "interaction-report.json"
+  ],
+  "required_interactions": [
+    "window_lifecycle",
+    "typed_button_message",
+    "text_edit_copy_paste",
+    "cjk_ime_stable",
+    "scroll",
+    "tab_focus",
+    "file_open_save",
+    "system_theme_change",
+    "resize_without_artifacts"
+  ],
+  "platforms": [
+    {
+      "id": "windows",
+      "backend": "windows-win32",
+      "status": "in_progress"
+    },
+    {
+      "id": "macos",
+      "backend": "macos-appkit",
+      "status": "not_started"
+    },
+    {
+      "id": "linux",
+      "backend": "linux-gtk",
+      "status": "not_started"
+    }
+  ]
+}

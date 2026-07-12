@@ -85,6 +85,25 @@
       ]
     },
     {
+      "id": "long-list",
+      "purpose": "Virtual rows, background pagination, prefetch and bounded page caching",
+      "required": [
+        "src/paged_list.rs",
+        "src/view.rs",
+        "examples/paged_virtual_list.rs",
+        "docs/paged-virtual-list.md"
+      ],
+      "optional": [
+        "src/windows_win32_host.rs",
+        "Cargo.toml"
+      ],
+      "verify": [
+        "cargo test --no-default-features --features paged-list,label --quiet",
+        "cargo check --example paged_virtual_list --no-default-features --features window,button,label,paged-list",
+        "cargo run --example paged_virtual_list --no-default-features --features window,button,label,paged-list -- --smoke"
+      ]
+    },
+    {
       "id": "workbench",
       "purpose": "Conversation/task workbench, composer and inspector shell",
       "required": [
@@ -168,12 +187,15 @@
         "src/native_hosts.rs",
         "src/native_host_launch.rs",
         "src/native_adapter_manifest.rs",
+        "src/desktop_services.rs",
         "docs/porting.md"
       ],
       "optional": [
         "src/windows_win32_host.rs",
         "Cargo.toml",
-        "docs/native-host-smoke.md"
+        "docs/native-host-smoke.md",
+        "docs/v0.2-desktop-native.md",
+        "examples/desktop_native_showcase.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",

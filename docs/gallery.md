@@ -35,6 +35,23 @@ composer and inspector while leaving product data and commands to the app.
 真实点击会生成 `Msg`，进入 `update`，重建 View 并触发重绘。
 Real input emits `Msg`, enters `update`, rebuilds the View and repaints.
 
+## Native Desktop Showcase / 原生桌面示例
+
+<table>
+  <tr><th>Light / 浅色</th><th>Dark / 深色</th></tr>
+  <tr>
+    <td><img src="platform-proof/windows/startup.png" alt="Native desktop showcase light theme"></td>
+    <td><img src="platform-proof/windows/dark-theme.png" alt="Native desktop showcase dark theme"></td>
+  </tr>
+</table>
+
+这个 Windows 截图来自三桌面共用的 `desktop_native_showcase`：左侧导航、命令栏、
+单行和多行输入、主题开关、列表与滚动都由同一套 Rust 状态和布局声明生成。
+macOS AppKit 与 Linux GTK4 截图只有通过 v0.2 目标机证据门禁后才会加入。
+
+This Windows capture comes from the shared `desktop_native_showcase`. AppKit
+and GTK4 captures will be added only after their v0.2 target proof gates pass.
+
 ## Application Demos / 应用示例
 
 <table>
@@ -118,6 +135,7 @@ See [`calculator-demo.md`](calculator-demo.md) for the complete methodology.
 ```powershell
 cargo run --example navigation_shell_layout --features full -- --smoke
 cargo run --example workbench_shell --features full -- --smoke
+cargo run --example desktop_native_showcase --features full -- --smoke --scenario startup --screenshot docs/platform-proof/windows/startup.png
 cargo run --example zsui_notepad --no-default-features --features notepad-demo -- --smoke
 cargo run --example zsui_calculator --no-default-features --features calculator-demo -- --smoke
 .\scripts\measure-notepad-comparison.ps1

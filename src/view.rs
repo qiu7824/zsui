@@ -16,7 +16,7 @@ use crate::render_protocol::{NativeDrawTextCommand, SemanticTextStyle};
 use crate::{
     geometry::{ComponentId, Dp, Dpi, LayoutNode, LayoutOutput, Point, Rect},
     render_protocol::{ColorRole, NativeDrawCommand, NativeDrawFill, NativeDrawPlan},
-    style::ThemeColorToken,
+    style::{ThemeColorToken, ZsuiThemeMode},
     Command, UiCommand,
 };
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,67 @@ impl From<ComponentId> for WidgetId {
     }
 }
 
+#[cfg(feature = "virtual-list")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VirtualListRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[cfg(feature = "virtual-list")]
+impl VirtualListRange {
+    pub const fn new(start: usize, end: usize) -> Self {
+        Self {
+            start,
+            end: if end < start { start } else { end },
+        }
+    }
+
+    pub const fn len(self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.start >= self.end
+    }
+
+    pub const fn contains(self, index: usize) -> bool {
+        index >= self.start && index < self.end
+    }
+
+    pub const fn clamp(self, total_count: usize) -> Self {
+        let start = if self.start > total_count {
+            total_count
+        } else {
+            self.start
+        };
+        let end = if self.end > total_count {
+            total_count
+        } else {
+            self.end
+        };
+        Self::new(start, end)
+    }
+}
+
+#[cfg(feature = "virtual-list")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VirtualListScrollDirection {
+    Backward,
+    Stationary,
+    Forward,
+}
+
+#[cfg(feature = "virtual-list")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct VirtualListViewport {
+    pub offset_y: Dp,
+    pub row_height: Dp,
+    pub visible_range: VirtualListRange,
+    pub materialized_range: VirtualListRange,
+    pub direction: VirtualListScrollDirection,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewStackDirection {
     Row,
@@ -64,6 +125,7 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "textbox")]
     Textbox {
         value: String,
+        multiline: bool,
         on_change: Option<fn(String) -> Msg>,
     },
     #[cfg(feature = "checkbox")]
@@ -88,17 +150,52 @@ pub enum ViewNodeKind<Msg> {
         content_height: Option<Dp>,
         on_scroll: Option<fn(Dp) -> Msg>,
     },
+    #[cfg(feature = "virtual-list")]
+    VirtualList {
+        total_count: usize,
+        row_height: Dp,
+        overscan_rows: usize,
+        row_indices: Vec<usize>,
+        selected_index: Option<usize>,
+        offset_y: Dp,
+        visible_range: VirtualListRange,
+        materialized_range: VirtualListRange,
+        on_select: Option<fn(usize) -> Msg>,
+        on_viewport_changed: Option<fn(VirtualListViewport) -> Msg>,
+        loading: bool,
+        show_placeholders: bool,
+    },
     Stack {
         direction: ViewStackDirection,
     },
     Spacer,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewStyle {
     pub padding: Option<Dp>,
     pub radius: Option<Dp>,
     pub background: Option<ThemeColorToken>,
+    pub width: Option<Dp>,
+    pub height: Option<Dp>,
+    pub flex: f32,
+    pub gap: Option<Dp>,
+    pub theme_mode: Option<ZsuiThemeMode>,
+}
+
+impl Default for ViewStyle {
+    fn default() -> Self {
+        Self {
+            padding: None,
+            radius: None,
+            background: None,
+            width: None,
+            height: None,
+            flex: 1.0,
+            gap: None,
+            theme_mode: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +205,7 @@ pub struct ViewNode<Msg> {
     pub style: ViewStyle,
     pub children: Vec<ViewNode<Msg>>,
     bounds: Option<Rect>,
+    layout_dpi: Dpi,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -119,6 +217,7 @@ impl<Msg> ViewNode<Msg> {
             style: ViewStyle::default(),
             children: Vec::new(),
             bounds: None,
+            layout_dpi: Dpi::standard(),
             message: PhantomData,
         }
     }
@@ -143,6 +242,31 @@ impl<Msg> ViewNode<Msg> {
         self
     }
 
+    pub fn width(mut self, width: Dp) -> Self {
+        self.style.width = Some(width);
+        self
+    }
+
+    pub fn height(mut self, height: Dp) -> Self {
+        self.style.height = Some(height);
+        self
+    }
+
+    pub fn flex(mut self, flex: f32) -> Self {
+        self.style.flex = flex.max(0.0);
+        self
+    }
+
+    pub fn gap(mut self, gap: Dp) -> Self {
+        self.style.gap = Some(gap);
+        self
+    }
+
+    pub fn theme_mode(mut self, theme_mode: ZsuiThemeMode) -> Self {
+        self.style.theme_mode = Some(theme_mode);
+        self
+    }
+
     pub fn child(mut self, child: ViewNode<Msg>) -> Self {
         self.children.push(child);
         self
@@ -155,6 +279,25 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn bounds(&self) -> Option<Rect> {
         self.bounds
+    }
+
+    pub fn background_poll_interval_ms(&self) -> Option<u64> {
+        #[cfg(feature = "virtual-list")]
+        if matches!(self.kind, ViewNodeKind::VirtualList { loading: true, .. }) {
+            return Some(33);
+        }
+        self.children
+            .iter()
+            .filter_map(ViewNode::background_poll_interval_ms)
+            .min()
+    }
+
+    #[cfg(feature = "virtual-list")]
+    fn clear_layout_bounds(&mut self) {
+        self.bounds = None;
+        for child in &mut self.children {
+            child.clear_layout_bounds();
+        }
     }
 }
 
@@ -189,27 +332,37 @@ impl<Msg: Clone> ViewNode<Msg> {
 
     #[cfg(feature = "list")]
     pub fn selected_index(mut self, index: Option<usize>) -> Self {
-        if let ViewNodeKind::List { selected_index, .. } = &mut self.kind {
-            *selected_index = index;
+        match &mut self.kind {
+            ViewNodeKind::List { selected_index, .. } => *selected_index = index,
+            #[cfg(feature = "virtual-list")]
+            ViewNodeKind::VirtualList { selected_index, .. } => *selected_index = index,
+            _ => {}
         }
         self
     }
 
     #[cfg(feature = "list")]
     pub fn on_select(mut self, message: fn(usize) -> Msg) -> Self {
-        if let ViewNodeKind::List { on_select, .. } = &mut self.kind {
-            *on_select = Some(message);
+        match &mut self.kind {
+            ViewNodeKind::List { on_select, .. } => *on_select = Some(message),
+            #[cfg(feature = "virtual-list")]
+            ViewNodeKind::VirtualList { on_select, .. } => *on_select = Some(message),
+            _ => {}
         }
         self
     }
 
     #[cfg(feature = "scroll")]
     pub fn scroll_y(mut self, offset_y: Dp) -> Self {
-        if let ViewNodeKind::Scroll {
-            offset_y: current, ..
-        } = &mut self.kind
-        {
-            *current = offset_y;
+        match &mut self.kind {
+            ViewNodeKind::Scroll {
+                offset_y: current, ..
+            } => *current = offset_y,
+            #[cfg(feature = "virtual-list")]
+            ViewNodeKind::VirtualList {
+                offset_y: current, ..
+            } => *current = offset_y,
+            _ => {}
         }
         self
     }
@@ -226,6 +379,57 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_scroll(mut self, message: fn(Dp) -> Msg) -> Self {
         if let ViewNodeKind::Scroll { on_scroll, .. } = &mut self.kind {
             *on_scroll = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn item_height(mut self, row_height: Dp) -> Self {
+        if let ViewNodeKind::VirtualList {
+            row_height: current,
+            ..
+        } = &mut self.kind
+        {
+            *current = Dp::new(row_height.0.max(1.0));
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn overscan_rows(mut self, rows: usize) -> Self {
+        if let ViewNodeKind::VirtualList { overscan_rows, .. } = &mut self.kind {
+            *overscan_rows = rows;
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn on_viewport_changed(mut self, message: fn(VirtualListViewport) -> Msg) -> Self {
+        if let ViewNodeKind::VirtualList {
+            on_viewport_changed,
+            ..
+        } = &mut self.kind
+        {
+            *on_viewport_changed = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn loading(mut self, is_loading: bool) -> Self {
+        if let ViewNodeKind::VirtualList { loading, .. } = &mut self.kind {
+            *loading = is_loading;
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn placeholders(mut self, visible: bool) -> Self {
+        if let ViewNodeKind::VirtualList {
+            show_placeholders, ..
+        } = &mut self.kind
+        {
+            *show_placeholders = visible;
         }
         self
     }
@@ -248,6 +452,16 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
 pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Textbox {
         value: value.into(),
+        multiline: false,
+        on_change: None,
+    })
+}
+
+#[cfg(feature = "textbox")]
+pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::Textbox {
+        value: value.into(),
+        multiline: true,
         on_change: None,
     })
 }
@@ -286,13 +500,48 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
 #[cfg(feature = "list")]
 pub fn list<T, Msg>(
     items: impl IntoIterator<Item = T>,
-    mut render: impl FnMut(T) -> ViewNode<Msg>,
+    render: impl FnMut(T) -> ViewNode<Msg>,
 ) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::List {
         selected_index: None,
         on_select: None,
     })
-    .children(items.into_iter().map(|item| render(item)))
+    .children(items.into_iter().map(render))
+}
+
+#[cfg(feature = "virtual-list")]
+pub fn virtual_list<T, Msg>(
+    total_count: usize,
+    rows: impl IntoIterator<Item = (usize, T)>,
+    mut render: impl FnMut(usize, T) -> ViewNode<Msg>,
+) -> ViewNode<Msg> {
+    let mut rows = rows
+        .into_iter()
+        .filter(|(index, _)| *index < total_count)
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|(index, _)| *index);
+    rows.dedup_by_key(|(index, _)| *index);
+    let mut row_indices = Vec::with_capacity(rows.len());
+    let mut children = Vec::with_capacity(rows.len());
+    for (index, item) in rows {
+        row_indices.push(index);
+        children.push(render(index, item));
+    }
+    ViewNode::<Msg>::new(ViewNodeKind::VirtualList {
+        total_count,
+        row_height: Dp::new(40.0),
+        overscan_rows: 4,
+        row_indices,
+        selected_index: None,
+        offset_y: Dp::new(0.0),
+        visible_range: VirtualListRange::new(0, 0),
+        materialized_range: VirtualListRange::new(0, 0),
+        on_select: None,
+        on_viewport_changed: None,
+        loading: false,
+        show_placeholders: true,
+    })
+    .children(children)
 }
 
 #[cfg(feature = "scroll")]
@@ -363,6 +612,7 @@ pub enum ViewHitTargetKind {
     Unknown,
     Button,
     Textbox,
+    TextEditor,
     Checkbox,
     Toggle,
     #[cfg(feature = "scroll")]
@@ -542,6 +792,8 @@ pub struct LiveViewUpdate {
 
 trait LiveViewDriver: Send {
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
+    fn refresh(&mut self) -> LiveViewUpdate;
+    fn background_poll_interval_ms(&self) -> Option<u64>;
     fn draw_plan(&self) -> NativeDrawPlan;
     fn interaction_plan(&self) -> ViewInteractionPlan;
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
@@ -572,6 +824,14 @@ impl SharedLiveViewRuntime {
 
     pub fn draw_plan(&self) -> NativeDrawPlan {
         self.lock().draw_plan()
+    }
+
+    pub fn refresh(&self) -> LiveViewUpdate {
+        self.lock().refresh()
+    }
+
+    pub fn background_poll_interval_ms(&self) -> Option<u64> {
+        self.lock().background_poll_interval_ms()
     }
 
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
@@ -696,6 +956,20 @@ where
         true
     }
 
+    fn refresh(&mut self) -> LiveViewUpdate {
+        self.layout();
+        self.revision = self.revision.saturating_add(1);
+        LiveViewUpdate {
+            redraw: true,
+            revision: self.revision,
+            ..LiveViewUpdate::default()
+        }
+    }
+
+    fn background_poll_interval_ms(&self) -> Option<u64> {
+        self.view.background_poll_interval_ms()
+    }
+
     fn draw_plan(&self) -> NativeDrawPlan {
         let mut cx = ViewPaintCx::new(self.dpi);
         self.view.paint(&mut cx);
@@ -811,6 +1085,10 @@ impl ViewPaintCx {
     pub fn into_plan(self) -> NativeDrawPlan {
         self.plan
     }
+
+    pub fn set_theme_mode(&mut self, theme_mode: ZsuiThemeMode) {
+        self.plan.theme_mode = theme_mode;
+    }
 }
 
 pub trait View<Msg> {
@@ -819,9 +1097,98 @@ pub trait View<Msg> {
     fn paint(&self, cx: &mut ViewPaintCx);
 }
 
+#[cfg(feature = "virtual-list")]
+impl<Msg: Clone> ViewNode<Msg> {
+    fn layout_virtual_list(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        self.bounds = Some(cx.bounds);
+        self.layout_dpi = cx.dpi;
+        let (total_count, row_height, overscan_rows, row_indices, current_offset) = match &self.kind
+        {
+            ViewNodeKind::VirtualList {
+                total_count,
+                row_height,
+                overscan_rows,
+                row_indices,
+                offset_y,
+                ..
+            } => (
+                *total_count,
+                *row_height,
+                *overscan_rows,
+                row_indices.clone(),
+                *offset_y,
+            ),
+            _ => unreachable!("virtual list layout requires a virtual list node"),
+        };
+        let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
+        let viewport_height =
+            Dp::new(content_bounds.height.max(0) as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
+        let viewport = virtual_list_viewport(
+            total_count,
+            row_height,
+            current_offset,
+            viewport_height,
+            overscan_rows,
+            VirtualListScrollDirection::Stationary,
+        );
+        if let ViewNodeKind::VirtualList {
+            offset_y,
+            visible_range,
+            materialized_range,
+            ..
+        } = &mut self.kind
+        {
+            *offset_y = viewport.offset_y;
+            *visible_range = viewport.visible_range;
+            *materialized_range = viewport.materialized_range;
+        }
+
+        for child in &mut self.children {
+            child.clear_layout_bounds();
+        }
+        let mut children = Vec::new();
+        if let Some(id) = self.id {
+            children.push(LayoutNode {
+                component: id.into(),
+                bounds: cx.bounds,
+            });
+        }
+        let row_height_px = row_height.to_px(cx.dpi).round_i32().max(1);
+        let offset_px = viewport.offset_y.to_px(cx.dpi).round_i32().max(0);
+        for (index, child) in row_indices.into_iter().zip(self.children.iter_mut()) {
+            if !viewport.materialized_range.contains(index) {
+                continue;
+            }
+            let row_top = (index as i64)
+                .saturating_mul(row_height_px as i64)
+                .saturating_sub(offset_px as i64)
+                .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            let mut child_cx = ViewLayoutCx {
+                bounds: Rect {
+                    x: content_bounds.x,
+                    y: content_bounds.y.saturating_add(row_top),
+                    width: content_bounds.width,
+                    height: row_height_px,
+                },
+                dpi: cx.dpi,
+            };
+            children.extend(child.layout(&mut child_cx).children);
+        }
+        LayoutOutput {
+            bounds: cx.bounds,
+            children,
+        }
+    }
+}
+
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        #[cfg(feature = "virtual-list")]
+        if matches!(self.kind, ViewNodeKind::VirtualList { .. }) {
+            return self.layout_virtual_list(cx);
+        }
         self.bounds = Some(cx.bounds);
+        self.layout_dpi = cx.dpi;
         let mut children = Vec::new();
         if let Some(id) = self.id {
             children.push(LayoutNode {
@@ -830,7 +1197,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             });
         }
 
-        let child_bounds = split_child_bounds(cx.bounds, &self.kind, self.children.len(), cx.dpi);
+        let child_bounds = split_child_bounds(
+            inset_bounds(cx.bounds, self.style.padding, cx.dpi),
+            &self.kind,
+            &self.children,
+            self.style.gap,
+            cx.dpi,
+        );
         for (child, bounds) in self.children.iter_mut().zip(child_bounds) {
             let mut child_cx = ViewLayoutCx {
                 bounds,
@@ -867,7 +1240,36 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
         }
 
+        #[cfg(feature = "virtual-list")]
+        if let (
+            ViewNodeKind::VirtualList {
+                row_indices,
+                selected_index,
+                on_select,
+                ..
+            },
+            ViewEvent::Click { widget },
+        ) = (&mut self.kind, event)
+        {
+            if let Some(position) = self
+                .children
+                .iter()
+                .position(|child| child.contains_widget(*widget))
+            {
+                if let Some(index) = row_indices.get(position).copied() {
+                    *selected_index = Some(index);
+                    if let Some(message) = on_select {
+                        cx.emit(message(index));
+                    }
+                }
+            }
+        }
+
         if self.event_targets_self(event) {
+            #[cfg(feature = "virtual-list")]
+            let list_bounds = self
+                .bounds
+                .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
             match (&mut self.kind, event) {
                 #[cfg(feature = "button")]
                 (ViewNodeKind::Button { on_click, .. }, ViewEvent::Click { .. }) => {
@@ -877,7 +1279,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
                 #[cfg(feature = "textbox")]
                 (
-                    ViewNodeKind::Textbox { value, on_change },
+                    ViewNodeKind::Textbox {
+                        value, on_change, ..
+                    },
                     ViewEvent::TextChanged {
                         value: next_value, ..
                     },
@@ -924,11 +1328,57 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     },
                     ViewEvent::ScrollBy { delta_y, .. },
                 ) => {
-                    let max_offset = scroll_max_offset_y(self.bounds, *content_height);
+                    let max_offset =
+                        scroll_max_offset_y(self.bounds, *content_height, self.layout_dpi);
                     let next = Dp::new((offset_y.0 + delta_y.0).clamp(0.0, max_offset.0));
                     *offset_y = next;
                     if let Some(message) = on_scroll {
                         cx.emit(message(next));
+                    }
+                }
+                #[cfg(feature = "virtual-list")]
+                (
+                    ViewNodeKind::VirtualList {
+                        total_count,
+                        row_height,
+                        overscan_rows,
+                        offset_y,
+                        visible_range,
+                        materialized_range,
+                        on_viewport_changed,
+                        ..
+                    },
+                    ViewEvent::ScrollBy { delta_y, .. },
+                ) => {
+                    let viewport_height = list_bounds
+                        .map(|bounds| {
+                            Dp::new(
+                                bounds.height.max(0) as f32
+                                    / self.layout_dpi.scale_factor().max(f32::EPSILON),
+                            )
+                        })
+                        .unwrap_or(Dp::new(0.0));
+                    let requested = Dp::new(offset_y.0 + delta_y.0);
+                    let direction = if requested.0 > offset_y.0 {
+                        VirtualListScrollDirection::Forward
+                    } else if requested.0 < offset_y.0 {
+                        VirtualListScrollDirection::Backward
+                    } else {
+                        VirtualListScrollDirection::Stationary
+                    };
+                    let viewport = virtual_list_viewport(
+                        *total_count,
+                        *row_height,
+                        requested,
+                        viewport_height,
+                        *overscan_rows,
+                        direction,
+                    );
+                    *offset_y = viewport.offset_y;
+                    *visible_range = viewport.visible_range;
+                    *materialized_range = viewport.materialized_range;
+                    if let Some(message) = on_viewport_changed {
+                        cx.emit(message(viewport));
                     }
                 }
                 _ => {}
@@ -945,12 +1395,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             return;
         };
 
+        if let Some(theme_mode) = self.style.theme_mode {
+            cx.set_theme_mode(theme_mode);
+        }
+
         if let Some(background) = self.style.background {
-            cx.draw(NativeDrawCommand::RoundFill {
-                rect: bounds,
-                fill: NativeDrawFill::Role(color_role_for_token(background)),
-                radius: radius_px(self.style.radius, cx.dpi),
-            });
+            let fill = NativeDrawFill::Role(color_role_for_token(background));
+            let radius = radius_px(self.style.radius, cx.dpi);
+            if radius == 0 {
+                cx.draw(NativeDrawCommand::FillRect { rect: bounds, fill });
+            } else {
+                cx.draw(NativeDrawCommand::RoundFill {
+                    rect: bounds,
+                    fill,
+                    radius,
+                });
+            }
         }
 
         match &self.kind {
@@ -980,17 +1440,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 )));
             }
             #[cfg(feature = "textbox")]
-            ViewNodeKind::Textbox { value, .. } => {
+            ViewNodeKind::Textbox {
+                value, multiline, ..
+            } => {
                 cx.draw(NativeDrawCommand::RoundRect {
                     rect: bounds,
                     fill: NativeDrawFill::Role(ColorRole::Surface),
                     stroke: Some(NativeDrawFill::Role(ColorRole::Control)),
                     radius: radius_px(self.style.radius.or(Some(Dp::new(6.0))), cx.dpi),
                 });
+                let mut text_style = SemanticTextStyle::body();
+                if *multiline {
+                    text_style.vertical_align = crate::VerticalAlign::Start;
+                    text_style.wrap = crate::TextWrap::Word;
+                    text_style.ellipsis = false;
+                }
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                     value,
                     padded_bounds(bounds, self.style.padding.or(Some(Dp::new(8.0))), cx.dpi),
-                    SemanticTextStyle::body(),
+                    text_style,
                 )));
             }
             #[cfg(feature = "checkbox")]
@@ -1044,6 +1512,70 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         radius: radius_px(self.style.radius.or(Some(Dp::new(4.0))), cx.dpi),
                     });
                 }
+            }
+            #[cfg(feature = "virtual-list")]
+            ViewNodeKind::VirtualList {
+                row_height,
+                row_indices,
+                selected_index,
+                offset_y,
+                visible_range,
+                show_placeholders,
+                ..
+            } => {
+                cx.draw(NativeDrawCommand::PushClip { rect: bounds });
+                if let Some(selected_bounds) = selected_index
+                    .and_then(|index| row_indices.binary_search(&index).ok())
+                    .and_then(|position| self.children.get(position))
+                    .and_then(ViewNode::bounds)
+                {
+                    cx.draw(NativeDrawCommand::RoundFill {
+                        rect: selected_bounds,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::Accent,
+                            alpha: 36,
+                        },
+                        radius: radius_px(self.style.radius.or(Some(Dp::new(4.0))), cx.dpi),
+                    });
+                }
+                if *show_placeholders {
+                    let content_bounds = inset_bounds(bounds, self.style.padding, cx.dpi);
+                    for index in visible_range.start..visible_range.end {
+                        if row_indices.binary_search(&index).is_ok() {
+                            continue;
+                        }
+                        let row_bounds = virtual_list_row_bounds(
+                            content_bounds,
+                            index,
+                            *row_height,
+                            *offset_y,
+                            cx.dpi,
+                        );
+                        let inset_x = 8.min(row_bounds.width / 4).max(0);
+                        let inset_y = 6.min(row_bounds.height / 4).max(0);
+                        let placeholder = Rect {
+                            x: row_bounds.x + inset_x,
+                            y: row_bounds.y + inset_y,
+                            width: (row_bounds.width - inset_x * 2).max(0),
+                            height: (row_bounds.height - inset_y * 2).max(0),
+                        };
+                        if placeholder.width > 0 && placeholder.height > 0 {
+                            cx.draw(NativeDrawCommand::RoundFill {
+                                rect: placeholder,
+                                fill: NativeDrawFill::RoleWithAlpha {
+                                    role: ColorRole::Control,
+                                    alpha: 96,
+                                },
+                                radius: 4,
+                            });
+                        }
+                    }
+                }
+                for child in &self.children {
+                    child.paint(cx);
+                }
+                cx.draw(NativeDrawCommand::PopClip);
+                return;
             }
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => {
@@ -1128,6 +1660,14 @@ impl<Msg> ViewNode<Msg> {
                 .iter()
                 .position(|child| child.contains_widget(widget));
         }
+        #[cfg(feature = "virtual-list")]
+        if let ViewNodeKind::VirtualList { row_indices, .. } = &self.kind {
+            let position = self
+                .children
+                .iter()
+                .position(|child| child.contains_widget(widget))?;
+            return row_indices.get(position).copied();
+        }
 
         self.children
             .iter()
@@ -1155,6 +1695,23 @@ impl<Msg> ViewNode<Msg> {
                 .first_widget_id()
                 .map(|widget| (widget, next));
         }
+        #[cfg(feature = "virtual-list")]
+        if let ViewNodeKind::VirtualList { row_indices, .. } = &self.kind {
+            let current = self
+                .children
+                .iter()
+                .position(|child| child.contains_widget(widget))?;
+            let next = current
+                .saturating_add_signed(offset)
+                .min(self.children.len().saturating_sub(1));
+            if next == current {
+                return None;
+            }
+            let index = *row_indices.get(next)?;
+            return self.children[next]
+                .first_widget_id()
+                .map(|widget| (widget, index));
+        }
 
         self.children
             .iter()
@@ -1169,7 +1726,11 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "scroll")]
     pub fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId> {
-        if matches!(self.kind, ViewNodeKind::Scroll { .. }) && self.contains_widget(widget) {
+        let is_scroll_target = matches!(self.kind, ViewNodeKind::Scroll { .. });
+        #[cfg(feature = "virtual-list")]
+        let is_scroll_target =
+            is_scroll_target || matches!(self.kind, ViewNodeKind::VirtualList { .. });
+        if is_scroll_target && self.contains_widget(widget) {
             return self.id.or_else(|| self.first_widget_id_any());
         }
 
@@ -1196,7 +1757,12 @@ impl<Msg> ViewNode<Msg> {
         }
 
         #[cfg(feature = "scroll")]
-        let child_clip = if matches!(self.kind, ViewNodeKind::Scroll { .. }) {
+        let clips_children = matches!(self.kind, ViewNodeKind::Scroll { .. });
+        #[cfg(all(feature = "scroll", feature = "virtual-list"))]
+        let clips_children =
+            clips_children || matches!(self.kind, ViewNodeKind::VirtualList { .. });
+        #[cfg(feature = "scroll")]
+        let child_clip = if clips_children {
             self.bounds.and_then(|bounds| clipped_rect(bounds, clip))
         } else {
             clip
@@ -1214,56 +1780,153 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "button")]
             ViewNodeKind::Button { .. } => ViewHitTargetKind::Button,
             #[cfg(feature = "textbox")]
-            ViewNodeKind::Textbox { .. } => ViewHitTargetKind::Textbox,
+            ViewNodeKind::Textbox { multiline, .. } => {
+                if *multiline {
+                    ViewHitTargetKind::TextEditor
+                } else {
+                    ViewHitTargetKind::Textbox
+                }
+            }
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { .. } => ViewHitTargetKind::Checkbox,
             #[cfg(feature = "toggle")]
             ViewNodeKind::Toggle { .. } => ViewHitTargetKind::Toggle,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
+            #[cfg(feature = "virtual-list")]
+            ViewNodeKind::VirtualList { .. } => ViewHitTargetKind::Scroll,
             _ => ViewHitTargetKind::Unknown,
         }
+    }
+}
+
+#[cfg(feature = "virtual-list")]
+pub fn virtual_list_viewport(
+    total_count: usize,
+    row_height: Dp,
+    offset_y: Dp,
+    viewport_height: Dp,
+    overscan_rows: usize,
+    direction: VirtualListScrollDirection,
+) -> VirtualListViewport {
+    let row_height = if row_height.0.is_finite() {
+        row_height.0.max(1.0)
+    } else {
+        1.0
+    };
+    let viewport_height = if viewport_height.0.is_finite() {
+        viewport_height.0.max(0.0)
+    } else {
+        0.0
+    };
+    let requested_offset = if offset_y.0.is_finite() {
+        offset_y.0.max(0.0)
+    } else {
+        0.0
+    };
+    let content_height = total_count as f64 * row_height as f64;
+    let max_offset = (content_height - viewport_height as f64).max(0.0) as f32;
+    let offset_y = requested_offset.min(max_offset);
+    if total_count == 0 || viewport_height <= 0.0 {
+        return VirtualListViewport {
+            offset_y: Dp::new(offset_y),
+            row_height: Dp::new(row_height),
+            visible_range: VirtualListRange::new(0, 0),
+            materialized_range: VirtualListRange::new(0, 0),
+            direction,
+        };
+    }
+
+    let start = ((offset_y / row_height).floor() as usize).min(total_count);
+    let end = (((offset_y + viewport_height) / row_height).ceil() as usize)
+        .max(start.saturating_add(1))
+        .min(total_count);
+    let visible_range = VirtualListRange::new(start, end);
+    let materialized_range = VirtualListRange::new(
+        start.saturating_sub(overscan_rows),
+        end.saturating_add(overscan_rows).min(total_count),
+    );
+    VirtualListViewport {
+        offset_y: Dp::new(offset_y),
+        row_height: Dp::new(row_height),
+        visible_range,
+        materialized_range,
+        direction,
+    }
+}
+
+#[cfg(feature = "virtual-list")]
+fn virtual_list_row_bounds(
+    bounds: Rect,
+    index: usize,
+    row_height: Dp,
+    offset_y: Dp,
+    dpi: Dpi,
+) -> Rect {
+    let row_height_px = row_height.to_px(dpi).round_i32().max(1);
+    let offset_px = offset_y.to_px(dpi).round_i32().max(0);
+    let row_top = (index as i64)
+        .saturating_mul(row_height_px as i64)
+        .saturating_sub(offset_px as i64)
+        .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    Rect {
+        x: bounds.x,
+        y: bounds.y.saturating_add(row_top),
+        width: bounds.width,
+        height: row_height_px,
     }
 }
 
 fn split_child_bounds<Msg>(
     bounds: Rect,
     kind: &ViewNodeKind<Msg>,
-    child_count: usize,
-    _dpi: Dpi,
+    children: &[ViewNode<Msg>],
+    gap: Option<Dp>,
+    dpi: Dpi,
 ) -> Vec<Rect> {
+    let child_count = children.len();
     if child_count == 0 {
         return Vec::new();
     }
+    let gap = gap
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
 
     match kind {
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => {
-            let width = bounds.width / child_count as i32;
-            (0..child_count)
-                .map(|index| Rect {
-                    x: bounds.x + width * index as i32,
-                    y: bounds.y,
-                    width,
-                    height: bounds.height,
+            let widths =
+                allocate_axis_lengths(bounds.width, gap, children, |style| style.width, dpi);
+            let mut x = bounds.x;
+            widths
+                .into_iter()
+                .map(|width| {
+                    let rect = Rect {
+                        x,
+                        y: bounds.y,
+                        width,
+                        height: bounds.height,
+                    };
+                    x += width + gap;
+                    rect
                 })
                 .collect()
         }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Column,
-        } => split_column_child_bounds(bounds, child_count),
+        } => split_column_child_bounds(bounds, children, gap, dpi),
         #[cfg(feature = "list")]
-        ViewNodeKind::List { .. } => split_column_child_bounds(bounds, child_count),
+        ViewNodeKind::List { .. } => split_column_child_bounds(bounds, children, gap, dpi),
         #[cfg(feature = "scroll")]
         ViewNodeKind::Scroll {
             offset_y,
             content_height,
             ..
         } => {
-            let offset_y = offset_y.to_px(_dpi).round_i32().max(0);
+            let offset_y = offset_y.to_px(dpi).round_i32().max(0);
             let height = content_height
-                .map(|height| height.to_px(_dpi).round_i32())
+                .map(|height| height.to_px(dpi).round_i32())
                 .unwrap_or(bounds.height)
                 .max(bounds.height);
             vec![
@@ -1280,22 +1943,118 @@ fn split_child_bounds<Msg>(
     }
 }
 
-fn split_column_child_bounds(bounds: Rect, child_count: usize) -> Vec<Rect> {
-    let height = bounds.height / child_count as i32;
-    (0..child_count)
-        .map(|index| Rect {
-            x: bounds.x,
-            y: bounds.y + height * index as i32,
-            width: bounds.width,
-            height,
+fn split_column_child_bounds<Msg>(
+    bounds: Rect,
+    children: &[ViewNode<Msg>],
+    gap: i32,
+    dpi: Dpi,
+) -> Vec<Rect> {
+    let heights = allocate_axis_lengths(bounds.height, gap, children, |style| style.height, dpi);
+    let mut y = bounds.y;
+    heights
+        .into_iter()
+        .map(|height| {
+            let rect = Rect {
+                x: bounds.x,
+                y,
+                width: bounds.width,
+                height,
+            };
+            y += height + gap;
+            rect
         })
         .collect()
 }
 
-#[cfg(any(feature = "label", feature = "button", feature = "textbox"))]
-fn padded_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+fn allocate_axis_lengths<Msg>(
+    total: i32,
+    gap: i32,
+    children: &[ViewNode<Msg>],
+    fixed: impl Fn(&ViewStyle) -> Option<Dp>,
+    dpi: Dpi,
+) -> Vec<i32> {
+    let total = total.max(0);
+    let total_gap = gap
+        .saturating_mul(children.len().saturating_sub(1) as i32)
+        .min(total);
+    let available = total - total_gap;
+    let requested = children
+        .iter()
+        .map(|child| fixed(&child.style).map(|value| value.to_px(dpi).round_i32().max(0)))
+        .collect::<Vec<_>>();
+    let fixed_total: i32 = requested.iter().flatten().copied().sum();
+    let mut lengths = vec![0; children.len()];
+
+    if fixed_total >= available && fixed_total > 0 {
+        let scale = available as f32 / fixed_total as f32;
+        let fixed_indices = requested
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.map(|value| (index, value)))
+            .collect::<Vec<_>>();
+        let mut assigned = 0;
+        for (position, (index, value)) in fixed_indices.iter().enumerate() {
+            let length = if position + 1 == fixed_indices.len() {
+                available - assigned
+            } else {
+                ((*value as f32) * scale).floor() as i32
+            }
+            .max(0);
+            lengths[*index] = length;
+            assigned += length;
+        }
+        return lengths;
+    }
+
+    for (index, value) in requested.iter().enumerate() {
+        if let Some(value) = value {
+            lengths[index] = *value;
+        }
+    }
+
+    let remaining = (available - fixed_total).max(0);
+    let flexible = requested
+        .iter()
+        .enumerate()
+        .filter(|(_, value)| value.is_none())
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if flexible.is_empty() {
+        return lengths;
+    }
+
+    let flex_total: f32 = flexible
+        .iter()
+        .map(|index| children[*index].style.flex.max(0.0))
+        .sum();
+    let equal_flex = flex_total <= f32::EPSILON;
+    let denominator = if equal_flex {
+        flexible.len() as f32
+    } else {
+        flex_total
+    };
+    let mut assigned = 0;
+    for (position, index) in flexible.iter().enumerate() {
+        let length = if position + 1 == flexible.len() {
+            remaining - assigned
+        } else {
+            let weight = if equal_flex {
+                1.0
+            } else {
+                children[*index].style.flex.max(0.0)
+            };
+            ((remaining as f32) * weight / denominator).floor() as i32
+        }
+        .max(0);
+        lengths[*index] = length;
+        assigned += length;
+    }
+    lengths
+}
+
+fn inset_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     let padding = padding
-        .map(|value| value.to_px(dpi).round_i32())
+        .map(|value| value.to_px(dpi).round_i32().max(0))
         .unwrap_or(0);
     Rect {
         x: bounds.x + padding,
@@ -1305,6 +2064,11 @@ fn padded_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     }
 }
 
+#[cfg(any(feature = "label", feature = "button", feature = "textbox"))]
+fn padded_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+    inset_bounds(bounds, padding, dpi)
+}
+
 fn radius_px(radius: Option<Dp>, dpi: Dpi) -> i32 {
     radius
         .map(|value| value.to_px(dpi).round_i32().max(0))
@@ -1312,14 +2076,15 @@ fn radius_px(radius: Option<Dp>, dpi: Dpi) -> i32 {
 }
 
 #[cfg(feature = "scroll")]
-fn scroll_max_offset_y(bounds: Option<Rect>, content_height: Option<Dp>) -> Dp {
-    let viewport_height = bounds
+fn scroll_max_offset_y(bounds: Option<Rect>, content_height: Option<Dp>, dpi: Dpi) -> Dp {
+    let viewport_px = bounds
         .map(|bounds| bounds.height.max(0) as f32)
         .unwrap_or(0.0);
-    let content_height = content_height
-        .map(|height| height.0.max(0.0))
-        .unwrap_or(viewport_height);
-    Dp::new((content_height - viewport_height).max(0.0))
+    let content_px = content_height
+        .map(|height| height.to_px(dpi).0.max(0.0))
+        .unwrap_or(viewport_px);
+    let scale = (dpi.0 / Dpi::standard().0).max(f32::EPSILON);
+    Dp::new(((content_px - viewport_px) / scale).max(0.0))
 }
 
 fn color_role_for_token(token: ThemeColorToken) -> ColorRole {
@@ -1379,6 +2144,8 @@ mod tests {
         RowSelected(usize),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
+        #[cfg(feature = "virtual-list")]
+        ViewportChanged(VirtualListViewport),
     }
 
     #[test]
@@ -1422,6 +2189,67 @@ mod tests {
         assert_eq!(output.bounds.width, 240);
         assert_eq!(paint.plan().text_count(), 2);
         assert!(paint.plan().command_count() >= 3);
+    }
+
+    #[test]
+    fn stack_layout_honors_fixed_size_flex_and_gap() {
+        let navigation = WidgetId::new(70);
+        let content = WidgetId::new(71);
+        let mut view: ViewNode<()> = row(vec![
+            spacer().id(navigation).width(Dp::new(240.0)),
+            spacer().id(content).flex(1.0),
+        ])
+        .gap(Dp::new(12.0));
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 960,
+                height: 640,
+            },
+            Dpi::standard(),
+        );
+
+        let output = view.layout(&mut layout);
+        let navigation_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == navigation.into())
+            .unwrap()
+            .bounds;
+        let content_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == content.into())
+            .unwrap()
+            .bounds;
+
+        assert_eq!(navigation_bounds.width, 240);
+        assert_eq!(content_bounds.x, 252);
+        assert_eq!(content_bounds.width, 708);
+    }
+
+    #[test]
+    fn square_background_uses_full_rect_fill() {
+        let mut view: ViewNode<()> = spacer().bg(ThemeColorToken::Surface);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 80,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+
+        view.paint(&mut paint);
+
+        assert!(matches!(
+            paint.plan().commands.first(),
+            Some(NativeDrawCommand::FillRect { .. })
+        ));
     }
 
     #[test]
@@ -1525,6 +2353,34 @@ mod tests {
             events.into_messages(),
             vec![Msg::NameChanged("ZSUI".to_string())]
         );
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn text_editor_is_a_multiline_focus_target_with_wrapped_text() {
+        let editor_id = WidgetId::new(5);
+        let mut view = text_editor::<Msg>("first\nsecond").id(editor_id);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 180,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert_eq!(view.hit_target_kind(), ViewHitTargetKind::TextEditor);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.style.wrap == crate::TextWrap::Word
+                    && text.style.vertical_align == crate::VerticalAlign::Start
+                    && !text.style.ellipsis
+        )));
     }
 
     #[test]
@@ -1653,6 +2509,194 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::PopClip)));
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn scroll_boundary_converts_viewport_pixels_at_high_dpi() {
+        let scroll_id = WidgetId::new(23);
+        let mut view: ViewNode<Msg> = scroll(text("High DPI content"))
+            .id(scroll_id)
+            .content_height(Dp::new(240.0))
+            .scroll_y(Dp::new(170.0))
+            .on_scroll(Msg::ScrollChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 120,
+            },
+            Dpi::new(192.0),
+        );
+        view.layout(&mut layout);
+        let mut events = ViewEventCx::new();
+
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollBy {
+                widget: scroll_id,
+                delta_y: Dp::new(20.0),
+            },
+        );
+
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ScrollChanged(Dp::new(180.0))]
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "virtual-list", feature = "label"))]
+    fn virtual_list_layout_and_paint_only_touch_the_materialized_window() {
+        let list_id = WidgetId::new(600);
+        let mut view = virtual_list(
+            100_000,
+            (490..520).map(|index| (index, format!("Row {index}"))),
+            |index, label| text(label).id(WidgetId::new(1_000 + index as u64)),
+        )
+        .id(list_id)
+        .height(Dp::new(100.0))
+        .item_height(Dp::new(20.0))
+        .overscan_rows(2)
+        .scroll_y(Dp::new(10_000.0))
+        .on_viewport_changed(Msg::ViewportChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 100,
+            },
+            Dpi::standard(),
+        );
+
+        let output = view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert_eq!(output.children.len(), 10);
+        assert_eq!(view.interaction_plan().hit_target_count(), 6);
+        assert_eq!(
+            paint
+                .plan()
+                .commands
+                .iter()
+                .filter(|command| matches!(command, NativeDrawCommand::Text(_)))
+                .count(),
+            9
+        );
+        assert!(view.children[0].bounds().is_none());
+        assert!(view.children[8].bounds().is_some());
+    }
+
+    #[test]
+    #[cfg(all(feature = "virtual-list", feature = "label"))]
+    fn virtual_list_scroll_emits_global_range_and_global_selection() {
+        let list_id = WidgetId::new(700);
+        let row_id = WidgetId::new(711);
+        let mut view = virtual_list(100, [(11, "Eleven"), (12, "Twelve")], |index, label| {
+            text(label).id(if index == 11 {
+                row_id
+            } else {
+                WidgetId::new(712)
+            })
+        })
+        .id(list_id)
+        .item_height(Dp::new(20.0))
+        .overscan_rows(1)
+        .scroll_y(Dp::new(200.0))
+        .on_select(Msg::RowSelected)
+        .on_viewport_changed(Msg::ViewportChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 60,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut events = ViewEventCx::new();
+
+        view.event(&mut events, &ViewEvent::Click { widget: row_id });
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollBy {
+                widget: list_id,
+                delta_y: Dp::new(20.0),
+            },
+        );
+
+        assert_eq!(events.messages()[0], Msg::RowSelected(11));
+        assert!(matches!(
+            events.messages()[1],
+            Msg::ViewportChanged(VirtualListViewport {
+                visible_range: VirtualListRange { start: 11, end: 14 },
+                materialized_range: VirtualListRange { start: 10, end: 15 },
+                direction: VirtualListScrollDirection::Forward,
+                ..
+            })
+        ));
+        assert_eq!(view.widget_list_index(row_id), Some(11));
+    }
+
+    #[test]
+    #[cfg(feature = "virtual-list")]
+    fn virtual_list_viewport_clamps_large_offsets_without_iterating_items() {
+        let viewport = virtual_list_viewport(
+            100_000,
+            Dp::new(24.0),
+            Dp::new(f32::MAX),
+            Dp::new(240.0),
+            4,
+            VirtualListScrollDirection::Forward,
+        );
+
+        assert_eq!(
+            viewport.visible_range,
+            VirtualListRange::new(99_990, 100_000)
+        );
+        assert_eq!(
+            viewport.materialized_range,
+            VirtualListRange::new(99_986, 100_000)
+        );
+        assert_eq!(viewport.offset_y, Dp::new(2_399_760.0));
+    }
+
+    #[test]
+    #[cfg(all(feature = "virtual-list", feature = "label"))]
+    fn live_view_background_poll_stops_after_loaded_state_is_refreshed() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+
+        let loading = Arc::new(AtomicBool::new(true));
+        let view_loading = Arc::clone(&loading);
+        let runtime = live_view_runtime(
+            (),
+            move |_| {
+                virtual_list(1, [(0, "Loaded")], |_, value| text(value))
+                    .loading(view_loading.load(Ordering::SeqCst))
+            },
+            |_, _: (), _| {},
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 80,
+            },
+            Dpi::standard(),
+        );
+
+        assert_eq!(runtime.background_poll_interval_ms(), Some(33));
+        loading.store(false, Ordering::SeqCst);
+        let update = runtime.refresh();
+        assert!(update.redraw);
+        assert_eq!(update.revision, 1);
+        assert_eq!(runtime.background_poll_interval_ms(), None);
     }
 
     #[test]

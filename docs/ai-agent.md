@@ -36,8 +36,8 @@ and is not part of normal task context.
   explicit features or optional dependencies.
 - Windows is the strongest real runtime today. macOS/Linux are first-pass
   desktop paths. Android/Harmony still require real runtime and device proof.
-- The component catalog currently tracks 48 families: 20 first-pass runtime,
-  8 contract-only and 20 not started. Composite shells do not change that count.
+- The component catalog currently tracks 48 families: 21 first-pass runtime,
+  8 contract-only and 19 not started. Composite shells do not change that count.
 
 ## Task Router
 
@@ -46,6 +46,7 @@ and is not part of normal task context.
 | `quickstart` | Public entry points, one-line windows, basic examples |
 | `features` | Cargo features, optional dependencies, compile trimming |
 | `view-widgets` | `View<Msg>`, state/update, basic controls, input routing |
+| `long-list` | Virtual rows, background pagination, prefetch and LRU caching |
 | `navigation-shell` | Left navigation, grouped cards, settings rows, scroll |
 | `workbench` | Conversation/task shell, composer, inspector, message blocks |
 | `document-shell` | Document chrome, native editor inset, notepad example |

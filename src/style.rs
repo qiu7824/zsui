@@ -12,6 +12,15 @@ pub const ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT: i32 = 40;
 pub const ZSUI_FLUENT_SMALL_ICON_SIZE: i32 = 16;
 pub const ZSUI_FLUENT_STANDARD_ICON_SIZE: i32 = 20;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsuiThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+    HighContrast,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeColorToken {
     Surface,

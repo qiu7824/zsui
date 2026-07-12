@@ -18,7 +18,7 @@ rust_decimal = { version = "1.42.1", default-features = false, features = ["math
 winit = { version = "0.30", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Input_Ime", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [features]
 default = ["window", "button", "label"]
@@ -30,6 +30,8 @@ widgets-input = []
 widgets-list = []
 scroll = []
 list = ["widgets-list", "scroll"]
+virtual-list = ["list", "scroll"]
+paged-list = ["virtual-list"]
 textbox = ["widgets-input"]
 checkbox = ["widgets-input"]
 toggle = ["widgets-input"]
@@ -55,13 +57,17 @@ calculator-demo = ["windows-gdi", "calculator"]
 desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
-all-widgets = ["button", "label", "scroll", "list", "textbox", "checkbox", "toggle", "table", "workbench"]
+macos-appkit = []
+linux-gtk = []
+desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
+all-widgets = ["button", "label", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",
     "calculator",
     "dark-mode",
     "document-shell",
+    "desktop-native",
     "desktop-winit",
     "hotkey",
     "mobile",
@@ -121,6 +127,16 @@ required-features = ["list", "label"]
 name = "scroll_view"
 path = "examples/scroll_view.rs"
 required-features = ["scroll", "label"]
+
+[[example]]
+name = "paged_virtual_list"
+path = "examples/paged_virtual_list.rs"
+required-features = ["window", "button", "label", "paged-list"]
+
+[[example]]
+name = "desktop_native_showcase"
+path = "examples/desktop_native_showcase.rs"
+required-features = ["desktop-native", "window", "button", "label", "textbox", "toggle", "list", "scroll", "style"]
 
 [[example]]
 name = "product_adapter_view"

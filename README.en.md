@@ -223,6 +223,17 @@ feature modules such as `zsui-core`, `zsui-shell`, `zsui-render`,
 `zsui-style`, `zsui-widgets-base`, `zsui-widgets-input`,
 `zsui-widgets-list` and `zsui-widgets-extra`.
 
+Long uniform-row collections use the optional `paged-list` feature. It combines
+visible-range-only layout and painting with a dedicated loader thread, request
+deduplication, stale-generation rejection and a bounded LRU page cache:
+
+```text
+cargo run --example paged_virtual_list --no-default-features --features window,button,label,paged-list
+```
+
+See [`docs/paged-virtual-list.md`](docs/paged-virtual-list.md) for the data-source
+contract and verification commands.
+
 ## Rust-First Target
 
 ZSUI's long-term API target is not a C++/C# style inheritance tree. The
@@ -520,6 +531,12 @@ start with a small core, then compose only the context needed for the task.
 - `examples/list_selection.rs`: feature-gated typed list row selection example.
 - `examples/scroll_view.rs`: feature-gated scroll container layout, typed
   scroll event, clipping and draw-plan example.
+- `examples/paged_virtual_list.rs`: 100,000-row background-paged virtual list
+  with bounded cache, stable keys and typed viewport messages.
+- `examples/desktop_native_showcase.rs`: one shared desktop `State`, `Msg`,
+  `view` and `update` with navigation, command bar, text editor, scrolling,
+  theme intent and a native menu. The AppKit and GTK4 completion gate is
+  documented in [`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md).
 - `examples/navigation_shell_layout.rs`: product-neutral WinUI-style
   navigation/card shell layout projected to a native draw plan.
 - `examples/workbench_shell.rs`: reusable desktop conversation/task workbench
