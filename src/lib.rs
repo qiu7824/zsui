@@ -35,9 +35,13 @@ pub mod icon;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+mod linux_gtk_renderer;
+#[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_services;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 pub mod macos_appkit_menu;
+#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+mod macos_appkit_renderer;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 pub mod macos_appkit_services;
 pub mod menu;
@@ -50,6 +54,12 @@ pub mod native_adapter_manifest;
     all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
 ))]
 mod native_clipboard;
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+mod native_draw_support;
 #[cfg(any(
     test,
     all(target_os = "macos", feature = "macos-appkit"),

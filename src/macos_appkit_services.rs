@@ -62,6 +62,7 @@ impl ZsuiAppKitRuntimeDelegate {
 
 pub(crate) fn run_macos_appkit_native_window_event_loop(
     specs: &[WindowSpec],
+    draw_plans: &[Option<crate::NativeDrawPlan>],
     auto_close_after_ms: Option<u64>,
 ) -> ZsuiResult<usize> {
     if specs.is_empty() {
@@ -70,8 +71,12 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let mtm = appkit_main_thread_marker("macos_native_event_loop")?;
     let mut window_service = MacosAppKitWindowService::new()?;
     let mut ids = Vec::with_capacity(specs.len());
-    for spec in specs {
-        ids.push(window_service.create_window(spec)?);
+    for (index, spec) in specs.iter().enumerate() {
+        let id = window_service.create_window(spec)?;
+        if let Some(plan) = draw_plans.get(index).and_then(Clone::clone) {
+            window_service.set_window_draw_plan(id, plan)?;
+        }
+        ids.push(id);
     }
 
     let mut menu_service = crate::macos_appkit_menu::MacosAppKitMenuService::new()?;
@@ -137,6 +142,19 @@ impl MacosAppKitWindowService {
 
     pub fn window_count(&self) -> usize {
         self.windows.len()
+    }
+
+    pub fn set_window_draw_plan(
+        &mut self,
+        window: WindowId,
+        plan: crate::NativeDrawPlan,
+    ) -> ZsuiResult<()> {
+        appkit_main_thread_marker("macos_set_window_draw_plan")?;
+        crate::macos_appkit_renderer::install_macos_appkit_draw_plan(
+            self.window(window, "macos_set_window_draw_plan")?,
+            plan,
+        );
+        Ok(())
     }
 
     fn window(&self, id: WindowId, operation: &'static str) -> ZsuiResult<&NSWindow> {
@@ -234,8 +252,11 @@ impl WindowService for MacosAppKitWindowService {
 
     fn request_window_redraw(&mut self, window: WindowId) -> ZsuiResult<()> {
         appkit_main_thread_marker("macos_request_window_redraw")?;
-        self.window(window, "macos_request_window_redraw")?
-            .displayIfNeeded();
+        let window = self.window(window, "macos_request_window_redraw")?;
+        if let Some(view) = window.contentView() {
+            view.setNeedsDisplay(true);
+        }
+        window.displayIfNeeded();
         Ok(())
     }
 

@@ -71,8 +71,10 @@ AppKit and GTK4 menu services lower to their platform-native accelerator forms.
 Target interaction proof for those services still requires real macOS/Linux
 hosts.
 
-Windows can also attach a typed Rust view draw plan and route a Win32 native
-click message during the smoke run:
+All three direct desktop hosts attach a typed Rust view draw plan to their
+native content surface. Win32 paints through its buffered GDI sink, AppKit
+through a custom `NSView`, and GTK4 through `DrawingArea`/Cairo/Pango. Windows
+also routes a native click message during the smoke run:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --view
@@ -126,8 +128,8 @@ Required target-smoke artifacts:
 - `agent-context.json`: matching `zsui_agent_context_json()` output.
 
 Windows uses the `win32_gdi` runtime, macOS uses AppKit, and Linux uses GTK4.
-All three enter their target-native event loop; only Windows currently captures
-the required screenshot automatically.
+All three enter their target-native event loop and paint supplied draw plans;
+only Windows currently captures the required screenshot automatically.
 Android and Harmony are still scaffold/bridge-contract plans until real
 Activity/Ability runtime hosts exist. Their current device-smoke contract can
 be inspected with:

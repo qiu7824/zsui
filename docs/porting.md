@@ -59,12 +59,22 @@ disabled, checked and accelerator state and return typed `Command` values as
 images and files remain explicitly unsupported until their native formats are
 implemented and tested.
 
+The unified native-window path also attaches backend-neutral `NativeDrawPlan`
+content to both platforms. AppKit uses a flipped custom `NSView`,
+`NSBezierPath`, semantic `NSString` attributes and SF Symbols. GTK4 uses a
+`DrawingArea`, Cairo, Pango and the current icon theme with the bundled Fluent
+SVG fallback. Both sinks implement fill, stroke, rounded geometry, text, icon
+and balanced clip commands. This is first-pass rendering evidence only: target
+screenshots, resize-driven relayout, accessibility and native input routing
+remain separate gates.
+
 These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
-fallback transport. Shared View rendering, input, target screenshot capture
-and interaction evidence remain required; entering a native event loop alone
-is not system-complete evidence.
+fallback transport. Shared View rendering now reaches all three native window
+surfaces, but AppKit/GTK4 input, target screenshot capture and interaction
+evidence remain required; entering or painting a native event loop alone is
+not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error
@@ -138,8 +148,9 @@ behind `ProductAdapterHost`.
 For self-drawn surfaces, translate `NativeDrawPlan` / `NativeDrawCommand` into
 the target drawing API through `NativeDrawCommandSink`. Windows has the
 `WindowsGdiRenderer`, `WindowsGdiTextLayout` and
-`WindowsGdiDrawSink`; other backends should keep the same command contract and
-only swap the native drawing implementation.
+`WindowsGdiDrawSink`; AppKit and GTK4 now keep the same command contract in
+`macos_appkit_renderer.rs` and `linux_gtk_renderer.rs` while swapping only the
+native drawing and text-layout implementation.
 
 For direct desktop window hosts, keep the product-neutral shape from
 `WindowsWin32MainWindowHost`: map `NativeMainWindowRequest` and

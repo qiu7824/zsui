@@ -26,6 +26,7 @@ struct LinuxGtkRuntimeState {
 
 pub(crate) fn run_linux_gtk_native_window_event_loop(
     specs: &[WindowSpec],
+    draw_plans: &[Option<crate::NativeDrawPlan>],
     auto_close_after_ms: Option<u64>,
 ) -> ZsuiResult<usize> {
     if specs.is_empty() {
@@ -36,12 +37,14 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     let specs = Rc::new(specs.to_vec());
+    let draw_plans = Rc::new(draw_plans.to_vec());
     let state = Rc::new(RefCell::new(None::<LinuxGtkRuntimeState>));
     let startup_error = Rc::new(RefCell::new(None::<String>));
     let created_count = Rc::new(RefCell::new(0_usize));
 
     application.connect_activate({
         let specs = Rc::clone(&specs);
+        let draw_plans = Rc::clone(&draw_plans);
         let state = Rc::clone(&state);
         let startup_error = Rc::clone(&startup_error);
         let created_count = Rc::clone(&created_count);
@@ -51,9 +54,18 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             }
             let mut windows = LinuxGtkWindowService::from_application(application.clone());
             let mut ids = Vec::with_capacity(specs.len());
-            for spec in specs.iter() {
+            for (index, spec) in specs.iter().enumerate() {
                 match windows.create_window(spec) {
-                    Ok(id) => ids.push(id),
+                    Ok(id) => {
+                        if let Some(plan) = draw_plans.get(index).and_then(Clone::clone) {
+                            if let Err(error) = windows.set_window_draw_plan(id, plan) {
+                                *startup_error.borrow_mut() = Some(error.to_string());
+                                application.quit();
+                                return;
+                            }
+                        }
+                        ids.push(id)
+                    }
                     Err(error) => {
                         *startup_error.borrow_mut() = Some(error.to_string());
                         application.quit();
@@ -133,6 +145,19 @@ impl LinuxGtkWindowService {
 
     pub fn window_count(&self) -> usize {
         self.windows.len()
+    }
+
+    pub fn set_window_draw_plan(
+        &mut self,
+        window: WindowId,
+        plan: crate::NativeDrawPlan,
+    ) -> ZsuiResult<()> {
+        ensure_gtk_main_thread("gtk_set_window_draw_plan")?;
+        crate::linux_gtk_renderer::install_linux_gtk_draw_plan(
+            self.window(window, "gtk_set_window_draw_plan")?,
+            plan,
+        );
+        Ok(())
     }
 
     fn window(&self, id: WindowId, operation: &'static str) -> ZsuiResult<&gtk::ApplicationWindow> {

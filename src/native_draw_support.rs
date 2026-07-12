@@ -1,0 +1,191 @@
+use crate::{
+    Color, ColorRole, NativeDrawFill, NativeStyleResolver, SemanticTextStyle, TextRole, TextStyle,
+    ZsuiTheme, ZsuiThemeMode,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeDrawPalette {
+    pub primary_text: Color,
+    pub secondary_text: Color,
+    pub disabled_text: Color,
+    pub accent: Color,
+    pub accent_text: Color,
+    pub surface: Color,
+    pub surface_raised: Color,
+    pub control: Color,
+    pub border: Color,
+    pub success: Color,
+    pub warning: Color,
+    pub danger: Color,
+}
+
+impl NativeDrawPalette {
+    pub(crate) fn for_mode(mode: ZsuiThemeMode, system_prefers_dark: bool) -> Self {
+        let dark = match mode {
+            ZsuiThemeMode::Dark => true,
+            ZsuiThemeMode::Light => false,
+            ZsuiThemeMode::System | ZsuiThemeMode::HighContrast => system_prefers_dark,
+        };
+        Self::from_theme(&if dark {
+            ZsuiTheme::dark()
+        } else {
+            ZsuiTheme::light()
+        })
+    }
+
+    pub(crate) fn from_theme(theme: &ZsuiTheme) -> Self {
+        Self {
+            primary_text: theme.colors.text_primary,
+            secondary_text: theme.colors.text_secondary,
+            disabled_text: blend_color(theme.colors.text_secondary, theme.colors.surface, 96),
+            accent: theme.colors.accent,
+            accent_text: theme.colors.accent_text,
+            surface: theme.colors.surface,
+            surface_raised: theme.colors.surface_raised,
+            control: theme.colors.control,
+            border: theme.colors.border,
+            success: theme.colors.success,
+            warning: theme.colors.warning,
+            danger: theme.colors.danger,
+        }
+    }
+
+    pub(crate) const fn resolve(self, role: ColorRole) -> Color {
+        match role {
+            ColorRole::PrimaryText => self.primary_text,
+            ColorRole::SecondaryText => self.secondary_text,
+            ColorRole::DisabledText => self.disabled_text,
+            ColorRole::Accent => self.accent,
+            ColorRole::AccentText => self.accent_text,
+            ColorRole::Surface => self.surface,
+            ColorRole::SurfaceRaised => self.surface_raised,
+            ColorRole::Control => self.control,
+            ColorRole::Border => self.border,
+            ColorRole::Success => self.success,
+            ColorRole::Warning => self.warning,
+            ColorRole::Danger => self.danger,
+        }
+    }
+
+    pub(crate) const fn resolve_fill(self, fill: NativeDrawFill) -> Color {
+        match fill {
+            NativeDrawFill::Color(color) => color,
+            NativeDrawFill::Role(role) => self.resolve(role),
+            NativeDrawFill::RoleWithAlpha { role, alpha } => {
+                blend_color(self.resolve(role), self.surface, alpha)
+            }
+        }
+    }
+}
+
+const fn blend_color(foreground: Color, background: Color, alpha: u8) -> Color {
+    const fn channel(foreground: u8, background: u8, alpha: u8) -> u8 {
+        let alpha = alpha as u32;
+        (((foreground as u32 * alpha) + (background as u32 * (255 - alpha)) + 127) / 255) as u8
+    }
+
+    Color {
+        r: channel(foreground.r, background.r, alpha),
+        g: channel(foreground.g, background.g, alpha),
+        b: channel(foreground.b, background.b, alpha),
+        a: 255,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeDrawTextStyleResolver {
+    font_family: String,
+    monospace_font_family: String,
+    icon_font_family: String,
+    palette: NativeDrawPalette,
+}
+
+impl NativeDrawTextStyleResolver {
+    pub(crate) fn new(
+        font_family: impl Into<String>,
+        monospace_font_family: impl Into<String>,
+        icon_font_family: impl Into<String>,
+        palette: NativeDrawPalette,
+    ) -> Self {
+        Self {
+            font_family: font_family.into(),
+            monospace_font_family: monospace_font_family.into(),
+            icon_font_family: icon_font_family.into(),
+            palette,
+        }
+    }
+}
+
+impl NativeStyleResolver for NativeDrawTextStyleResolver {
+    fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
+        let size = match style.role {
+            TextRole::Body => 14.0,
+            TextRole::Caption => 12.0,
+            TextRole::BodyLarge => 18.0,
+            TextRole::Subtitle => 20.0,
+            TextRole::Title => 28.0,
+            TextRole::Display => 44.0,
+            TextRole::Button => 14.0,
+            TextRole::Icon => 16.0,
+            TextRole::Monospace => 13.0,
+        };
+        let font_family = match style.role {
+            TextRole::Monospace => self.monospace_font_family.clone(),
+            TextRole::Icon => self.icon_font_family.clone(),
+            _ => self.font_family.clone(),
+        };
+        TextStyle {
+            font_family,
+            size,
+            weight: style.weight,
+            color: self.palette.resolve(style.color),
+            horizontal_align: style.horizontal_align,
+            vertical_align: style.vertical_align,
+            wrap: style.wrap,
+            ellipsis: style.ellipsis,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{HorizontalAlign, TextWeight, TextWrap, VerticalAlign};
+
+    #[test]
+    fn palette_resolves_theme_roles_and_alpha_against_surface() {
+        let palette = NativeDrawPalette::for_mode(ZsuiThemeMode::Dark, false);
+        assert_eq!(palette.surface, ZsuiTheme::dark().colors.surface);
+        assert_eq!(
+            palette.resolve_fill(NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 0,
+            }),
+            palette.surface
+        );
+    }
+
+    #[test]
+    fn text_style_resolver_preserves_semantic_layout_options() {
+        let resolver = NativeDrawTextStyleResolver::new(
+            "system",
+            "monospace",
+            "icons",
+            NativeDrawPalette::for_mode(ZsuiThemeMode::Light, false),
+        );
+        let style = resolver.resolve_text_style(SemanticTextStyle {
+            role: TextRole::Title,
+            color: ColorRole::Accent,
+            weight: TextWeight::Bold,
+            horizontal_align: HorizontalAlign::End,
+            vertical_align: VerticalAlign::Start,
+            wrap: TextWrap::Word,
+            ellipsis: false,
+        });
+        assert_eq!(style.font_family, "system");
+        assert_eq!(style.size, 28.0);
+        assert_eq!(style.weight, TextWeight::Bold);
+        assert_eq!(style.horizontal_align, HorizontalAlign::End);
+        assert_eq!(style.wrap, TextWrap::Word);
+    }
+}

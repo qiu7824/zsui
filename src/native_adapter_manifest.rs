@@ -427,10 +427,15 @@ fn native_ui_capability_readiness(
             ),
         },
         NativeUiPlatform::Macos => match capability {
+            Renderer | TextLayout => (
+                FirstPass,
+                "src/macos_appkit_renderer.rs",
+                "NativeDrawPlan commands, clipping, SF Symbols and semantic NSString text are connected to an AppKit NSView; target visual proof remains pending",
+            ),
             MainWindow => (
                 FirstPass,
                 "src/macos_appkit_services.rs",
-                "NSApplication/NSWindow creation, visibility, redraw, owned close and the unified event loop are connected; rendering, input and target proof are pending",
+                "NSApplication/NSWindow creation, visibility, redraw, owned close, draw-plan content views and the unified event loop are connected; input and target proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -454,10 +459,15 @@ fn native_ui_capability_readiness(
             ),
         },
         NativeUiPlatform::Linux => match capability {
+            Renderer | TextLayout => (
+                FirstPass,
+                "src/linux_gtk_renderer.rs",
+                "NativeDrawPlan commands, clipping, themed icons and Pango text are connected to a GTK4 DrawingArea/Cairo surface; Wayland/X11 visual proof remains pending",
+            ),
             MainWindow => (
                 FirstPass,
                 "src/linux_gtk_services.rs",
-                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close and the unified event loop are connected; rendering, input and Wayland/X11 proof are pending",
+                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close, draw-plan child surfaces and the unified event loop are connected; input and Wayland/X11 proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -853,9 +863,17 @@ mod tests {
         let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
             .expect("macOS readiness should be declared");
         assert_eq!(macos.ready_count, 0);
-        assert_eq!(macos.first_pass_count, 4);
-        assert_eq!(macos.contract_only_count, 14);
-        assert!(macos.contract_only_capability_names().contains(&"renderer"));
+        assert_eq!(macos.first_pass_count, 6);
+        assert_eq!(macos.contract_only_count, 12);
+        assert!(!macos.contract_only_capability_names().contains(&"renderer"));
+        assert_eq!(
+            macos
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::Renderer)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
         assert_eq!(
             macos
                 .capabilities
@@ -884,8 +902,16 @@ mod tests {
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 4);
-        assert_eq!(linux.contract_only_count, 14);
+        assert_eq!(linux.first_pass_count, 6);
+        assert_eq!(linux.contract_only_count, 12);
+        assert_eq!(
+            linux
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::TextLayout)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
         assert_eq!(
             linux
                 .capabilities

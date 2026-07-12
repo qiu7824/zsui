@@ -1989,7 +1989,7 @@ fn run_native_window_event_loop(
 fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
     trays: Vec<TraySpec>,
-    _draw_plans: Vec<Option<NativeDrawPlan>>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
     _view_runtimes: Vec<NativeViewInputRuntime>,
     _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
@@ -1999,15 +1999,19 @@ fn run_native_window_event_loop(
             "the AppKit NSStatusItem runtime is not connected to the unified event loop",
         ));
     }
-    crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(&windows, None)
-        .map(|_| ())
+    crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
+        &windows,
+        &draw_plans,
+        None,
+    )
+    .map(|_| ())
 }
 
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
     trays: Vec<TraySpec>,
-    _draw_plans: Vec<Option<NativeDrawPlan>>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
     _view_runtimes: Vec<NativeViewInputRuntime>,
     _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
@@ -2017,7 +2021,8 @@ fn run_native_window_event_loop(
             "the GTK4 status-item runtime is not connected to the unified event loop",
         ));
     }
-    crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(&windows, None).map(|_| ())
+    crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(&windows, &draw_plans, None)
+        .map(|_| ())
 }
 
 #[cfg(any(
@@ -2479,11 +2484,13 @@ fn run_native_window_smoke_event_loop(
     #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
     let created = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
         &windows,
+        &draw_plans,
         Some(options.auto_close_after_ms),
     )?;
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
     let created = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
         &windows,
+        &draw_plans,
         Some(options.auto_close_after_ms),
     )?;
 

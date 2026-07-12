@@ -1,0 +1,354 @@
+use gtk::gdk::prelude::GdkCairoContextExt;
+use gtk::glib::translate::ToGlibPtr;
+use gtk::prelude::*;
+use gtk4 as gtk;
+
+use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
+use crate::{
+    Color, HorizontalAlign, NativeDrawCommand, NativeDrawCommandSink, NativeDrawIconCommand,
+    NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, NativeStyleResolver, Rect, Size,
+    TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
+};
+
+#[link(name = "pangocairo-1.0")]
+unsafe extern "C" {
+    fn pango_cairo_show_layout(
+        context: *mut gtk::cairo::ffi::cairo_t,
+        layout: *mut gtk::pango::ffi::PangoLayout,
+    );
+}
+
+pub(crate) fn install_linux_gtk_draw_plan(window: &gtk::ApplicationWindow, plan: NativeDrawPlan) {
+    let drawing_area = gtk::DrawingArea::new();
+    drawing_area.set_hexpand(true);
+    drawing_area.set_vexpand(true);
+    drawing_area.set_draw_func(move |area, context, _width, _height| {
+        let system_prefers_dark = gtk::Settings::default()
+            .map(|settings| settings.is_gtk_application_prefer_dark_theme())
+            .unwrap_or(false);
+        let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);
+        let mut sink = LinuxGtkDrawSink::new(area, context, palette);
+        sink.draw_plan(&plan);
+    });
+    window.set_child(Some(&drawing_area));
+}
+
+pub struct LinuxGtkTextLayout {
+    context: gtk::pango::Context,
+}
+
+impl LinuxGtkTextLayout {
+    pub fn new(context: gtk::pango::Context) -> Self {
+        Self { context }
+    }
+
+    fn pango_layout(
+        &self,
+        text: &str,
+        style: &TextStyle,
+        bounds: Option<Rect>,
+    ) -> gtk::pango::Layout {
+        let layout = gtk::pango::Layout::new(&self.context);
+        configure_pango_layout(&layout, text, style, bounds);
+        layout
+    }
+}
+
+impl TextLayout for LinuxGtkTextLayout {
+    fn measure(&self, text: &str, style: &TextStyle, max_width: i32) -> Size {
+        if text.is_empty() {
+            return Size {
+                width: 0,
+                height: 0,
+            };
+        }
+        let bounds = (max_width > 0).then(|| Rect {
+            x: 0,
+            y: 0,
+            width: max_width,
+            height: i32::MAX / 4,
+        });
+        let layout = self.pango_layout(text, style, bounds);
+        let (width, height) = layout.pixel_size();
+        Size {
+            width: width.max(0),
+            height: height.max(0),
+        }
+    }
+
+    fn layout_runs(&self, text: &str, _style: &TextStyle, bounds: Rect) -> Vec<TextRun> {
+        if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![TextRun {
+                text: text.to_string(),
+                bounds,
+            }]
+        }
+    }
+}
+
+struct LinuxGtkDrawSink<'a> {
+    area: &'a gtk::DrawingArea,
+    context: &'a gtk::cairo::Context,
+    palette: NativeDrawPalette,
+    style_resolver: NativeDrawTextStyleResolver,
+    text_layout: LinuxGtkTextLayout,
+    clip_depth: usize,
+}
+
+impl<'a> LinuxGtkDrawSink<'a> {
+    fn new(
+        area: &'a gtk::DrawingArea,
+        context: &'a gtk::cairo::Context,
+        palette: NativeDrawPalette,
+    ) -> Self {
+        Self {
+            area,
+            context,
+            palette,
+            style_resolver: NativeDrawTextStyleResolver::new(
+                "Cantarell",
+                "Monospace",
+                "Cantarell",
+                palette,
+            ),
+            text_layout: LinuxGtkTextLayout::new(area.pango_context()),
+            clip_depth: 0,
+        }
+    }
+
+    fn set_source(&self, color: Color) {
+        self.context.set_source_rgba(
+            f64::from(color.r) / 255.0,
+            f64::from(color.g) / 255.0,
+            f64::from(color.b) / 255.0,
+            f64::from(color.a) / 255.0,
+        );
+    }
+
+    fn add_rect(&self, rect: Rect) {
+        self.context.rectangle(
+            f64::from(rect.x),
+            f64::from(rect.y),
+            f64::from(rect.width.max(0)),
+            f64::from(rect.height.max(0)),
+        );
+    }
+
+    fn add_round_rect(&self, rect: Rect, radius: i32) {
+        let x = f64::from(rect.x);
+        let y = f64::from(rect.y);
+        let width = f64::from(rect.width.max(0));
+        let height = f64::from(rect.height.max(0));
+        let radius = f64::from(radius.max(0)).min(width / 2.0).min(height / 2.0);
+        if radius <= 0.0 {
+            self.context.rectangle(x, y, width, height);
+            return;
+        }
+        let right = x + width;
+        let bottom = y + height;
+        self.context.new_sub_path();
+        self.context.arc(
+            right - radius,
+            y + radius,
+            radius,
+            -std::f64::consts::FRAC_PI_2,
+            0.0,
+        );
+        self.context.arc(
+            right - radius,
+            bottom - radius,
+            radius,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        );
+        self.context.arc(
+            x + radius,
+            bottom - radius,
+            radius,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+        );
+        self.context.arc(
+            x + radius,
+            y + radius,
+            radius,
+            std::f64::consts::PI,
+            std::f64::consts::PI * 1.5,
+        );
+        self.context.close_path();
+    }
+
+    fn draw_text(&self, command: &NativeDrawTextCommand) {
+        let style = self.style_resolver.resolve_text_style(command.style);
+        let layout = self
+            .text_layout
+            .pango_layout(&command.text, &style, Some(command.bounds));
+        let (_, text_height) = layout.pixel_size();
+        let y = match style.vertical_align {
+            VerticalAlign::Start => command.bounds.y,
+            VerticalAlign::Center => {
+                command.bounds.y + (command.bounds.height - text_height).max(0) / 2
+            }
+            VerticalAlign::End => command.bounds.y + (command.bounds.height - text_height).max(0),
+        };
+        self.set_source(style.color);
+        self.context
+            .move_to(f64::from(command.bounds.x), f64::from(y));
+        unsafe {
+            pango_cairo_show_layout(self.context.to_raw_none(), layout.to_glib_none().0);
+        }
+    }
+
+    fn draw_icon(&self, command: &NativeDrawIconCommand) {
+        let size = command.bounds.width.min(command.bounds.height).max(1);
+        let theme = gtk::IconTheme::for_display(&self.area.display());
+        let flags = if command.color_mode == NativeIconColorMode::ThemeAware {
+            gtk::IconLookupFlags::FORCE_SYMBOLIC
+        } else {
+            gtk::IconLookupFlags::empty()
+        };
+        let paintable = theme.lookup_icon(
+            command.icon.gtk_symbolic_name(),
+            &[],
+            size,
+            1,
+            gtk::TextDirection::None,
+            flags,
+        );
+        let pixbuf = paintable
+            .file()
+            .and_then(|file| file.path())
+            .and_then(|path| {
+                gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true).ok()
+            });
+        let pixbuf = pixbuf.or_else(|| {
+            let loader = gtk::gdk_pixbuf::PixbufLoader::with_type("svg").ok()?;
+            loader.set_size(size, size);
+            loader
+                .write(crate::bundled_fluent_icon_svg(command.icon))
+                .ok()?;
+            loader.close().ok()?;
+            loader.pixbuf()
+        });
+        if let Some(pixbuf) = pixbuf {
+            self.context.set_source_pixbuf(
+                &pixbuf,
+                f64::from(command.bounds.x),
+                f64::from(command.bounds.y),
+            );
+            let _ = self.context.paint();
+        }
+    }
+
+    fn push_clip(&mut self, rect: Rect) {
+        if self.context.save().is_ok() {
+            self.add_rect(rect);
+            self.context.clip();
+            self.clip_depth += 1;
+        }
+    }
+
+    fn pop_clip(&mut self) {
+        if self.clip_depth > 0 {
+            let _ = self.context.restore();
+            self.clip_depth -= 1;
+        }
+    }
+}
+
+impl Drop for LinuxGtkDrawSink<'_> {
+    fn drop(&mut self) {
+        while self.clip_depth > 0 {
+            self.pop_clip();
+        }
+    }
+}
+
+impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
+    fn draw_command(&mut self, command: &NativeDrawCommand) {
+        match command {
+            NativeDrawCommand::FillRect { rect, fill } => {
+                self.set_source(self.palette.resolve_fill(*fill));
+                self.add_rect(*rect);
+                let _ = self.context.fill();
+            }
+            NativeDrawCommand::StrokeRect {
+                rect,
+                stroke,
+                width,
+            } => {
+                self.set_source(self.palette.resolve_fill(*stroke));
+                self.context.set_line_width(f64::from((*width).max(1)));
+                self.add_rect(*rect);
+                let _ = self.context.stroke();
+            }
+            NativeDrawCommand::RoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+            } => {
+                self.add_round_rect(*rect, *radius);
+                self.set_source(self.palette.resolve_fill(*fill));
+                if stroke.is_some() {
+                    let _ = self.context.fill_preserve();
+                } else {
+                    let _ = self.context.fill();
+                }
+                if let Some(stroke) = stroke {
+                    self.set_source(self.palette.resolve_fill(*stroke));
+                    self.context.set_line_width(1.0);
+                    let _ = self.context.stroke();
+                }
+            }
+            NativeDrawCommand::RoundFill { rect, fill, radius } => {
+                self.add_round_rect(*rect, *radius);
+                self.set_source(self.palette.resolve_fill(*fill));
+                let _ = self.context.fill();
+            }
+            NativeDrawCommand::Text(command) => self.draw_text(command),
+            NativeDrawCommand::Icon(command) => self.draw_icon(command),
+            NativeDrawCommand::PushClip { rect } => self.push_clip(*rect),
+            NativeDrawCommand::PopClip => self.pop_clip(),
+        }
+    }
+}
+
+fn configure_pango_layout(
+    layout: &gtk::pango::Layout,
+    text: &str,
+    style: &TextStyle,
+    bounds: Option<Rect>,
+) {
+    layout.set_text(text);
+    let mut font = gtk::pango::FontDescription::new();
+    font.set_family(&style.font_family);
+    font.set_absolute_size(f64::from(style.size) * f64::from(gtk::pango::SCALE));
+    font.set_weight(match style.weight {
+        TextWeight::Regular => gtk::pango::Weight::Normal,
+        TextWeight::Medium => gtk::pango::Weight::Medium,
+        TextWeight::Semibold => gtk::pango::Weight::Semibold,
+        TextWeight::Bold => gtk::pango::Weight::Bold,
+    });
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(match style.horizontal_align {
+        HorizontalAlign::Start => gtk::pango::Alignment::Left,
+        HorizontalAlign::Center => gtk::pango::Alignment::Center,
+        HorizontalAlign::End => gtk::pango::Alignment::Right,
+    });
+    layout.set_wrap(gtk::pango::WrapMode::WordChar);
+    if let Some(bounds) = bounds {
+        layout.set_width(bounds.width.max(0).saturating_mul(gtk::pango::SCALE));
+        if style.wrap == TextWrap::Word {
+            layout.set_height(bounds.height.max(0).saturating_mul(gtk::pango::SCALE));
+        }
+    }
+    layout.set_single_paragraph_mode(style.wrap == TextWrap::NoWrap);
+    layout.set_ellipsize(if style.ellipsis {
+        gtk::pango::EllipsizeMode::End
+    } else {
+        gtk::pango::EllipsizeMode::None
+    });
+}
