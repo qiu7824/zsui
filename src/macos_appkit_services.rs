@@ -63,6 +63,7 @@ impl ZsuiAppKitRuntimeDelegate {
 pub(crate) fn run_macos_appkit_native_window_event_loop(
     specs: &[WindowSpec],
     draw_plans: &[Option<crate::NativeDrawPlan>],
+    view_runtimes: &[crate::native::NativeViewInputRuntime],
     auto_close_after_ms: Option<u64>,
 ) -> ZsuiResult<usize> {
     if specs.is_empty() {
@@ -74,7 +75,11 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     for (index, spec) in specs.iter().enumerate() {
         let id = window_service.create_window(spec)?;
         if let Some(plan) = draw_plans.get(index).and_then(Clone::clone) {
-            window_service.set_window_draw_plan(id, plan)?;
+            window_service.set_window_view_content(
+                id,
+                plan,
+                view_runtimes.get(index).cloned().unwrap_or_default(),
+            )?;
         }
         ids.push(id);
     }
@@ -149,10 +154,24 @@ impl MacosAppKitWindowService {
         window: WindowId,
         plan: crate::NativeDrawPlan,
     ) -> ZsuiResult<()> {
+        self.set_window_view_content(
+            window,
+            plan,
+            crate::native::NativeViewInputRuntime::default(),
+        )
+    }
+
+    pub(crate) fn set_window_view_content(
+        &mut self,
+        window: WindowId,
+        plan: crate::NativeDrawPlan,
+        runtime: crate::native::NativeViewInputRuntime,
+    ) -> ZsuiResult<()> {
         appkit_main_thread_marker("macos_set_window_draw_plan")?;
         crate::macos_appkit_renderer::install_macos_appkit_draw_plan(
             self.window(window, "macos_set_window_draw_plan")?,
             plan,
+            runtime,
         );
         Ok(())
     }

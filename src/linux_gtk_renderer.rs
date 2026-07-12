@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gtk::gdk::prelude::GdkCairoContextExt;
 use gtk::glib::translate::ToGlibPtr;
 use gtk::prelude::*;
@@ -18,19 +21,59 @@ unsafe extern "C" {
     );
 }
 
-pub(crate) fn install_linux_gtk_draw_plan(window: &gtk::ApplicationWindow, plan: NativeDrawPlan) {
+pub(crate) fn install_linux_gtk_draw_plan(
+    window: &gtk::ApplicationWindow,
+    plan: NativeDrawPlan,
+    runtime: crate::native::NativeViewInputRuntime,
+) {
     let drawing_area = gtk::DrawingArea::new();
     drawing_area.set_hexpand(true);
     drawing_area.set_vexpand(true);
-    drawing_area.set_draw_func(move |area, context, _width, _height| {
-        let system_prefers_dark = gtk::Settings::default()
-            .map(|settings| settings.is_gtk_application_prefer_dark_theme())
-            .unwrap_or(false);
-        let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);
-        let mut sink = LinuxGtkDrawSink::new(area, context, palette);
-        sink.draw_plan(&plan);
+    let plan = Rc::new(RefCell::new(plan));
+    let runtime = Rc::new(RefCell::new(runtime));
+    drawing_area.set_draw_func({
+        let plan = Rc::clone(&plan);
+        move |area, context, _width, _height| {
+            let plan = plan.borrow();
+            let system_prefers_dark = gtk::Settings::default()
+                .map(|settings| settings.is_gtk_application_prefer_dark_theme())
+                .unwrap_or(false);
+            let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);
+            let mut sink = LinuxGtkDrawSink::new(area, context, palette);
+            sink.draw_plan(&plan);
+        }
     });
+    let gesture = gtk::GestureClick::new();
+    gesture.set_button(gtk::gdk::BUTTON_PRIMARY);
+    gesture.connect_released({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        move |_gesture, _press_count, x, y| {
+            let report = runtime.borrow_mut().dispatch_pointer_click(crate::Point {
+                x: gtk_coordinate(x),
+                y: gtk_coordinate(y),
+            });
+            if let Some(updated) = report.redraw_plan {
+                *plan.borrow_mut() = updated;
+                area.queue_draw();
+            }
+            if report.quit_requested {
+                if let Some(application) = &application {
+                    application.quit();
+                }
+            }
+        }
+    });
+    drawing_area.add_controller(gesture);
     window.set_child(Some(&drawing_area));
+}
+
+fn gtk_coordinate(value: f64) -> i32 {
+    value
+        .round()
+        .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
 }
 
 pub struct LinuxGtkTextLayout {

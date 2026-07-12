@@ -804,12 +804,25 @@ impl NativeWindowSmokeRunReport {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
-struct NativeViewInputRuntime {
+pub(crate) struct NativeViewInputRuntime {
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NativeViewClickDispatchReport {
+    pub handled: bool,
+    pub hit_target_count: usize,
+    pub message_count: usize,
+    pub app_command_count: usize,
+    pub ui_command_count: usize,
+    pub ui_command_ids: Vec<&'static str>,
+    pub redraw_plan: Option<NativeDrawPlan>,
+    pub quit_requested: bool,
+    pub errors: Vec<String>,
 }
 
 #[allow(dead_code)]
@@ -840,6 +853,104 @@ impl NativeViewInputRuntime {
                     .map(ViewInteractionPlan::hit_target_count)
             })
             .unwrap_or(0)
+    }
+
+    pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewClickDispatchReport {
+        let mut report = NativeViewClickDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..NativeViewClickDispatchReport::default()
+        };
+        let interaction_plan = self
+            .live_view
+            .as_ref()
+            .map(SharedLiveViewRuntime::interaction_plan)
+            .or_else(|| self.interaction_plan.clone());
+        let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
+            return report;
+        };
+        report.handled = true;
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            return report;
+        }
+
+        let event = if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
+        ) {
+            let checked = !self
+                .live_view
+                .as_ref()
+                .and_then(|runtime| runtime.widget_checked_value(target.widget))
+                .or_else(|| {
+                    self.ui_command_view
+                        .as_ref()
+                        .and_then(|view| view.widget_checked_value(target.widget))
+                })
+                .unwrap_or(false);
+            ViewEvent::Toggled {
+                widget: target.widget,
+                checked,
+            }
+        } else {
+            ViewEvent::Click {
+                widget: target.widget,
+            }
+        };
+
+        let (commands, ui_commands, redraw, quit_requested) =
+            if let Some(live_view) = &self.live_view {
+                let update = live_view.dispatch_event(&event);
+                report.message_count = update.message_count;
+                if update.redraw {
+                    report.redraw_plan = Some(live_view.draw_plan());
+                    report.hit_target_count = live_view.interaction_plan().hit_target_count();
+                }
+                (
+                    update.commands,
+                    update.ui_commands,
+                    update.redraw,
+                    update.quit_requested,
+                )
+            } else {
+                let mut event_cx = ViewEventCx::new();
+                if let Some(view) = &mut self.ui_command_view {
+                    view.event(&mut event_cx, &event);
+                }
+                let messages = event_cx.into_messages();
+                report.message_count = messages.len();
+                (Vec::new(), messages, false, false)
+            };
+
+        report.app_command_count = commands.len();
+        report.ui_command_count = ui_commands.len();
+        report.quit_requested = quit_requested || commands.contains(&Command::Quit);
+        let app_executor = self.app_command_executor.clone();
+        for command in commands {
+            if let Some(executor) = &app_executor {
+                if let Err(error) = executor.dispatch(command) {
+                    report.errors.push(error.to_string());
+                }
+            }
+        }
+        let ui_executor = self.ui_command_executor.clone();
+        for command in ui_commands {
+            report.ui_command_ids.push(command.id.0);
+            if let Some(executor) = &ui_executor {
+                if let Err(error) = executor.dispatch(command) {
+                    report.errors.push(error.to_string());
+                }
+            }
+        }
+        if redraw && report.redraw_plan.is_none() {
+            report.redraw_plan = self
+                .live_view
+                .as_ref()
+                .map(SharedLiveViewRuntime::draw_plan);
+        }
+        report
     }
 
     #[cfg(all(windows, feature = "windows-win32"))]
@@ -1990,7 +2101,7 @@ fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
     trays: Vec<TraySpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
-    _view_runtimes: Vec<NativeViewInputRuntime>,
+    view_runtimes: Vec<NativeViewInputRuntime>,
     _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
     if !trays.is_empty() {
@@ -2002,6 +2113,7 @@ fn run_native_window_event_loop(
     crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
         &windows,
         &draw_plans,
+        &view_runtimes,
         None,
     )
     .map(|_| ())
@@ -2012,7 +2124,7 @@ fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
     trays: Vec<TraySpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
-    _view_runtimes: Vec<NativeViewInputRuntime>,
+    view_runtimes: Vec<NativeViewInputRuntime>,
     _shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
     if !trays.is_empty() {
@@ -2021,8 +2133,13 @@ fn run_native_window_event_loop(
             "the GTK4 status-item runtime is not connected to the unified event loop",
         ));
     }
-    crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(&windows, &draw_plans, None)
-        .map(|_| ())
+    crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
+        &windows,
+        &draw_plans,
+        &view_runtimes,
+        None,
+    )
+    .map(|_| ())
 }
 
 #[cfg(any(
@@ -2485,12 +2602,14 @@ fn run_native_window_smoke_event_loop(
     let created = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
         &windows,
         &draw_plans,
+        std::slice::from_ref(&view_runtime),
         Some(options.auto_close_after_ms),
     )?;
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
     let created = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
         &windows,
         &draw_plans,
+        std::slice::from_ref(&view_runtime),
         Some(options.auto_close_after_ms),
     )?;
 
@@ -3263,6 +3382,95 @@ mod tests {
         assert_eq!(executor.report().executed_count, 1);
         assert_eq!(report.native_view_ui_command_ids, vec!["zsui.test.save"]);
         assert_eq!(report.native_view_unhandled_click_count, 0);
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_view_runtime_dispatches_platform_click_and_returns_repaint() {
+        #[derive(Clone)]
+        enum Msg {
+            Increment,
+        }
+        struct State {
+            count: u32,
+        }
+
+        let button_id = crate::WidgetId::new(71);
+        let builder = native_window("Platform Click")
+            .size(360, 220)
+            .stateful_view(
+                State { count: 0 },
+                move |state| {
+                    crate::column([
+                        crate::text(format!("Count: {}", state.count)),
+                        crate::button("Increment")
+                            .id(button_id)
+                            .on_click(Msg::Increment),
+                    ])
+                },
+                |state, message, _cx| match message {
+                    Msg::Increment => state.count += 1,
+                },
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(button_id))
+            .expect("button should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let report = runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+
+        assert!(report.handled);
+        assert_eq!(report.message_count, 1);
+        assert!(report.errors.is_empty());
+        assert!(report.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
+                )
+            })
+        }));
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_view_runtime_dispatches_platform_click_to_shared_executor() {
+        let executor = SharedUiCommandExecutor::new(|command: UiCommand| {
+            Ok(vec![AppEvent::Custom {
+                id: command.id.0.to_string(),
+                payload: None,
+            }])
+        });
+        let button_id = crate::WidgetId::new(72);
+        let builder = native_window("Platform Command")
+            .size(360, 220)
+            .ui_command_view(crate::column([
+                crate::text::<UiCommand>("Settings"),
+                crate::button("Save")
+                    .id(button_id)
+                    .on_click(UiCommand::app(crate::CommandId("zsui.platform.save"))),
+            ]))
+            .shared_ui_command_executor(executor.clone());
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(button_id))
+            .expect("button should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let report = runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+
+        assert!(report.handled);
+        assert_eq!(report.ui_command_count, 1);
+        assert_eq!(report.ui_command_ids, vec!["zsui.platform.save"]);
+        assert!(report.errors.is_empty());
+        assert_eq!(executor.report().executed_count, 1);
     }
 
     #[test]

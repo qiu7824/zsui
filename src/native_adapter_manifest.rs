@@ -452,6 +452,11 @@ fn native_ui_capability_readiness(
                 "src/macos_appkit_menu.rs",
                 "NSMenu and NSMenuItem preserve nested state and return typed commands through a safe queue; AppKit host proof is pending",
             ),
+            MainExecutionPlanBridge => (
+                FirstPass,
+                "src/macos_appkit_renderer.rs",
+                "NSView mouse activation hit-tests the shared ViewInteractionPlan, dispatches typed live/static view messages and repaints rebuilt draw plans; keyboard, text, scroll and target proof are pending",
+            ),
             _ => (
                 ContractOnly,
                 "src/host_protocol.rs",
@@ -483,6 +488,11 @@ fn native_ui_capability_readiness(
                 FirstPass,
                 "src/linux_gtk_menu.rs",
                 "GMenu and SimpleAction preserve nested state and return typed commands through a safe queue; GTK host proof is pending",
+            ),
+            MainExecutionPlanBridge => (
+                FirstPass,
+                "src/linux_gtk_renderer.rs",
+                "GTK4 GestureClick hit-tests the shared ViewInteractionPlan, dispatches typed live/static view messages and repaints rebuilt draw plans; keyboard, text, scroll and target proof are pending",
             ),
             _ => (
                 ContractOnly,
@@ -863,8 +873,8 @@ mod tests {
         let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
             .expect("macOS readiness should be declared");
         assert_eq!(macos.ready_count, 0);
-        assert_eq!(macos.first_pass_count, 6);
-        assert_eq!(macos.contract_only_count, 12);
+        assert_eq!(macos.first_pass_count, 7);
+        assert_eq!(macos.contract_only_count, 11);
         assert!(!macos.contract_only_capability_names().contains(&"renderer"));
         assert_eq!(
             macos
@@ -902,8 +912,8 @@ mod tests {
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 6);
-        assert_eq!(linux.contract_only_count, 12);
+        assert_eq!(linux.first_pass_count, 7);
+        assert_eq!(linux.contract_only_count, 11);
         assert_eq!(
             linux
                 .capabilities

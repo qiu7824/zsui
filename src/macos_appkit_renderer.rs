@@ -1,8 +1,10 @@
+use std::cell::RefCell;
+
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
+    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSEvent, NSFont, NSFontAttributeName,
     NSFontWeightBold, NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold,
     NSForegroundColorAttributeName, NSGraphicsContext, NSImage, NSLineBreakMode,
     NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStringDrawing,
@@ -21,7 +23,8 @@ use crate::{
 };
 
 struct ZsuiAppKitDrawViewIvars {
-    plan: NativeDrawPlan,
+    plan: RefCell<NativeDrawPlan>,
+    runtime: RefCell<crate::native::NativeViewInputRuntime>,
 }
 
 define_class!(
@@ -41,17 +44,45 @@ define_class!(
         #[unsafe(method(drawRect:))]
         fn draw_rect(&self, _dirty_rect: NSRect) {
             let system_prefers_dark = appkit_system_prefers_dark(self.mtm());
-            let palette =
-                NativeDrawPalette::for_mode(self.ivars().plan.theme_mode, system_prefers_dark);
+            let plan = self.ivars().plan.borrow();
+            let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);
             let mut sink = MacosAppKitDrawSink::new(palette);
-            sink.draw_plan(&self.ivars().plan);
+            sink.draw_plan(&plan);
+        }
+
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            let location = self.convertPoint_fromView(event.locationInWindow(), None);
+            let report = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_pointer_click(crate::Point {
+                    x: appkit_coordinate(location.x),
+                    y: appkit_coordinate(location.y),
+                });
+            if let Some(plan) = report.redraw_plan {
+                *self.ivars().plan.borrow_mut() = plan;
+                self.setNeedsDisplay(true);
+            }
+            if report.quit_requested {
+                objc2_app_kit::NSApplication::sharedApplication(self.mtm()).stop(None);
+            }
         }
     }
 );
 
 impl ZsuiAppKitDrawView {
-    fn new(mtm: MainThreadMarker, frame: NSRect, plan: NativeDrawPlan) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars { plan });
+    fn new(
+        mtm: MainThreadMarker,
+        frame: NSRect,
+        plan: NativeDrawPlan,
+        runtime: crate::native::NativeViewInputRuntime,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars {
+            plan: RefCell::new(plan),
+            runtime: RefCell::new(runtime),
+        });
         unsafe { msg_send![super(this), initWithFrame: frame] }
     }
 }
@@ -59,13 +90,14 @@ impl ZsuiAppKitDrawView {
 pub(crate) fn install_macos_appkit_draw_plan(
     window: &objc2_app_kit::NSWindow,
     plan: NativeDrawPlan,
+    runtime: crate::native::NativeViewInputRuntime,
 ) {
     let mtm = window.mtm();
     let frame = window
         .contentView()
         .map(|view| view.frame())
         .unwrap_or_else(|| NSRect::new(NSPoint::new(0.0, 0.0), window.frame().size));
-    let view = ZsuiAppKitDrawView::new(mtm, frame, plan);
+    let view = ZsuiAppKitDrawView::new(mtm, frame, plan, runtime);
     view.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
@@ -328,6 +360,12 @@ fn appkit_rect(rect: Rect) -> NSRect {
         NSPoint::new(f64::from(rect.x), f64::from(rect.y)),
         NSSize::new(f64::from(rect.width.max(0)), f64::from(rect.height.max(0))),
     )
+}
+
+fn appkit_coordinate(value: f64) -> i32 {
+    value
+        .round()
+        .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
 }
 
 fn appkit_system_prefers_dark(mtm: MainThreadMarker) -> bool {

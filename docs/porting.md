@@ -64,17 +64,20 @@ content to both platforms. AppKit uses a flipped custom `NSView`,
 `NSBezierPath`, semantic `NSString` attributes and SF Symbols. GTK4 uses a
 `DrawingArea`, Cairo, Pango and the current icon theme with the bundled Fluent
 SVG fallback. Both sinks implement fill, stroke, rounded geometry, text, icon
-and balanced clip commands. This is first-pass rendering evidence only: target
-screenshots, resize-driven relayout, accessibility and native input routing
-remain separate gates.
+and balanced clip commands. AppKit `mouseUp:` and GTK4 `GestureClick` also
+convert local coordinates into the shared `ViewInteractionPlan`, dispatch
+typed static/live view messages, hand emitted commands to shared executors and
+replace the draw plan after stateful updates. This is first-pass pointer
+activation only: target screenshots, resize-driven relayout, accessibility,
+keyboard, text/IME and scroll routing remain separate gates.
 
 These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
-fallback transport. Shared View rendering now reaches all three native window
-surfaces, but AppKit/GTK4 input, target screenshot capture and interaction
-evidence remain required; entering or painting a native event loop alone is
-not system-complete evidence.
+fallback transport. Shared View rendering and click activation now reach all
+three native window surfaces, but AppKit/GTK4 keyboard, text/IME, scroll,
+target screenshot capture and interaction evidence remain required; entering
+or painting a native event loop alone is not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

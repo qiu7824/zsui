@@ -27,6 +27,7 @@ struct LinuxGtkRuntimeState {
 pub(crate) fn run_linux_gtk_native_window_event_loop(
     specs: &[WindowSpec],
     draw_plans: &[Option<crate::NativeDrawPlan>],
+    view_runtimes: &[crate::native::NativeViewInputRuntime],
     auto_close_after_ms: Option<u64>,
 ) -> ZsuiResult<usize> {
     if specs.is_empty() {
@@ -38,6 +39,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         .build();
     let specs = Rc::new(specs.to_vec());
     let draw_plans = Rc::new(draw_plans.to_vec());
+    let view_runtimes = Rc::new(view_runtimes.to_vec());
     let state = Rc::new(RefCell::new(None::<LinuxGtkRuntimeState>));
     let startup_error = Rc::new(RefCell::new(None::<String>));
     let created_count = Rc::new(RefCell::new(0_usize));
@@ -45,6 +47,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     application.connect_activate({
         let specs = Rc::clone(&specs);
         let draw_plans = Rc::clone(&draw_plans);
+        let view_runtimes = Rc::clone(&view_runtimes);
         let state = Rc::clone(&state);
         let startup_error = Rc::clone(&startup_error);
         let created_count = Rc::clone(&created_count);
@@ -58,7 +61,11 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                 match windows.create_window(spec) {
                     Ok(id) => {
                         if let Some(plan) = draw_plans.get(index).and_then(Clone::clone) {
-                            if let Err(error) = windows.set_window_draw_plan(id, plan) {
+                            if let Err(error) = windows.set_window_view_content(
+                                id,
+                                plan,
+                                view_runtimes.get(index).cloned().unwrap_or_default(),
+                            ) {
                                 *startup_error.borrow_mut() = Some(error.to_string());
                                 application.quit();
                                 return;
@@ -152,10 +159,24 @@ impl LinuxGtkWindowService {
         window: WindowId,
         plan: crate::NativeDrawPlan,
     ) -> ZsuiResult<()> {
+        self.set_window_view_content(
+            window,
+            plan,
+            crate::native::NativeViewInputRuntime::default(),
+        )
+    }
+
+    pub(crate) fn set_window_view_content(
+        &mut self,
+        window: WindowId,
+        plan: crate::NativeDrawPlan,
+        runtime: crate::native::NativeViewInputRuntime,
+    ) -> ZsuiResult<()> {
         ensure_gtk_main_thread("gtk_set_window_draw_plan")?;
         crate::linux_gtk_renderer::install_linux_gtk_draw_plan(
             self.window(window, "gtk_set_window_draw_plan")?,
             plan,
+            runtime,
         );
         Ok(())
     }

@@ -74,7 +74,9 @@ hosts.
 All three direct desktop hosts attach a typed Rust view draw plan to their
 native content surface. Win32 paints through its buffered GDI sink, AppKit
 through a custom `NSView`, and GTK4 through `DrawingArea`/Cairo/Pango. Windows
-also routes a native click message during the smoke run:
+posts a native click message during the smoke run. AppKit `mouseUp:` and GTK4
+`GestureClick` are connected to the same typed hit-test/message/executor path,
+but still require target-machine interaction artifacts:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --view
