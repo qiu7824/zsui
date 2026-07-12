@@ -88,6 +88,7 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_ui_command_ids: Vec<&'static str>,
     pub native_view_unhandled_click_count: usize,
     pub native_view_focus_count: usize,
+    pub native_view_focus_visual_count: usize,
     pub native_view_focus_traversal_count: usize,
     pub native_view_text_input_count: usize,
     pub native_view_toggle_count: usize,
@@ -141,6 +142,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_ui_command_ids: Vec::new(),
             native_view_unhandled_click_count: 0,
             native_view_focus_count: 0,
+            native_view_focus_visual_count: 0,
             native_view_focus_traversal_count: 0,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
@@ -292,6 +294,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_ui_command_ids: report.native_view_ui_command_ids.clone(),
             native_view_unhandled_click_count: report.native_view_unhandled_click_count,
             native_view_focus_count: report.native_view_focus_count,
+            native_view_focus_visual_count: report.native_view_focus_visual_count,
             native_view_focus_traversal_count: report.native_view_focus_traversal_count,
             native_view_text_input_count: report.native_view_text_input_count,
             native_view_toggle_count: report.native_view_toggle_count,
@@ -913,8 +916,9 @@ mod tests {
             native_view_live_revision: 0,
             native_view_quit_requested: false,
             native_view_unhandled_click_count: 0,
-            native_view_focus_count: 0,
-            native_view_focus_traversal_count: 0,
+            native_view_focus_count: 1,
+            native_view_focus_visual_count: 1,
+            native_view_focus_traversal_count: 1,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
@@ -968,6 +972,7 @@ mod tests {
         assert!(interaction_json.contains("\"status_menu_command_routed\": true"));
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_focus_visual_count\": 1"));
         assert!(interaction_json.contains("zsui.test.save"));
         assert!(interaction_json.contains("auto_close_elapsed"));
     }

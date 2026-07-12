@@ -320,7 +320,7 @@ impl HostCapabilities {
         let mut capabilities = Self::macos_scaffold();
         if cfg!(feature = "macos-appkit") {
             capabilities.windows = CapabilitySupport::partial(
-                "NSApplication/NSWindow lifecycle, draw-plan rendering, typed input and resize relayout are connected; target proof is pending",
+                "NSApplication/NSWindow lifecycle, draw-plan rendering, typed input, semantic focus rings and resize relayout are connected; target proof is pending",
             );
             capabilities.window_resizing = CapabilitySupport::partial(
                 "actual NSView bounds rebuild shared layout, draw plans and input geometry; target resize artifacts are pending",
@@ -409,7 +409,7 @@ impl HostCapabilities {
         let mut capabilities = Self::linux_scaffold();
         if cfg!(feature = "linux-gtk") {
             capabilities.windows = CapabilitySupport::partial(
-                "GtkApplication/ApplicationWindow lifecycle, draw-plan rendering, typed input and allocation relayout are connected; target proof is pending",
+                "GtkApplication/ApplicationWindow lifecycle, draw-plan rendering, typed input, semantic focus rings and allocation relayout are connected; target proof is pending",
             );
             capabilities.window_resizing = CapabilitySupport::partial(
                 "actual DrawingArea allocation rebuilds shared layout, draw plans and input geometry; Wayland/X11 resize artifacts are pending",

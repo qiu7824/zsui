@@ -82,6 +82,14 @@ plan, hit targets and candidate-window geometry before the current frame is
 painted. Target resize screenshots and explicit public `WindowResized` service
 events remain incomplete evidence gates.
 
+Focus visuals are also backend-neutral. `NativeViewInputRuntime` and the Win32
+view-input route append the same inset, DPI-scaled `ColorRole::Accent` stroke
+to a fresh `NativeDrawPlan` whenever pointer or Tab focus changes. AppKit
+first-responder resignation, GTK4 focus leave and Win32 `WM_KILLFOCUS` rebuild
+the undecorated plan, so inactive windows do not retain a stale focus ring.
+Backends must not substitute private colors or toolkit-specific focus state for
+this shared semantic visual.
+
 These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a

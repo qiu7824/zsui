@@ -3,6 +3,7 @@ use serde::Serialize;
 #[cfg(feature = "workbench")]
 use crate::workbench::ZsWorkbenchSpec;
 
+use crate::native_input_visuals::decorate_native_focus_ring;
 use crate::{
     app::{app, ZsuiApp, ZsuiAppRuntime},
     app_command::{app_command_name, AppCommandExecutor, SharedAppCommandExecutor},
@@ -697,6 +698,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_quit_requested: bool,
     pub native_view_unhandled_click_count: usize,
     pub native_view_focus_count: usize,
+    pub native_view_focus_visual_count: usize,
     pub native_view_focus_traversal_count: usize,
     pub native_view_text_input_count: usize,
     pub native_view_toggle_count: usize,
@@ -771,6 +773,7 @@ impl NativeWindowSmokeRunReport {
             native_view_quit_requested: false,
             native_view_unhandled_click_count: 0,
             native_view_focus_count: 0,
+            native_view_focus_visual_count: 0,
             native_view_focus_traversal_count: 0,
             native_view_text_input_count: 0,
             native_view_toggle_count: 0,
@@ -827,6 +830,7 @@ struct NativeViewImePreedit {
 pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
     pub surface_changed: bool,
+    pub focus_visual_changed: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
     pub app_command_count: usize,
@@ -926,9 +930,10 @@ impl NativeViewInputRuntime {
         }) {
             self.focused_widget = None;
             self.ime_preedit = None;
+            report.focus_visual_changed = true;
         }
         if let Some(plan) = report.redraw_plan.take() {
-            report.redraw_plan = Some(self.compose_ime_preedit(plan));
+            report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
         report.hit_target_count = self.hit_target_count();
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
@@ -1173,6 +1178,20 @@ impl NativeViewInputRuntime {
         }
     }
 
+    pub(crate) fn blur_focus(&mut self) -> NativeViewInputDispatchReport {
+        let had_focus = self.focused_widget.take().is_some();
+        let had_preedit = self.ime_preedit.take().is_some();
+        NativeViewInputDispatchReport {
+            handled: had_focus || had_preedit,
+            focus_visual_changed: had_focus,
+            hit_target_count: self.hit_target_count(),
+            redraw_plan: (had_focus || had_preedit)
+                .then(|| self.current_composed_draw_plan())
+                .flatten(),
+            ..NativeViewInputDispatchReport::default()
+        }
+    }
+
     pub(crate) fn dispatch_pointer_scroll(
         &mut self,
         point: Point,
@@ -1218,12 +1237,17 @@ impl NativeViewInputRuntime {
         target: crate::ViewHitTarget,
         report: &mut NativeViewInputDispatchReport,
     ) {
-        if self.focused_widget != Some(target.widget) && self.ime_preedit.take().is_some() {
-            report.redraw_plan = self.current_composed_draw_plan();
+        if self.focused_widget == Some(target.widget) {
+            report.focused_widget = Some(target.widget.0);
+            report.ime_caret_rect = self.text_input_caret_rect();
+            return;
         }
+        self.ime_preedit = None;
         self.focused_widget = Some(target.widget);
         report.focused_widget = Some(target.widget.0);
         report.ime_caret_rect = self.text_input_caret_rect();
+        report.focus_visual_changed = true;
+        report.redraw_plan = self.current_composed_draw_plan();
     }
 
     fn focused_text_input_target(&self) -> Option<crate::ViewHitTarget> {
@@ -1247,7 +1271,15 @@ impl NativeViewInputRuntime {
             view.paint(&mut paint_cx);
             paint_cx.into_plan()
         };
-        Some(self.compose_ime_preedit(plan))
+        Some(self.compose_input_visuals(plan))
+    }
+
+    fn compose_input_visuals(&self, plan: NativeDrawPlan) -> NativeDrawPlan {
+        let mut plan = self.compose_ime_preedit(plan);
+        if let Some(interaction_plan) = self.current_interaction_plan() {
+            decorate_native_focus_ring(&mut plan, &interaction_plan, self.focused_widget, self.dpi);
+        }
+        plan
     }
 
     fn compose_ime_preedit(&self, mut plan: NativeDrawPlan) -> NativeDrawPlan {
@@ -1395,9 +1427,10 @@ impl NativeViewInputRuntime {
         }) {
             self.focused_widget = None;
             self.ime_preedit = None;
+            report.focus_visual_changed = true;
         }
         if let Some(plan) = report.redraw_plan.take() {
-            report.redraw_plan = Some(self.compose_ime_preedit(plan));
+            report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
         report.ime_preedit_text = self.ime_preedit.as_ref().map(|state| state.text.clone());
@@ -1563,6 +1596,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_quit_requested |= input.quit_requested;
     report.native_view_unhandled_click_count += input.unhandled_click_count;
     report.native_view_focus_count += input.focus_count;
+    report.native_view_focus_visual_count += input.focus_visual_count;
     report.native_view_focus_traversal_count += input.focus_traversal_count;
     report.native_view_text_input_count += input.text_input_count;
     report.native_view_toggle_count += input.toggle_count;
@@ -4013,6 +4047,16 @@ mod tests {
                     .on_click(UiCommand::app(crate::CommandId("zsui.keyboard.second"))),
             ]))
             .shared_ui_command_executor(executor.clone());
+        let first_bounds = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(first))
+            .expect("first button should have focus geometry")
+            .bounds;
+        let second_bounds = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(second))
+            .expect("second button should have focus geometry")
+            .bounds;
         let mut runtime = builder.native_view_input_runtime();
 
         let first_focus = runtime.dispatch_key(NativeViewKey::Tab);
@@ -4020,11 +4064,38 @@ mod tests {
         let activated = runtime.dispatch_key(NativeViewKey::Enter);
 
         assert!(first_focus.handled);
+        assert!(first_focus.focus_visual_changed);
         assert_eq!(first_focus.focused_widget, Some(first.0));
+        assert!(first_focus.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. }
+                    if rect.x == first_bounds.x + 1 && rect.y == first_bounds.y + 1)
+            })
+        }));
+        assert!(second_focus.focus_visual_changed);
         assert_eq!(second_focus.focused_widget, Some(second.0));
+        assert!(second_focus.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. }
+                    if rect.x == second_bounds.x + 1 && rect.y == second_bounds.y + 1)
+            }) && !plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. }
+                    if rect.x == first_bounds.x + 1 && rect.y == first_bounds.y + 1)
+            })
+        }));
         assert!(activated.handled);
         assert_eq!(activated.ui_command_ids, vec!["zsui.keyboard.second"]);
         assert_eq!(executor.report().executed_count, 1);
+
+        let blurred = runtime.blur_focus();
+        assert!(blurred.focus_visual_changed);
+        assert_eq!(blurred.focused_widget, None);
+        assert!(blurred.redraw_plan.as_ref().is_some_and(|plan| {
+            !plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. }
+                    if rect.x == first_bounds.x + 1 || rect.x == second_bounds.x + 1)
+            })
+        }));
     }
 
     #[cfg(all(feature = "label", feature = "textbox"))]
@@ -4281,6 +4352,7 @@ mod tests {
         assert!(options.native_view_scroll_inputs.is_empty());
         assert!(options.native_view_inputs.is_empty());
         assert_eq!(report.native_view_focus_count, 0);
+        assert_eq!(report.native_view_focus_visual_count, 0);
         assert_eq!(report.native_view_focus_traversal_count, 0);
         assert_eq!(report.native_view_text_input_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);

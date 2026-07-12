@@ -255,7 +255,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
         move |_focus| {
-            let report = runtime.borrow_mut().cancel_ime_preedit();
+            let report = runtime.borrow_mut().blur_focus();
             if let Some(updated) = report.redraw_plan {
                 *plan.borrow_mut() = updated;
                 area.queue_draw();

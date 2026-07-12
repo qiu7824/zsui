@@ -198,7 +198,7 @@ define_class!(
         fn resign_first_responder(&self) -> bool {
             self.ivars().marked_text.borrow_mut().clear();
             self.ivars().marked_selection.set(None);
-            let report = self.ivars().runtime.borrow_mut().cancel_ime_preedit();
+            let report = self.ivars().runtime.borrow_mut().blur_focus();
             self.apply_input_report(report);
             if let Some(context) = self.inputContext() {
                 context.discardMarkedText();

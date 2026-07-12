@@ -163,7 +163,9 @@ impl DesktopCapabilities {
             )
             .with_support(
                 DesktopCapability::KeyboardFocus,
-                CapabilitySupport::supported("click and Tab focus routing are connected"),
+                CapabilitySupport::supported(
+                    "click and Tab focus routing plus the shared semantic focus ring are connected",
+                ),
             )
             .with_support(
                 DesktopCapability::PointerInput,
@@ -241,7 +243,7 @@ impl DesktopCapabilities {
                 DesktopCapability::KeyboardFocus,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSView first-responder focus, Tab traversal and keyboard activation are connected; focus visuals and target proof are pending",
+                        "NSView first-responder focus, Tab traversal, keyboard activation and shared semantic focus rings are connected; target proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -371,7 +373,7 @@ impl DesktopCapabilities {
                 DesktopCapability::KeyboardFocus,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GTK4 focusable DrawingArea, Tab traversal and keyboard activation are connected; focus visuals and target proof are pending",
+                        "GTK4 focusable DrawingArea, Tab traversal, keyboard activation and shared semantic focus rings are connected; target proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

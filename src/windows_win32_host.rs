@@ -10,6 +10,7 @@ use std::{
     },
 };
 
+use crate::native_input_visuals::decorate_native_focus_ring;
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
@@ -25,7 +26,7 @@ use crate::{
     NativeTransientWindowHostOperation, NativeTransientWindowPresentation,
     NativeTransientWindowRequest, NativeWindowOptions, Renderer, SaveFileDialogSpec,
     SharedAppCommandExecutor, SharedUiCommandExecutor, Size, TraySpec, UiCommand, UiRect, View,
-    ViewEventCx, ViewInteractionPlan, ViewNode, WindowSpec, ZsShellInteractionEvent,
+    ViewEventCx, ViewInteractionPlan, ViewNode, ViewPaintCx, WindowSpec, ZsShellInteractionEvent,
     ZsShellInteractionUpdate, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
 use windows_sys::Win32::{
@@ -78,11 +79,11 @@ use windows_sys::Win32::{
             SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
             WM_APP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND,
             WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
-            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
-            WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED,
-            WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_NOACTIVATE,
-            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED,
-            WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+            WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND,
+            WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN,
+            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -1768,6 +1769,7 @@ pub struct WindowsWin32ViewInputRoute {
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
+    dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
     app_command_executor: Option<SharedAppCommandExecutor>,
@@ -1786,6 +1788,7 @@ impl WindowsWin32ViewInputRoute {
             ui_command_view: Some(ui_command_view),
             live_view: None,
             focused_widget: None,
+            dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
             app_command_executor: None,
@@ -1801,6 +1804,7 @@ impl WindowsWin32ViewInputRoute {
             ui_command_view: None,
             live_view: Some(live_view),
             focused_widget: None,
+            dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
             app_command_executor: None,
@@ -2105,9 +2109,32 @@ impl WindowsWin32ViewInputRoute {
         self.focused_widget = Some(target.widget);
         report.focus_count = 1;
         report.focused_widget = Some(target.widget.0);
+        if self.rebuild_pending_draw_plan() {
+            report.focus_visual_count = 1;
+            report
+                .events
+                .push(format!("win32_view_focus_visual:{}", target.widget.0));
+        }
         report
             .events
             .push(format!("win32_view_focus:{}", target.widget.0));
+    }
+
+    fn dispatch_blur(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let Some(widget) = self.focused_widget.take() else {
+            return report;
+        };
+        if self.rebuild_pending_draw_plan() {
+            report.focus_visual_count = 1;
+        }
+        report
+            .events
+            .push(format!("win32_view_focus_visual_cleared:{}", widget.0));
+        report
     }
 
     fn focused_target(&self) -> Option<crate::ViewHitTarget> {
@@ -2186,7 +2213,7 @@ impl WindowsWin32ViewInputRoute {
             }
             if update.redraw {
                 self.interaction_plan = live_view.interaction_plan();
-                self.pending_draw_plan = Some(live_view.draw_plan());
+                self.rebuild_pending_draw_plan();
                 report.hit_target_count = self.hit_target_count();
                 report
                     .events
@@ -2211,6 +2238,7 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_ui_command:{}", command.id.0));
             self.pending_ui_commands.push(command);
         }
+        self.rebuild_pending_draw_plan();
     }
 
     fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
@@ -2279,6 +2307,26 @@ impl WindowsWin32ViewInputRoute {
         self.pending_draw_plan.take()
     }
 
+    fn rebuild_pending_draw_plan(&mut self) -> bool {
+        let mut plan = if let Some(live_view) = &self.live_view {
+            live_view.draw_plan()
+        } else if let Some(view) = &self.ui_command_view {
+            let mut paint_cx = ViewPaintCx::new(self.dpi);
+            view.paint(&mut paint_cx);
+            paint_cx.into_plan()
+        } else {
+            return false;
+        };
+        decorate_native_focus_ring(
+            &mut plan,
+            &self.interaction_plan,
+            self.focused_widget,
+            self.dpi,
+        );
+        self.pending_draw_plan = Some(plan);
+        true
+    }
+
     fn take_quit_requested(&mut self) -> bool {
         std::mem::take(&mut self.quit_requested)
     }
@@ -2313,7 +2361,7 @@ impl WindowsWin32ViewInputRoute {
         };
         let update = live_view.refresh();
         self.interaction_plan = live_view.interaction_plan();
-        self.pending_draw_plan = Some(live_view.draw_plan());
+        self.rebuild_pending_draw_plan();
         WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             background_refresh_count: 1,
@@ -2327,6 +2375,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
+        self.dpi = dpi;
         let Some(live_view) = &self.live_view else {
             return false;
         };
@@ -2334,7 +2383,7 @@ impl WindowsWin32ViewInputRoute {
             return false;
         }
         self.interaction_plan = live_view.interaction_plan();
-        self.pending_draw_plan = Some(live_view.draw_plan());
+        self.rebuild_pending_draw_plan();
         true
     }
 }
@@ -2364,6 +2413,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub quit_requested: bool,
     pub unhandled_click_count: usize,
     pub focus_count: usize,
+    pub focus_visual_count: usize,
     pub focused_widget: Option<u64>,
     pub focus_traversal_count: usize,
     pub text_input_count: usize,
@@ -2403,6 +2453,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.quit_requested |= next.quit_requested;
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
+        self.focus_visual_count += next.focus_visual_count;
         self.focused_widget = next.focused_widget.or(self.focused_widget);
         self.focus_traversal_count += next.focus_traversal_count;
         self.text_input_count += next.text_input_count;
@@ -2586,6 +2637,12 @@ pub fn dispatch_windows_win32_window_view_key_down(
     virtual_key: u32,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_key_down(virtual_key))
+}
+
+pub fn dispatch_windows_win32_window_view_blur(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, WindowsWin32ViewInputRoute::dispatch_blur)
 }
 
 pub fn dispatch_windows_win32_window_view_scroll(
@@ -3731,6 +3788,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_IME_ENDCOMPOSITION => DefWindowProcW(hwnd, msg, wparam, lparam),
+        WM_KILLFOCUS => match dispatch_windows_win32_window_view_blur(hwnd) {
+            Some(report) if !report.events.is_empty() => 0,
+            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        },
         WM_CHAR => {
             if let Some(text) = text_from_char_wparam(wparam) {
                 if dispatch_windows_win32_window_view_text_input(hwnd, &text).is_some() {
@@ -4411,17 +4472,33 @@ mod tests {
             .expect("registered route should focus next target from Tab");
         let key = dispatch_windows_win32_window_view_key_down(hwnd, ZSUI_WIN32_VK_RETURN)
             .expect("focused second button should dispatch keyboard activation");
+        let focused_plan = window_draw_plan(hwnd).expect("focus should publish a draw plan");
+        let blur = dispatch_windows_win32_window_view_blur(hwnd)
+            .expect("registered route should clear focus visuals");
+        let blurred_plan = window_draw_plan(hwnd).expect("blur should publish a clean draw plan");
         let aggregate = windows_win32_window_view_input_report(hwnd)
             .expect("registered route should keep aggregate report");
 
         assert_eq!(first_focus.focus_traversal_count, 1);
+        assert_eq!(first_focus.focus_visual_count, 1);
         assert_eq!(first_focus.focused_widget, Some(first.0));
         assert_eq!(second_focus.focus_traversal_count, 1);
+        assert_eq!(second_focus.focus_visual_count, 1);
         assert_eq!(second_focus.focused_widget, Some(second.0));
+        assert!(focused_plan.commands.iter().any(|command| {
+            matches!(command, crate::NativeDrawCommand::StrokeRect { rect, width: 2, .. }
+                if rect.x == 1 && rect.y == 49 && rect.width == 118 && rect.height == 46)
+        }));
         assert_eq!(key.ui_command_ids, vec!["zsui.test.win32.second"]);
+        assert_eq!(blur.focus_visual_count, 1);
+        assert!(!blurred_plan
+            .commands
+            .iter()
+            .any(|command| { matches!(command, crate::NativeDrawCommand::StrokeRect { .. }) }));
         assert_eq!(aggregate.focus_traversal_count, 2);
         assert_eq!(aggregate.key_down_count, 3);
         assert_eq!(aggregate.focus_count, 2);
+        assert_eq!(aggregate.focus_visual_count, 3);
         assert_eq!(aggregate.keyboard_activation_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
     }

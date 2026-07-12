@@ -411,12 +411,12 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 87,
-            status_name: "three_native_event_loops_renderers_first_pass_input_and_resize_relayout",
+            percent_complete: 89,
+            status_name: "three_native_event_loops_renderers_first_pass_input_focus_visuals_and_resize",
             source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
-                "AppKit precise caret/selection editing, focus visuals and richer pointer dispatch",
-                "GTK4 precise caret/selection editing, focus visuals and richer pointer dispatch",
+                "AppKit precise caret/selection editing and richer pointer dispatch",
+                "GTK4 precise caret/selection editing and richer pointer dispatch",
                 "macOS target screenshot and interaction artifacts",
                 "Linux Wayland/X11 screenshot and interaction artifacts",
                 "richer Win32 pointer/IME events",

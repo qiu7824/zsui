@@ -83,7 +83,9 @@ keyboard activation and direct UTF-8 edits. AppKit `NSTextInputClient` and GTK4
 window anchors through the same shared runtime. Each renderer also feeds its
 actual content bounds back into shared layout before painting, so resize updates
 draw commands, hit targets and text-input geometry rather than stretching a
-startup snapshot.
+startup snapshot. Pointer/Tab focus appends the same semantic accent focus ring
+on all three draw sinks, while native focus loss rebuilds the clean plan. The
+Windows interaction artifact records this as `native_view_focus_visual_count`.
 Both still require target-machine interaction artifacts:
 
 ```powershell
@@ -109,7 +111,8 @@ feature, it routes checkbox clicks into `Toggled`/`UiCommand` output. It also
 records typed row selection when built with the `list` feature, including
 Up/Down keyboard selection between focused rows. It also posts `WM_KEYDOWN`
 Tab to prove ordered focus traversal and Enter to prove focused keyboard
-activation into the same `UiCommand` path. Richer pointer coverage, precise
+activation into the same `UiCommand` path; the resulting focus-ring repaint is
+counted independently from logical focus changes. Richer pointer coverage, precise
 caret/selection editing, non-Windows target input evidence and resize screenshot
 artifacts remain later runtime gates.
 When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`

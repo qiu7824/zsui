@@ -70,6 +70,7 @@ pub mod native_host_actions;
 pub mod native_host_launch;
 pub mod native_hosts;
 pub mod native_icons;
+mod native_input_visuals;
 #[cfg(any(
     test,
     all(windows, feature = "windows-win32"),

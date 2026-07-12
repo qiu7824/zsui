@@ -460,7 +460,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView bounds plus mouse/scroll/key and NSTextInputClient callbacks relayout shared views, rebuild hit geometry, route typed input and repaint rebuilt draw plans; target proof is pending",
+                "NSView bounds plus mouse/scroll/key and NSTextInputClient callbacks relayout shared views, rebuild hit geometry, route typed input and repaint shared semantic focus rings; target proof is pending",
             ),
             _ => (
                 ContractOnly,
@@ -502,7 +502,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 allocation plus click/scroll/key controllers and GtkIMContext callbacks relayout shared views, rebuild hit geometry, route typed input and repaint rebuilt draw plans; target proof is pending",
+                "GTK4 allocation plus click/scroll/key controllers and GtkIMContext callbacks relayout shared views, rebuild hit geometry, route typed input and repaint shared semantic focus rings; target proof is pending",
             ),
             _ => (
                 ContractOnly,
