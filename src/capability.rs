@@ -262,7 +262,7 @@ impl HostCapabilities {
             "Win32 status items can be created by the direct native host; target tray/menu command proof is still pending",
         );
         capabilities.menus = CapabilitySupport::supported(
-            "Win32 window menus are owned by the host and route typed Command values",
+            "Win32 window menus and HACCEL tables are RAII-owned and route typed Command values",
         );
         capabilities.file_picker = CapabilitySupport::supported(
             "Win32 common open-file dialog is connected through the native host",
@@ -319,6 +319,15 @@ impl HostCapabilities {
     pub fn macos_native_window_host() -> Self {
         let mut capabilities = Self::macos_scaffold();
         capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.menus = if cfg!(feature = "macos-appkit") {
+            CapabilitySupport::partial(
+                "NSMenu/NSMenuItem installation and typed command polling are connected; AppKit host integration proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable macos-appkit to compile the native AppKit menu service",
+            )
+        };
         capabilities.file_picker = if cfg!(feature = "macos-appkit") {
             CapabilitySupport::partial(
                 "NSOpenPanel and NSSavePanel are connected; target interaction proof is pending",
@@ -377,6 +386,15 @@ impl HostCapabilities {
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
         capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.menus = if cfg!(feature = "linux-gtk") {
+            CapabilitySupport::partial(
+                "GMenu/SimpleAction installation and typed command polling are connected; GTK host integration proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable linux-gtk to compile the native GTK4 menu service",
+            )
+        };
         capabilities.file_picker = if cfg!(feature = "linux-gtk") {
             CapabilitySupport::partial(
                 "GTK4 FileChooserNative open/save services are connected; Wayland/X11 interaction proof is pending",

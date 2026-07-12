@@ -2337,7 +2337,7 @@ fn run_native_window_smoke_event_loop(
         screenshot_result
     });
 
-    match crate::windows_win32_host::WindowsWin32MessageLoop::run() {
+    match crate::windows_win32_host::WindowsWin32MessageLoop::run_with_windows(&handles) {
         crate::windows_win32_host::WindowsWin32MessageLoopResult::Quit(_) => {
             report.exited_by_auto_close = true;
             report.close_requested_count = report.created_window_count;

@@ -96,7 +96,7 @@ pub fn linux_gtk_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Optio
     result
 }
 
-fn ensure_gtk_main_thread(operation: &'static str) -> ZsuiResult<()> {
+pub(crate) fn ensure_gtk_main_thread(operation: &'static str) -> ZsuiResult<()> {
     if gtk::is_initialized() && !gtk::is_initialized_main_thread() {
         return Err(ZsuiError::host(
             operation,

@@ -436,6 +436,11 @@ fn native_ui_capability_readiness(
                 "src/macos_appkit_services.rs",
                 "NSOpenPanel and NSSavePanel are connected through the safe FileDialogService; target interaction proof is pending",
             ),
+            PopupMenu => (
+                FirstPass,
+                "src/macos_appkit_menu.rs",
+                "NSMenu and NSMenuItem preserve nested state and return typed commands through a safe queue; AppKit host proof is pending",
+            ),
             MainWindow => (
                 ContractOnly,
                 "src/native.rs",
@@ -457,6 +462,11 @@ fn native_ui_capability_readiness(
                 FirstPass,
                 "src/linux_gtk_services.rs",
                 "GTK4 FileChooserNative open/save is connected through the safe FileDialogService; target interaction proof is pending",
+            ),
+            PopupMenu => (
+                FirstPass,
+                "src/linux_gtk_menu.rs",
+                "GMenu and SimpleAction preserve nested state and return typed commands through a safe queue; GTK host proof is pending",
             ),
             MainWindow => (
                 ContractOnly,
@@ -836,8 +846,8 @@ mod tests {
         let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
             .expect("macOS readiness should be declared");
         assert_eq!(macos.ready_count, 0);
-        assert_eq!(macos.first_pass_count, 2);
-        assert_eq!(macos.contract_only_count, 16);
+        assert_eq!(macos.first_pass_count, 3);
+        assert_eq!(macos.contract_only_count, 15);
         assert!(macos.contract_only_capability_names().contains(&"renderer"));
         assert!(macos
             .contract_only_capability_names()
@@ -850,15 +860,31 @@ mod tests {
                 .map(|entry| entry.level),
             Some(NativeUiCapabilityReadinessLevel::FirstPass)
         );
+        assert_eq!(
+            macos
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::PopupMenu)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
 
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 2);
-        assert_eq!(linux.contract_only_count, 16);
+        assert_eq!(linux.first_pass_count, 3);
+        assert_eq!(linux.contract_only_count, 15);
         assert!(linux
             .contract_only_capability_names()
             .contains(&"main_window"));
+        assert_eq!(
+            linux
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::PopupMenu)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
 
         let android = native_ui_platform_readiness(NativeUiPlatform::Android)
             .expect("Android readiness should be declared");

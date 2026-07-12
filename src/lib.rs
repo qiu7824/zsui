@@ -33,7 +33,11 @@ pub mod host_protocol;
 pub mod hotkey;
 pub mod icon;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+pub mod linux_gtk_menu;
+#[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_services;
+#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+pub mod macos_appkit_menu;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 pub mod macos_appkit_services;
 pub mod menu;
@@ -50,6 +54,13 @@ pub mod native_host_actions;
 pub mod native_host_launch;
 pub mod native_hosts;
 pub mod native_icons;
+#[cfg(any(
+    test,
+    all(windows, feature = "windows-win32"),
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+mod native_menu;
 pub mod native_smoke;
 #[cfg(feature = "paged-list")]
 pub mod paged_list;
@@ -562,7 +573,14 @@ mod tests {
             macos.window_transparency.status,
             CapabilityStatus::Unsupported
         );
-        assert_eq!(macos.menus.status, CapabilityStatus::Unsupported);
+        assert_eq!(
+            macos.menus.status,
+            if cfg!(feature = "macos-appkit") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
         assert_eq!(
             macos.file_picker.status,
             if cfg!(feature = "macos-appkit") {
@@ -584,7 +602,14 @@ mod tests {
             linux.window_transparency.status,
             CapabilityStatus::Unsupported
         );
-        assert_eq!(linux.menus.status, CapabilityStatus::Unsupported);
+        assert_eq!(
+            linux.menus.status,
+            if cfg!(feature = "linux-gtk") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
         assert_eq!(
             linux.file_picker.status,
             if cfg!(feature = "linux-gtk") {

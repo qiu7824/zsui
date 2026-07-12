@@ -183,7 +183,9 @@ impl DesktopCapabilities {
             )
             .with_support(
                 DesktopCapability::NativeMenu,
-                CapabilitySupport::supported("owned HMENU command routing is connected"),
+                CapabilitySupport::supported(
+                    "owned HMENU/HACCEL command and keyboard routing are connected",
+                ),
             )
             .with_support(
                 DesktopCapability::ClipboardText,
@@ -224,6 +226,18 @@ impl DesktopCapabilities {
     pub fn macos_appkit_current() -> Self {
         Self::all_unsupported(PlatformName::Macos)
             .with_support(
+                DesktopCapability::NativeMenu,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSMenu/NSMenuItem state and typed command polling are connected; AppKit host proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile the native AppKit menu service",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::OpenFileDialog,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
@@ -257,6 +271,18 @@ impl DesktopCapabilities {
 
     pub fn linux_gtk_current() -> Self {
         Self::all_unsupported(PlatformName::Linux)
+            .with_support(
+                DesktopCapability::NativeMenu,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GMenu/SimpleAction state and typed command polling are connected; GTK host proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile the native GTK4 menu service",
+                    )
+                },
+            )
             .with_support(
                 DesktopCapability::OpenFileDialog,
                 if cfg!(feature = "linux-gtk") {

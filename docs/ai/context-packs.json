@@ -215,7 +215,10 @@
       ],
       "optional": [
         "src/windows_win32_host.rs",
+        "src/native_menu.rs",
+        "src/macos_appkit_menu.rs",
         "src/macos_appkit_services.rs",
+        "src/linux_gtk_menu.rs",
         "src/linux_gtk_services.rs",
         "src/native_file_dialog.rs",
         "Cargo.toml",

@@ -811,7 +811,9 @@ fn platform_binding_name_for_capability(
             Some("windows_win32_transient_window_host")
         }
         (NativeUiPlatform::Macos, "file_dialog") => Some("appkit_open_save_panel_service"),
+        (NativeUiPlatform::Macos, "popup_menu") => Some("appkit_ns_menu_command_service"),
         (NativeUiPlatform::Linux, "file_dialog") => Some("gtk_file_chooser_native_service"),
+        (NativeUiPlatform::Linux, "popup_menu") => Some("gtk_gmenu_simple_action_service"),
         (NativeUiPlatform::Android, "main_window") => Some("android_activity_surface"),
         (NativeUiPlatform::Android, "settings_window") => Some("android_settings_fragment"),
         (NativeUiPlatform::Android, "settings_dropdown") => Some("android_spinner_or_menu"),
@@ -931,8 +933,8 @@ mod tests {
             .iter()
             .find(|report| report.platform == NativeUiPlatform::Macos)
             .expect("macOS capability readiness should be included");
-        assert_eq!(macos.runtime_implementation_count(), 2);
-        assert_eq!(macos.contract_only_count, 16);
+        assert_eq!(macos.runtime_implementation_count(), 3);
+        assert_eq!(macos.contract_only_count, 15);
         assert!(context
             .readiness
             .declaration_audit_surface_names

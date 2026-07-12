@@ -56,6 +56,19 @@ proof before the tray surface is system-complete; the Win32 host exposes the
 `TrackPopupMenu` selection route, but the auto-closing smoke runner does not
 block waiting for manual selection.
 
+The native window-menu smoke path is:
+
+```powershell
+cargo run --example native_smoke_run -- windows --menu
+```
+
+On Windows this installs an owned `HMENU` plus `HACCEL`, preserves nested and
+disabled item state, and records typed window-menu command routing in
+`interaction.json`. The same `MenuSpec` uses `Primary+O`/`Primary+S`, which the
+AppKit and GTK4 menu services lower to their platform-native accelerator forms.
+Target interaction proof for those services still requires real macOS/Linux
+hosts.
+
 Windows can also attach a typed Rust view draw plan and route a Win32 native
 click message during the smoke run:
 

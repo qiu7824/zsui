@@ -15,7 +15,7 @@ use zsui::NativeViewKey;
 use zsui::{button, column, text, CommandId, Point, UiCommand, WidgetId};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
-    write_native_host_smoke_artifacts_with_interaction_to, Command,
+    write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
     NativeHostSmokeInteractionReport, NativeUiPlatform, NativeWindowBuilder,
     NativeWindowSmokeRunOptions, TraySpec,
 };
@@ -31,6 +31,8 @@ fn main() -> ExitCode {
         non_flag_args.get(1).map(|arg| arg.as_str()),
         args.iter()
             .any(|arg| arg == "--tray" || arg == "--status-item"),
+        args.iter()
+            .any(|arg| arg == "--menu" || arg == "--window-menu"),
         args.iter().any(|arg| arg == "--view"),
         args.iter()
             .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
@@ -50,6 +52,7 @@ fn run_smoke(
     platform: Option<&str>,
     artifact_root: Option<&str>,
     include_status_item: bool,
+    include_window_menu: bool,
     include_typed_view: bool,
     include_scroll_view: bool,
 ) -> Result<String, String> {
@@ -141,6 +144,11 @@ fn run_smoke(
     }
 
     let builder = native_window("ZSUI Smoke").size(520, 320);
+    let builder = if include_window_menu {
+        builder.menu(smoke_window_menu())
+    } else {
+        builder
+    };
     let builder = if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
@@ -165,6 +173,23 @@ fn run_smoke(
         "artifacts": write_report,
     }))
     .map_err(|err| err.to_string())
+}
+
+fn smoke_window_menu() -> MenuSpec {
+    let mut file = MenuSpec::new();
+    file.items.push(
+        MenuItemSpec::command("Open", Command::custom("zsui.native_smoke.open"))
+            .accelerator("Primary+O"),
+    );
+    file.items.push(
+        MenuItemSpec::command("Save", Command::custom("zsui.native_smoke.save"))
+            .accelerator("Primary+S"),
+    );
+    file.items.push(MenuItemSpec::Separator);
+    file.items.push(
+        MenuItemSpec::command("Disabled", Command::custom("zsui.native_smoke.disabled")).disabled(),
+    );
+    MenuSpec::new().title("ZSUI Smoke").submenu("File", file)
 }
 
 #[cfg(all(feature = "button", feature = "label"))]

@@ -45,12 +45,17 @@ optional dependencies. The
 default `window` umbrella must keep the one-line desktop entry working and rely
 on target-specific dependencies to compile only the active platform backend.
 
-The AppKit and GTK4 backend features provide the first target-native desktop
-service slice through the safe `FileDialogService`. macOS maps open and save
-requests to `NSOpenPanel` and `NSSavePanel`; Linux maps them to GTK4
-`FileChooserNative`. Both remain incomplete native hosts until the shared View
-renderer, input path, menu, clipboard and target smoke evidence are connected.
-The Winit transport is not AppKit or GTK4 completion evidence.
+The AppKit and GTK4 backend features provide target-native desktop service
+slices through safe Rust contracts. macOS maps open/save requests to
+`NSOpenPanel`/`NSSavePanel` and lowers `MenuSpec` into owned
+`NSMenu`/`NSMenuItem` objects. Linux maps dialogs to GTK4 `FileChooserNative`
+and menus to `GMenu`/`SimpleAction`. Both menu paths preserve nested,
+disabled, checked and accelerator state and return typed `Command` values as
+`DesktopEvent::MenuCommand`; native toolkit objects remain private.
+
+These services do not complete either native host. Shared View rendering,
+input, clipboard, host event-loop integration and target smoke evidence remain
+required. The Winit transport is not AppKit or GTK4 completion evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error
@@ -151,6 +156,12 @@ also available through the Win32 command table, and RAII popup-menu creation
 plus cleanup is smoke-recorded. The host also exposes `TrackPopupMenu`
 selection routing. Still add required target smoke artifacts for real user
 popup menu selection before claiming system completion.
+
+Window menus retain their `HMENU` and `HACCEL` resources through RAII. The
+message loop calls `TranslateAcceleratorW` before normal dispatch, so a shared
+`MenuItemSpec::accelerator` routes the same typed `Command` as clicking the
+native menu item. AppKit maps the same accelerator to key equivalents and GTK4
+maps it to application action accelerators.
 
 Each backend should report real support through `HostCapabilities`.
 Use `CapabilityStatus::Partial` when a declaration can be accepted but native

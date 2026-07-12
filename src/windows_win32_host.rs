@@ -53,7 +53,8 @@ use windows_sys::Win32::{
             },
             KeyboardAndMouse::{
                 ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER, TME_LEAVE,
-                TRACKMOUSEEVENT,
+                TRACKMOUSEEVENT, VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_HOME,
+                VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
             },
         },
         Shell::{
@@ -61,25 +62,27 @@ use windows_sys::Win32::{
             NOTIFYICONDATAW,
         },
         WindowsAndMessaging::{
-            AppendMenuW, CreateMenu, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
-            DestroyMenu, DestroyWindow, DispatchMessageW, DrawMenuBar, GetClientRect, GetCursorPos,
-            GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowLongW, GetWindowRect,
-            IsWindow, KillTimer, LoadCursorW, LoadImageW, PostMessageW, PostQuitMessage,
-            RegisterClassExW, SendMessageW, SetForegroundWindow, SetMenu, SetTimer,
-            SetWindowLongPtrW, SetWindowLongW, SetWindowPos, ShowWindow, TrackPopupMenu,
-            TranslateMessage, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-            GWLP_USERDATA, GWL_EXSTYLE, HCURSOR, HICON, HMENU, HTCAPTION, HWND_TOPMOST, ICON_BIG,
-            ICON_SMALL, IDC_ARROW, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MF_CHECKED,
-            MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, SC_MOVE, SM_CXICON, SM_CXSMICON,
-            SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-            SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, TPM_NONOTIFY,
-            TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
-            WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
-            WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-            WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SETTINGCHANGE,
-            WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION,
-            WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX,
-            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            AppendMenuW, CreateAcceleratorTableW, CreateMenu, CreatePopupMenu, CreateWindowExW,
+            DefWindowProcW, DestroyAcceleratorTable, DestroyIcon, DestroyMenu, DestroyWindow,
+            DispatchMessageW, DrawMenuBar, GetClientRect, GetCursorPos, GetMessageW,
+            GetSystemMetrics, GetWindowLongPtrW, GetWindowLongW, GetWindowRect, IsWindow,
+            KillTimer, LoadCursorW, LoadImageW, PostMessageW, PostQuitMessage, RegisterClassExW,
+            SendMessageW, SetForegroundWindow, SetMenu, SetTimer, SetWindowLongPtrW,
+            SetWindowLongW, SetWindowPos, ShowWindow, TrackPopupMenu, TranslateAcceleratorW,
+            TranslateMessage, ACCEL, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW,
+            CW_USEDEFAULT, FALT, FCONTROL, FSHIFT, FVIRTKEY, GWLP_USERDATA, GWL_EXSTYLE, HACCEL,
+            HCURSOR, HICON, HMENU, HTCAPTION, HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW,
+            IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MF_CHECKED, MF_GRAYED, MF_POPUP,
+            MF_SEPARATOR, MF_STRING, MSG, SC_MOVE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON,
+            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
+            SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+            WM_APP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND,
+            WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
+            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
+            WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED,
+            WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_NOACTIVATE,
+            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED,
+            WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -259,6 +262,12 @@ pub struct WindowsWin32MessageLoop;
 
 impl WindowsWin32MessageLoop {
     pub fn run() -> WindowsWin32MessageLoopResult {
+        Self::run_with_windows(&[])
+    }
+
+    pub fn run_with_windows(
+        windows: &[WindowsWin32OwnedMainWindowHandles],
+    ) -> WindowsWin32MessageLoopResult {
         let mut msg: MSG = unsafe { zeroed() };
         loop {
             let code = unsafe { GetMessageW(&mut msg, null_mut(), 0, 0) };
@@ -267,6 +276,12 @@ impl WindowsWin32MessageLoop {
             }
             if code == 0 {
                 return WindowsWin32MessageLoopResult::Quit(msg.wParam as i32);
+            }
+            if windows
+                .iter()
+                .any(|window| window.translate_accelerator(&msg))
+            {
+                continue;
             }
             unsafe {
                 TranslateMessage(&msg);
@@ -435,6 +450,12 @@ impl WindowsWin32OwnedMainWindowHandles {
 
     pub fn set_main_owned_menu(&mut self, menu: WindowsWin32OwnedWindowMenu) {
         self.window_menu = Some(menu);
+    }
+
+    pub fn translate_accelerator(&self, message: &MSG) -> bool {
+        self.window_menu
+            .as_ref()
+            .is_some_and(|menu| menu.translate_accelerator(message))
     }
 
     pub fn into_handles(mut self) -> NativeMainWindowHandles<HWND> {
@@ -618,6 +639,7 @@ pub struct WindowsWin32StatusMenuCommandEntry {
     pub label: String,
     pub command: Command,
     pub enabled: bool,
+    pub accelerator: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -675,6 +697,7 @@ fn collect_status_menu_commands(
                 label,
                 command,
                 enabled,
+                accelerator,
                 ..
             } => {
                 entries.push(WindowsWin32StatusMenuCommandEntry {
@@ -683,6 +706,7 @@ fn collect_status_menu_commands(
                     label: label.clone(),
                     command: command.clone(),
                     enabled: inherited_enabled && *enabled,
+                    accelerator: accelerator.clone(),
                 });
                 *next_id = (*next_id).saturating_add(1);
             }
@@ -779,9 +803,121 @@ impl Drop for WindowsWin32OwnedPopupMenu {
 }
 
 #[derive(Debug)]
+struct WindowsWin32OwnedAcceleratorTable {
+    handle: HACCEL,
+    entry_count: usize,
+}
+
+impl WindowsWin32OwnedAcceleratorTable {
+    fn from_command_table(table: &WindowsWin32StatusMenuCommandTable) -> ZsuiResult<Option<Self>> {
+        let mut entries = Vec::new();
+        for command in table.entries().iter().filter(|entry| entry.enabled) {
+            let Some(accelerator) = command.accelerator.as_deref() else {
+                continue;
+            };
+            let accelerator = crate::native_menu::NativeMenuAccelerator::parse(accelerator)?;
+            let cmd = u16::try_from(command.native_id).map_err(|_| {
+                ZsuiError::invalid_spec(
+                    "menu.accelerator",
+                    "Win32 menu command id does not fit an accelerator table",
+                )
+            })?;
+            entries.push(ACCEL {
+                fVirt: windows_accelerator_flags(&accelerator),
+                key: windows_accelerator_virtual_key(&accelerator)?,
+                cmd,
+            });
+        }
+        if entries.is_empty() {
+            return Ok(None);
+        }
+        let handle = unsafe { CreateAcceleratorTableW(entries.as_ptr(), entries.len() as i32) };
+        if handle.is_null() {
+            return Err(ZsuiError::host(
+                "windows_win32_create_accelerator_table",
+                "CreateAcceleratorTableW failed",
+            ));
+        }
+        Ok(Some(Self {
+            handle,
+            entry_count: entries.len(),
+        }))
+    }
+
+    fn translate(&self, window: HWND, message: &MSG) -> bool {
+        unsafe { TranslateAcceleratorW(window, self.handle, message) != 0 }
+    }
+}
+
+fn windows_accelerator_flags(accelerator: &crate::native_menu::NativeMenuAccelerator) -> u8 {
+    let mut flags = FVIRTKEY;
+    if accelerator.primary || accelerator.super_key {
+        flags |= FCONTROL;
+    }
+    if accelerator.alt {
+        flags |= FALT;
+    }
+    if accelerator.shift {
+        flags |= FSHIFT;
+    }
+    flags
+}
+
+fn windows_accelerator_virtual_key(
+    accelerator: &crate::native_menu::NativeMenuAccelerator,
+) -> ZsuiResult<u16> {
+    let key = match accelerator.key.as_str() {
+        "Enter" | "Return" => VK_RETURN,
+        "Tab" => VK_TAB,
+        "Escape" => VK_ESCAPE,
+        "Space" => VK_SPACE,
+        "Backspace" => VK_BACK,
+        "Delete" => VK_DELETE,
+        "Up" => VK_UP,
+        "Down" => VK_DOWN,
+        "Left" => VK_LEFT,
+        "Right" => VK_RIGHT,
+        "Home" => VK_HOME,
+        "End" => VK_END,
+        "PageUp" => VK_PRIOR,
+        "PageDown" => VK_NEXT,
+        key if key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric() => {
+            key.as_bytes()[0] as u16
+        }
+        key if key.starts_with('F') => {
+            let number = key[1..].parse::<u16>().map_err(|_| {
+                ZsuiError::invalid_spec(
+                    "menu.accelerator",
+                    format!("unsupported Win32 accelerator key `{key}`"),
+                )
+            })?;
+            VK_F1 + number - 1
+        }
+        key => {
+            return Err(ZsuiError::invalid_spec(
+                "menu.accelerator",
+                format!("unsupported Win32 accelerator key `{key}`"),
+            ));
+        }
+    };
+    Ok(key)
+}
+
+impl Drop for WindowsWin32OwnedAcceleratorTable {
+    fn drop(&mut self) {
+        if !self.handle.is_null() {
+            unsafe {
+                DestroyAcceleratorTable(self.handle);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct WindowsWin32OwnedWindowMenu {
     owner: HWND,
     menu: HMENU,
+    accelerator_table: Option<WindowsWin32OwnedAcceleratorTable>,
     active: bool,
 }
 
@@ -794,6 +930,8 @@ impl WindowsWin32OwnedWindowMenu {
             ));
         }
         let command_table = WindowsWin32StatusMenuCommandTable::from_menu(menu);
+        let accelerator_table =
+            WindowsWin32OwnedAcceleratorTable::from_command_table(&command_table)?;
         let handle = create_empty_window_menu()?;
         let mut command_index = 0;
         if let Err(err) =
@@ -820,12 +958,28 @@ impl WindowsWin32OwnedWindowMenu {
         Ok(Self {
             owner,
             menu: handle,
+            accelerator_table,
             active: true,
         })
     }
 
     pub const fn handle(&self) -> HMENU {
         self.menu
+    }
+
+    pub fn accelerator_count(&self) -> usize {
+        self.accelerator_table
+            .as_ref()
+            .map(|table| table.entry_count)
+            .unwrap_or(0)
+    }
+
+    fn translate_accelerator(&self, message: &MSG) -> bool {
+        self.active
+            && self
+                .accelerator_table
+                .as_ref()
+                .is_some_and(|table| table.translate(self.owner, message))
     }
 
     pub fn detach_and_destroy(mut self) -> bool {
@@ -1128,7 +1282,12 @@ fn append_status_popup_menu_items(
 ) -> ZsuiResult<()> {
     for item in &menu.items {
         match item {
-            MenuItemSpec::Command { label, checked, .. } => {
+            MenuItemSpec::Command {
+                label,
+                checked,
+                accelerator,
+                ..
+            } => {
                 let entry = command_table.entries().get(*command_index).ok_or_else(|| {
                     ZsuiError::host(
                         "windows_win32_status_popup_menu",
@@ -1136,7 +1295,11 @@ fn append_status_popup_menu_items(
                     )
                 })?;
                 *command_index += 1;
-                let label = wide_null(label);
+                let display_label = accelerator
+                    .as_deref()
+                    .map(|accelerator| format!("{label}\t{accelerator}"))
+                    .unwrap_or_else(|| label.clone());
+                let label = wide_null(&display_label);
                 let mut flags = MF_STRING;
                 if !entry.enabled {
                     flags |= MF_GRAYED;
@@ -2856,7 +3019,7 @@ pub fn run_windows_win32_native_window_event_loop_with_routes_and_status_items(
         }
         _status_item_host = Some(host);
     }
-    match WindowsWin32MessageLoop::run() {
+    match WindowsWin32MessageLoop::run_with_windows(&_handles) {
         WindowsWin32MessageLoopResult::Quit(_) => Ok(()),
         WindowsWin32MessageLoopResult::Failed => Err(ZsuiError::host(
             "windows_win32_message_loop",
@@ -4620,6 +4783,26 @@ mod tests {
             table.resolve_native_command_id(ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID + 99),
             NativeStatusMenuCommandResult::NotFound
         );
+    }
+
+    #[test]
+    fn owned_accelerator_table_uses_typed_menu_commands_and_raii() {
+        let mut menu = MenuSpec::new();
+        menu.items.push(
+            MenuItemSpec::command("Open", Command::custom("file.open")).accelerator("Ctrl+O"),
+        );
+        menu.items.push(
+            MenuItemSpec::command("Save As", Command::custom("file.save_as"))
+                .accelerator("Ctrl+Shift+S"),
+        );
+        let table = WindowsWin32StatusMenuCommandTable::from_menu(&menu);
+        let accelerators = WindowsWin32OwnedAcceleratorTable::from_command_table(&table)
+            .expect("valid Win32 accelerators")
+            .expect("accelerator table should be created");
+
+        assert!(std::mem::needs_drop::<WindowsWin32OwnedAcceleratorTable>());
+        assert_eq!(accelerators.entry_count, 2);
+        assert_eq!(table.entries()[0].accelerator.as_deref(), Some("Ctrl+O"));
     }
 
     #[test]

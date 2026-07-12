@@ -240,8 +240,10 @@ Optional dependencies must stay behind explicit feature gates: `clipboard`
 enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
 `desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
 `macos-appkit` enables optional `objc2` AppKit bindings, and `linux-gtk`
-enables optional GTK4 bindings. Platform-native file dialogs therefore do not
-enter builds that omit their backend feature.
+enables optional GTK4 bindings. Platform-native file dialogs and menu adapters
+therefore do not enter builds that omit their backend feature. Menu adapters
+lower the shared `MenuSpec` into backend objects while keeping `NSMenu`,
+`GMenu` and callback targets out of the public application API.
 Advanced controls should be gated by
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control
