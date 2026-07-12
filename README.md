@@ -213,9 +213,10 @@ cargo run --example desktop_native_showcase --features full
 ```
 
 同一个 `State`、`Msg`、`view` 和 `update` 包含左侧导航、命令栏、单行/多行
-输入、列表滚动、主题开关与原生菜单声明。Windows 已有真实 Win32 smoke 截图；
+输入、列表滚动、主题开关与原生菜单声明。统一入口现在分别进入 Win32、
+`NSApplication` 和 `GtkApplication` 原生事件循环。Windows 已有真实 smoke 截图；
 AppKit 与 GTK4 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
-完成后端和目标机证据，当前不会把 Winit 路径标记成二者已完成。
+完成绘制、输入、截图和目标机交互证据。
 
 ### 十万行分页虚拟列表
 
@@ -259,8 +260,8 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 | 平台 | 当前状态 | 说明 |
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
-| macOS | 第一阶段桌面路径 | 当前通过 Winit 启动；完整 AppKit 绑定与目标机证据仍待完成 |
-| Linux | 第一阶段桌面路径 | 当前通过 Winit 启动；完整 GTK/libadwaita 绑定仍待完成 |
+| macOS | 原生宿主首轮 | 统一入口进入 NSApplication/NSWindow；绘制、输入、截图和目标机证据仍待完成 |
+| Linux | 原生宿主首轮 | 统一入口进入 GtkApplication/ApplicationWindow；绘制、输入、Wayland/X11 截图和交互证据仍待完成 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 | Harmony | 宿主契约 | Ability/FFI 与真实设备运行仍待完成 |
 

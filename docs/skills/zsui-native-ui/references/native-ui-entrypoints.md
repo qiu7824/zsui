@@ -141,9 +141,9 @@ Already reusable at code level:
 - Product-neutral native host contracts for dialogs, file pickers, shell-open,
   clipboard, popup/transient windows, IME, text caret, main/settings windows,
   search controls and runtime startup.
-- Native backend metadata for Windows through the `win32_gdi`
-  runtime, macOS/Linux through the current `winit_desktop` runtime, plus
-  Android and Harmony adapter scaffolds.
+- Native backend metadata for Windows through the `win32_gdi` runtime, macOS
+  through AppKit, Linux through GTK4, plus Android and Harmony adapter
+  scaffolds. `winit_desktop` is retained only as an explicit fallback.
 - Android Activity and Harmony Ability scaffold manifests with bridge entry
   points, lifecycle bindings, permissions and capability mappings.
 - Android/Harmony bridge contracts through `mobile_runtime_bridge_contract()`,

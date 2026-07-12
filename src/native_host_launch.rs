@@ -80,14 +80,15 @@ pub fn native_host_launch_plan_for_platform(
         },
         native_application_type: match platform {
             NativeUiPlatform::Windows => "Win32 message loop with GDI no-flicker paint on Windows",
-            NativeUiPlatform::Macos => "winit desktop event loop on macOS",
-            NativeUiPlatform::Linux => "winit desktop event loop on Linux",
+            NativeUiPlatform::Macos => "NSApplication event loop on macOS",
+            NativeUiPlatform::Linux => "GtkApplication event loop on Linux",
             NativeUiPlatform::Android => "Android Activity host",
             NativeUiPlatform::Harmony => "Harmony Ability host",
         },
         native_window_type: match platform {
             NativeUiPlatform::Windows => "Win32 HWND main/quick windows",
-            NativeUiPlatform::Macos | NativeUiPlatform::Linux => "winit::window::Window",
+            NativeUiPlatform::Macos => "AppKit NSWindow",
+            NativeUiPlatform::Linux => "GTK4 ApplicationWindow",
             NativeUiPlatform::Android => "android.app.Activity surface",
             NativeUiPlatform::Harmony => "OpenHarmony Ability window",
         },
@@ -96,7 +97,7 @@ pub fn native_host_launch_plan_for_platform(
         mode: match platform {
             NativeUiPlatform::Windows => NativeHostLaunchMode::RealNativeHost,
             NativeUiPlatform::Macos | NativeUiPlatform::Linux => {
-                NativeHostLaunchMode::DesktopTransportFallback
+                NativeHostLaunchMode::RealNativeHost
             }
             NativeUiPlatform::Android | NativeUiPlatform::Harmony => {
                 NativeHostLaunchMode::ContractScaffoldFallback
@@ -142,15 +143,17 @@ mod tests {
     }
 
     #[test]
-    fn winit_desktop_transport_is_not_reported_as_appkit_or_gtk_completion() {
+    fn appkit_and_gtk_launch_plans_enter_real_native_event_loops() {
         let macos = native_host_launch_plan_for_platform(NativeUiPlatform::Macos)
             .expect("macOS launch plan should exist");
         let linux = native_host_launch_plan_for_platform(NativeUiPlatform::Linux)
             .expect("Linux launch plan should exist");
 
-        assert_eq!(macos.mode, NativeHostLaunchMode::DesktopTransportFallback);
-        assert_eq!(linux.mode_name(), "desktop_transport_fallback");
-        assert!(!macos.enters_real_event_loop());
-        assert!(!linux.enters_real_event_loop());
+        assert_eq!(macos.toolkit, NativeUiToolkit::AppKit);
+        assert_eq!(linux.toolkit, NativeUiToolkit::Gtk4Libadwaita);
+        assert_eq!(macos.mode, NativeHostLaunchMode::RealNativeHost);
+        assert_eq!(linux.mode_name(), "real_native_host");
+        assert!(macos.enters_real_event_loop());
+        assert!(linux.enters_real_event_loop());
     }
 }

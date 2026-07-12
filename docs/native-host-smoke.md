@@ -37,9 +37,11 @@ cargo run --example native_smoke_run -- windows
 On Windows this opens the Win32/GDI native window path, closes it
 automatically, then rewrites `interaction.json` and `launch.log` with the
 observed window lifecycle. It also captures `window.png` into the artifact
-directory through the direct Win32 `HWND`. macOS and Linux still use the
-`winit_desktop` first-pass runtime and need platform screenshot capture support
-before their target-smoke proof is complete.
+directory through the direct Win32 `HWND`. macOS now enters `NSApplication`
+with owned `NSWindow` objects, and Linux enters `GtkApplication` with owned
+`ApplicationWindow` objects. Both direct native smoke paths auto-close and
+record lifecycle evidence, but still need target screenshot capture before
+target-smoke proof is complete.
 
 Windows can also request a real status item during the same smoke run:
 
@@ -123,8 +125,9 @@ Required target-smoke artifacts:
 - `capabilities.json`: observed host capability report.
 - `agent-context.json`: matching `zsui_agent_context_json()` output.
 
-Windows currently uses the `win32_gdi` runtime and is ready to attempt
-target smoke. macOS and Linux use the `winit_desktop` first-pass runtime.
+Windows uses the `win32_gdi` runtime, macOS uses AppKit, and Linux uses GTK4.
+All three enter their target-native event loop; only Windows currently captures
+the required screenshot automatically.
 Android and Harmony are still scaffold/bridge-contract plans until real
 Activity/Ability runtime hosts exist. Their current device-smoke contract can
 be inspected with:

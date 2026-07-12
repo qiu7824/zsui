@@ -94,6 +94,7 @@
         "docs/paged-virtual-list.md"
       ],
       "optional": [
+        "src/native.rs",
         "src/windows_win32_host.rs",
         "Cargo.toml"
       ],

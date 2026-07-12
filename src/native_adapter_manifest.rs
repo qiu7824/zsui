@@ -52,9 +52,10 @@ pub const SUPPORTED_NATIVE_UI_PLATFORMS: [NativeUiPlatform; 5] = [
     NativeUiPlatform::Harmony,
 ];
 
-pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 4] = [
+pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 5] = [
     NativeUiToolkit::Win32Gdi,
-    NativeUiToolkit::WinitDesktop,
+    NativeUiToolkit::AppKit,
+    NativeUiToolkit::Gtk4Libadwaita,
     NativeUiToolkit::AndroidActivity,
     NativeUiToolkit::HarmonyAbility,
 ];
@@ -121,17 +122,17 @@ pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Macos,
-        toolkit: NativeUiToolkit::WinitDesktop,
+        toolkit: NativeUiToolkit::AppKit,
         status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "DesktopWinitNativeWindowBoundary",
-        module_path: "src/native.rs",
+        adapter_boundary: "MacosAppKitWindowService",
+        module_path: "src/macos_appkit_services.rs",
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Linux,
-        toolkit: NativeUiToolkit::WinitDesktop,
+        toolkit: NativeUiToolkit::Gtk4Libadwaita,
         status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "DesktopWinitNativeWindowBoundary",
-        module_path: "src/native.rs",
+        adapter_boundary: "LinuxGtkWindowService",
+        module_path: "src/linux_gtk_services.rs",
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Android,
@@ -429,7 +430,7 @@ fn native_ui_capability_readiness(
             MainWindow => (
                 FirstPass,
                 "src/macos_appkit_services.rs",
-                "NSApplication/NSWindow creation, visibility, redraw and owned close are connected through WindowService; event-loop integration and target proof are pending",
+                "NSApplication/NSWindow creation, visibility, redraw, owned close and the unified event loop are connected; rendering, input and target proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -456,7 +457,7 @@ fn native_ui_capability_readiness(
             MainWindow => (
                 FirstPass,
                 "src/linux_gtk_services.rs",
-                "GtkApplication/ApplicationWindow creation, visibility, redraw and owned close are connected through WindowService; event-loop integration and Wayland/X11 proof are pending",
+                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close and the unified event loop are connected; rendering, input and Wayland/X11 proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -760,6 +761,12 @@ mod tests {
         assert_eq!(windows.status, NativeUiBackendStatus::NativeHostFirstPass);
         assert_eq!(windows.platform_name(), "windows");
         assert_eq!(windows.toolkit_name(), "win32_gdi");
+        let macos = native_ui_backend_for_platform(NativeUiPlatform::Macos)
+            .expect("macOS backend should be declared");
+        let linux = native_ui_backend_for_platform(NativeUiPlatform::Linux)
+            .expect("Linux backend should be declared");
+        assert_eq!(macos.toolkit, NativeUiToolkit::AppKit);
+        assert_eq!(linux.toolkit, NativeUiToolkit::Gtk4Libadwaita);
         let android = native_ui_backend_for_platform(NativeUiPlatform::Android)
             .expect("android backend should be declared");
         assert_eq!(android.toolkit, NativeUiToolkit::AndroidActivity);
@@ -777,7 +784,7 @@ mod tests {
         );
 
         assert_eq!(SUPPORTED_NATIVE_UI_PLATFORMS.len(), 5);
-        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 4);
+        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 5);
         assert_eq!(REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES.len(), 18);
     }
 

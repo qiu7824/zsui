@@ -1718,7 +1718,11 @@ fn menu_entry_count(menu: &MenuSpec) -> usize {
         .sum()
 }
 
-#[cfg(all(windows, feature = "windows-win32"))]
+#[cfg(any(
+    all(windows, feature = "windows-win32"),
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
 fn menu_command_count(menu: &MenuSpec) -> usize {
     menu.items
         .iter()
@@ -1981,10 +1985,50 @@ fn run_native_window_event_loop(
     ))
 }
 
+#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+fn run_native_window_event_loop(
+    windows: Vec<WindowSpec>,
+    trays: Vec<TraySpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtimes: Vec<NativeViewInputRuntime>,
+    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
+) -> ZsuiResult<()> {
+    if !trays.is_empty() {
+        return Err(ZsuiError::unsupported(
+            "native_window_status_item",
+            "the AppKit NSStatusItem runtime is not connected to the unified event loop",
+        ));
+    }
+    crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(&windows, None)
+        .map(|_| ())
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+fn run_native_window_event_loop(
+    windows: Vec<WindowSpec>,
+    trays: Vec<TraySpec>,
+    _draw_plans: Vec<Option<NativeDrawPlan>>,
+    _view_runtimes: Vec<NativeViewInputRuntime>,
+    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
+) -> ZsuiResult<()> {
+    if !trays.is_empty() {
+        return Err(ZsuiError::unsupported(
+            "native_window_status_item",
+            "the GTK4 status-item runtime is not connected to the unified event loop",
+        ));
+    }
+    crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(&windows, None).map(|_| ())
+}
+
 #[cfg(any(
-    all(feature = "desktop-winit", target_os = "macos"),
     all(
         feature = "desktop-winit",
+        not(feature = "macos-appkit"),
+        target_os = "macos"
+    ),
+    all(
+        feature = "desktop-winit",
+        not(feature = "linux-gtk"),
         target_os = "linux",
         not(target_env = "ohos")
     )
@@ -2402,9 +2446,107 @@ fn run_native_window_smoke_event_loop(
 }
 
 #[cfg(any(
-    all(feature = "desktop-winit", target_os = "macos"),
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+fn run_native_window_smoke_event_loop(
+    windows: Vec<WindowSpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
+    mut view_runtime: NativeViewInputRuntime,
+    _shell_runtime: Option<ZsShellRuntime>,
+    options: NativeWindowSmokeRunOptions,
+) -> ZsuiResult<NativeWindowSmokeRunReport> {
+    if windows.is_empty() {
+        return Ok(NativeWindowSmokeRunReport::empty(options));
+    }
+    let mut report = NativeWindowSmokeRunReport {
+        requested_window_count: windows.len(),
+        window_menu_requested_count: windows
+            .iter()
+            .filter(|window| window.menu.is_some())
+            .count(),
+        window_menu_native_command_count: windows
+            .iter()
+            .filter_map(|window| window.menu.as_ref())
+            .map(menu_command_count)
+            .sum(),
+        auto_close_after_ms: options.auto_close_after_ms,
+        ..NativeWindowSmokeRunReport::empty(options.clone())
+    };
+    record_draw_plan_smoke(&mut report, &draw_plans);
+    record_native_view_input_smoke(&mut report, &mut view_runtime, &options);
+
+    #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+    let created = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
+        &windows,
+        Some(options.auto_close_after_ms),
+    )?;
+    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+    let created = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
+        &windows,
+        Some(options.auto_close_after_ms),
+    )?;
+
+    report.created_window_count = created;
+    report.window_menu_attached_count = report.window_menu_requested_count.min(created);
+    report.close_requested_count = created;
+    report.exited_by_auto_close = true;
+    report.events.extend(
+        windows
+            .iter()
+            .take(created)
+            .map(|spec| format!("window_created:{}", spec.title)),
+    );
+    report.events.push("auto_close_elapsed".to_string());
+
+    if options.screenshot_file.is_some() {
+        report.screenshot_error = Some(
+            "native screenshot capture still requires target AppKit/GTK4 integration".to_string(),
+        );
+        report.events.push("screenshot_error".to_string());
+    }
+    if options.status_item.is_some() {
+        report.status_item_error = Some(
+            "status-item smoke is not connected to the AppKit/GTK4 unified event loop".to_string(),
+        );
+        report.events.push("status_item_unsupported".to_string());
+    }
+    if options.require_visible_window && !report.visible_window_was_created() {
+        return Err(ZsuiError::host(
+            "native_window_smoke",
+            "no visible native window was created",
+        ));
+    }
+    if options.require_screenshot {
+        return Err(ZsuiError::host(
+            "native_window_smoke_screenshot",
+            report
+                .screenshot_error
+                .clone()
+                .unwrap_or_else(|| "window screenshot was not captured".to_string()),
+        ));
+    }
+    if options.require_status_item {
+        return Err(ZsuiError::unsupported(
+            "native_window_smoke_status_item",
+            report
+                .status_item_error
+                .clone()
+                .unwrap_or_else(|| "status item was not created".to_string()),
+        ));
+    }
+    Ok(report)
+}
+
+#[cfg(any(
     all(
         feature = "desktop-winit",
+        not(feature = "macos-appkit"),
+        target_os = "macos"
+    ),
+    all(
+        feature = "desktop-winit",
+        not(feature = "linux-gtk"),
         target_os = "linux",
         not(target_env = "ohos")
     )
@@ -2611,8 +2753,12 @@ fn run_native_window_smoke_event_loop(
     not(windows),
     feature = "desktop-winit",
     any(
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos"))
+        all(target_os = "macos", not(feature = "macos-appkit")),
+        all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            not(feature = "linux-gtk")
+        )
     )
 ))]
 fn capture_first_native_window_png(
@@ -2911,10 +3057,15 @@ fn write_rgba_png(
         target_os = "macos",
         all(target_os = "linux", not(target_env = "ohos"))
     )),
-    all(target_os = "macos", not(feature = "desktop-winit")),
+    all(
+        target_os = "macos",
+        not(feature = "macos-appkit"),
+        not(feature = "desktop-winit")
+    ),
     all(
         target_os = "linux",
         not(target_env = "ohos"),
+        not(feature = "linux-gtk"),
         not(feature = "desktop-winit")
     )
 ))]
@@ -2937,10 +3088,15 @@ fn run_native_window_event_loop(
         target_os = "macos",
         all(target_os = "linux", not(target_env = "ohos"))
     )),
-    all(target_os = "macos", not(feature = "desktop-winit")),
+    all(
+        target_os = "macos",
+        not(feature = "macos-appkit"),
+        not(feature = "desktop-winit")
+    ),
     all(
         target_os = "linux",
         not(target_env = "ohos"),
+        not(feature = "linux-gtk"),
         not(feature = "desktop-winit")
     )
 ))]

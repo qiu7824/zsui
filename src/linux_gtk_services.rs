@@ -1,5 +1,8 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::time::Duration;
 
 use gtk::gio;
 use gtk::glib::MainContext;
@@ -12,9 +15,92 @@ use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, SaveFileDialogSpec,
-    WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
+    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, MenuService,
+    SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
+
+struct LinuxGtkRuntimeState {
+    _windows: LinuxGtkWindowService,
+    _menu: Option<crate::linux_gtk_menu::LinuxGtkMenuService>,
+}
+
+pub(crate) fn run_linux_gtk_native_window_event_loop(
+    specs: &[WindowSpec],
+    auto_close_after_ms: Option<u64>,
+) -> ZsuiResult<usize> {
+    if specs.is_empty() {
+        return Ok(0);
+    }
+    let application = gtk::Application::builder()
+        .application_id("io.github.qiu7824.zsui")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    let specs = Rc::new(specs.to_vec());
+    let state = Rc::new(RefCell::new(None::<LinuxGtkRuntimeState>));
+    let startup_error = Rc::new(RefCell::new(None::<String>));
+    let created_count = Rc::new(RefCell::new(0_usize));
+
+    application.connect_activate({
+        let specs = Rc::clone(&specs);
+        let state = Rc::clone(&state);
+        let startup_error = Rc::clone(&startup_error);
+        let created_count = Rc::clone(&created_count);
+        move |application| {
+            if state.borrow().is_some() {
+                return;
+            }
+            let mut windows = LinuxGtkWindowService::from_application(application.clone());
+            let mut ids = Vec::with_capacity(specs.len());
+            for spec in specs.iter() {
+                match windows.create_window(spec) {
+                    Ok(id) => ids.push(id),
+                    Err(error) => {
+                        *startup_error.borrow_mut() = Some(error.to_string());
+                        application.quit();
+                        return;
+                    }
+                }
+            }
+
+            let mut menu =
+                crate::linux_gtk_menu::LinuxGtkMenuService::from_application(application.clone());
+            let menu = if let Some((window, menu_spec)) = ids
+                .first()
+                .copied()
+                .zip(specs.first().and_then(|spec| spec.menu.as_ref()))
+            {
+                if let Err(error) = menu.set_window_menu(window, Some(menu_spec)) {
+                    *startup_error.borrow_mut() = Some(error.to_string());
+                    application.quit();
+                    return;
+                }
+                Some(menu)
+            } else {
+                None
+            };
+            *created_count.borrow_mut() = ids.len();
+            *state.borrow_mut() = Some(LinuxGtkRuntimeState {
+                _windows: windows,
+                _menu: menu,
+            });
+
+            if let Some(delay) = auto_close_after_ms {
+                let application = application.clone();
+                gtk::glib::timeout_add_local_once(Duration::from_millis(delay.max(1)), move || {
+                    application.quit()
+                });
+            }
+        }
+    });
+
+    application.run();
+    state.borrow_mut().take();
+    if let Some(error) = startup_error.borrow_mut().take() {
+        return Err(ZsuiError::host("linux_gtk_event_loop", error));
+    }
+    let created_count = *created_count.borrow();
+    Ok(created_count)
+}
 
 #[derive(Debug)]
 pub struct LinuxGtkWindowService {

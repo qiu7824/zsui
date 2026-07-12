@@ -60,10 +60,11 @@ images and files remain explicitly unsupported until their native formats are
 implemented and tested.
 
 These services do not complete either native host. The unified
-`native_window(...).run()` path still uses its Winit transport on macOS/Linux;
-shared View rendering, input, native event-loop integration and target smoke
-evidence remain required.
-The Winit transport is not AppKit or GTK4 completion evidence.
+`native_window(...).run()` path now enters `NSApplication` on macOS and
+`GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
+fallback transport. Shared View rendering, input, target screenshot capture
+and interaction evidence remain required; entering a native event loop alone
+is not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

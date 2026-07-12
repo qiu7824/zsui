@@ -320,7 +320,7 @@ impl HostCapabilities {
         let mut capabilities = Self::macos_scaffold();
         if cfg!(feature = "macos-appkit") {
             capabilities.windows = CapabilitySupport::partial(
-                "NSApplication/NSWindow creation and owned lifecycle are connected; AppKit event-loop integration and target proof are pending",
+                "NSApplication/NSWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
             );
             capabilities.window_resizing = CapabilitySupport::partial(
                 "NSWindow resizable and minimum-size declarations are connected; resize event routing is pending",
@@ -409,7 +409,7 @@ impl HostCapabilities {
         let mut capabilities = Self::linux_scaffold();
         if cfg!(feature = "linux-gtk") {
             capabilities.windows = CapabilitySupport::partial(
-                "GtkApplication/ApplicationWindow creation and owned lifecycle are connected; GTK event-loop integration and target proof are pending",
+                "GtkApplication/ApplicationWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
             );
             capabilities.window_resizing = CapabilitySupport::partial(
                 "GTK4 resizable and minimum-size declarations are connected; resize event routing is pending",

@@ -229,7 +229,7 @@ impl DesktopCapabilities {
                 DesktopCapability::NativeWindow,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSApplication/NSWindow creation and owned lifecycle are connected; AppKit event-loop integration and target proof are pending",
+                        "NSApplication/NSWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -311,7 +311,7 @@ impl DesktopCapabilities {
                 DesktopCapability::NativeWindow,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GtkApplication/ApplicationWindow creation and owned lifecycle are connected; GTK event-loop integration and target proof are pending",
+                        "GtkApplication/ApplicationWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

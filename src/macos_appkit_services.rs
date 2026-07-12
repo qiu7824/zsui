@@ -1,13 +1,19 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
+use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
+use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSFloatingWindowLevel,
-    NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow,
-    NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType,
+    NSFloatingWindowLevel, NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString,
+    NSSavePanel, NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
-use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
+use objc2_foundation::{
+    NSArray, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSTimer, NSURL,
+};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -15,9 +21,100 @@ use crate::native_file_dialog::{
     native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, SaveFileDialogSpec,
-    WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
+    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, MenuService,
+    SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
+
+struct ZsuiAppKitRuntimeDelegateIvars {
+    open_windows: Cell<usize>,
+}
+
+define_class!(
+    #[unsafe(super = NSObject)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = ZsuiAppKitRuntimeDelegateIvars]
+    struct ZsuiAppKitRuntimeDelegate;
+
+    unsafe impl NSObjectProtocol for ZsuiAppKitRuntimeDelegate {}
+
+    unsafe impl NSApplicationDelegate for ZsuiAppKitRuntimeDelegate {}
+
+    unsafe impl NSWindowDelegate for ZsuiAppKitRuntimeDelegate {
+        #[unsafe(method(windowWillClose:))]
+        fn window_will_close(&self, _notification: &NSNotification) {
+            let remaining = self.ivars().open_windows.get().saturating_sub(1);
+            self.ivars().open_windows.set(remaining);
+            if remaining == 0 {
+                NSApplication::sharedApplication(self.mtm()).stop(None);
+            }
+        }
+    }
+);
+
+impl ZsuiAppKitRuntimeDelegate {
+    fn new(mtm: MainThreadMarker, open_windows: usize) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(ZsuiAppKitRuntimeDelegateIvars {
+            open_windows: Cell::new(open_windows),
+        });
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
+pub(crate) fn run_macos_appkit_native_window_event_loop(
+    specs: &[WindowSpec],
+    auto_close_after_ms: Option<u64>,
+) -> ZsuiResult<usize> {
+    if specs.is_empty() {
+        return Ok(0);
+    }
+    let mtm = appkit_main_thread_marker("macos_native_event_loop")?;
+    let mut window_service = MacosAppKitWindowService::new()?;
+    let mut ids = Vec::with_capacity(specs.len());
+    for spec in specs {
+        ids.push(window_service.create_window(spec)?);
+    }
+
+    let mut menu_service = crate::macos_appkit_menu::MacosAppKitMenuService::new()?;
+    if let Some((window, menu)) = ids
+        .first()
+        .copied()
+        .zip(specs.first().and_then(|spec| spec.menu.as_ref()))
+    {
+        menu_service.set_window_menu(window, Some(menu))?;
+    }
+
+    let delegate = ZsuiAppKitRuntimeDelegate::new(mtm, ids.len());
+    let application = &window_service._application;
+    let application_delegate: &ProtocolObject<dyn NSApplicationDelegate> =
+        ProtocolObject::from_ref(&*delegate);
+    let window_delegate: &ProtocolObject<dyn NSWindowDelegate> =
+        ProtocolObject::from_ref(&*delegate);
+    application.setDelegate(Some(application_delegate));
+    for window in window_service.windows.values() {
+        window.setDelegate(Some(window_delegate));
+    }
+    #[allow(deprecated)]
+    application.activateIgnoringOtherApps(true);
+
+    let timer = auto_close_after_ms.map(|delay| unsafe {
+        NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+            delay.max(1) as f64 / 1_000.0,
+            application.as_ref(),
+            objc2::sel!(stop:),
+            None,
+            false,
+        )
+    });
+    application.run();
+    if let Some(timer) = timer {
+        timer.invalidate();
+    }
+    for window in window_service.windows.values() {
+        window.setDelegate(None);
+    }
+    application.setDelegate(None);
+    Ok(ids.len())
+}
 
 #[derive(Debug)]
 pub struct MacosAppKitWindowService {

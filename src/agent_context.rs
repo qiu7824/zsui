@@ -411,12 +411,14 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 66,
-            status_name: "win32_client_sized_workbench_shell_and_status_popup_ready",
-            source_path: "src/windows_win32_host.rs",
+            percent_complete: 70,
+            status_name: "three_native_event_loops_with_win32_rendering_and_input_lead",
+            source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
-                "AppKit split",
-                "GTK split",
+                "AppKit View renderer and input dispatch",
+                "GTK4 View renderer and input dispatch",
+                "macOS target screenshot and interaction artifacts",
+                "Linux Wayland/X11 screenshot and interaction artifacts",
                 "richer Win32 pointer/IME events",
                 "manual or touch scroll interaction proof",
                 "target smoke artifact for real user popup menu selection",
@@ -1135,7 +1137,8 @@ mod tests {
         assert!(json.contains("crate_split_architecture"));
         assert!(json.contains("platform_api_on_demand"));
         assert!(json.contains("docs/skills/zsui-native-ui/"));
-        assert!(json.contains("winit_desktop"));
+        assert!(json.contains("appkit"));
+        assert!(json.contains("gtk4_libadwaita"));
         assert!(json.contains("android_activity"));
         assert!(json.contains("harmony_ability"));
         assert!(json.contains("zsui_harmony_ability_surface_created"));

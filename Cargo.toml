@@ -30,7 +30,7 @@ windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation
 
 [features]
 default = ["window", "button", "label"]
-window = ["windows-win32", "desktop-winit"]
+window = ["windows-win32", "macos-appkit", "linux-gtk"]
 button = ["widgets-base"]
 label = ["widgets-base"]
 widgets-base = []

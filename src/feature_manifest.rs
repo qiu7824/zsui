@@ -84,8 +84,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Shell,
             true,
             Vec::new(),
-            vec!["windows-win32", "desktop-winit"],
-            "window declarations and the target-native Win32 or Winit desktop host path",
+            vec!["windows-win32", "macos-appkit", "linux-gtk"],
+            "window declarations and target-native Win32, AppKit or GTK4 desktop host paths",
         ),
         ZsuiCargoFeature::new(
             "button",
@@ -459,7 +459,10 @@ mod tests {
             .into_iter()
             .find(|feature| feature.name == "window")
             .expect("window feature should be listed");
-        assert_eq!(window.enables, vec!["windows-win32", "desktop-winit"]);
+        assert_eq!(
+            window.enables,
+            vec!["windows-win32", "macos-appkit", "linux-gtk"]
+        );
     }
 
     #[test]

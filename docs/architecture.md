@@ -246,7 +246,9 @@ feature. Window adapters own `NSWindow`/`ApplicationWindow` instances behind
 strong `WindowId` values; clipboard adapters map `ClipboardData::Text`/`Empty`
 to `NSPasteboard` or `GdkClipboard`; menu adapters lower the shared `MenuSpec`
 into backend objects. Native toolkit objects and callback targets stay out of
-the public application API.
+the public application API. The `window` umbrella selects Win32, AppKit or GTK4
+by target; `desktop-winit` remains an explicit fallback and is not completion
+evidence for either native toolkit.
 Advanced controls should be gated by
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control
