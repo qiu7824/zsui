@@ -68,17 +68,21 @@ and balanced clip commands. AppKit `mouseUp:`/`scrollWheel:` and GTK4
 `GestureClick`/`EventControllerScroll` also convert local coordinates into the
 shared `ViewInteractionPlan`, dispatch typed static/live view messages, hand
 emitted commands to shared executors and replace the draw plan after stateful
-updates. This is first-pass pointer activation and scrolling only: target
-screenshots, resize-driven relayout, accessibility, keyboard and text/IME
-routing remain separate gates.
+updates. The content views are focusable and also route Tab/Shift+Tab, Enter/Space,
+list Up/Down, direct UTF-8 character input, multiline return and deletion.
+This remains first-pass input evidence: target screenshots, resize-driven
+relayout and accessibility remain separate gates.
+Composition/preedit still requires `NSTextInputClient` and `GtkIMContext`, so
+CJK IME remains a distinct incomplete gate.
 
 These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
-fallback transport. Shared View rendering, click activation and scrolling now
-reach all three native window surfaces, but AppKit/GTK4 keyboard, text/IME,
-target screenshot capture and interaction evidence remain required; entering
-or painting a native event loop alone is not system-complete evidence.
+fallback transport. Shared View rendering, click/scroll, keyboard focus,
+activation and direct text editing now reach all three native window surfaces,
+but AppKit/GTK4 IME/preedit, target screenshot capture and interaction evidence
+remain required; entering or painting a native event loop alone is not
+system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

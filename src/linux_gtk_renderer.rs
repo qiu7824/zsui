@@ -29,6 +29,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
     let drawing_area = gtk::DrawingArea::new();
     drawing_area.set_hexpand(true);
     drawing_area.set_vexpand(true);
+    drawing_area.set_focusable(true);
     let plan = Rc::new(RefCell::new(plan));
     let runtime = Rc::new(RefCell::new(runtime));
     drawing_area.set_draw_func({
@@ -55,6 +56,9 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 x: gtk_coordinate(x),
                 y: gtk_coordinate(y),
             });
+            if report.handled {
+                area.grab_focus();
+            }
             if let Some(updated) = report.redraw_plan {
                 *plan.borrow_mut() = updated;
                 area.queue_draw();
@@ -105,6 +109,73 @@ pub(crate) fn install_linux_gtk_draw_plan(
         }
     });
     drawing_area.add_controller(scroll);
+    let keyboard = gtk::EventControllerKey::new();
+    keyboard.connect_key_pressed({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        move |_controller, key, _keycode, modifiers| {
+            let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+            let command_or_control = modifiers.intersects(
+                gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK
+                    | gtk::gdk::ModifierType::META_MASK,
+            );
+            let mut runtime = runtime.borrow_mut();
+            let report = match key {
+                gtk::gdk::Key::Tab => {
+                    runtime.dispatch_key_with_shift(crate::NativeViewKey::Tab, shift)
+                }
+                gtk::gdk::Key::ISO_Left_Tab => {
+                    runtime.dispatch_key_with_shift(crate::NativeViewKey::Tab, true)
+                }
+                gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
+                    let report = runtime.dispatch_key(crate::NativeViewKey::Enter);
+                    if report.handled {
+                        report
+                    } else {
+                        runtime.dispatch_text_input("\r")
+                    }
+                }
+                gtk::gdk::Key::space => {
+                    let report = runtime.dispatch_key(crate::NativeViewKey::Space);
+                    if report.handled || command_or_control {
+                        report
+                    } else {
+                        runtime.dispatch_text_input(" ")
+                    }
+                }
+                gtk::gdk::Key::Up => runtime.dispatch_key(crate::NativeViewKey::Up),
+                gtk::gdk::Key::Down => runtime.dispatch_key(crate::NativeViewKey::Down),
+                gtk::gdk::Key::BackSpace | gtk::gdk::Key::Delete => {
+                    runtime.dispatch_text_input("\u{8}")
+                }
+                _ if !command_or_control => key
+                    .to_unicode()
+                    .filter(|character| !character.is_control())
+                    .map(|character| runtime.dispatch_text_input(&character.to_string()))
+                    .unwrap_or_default(),
+                _ => crate::native::NativeViewInputDispatchReport::default(),
+            };
+            drop(runtime);
+            if let Some(updated) = report.redraw_plan {
+                *plan.borrow_mut() = updated;
+                area.queue_draw();
+            }
+            if report.quit_requested {
+                if let Some(application) = &application {
+                    application.quit();
+                }
+            }
+            if report.handled {
+                gtk::glib::Propagation::Stop
+            } else {
+                gtk::glib::Propagation::Proceed
+            }
+        }
+    });
+    drawing_area.add_controller(keyboard);
     window.set_child(Some(&drawing_area));
 }
 

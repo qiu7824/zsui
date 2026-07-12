@@ -229,11 +229,47 @@ impl DesktopCapabilities {
                 DesktopCapability::NativeWindow,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSApplication/NSWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
+                        "NSApplication/NSWindow creation, owned lifecycle, draw-plan rendering and typed pointer/keyboard routing are connected; target proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
                         "enable macos-appkit to compile the native AppKit window service",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::KeyboardFocus,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSView first-responder focus, Tab traversal and keyboard activation are connected; focus visuals and target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit keyboard focus routing",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::PointerInput,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSView mouse activation and scrollWheel routing are connected; richer pointer gestures and target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit pointer routing",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::TextInput,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "focused direct UTF-8 key input, multiline return and deletion are connected; NSTextInputClient preedit/IME is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit text input routing",
                     )
                 },
             )
@@ -300,7 +336,7 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::NativeIcons,
                 CapabilitySupport::partial(
-                    "SF Symbols are mapped; AppKit image lookup and fallback rendering are not connected",
+                    "SF Symbols are resolved and painted by the AppKit draw sink; target visual proof is pending",
                 ),
             )
     }
@@ -311,11 +347,47 @@ impl DesktopCapabilities {
                 DesktopCapability::NativeWindow,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GtkApplication/ApplicationWindow creation, owned lifecycle and event loop are connected; rendering, input and target proof are pending",
+                        "GtkApplication/ApplicationWindow creation, owned lifecycle, draw-plan rendering and typed pointer/keyboard routing are connected; target proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
                         "enable linux-gtk to compile the native GTK4 window service",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::KeyboardFocus,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK4 focusable DrawingArea, Tab traversal and keyboard activation are connected; focus visuals and target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 keyboard focus routing",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::PointerInput,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK4 GestureClick and EventControllerScroll routing are connected; richer pointer gestures and target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 pointer routing",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::TextInput,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "focused direct UTF-8 key input, multiline return and deletion are connected; GtkIMContext preedit/IME is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 text input routing",
                     )
                 },
             )
@@ -382,7 +454,7 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::NativeIcons,
                 CapabilitySupport::partial(
-                    "GTK symbolic icon names are mapped; GtkIconTheme lookup and fallback rendering are not connected",
+                    "GtkIconTheme lookup and bundled Fluent SVG fallback are painted by the GTK4 draw sink; target visual proof is pending",
                 ),
             )
     }
@@ -825,6 +897,28 @@ mod tests {
                 CapabilityStatus::Unsupported
             })
         );
+        for capability in [
+            DesktopCapability::KeyboardFocus,
+            DesktopCapability::PointerInput,
+            DesktopCapability::TextInput,
+        ] {
+            assert_eq!(
+                macos.support(capability).map(|support| support.status),
+                Some(if cfg!(feature = "macos-appkit") {
+                    CapabilityStatus::Partial
+                } else {
+                    CapabilityStatus::Unsupported
+                })
+            );
+            assert_eq!(
+                linux.support(capability).map(|support| support.status),
+                Some(if cfg!(feature = "linux-gtk") {
+                    CapabilityStatus::Partial
+                } else {
+                    CapabilityStatus::Unsupported
+                })
+            );
+        }
         assert_eq!(
             macos.missing_or_incomplete().len(),
             REQUIRED_DESKTOP_CAPABILITIES.len()

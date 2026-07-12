@@ -435,7 +435,7 @@ fn native_ui_capability_readiness(
             MainWindow => (
                 FirstPass,
                 "src/macos_appkit_services.rs",
-                "NSApplication/NSWindow creation, visibility, redraw, owned close, draw-plan content views and the unified event loop are connected; input and target proof are pending",
+                "NSApplication/NSWindow creation, visibility, redraw, owned close, draw-plan content views and typed pointer/keyboard routing are connected; richer input and target proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -455,7 +455,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView mouse/scroll events hit-test the shared ViewInteractionPlan, dispatch typed live/static view messages and repaint rebuilt draw plans; keyboard, text and target proof are pending",
+                "NSView mouse/scroll/key events hit-test the shared ViewInteractionPlan, route focus, activation and direct UTF-8 editing, then repaint rebuilt draw plans; IME/preedit and target proof are pending",
             ),
             _ => (
                 ContractOnly,
@@ -472,7 +472,7 @@ fn native_ui_capability_readiness(
             MainWindow => (
                 FirstPass,
                 "src/linux_gtk_services.rs",
-                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close, draw-plan child surfaces and the unified event loop are connected; input and Wayland/X11 proof are pending",
+                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close, draw-plan child surfaces and typed pointer/keyboard routing are connected; richer input and Wayland/X11 proof are pending",
             ),
             Clipboard => (
                 FirstPass,
@@ -492,7 +492,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 GestureClick/EventControllerScroll hit-test the shared ViewInteractionPlan, dispatch typed live/static view messages and repaint rebuilt draw plans; keyboard, text and target proof are pending",
+                "GTK4 click/scroll/key controllers hit-test the shared ViewInteractionPlan, route focus, activation and direct UTF-8 editing, then repaint rebuilt draw plans; IME/preedit and target proof are pending",
             ),
             _ => (
                 ContractOnly,

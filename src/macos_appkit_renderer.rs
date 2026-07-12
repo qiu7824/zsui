@@ -4,11 +4,13 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSEvent, NSFont, NSFontAttributeName,
-    NSFontWeightBold, NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold,
-    NSForegroundColorAttributeName, NSGraphicsContext, NSImage, NSLineBreakMode,
-    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStringDrawing,
-    NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTextAlignment, NSView,
+    NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
+    NSColor, NSDeleteCharacter, NSDownArrowFunctionKey, NSEnterCharacter, NSEvent,
+    NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold, NSFontWeightMedium,
+    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGraphicsContext,
+    NSImage, NSLineBreakMode, NSMutableParagraphStyle, NSParagraphStyleAttributeName,
+    NSStringDrawing, NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter,
+    NSTextAlignment, NSUpArrowFunctionKey, NSView,
 };
 use objc2_foundation::{
     NSAttributedStringKey, NSDictionary, NSMutableDictionary, NSObjectProtocol, NSPoint, NSRect,
@@ -41,6 +43,11 @@ define_class!(
             true
         }
 
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool {
+            true
+        }
+
         #[unsafe(method(drawRect:))]
         fn draw_rect(&self, _dirty_rect: NSRect) {
             let system_prefers_dark = appkit_system_prefers_dark(self.mtm());
@@ -61,7 +68,71 @@ define_class!(
                     x: appkit_coordinate(location.x),
                     y: appkit_coordinate(location.y),
                 });
+            if report.handled {
+                if let Some(window) = self.window() {
+                    window.makeFirstResponder(Some(self));
+                }
+            }
             self.apply_input_report(report);
+        }
+
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            let modifiers = event.modifierFlags();
+            let shift = modifiers.contains(NSEventModifierFlags::Shift);
+            let command_or_control = modifiers
+                .intersects(NSEventModifierFlags::Command | NSEventModifierFlags::Control);
+            let unmodified = event
+                .charactersIgnoringModifiers()
+                .map(|text| text.to_string())
+                .unwrap_or_default();
+            let code = unmodified.chars().next().map(u32::from);
+            let mut runtime = self.ivars().runtime.borrow_mut();
+            let report = match code {
+                Some(code) if code == NSTabCharacter => {
+                    runtime.dispatch_key_with_shift(crate::NativeViewKey::Tab, shift)
+                }
+                Some(code)
+                    if code == NSCarriageReturnCharacter || code == NSEnterCharacter =>
+                {
+                    let report = runtime.dispatch_key(crate::NativeViewKey::Enter);
+                    if report.handled {
+                        report
+                    } else {
+                        runtime.dispatch_text_input("\r")
+                    }
+                }
+                Some(code) if code == u32::from(' ') => {
+                    let report = runtime.dispatch_key(crate::NativeViewKey::Space);
+                    if report.handled || command_or_control {
+                        report
+                    } else {
+                        runtime.dispatch_text_input(" ")
+                    }
+                }
+                Some(code) if code == NSUpArrowFunctionKey => {
+                    runtime.dispatch_key(crate::NativeViewKey::Up)
+                }
+                Some(code) if code == NSDownArrowFunctionKey => {
+                    runtime.dispatch_key(crate::NativeViewKey::Down)
+                }
+                Some(code) if code == NSBackspaceCharacter || code == NSDeleteCharacter => {
+                    runtime.dispatch_text_input("\u{8}")
+                }
+                _ if !command_or_control => event
+                    .characters()
+                    .map(|text| runtime.dispatch_text_input(&text.to_string()))
+                    .unwrap_or_default(),
+                _ => crate::native::NativeViewInputDispatchReport::default(),
+            };
+            drop(runtime);
+            if report.handled {
+                self.apply_input_report(report);
+            } else {
+                unsafe {
+                    let _: () = msg_send![super(self), keyDown: event];
+                }
+            }
         }
 
         #[unsafe(method(scrollWheel:))]

@@ -810,6 +810,7 @@ pub(crate) struct NativeViewInputRuntime {
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
+    focused_widget: Option<crate::WidgetId>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
 }
@@ -822,6 +823,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub app_command_count: usize,
     pub ui_command_count: usize,
     pub ui_command_ids: Vec<&'static str>,
+    pub focused_widget: Option<u64>,
     pub redraw_plan: Option<NativeDrawPlan>,
     pub quit_requested: bool,
     pub errors: Vec<String>,
@@ -843,21 +845,24 @@ impl NativeViewInputRuntime {
             interaction_plan,
             ui_command_view,
             live_view,
+            focused_widget: None,
             app_command_executor,
             ui_command_executor,
         }
     }
 
     fn hit_target_count(&self) -> usize {
+        self.current_interaction_plan()
+            .as_ref()
+            .map(ViewInteractionPlan::hit_target_count)
+            .unwrap_or(0)
+    }
+
+    fn current_interaction_plan(&self) -> Option<ViewInteractionPlan> {
         self.live_view
             .as_ref()
-            .map(|runtime| runtime.interaction_plan().hit_target_count())
-            .or_else(|| {
-                self.interaction_plan
-                    .as_ref()
-                    .map(ViewInteractionPlan::hit_target_count)
-            })
-            .unwrap_or(0)
+            .map(SharedLiveViewRuntime::interaction_plan)
+            .or_else(|| self.interaction_plan.clone())
     }
 
     pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewInputDispatchReport {
@@ -865,15 +870,12 @@ impl NativeViewInputRuntime {
             hit_target_count: self.hit_target_count(),
             ..NativeViewInputDispatchReport::default()
         };
-        let interaction_plan = self
-            .live_view
-            .as_ref()
-            .map(SharedLiveViewRuntime::interaction_plan)
-            .or_else(|| self.interaction_plan.clone());
+        let interaction_plan = self.current_interaction_plan();
         let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
             return report;
         };
         report.handled = true;
+        self.focus_target(target, &mut report);
         if matches!(
             target.kind,
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
@@ -881,31 +883,139 @@ impl NativeViewInputRuntime {
             return report;
         }
 
-        let event = if matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
-        ) {
-            let checked = !self
-                .live_view
-                .as_ref()
-                .and_then(|runtime| runtime.widget_checked_value(target.widget))
-                .or_else(|| {
-                    self.ui_command_view
-                        .as_ref()
-                        .and_then(|view| view.widget_checked_value(target.widget))
-                })
-                .unwrap_or(false);
-            ViewEvent::Toggled {
-                widget: target.widget,
-                checked,
-            }
-        } else {
-            ViewEvent::Click {
-                widget: target.widget,
-            }
-        };
+        let event = self.activation_event(target);
 
         self.dispatch_view_event(event, report)
+    }
+
+    pub(crate) fn dispatch_key(&mut self, key: NativeViewKey) -> NativeViewInputDispatchReport {
+        self.dispatch_key_with_shift(key, false)
+    }
+
+    pub(crate) fn dispatch_key_with_shift(
+        &mut self,
+        key: NativeViewKey,
+        shift: bool,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let Some(interaction_plan) = self.current_interaction_plan() else {
+            return report;
+        };
+        if key == NativeViewKey::Tab {
+            let offset = if shift { -1 } else { 1 };
+            if let Some(target) = interaction_plan.next_focus_target(self.focused_widget, offset) {
+                report.handled = true;
+                self.focus_target(target, &mut report);
+            }
+            return report;
+        }
+
+        let Some(widget) = self.focused_widget else {
+            return report;
+        };
+        let Some(target) = interaction_plan.hit_target_for_widget(widget) else {
+            self.focused_widget = None;
+            report.focused_widget = None;
+            return report;
+        };
+
+        #[cfg(feature = "list")]
+        if matches!(key, NativeViewKey::Up | NativeViewKey::Down) {
+            let offset = if key == NativeViewKey::Up { -1 } else { 1 };
+            if let Some((next_widget, _index)) = self.widget_list_relative_widget(widget, offset) {
+                if let Some(next_target) = interaction_plan.hit_target_for_widget(next_widget) {
+                    report.handled = true;
+                    self.focus_target(next_target, &mut report);
+                    return self.dispatch_view_event(
+                        ViewEvent::Click {
+                            widget: next_widget,
+                        },
+                        report,
+                    );
+                }
+            }
+        }
+
+        let activates = matches!(
+            (target.kind, key),
+            (
+                crate::ViewHitTargetKind::Button | crate::ViewHitTargetKind::Unknown,
+                NativeViewKey::Enter | NativeViewKey::Space
+            ) | (
+                crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle,
+                NativeViewKey::Space
+            )
+        );
+        if activates {
+            report.handled = true;
+            return self.dispatch_view_event(self.activation_event(target), report);
+        }
+        report
+    }
+
+    pub(crate) fn dispatch_text_input(&mut self, text: &str) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let Some(widget) = self.focused_widget else {
+            return report;
+        };
+        let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+        else {
+            self.focused_widget = None;
+            report.focused_widget = None;
+            return report;
+        };
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            return report;
+        }
+
+        let mut value = self.widget_text_value(widget).unwrap_or_default();
+        let mut accepted = 0_usize;
+        let mut previous_was_carriage_return = false;
+        for ch in text.chars() {
+            match ch {
+                '\u{8}' | '\u{7f}' => {
+                    if value.pop().is_some() {
+                        accepted += 1;
+                    }
+                }
+                '\r' if target.kind == crate::ViewHitTargetKind::TextEditor => {
+                    value.push('\n');
+                    accepted += 1;
+                    previous_was_carriage_return = true;
+                    continue;
+                }
+                '\n' if target.kind == crate::ViewHitTargetKind::TextEditor
+                    && !previous_was_carriage_return =>
+                {
+                    value.push('\n');
+                    accepted += 1;
+                }
+                ch if !ch.is_control() => {
+                    value.push(ch);
+                    accepted += 1;
+                }
+                _ => {}
+            }
+            previous_was_carriage_return = false;
+        }
+        if accepted == 0 {
+            return report;
+        }
+        report.handled = true;
+        self.dispatch_view_event(ViewEvent::TextChanged { widget, value }, report)
     }
 
     pub(crate) fn dispatch_pointer_scroll(
@@ -946,6 +1056,69 @@ impl NativeViewInputRuntime {
 
         let _ = (target, delta_y);
         report
+    }
+
+    fn focus_target(
+        &mut self,
+        target: crate::ViewHitTarget,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        self.focused_widget = Some(target.widget);
+        report.focused_widget = Some(target.widget.0);
+    }
+
+    fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
+        ) {
+            ViewEvent::Toggled {
+                widget: target.widget,
+                checked: !self.widget_checked_value(target.widget).unwrap_or(false),
+            }
+        } else {
+            ViewEvent::Click {
+                widget: target.widget,
+            }
+        }
+    }
+
+    fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_text_value(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_text_value(widget).map(str::to_string))
+            })
+    }
+
+    fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_checked_value(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_checked_value(widget))
+            })
+    }
+
+    #[cfg(feature = "list")]
+    fn widget_list_relative_widget(
+        &self,
+        widget: crate::WidgetId,
+        offset: isize,
+    ) -> Option<(crate::WidgetId, usize)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_list_relative_widget(widget, offset))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_list_relative_widget(widget, offset))
+            })
     }
 
     fn dispatch_view_event(
@@ -1001,6 +1174,13 @@ impl NativeViewInputRuntime {
                 }
             }
         }
+        if self.focused_widget.is_some_and(|widget| {
+            self.current_interaction_plan()
+                .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
+        }) {
+            self.focused_widget = None;
+        }
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
         report
     }
 
@@ -3580,6 +3760,93 @@ mod tests {
         assert!(report.errors.is_empty());
         assert!(report.redraw_plan.is_some_and(|plan| plan != before));
         assert_eq!(executor.report().executed_count, 1);
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[test]
+    fn native_view_runtime_traverses_focus_and_activates_from_keyboard() {
+        let executor = SharedUiCommandExecutor::new(|command: UiCommand| {
+            Ok(vec![AppEvent::Custom {
+                id: command.id.0.to_string(),
+                payload: None,
+            }])
+        });
+        let first = crate::WidgetId::new(74);
+        let second = crate::WidgetId::new(75);
+        let builder = native_window("Platform Keyboard")
+            .size(360, 220)
+            .ui_command_view(crate::column([
+                crate::button("First")
+                    .id(first)
+                    .on_click(UiCommand::app(crate::CommandId("zsui.keyboard.first"))),
+                crate::button("Second")
+                    .id(second)
+                    .on_click(UiCommand::app(crate::CommandId("zsui.keyboard.second"))),
+            ]))
+            .shared_ui_command_executor(executor.clone());
+        let mut runtime = builder.native_view_input_runtime();
+
+        let first_focus = runtime.dispatch_key(NativeViewKey::Tab);
+        let second_focus = runtime.dispatch_key(NativeViewKey::Tab);
+        let activated = runtime.dispatch_key(NativeViewKey::Enter);
+
+        assert!(first_focus.handled);
+        assert_eq!(first_focus.focused_widget, Some(first.0));
+        assert_eq!(second_focus.focused_widget, Some(second.0));
+        assert!(activated.handled);
+        assert_eq!(activated.ui_command_ids, vec!["zsui.keyboard.second"]);
+        assert_eq!(executor.report().executed_count, 1);
+    }
+
+    #[cfg(all(feature = "label", feature = "textbox"))]
+    #[test]
+    fn native_view_runtime_routes_focused_utf8_text_and_backspace() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(String),
+        }
+        struct State {
+            value: String,
+        }
+
+        let textbox_id = crate::WidgetId::new(76);
+        let builder = native_window("Platform Text").size(360, 220).stateful_view(
+            State {
+                value: String::new(),
+            },
+            move |state| {
+                crate::textbox(&state.value)
+                    .id(textbox_id)
+                    .on_change(Msg::Changed)
+            },
+            |state, message, _cx| match message {
+                Msg::Changed(value) => state.value = value,
+            },
+        );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(textbox_id))
+            .expect("textbox should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let focus = runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        let typed = runtime.dispatch_text_input("中文A");
+        let erased = runtime.dispatch_text_input("\u{8}");
+
+        assert_eq!(focus.focused_widget, Some(textbox_id.0));
+        assert!(typed.handled);
+        assert!(erased.handled);
+        assert!(erased.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::NativeDrawCommand::Text(text) if text.text == "中文"
+                )
+            })
+        }));
     }
 
     #[test]
