@@ -69,13 +69,16 @@ and balanced clip commands. AppKit `mouseUp:`/`scrollWheel:` and GTK4
 shared `ViewInteractionPlan`, dispatch typed static/live view messages, hand
 emitted commands to shared executors and replace the draw plan after stateful
 updates. The content views are focusable and also route Tab/Shift+Tab, Enter/Space,
-list Up/Down, direct UTF-8 character input, multiline return and deletion.
+list Up/Down, direct UTF-8 character input, multiline return/deletion, Unicode
+Left/Right/Home/End caret navigation and Shift range selection.
 AppKit now implements `NSTextInputClient`; GTK4 owns a focused
 `GtkIMMulticontext`. Both keep marked text provisional in the shared input
 runtime, render it without mutating application state, commit UTF-8 through
 the normal typed `TextChanged` path and anchor the native candidate window to
-the focused editor. Precise cursor/selection editing, target CJK interaction
-artifacts and accessibility remain separate gates. During native resize,
+the focused editor. Selection replacement is shared across direct input and IME;
+AppKit reports UTF-16 selected/marked ranges and GTK4 supplies surrounding UTF-8
+text. Shaped-glyph caret geometry, pointer hit testing/drag selection, target CJK
+interaction artifacts and accessibility remain separate gates. During native resize,
 actual `NSView` bounds and GTK4 `DrawingArea` allocations flow back through
 `NativeViewInputRuntime::set_surface(...)`, rebuilding the shared layout, draw
 plan, hit targets and candidate-window geometry before the current frame is
@@ -94,9 +97,9 @@ These services do not complete either native host. The unified
 `native_window(...).run()` path now enters `NSApplication` on macOS and
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
 fallback transport. Shared View rendering, click/scroll, keyboard focus,
-activation, direct text editing and first-pass IME composition now reach all
+activation, Unicode caret/range editing and first-pass IME composition now reach all
 three native window surfaces, but target screenshot capture, CJK interaction
-evidence and precise caret/selection behavior remain required; entering or
+evidence and shaped-glyph caret hit testing/drag selection remain required; entering or
 painting a native event loop alone is not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
@@ -134,7 +137,9 @@ textbox `TextChanged` events when the textbox feature is enabled and checkbox
 clicks into typed `Toggled` events when the checkbox feature is enabled.
 `WM_KEYDOWN` Enter/Space activation is also routed for focused button and
 checkbox/toggle targets, and Tab traverses the ordered `ViewInteractionPlan` focus
-targets. Feature-gated list row selection uses child IDs and dispatches through
+targets. Textbox/TextEditor targets also route Left/Right/Home/End, Shift range
+selection, Unicode replacement, Backspace and forward Delete through the shared
+character-indexed editor state. Feature-gated list row selection uses child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection
 and emit the same typed message. Win32 `WM_MOUSEWHEEL` can target the nearest
 scroll container and emit a typed scroll event. Other backends should add their

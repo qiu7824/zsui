@@ -5,10 +5,11 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
-    NSColor, NSDeleteCharacter, NSDownArrowFunctionKey, NSEnterCharacter, NSEvent,
-    NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold, NSFontWeightMedium,
-    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGraphicsContext,
-    NSImage, NSLineBreakMode, NSMutableParagraphStyle, NSParagraphStyleAttributeName,
+    NSColor, NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey, NSEnterCharacter,
+    NSEvent, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold,
+    NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName,
+    NSGraphicsContext, NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode,
+    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSRightArrowFunctionKey,
     NSStringDrawing, NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter,
     NSTextAlignment, NSTextInputClient, NSUpArrowFunctionKey, NSView,
 };
@@ -87,25 +88,25 @@ define_class!(
 
         #[unsafe(method(selectedRange))]
         fn selected_range(&self) -> NSRange {
-            let committed_utf16 = self
-                .ivars()
-                .runtime
-                .borrow()
-                .focused_text_input_value()
-                .map(|value| value.encode_utf16().count());
-            let Some(committed_utf16) = committed_utf16 else {
+            let runtime = self.ivars().runtime.borrow();
+            let Some((committed, selection)) = runtime.focused_text_input_snapshot() else {
                 return NSRange::new(NSNotFound as usize, 0);
             };
             if let Some((start, end)) = self.ivars().marked_selection.get() {
+                let replacement_start = runtime
+                    .ime_replacement_selection()
+                    .map(|selection| selection.ordered().0)
+                    .unwrap_or(selection.caret);
+                let base = char_index_to_utf16_offset(&committed, replacement_start);
                 let marked = self.ivars().marked_text.borrow();
                 let start = char_index_to_utf16_offset(&marked, start);
                 let end = char_index_to_utf16_offset(&marked, end);
-                NSRange::new(
-                    committed_utf16.saturating_add(start),
-                    end.saturating_sub(start),
-                )
+                NSRange::new(base.saturating_add(start), end.saturating_sub(start))
             } else {
-                NSRange::new(committed_utf16, 0)
+                let (start, end) = selection.ordered();
+                let start = char_index_to_utf16_offset(&committed, start);
+                let end = char_index_to_utf16_offset(&committed, end);
+                NSRange::new(start, end.saturating_sub(start))
             }
         }
 
@@ -115,12 +116,16 @@ define_class!(
             if marked.is_empty() {
                 return NSRange::new(NSNotFound as usize, 0);
             }
-            let start = self
-                .ivars()
-                .runtime
-                .borrow()
-                .focused_text_input_value()
-                .map(|value| value.encode_utf16().count())
+            let runtime = self.ivars().runtime.borrow();
+            let start = runtime
+                .focused_text_input_snapshot()
+                .map(|(value, selection)| {
+                    let replacement_start = runtime
+                        .ime_replacement_selection()
+                        .map(|selection| selection.ordered().0)
+                        .unwrap_or(selection.caret);
+                    char_index_to_utf16_offset(&value, replacement_start)
+                })
                 .unwrap_or(0);
             NSRange::new(start, marked.encode_utf16().count())
         }
@@ -177,8 +182,8 @@ define_class!(
             self.ivars()
                 .runtime
                 .borrow()
-                .focused_text_input_value()
-                .map(|value| value.encode_utf16().count())
+                .focused_text_input_snapshot()
+                .map(|(value, selection)| char_index_to_utf16_offset(&value, selection.caret))
                 .unwrap_or(0)
         }
     }
@@ -300,9 +305,18 @@ define_class!(
                 Some(code) if code == NSDownArrowFunctionKey => {
                     runtime.dispatch_key(crate::NativeViewKey::Down)
                 }
-                Some(code) if code == NSBackspaceCharacter || code == NSDeleteCharacter => {
+                Some(code) if code == NSLeftArrowFunctionKey => runtime
+                    .dispatch_key_with_shift(crate::NativeViewKey::Left, shift),
+                Some(code) if code == NSRightArrowFunctionKey => runtime
+                    .dispatch_key_with_shift(crate::NativeViewKey::Right, shift),
+                Some(code) if code == NSHomeFunctionKey => runtime
+                    .dispatch_key_with_shift(crate::NativeViewKey::Home, shift),
+                Some(code) if code == NSEndFunctionKey => runtime
+                    .dispatch_key_with_shift(crate::NativeViewKey::End, shift),
+                Some(code) if code == NSBackspaceCharacter => {
                     runtime.dispatch_text_input("\u{8}")
                 }
+                Some(code) if code == NSDeleteCharacter => runtime.dispatch_text_input("\u{7f}"),
                 _ if !command_or_control => event
                     .characters()
                     .map(|text| runtime.dispatch_text_input(&text.to_string()))

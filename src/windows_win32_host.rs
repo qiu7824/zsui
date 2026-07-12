@@ -10,7 +10,11 @@ use std::{
     },
 };
 
-use crate::native_input_visuals::decorate_native_focus_ring;
+use crate::native_input_visuals::{decorate_native_focus_ring, decorate_native_text_edit_visuals};
+use crate::native_text_edit::{
+    delete_backward, delete_forward, insert_text, move_selection, NativeTextEditState,
+    NativeTextMovement,
+};
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
@@ -53,9 +57,10 @@ use windows_sys::Win32::{
                 CANDIDATEFORM, CFS_EXCLUDE, GCS_RESULTSTR,
             },
             KeyboardAndMouse::{
-                ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER, TME_LEAVE,
-                TRACKMOUSEEVENT, VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_HOME,
-                VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
+                GetKeyState, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER,
+                TME_LEAVE, TRACKMOUSEEVENT, VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1,
+                VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE,
+                VK_TAB, VK_UP,
             },
         },
         Shell::{
@@ -1769,6 +1774,7 @@ pub struct WindowsWin32ViewInputRoute {
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
+    text_edit: Option<NativeTextEditState>,
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
@@ -1788,6 +1794,7 @@ impl WindowsWin32ViewInputRoute {
             ui_command_view: Some(ui_command_view),
             live_view: None,
             focused_widget: None,
+            text_edit: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1804,6 +1811,7 @@ impl WindowsWin32ViewInputRoute {
             ui_command_view: None,
             live_view: Some(live_view),
             focused_widget: None,
+            text_edit: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1883,56 +1891,81 @@ impl WindowsWin32ViewInputRoute {
         }
 
         let mut value = self.widget_text_value(widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        state.clamp(&value);
         let mut accepted = 0;
+        let mut text_changed = false;
+        let mut selection_changed = false;
         let mut previous_was_carriage_return = false;
         for ch in text.chars() {
-            match ch {
-                '\u{8}' => {
-                    if value.pop().is_some() {
-                        accepted += 1;
-                    }
-                }
+            let edit = match ch {
+                '\u{8}' => delete_backward(&mut value, &mut state.selection),
+                '\u{7f}' => delete_forward(&mut value, &mut state.selection),
                 '\r' if target.kind == crate::ViewHitTargetKind::TextEditor => {
-                    value.push('\n');
-                    accepted += 1;
                     previous_was_carriage_return = true;
-                    continue;
+                    insert_text(&mut value, &mut state.selection, "\n")
                 }
                 '\n' if target.kind == crate::ViewHitTargetKind::TextEditor
                     && !previous_was_carriage_return =>
                 {
-                    value.push('\n');
-                    accepted += 1;
+                    insert_text(&mut value, &mut state.selection, "\n")
                 }
                 ch if !ch.is_control() => {
-                    value.push(ch);
-                    accepted += 1;
+                    let mut buffer = [0_u8; 4];
+                    insert_text(
+                        &mut value,
+                        &mut state.selection,
+                        ch.encode_utf8(&mut buffer),
+                    )
                 }
-                _ => {}
+                _ => Default::default(),
+            };
+            accepted += usize::from(edit.handled);
+            text_changed |= edit.text_changed;
+            selection_changed |= edit.selection_changed;
+            if ch != '\r' {
+                previous_was_carriage_return = false;
             }
-            previous_was_carriage_return = false;
         }
         if accepted == 0 {
             return report;
         }
 
+        self.text_edit = Some(state);
         report.text_input_count = accepted;
-        report.event_count = 1;
+        report.text_selection_change_count = usize::from(selection_changed);
+        report.text_caret = Some(state.selection.caret);
         report
             .events
             .push(format!("win32_view_text_changed:{}", widget.0));
-        self.dispatch_event(crate::ViewEvent::TextChanged { widget, value }, &mut report);
+        if text_changed {
+            report.event_count = 1;
+            self.dispatch_event(crate::ViewEvent::TextChanged { widget, value }, &mut report);
+        } else if selection_changed {
+            self.rebuild_pending_draw_plan();
+        }
         report
     }
 
     fn dispatch_key_down(&mut self, virtual_key: u32) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_key_down_with_shift(virtual_key, false)
+    }
+
+    fn dispatch_key_down_with_shift(
+        &mut self,
+        virtual_key: u32,
+        shift: bool,
+    ) -> WindowsWin32ViewInputDispatchReport {
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             key_down_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         if virtual_key == ZSUI_WIN32_VK_TAB {
-            self.dispatch_focus_traversal(1, &mut report);
+            self.dispatch_focus_traversal(if shift { -1 } else { 1 }, &mut report);
             return report;
         }
 
@@ -1950,6 +1983,48 @@ impl WindowsWin32ViewInputRoute {
             ));
             return report;
         };
+
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            if virtual_key == u32::from(VK_DELETE) {
+                let mut edit = self.dispatch_text_input("\u{7f}");
+                edit.key_down_count = 1;
+                return edit;
+            }
+            let movement = match virtual_key {
+                key if key == u32::from(VK_LEFT) => Some(NativeTextMovement::Left),
+                key if key == u32::from(VK_RIGHT) => Some(NativeTextMovement::Right),
+                key if key == u32::from(VK_HOME) => Some(NativeTextMovement::Home),
+                key if key == u32::from(VK_END) => Some(NativeTextMovement::End),
+                _ => None,
+            };
+            if let Some(movement) = movement {
+                let value = self.widget_text_value(widget).unwrap_or_default();
+                let mut state = self
+                    .text_edit
+                    .filter(|state| state.widget == widget)
+                    .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+                let edit = move_selection(
+                    &value,
+                    &mut state.selection,
+                    movement,
+                    shift,
+                    target.kind == crate::ViewHitTargetKind::TextEditor,
+                );
+                self.text_edit = Some(state);
+                report.text_navigation_count = 1;
+                report.text_selection_change_count = usize::from(edit.selection_changed);
+                report.text_caret = Some(state.selection.caret);
+                report.events.push(format!(
+                    "win32_view_text_navigate:{}:{virtual_key}:{}",
+                    widget.0, state.selection.caret
+                ));
+                self.rebuild_pending_draw_plan();
+                return report;
+            }
+        }
 
         #[cfg(feature = "list")]
         if matches!(virtual_key, ZSUI_WIN32_VK_UP | ZSUI_WIN32_VK_DOWN) {
@@ -2103,12 +2178,16 @@ impl WindowsWin32ViewInputRoute {
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
         if self.focused_widget == Some(target.widget) {
+            self.ensure_text_edit_for_target(target);
             report.focused_widget = Some(target.widget.0);
+            report.text_caret = self.text_edit.map(|state| state.selection.caret);
             return;
         }
         self.focused_widget = Some(target.widget);
+        self.ensure_text_edit_for_target(target);
         report.focus_count = 1;
         report.focused_widget = Some(target.widget.0);
+        report.text_caret = self.text_edit.map(|state| state.selection.caret);
         if self.rebuild_pending_draw_plan() {
             report.focus_visual_count = 1;
             report
@@ -2128,6 +2207,7 @@ impl WindowsWin32ViewInputRoute {
         let Some(widget) = self.focused_widget.take() else {
             return report;
         };
+        self.text_edit = None;
         if self.rebuild_pending_draw_plan() {
             report.focus_visual_count = 1;
         }
@@ -2140,6 +2220,23 @@ impl WindowsWin32ViewInputRoute {
     fn focused_target(&self) -> Option<crate::ViewHitTarget> {
         self.focused_widget
             .and_then(|widget| self.interaction_plan.hit_target_for_widget(widget))
+    }
+
+    fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            self.text_edit = None;
+            return;
+        }
+        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        state.clamp(&value);
+        self.text_edit = Some(state);
     }
 
     fn dispatch_activation(
@@ -2317,6 +2414,17 @@ impl WindowsWin32ViewInputRoute {
         } else {
             return false;
         };
+        if let (Some(target), Some(state)) = (self.focused_target(), self.text_edit) {
+            if let Some(value) = self.widget_text_value(target.widget) {
+                decorate_native_text_edit_visuals(
+                    &mut plan,
+                    target,
+                    &value,
+                    state.selection.clamp(&value),
+                    self.dpi,
+                );
+            }
+        }
         decorate_native_focus_ring(
             &mut plan,
             &self.interaction_plan,
@@ -2417,6 +2525,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub focused_widget: Option<u64>,
     pub focus_traversal_count: usize,
     pub text_input_count: usize,
+    pub text_navigation_count: usize,
+    pub text_selection_change_count: usize,
+    pub text_caret: Option<usize>,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -2457,6 +2568,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.focused_widget = next.focused_widget.or(self.focused_widget);
         self.focus_traversal_count += next.focus_traversal_count;
         self.text_input_count += next.text_input_count;
+        self.text_navigation_count += next.text_navigation_count;
+        self.text_selection_change_count += next.text_selection_change_count;
+        self.text_caret = next.text_caret.or(self.text_caret);
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -2637,6 +2751,16 @@ pub fn dispatch_windows_win32_window_view_key_down(
     virtual_key: u32,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_key_down(virtual_key))
+}
+
+pub fn dispatch_windows_win32_window_view_key_down_with_shift(
+    hwnd: HWND,
+    virtual_key: u32,
+    shift: bool,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_key_down_with_shift(virtual_key, shift)
+    })
 }
 
 pub fn dispatch_windows_win32_window_view_blur(
@@ -3811,7 +3935,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
-        WM_KEYDOWN => match dispatch_windows_win32_window_view_key_down(hwnd, wparam as u32) {
+        WM_KEYDOWN => match dispatch_windows_win32_window_view_key_down_with_shift(
+            hwnd,
+            wparam as u32,
+            (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
+        ) {
             Some(report) if report.unhandled_key_count == 0 => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         },
@@ -4665,6 +4793,53 @@ mod tests {
         assert_eq!(aggregate.text_input_count, 2);
         assert_eq!(aggregate.ui_command_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_replaces_unicode_keyboard_selection() {
+        let widget = crate::WidgetId::new(32);
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox("A中文Z").id(widget),
+        );
+        route.dispatch_click(crate::Point { x: 20, y: 20 });
+        route.dispatch_key_down(u32::from(VK_HOME));
+        route.dispatch_key_down(u32::from(VK_RIGHT));
+        route.dispatch_key_down_with_shift(u32::from(VK_RIGHT), true);
+        let selected = route.dispatch_key_down_with_shift(u32::from(VK_RIGHT), true);
+        let selection_plan = route
+            .take_pending_draw_plan()
+            .expect("selection navigation should rebuild the draw plan");
+
+        let replaced = route.dispatch_text_input("🙂");
+
+        assert_eq!(selected.text_navigation_count, 1);
+        assert_eq!(selected.text_selection_change_count, 1);
+        assert_eq!(selected.text_caret, Some(3));
+        assert!(selection_plan.commands.iter().any(|command| {
+            matches!(
+                command,
+                crate::NativeDrawCommand::FillRect {
+                    fill: crate::NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::Accent,
+                        alpha: 64,
+                    },
+                    ..
+                }
+            )
+        }));
+        assert_eq!(replaced.text_caret, Some(2));
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
     }
 
     #[test]

@@ -174,13 +174,13 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::TextInput,
                 CapabilitySupport::supported(
-                    "single-line and multiline committed text routing is connected",
+                    "single-line and multiline Unicode text routing, logical caret navigation, Shift range selection and replacement are connected",
                 ),
             )
             .with_support(
                 DesktopCapability::InputMethod,
                 CapabilitySupport::partial(
-                    "IMM32 result commit and candidate placement are connected; CJK target proof is pending",
+                    "IMM32 result commit and logical-caret candidate placement are connected; shaped-glyph hit testing, drag selection and CJK target proof are pending",
                 ),
             )
             .with_support(
@@ -267,7 +267,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "focused direct and IME-committed UTF-8 input, multiline return and deletion are connected; precise selection editing and target proof are pending",
+                        "focused UTF-8 input, Unicode caret navigation, Shift range selection/replacement and multiline deletion are connected; shaped-glyph hit testing, drag selection and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -279,7 +279,7 @@ impl DesktopCapabilities {
                 DesktopCapability::InputMethod,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSTextInputClient preedit, commit, marked ranges and candidate-window anchoring are connected; precise caret geometry and CJK target proof are pending",
+                        "NSTextInputClient preedit/commit, UTF-16 selected and marked ranges, replacement selection and logical-caret candidate anchoring are connected; shaped-glyph geometry and CJK target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -397,7 +397,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "focused direct and IME-committed UTF-8 input, multiline return and deletion are connected; precise selection editing and target proof are pending",
+                        "focused UTF-8 input, Unicode caret navigation, Shift range selection/replacement and multiline deletion are connected; shaped-glyph hit testing, drag selection and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -409,7 +409,7 @@ impl DesktopCapabilities {
                 DesktopCapability::InputMethod,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GtkIMMulticontext preedit, commit, focus lifecycle and candidate-window anchoring are connected; precise caret geometry and CJK target proof are pending",
+                        "GtkIMMulticontext preedit/commit, focus lifecycle, surrounding UTF-8 text and logical-caret candidate anchoring are connected; shaped-glyph geometry and CJK target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

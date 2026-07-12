@@ -79,6 +79,7 @@ mod native_input_visuals;
 ))]
 mod native_menu;
 pub mod native_smoke;
+mod native_text_edit;
 #[cfg(feature = "paged-list")]
 pub mod paged_list;
 pub mod product_adapter;

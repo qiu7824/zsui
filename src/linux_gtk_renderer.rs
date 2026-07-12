@@ -213,9 +213,20 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 }
                 gtk::gdk::Key::Up => runtime_state.dispatch_key(crate::NativeViewKey::Up),
                 gtk::gdk::Key::Down => runtime_state.dispatch_key(crate::NativeViewKey::Down),
-                gtk::gdk::Key::BackSpace | gtk::gdk::Key::Delete => {
-                    runtime_state.dispatch_text_input("\u{8}")
+                gtk::gdk::Key::Left => {
+                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Left, shift)
                 }
+                gtk::gdk::Key::Right => {
+                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Right, shift)
+                }
+                gtk::gdk::Key::Home => {
+                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Home, shift)
+                }
+                gtk::gdk::Key::End => {
+                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::End, shift)
+                }
+                gtk::gdk::Key::BackSpace => runtime_state.dispatch_text_input("\u{8}"),
+                gtk::gdk::Key::Delete => runtime_state.dispatch_text_input("\u{7f}"),
                 _ if !command_or_control => key
                     .to_unicode()
                     .filter(|character| !character.is_control())
@@ -293,11 +304,12 @@ fn sync_linux_gtk_ime(
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: &gtk::IMMulticontext,
 ) {
-    let (has_text_input, caret_rect) = {
+    let (has_text_input, caret_rect, surrounding) = {
         let runtime = runtime.borrow();
         (
             runtime.has_focused_text_input(),
             runtime.text_input_caret_rect(),
+            runtime.focused_text_input_snapshot(),
         )
     };
     if area.has_focus() && has_text_input {
@@ -308,6 +320,11 @@ fn sync_linux_gtk_ime(
                 rect.width.max(1),
                 rect.height.max(1),
             ));
+        }
+        if let Some((value, selection)) = surrounding {
+            let cursor = crate::native_text_edit::char_to_byte_index(&value, selection.caret)
+                .min(i32::MAX as usize) as i32;
+            ime.set_surrounding(&value, cursor);
         }
         ime.focus_in();
     } else {

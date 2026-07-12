@@ -413,7 +413,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/windows_win32_host.rs",
-                "IMM32 result commit and candidate placement are connected; CJK target interaction proof is pending",
+                "IMM32 result commit, Unicode selection replacement and logical-caret candidate placement are connected; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
@@ -455,12 +455,12 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSTextInputClient routes marked-text preedit, UTF-8 commit and candidate-window anchoring through provisional shared input state; precise caret geometry and CJK target proof are pending",
+                "NSTextInputClient routes selected/marked UTF-16 ranges, replacement preedit, UTF-8 commit and logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView bounds plus mouse/scroll/key and NSTextInputClient callbacks relayout shared views, rebuild hit geometry, route typed input and repaint shared semantic focus rings; target proof is pending",
+                "NSView bounds plus mouse/scroll/key and NSTextInputClient callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
             ),
             _ => (
                 ContractOnly,
@@ -497,12 +497,12 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GtkIMMulticontext routes preedit, UTF-8 commit, focus lifecycle and candidate-window anchoring through provisional shared input state; precise caret geometry and CJK target proof are pending",
+                "GtkIMMulticontext routes preedit, UTF-8 commit, surrounding text, focus lifecycle and logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 allocation plus click/scroll/key controllers and GtkIMContext callbacks relayout shared views, rebuild hit geometry, route typed input and repaint shared semantic focus rings; target proof is pending",
+                "GTK4 allocation plus click/scroll/key controllers and GtkIMContext callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
             ),
             _ => (
                 ContractOnly,
