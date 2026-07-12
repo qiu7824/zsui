@@ -797,9 +797,6 @@ fn platform_binding_name_for_capability(
 ) -> Option<&'static str> {
     match (platform, capability_name) {
         (NativeUiPlatform::Windows, "main_window") => Some("windows_win32_main_window_host"),
-        (NativeUiPlatform::Macos, "main_window") | (NativeUiPlatform::Linux, "main_window") => {
-            Some("winit_native_window")
-        }
         (NativeUiPlatform::Windows, "main_execution_plan_bridge")
         | (NativeUiPlatform::Macos, "main_execution_plan_bridge")
         | (NativeUiPlatform::Linux, "main_execution_plan_bridge") => {
@@ -811,9 +808,11 @@ fn platform_binding_name_for_capability(
             Some("windows_win32_transient_window_host")
         }
         (NativeUiPlatform::Macos, "file_dialog") => Some("appkit_open_save_panel_service"),
+        (NativeUiPlatform::Macos, "main_window") => Some("appkit_ns_window_service"),
         (NativeUiPlatform::Macos, "clipboard") => Some("appkit_ns_pasteboard_text_service"),
         (NativeUiPlatform::Macos, "popup_menu") => Some("appkit_ns_menu_command_service"),
         (NativeUiPlatform::Linux, "file_dialog") => Some("gtk_file_chooser_native_service"),
+        (NativeUiPlatform::Linux, "main_window") => Some("gtk_application_window_service"),
         (NativeUiPlatform::Linux, "clipboard") => Some("gtk_gdk_clipboard_text_service"),
         (NativeUiPlatform::Linux, "popup_menu") => Some("gtk_gmenu_simple_action_service"),
         (NativeUiPlatform::Android, "main_window") => Some("android_activity_surface"),
@@ -935,8 +934,8 @@ mod tests {
             .iter()
             .find(|report| report.platform == NativeUiPlatform::Macos)
             .expect("macOS capability readiness should be included");
-        assert_eq!(macos.runtime_implementation_count(), 3);
-        assert_eq!(macos.contract_only_count, 15);
+        assert_eq!(macos.runtime_implementation_count(), 4);
+        assert_eq!(macos.contract_only_count, 14);
         assert!(context
             .readiness
             .declaration_audit_surface_names

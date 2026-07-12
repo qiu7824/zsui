@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use gtk::gio;
@@ -12,8 +13,146 @@ use crate::native_file_dialog::{
 };
 use crate::{
     ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, SaveFileDialogSpec,
-    ZsuiError, ZsuiResult,
+    WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
+
+#[derive(Debug)]
+pub struct LinuxGtkWindowService {
+    application: gtk::Application,
+    windows: HashMap<WindowId, gtk::ApplicationWindow>,
+    next_window_id: u64,
+}
+
+impl LinuxGtkWindowService {
+    pub fn for_current_application() -> ZsuiResult<Self> {
+        ensure_gtk_main_thread("gtk_window_service")?;
+        let application = gio::Application::default()
+            .and_then(|application| application.downcast::<gtk::Application>().ok())
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "gtk_window_service",
+                    "a running GTK Application is required before creating native windows",
+                )
+            })?;
+        Ok(Self::from_application(application))
+    }
+
+    pub(crate) fn from_application(application: gtk::Application) -> Self {
+        Self {
+            application,
+            windows: HashMap::new(),
+            next_window_id: 1,
+        }
+    }
+
+    pub fn window_count(&self) -> usize {
+        self.windows.len()
+    }
+
+    fn window(&self, id: WindowId, operation: &'static str) -> ZsuiResult<&gtk::ApplicationWindow> {
+        self.windows
+            .get(&id)
+            .ok_or_else(|| ZsuiError::host(operation, format!("unknown window id {}", id.0)))
+    }
+
+    fn allocate_window_id(&mut self) -> ZsuiResult<WindowId> {
+        let id = WindowId(self.next_window_id);
+        self.next_window_id = self.next_window_id.checked_add(1).ok_or_else(|| {
+            ZsuiError::host(
+                "gtk_create_window",
+                "the native window id range is exhausted",
+            )
+        })?;
+        Ok(id)
+    }
+}
+
+impl Drop for LinuxGtkWindowService {
+    fn drop(&mut self) {
+        for (_, window) in self.windows.drain() {
+            window.close();
+        }
+    }
+}
+
+impl WindowService for LinuxGtkWindowService {
+    fn create_window(&mut self, spec: &WindowSpec) -> ZsuiResult<WindowId> {
+        ensure_gtk_main_thread("gtk_create_window")?;
+        if spec.always_on_top {
+            return Err(ZsuiError::unsupported(
+                "window_always_on_top",
+                "GTK4 cannot guarantee always-on-top behavior across Wayland compositors",
+            ));
+        }
+        if spec.transparent {
+            return Err(ZsuiError::unsupported(
+                "window_transparency",
+                "the GTK4 transparent window surface is not connected",
+            ));
+        }
+        let window = gtk::ApplicationWindow::builder()
+            .application(&self.application)
+            .title(&spec.title)
+            .default_width(spec.width.min(i32::MAX as u32).max(1) as i32)
+            .default_height(spec.height.min(i32::MAX as u32).max(1) as i32)
+            .build();
+        window.set_resizable(spec.resizable);
+        window.set_decorated(spec.decorations);
+        if spec.min_width.is_some() || spec.min_height.is_some() {
+            window.set_size_request(
+                spec.min_width.map(gtk_dimension).unwrap_or(-1),
+                spec.min_height.map(gtk_dimension).unwrap_or(-1),
+            );
+        }
+        if spec.visible {
+            window.present();
+        }
+        let id = self.allocate_window_id()?;
+        self.windows.insert(id, window);
+        Ok(id)
+    }
+
+    fn set_window_title(&mut self, window: WindowId, title: &str) -> ZsuiResult<()> {
+        ensure_gtk_main_thread("gtk_set_window_title")?;
+        self.window(window, "gtk_set_window_title")?
+            .set_title(Some(title));
+        Ok(())
+    }
+
+    fn set_window_visible(&mut self, window: WindowId, visible: bool) -> ZsuiResult<()> {
+        ensure_gtk_main_thread("gtk_set_window_visible")?;
+        let window = self.window(window, "gtk_set_window_visible")?;
+        if visible {
+            window.present();
+        } else {
+            window.set_visible(false);
+        }
+        Ok(())
+    }
+
+    fn request_window_redraw(&mut self, window: WindowId) -> ZsuiResult<()> {
+        ensure_gtk_main_thread("gtk_request_window_redraw")?;
+        self.window(window, "gtk_request_window_redraw")?
+            .queue_draw();
+        Ok(())
+    }
+
+    fn close_window(&mut self, window: WindowId) -> ZsuiResult<()> {
+        ensure_gtk_main_thread("gtk_close_window")?;
+        let window = self.windows.remove(&window).ok_or_else(|| {
+            ZsuiError::host(
+                "gtk_close_window",
+                format!("unknown window id {}", window.0),
+            )
+        })?;
+        window.close();
+        Ok(())
+    }
+}
+
+fn gtk_dimension(value: u32) -> i32 {
+    value.min(i32::MAX as u32).max(1) as i32
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LinuxGtkClipboardService;
@@ -206,5 +345,11 @@ mod tests {
     fn gtk_clipboard_service_implements_safe_public_contract() {
         fn assert_service<T: ClipboardService>() {}
         assert_service::<LinuxGtkClipboardService>();
+    }
+
+    #[test]
+    fn gtk_window_service_implements_safe_public_contract() {
+        fn assert_service<T: WindowService>() {}
+        assert_service::<LinuxGtkWindowService>();
     }
 }

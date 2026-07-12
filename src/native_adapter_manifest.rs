@@ -426,6 +426,11 @@ fn native_ui_capability_readiness(
             ),
         },
         NativeUiPlatform::Macos => match capability {
+            MainWindow => (
+                FirstPass,
+                "src/macos_appkit_services.rs",
+                "NSApplication/NSWindow creation, visibility, redraw and owned close are connected through WindowService; event-loop integration and target proof are pending",
+            ),
             Clipboard => (
                 FirstPass,
                 "src/macos_appkit_services.rs",
@@ -441,11 +446,6 @@ fn native_ui_capability_readiness(
                 "src/macos_appkit_menu.rs",
                 "NSMenu and NSMenuItem preserve nested state and return typed commands through a safe queue; AppKit host proof is pending",
             ),
-            MainWindow => (
-                ContractOnly,
-                "src/native.rs",
-                "the Winit transport is not credited as an AppKit host; shared rendering and input remain unconnected",
-            ),
             _ => (
                 ContractOnly,
                 "src/host_protocol.rs",
@@ -453,6 +453,11 @@ fn native_ui_capability_readiness(
             ),
         },
         NativeUiPlatform::Linux => match capability {
+            MainWindow => (
+                FirstPass,
+                "src/linux_gtk_services.rs",
+                "GtkApplication/ApplicationWindow creation, visibility, redraw and owned close are connected through WindowService; event-loop integration and Wayland/X11 proof are pending",
+            ),
             Clipboard => (
                 FirstPass,
                 "src/linux_gtk_services.rs",
@@ -467,11 +472,6 @@ fn native_ui_capability_readiness(
                 FirstPass,
                 "src/linux_gtk_menu.rs",
                 "GMenu and SimpleAction preserve nested state and return typed commands through a safe queue; GTK host proof is pending",
-            ),
-            MainWindow => (
-                ContractOnly,
-                "src/native.rs",
-                "the Winit transport is not credited as a GTK4 host; shared rendering and input remain unconnected",
             ),
             _ => (
                 ContractOnly,
@@ -846,12 +846,17 @@ mod tests {
         let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
             .expect("macOS readiness should be declared");
         assert_eq!(macos.ready_count, 0);
-        assert_eq!(macos.first_pass_count, 3);
-        assert_eq!(macos.contract_only_count, 15);
+        assert_eq!(macos.first_pass_count, 4);
+        assert_eq!(macos.contract_only_count, 14);
         assert!(macos.contract_only_capability_names().contains(&"renderer"));
-        assert!(macos
-            .contract_only_capability_names()
-            .contains(&"main_window"));
+        assert_eq!(
+            macos
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::MainWindow)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
         assert_eq!(
             macos
                 .capabilities
@@ -872,11 +877,16 @@ mod tests {
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 3);
-        assert_eq!(linux.contract_only_count, 15);
-        assert!(linux
-            .contract_only_capability_names()
-            .contains(&"main_window"));
+        assert_eq!(linux.first_pass_count, 4);
+        assert_eq!(linux.contract_only_count, 14);
+        assert_eq!(
+            linux
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::MainWindow)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
         assert_eq!(
             linux
                 .capabilities

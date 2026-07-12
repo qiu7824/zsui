@@ -46,7 +46,10 @@ default `window` umbrella must keep the one-line desktop entry working and rely
 on target-specific dependencies to compile only the active platform backend.
 
 The AppKit and GTK4 backend features provide target-native desktop service
-slices through safe Rust contracts. macOS maps open/save requests to
+slices through safe Rust contracts. Both now map `WindowSpec` through
+`WindowService` to owned `NSWindow` or `ApplicationWindow` instances with
+strong `WindowId` routing for title, visibility, redraw and close operations.
+macOS maps open/save requests to
 `NSOpenPanel`/`NSSavePanel` and lowers `MenuSpec` into owned
 `NSMenu`/`NSMenuItem` objects; UTF-8 clipboard text uses `NSPasteboard`. Linux
 maps dialogs to GTK4 `FileChooserNative`, menus to `GMenu`/`SimpleAction`, and
@@ -56,8 +59,10 @@ disabled, checked and accelerator state and return typed `Command` values as
 images and files remain explicitly unsupported until their native formats are
 implemented and tested.
 
-These services do not complete either native host. Shared View rendering,
-input, host event-loop integration and target smoke evidence remain required.
+These services do not complete either native host. The unified
+`native_window(...).run()` path still uses its Winit transport on macOS/Linux;
+shared View rendering, input, native event-loop integration and target smoke
+evidence remain required.
 The Winit transport is not AppKit or GTK4 completion evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe

@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use objc2::{rc::Retained, MainThreadMarker};
+use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel,
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSFloatingWindowLevel,
+    NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow,
+    NSWindowStyleMask,
 };
-use objc2_foundation::{NSArray, NSString, NSURL};
+use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -13,8 +16,144 @@ use crate::native_file_dialog::{
 };
 use crate::{
     ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, SaveFileDialogSpec,
-    ZsuiError, ZsuiResult,
+    WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
+
+#[derive(Debug)]
+pub struct MacosAppKitWindowService {
+    _application: Retained<NSApplication>,
+    windows: HashMap<WindowId, Retained<NSWindow>>,
+    next_window_id: u64,
+}
+
+impl MacosAppKitWindowService {
+    pub fn new() -> ZsuiResult<Self> {
+        let mtm = appkit_main_thread_marker("NSApplication")?;
+        let application = NSApplication::sharedApplication(mtm);
+        application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+        Ok(Self {
+            _application: application,
+            windows: HashMap::new(),
+            next_window_id: 1,
+        })
+    }
+
+    pub fn window_count(&self) -> usize {
+        self.windows.len()
+    }
+
+    fn window(&self, id: WindowId, operation: &'static str) -> ZsuiResult<&NSWindow> {
+        self.windows
+            .get(&id)
+            .map(AsRef::as_ref)
+            .ok_or_else(|| ZsuiError::host(operation, format!("unknown window id {}", id.0)))
+    }
+
+    fn allocate_window_id(&mut self) -> ZsuiResult<WindowId> {
+        let id = WindowId(self.next_window_id);
+        self.next_window_id = self.next_window_id.checked_add(1).ok_or_else(|| {
+            ZsuiError::host(
+                "macos_create_window",
+                "the native window id range is exhausted",
+            )
+        })?;
+        Ok(id)
+    }
+}
+
+impl Drop for MacosAppKitWindowService {
+    fn drop(&mut self) {
+        for (_, window) in self.windows.drain() {
+            window.close();
+        }
+    }
+}
+
+impl WindowService for MacosAppKitWindowService {
+    fn create_window(&mut self, spec: &WindowSpec) -> ZsuiResult<WindowId> {
+        let mtm = appkit_main_thread_marker("macos_create_window")?;
+        if spec.transparent {
+            return Err(ZsuiError::unsupported(
+                "window_transparency",
+                "the AppKit transparent window surface is not connected",
+            ));
+        }
+        let mut style = if spec.decorations {
+            NSWindowStyleMask::Titled
+                | NSWindowStyleMask::Closable
+                | NSWindowStyleMask::Miniaturizable
+        } else {
+            NSWindowStyleMask::Borderless
+        };
+        if spec.resizable {
+            style |= NSWindowStyleMask::Resizable;
+        }
+        let window = unsafe {
+            NSWindow::initWithContentRect_styleMask_backing_defer(
+                NSWindow::alloc(mtm),
+                NSRect::new(
+                    NSPoint::new(0.0, 0.0),
+                    NSSize::new(spec.width.max(1) as f64, spec.height.max(1) as f64),
+                ),
+                style,
+                NSBackingStoreType::Buffered,
+                false,
+            )
+        };
+        unsafe { window.setReleasedWhenClosed(false) };
+        window.setTitle(&NSString::from_str(&spec.title));
+        if let (Some(width), Some(height)) = (spec.min_width, spec.min_height) {
+            window.setMinSize(NSSize::new(width.max(1) as f64, height.max(1) as f64));
+        }
+        if spec.always_on_top {
+            window.setLevel(NSFloatingWindowLevel);
+        }
+        window.center();
+        if spec.visible {
+            window.makeKeyAndOrderFront(None);
+        }
+        let id = self.allocate_window_id()?;
+        self.windows.insert(id, window);
+        Ok(id)
+    }
+
+    fn set_window_title(&mut self, window: WindowId, title: &str) -> ZsuiResult<()> {
+        appkit_main_thread_marker("macos_set_window_title")?;
+        self.window(window, "macos_set_window_title")?
+            .setTitle(&NSString::from_str(title));
+        Ok(())
+    }
+
+    fn set_window_visible(&mut self, window: WindowId, visible: bool) -> ZsuiResult<()> {
+        appkit_main_thread_marker("macos_set_window_visible")?;
+        let window = self.window(window, "macos_set_window_visible")?;
+        if visible {
+            window.makeKeyAndOrderFront(None);
+        } else {
+            window.orderOut(None);
+        }
+        Ok(())
+    }
+
+    fn request_window_redraw(&mut self, window: WindowId) -> ZsuiResult<()> {
+        appkit_main_thread_marker("macos_request_window_redraw")?;
+        self.window(window, "macos_request_window_redraw")?
+            .displayIfNeeded();
+        Ok(())
+    }
+
+    fn close_window(&mut self, window: WindowId) -> ZsuiResult<()> {
+        appkit_main_thread_marker("macos_close_window")?;
+        let window = self.windows.remove(&window).ok_or_else(|| {
+            ZsuiError::host(
+                "macos_close_window",
+                format!("unknown window id {}", window.0),
+            )
+        })?;
+        window.close();
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MacosAppKitClipboardService;
@@ -182,5 +321,11 @@ mod tests {
     fn appkit_clipboard_service_implements_safe_public_contract() {
         fn assert_service<T: ClipboardService>() {}
         assert_service::<MacosAppKitClipboardService>();
+    }
+
+    #[test]
+    fn appkit_window_service_implements_safe_public_contract() {
+        fn assert_service<T: WindowService>() {}
+        assert_service::<MacosAppKitWindowService>();
     }
 }

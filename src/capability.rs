@@ -318,6 +318,20 @@ impl HostCapabilities {
 
     pub fn macos_native_window_host() -> Self {
         let mut capabilities = Self::macos_scaffold();
+        if cfg!(feature = "macos-appkit") {
+            capabilities.windows = CapabilitySupport::partial(
+                "NSApplication/NSWindow creation and owned lifecycle are connected; AppKit event-loop integration and target proof are pending",
+            );
+            capabilities.window_resizing = CapabilitySupport::partial(
+                "NSWindow resizable and minimum-size declarations are connected; resize event routing is pending",
+            );
+            capabilities.window_decorations = CapabilitySupport::partial(
+                "NSWindow titled and borderless style declarations are connected; target proof is pending",
+            );
+            capabilities.window_always_on_top = CapabilitySupport::partial(
+                "NSFloatingWindowLevel is connected; target interaction proof is pending",
+            );
+        }
         capabilities.clipboard_text = if cfg!(feature = "macos-appkit") {
             CapabilitySupport::partial(
                 "NSPasteboard UTF-8 text read/write is connected; AppKit host proof is pending",
@@ -393,6 +407,17 @@ impl HostCapabilities {
 
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
+        if cfg!(feature = "linux-gtk") {
+            capabilities.windows = CapabilitySupport::partial(
+                "GtkApplication/ApplicationWindow creation and owned lifecycle are connected; GTK event-loop integration and target proof are pending",
+            );
+            capabilities.window_resizing = CapabilitySupport::partial(
+                "GTK4 resizable and minimum-size declarations are connected; resize event routing is pending",
+            );
+            capabilities.window_decorations = CapabilitySupport::partial(
+                "GTK4 decorated and undecorated window declarations are connected; compositor proof is pending",
+            );
+        }
         capabilities.clipboard_text = if cfg!(feature = "linux-gtk") {
             CapabilitySupport::partial(
                 "GdkClipboard UTF-8 text read/write is connected; Wayland/X11 host proof is pending",

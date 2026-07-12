@@ -226,6 +226,30 @@ impl DesktopCapabilities {
     pub fn macos_appkit_current() -> Self {
         Self::all_unsupported(PlatformName::Macos)
             .with_support(
+                DesktopCapability::NativeWindow,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSApplication/NSWindow creation and owned lifecycle are connected; AppKit event-loop integration and target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile the native AppKit window service",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::WindowResize,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSWindow resizable and minimum-size declarations are connected; resize event routing is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit window resizing",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::ClipboardText,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
@@ -283,6 +307,30 @@ impl DesktopCapabilities {
 
     pub fn linux_gtk_current() -> Self {
         Self::all_unsupported(PlatformName::Linux)
+            .with_support(
+                DesktopCapability::NativeWindow,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GtkApplication/ApplicationWindow creation and owned lifecycle are connected; GTK event-loop integration and target proof are pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile the native GTK4 window service",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::WindowResize,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK4 resizable and minimum-size declarations are connected; resize event routing is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 window resizing",
+                    )
+                },
+            )
             .with_support(
                 DesktopCapability::ClipboardText,
                 if cfg!(feature = "linux-gtk") {
