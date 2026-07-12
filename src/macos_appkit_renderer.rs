@@ -61,18 +61,48 @@ define_class!(
                     x: appkit_coordinate(location.x),
                     y: appkit_coordinate(location.y),
                 });
-            if let Some(plan) = report.redraw_plan {
-                *self.ivars().plan.borrow_mut() = plan;
-                self.setNeedsDisplay(true);
+            self.apply_input_report(report);
+        }
+
+        #[unsafe(method(scrollWheel:))]
+        fn scroll_wheel(&self, event: &NSEvent) {
+            let raw_delta = event.scrollingDeltaY() as f32;
+            let delta_y = if event.hasPreciseScrollingDeltas() {
+                -raw_delta
+            } else {
+                -raw_delta * 48.0
+            };
+            if delta_y.abs() < f32::EPSILON {
+                return;
             }
-            if report.quit_requested {
-                objc2_app_kit::NSApplication::sharedApplication(self.mtm()).stop(None);
-            }
+            let location = self.convertPoint_fromView(event.locationInWindow(), None);
+            let report = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_pointer_scroll(
+                    crate::Point {
+                        x: appkit_coordinate(location.x),
+                        y: appkit_coordinate(location.y),
+                    },
+                    crate::Dp::new(delta_y),
+                );
+            self.apply_input_report(report);
         }
     }
 );
 
 impl ZsuiAppKitDrawView {
+    fn apply_input_report(&self, report: crate::native::NativeViewInputDispatchReport) {
+        if let Some(plan) = report.redraw_plan {
+            *self.ivars().plan.borrow_mut() = plan;
+            self.setNeedsDisplay(true);
+        }
+        if report.quit_requested {
+            objc2_app_kit::NSApplication::sharedApplication(self.mtm()).stop(None);
+        }
+    }
+
     fn new(
         mtm: MainThreadMarker,
         frame: NSRect,

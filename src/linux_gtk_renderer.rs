@@ -67,6 +67,44 @@ pub(crate) fn install_linux_gtk_draw_plan(
         }
     });
     drawing_area.add_controller(gesture);
+    let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+    scroll.connect_scroll({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        move |controller, _delta_x, delta_y| {
+            if delta_y.abs() < f64::EPSILON {
+                return gtk::glib::Propagation::Proceed;
+            }
+            let (x, y) = controller
+                .current_event()
+                .and_then(|event| event.position())
+                .unwrap_or((0.0, 0.0));
+            let report = runtime.borrow_mut().dispatch_pointer_scroll(
+                crate::Point {
+                    x: gtk_coordinate(x),
+                    y: gtk_coordinate(y),
+                },
+                crate::Dp::new((delta_y * 48.0) as f32),
+            );
+            if let Some(updated) = report.redraw_plan {
+                *plan.borrow_mut() = updated;
+                area.queue_draw();
+            }
+            if report.quit_requested {
+                if let Some(application) = &application {
+                    application.quit();
+                }
+            }
+            if report.handled {
+                gtk::glib::Propagation::Stop
+            } else {
+                gtk::glib::Propagation::Proceed
+            }
+        }
+    });
+    drawing_area.add_controller(scroll);
     window.set_child(Some(&drawing_area));
 }
 

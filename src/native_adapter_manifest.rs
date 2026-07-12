@@ -455,7 +455,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSView mouse activation hit-tests the shared ViewInteractionPlan, dispatches typed live/static view messages and repaints rebuilt draw plans; keyboard, text, scroll and target proof are pending",
+                "NSView mouse/scroll events hit-test the shared ViewInteractionPlan, dispatch typed live/static view messages and repaint rebuilt draw plans; keyboard, text and target proof are pending",
             ),
             _ => (
                 ContractOnly,
@@ -492,7 +492,7 @@ fn native_ui_capability_readiness(
             MainExecutionPlanBridge => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GTK4 GestureClick hit-tests the shared ViewInteractionPlan, dispatches typed live/static view messages and repaints rebuilt draw plans; keyboard, text, scroll and target proof are pending",
+                "GTK4 GestureClick/EventControllerScroll hit-test the shared ViewInteractionPlan, dispatch typed live/static view messages and repaint rebuilt draw plans; keyboard, text and target proof are pending",
             ),
             _ => (
                 ContractOnly,

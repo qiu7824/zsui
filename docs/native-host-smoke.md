@@ -76,7 +76,8 @@ native content surface. Win32 paints through its buffered GDI sink, AppKit
 through a custom `NSView`, and GTK4 through `DrawingArea`/Cairo/Pango. Windows
 posts a native click message during the smoke run. AppKit `mouseUp:` and GTK4
 `GestureClick` are connected to the same typed hit-test/message/executor path,
-but still require target-machine interaction artifacts:
+while AppKit `scrollWheel:` and GTK4 `EventControllerScroll` emit the same
+typed `ScrollBy` path. Both still require target-machine interaction artifacts:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --view

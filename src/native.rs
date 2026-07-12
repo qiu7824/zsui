@@ -13,7 +13,7 @@ use crate::{
         AppEvent, Command, DialogResponse, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId,
         WindowId, ZsuiError, ZsuiResult,
     },
-    geometry::{Dpi, Point, Rect},
+    geometry::{Dp, Dpi, Point, Rect},
     host::{MemoryHost, TrayRecord, WindowRecord, ZsuiHost},
     hotkey::HotkeySpec,
     menu::{MenuItemSpec, MenuSpec},
@@ -805,6 +805,8 @@ impl NativeWindowSmokeRunReport {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NativeViewInputRuntime {
+    surface: Option<Rect>,
+    dpi: Dpi,
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
@@ -813,7 +815,7 @@ pub(crate) struct NativeViewInputRuntime {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct NativeViewClickDispatchReport {
+pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
@@ -828,6 +830,7 @@ pub(crate) struct NativeViewClickDispatchReport {
 #[allow(dead_code)]
 impl NativeViewInputRuntime {
     fn new(
+        surface: Rect,
         interaction_plan: Option<ViewInteractionPlan>,
         ui_command_view: Option<ViewNode<UiCommand>>,
         live_view: Option<SharedLiveViewRuntime>,
@@ -835,6 +838,8 @@ impl NativeViewInputRuntime {
         ui_command_executor: Option<SharedUiCommandExecutor>,
     ) -> Self {
         Self {
+            surface: Some(surface),
+            dpi: Dpi::standard(),
             interaction_plan,
             ui_command_view,
             live_view,
@@ -855,10 +860,10 @@ impl NativeViewInputRuntime {
             .unwrap_or(0)
     }
 
-    pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewClickDispatchReport {
-        let mut report = NativeViewClickDispatchReport {
+    pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
-            ..NativeViewClickDispatchReport::default()
+            ..NativeViewInputDispatchReport::default()
         };
         let interaction_plan = self
             .live_view
@@ -900,29 +905,81 @@ impl NativeViewInputRuntime {
             }
         };
 
-        let (commands, ui_commands, redraw, quit_requested) =
-            if let Some(live_view) = &self.live_view {
-                let update = live_view.dispatch_event(&event);
-                report.message_count = update.message_count;
-                if update.redraw {
-                    report.redraw_plan = Some(live_view.draw_plan());
-                    report.hit_target_count = live_view.interaction_plan().hit_target_count();
+        self.dispatch_view_event(event, report)
+    }
+
+    pub(crate) fn dispatch_pointer_scroll(
+        &mut self,
+        point: Point,
+        delta_y: Dp,
+    ) -> NativeViewInputDispatchReport {
+        let report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let interaction_plan = self
+            .live_view
+            .as_ref()
+            .map(SharedLiveViewRuntime::interaction_plan)
+            .or_else(|| self.interaction_plan.clone());
+        let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
+            return report;
+        };
+
+        #[cfg(feature = "scroll")]
+        {
+            let scroll_widget = self
+                .live_view
+                .as_ref()
+                .and_then(|runtime| runtime.widget_scroll_target(target.widget))
+                .or_else(|| {
+                    self.ui_command_view
+                        .as_ref()
+                        .and_then(|view| view.widget_scroll_target(target.widget))
+                });
+            if let Some(widget) = scroll_widget {
+                let mut report = report;
+                report.handled = true;
+                return self.dispatch_view_event(ViewEvent::ScrollBy { widget, delta_y }, report);
+            }
+        }
+
+        let _ = (target, delta_y);
+        report
+    }
+
+    fn dispatch_view_event(
+        &mut self,
+        event: ViewEvent,
+        mut report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        let (commands, ui_commands, quit_requested) = if let Some(live_view) = &self.live_view {
+            let update = live_view.dispatch_event(&event);
+            report.message_count = update.message_count;
+            if update.redraw {
+                report.redraw_plan = Some(live_view.draw_plan());
+                report.hit_target_count = live_view.interaction_plan().hit_target_count();
+            }
+            (update.commands, update.ui_commands, update.quit_requested)
+        } else {
+            let mut event_cx = ViewEventCx::new();
+            if let Some(view) = &mut self.ui_command_view {
+                view.event(&mut event_cx, &event);
+                if let Some(surface) = self.surface {
+                    let mut layout_cx = ViewLayoutCx::new(surface, self.dpi);
+                    view.layout(&mut layout_cx);
+                    let interaction_plan = view.interaction_plan();
+                    report.hit_target_count = interaction_plan.hit_target_count();
+                    self.interaction_plan = Some(interaction_plan);
                 }
-                (
-                    update.commands,
-                    update.ui_commands,
-                    update.redraw,
-                    update.quit_requested,
-                )
-            } else {
-                let mut event_cx = ViewEventCx::new();
-                if let Some(view) = &mut self.ui_command_view {
-                    view.event(&mut event_cx, &event);
-                }
-                let messages = event_cx.into_messages();
-                report.message_count = messages.len();
-                (Vec::new(), messages, false, false)
-            };
+                let mut paint_cx = ViewPaintCx::new(self.dpi);
+                view.paint(&mut paint_cx);
+                report.redraw_plan = Some(paint_cx.into_plan());
+            }
+            let messages = event_cx.into_messages();
+            report.message_count = messages.len();
+            (Vec::new(), messages, false)
+        };
 
         report.app_command_count = commands.len();
         report.ui_command_count = ui_commands.len();
@@ -943,12 +1000,6 @@ impl NativeViewInputRuntime {
                     report.errors.push(error.to_string());
                 }
             }
-        }
-        if redraw && report.redraw_plan.is_none() {
-            report.redraw_plan = self
-                .live_view
-                .as_ref()
-                .map(SharedLiveViewRuntime::draw_plan);
         }
         report
     }
@@ -1526,6 +1577,12 @@ impl NativeWindowBuilder {
 
     fn native_view_input_runtime(&self) -> NativeViewInputRuntime {
         NativeViewInputRuntime::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.window.width as i32,
+                height: self.window.height as i32,
+            },
             self.view_interaction_plan.clone(),
             self.view_ui_command_tree.clone(),
             self.live_view_runtime.clone(),
@@ -3470,6 +3527,58 @@ mod tests {
         assert_eq!(report.ui_command_count, 1);
         assert_eq!(report.ui_command_ids, vec!["zsui.platform.save"]);
         assert!(report.errors.is_empty());
+        assert_eq!(executor.report().executed_count, 1);
+    }
+
+    #[cfg(all(feature = "label", feature = "scroll"))]
+    #[test]
+    fn native_view_runtime_dispatches_platform_scroll_and_repaints() {
+        fn scrolled(_offset: Dp) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.platform.scrolled"))
+        }
+
+        let executor = SharedUiCommandExecutor::new(|command: UiCommand| {
+            Ok(vec![AppEvent::Custom {
+                id: command.id.0.to_string(),
+                payload: None,
+            }])
+        });
+        let scroll_id = crate::WidgetId::new(73);
+        let builder = native_window("Platform Scroll")
+            .size(360, 220)
+            .ui_command_view(
+                crate::scroll(crate::column([
+                    crate::text::<UiCommand>("First"),
+                    crate::text::<UiCommand>("Second"),
+                    crate::text::<UiCommand>("Third"),
+                ]))
+                .id(scroll_id)
+                .content_height(Dp::new(600.0))
+                .on_scroll(scrolled),
+            )
+            .shared_ui_command_executor(executor.clone());
+        let before = builder
+            .native_draw_plan()
+            .cloned()
+            .expect("scroll view should have an initial draw plan");
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(scroll_id))
+            .expect("scroll view should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let report = runtime.dispatch_pointer_scroll(
+            Point {
+                x: target.bounds.x + target.bounds.width / 2,
+                y: target.bounds.y + target.bounds.height / 2,
+            },
+            Dp::new(48.0),
+        );
+
+        assert!(report.handled);
+        assert_eq!(report.ui_command_ids, vec!["zsui.platform.scrolled"]);
+        assert!(report.errors.is_empty());
+        assert!(report.redraw_plan.is_some_and(|plan| plan != before));
         assert_eq!(executor.report().executed_count, 1);
     }
 
