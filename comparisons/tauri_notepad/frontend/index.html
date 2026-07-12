@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri Notepad baseline</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="toolbar">
+        <button id="new" type="button">New</button>
+        <button id="open" type="button">Open...</button>
+        <button id="save" type="button">Save</button>
+        <button id="save-as" type="button">Save as...</button>
+        <span class="toolbar-spacer"></span>
+        <label><input id="word-wrap" type="checkbox" checked /> Word wrap</label>
+        <label><input id="show-status" type="checkbox" checked /> Status</label>
+      </header>
+      <section class="editor-frame">
+        <textarea id="editor" wrap="soft" spellcheck="false" autofocus></textarea>
+      </section>
+      <div id="error" class="error" hidden></div>
+      <footer id="status" class="status-bar">
+        <span id="cursor">Ln 1, Col 1</span>
+        <span class="status-spacer"></span>
+        <span id="characters">0 chars</span>
+        <span>UTF-8</span>
+      </footer>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

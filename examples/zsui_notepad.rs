@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 #[path = "zsui_notepad/document.rs"]
 mod document;
 

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tauri Notepad baseline",
+  "version": "0.1.0",
+  "identifier": "dev.zsui.comparison.tauri-notepad",
+  "build": {
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Untitled - Tauri Notepad baseline",
+        "width": 900,
+        "height": 620,
+        "minWidth": 520,
+        "minHeight": 360,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
+  }
+}

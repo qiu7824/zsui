@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Core window capability for the local Tauri comparison",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

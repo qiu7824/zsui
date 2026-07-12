@@ -1,0 +1,16 @@
+[package]
+name = "iced-notepad-baseline"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+iced = { version = "=0.14.0", default-features = false, features = ["image", "thread-pool", "tiny-skia"] }
+rfd = "=0.17.2"
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

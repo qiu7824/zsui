@@ -133,7 +133,11 @@
       "optional": [
         "src/windows_gdi_renderer.rs",
         "src/icon.rs",
-        "scripts/measure-notepad-comparison.ps1"
+        "scripts/measure-notepad-comparison.ps1",
+        "comparisons/egui_notepad",
+        "comparisons/iced_notepad",
+        "comparisons/slint_notepad",
+        "comparisons/tauri_notepad"
       ],
       "verify": [
         "cargo test --example zsui_notepad --no-default-features --features notepad-demo --quiet",

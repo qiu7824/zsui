@@ -35,14 +35,22 @@
 <p align="center"><a href="docs/gallery.md"><b>查看完整 Demo 与对比图库</b></a></p>
 
 <details>
-<summary><b>展开 ZSUI / egui / Windows 对比图</b></summary>
+<summary><b>展开 ZSUI / egui / Iced / Slint / Tauri 2 / Windows 对比图</b></summary>
 
 <h4>记事本</h4>
 <table>
-  <tr><th>ZSUI</th><th>eframe / egui</th><th>Windows Notepad</th></tr>
+  <tr><th>ZSUI</th><th>Iced</th><th>Slint</th></tr>
   <tr>
     <td><img src="docs/images/notepad.png" alt="ZSUI Notepad"></td>
+    <td><img src="docs/images/notepad-iced.png" alt="Iced Notepad"></td>
+    <td><img src="docs/images/notepad-slint.png" alt="Slint Notepad"></td>
+  </tr>
+</table>
+<table>
+  <tr><th>eframe / egui</th><th>Tauri 2</th><th>Windows Notepad</th></tr>
+  <tr>
     <td><img src="docs/images/notepad-egui.png" alt="egui Notepad"></td>
+    <td><img src="docs/images/notepad-tauri.png" alt="Tauri Notepad"></td>
     <td><img src="docs/images/notepad-windows.png" alt="Windows Notepad"></td>
   </tr>
 </table>

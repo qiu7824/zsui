@@ -199,10 +199,12 @@ notepad benchmark. It provides a document tab, command bar, editor frame,
 status layout, semantic draw plan and hit regions without owning product state
 or raw platform handles. The native editor, file dialog, accelerator and
 lifecycle code still lives in the example's platform module. Use
-`docs/notepad-demo.md` and
-`scripts/measure-notepad-comparison.ps1` to judge output size, memory and AI
-implementation effort without upgrading the native text-editor or file-dialog
-services to complete.
+`docs/notepad-demo.md` and `scripts/measure-notepad-comparison.ps1` to compare
+ZSUI with the isolated egui, Iced, Slint and Tauri 2 baselines. The script
+measures complete process trees, including Tauri's WebView2 descendants. Read
+an individual `comparisons/*_notepad` directory only when that baseline is
+needed; it is optional AI context, not bootstrap context. Do not interpret the
+comparison as completing ZSUI's native text-editor or file-dialog services.
 The optional `calculator` feature in `src/calculator.rs` is a second runnable
 application slice. `ZsCalculatorEngine` provides decimal arithmetic, typed
 actions, memory and history; `ZsCalculatorShellSpec` provides DPI-aware Fluent
@@ -275,8 +277,9 @@ state cannot call `run`. The original one-line builder remains unchanged.
 - Conversation/task workbench API: `src/workbench.rs`
 - Document editor shell API: `src/document_shell.rs`
 - Component readiness catalog: `src/component_catalog.rs`
-- Notepad integration benchmark: `docs/notepad-demo.md`,
-  `examples/zsui_notepad.rs`, `scripts/measure-notepad-comparison.ps1`
+- Notepad integration and five-framework benchmark: `docs/notepad-demo.md`,
+  `examples/zsui_notepad.rs`, `scripts/measure-notepad-comparison.ps1`;
+  isolated baselines live under `comparisons/*_notepad`
 - Calculator engine, shell and benchmark: `src/calculator.rs`,
   `docs/calculator-demo.md`, `examples/zsui_calculator.rs`,
   `scripts/measure-calculator-comparison.ps1`

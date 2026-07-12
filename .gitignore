@@ -1,6 +1,13 @@
 /target
 /comparisons/egui_notepad/target
+/comparisons/iced_notepad/target
+/comparisons/slint_notepad/target
+/comparisons/tauri_notepad/target
+/comparisons/tauri_notepad/gen
 !/comparisons/egui_notepad/Cargo.lock
+!/comparisons/iced_notepad/Cargo.lock
+!/comparisons/slint_notepad/Cargo.lock
+!/comparisons/tauri_notepad/Cargo.lock
 *.pdb
 *.exe
 .DS_Store

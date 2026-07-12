@@ -1,0 +1,28 @@
+[package]
+name = "tauri-notepad-baseline"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+rfd = "=0.17.2"
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "=2.11.5", default-features = false, features = [
+    "common-controls-v6",
+    "compression",
+    "wry",
+] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

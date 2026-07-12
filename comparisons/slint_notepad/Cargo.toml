@@ -1,0 +1,24 @@
+[package]
+name = "slint-notepad-baseline"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rfd = "=0.17.2"
+slint = { version = "=1.17.1", default-features = false, features = [
+    "accessibility",
+    "backend-winit",
+    "compat-1-2",
+    "image-default-formats",
+    "renderer-software",
+    "software-renderer-systemfonts",
+    "std",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

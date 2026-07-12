@@ -77,29 +77,45 @@ self-drawn keypad.
 <table>
   <tr>
     <th>ZSUI</th>
-    <th>eframe / egui</th>
-    <th>Windows Notepad</th>
+    <th>Iced</th>
+    <th>Slint</th>
   </tr>
   <tr>
     <td><img src="images/notepad.png" alt="ZSUI Notepad"></td>
+    <td><img src="images/notepad-iced.png" alt="Iced Notepad"></td>
+    <td><img src="images/notepad-slint.png" alt="Slint Notepad"></td>
+  </tr>
+</table>
+<table>
+  <tr>
+    <th>eframe / egui</th>
+    <th>Tauri 2</th>
+    <th>Windows Notepad</th>
+  </tr>
+  <tr>
     <td><img src="images/notepad-egui.png" alt="egui Notepad"></td>
+    <td><img src="images/notepad-tauri.png" alt="Tauri Notepad"></td>
     <td><img src="images/notepad-windows.png" alt="Windows Notepad"></td>
   </tr>
 </table>
 
 一次相同机器、5 秒预热后的任务管理器私有工作集观测：
 
-| Implementation | App files | App lines | Binary | Task Manager memory |
-| --- | ---: | ---: | ---: | ---: |
-| ZSUI Notepad | 3 | 937 | 0.26 MiB | 1.84 MiB |
-| eframe/egui baseline | 2 | 344 | 5.67 MiB | 43.61 MiB |
-| Windows Notepad | system app | system app | package file* | 37.89 MiB |
+| Implementation | Processes | App files | Nonblank app lines | Binary | Task Manager memory |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ZSUI Notepad | 1 | 3 | 938 | 0.27 MiB | 1.84 MiB |
+| eframe/egui baseline | 1 | 2 | 344 | 5.67 MiB | 43.47 MiB |
+| Iced baseline | 1 | 2 | 259 | 4.07 MiB | 5.50 MiB |
+| Slint baseline | 1 | 2 | 328 | 9.66 MiB | 5.04 MiB |
+| Tauri 2 baseline | 7 | 8 | 411 | 2.65 MiB* | 80.57 MiB |
+| Windows Notepad | 1 | system app | system app | package file* | 37.65 MiB |
 
 完整方法、总工作集与 private bytes 见
 [`notepad-demo.md`](notepad-demo.md)。这些数值是单机观测，不是所有设备上的固定值。
 
 See [`notepad-demo.md`](notepad-demo.md) for methodology, total working set and
-private bytes. These are observations from one machine, not universal constants.
+private bytes. Tauri includes all recursive WebView2 child processes. These are
+observations from one machine, not universal constants.
 
 ## Calculator Comparison / 计算器对比
 
