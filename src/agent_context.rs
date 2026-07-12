@@ -811,8 +811,10 @@ fn platform_binding_name_for_capability(
             Some("windows_win32_transient_window_host")
         }
         (NativeUiPlatform::Macos, "file_dialog") => Some("appkit_open_save_panel_service"),
+        (NativeUiPlatform::Macos, "clipboard") => Some("appkit_ns_pasteboard_text_service"),
         (NativeUiPlatform::Macos, "popup_menu") => Some("appkit_ns_menu_command_service"),
         (NativeUiPlatform::Linux, "file_dialog") => Some("gtk_file_chooser_native_service"),
+        (NativeUiPlatform::Linux, "clipboard") => Some("gtk_gdk_clipboard_text_service"),
         (NativeUiPlatform::Linux, "popup_menu") => Some("gtk_gmenu_simple_action_service"),
         (NativeUiPlatform::Android, "main_window") => Some("android_activity_surface"),
         (NativeUiPlatform::Android, "settings_window") => Some("android_settings_fragment"),

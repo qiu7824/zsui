@@ -48,14 +48,17 @@ on target-specific dependencies to compile only the active platform backend.
 The AppKit and GTK4 backend features provide target-native desktop service
 slices through safe Rust contracts. macOS maps open/save requests to
 `NSOpenPanel`/`NSSavePanel` and lowers `MenuSpec` into owned
-`NSMenu`/`NSMenuItem` objects. Linux maps dialogs to GTK4 `FileChooserNative`
-and menus to `GMenu`/`SimpleAction`. Both menu paths preserve nested,
+`NSMenu`/`NSMenuItem` objects; UTF-8 clipboard text uses `NSPasteboard`. Linux
+maps dialogs to GTK4 `FileChooserNative`, menus to `GMenu`/`SimpleAction`, and
+UTF-8 clipboard text to `GdkClipboard`. Both menu paths preserve nested,
 disabled, checked and accelerator state and return typed `Command` values as
-`DesktopEvent::MenuCommand`; native toolkit objects remain private.
+`DesktopEvent::MenuCommand`; native toolkit objects remain private. Clipboard
+images and files remain explicitly unsupported until their native formats are
+implemented and tested.
 
 These services do not complete either native host. Shared View rendering,
-input, clipboard, host event-loop integration and target smoke evidence remain
-required. The Winit transport is not AppKit or GTK4 completion evidence.
+input, host event-loop integration and target smoke evidence remain required.
+The Winit transport is not AppKit or GTK4 completion evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

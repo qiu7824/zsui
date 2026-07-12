@@ -318,7 +318,15 @@ impl HostCapabilities {
 
     pub fn macos_native_window_host() -> Self {
         let mut capabilities = Self::macos_scaffold();
-        capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.clipboard_text = if cfg!(feature = "macos-appkit") {
+            CapabilitySupport::partial(
+                "NSPasteboard UTF-8 text read/write is connected; AppKit host proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable macos-appkit to compile the native AppKit clipboard service",
+            )
+        };
         capabilities.menus = if cfg!(feature = "macos-appkit") {
             CapabilitySupport::partial(
                 "NSMenu/NSMenuItem installation and typed command polling are connected; AppKit host integration proof is pending",
@@ -385,7 +393,15 @@ impl HostCapabilities {
 
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
-        capabilities.clipboard_text = native_text_clipboard_support();
+        capabilities.clipboard_text = if cfg!(feature = "linux-gtk") {
+            CapabilitySupport::partial(
+                "GdkClipboard UTF-8 text read/write is connected; Wayland/X11 host proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable linux-gtk to compile the native GTK4 clipboard service",
+            )
+        };
         capabilities.menus = if cfg!(feature = "linux-gtk") {
             CapabilitySupport::partial(
                 "GMenu/SimpleAction installation and typed command polling are connected; GTK host integration proof is pending",

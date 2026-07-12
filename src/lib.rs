@@ -49,6 +49,12 @@ pub mod native_adapter_manifest;
     all(target_os = "macos", feature = "macos-appkit"),
     all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
 ))]
+mod native_clipboard;
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
 mod native_file_dialog;
 pub mod native_host_actions;
 pub mod native_host_launch;
@@ -582,6 +588,14 @@ mod tests {
             }
         );
         assert_eq!(
+            macos.clipboard_text.status,
+            if cfg!(feature = "macos-appkit") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
+        assert_eq!(
             macos.file_picker.status,
             if cfg!(feature = "macos-appkit") {
                 CapabilityStatus::Partial
@@ -604,6 +618,14 @@ mod tests {
         );
         assert_eq!(
             linux.menus.status,
+            if cfg!(feature = "linux-gtk") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
+        assert_eq!(
+            linux.clipboard_text.status,
             if cfg!(feature = "linux-gtk") {
                 CapabilityStatus::Partial
             } else {

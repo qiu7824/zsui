@@ -3,13 +3,52 @@ use std::path::{Path, PathBuf};
 use gtk::gio;
 use gtk::glib::MainContext;
 use gtk::prelude::*;
-use gtk::{FileChooserAction, FileChooserNative, FileFilter, ResponseType};
+use gtk::{gdk, FileChooserAction, FileChooserNative, FileFilter, ResponseType};
 use gtk4 as gtk;
 
+use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
-use crate::{FileDialogService, FileDialogSpec, SaveFileDialogSpec, ZsuiError, ZsuiResult};
+use crate::{
+    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, SaveFileDialogSpec,
+    ZsuiError, ZsuiResult,
+};
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LinuxGtkClipboardService;
+
+impl ClipboardService for LinuxGtkClipboardService {
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
+        let clipboard = gtk_system_clipboard("gtk_read_clipboard")?;
+        MainContext::default()
+            .block_on(clipboard.read_text_future())
+            .map(|text| text.map(|text| ClipboardData::Text(text.to_string())))
+            .map_err(|error| ZsuiError::host("gtk_read_clipboard", error.to_string()))
+    }
+
+    fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
+        let write = native_clipboard_text_write(data)?;
+        let clipboard = gtk_system_clipboard("gtk_write_clipboard")?;
+        match write {
+            NativeClipboardTextWrite::Clear => clipboard
+                .set_content(None::<&gdk::ContentProvider>)
+                .map_err(|error| ZsuiError::host("gtk_write_clipboard", error.to_string())),
+            NativeClipboardTextWrite::Text(text) => {
+                clipboard.set_text(text);
+                Ok(())
+            }
+        }
+    }
+}
+
+fn gtk_system_clipboard(operation: &'static str) -> ZsuiResult<gdk::Clipboard> {
+    ensure_gtk_main_thread(operation)?;
+    let display = gdk::Display::default().ok_or_else(|| {
+        ZsuiError::host(operation, "GTK has no default display for clipboard access")
+    })?;
+    Ok(display.clipboard())
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LinuxGtkFileDialogService;
@@ -100,7 +139,7 @@ pub(crate) fn ensure_gtk_main_thread(operation: &'static str) -> ZsuiResult<()> 
     if gtk::is_initialized() && !gtk::is_initialized_main_thread() {
         return Err(ZsuiError::host(
             operation,
-            "GTK file dialogs must be presented from the GTK main thread",
+            "GTK desktop services must run on the GTK main thread",
         ));
     }
     if !gtk::is_initialized_main_thread() {
@@ -161,5 +200,11 @@ mod tests {
     fn gtk_file_dialog_service_implements_safe_public_contract() {
         fn assert_service<T: FileDialogService>() {}
         assert_service::<LinuxGtkFileDialogService>();
+    }
+
+    #[test]
+    fn gtk_clipboard_service_implements_safe_public_contract() {
+        fn assert_service<T: ClipboardService>() {}
+        assert_service::<LinuxGtkClipboardService>();
     }
 }

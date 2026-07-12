@@ -215,6 +215,7 @@
       ],
       "optional": [
         "src/windows_win32_host.rs",
+        "src/native_clipboard.rs",
         "src/native_menu.rs",
         "src/macos_appkit_menu.rs",
         "src/macos_appkit_services.rs",

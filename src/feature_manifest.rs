@@ -373,7 +373,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec!["objc2", "objc2-app-kit", "objc2-foundation"],
             Vec::new(),
-            "macOS AppKit backend boundary with native file-dialog and typed menu services",
+            "macOS AppKit backend boundary with native clipboard, file-dialog and typed menu services",
         ),
         ZsuiCargoFeature::new(
             "linux-gtk",
@@ -381,7 +381,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec!["gtk4"],
             Vec::new(),
-            "Linux GTK4 backend boundary with native file-dialog and typed menu services",
+            "Linux GTK4 backend boundary with native clipboard, file-dialog and typed menu services",
         ),
         ZsuiCargoFeature::new(
             "desktop-native",

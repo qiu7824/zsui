@@ -1,14 +1,54 @@
 use std::path::{Path, PathBuf};
 
 use objc2::{rc::Retained, MainThreadMarker};
-use objc2_app_kit::{NSModalResponseOK, NSOpenPanel, NSSavePanel};
+use objc2_app_kit::{
+    NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel,
+};
 use objc2_foundation::{NSArray, NSString, NSURL};
 
+use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
     native_file_dialog_extensions, native_file_dialog_initial_directory,
     native_save_dialog_suggested_name,
 };
-use crate::{FileDialogService, FileDialogSpec, SaveFileDialogSpec, ZsuiError, ZsuiResult};
+use crate::{
+    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, SaveFileDialogSpec,
+    ZsuiError, ZsuiResult,
+};
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MacosAppKitClipboardService;
+
+impl ClipboardService for MacosAppKitClipboardService {
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
+        let _mtm = appkit_main_thread_marker("NSPasteboard")?;
+        Ok(NSPasteboard::generalPasteboard()
+            .stringForType(unsafe { NSPasteboardTypeString })
+            .map(|text| ClipboardData::Text(text.to_string())))
+    }
+
+    fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
+        let write = native_clipboard_text_write(data)?;
+        let _mtm = appkit_main_thread_marker("NSPasteboard")?;
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        match write {
+            NativeClipboardTextWrite::Clear => Ok(()),
+            NativeClipboardTextWrite::Text(text) => {
+                if pasteboard
+                    .setString_forType(&NSString::from_str(text), unsafe { NSPasteboardTypeString })
+                {
+                    Ok(())
+                } else {
+                    Err(ZsuiError::host(
+                        "macos_write_clipboard",
+                        "NSPasteboard rejected the UTF-8 text value",
+                    ))
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MacosAppKitFileDialogService;
@@ -100,7 +140,7 @@ fn appkit_main_thread_marker(operation: &'static str) -> ZsuiResult<MainThreadMa
     MainThreadMarker::new().ok_or_else(|| {
         ZsuiError::host(
             operation,
-            "AppKit file dialogs must be presented from the macOS main thread",
+            "AppKit desktop services must run on the macOS main thread",
         )
     })
 }
@@ -136,5 +176,11 @@ mod tests {
     fn appkit_file_dialog_service_implements_safe_public_contract() {
         fn assert_service<T: FileDialogService>() {}
         assert_service::<MacosAppKitFileDialogService>();
+    }
+
+    #[test]
+    fn appkit_clipboard_service_implements_safe_public_contract() {
+        fn assert_service<T: ClipboardService>() {}
+        assert_service::<MacosAppKitClipboardService>();
     }
 }

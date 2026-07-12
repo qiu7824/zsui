@@ -428,8 +428,8 @@ fn native_ui_capability_readiness(
         NativeUiPlatform::Macos => match capability {
             Clipboard => (
                 FirstPass,
-                "src/host.rs",
-                "feature-gated text clipboard access is available; files and images are not complete",
+                "src/macos_appkit_services.rs",
+                "NSPasteboard UTF-8 text read/write is connected through the safe ClipboardService; files, images and target proof remain incomplete",
             ),
             FileDialog => (
                 FirstPass,
@@ -455,8 +455,8 @@ fn native_ui_capability_readiness(
         NativeUiPlatform::Linux => match capability {
             Clipboard => (
                 FirstPass,
-                "src/host.rs",
-                "feature-gated text clipboard access is available; files and images are not complete",
+                "src/linux_gtk_services.rs",
+                "GdkClipboard UTF-8 text read/write is connected through the safe ClipboardService; files, images and Wayland/X11 proof remain incomplete",
             ),
             FileDialog => (
                 FirstPass,

@@ -226,6 +226,18 @@ impl DesktopCapabilities {
     pub fn macos_appkit_current() -> Self {
         Self::all_unsupported(PlatformName::Macos)
             .with_support(
+                DesktopCapability::ClipboardText,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSPasteboard UTF-8 text read/write is connected; AppKit host proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile the native AppKit clipboard service",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::NativeMenu,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
@@ -271,6 +283,18 @@ impl DesktopCapabilities {
 
     pub fn linux_gtk_current() -> Self {
         Self::all_unsupported(PlatformName::Linux)
+            .with_support(
+                DesktopCapability::ClipboardText,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GdkClipboard UTF-8 text read/write is connected; Wayland/X11 host proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile the native GTK4 clipboard service",
+                    )
+                },
+            )
             .with_support(
                 DesktopCapability::NativeMenu,
                 if cfg!(feature = "linux-gtk") {
@@ -733,6 +757,26 @@ mod tests {
         assert!(windows.is_fully_supported(DesktopCapability::NativeIcons));
         assert!(!windows.is_fully_supported(DesktopCapability::InputMethod));
         assert!(!windows.is_fully_supported(DesktopCapability::OpenFileDialog));
+        assert_eq!(
+            macos
+                .support(DesktopCapability::ClipboardText)
+                .map(|support| support.status),
+            Some(if cfg!(feature = "macos-appkit") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            })
+        );
+        assert_eq!(
+            linux
+                .support(DesktopCapability::ClipboardText)
+                .map(|support| support.status),
+            Some(if cfg!(feature = "linux-gtk") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            })
+        );
         assert_eq!(
             macos.missing_or_incomplete().len(),
             REQUIRED_DESKTOP_CAPABILITIES.len()
