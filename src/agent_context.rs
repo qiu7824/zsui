@@ -1154,7 +1154,7 @@ mod tests {
         let packs = manifest["packs"]
             .as_array()
             .expect("AI context packs should be an array");
-        assert_eq!(packs.len(), 14);
+        assert_eq!(packs.len(), 15);
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut ids = HashSet::new();
         for pack in packs {

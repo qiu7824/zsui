@@ -40,6 +40,7 @@ $singleFeatures = @(
     "clipboard",
     "image",
     "native-smoke",
+    "fluent-icons",
     "notepad-demo",
     "calculator-demo",
     "desktop-winit",

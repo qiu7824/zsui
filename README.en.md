@@ -326,10 +326,13 @@ Built-in workbench visuals consume the shared Fluent token layer rather than
 embedding product colors or icon code points. The Windows renderer uses Segoe
 UI Variable Text, the Windows 11 12/16 and 14/20 type ramp, semantic surface and
 border colors, 4 epx control corners, 8 epx card corners and semantic `ZsIcon`
-commands resolved through Segoe Fluent Icons. GTK icon-theme names and macOS SF
-Symbol names are exposed by the same icon catalog for their native backends.
-System accent/high-contrast discovery and native GTK/macOS icon binding remain
-explicit completion gates.
+commands. It detects Segoe Fluent Icons at runtime and falls back to the system
+Segoe MDL2 Assets family. macOS candidates use SF Symbols and Linux candidates
+use the current GTK symbolic icon theme. An MIT Fluent System Icons SVG subset
+is available through target-aware backend gating or the explicit
+`fluent-icons` feature. No system icon font is bundled. AppKit `NSImage` and GTK
+`GtkIconTheme` runtime lookup remain explicit completion gates; see
+[`docs/native-icons.md`](docs/native-icons.md).
 
 Audit a declaration before attaching it to a host:
 
@@ -648,3 +651,5 @@ Rust-native UI infrastructure.
 ## License
 
 This project is licensed under [GPL-3.0-only](LICENSE).
+Bundled Fluent System Icons fallback assets are licensed under MIT; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

@@ -39,6 +39,7 @@ pub mod native_adapter_manifest;
 pub mod native_host_actions;
 pub mod native_host_launch;
 pub mod native_hosts;
+pub mod native_icons;
 pub mod native_smoke;
 #[cfg(feature = "paged-list")]
 pub mod paged_list;
@@ -114,9 +115,9 @@ pub use core::{
 };
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
-    DesktopHost, DesktopKey, DesktopTheme, FileDialogService, KeyModifiers, MenuService,
-    SaveFileDialogSpec, TextInputRequest, TextInputService, ThemePreference, ThemeService,
-    WindowService, REQUIRED_DESKTOP_CAPABILITIES,
+    DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
+    MenuService, SaveFileDialogSpec, TextInputRequest, TextInputService, ThemePreference,
+    ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 pub use document_shell::{
@@ -285,6 +286,18 @@ pub use native_hosts::{
     REQUIRED_NATIVE_SETTINGS_PAGE_MODEL_HOST_OPERATIONS,
     REQUIRED_NATIVE_SETTINGS_WINDOW_HOST_OPERATIONS, REQUIRED_NATIVE_STATUS_ITEM_HOST_OPERATIONS,
     REQUIRED_NATIVE_STATUS_MENU_COMMAND_HOST_OPERATIONS,
+};
+#[cfg(any(
+    feature = "fluent-icons",
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", feature = "linux-gtk")
+))]
+pub use native_icons::{
+    bundled_fluent_icon_svg, FLUENT_SYSTEM_ICONS_LICENSE, FLUENT_SYSTEM_ICONS_NOTICE,
+};
+pub use native_icons::{
+    native_icon_candidates, resolve_native_icon, NativeIconLookup, NativeIconSource,
+    NativeIconSourceKind, WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY,
 };
 pub use native_smoke::{
     native_host_smoke_artifact_names, native_host_smoke_artifact_requirements,

@@ -2,9 +2,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::native_icons::NativeIconSource;
 use crate::{
     CapabilityStatus, CapabilitySupport, ClipboardData, Command, Dpi, FileDialogSpec, MenuSpec,
-    PlatformName, Rect, WidgetId, WindowId, WindowSpec, ZsuiError, ZsuiResult,
+    PlatformName, Rect, WidgetId, WindowId, WindowSpec, ZsIcon, ZsuiError, ZsuiResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,6 +22,7 @@ pub enum DesktopCapability {
     OpenFileDialog,
     SaveFileDialog,
     SystemTheme,
+    NativeIcons,
 }
 
 impl DesktopCapability {
@@ -38,11 +40,12 @@ impl DesktopCapability {
             Self::OpenFileDialog => "open_file_dialog",
             Self::SaveFileDialog => "save_file_dialog",
             Self::SystemTheme => "system_theme",
+            Self::NativeIcons => "native_icons",
         }
     }
 }
 
-pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 12] = [
+pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 13] = [
     DesktopCapability::NativeWindow,
     DesktopCapability::WindowResize,
     DesktopCapability::ScaleFactor,
@@ -55,6 +58,7 @@ pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 12] = [
     DesktopCapability::OpenFileDialog,
     DesktopCapability::SaveFileDialog,
     DesktopCapability::SystemTheme,
+    DesktopCapability::NativeIcons,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,14 +213,30 @@ impl DesktopCapabilities {
                     "system theme detection and repaint are connected; live-change proof is pending",
                 ),
             )
+            .with_support(
+                DesktopCapability::NativeIcons,
+                CapabilitySupport::supported(
+                    "the GDI renderer detects Segoe Fluent Icons and falls back to Segoe MDL2 Assets",
+                ),
+            )
     }
 
     pub fn macos_appkit_current() -> Self {
-        Self::all_unsupported(PlatformName::Macos)
+        Self::all_unsupported(PlatformName::Macos).with_support(
+            DesktopCapability::NativeIcons,
+            CapabilitySupport::partial(
+                "SF Symbols are mapped; AppKit image lookup and fallback rendering are not connected",
+            ),
+        )
     }
 
     pub fn linux_gtk_current() -> Self {
-        Self::all_unsupported(PlatformName::Linux)
+        Self::all_unsupported(PlatformName::Linux).with_support(
+            DesktopCapability::NativeIcons,
+            CapabilitySupport::partial(
+                "GTK symbolic icon names are mapped; GtkIconTheme lookup and fallback rendering are not connected",
+            ),
+        )
     }
 
     pub fn current_native_backend() -> Self {
@@ -392,8 +412,18 @@ pub trait TextInputService {
     fn blur_text_input(&mut self, window: WindowId) -> ZsuiResult<()>;
 }
 
+pub trait IconService {
+    fn resolve_icon(&self, icon: ZsIcon) -> ZsuiResult<NativeIconSource>;
+}
+
 pub trait DesktopHost:
-    WindowService + ClipboardService + FileDialogService + MenuService + ThemeService + TextInputService
+    WindowService
+    + ClipboardService
+    + FileDialogService
+    + MenuService
+    + ThemeService
+    + TextInputService
+    + IconService
 {
     fn desktop_capabilities(&self) -> &DesktopCapabilities;
     fn poll_desktop_event(&mut self) -> ZsuiResult<Option<DesktopEvent>>;
@@ -403,6 +433,7 @@ pub trait DesktopHost:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_icons::native_icon_candidates;
 
     struct ContractHost {
         capabilities: DesktopCapabilities,
@@ -498,6 +529,21 @@ mod tests {
 
         fn blur_text_input(&mut self, _window: WindowId) -> ZsuiResult<()> {
             self.require(DesktopCapability::TextInput)
+        }
+    }
+
+    impl IconService for ContractHost {
+        fn resolve_icon(&self, icon: ZsIcon) -> ZsuiResult<NativeIconSource> {
+            self.require(DesktopCapability::NativeIcons)?;
+            native_icon_candidates(&self.capabilities.platform, icon)
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
+                    ZsuiError::unsupported(
+                        "native_icons",
+                        "the contract host has no icon source for this platform",
+                    )
+                })
         }
     }
 
@@ -608,6 +654,7 @@ mod tests {
 
         assert!(windows.is_fully_supported(DesktopCapability::NativeWindow));
         assert!(windows.is_fully_supported(DesktopCapability::NativeMenu));
+        assert!(windows.is_fully_supported(DesktopCapability::NativeIcons));
         assert!(!windows.is_fully_supported(DesktopCapability::InputMethod));
         assert!(!windows.is_fully_supported(DesktopCapability::OpenFileDialog));
         assert_eq!(
@@ -618,5 +665,21 @@ mod tests {
             linux.missing_or_incomplete().len(),
             REQUIRED_DESKTOP_CAPABILITIES.len()
         );
+    }
+
+    #[test]
+    fn icon_service_returns_safe_semantic_platform_sources() {
+        let host = ContractHost {
+            capabilities: DesktopCapabilities::all_unsupported(PlatformName::Windows).with_support(
+                DesktopCapability::NativeIcons,
+                CapabilitySupport::supported("contract test implementation"),
+            ),
+            events: Vec::new(),
+        };
+
+        let source = host.resolve_icon(ZsIcon::Save).unwrap();
+        assert_eq!(source.icon, ZsIcon::Save);
+        assert_eq!(source.identifier, crate::WINDOWS_FLUENT_ICON_FONT_FAMILY);
+        assert!(source.kind.is_platform_native());
     }
 }

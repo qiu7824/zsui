@@ -187,10 +187,11 @@ explicit gaps.
 Its built-in visuals use the Fluent token definitions in `src/style.rs` and
 semantic `ZsIcon` commands from `src/icon.rs`. Agents must not add PUA glyph
 strings, private component palettes or arbitrary control dimensions to this
-module. Windows resolves semantic icons through Segoe Fluent Icons; GTK theme
-names and SF Symbol names are catalogued for future native bindings. Dark/high
-contrast smoke and complete hover/pressed/focus-visible state coverage are not
-yet complete.
+module. Windows detects Segoe Fluent Icons and falls back to Segoe MDL2 Assets
+in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
+GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
+AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
+dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
 `src/component_catalog.rs` tracks 48 WinUI-style component families: 21 have a
 first-pass runtime surface, 8 are contract-only and 19 are not started.
 `src/document_shell.rs` is the reusable visual boundary used by the Windows

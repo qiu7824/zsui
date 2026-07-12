@@ -181,6 +181,25 @@
       ]
     },
     {
+      "id": "icons",
+      "purpose": "Semantic icons, native platform sources and licensed fallback assets",
+      "required": [
+        "src/icon.rs",
+        "src/native_icons.rs",
+        "docs/native-icons.md"
+      ],
+      "optional": [
+        "src/windows_gdi_renderer.rs",
+        "src/desktop_services.rs",
+        "Cargo.toml",
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "verify": [
+        "cargo test --no-default-features --features fluent-icons --quiet",
+        "cargo test --features full --quiet"
+      ]
+    },
+    {
       "id": "desktop-hosts",
       "purpose": "Windows, macOS and Linux host/capability boundaries",
       "required": [

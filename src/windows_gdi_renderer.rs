@@ -1,18 +1,20 @@
 use std::{ffi::c_void, io::Cursor, ptr::null, sync::OnceLock};
 
 use crate::{
+    native_icons::{WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY},
     Color, ColorRole, HorizontalAlign, NativeDrawCommand, NativeDrawCommandOperation,
     NativeDrawCommandSink, NativeDrawFill, NativeDrawIconCommand, NativeDrawPlan,
     NativeDrawTextCommand, NativeIconColorMode, NativeStyleResolver, Rect, Renderer,
     SemanticTextStyle, Size, TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
+    ZsIcon,
 };
 use windows_sys::Win32::{
     Foundation::{POINT, RECT},
     Graphics::Gdi::{
         CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, FillRect, FrameRect,
-        GetStockObject, IntersectClipRect, RestoreDC, RoundRect, SaveDC, SelectObject, SetBkMode,
-        SetBrushOrgEx, SetStretchBltMode, SetTextColor, StretchDIBits, BITMAPINFO,
-        BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
+        GetStockObject, GetTextFaceW, IntersectClipRect, RestoreDC, RoundRect, SaveDC,
+        SelectObject, SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor, StretchDIBits,
+        BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
         DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HDC, HGDIOBJ, NULL_PEN, OUT_DEFAULT_PRECIS,
         PS_SOLID, SRCCOPY,
     },
@@ -33,6 +35,45 @@ struct BpPaintParams {
 const BPBF_TOPDOWNDIB: u32 = 2;
 static BUFFERED_PAINT_INIT: OnceLock<()> = OnceLock::new();
 static GDIP_TOKEN: OnceLock<Option<usize>> = OnceLock::new();
+static WINDOWS_SYSTEM_ICON_FONT: OnceLock<WindowsSystemIconFont> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowsSystemIconFont {
+    SegoeFluentIcons,
+    SegoeMdl2Assets,
+    Unavailable,
+}
+
+impl WindowsSystemIconFont {
+    pub const fn font_family(self) -> Option<&'static str> {
+        match self {
+            Self::SegoeFluentIcons => Some(WINDOWS_FLUENT_ICON_FONT_FAMILY),
+            Self::SegoeMdl2Assets => Some(WINDOWS_MDL2_ICON_FONT_FAMILY),
+            Self::Unavailable => None,
+        }
+    }
+
+    pub const fn glyph(self, icon: ZsIcon) -> Option<&'static str> {
+        match self {
+            Self::SegoeFluentIcons => Some(icon.windows_fluent_glyph()),
+            Self::SegoeMdl2Assets => Some(icon.windows_mdl2_glyph()),
+            Self::Unavailable => None,
+        }
+    }
+}
+
+pub const fn select_windows_system_icon_font(
+    fluent_available: bool,
+    mdl2_available: bool,
+) -> WindowsSystemIconFont {
+    if fluent_available {
+        WindowsSystemIconFont::SegoeFluentIcons
+    } else if mdl2_available {
+        WindowsSystemIconFont::SegoeMdl2Assets
+    } else {
+        WindowsSystemIconFont::Unavailable
+    }
+}
 
 #[link(name = "uxtheme")]
 unsafe extern "system" {
@@ -594,6 +635,7 @@ impl WindowsGdiPalette {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowsGdiStyleResolver {
     pub font_family: String,
+    pub icon_font_family: String,
     pub palette: WindowsGdiPalette,
 }
 
@@ -601,8 +643,14 @@ impl WindowsGdiStyleResolver {
     pub fn new(font_family: impl Into<String>, palette: WindowsGdiPalette) -> Self {
         Self {
             font_family: font_family.into(),
+            icon_font_family: WINDOWS_FLUENT_ICON_FONT_FAMILY.to_string(),
             palette,
         }
+    }
+
+    pub fn with_icon_font_family(mut self, font_family: impl Into<String>) -> Self {
+        self.icon_font_family = font_family.into();
+        self
     }
 }
 
@@ -628,7 +676,7 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
         TextStyle {
             font_family: match style.role {
                 crate::TextRole::Monospace => "Consolas".to_string(),
-                crate::TextRole::Icon => "Segoe Fluent Icons".to_string(),
+                crate::TextRole::Icon => self.icon_font_family.clone(),
                 _ => self.font_family.clone(),
             },
             size,
@@ -646,6 +694,7 @@ pub struct WindowsGdiDrawSink {
     renderer: WindowsGdiRenderer,
     palette: WindowsGdiPalette,
     style_resolver: WindowsGdiStyleResolver,
+    system_icon_font: WindowsSystemIconFont,
     operation_log: Vec<NativeDrawCommandOperation>,
 }
 
@@ -655,10 +704,16 @@ impl WindowsGdiDrawSink {
     }
 
     pub fn with_palette(dc: HDC, palette: WindowsGdiPalette) -> Self {
+        let system_icon_font = detect_windows_system_icon_font(dc);
+        let icon_font_family = system_icon_font
+            .font_family()
+            .unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY);
         Self {
             renderer: WindowsGdiRenderer::new(dc),
             palette,
-            style_resolver: WindowsGdiStyleResolver::new("Segoe UI Variable Text", palette),
+            style_resolver: WindowsGdiStyleResolver::new("Segoe UI Variable Text", palette)
+                .with_icon_font_family(icon_font_family),
+            system_icon_font,
             operation_log: Vec::new(),
         }
     }
@@ -733,7 +788,10 @@ impl WindowsGdiDrawSink {
         if command.color_mode == NativeIconColorMode::Original && self.draw_original_icon(command) {
             return;
         }
-        self.draw_fluent_icon(command);
+        if self.draw_system_icon(command) {
+            return;
+        }
+        let _ = self.draw_original_icon(command);
     }
 
     fn draw_original_icon(&mut self, command: &NativeDrawIconCommand) -> bool {
@@ -747,10 +805,16 @@ impl WindowsGdiDrawSink {
         true
     }
 
-    fn draw_fluent_icon(&mut self, command: &NativeDrawIconCommand) {
+    fn draw_system_icon(&mut self, command: &NativeDrawIconCommand) -> bool {
+        let Some(font_family) = self.system_icon_font.font_family() else {
+            return false;
+        };
+        let Some(glyph) = self.system_icon_font.glyph(command.icon) else {
+            return false;
+        };
         let size = command.bounds.width.min(command.bounds.height).max(1) as f32;
         let style = TextStyle {
-            font_family: "Segoe Fluent Icons".to_string(),
+            font_family: font_family.to_string(),
             size,
             weight: TextWeight::Regular,
             color: self.palette.resolve(command.color),
@@ -761,12 +825,57 @@ impl WindowsGdiDrawSink {
         };
         self.renderer.draw_text(
             &TextRun {
-                text: command.icon.windows_fluent_glyph().to_string(),
+                text: glyph.to_string(),
                 bounds: command.bounds,
             },
             &style,
         );
+        true
     }
+}
+
+fn detect_windows_system_icon_font(dc: HDC) -> WindowsSystemIconFont {
+    if dc.is_null() {
+        return WindowsSystemIconFont::Unavailable;
+    }
+    if let Some(font) = WINDOWS_SYSTEM_ICON_FONT.get() {
+        return *font;
+    }
+    let selected = select_windows_system_icon_font(
+        windows_gdi_font_family_available(dc, WINDOWS_FLUENT_ICON_FONT_FAMILY),
+        windows_gdi_font_family_available(dc, WINDOWS_MDL2_ICON_FONT_FAMILY),
+    );
+    let _ = WINDOWS_SYSTEM_ICON_FONT.set(selected);
+    selected
+}
+
+fn windows_gdi_font_family_available(dc: HDC, family: &str) -> bool {
+    if dc.is_null() {
+        return false;
+    }
+    let style = TextStyle::line(family, 16.0, Color::rgb(0, 0, 0));
+    let Some(font) = WindowsGdiOwnedObject::font(&style) else {
+        return false;
+    };
+    let Some(_selected) = WindowsGdiSelectedObject::select(dc, font.object()) else {
+        return false;
+    };
+    let mut selected_family = [0_u16; 64];
+    let length = unsafe {
+        GetTextFaceW(
+            dc,
+            selected_family.len() as i32,
+            selected_family.as_mut_ptr(),
+        )
+    };
+    if length <= 0 {
+        return false;
+    }
+    let end = selected_family
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(selected_family.len());
+    String::from_utf16_lossy(&selected_family[..end]).eq_ignore_ascii_case(family)
 }
 
 impl NativeDrawCommandSink for WindowsGdiDrawSink {
@@ -1038,6 +1147,47 @@ mod tests {
 
         assert_eq!(style.font_family, "Segoe Fluent Icons");
         assert_eq!(style.size, 16.0);
+    }
+
+    #[test]
+    fn system_icon_font_prefers_fluent_then_mdl2() {
+        assert_eq!(
+            select_windows_system_icon_font(true, true),
+            WindowsSystemIconFont::SegoeFluentIcons
+        );
+        assert_eq!(
+            select_windows_system_icon_font(false, true),
+            WindowsSystemIconFont::SegoeMdl2Assets
+        );
+        assert_eq!(
+            select_windows_system_icon_font(false, false),
+            WindowsSystemIconFont::Unavailable
+        );
+        assert_eq!(
+            WindowsSystemIconFont::SegoeMdl2Assets.font_family(),
+            Some(WINDOWS_MDL2_ICON_FONT_FAMILY)
+        );
+        assert_eq!(
+            WindowsSystemIconFont::SegoeMdl2Assets.glyph(ZsIcon::Save),
+            Some(ZsIcon::Save.windows_mdl2_glyph())
+        );
+    }
+
+    #[test]
+    fn icon_text_role_accepts_detected_mdl2_font() {
+        let style = WindowsGdiStyleResolver::default()
+            .with_icon_font_family(WINDOWS_MDL2_ICON_FONT_FAMILY)
+            .resolve_text_style(SemanticTextStyle {
+                role: crate::TextRole::Icon,
+                color: ColorRole::PrimaryText,
+                weight: TextWeight::Regular,
+                horizontal_align: HorizontalAlign::Center,
+                vertical_align: VerticalAlign::Center,
+                wrap: TextWrap::NoWrap,
+                ellipsis: false,
+            });
+
+        assert_eq!(style.font_family, WINDOWS_MDL2_ICON_FONT_FAMILY);
     }
 
     #[test]

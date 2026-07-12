@@ -52,6 +52,7 @@ and is not part of normal task context.
 | `document-shell` | Document chrome, native editor inset, notepad example |
 | `calculator` | Decimal engine, keypad shell, calculator example/measurement |
 | `windows-renderer` | Win32/GDI+, no-flicker paint, DPI, icons, pointer input |
+| `icons` | Semantic icons, native platform sources and licensed SVG fallback |
 | `desktop-hosts` | Windows/macOS/Linux host and capability boundaries |
 | `mobile-hosts` | Android Activity and Harmony Ability contracts/proof |
 | `product-adapter` | Product boundary, runtime harness, command executors |

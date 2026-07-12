@@ -320,6 +320,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "native target-smoke artifact writing and review helpers",
         ),
         ZsuiCargoFeature::new(
+            "fluent-icons",
+            Widget,
+            false,
+            Vec::new(),
+            Vec::new(),
+            "MIT-licensed Fluent System Icons SVG fallback assets for missing native symbols",
+        ),
+        ZsuiCargoFeature::new(
             "notepad-demo",
             Tooling,
             false,

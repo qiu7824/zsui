@@ -39,6 +39,43 @@ pub enum ZsIcon {
 }
 
 impl ZsIcon {
+    pub const ALL: [Self; 34] = [
+        Self::App,
+        Self::Calculator,
+        Self::History,
+        Self::Backspace,
+        Self::Add,
+        Self::Search,
+        Self::Settings,
+        Self::Sidebar,
+        Self::Inspector,
+        Self::More,
+        Self::Attach,
+        Self::Send,
+        Self::Stop,
+        Self::Refresh,
+        Self::Retry,
+        Self::Code,
+        Self::Tool,
+        Self::Check,
+        Self::Minimize,
+        Self::Close,
+        Self::Text,
+        Self::Image,
+        Self::File,
+        Self::Folder,
+        Self::Save,
+        Self::Undo,
+        Self::Cut,
+        Self::Pin,
+        Self::Delete,
+        Self::Copy,
+        Self::Paste,
+        Self::Edit,
+        Self::Group,
+        Self::Phrase,
+    ];
+
     pub const fn asset_name(self) -> &'static str {
         match self {
             Self::App => "app",
@@ -148,6 +185,104 @@ impl ZsIcon {
             Self::Paste => "\u{E77F}",
             Self::Edit => "\u{E70F}",
             Self::Group => "\u{E902}",
+        }
+    }
+
+    pub const fn windows_mdl2_glyph(self) -> &'static str {
+        // The semantic subset used by ZSUI is in the MDL2-compatible PUA range.
+        self.windows_fluent_glyph()
+    }
+
+    pub const fn fluent_svg_asset_name(self) -> &'static str {
+        match self {
+            Self::App => "app.svg",
+            Self::Calculator => "calculator.svg",
+            Self::History => "history.svg",
+            Self::Backspace => "backspace.svg",
+            Self::Add => "add.svg",
+            Self::Search => "search.svg",
+            Self::Settings => "settings.svg",
+            Self::Sidebar => "sidebar.svg",
+            Self::Inspector => "inspector.svg",
+            Self::More => "more.svg",
+            Self::Attach => "attach.svg",
+            Self::Send => "send.svg",
+            Self::Stop => "stop.svg",
+            Self::Refresh => "refresh.svg",
+            Self::Retry => "retry.svg",
+            Self::Code => "code.svg",
+            Self::Tool => "tool.svg",
+            Self::Check => "check.svg",
+            Self::Minimize => "minimize.svg",
+            Self::Close => "close.svg",
+            Self::Text => "text.svg",
+            Self::Image => "image.svg",
+            Self::File => "file.svg",
+            Self::Folder => "folder.svg",
+            Self::Save => "save.svg",
+            Self::Undo => "undo.svg",
+            Self::Cut => "cut.svg",
+            Self::Pin => "pin.svg",
+            Self::Delete => "delete.svg",
+            Self::Copy => "copy.svg",
+            Self::Paste => "paste.svg",
+            Self::Edit => "edit.svg",
+            Self::Group => "group.svg",
+            Self::Phrase => "phrase.svg",
+        }
+    }
+
+    #[cfg(any(
+        feature = "fluent-icons",
+        all(target_os = "macos", feature = "macos-appkit"),
+        all(target_os = "linux", feature = "linux-gtk")
+    ))]
+    pub const fn fluent_svg_bytes(self) -> &'static [u8] {
+        match self {
+            Self::App => include_bytes!("../assets/fluent-system-icons/regular/app.svg"),
+            Self::Calculator => {
+                include_bytes!("../assets/fluent-system-icons/regular/calculator.svg")
+            }
+            Self::History => include_bytes!("../assets/fluent-system-icons/regular/history.svg"),
+            Self::Backspace => {
+                include_bytes!("../assets/fluent-system-icons/regular/backspace.svg")
+            }
+            Self::Add => include_bytes!("../assets/fluent-system-icons/regular/add.svg"),
+            Self::Search => include_bytes!("../assets/fluent-system-icons/regular/search.svg"),
+            Self::Settings => {
+                include_bytes!("../assets/fluent-system-icons/regular/settings.svg")
+            }
+            Self::Sidebar => include_bytes!("../assets/fluent-system-icons/regular/sidebar.svg"),
+            Self::Inspector => {
+                include_bytes!("../assets/fluent-system-icons/regular/inspector.svg")
+            }
+            Self::More => include_bytes!("../assets/fluent-system-icons/regular/more.svg"),
+            Self::Attach => include_bytes!("../assets/fluent-system-icons/regular/attach.svg"),
+            Self::Send => include_bytes!("../assets/fluent-system-icons/regular/send.svg"),
+            Self::Stop => include_bytes!("../assets/fluent-system-icons/regular/stop.svg"),
+            Self::Refresh => include_bytes!("../assets/fluent-system-icons/regular/refresh.svg"),
+            Self::Retry => include_bytes!("../assets/fluent-system-icons/regular/retry.svg"),
+            Self::Code => include_bytes!("../assets/fluent-system-icons/regular/code.svg"),
+            Self::Tool => include_bytes!("../assets/fluent-system-icons/regular/tool.svg"),
+            Self::Check => include_bytes!("../assets/fluent-system-icons/regular/check.svg"),
+            Self::Minimize => {
+                include_bytes!("../assets/fluent-system-icons/regular/minimize.svg")
+            }
+            Self::Close => include_bytes!("../assets/fluent-system-icons/regular/close.svg"),
+            Self::Text => include_bytes!("../assets/fluent-system-icons/regular/text.svg"),
+            Self::Image => include_bytes!("../assets/fluent-system-icons/regular/image.svg"),
+            Self::File => include_bytes!("../assets/fluent-system-icons/regular/file.svg"),
+            Self::Folder => include_bytes!("../assets/fluent-system-icons/regular/folder.svg"),
+            Self::Save => include_bytes!("../assets/fluent-system-icons/regular/save.svg"),
+            Self::Undo => include_bytes!("../assets/fluent-system-icons/regular/undo.svg"),
+            Self::Cut => include_bytes!("../assets/fluent-system-icons/regular/cut.svg"),
+            Self::Pin => include_bytes!("../assets/fluent-system-icons/regular/pin.svg"),
+            Self::Delete => include_bytes!("../assets/fluent-system-icons/regular/delete.svg"),
+            Self::Copy => include_bytes!("../assets/fluent-system-icons/regular/copy.svg"),
+            Self::Paste => include_bytes!("../assets/fluent-system-icons/regular/paste.svg"),
+            Self::Edit => include_bytes!("../assets/fluent-system-icons/regular/edit.svg"),
+            Self::Group => include_bytes!("../assets/fluent-system-icons/regular/group.svg"),
+            Self::Phrase => include_bytes!("../assets/fluent-system-icons/regular/phrase.svg"),
         }
     }
 
@@ -266,25 +401,24 @@ mod tests {
 
     #[test]
     fn semantic_icons_have_native_symbol_mappings() {
-        for icon in [
-            ZsIcon::Calculator,
-            ZsIcon::History,
-            ZsIcon::Backspace,
-            ZsIcon::Add,
-            ZsIcon::Sidebar,
-            ZsIcon::Inspector,
-            ZsIcon::Attach,
-            ZsIcon::Send,
-            ZsIcon::Refresh,
-            ZsIcon::Code,
-            ZsIcon::Tool,
-            ZsIcon::Save,
-            ZsIcon::Undo,
-            ZsIcon::Cut,
-        ] {
+        for icon in ZsIcon::ALL {
             assert_eq!(icon.windows_fluent_glyph().chars().count(), 1);
+            assert_eq!(icon.windows_mdl2_glyph().chars().count(), 1);
             assert!(icon.gtk_symbolic_name().ends_with("-symbolic"));
             assert!(!icon.sf_symbol_name().is_empty());
+        }
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "fluent-icons",
+        all(target_os = "macos", feature = "macos-appkit"),
+        all(target_os = "linux", feature = "linux-gtk")
+    ))]
+    fn bundled_fluent_svg_fallback_covers_every_semantic_icon() {
+        for icon in ZsIcon::ALL {
+            assert!(icon.fluent_svg_asset_name().ends_with(".svg"));
+            assert!(icon.fluent_svg_bytes().starts_with(b"<svg"));
         }
     }
 }
