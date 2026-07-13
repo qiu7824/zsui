@@ -18,6 +18,7 @@ use zsui::checkbox;
     all(feature = "progress", feature = "label"),
     all(feature = "progress-ring", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "tree", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -50,6 +51,7 @@ use zsui::toggle_button;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "tree", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -65,6 +67,7 @@ use zsui::CommandId;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "tree", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -97,6 +100,8 @@ use zsui::{slider, SliderRange};
 use zsui::{tab_view, ZsTabId, ZsTabItem};
 #[cfg(feature = "time-picker")]
 use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
+#[cfg(all(feature = "tree", feature = "label"))]
+use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "toggle-button", feature = "label"),
@@ -106,6 +111,7 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "tree", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -157,6 +163,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--auto-suggest-view" || arg == "--auto-suggest"),
         args.iter()
+            .any(|arg| arg == "--tree-view" || arg == "--tree"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -195,6 +203,7 @@ fn run_smoke(
     include_progress_view: bool,
     include_progress_ring_view: bool,
     include_auto_suggest_view: bool,
+    include_tree_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -250,6 +259,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "auto-suggest", feature = "label")))]
     if include_auto_suggest_view {
         return Err("--auto-suggest-view requires the auto-suggest and label features".to_string());
+    }
+    #[cfg(not(all(feature = "tree", feature = "label")))]
+    if include_tree_view {
+        return Err("--tree-view requires the tree and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -409,6 +422,17 @@ fn run_smoke(
             .native_view_click(Point { x: 480, y: 80 })
             .native_view_text_input("B");
     }
+    #[cfg(all(feature = "tree", feature = "label"))]
+    if include_tree_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 62, y: 112 })
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Enter)
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_click(Point { x: 180, y: 144 });
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -476,6 +500,8 @@ fn run_smoke(
         attach_progress_ring_view(builder)
     } else if include_auto_suggest_view {
         attach_auto_suggest_view(builder)
+    } else if include_tree_view {
+        attach_tree_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -908,6 +934,76 @@ fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder
     )
 }
 
+#[cfg(all(feature = "tree", feature = "label"))]
+#[derive(Clone)]
+enum TreeSmokeMsg {
+    Selected(ZsTreeNodeId),
+    Expanded(ZsTreeExpansionChange),
+    Invoked(ZsTreeNodeId),
+}
+
+#[cfg(all(feature = "tree", feature = "label"))]
+struct TreeSmokeState {
+    selected: Option<ZsTreeNodeId>,
+    expanded: std::collections::BTreeSet<ZsTreeNodeId>,
+}
+
+#[cfg(all(feature = "tree", feature = "label"))]
+fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    let root = ZsTreeNodeId::new(1);
+    let src = ZsTreeNodeId::new(2);
+    builder.stateful_view(
+        TreeSmokeState {
+            selected: Some(src),
+            expanded: std::collections::BTreeSet::from([root]),
+        },
+        move |state| {
+            column([
+                text::<TreeSmokeMsg>("ZSUI TreeView Smoke").height(zsui::Dp::new(28.0)),
+                tree_view([ZsTreeNode::new(root, "Workspace")
+                    .icon(zsui::ZsIcon::Folder)
+                    .children([
+                        ZsTreeNode::new(src, "src")
+                            .icon(zsui::ZsIcon::Folder)
+                            .children([
+                                ZsTreeNode::new(3, "lib.rs").icon(zsui::ZsIcon::File),
+                                ZsTreeNode::new(4, "widget_render.rs").icon(zsui::ZsIcon::File),
+                            ]),
+                        ZsTreeNode::new(5, "examples")
+                            .icon(zsui::ZsIcon::Folder)
+                            .unrealized_children(true),
+                        ZsTreeNode::new(6, "Cargo.toml").icon(zsui::ZsIcon::File),
+                    ])])
+                .id(WidgetId::new(24))
+                .expanded_tree_nodes(state.expanded.iter().copied())
+                .selected_tree_node(state.selected)
+                .on_tree_select(TreeSmokeMsg::Selected)
+                .on_tree_expansion_change(TreeSmokeMsg::Expanded)
+                .on_tree_invoke(TreeSmokeMsg::Invoked),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            TreeSmokeMsg::Selected(node) => {
+                state.selected = Some(node);
+                cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.tree_selected")));
+            }
+            TreeSmokeMsg::Expanded(change) => {
+                if change.expanded {
+                    state.expanded.insert(change.node);
+                } else {
+                    state.expanded.remove(&change.node);
+                }
+                cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.tree_expanded")));
+            }
+            TreeSmokeMsg::Invoked(_node) => {
+                cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.tree_invoked")));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1179,6 +1275,11 @@ fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "auto-suggest", feature = "label")))]
 fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "tree", feature = "label")))]
+fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

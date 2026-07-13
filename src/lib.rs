@@ -101,6 +101,8 @@ pub mod timer_protocol;
 #[cfg(feature = "tooltip")]
 pub mod tooltip;
 pub mod tray;
+#[cfg(feature = "tree")]
+pub mod tree;
 pub mod ui_surface_protocol;
 pub mod view;
 pub mod widget_render;
@@ -446,6 +448,8 @@ pub use tooltip::{
     ZsTooltipPlatformStyle, ZsTooltipRenderPlan, ZsTooltipSpec,
 };
 pub use tray::TraySpec;
+#[cfg(feature = "tree")]
+pub use tree::{ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId, ZsTreeRowState, ZsTreeViewState};
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 #[cfg(feature = "auto-suggest")]
 pub use view::auto_suggest_box;
@@ -485,6 +489,8 @@ pub use view::time_picker;
 pub use view::toggle;
 #[cfg(feature = "toggle-button")]
 pub use view::toggle_button;
+#[cfg(feature = "tree")]
+pub use view::tree_view;
 #[cfg(feature = "tooltip")]
 pub use view::ViewTooltipTarget;
 #[cfg(feature = "date-picker")]
@@ -565,6 +571,11 @@ pub use widget_render::{
     ZsToggleButtonPlatformStyle, ZsToggleButtonRenderPlan,
 };
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
+#[cfg(feature = "tree")]
+pub use widget_render::{
+    zs_tree_view_native_draw_plan, zs_tree_view_render_plan, ZsTreePlatformStyle,
+    ZsTreeRowRenderPlan, ZsTreeViewMetrics, ZsTreeViewRenderPlan,
+};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub use windows_gdi_renderer::{

@@ -167,6 +167,18 @@ history remain authoritative for implementation status.
   and GTK follows SearchEntry geometry; all remain self-drawn through the shared
   renderer protocol. Long-list wheel paging, accessibility providers and
   AppKit/GTK target interaction smoke remain readiness gaps.
+- TreeView is an independent `tree` feature over `widgets-list`; it must not
+  pull in ListView, ScrollView or a platform child control. Applications own
+  immutable node trees and globally unique `ZsTreeNodeId` values, plus explicit
+  expanded and selected state. Expansion, selection and invocation are separate
+  typed messages. Visible rows are derived deterministically without a global
+  mutable registry; an unrealized-child marker permits application-driven lazy
+  loading. Windows uses WinUI-like rows and disclosures, macOS uses compact
+  disclosure-triangle metrics and accent selection, and GTK uses TreeExpander-
+  style indentation and disclosures through the same draw protocol. Selection
+  is preserved when its row is collapsed. Accessibility tree metadata,
+  multi-selection/drag-and-drop, large-tree virtualization and AppKit/GTK target
+  interaction smoke remain readiness gaps.
 - Every new component remains opt-in through its own Cargo feature. Default
   features stay `window`, `button` and `label`; `all-widgets`/`full` are explicit
   profile choices and must not become implicit dependencies of component APIs.

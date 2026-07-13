@@ -22,7 +22,8 @@ use crate::native_input_visuals::{
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
-    feature = "toggle-button"
+    feature = "toggle-button",
+    feature = "tree"
 ))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
@@ -1842,7 +1843,8 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
@@ -1851,7 +1853,8 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     pointer_pressed: Option<NativePointerVisualKey>,
     #[cfg(feature = "password-box")]
@@ -1891,7 +1894,8 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             pointer_hover: None,
             #[cfg(any(
@@ -1900,7 +1904,8 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             pointer_pressed: None,
             #[cfg(feature = "password-box")]
@@ -1936,7 +1941,8 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             pointer_hover: None,
             #[cfg(any(
@@ -1945,7 +1951,8 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             pointer_pressed: None,
             #[cfg(feature = "password-box")]
@@ -2042,7 +2049,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
@@ -2138,7 +2146,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         {
             let hovered = self
@@ -2240,7 +2249,8 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
@@ -2263,7 +2273,8 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
@@ -2276,7 +2287,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         {
             let hovered = self
@@ -2309,7 +2321,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         {
             let mut report = report;
@@ -2322,7 +2335,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         )))]
         {
             report
@@ -2350,7 +2364,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         {
             self.update_pointer_visual_state(None, None, &mut report);
@@ -2362,7 +2377,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         )))]
         {
             report
@@ -2740,6 +2756,137 @@ impl WindowsWin32ViewInputRoute {
                         widget,
                         expanded: false,
                     },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
+        #[cfg(feature = "tree")]
+        if target.kind == crate::ViewHitTargetKind::TreeView {
+            let Some(state) = self.widget_tree_view_state(widget) else {
+                return report;
+            };
+            let select = match virtual_key {
+                key if key == u32::from(VK_UP) => state.relative_visible(-1),
+                key if key == u32::from(VK_DOWN) => state.relative_visible(1),
+                key if key == u32::from(VK_HOME) => state.first_visible(),
+                key if key == u32::from(VK_END) => state.last_visible(),
+                ZSUI_WIN32_VK_SPACE => state.selected.or_else(|| state.first_visible()),
+                _ => None,
+            };
+            if let Some(node) = select {
+                report.handled = true;
+                if state.selected != Some(node) {
+                    report.tree_selection_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_tree_key_select:{}:{}",
+                        widget.0,
+                        node.get()
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TreeNodeSelected { widget, node },
+                        &mut report,
+                    );
+                }
+                return report;
+            }
+
+            if virtual_key == u32::from(VK_LEFT) {
+                let Some(node) = state.selected.or_else(|| state.first_visible()) else {
+                    return report;
+                };
+                let Some(row) = state.row(node) else {
+                    return report;
+                };
+                report.handled = true;
+                if row.expandable && row.expanded {
+                    report.tree_expansion_change_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_tree_key_collapse:{}:{}",
+                        widget.0,
+                        node.get()
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TreeNodeExpandedChanged {
+                            widget,
+                            node,
+                            expanded: false,
+                        },
+                        &mut report,
+                    );
+                } else if let Some(parent) = row.parent {
+                    report.tree_selection_count = usize::from(state.selected != Some(parent));
+                    report.event_count = report.tree_selection_count;
+                    self.dispatch_event(
+                        crate::ViewEvent::TreeNodeSelected {
+                            widget,
+                            node: parent,
+                        },
+                        &mut report,
+                    );
+                }
+                return report;
+            }
+
+            if virtual_key == u32::from(VK_RIGHT) {
+                let Some(node) = state.selected.or_else(|| state.first_visible()) else {
+                    return report;
+                };
+                let Some(row) = state.row(node) else {
+                    return report;
+                };
+                report.handled = true;
+                if row.expandable && !row.expanded {
+                    report.tree_expansion_change_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_tree_key_expand:{}:{}",
+                        widget.0,
+                        node.get()
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TreeNodeExpandedChanged {
+                            widget,
+                            node,
+                            expanded: true,
+                        },
+                        &mut report,
+                    );
+                } else if let Some(child) = state.first_visible_child(node) {
+                    report.tree_selection_count = usize::from(state.selected != Some(child));
+                    report.event_count = report.tree_selection_count;
+                    self.dispatch_event(
+                        crate::ViewEvent::TreeNodeSelected {
+                            widget,
+                            node: child,
+                        },
+                        &mut report,
+                    );
+                }
+                return report;
+            }
+
+            if virtual_key == ZSUI_WIN32_VK_RETURN {
+                let Some(node) = state
+                    .selected
+                    .filter(|selected| state.row(*selected).is_some())
+                else {
+                    return report;
+                };
+                report.handled = true;
+                report.keyboard_activation_count = 1;
+                report.tree_invoke_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_tree_key_invoke:{}:{}",
+                    widget.0,
+                    node.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TreeNodeInvoked { widget, node },
                     &mut report,
                 );
                 return report;
@@ -3395,7 +3542,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         self.update_pointer_visual_state(None, None, &mut report);
         #[cfg(feature = "number-box")]
@@ -3453,6 +3601,65 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "tree")]
+        match target.kind {
+            crate::ViewHitTargetKind::TreeNodeExpander { node } => {
+                let Some(row) = self
+                    .widget_tree_view_state(target.widget)
+                    .and_then(|state| state.row(node))
+                else {
+                    return;
+                };
+                if row.expandable {
+                    report.tree_expansion_change_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_tree_expanded:{}:{}:{}",
+                        target.widget.0,
+                        node.get(),
+                        !row.expanded
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TreeNodeExpandedChanged {
+                            widget: target.widget,
+                            node,
+                            expanded: !row.expanded,
+                        },
+                        report,
+                    );
+                }
+                return;
+            }
+            crate::ViewHitTargetKind::TreeNode { node } => {
+                let selected = self
+                    .widget_tree_view_state(target.widget)
+                    .and_then(|state| state.selected);
+                report.tree_selection_count = usize::from(selected != Some(node));
+                report.tree_invoke_count = 1;
+                report.event_count = 2;
+                report.events.push(format!(
+                    "win32_view_tree_invoke:{}:{}",
+                    target.widget.0,
+                    node.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TreeNodeSelected {
+                        widget: target.widget,
+                        node,
+                    },
+                    report,
+                );
+                self.dispatch_event(
+                    crate::ViewEvent::TreeNodeInvoked {
+                        widget: target.widget,
+                        node,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
         #[cfg(feature = "auto-suggest")]
         match target.kind {
             crate::ViewHitTargetKind::AutoSuggestSuggestion { suggestion } => {
@@ -3965,6 +4172,18 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "tree")]
+    fn widget_tree_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTreeViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tree_view_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tree_view_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -4167,7 +4386,8 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         decorate_native_pointer_visuals(
             &mut plan,
@@ -4255,7 +4475,8 @@ impl WindowsWin32ViewInputRoute {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     fn update_pointer_visual_state(
         &mut self,
@@ -4422,6 +4643,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub auto_suggest_highlight_change_count: usize,
     pub auto_suggest_submit_count: usize,
     pub auto_suggest_clear_count: usize,
+    pub tree_expansion_change_count: usize,
+    pub tree_selection_count: usize,
+    pub tree_invoke_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -4491,6 +4715,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.auto_suggest_highlight_change_count += next.auto_suggest_highlight_change_count;
         self.auto_suggest_submit_count += next.auto_suggest_submit_count;
         self.auto_suggest_clear_count += next.auto_suggest_clear_count;
+        self.tree_expansion_change_count += next.tree_expansion_change_count;
+        self.tree_selection_count += next.tree_selection_count;
+        self.tree_invoke_count += next.tree_invoke_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -7490,6 +7717,93 @@ mod tests {
         });
         assert_eq!(cleared.auto_suggest_clear_count, 1);
         assert_eq!(route.widget_text_value(widget).as_deref(), Some(""));
+    }
+
+    #[test]
+    #[cfg(feature = "tree")]
+    fn window_view_input_route_handles_tree_disclosure_rows_and_keyboard_hierarchy() {
+        fn selected(_node: crate::ZsTreeNodeId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.tree_selected"))
+        }
+        fn expanded(_change: crate::ZsTreeExpansionChange) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.tree_expanded"))
+        }
+        fn invoked(_node: crate::ZsTreeNodeId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.tree_invoked"))
+        }
+
+        let widget = crate::WidgetId::new(137);
+        let root = crate::ZsTreeNodeId::new(1);
+        let folder = crate::ZsTreeNodeId::new(2);
+        let leaf = crate::ZsTreeNodeId::new(3);
+        let mut view = crate::tree_view([crate::ZsTreeNode::new(root, "Workspace")
+            .icon(crate::ZsIcon::Folder)
+            .children([
+                crate::ZsTreeNode::new(folder, "src")
+                    .icon(crate::ZsIcon::Folder)
+                    .children([crate::ZsTreeNode::new(leaf, "lib.rs")]),
+                crate::ZsTreeNode::new(4, "Cargo.toml"),
+            ])])
+        .id(widget)
+        .expanded_tree_nodes([root])
+        .selected_tree_node(Some(folder))
+        .on_tree_select(selected)
+        .on_tree_expansion_change(expanded)
+        .on_tree_invoke(invoked);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 220,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let disclosure = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.kind == crate::ViewHitTargetKind::TreeNodeExpander { node: folder }
+            })
+            .expect("folder should expose a disclosure target");
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        let opened = route.dispatch_click(crate::Point {
+            x: disclosure.bounds.x + disclosure.bounds.width / 2,
+            y: disclosure.bounds.y + disclosure.bounds.height / 2,
+        });
+        assert_eq!(opened.tree_expansion_change_count, 1);
+        assert_eq!(opened.ui_command_count, 1);
+        let leaf_row = route
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TreeNode { node: leaf })
+            .expect("expanded folder should expose leaf row");
+        let pointer = route.dispatch_click(crate::Point {
+            x: leaf_row.bounds.x + leaf_row.bounds.width / 2,
+            y: leaf_row.bounds.y + leaf_row.bounds.height / 2,
+        });
+        assert_eq!(pointer.tree_selection_count, 1);
+        assert_eq!(pointer.tree_invoke_count, 1);
+        assert_eq!(pointer.ui_command_count, 2);
+
+        let parent = route.dispatch_key_down(u32::from(VK_LEFT));
+        assert_eq!(parent.tree_selection_count, 1);
+        assert_eq!(
+            route
+                .widget_tree_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(folder)
+        );
+        let collapsed = route.dispatch_key_down(u32::from(VK_LEFT));
+        assert_eq!(collapsed.tree_expansion_change_count, 1);
+        let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(keyboard.tree_invoke_count, 1);
+        assert_eq!(keyboard.keyboard_activation_count, 1);
     }
 
     #[test]

@@ -1,3 +1,5 @@
+#[cfg(feature = "tree")]
+use std::collections::BTreeSet;
 #[cfg(any(feature = "slider", feature = "number-box"))]
 use std::ops::RangeInclusive;
 use std::{
@@ -642,6 +644,15 @@ pub enum ViewNodeKind<Msg> {
         on_query_submit: Option<fn(crate::ZsAutoSuggestSubmission) -> Msg>,
         on_expanded_change: Option<fn(bool) -> Msg>,
     },
+    #[cfg(feature = "tree")]
+    TreeView {
+        roots: Vec<crate::ZsTreeNode>,
+        expanded: BTreeSet<crate::ZsTreeNodeId>,
+        selected: Option<crate::ZsTreeNodeId>,
+        on_select: Option<fn(crate::ZsTreeNodeId) -> Msg>,
+        on_expansion_change: Option<fn(crate::ZsTreeExpansionChange) -> Msg>,
+        on_invoke: Option<fn(crate::ZsTreeNodeId) -> Msg>,
+    },
     #[cfg(feature = "combo")]
     ComboBox {
         options: Vec<String>,
@@ -1013,6 +1024,62 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { on_select, .. } => *on_select = Some(message),
             _ => {}
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn selected_tree_node(mut self, selected: Option<crate::ZsTreeNodeId>) -> Self {
+        if let ViewNodeKind::TreeView {
+            selected: current, ..
+        } = &mut self.kind
+        {
+            *current = selected;
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn expanded_tree_nodes(
+        mut self,
+        expanded: impl IntoIterator<Item = crate::ZsTreeNodeId>,
+    ) -> Self {
+        if let ViewNodeKind::TreeView {
+            expanded: current, ..
+        } = &mut self.kind
+        {
+            *current = expanded.into_iter().collect();
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn on_tree_select(mut self, message: fn(crate::ZsTreeNodeId) -> Msg) -> Self {
+        if let ViewNodeKind::TreeView { on_select, .. } = &mut self.kind {
+            *on_select = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn on_tree_expansion_change(
+        mut self,
+        message: fn(crate::ZsTreeExpansionChange) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::TreeView {
+            on_expansion_change,
+            ..
+        } = &mut self.kind
+        {
+            *on_expansion_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn on_tree_invoke(mut self, message: fn(crate::ZsTreeNodeId) -> Msg) -> Self {
+        if let ViewNodeKind::TreeView { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(message);
         }
         self
     }
@@ -1579,6 +1646,18 @@ pub fn list<T, Msg>(
     .children(items.into_iter().map(render))
 }
 
+#[cfg(feature = "tree")]
+pub fn tree_view<Msg>(roots: impl IntoIterator<Item = crate::ZsTreeNode>) -> ViewNode<Msg> {
+    ViewNode::<Msg>::new(ViewNodeKind::TreeView {
+        roots: roots.into_iter().collect(),
+        expanded: BTreeSet::new(),
+        selected: None,
+        on_select: None,
+        on_expansion_change: None,
+        on_invoke: None,
+    })
+}
+
 #[cfg(feature = "virtual-list")]
 pub fn virtual_list<T, Msg>(
     total_count: usize,
@@ -1688,6 +1767,22 @@ pub enum ViewEvent {
     AutoSuggestSubmitted {
         widget: WidgetId,
         suggestion: Option<crate::ZsAutoSuggestionId>,
+    },
+    #[cfg(feature = "tree")]
+    TreeNodeExpandedChanged {
+        widget: WidgetId,
+        node: crate::ZsTreeNodeId,
+        expanded: bool,
+    },
+    #[cfg(feature = "tree")]
+    TreeNodeSelected {
+        widget: WidgetId,
+        node: crate::ZsTreeNodeId,
+    },
+    #[cfg(feature = "tree")]
+    TreeNodeInvoked {
+        widget: WidgetId,
+        node: crate::ZsTreeNodeId,
     },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
@@ -1827,6 +1922,16 @@ pub enum ViewHitTargetKind {
     #[cfg(feature = "auto-suggest")]
     AutoSuggestSuggestion {
         suggestion: crate::ZsAutoSuggestionId,
+    },
+    #[cfg(feature = "tree")]
+    TreeView,
+    #[cfg(feature = "tree")]
+    TreeNode {
+        node: crate::ZsTreeNodeId,
+    },
+    #[cfg(feature = "tree")]
+    TreeNodeExpander {
+        node: crate::ZsTreeNodeId,
     },
     #[cfg(feature = "combo")]
     ComboBox,
@@ -2045,6 +2150,13 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "tree")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::TreeNode { .. } | ViewHitTargetKind::TreeNodeExpander { .. }
+        ) {
+            return false;
+        }
         #[cfg(feature = "date-picker")]
         if matches!(
             self.kind,
@@ -2189,6 +2301,8 @@ trait LiveViewDriver: Send {
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
     #[cfg(feature = "auto-suggest")]
     fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState>;
+    #[cfg(feature = "tree")]
+    fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2269,6 +2383,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "auto-suggest")]
     pub fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState> {
         self.lock().widget_auto_suggest_state(widget)
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
+        self.lock().widget_tree_view_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2536,6 +2655,11 @@ where
     #[cfg(feature = "auto-suggest")]
     fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState> {
         self.view.widget_auto_suggest_state(widget)
+    }
+
+    #[cfg(feature = "tree")]
+    fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
+        self.view.widget_tree_view_state(widget)
     }
 
     #[cfg(feature = "combo")]
@@ -3331,6 +3455,81 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         }
                     }
                 }
+                #[cfg(feature = "tree")]
+                (
+                    ViewNodeKind::TreeView {
+                        roots,
+                        expanded,
+                        on_expansion_change,
+                        ..
+                    },
+                    ViewEvent::TreeNodeExpandedChanged {
+                        node,
+                        expanded: next_expanded,
+                        ..
+                    },
+                ) => {
+                    let expandable = crate::tree::find_tree_node(roots, *node)
+                        .is_some_and(crate::ZsTreeNode::is_expandable);
+                    if expandable {
+                        let changed = if *next_expanded {
+                            expanded.insert(*node)
+                        } else {
+                            expanded.remove(node)
+                        };
+                        if changed {
+                            if let Some(message) = on_expansion_change {
+                                cx.emit(message(crate::ZsTreeExpansionChange::new(
+                                    *node,
+                                    *next_expanded,
+                                )));
+                            }
+                        }
+                    }
+                }
+                #[cfg(feature = "tree")]
+                (
+                    ViewNodeKind::TreeView {
+                        roots,
+                        expanded,
+                        selected,
+                        on_select,
+                        ..
+                    },
+                    ViewEvent::TreeNodeSelected { node, .. },
+                ) => {
+                    let visible = crate::tree::tree_view_state(roots, expanded, *selected)
+                        .rows
+                        .iter()
+                        .any(|row| row.node == *node);
+                    if visible && *selected != Some(*node) {
+                        *selected = Some(*node);
+                        if let Some(message) = on_select {
+                            cx.emit(message(*node));
+                        }
+                    }
+                }
+                #[cfg(feature = "tree")]
+                (
+                    ViewNodeKind::TreeView {
+                        roots,
+                        expanded,
+                        selected,
+                        on_invoke,
+                        ..
+                    },
+                    ViewEvent::TreeNodeInvoked { node, .. },
+                ) => {
+                    let visible = crate::tree::tree_view_state(roots, expanded, *selected)
+                        .rows
+                        .iter()
+                        .any(|row| row.node == *node);
+                    if visible {
+                        if let Some(message) = on_invoke {
+                            cx.emit(message(*node));
+                        }
+                    }
+                }
                 #[cfg(feature = "password-box")]
                 (
                     ViewNodeKind::PasswordBox {
@@ -3940,6 +4139,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "tree")]
+            ViewNodeKind::TreeView {
+                roots,
+                expanded,
+                selected,
+                ..
+            } => {
+                let plan = crate::zs_tree_view_render_plan(
+                    bounds,
+                    roots,
+                    expanded,
+                    *selected,
+                    crate::ZsTreePlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_tree_view_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 options,
@@ -4111,6 +4329,10 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::AutoSuggestHighlighted { widget, .. })
             | (Some(id), ViewEvent::AutoSuggestCleared { widget })
             | (Some(id), ViewEvent::AutoSuggestSubmitted { widget, .. }) => id == *widget,
+            #[cfg(feature = "tree")]
+            (Some(id), ViewEvent::TreeNodeExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::TreeNodeSelected { widget, .. })
+            | (Some(id), ViewEvent::TreeNodeInvoked { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -4376,6 +4598,24 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_auto_suggest_state(widget))
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::TreeView {
+                roots,
+                expanded,
+                selected,
+                ..
+            } = &self.kind
+            {
+                return Some(crate::tree::tree_view_state(roots, expanded, *selected));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_tree_view_state(widget))
     }
 
     #[cfg(feature = "combo")]
@@ -4790,6 +5030,48 @@ impl<Msg> ViewNode<Msg> {
                     bounds,
                     ViewHitTargetKind::AutoSuggestClear,
                 ));
+            }
+        }
+
+        #[cfg(feature = "tree")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::TreeView {
+                roots,
+                expanded,
+                selected,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan = crate::zs_tree_view_render_plan(
+                bounds,
+                roots,
+                expanded,
+                *selected,
+                crate::ZsTreePlatformStyle::current(),
+                self.layout_dpi,
+            );
+            let tree_clip = clipped_rect(bounds, clip);
+            for row in plan.rows {
+                if let Some(row_bounds) = clipped_rect(row.bounds, tree_clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        row_bounds,
+                        ViewHitTargetKind::TreeNode { node: row.node },
+                    ));
+                }
+                if let Some(disclosure) = row
+                    .disclosure_bounds
+                    .and_then(|bounds| clipped_rect(bounds, tree_clip))
+                {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        disclosure,
+                        ViewHitTargetKind::TreeNodeExpander { node: row.node },
+                    ));
+                }
             }
         }
 
@@ -5353,6 +5635,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::RadioButton { .. } => ViewHitTargetKind::RadioButton,
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox { .. } => ViewHitTargetKind::AutoSuggestBox,
+            #[cfg(feature = "tree")]
+            ViewNodeKind::TreeView { .. } => ViewHitTargetKind::TreeView,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
@@ -5915,7 +6199,8 @@ mod tests {
         feature = "date-picker",
         feature = "time-picker",
         feature = "tabs",
-        feature = "list"
+        feature = "list",
+        feature = "tree"
     ))]
     #[derive(Debug, Clone, PartialEq)]
     enum Msg {
@@ -5949,6 +6234,12 @@ mod tests {
         TabSelected(ZsTabId),
         #[cfg(feature = "list")]
         RowSelected(usize),
+        #[cfg(feature = "tree")]
+        TreeSelected(crate::ZsTreeNodeId),
+        #[cfg(feature = "tree")]
+        TreeExpanded(crate::ZsTreeExpansionChange),
+        #[cfg(feature = "tree")]
+        TreeInvoked(crate::ZsTreeNodeId),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
@@ -6879,6 +7170,81 @@ mod tests {
         assert!(view
             .widget_auto_suggest_state(widget)
             .is_some_and(|state| !state.expanded));
+    }
+
+    #[cfg(feature = "tree")]
+    #[test]
+    fn tree_view_routes_strong_id_expansion_selection_invocation_and_hit_geometry() {
+        let widget = WidgetId::new(93);
+        let root = crate::ZsTreeNodeId::new(1);
+        let folder = crate::ZsTreeNodeId::new(2);
+        let leaf = crate::ZsTreeNodeId::new(3);
+        let mut view = tree_view([crate::ZsTreeNode::new(root, "Workspace")
+            .icon(crate::ZsIcon::Folder)
+            .children([
+                crate::ZsTreeNode::new(folder, "src")
+                    .icon(crate::ZsIcon::Folder)
+                    .children([crate::ZsTreeNode::new(leaf, "lib.rs")]),
+                crate::ZsTreeNode::new(4, "Cargo.toml"),
+            ])])
+        .id(widget)
+        .expanded_tree_nodes([root])
+        .selected_tree_node(Some(folder))
+        .on_tree_select(Msg::TreeSelected)
+        .on_tree_expansion_change(Msg::TreeExpanded)
+        .on_tree_invoke(Msg::TreeInvoked);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 260,
+                height: 160,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == ViewHitTargetKind::TreeNodeExpander { node: folder } }));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == ViewHitTargetKind::TreeNode { node: folder } }));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::TreeNodeExpandedChanged {
+                widget,
+                node: folder,
+                expanded: true,
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::TreeNodeSelected { widget, node: leaf },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::TreeNodeInvoked { widget, node: leaf },
+        );
+
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::TreeExpanded(crate::ZsTreeExpansionChange::new(folder, true)),
+                Msg::TreeSelected(leaf),
+                Msg::TreeInvoked(leaf),
+            ]
+        );
+        let state = view.widget_tree_view_state(widget).expect("tree state");
+        assert_eq!(state.selected, Some(leaf));
+        assert_eq!(
+            state.rows.iter().map(|row| row.node).collect::<Vec<_>>(),
+            vec![root, folder, leaf, 4_u64.into()]
+        );
     }
 
     #[cfg(feature = "combo")]

@@ -33,6 +33,7 @@ $singleFeatures = @(
     "progress",
     "progress-ring",
     "auto-suggest",
+    "tree",
     "combo",
     "date-picker",
     "time-picker",
@@ -70,7 +71,7 @@ $singleFeatures = @(
 $featureSets = @(
     "button,label,grid",
     "textbox,password-box,tooltip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,tabs",
-    "list,table",
+    "list,tree,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",
     "window,product-adapter,button,label",

@@ -147,6 +147,11 @@ const AUTO_SUGGEST_GAPS: &[&str] = &[
     "mouse-wheel paging for long suggestion lists",
     "AppKit and GTK4 target interaction smoke",
 ];
+const TREE_GAPS: &[&str] = &[
+    "accessibility tree level, expanded-state and selection providers",
+    "multi-selection, drag-and-drop and large-tree virtualization",
+    "AppKit and GTK4 target interaction smoke",
+];
 const TOGGLE_BUTTON_GAPS: &[&str] = &[
     "optional indeterminate state and grouped selection behavior",
     "accessibility toggle-button role and checked-state provider",
@@ -476,10 +481,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "tree",
         "TreeView",
         Collection,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("tree"),
+        "src/tree.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        TREE_GAPS
     ),
     component!(
         "table",
@@ -673,8 +678,8 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 8);
-        assert!(summary.missing_component_names.contains(&"tree"));
+        assert!(summary.not_started_count >= 7);
+        assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));
         assert!(!summary.missing_component_names.contains(&"toggle_button"));

@@ -1,3 +1,6 @@
+#[cfg(feature = "tree")]
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(
@@ -18,7 +21,8 @@ use crate::{HorizontalAlign, TextWeight};
     feature = "auto-suggest",
     feature = "combo",
     feature = "date-picker",
-    feature = "time-picker"
+    feature = "time-picker",
+    feature = "tree"
 ))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 #[cfg(any(
@@ -28,7 +32,8 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "number-box",
     feature = "tabs",
     feature = "time-picker",
-    feature = "toggle-button"
+    feature = "toggle-button",
+    feature = "tree"
 ))]
 use crate::{NativeDrawTextCommand, SemanticTextStyle};
 #[cfg(feature = "time-picker")]
@@ -1490,6 +1495,277 @@ fn inset_row_text(row: Rect, padding: i32) -> Rect {
     }
 }
 
+#[cfg(feature = "tree")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsTreePlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "tree")]
+impl ZsTreePlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Macos
+        } else {
+            Self::Gtk
+        }
+    }
+}
+
+#[cfg(feature = "tree")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsTreeViewMetrics {
+    pub row_height: Dp,
+    pub depth_indent: Dp,
+    pub disclosure_column: Dp,
+    pub disclosure_size: Dp,
+    pub icon_size: Dp,
+    pub leading_padding: Dp,
+    pub content_gap: Dp,
+    pub row_radius: Dp,
+}
+
+#[cfg(feature = "tree")]
+impl ZsTreeViewMetrics {
+    pub const fn for_platform(platform: ZsTreePlatformStyle) -> Self {
+        match platform {
+            ZsTreePlatformStyle::Windows => Self {
+                row_height: Dp::new(32.0),
+                depth_indent: Dp::new(20.0),
+                disclosure_column: Dp::new(24.0),
+                disclosure_size: Dp::new(12.0),
+                icon_size: Dp::new(16.0),
+                leading_padding: Dp::new(6.0),
+                content_gap: Dp::new(6.0),
+                row_radius: Dp::new(4.0),
+            },
+            ZsTreePlatformStyle::Macos => Self {
+                row_height: Dp::new(22.0),
+                depth_indent: Dp::new(16.0),
+                disclosure_column: Dp::new(18.0),
+                disclosure_size: Dp::new(10.0),
+                icon_size: Dp::new(16.0),
+                leading_padding: Dp::new(4.0),
+                content_gap: Dp::new(4.0),
+                row_radius: Dp::new(4.0),
+            },
+            ZsTreePlatformStyle::Gtk => Self {
+                row_height: Dp::new(34.0),
+                depth_indent: Dp::new(24.0),
+                disclosure_column: Dp::new(24.0),
+                disclosure_size: Dp::new(12.0),
+                icon_size: Dp::new(16.0),
+                leading_padding: Dp::new(6.0),
+                content_gap: Dp::new(6.0),
+                row_radius: Dp::new(6.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "tree")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTreeRowRenderPlan {
+    pub node: crate::ZsTreeNodeId,
+    pub parent: Option<crate::ZsTreeNodeId>,
+    pub depth: usize,
+    pub label: String,
+    pub icon: Option<ZsIcon>,
+    pub expandable: bool,
+    pub expanded: bool,
+    pub selected: bool,
+    pub bounds: Rect,
+    pub disclosure_bounds: Option<Rect>,
+    pub icon_bounds: Option<Rect>,
+    pub label_bounds: Rect,
+}
+
+#[cfg(feature = "tree")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTreeViewRenderPlan {
+    pub bounds: Rect,
+    pub rows: Vec<ZsTreeRowRenderPlan>,
+    pub row_radius: i32,
+    pub platform: ZsTreePlatformStyle,
+}
+
+#[cfg(feature = "tree")]
+pub fn zs_tree_view_render_plan(
+    bounds: Rect,
+    roots: &[crate::ZsTreeNode],
+    expanded: &BTreeSet<crate::ZsTreeNodeId>,
+    selected: Option<crate::ZsTreeNodeId>,
+    platform: ZsTreePlatformStyle,
+    dpi: Dpi,
+) -> ZsTreeViewRenderPlan {
+    let metrics = ZsTreeViewMetrics::for_platform(platform);
+    let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
+    let depth_indent = metrics.depth_indent.to_px(dpi).round_i32().max(1);
+    let disclosure_column = metrics.disclosure_column.to_px(dpi).round_i32().max(1);
+    let disclosure_size = metrics.disclosure_size.to_px(dpi).round_i32().max(1);
+    let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(1);
+    let leading_padding = metrics.leading_padding.to_px(dpi).round_i32().max(0);
+    let content_gap = metrics.content_gap.to_px(dpi).round_i32().max(0);
+    let rows = crate::tree::visible_tree_nodes(roots, expanded)
+        .into_iter()
+        .enumerate()
+        .map(|(index, visible)| {
+            let row_y = bounds.y.saturating_add(
+                row_height.saturating_mul(i32::try_from(index).unwrap_or(i32::MAX)),
+            );
+            let row = Rect {
+                x: bounds.x,
+                y: row_y,
+                width: bounds.width,
+                height: row_height,
+            };
+            let depth = i32::try_from(visible.depth).unwrap_or(i32::MAX);
+            let disclosure_x = row
+                .x
+                .saturating_add(leading_padding)
+                .saturating_add(depth_indent.saturating_mul(depth));
+            let disclosure_slot = Rect {
+                x: disclosure_x,
+                y: row.y,
+                width: disclosure_column,
+                height: row.height,
+            };
+            let center_in = |slot: Rect, size: i32| Rect {
+                x: slot.x.saturating_add((slot.width.saturating_sub(size)) / 2),
+                y: slot
+                    .y
+                    .saturating_add((slot.height.saturating_sub(size)) / 2),
+                width: size,
+                height: size,
+            };
+            let content_x = disclosure_slot
+                .x
+                .saturating_add(disclosure_slot.width)
+                .saturating_add(content_gap);
+            let icon_bounds = visible.node.node_icon().map(|_| {
+                center_in(
+                    Rect {
+                        x: content_x,
+                        y: row.y,
+                        width: icon_size,
+                        height: row.height,
+                    },
+                    icon_size,
+                )
+            });
+            let label_x = content_x.saturating_add(if icon_bounds.is_some() {
+                icon_size.saturating_add(content_gap)
+            } else {
+                0
+            });
+            ZsTreeRowRenderPlan {
+                node: visible.node.id(),
+                parent: visible.parent,
+                depth: visible.depth,
+                label: visible.node.label().to_string(),
+                icon: visible.node.node_icon(),
+                expandable: visible.node.is_expandable(),
+                expanded: visible.expanded,
+                selected: selected == Some(visible.node.id()),
+                bounds: row,
+                disclosure_bounds: visible
+                    .node
+                    .is_expandable()
+                    .then(|| center_in(disclosure_slot, disclosure_size)),
+                icon_bounds,
+                label_bounds: Rect {
+                    x: label_x,
+                    y: row.y,
+                    width: row
+                        .x
+                        .saturating_add(row.width)
+                        .saturating_sub(label_x)
+                        .saturating_sub(leading_padding)
+                        .max(0),
+                    height: row.height,
+                },
+            }
+        })
+        .collect();
+    ZsTreeViewRenderPlan {
+        bounds,
+        rows,
+        row_radius: metrics.row_radius.to_px(dpi).round_i32().max(1),
+        platform,
+    }
+}
+
+#[cfg(feature = "tree")]
+pub fn zs_tree_view_native_draw_plan(plan: &ZsTreeViewRenderPlan) -> NativeDrawPlan {
+    let mut commands = vec![
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: None,
+            radius: plan.row_radius,
+        },
+        NativeDrawCommand::PushClip { rect: plan.bounds },
+    ];
+    for row in &plan.rows {
+        if row.selected {
+            let fill = match plan.platform {
+                ZsTreePlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Accent),
+                ZsTreePlatformStyle::Windows => NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 36,
+                },
+                ZsTreePlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 48,
+                },
+            };
+            commands.push(NativeDrawCommand::RoundFill {
+                rect: row.bounds,
+                fill,
+                radius: plan.row_radius,
+            });
+        }
+        let foreground = if row.selected && plan.platform == ZsTreePlatformStyle::Macos {
+            ColorRole::AccentText
+        } else {
+            ColorRole::PrimaryText
+        };
+        if let Some(bounds) = row.disclosure_bounds {
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(
+                    if row.expanded {
+                        ZsIcon::ChevronDown
+                    } else {
+                        ZsIcon::ChevronRight
+                    },
+                    bounds,
+                    NativeIconColorMode::ThemeAware,
+                )
+                .with_color(foreground),
+            ));
+        }
+        if let (Some(icon), Some(bounds)) = (row.icon, row.icon_bounds) {
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(icon, bounds, NativeIconColorMode::ThemeAware)
+                    .with_color(foreground),
+            ));
+        }
+        let mut style = SemanticTextStyle::body();
+        style.color = foreground;
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            row.label.clone(),
+            row.label_bounds,
+            style,
+        )));
+    }
+    commands.push(NativeDrawCommand::PopClip);
+    NativeDrawPlan::new(commands)
+}
+
 #[cfg(feature = "combo")]
 /// Matches WinUI's default `ComboBoxPopupMaxNumberOfItems` resource.
 pub const ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS: usize = 15;
@@ -2689,6 +2965,64 @@ fn scale(value: i32, dpi: Dpi) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "tree")]
+    #[test]
+    fn tree_render_plan_preserves_platform_rows_depth_and_disclosure_geometry() {
+        let roots = [crate::ZsTreeNode::new(1, "Workspace")
+            .icon(ZsIcon::Folder)
+            .children([
+                crate::ZsTreeNode::new(2, "src")
+                    .icon(ZsIcon::Folder)
+                    .children([crate::ZsTreeNode::new(3, "lib.rs").icon(ZsIcon::File)]),
+                crate::ZsTreeNode::new(4, "Cargo.toml").icon(ZsIcon::File),
+            ])];
+        let expanded = BTreeSet::from([crate::ZsTreeNodeId::new(1)]);
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 280,
+            height: 160,
+        };
+        let windows = zs_tree_view_render_plan(
+            bounds,
+            &roots,
+            &expanded,
+            Some(crate::ZsTreeNodeId::new(2)),
+            ZsTreePlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = ZsTreeViewMetrics::for_platform(ZsTreePlatformStyle::Macos);
+        let gtk = ZsTreeViewMetrics::for_platform(ZsTreePlatformStyle::Gtk);
+
+        assert_eq!(windows.rows.len(), 3);
+        assert_eq!(windows.rows[0].depth, 0);
+        assert_eq!(windows.rows[1].depth, 1);
+        assert!(windows.rows[0].expanded);
+        assert!(windows.rows[1].selected);
+        assert!(windows.rows[0].disclosure_bounds.is_some());
+        assert!(windows.rows[2].disclosure_bounds.is_none());
+        assert!(windows.rows[1].label_bounds.x > windows.rows[0].label_bounds.x);
+        assert!(macos.row_height.0 < gtk.row_height.0);
+        assert!(macos.depth_indent.0 < gtk.depth_indent.0);
+
+        let draw = zs_tree_view_native_draw_plan(&windows);
+        assert_eq!(draw.text_count(), 3);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::ChevronDown
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 36,
+                },
+                ..
+            }
+        )));
+    }
 
     #[cfg(feature = "number-box")]
     #[test]

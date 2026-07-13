@@ -276,7 +276,8 @@ pub(crate) fn decorate_native_focus_ring(
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
-    feature = "toggle-button"
+    feature = "toggle-button",
+    feature = "tree"
 ))]
 pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
@@ -286,7 +287,8 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
-    feature = "toggle-button"
+    feature = "toggle-button",
+    feature = "tree"
 ))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
     let supported = false;
@@ -300,6 +302,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
         );
     #[cfg(feature = "toggle-button")]
     let supported = supported || target.kind == ViewHitTargetKind::ToggleButton;
+    #[cfg(feature = "tree")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::TreeNode { .. } | ViewHitTargetKind::TreeNodeExpander { .. }
+        );
     #[cfg(feature = "password-box")]
     let supported = supported || target.kind == ViewHitTargetKind::PasswordBoxReveal;
     #[cfg(feature = "date-picker")]
@@ -328,7 +336,8 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
-    feature = "toggle-button"
+    feature = "toggle-button",
+    feature = "tree"
 ))]
 pub(crate) fn decorate_native_pointer_visuals(
     plan: &mut NativeDrawPlan,
@@ -649,6 +658,55 @@ mod tests {
                     alpha: 14,
                 },
                 radius: 4,
+            }) if *rect == row
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "tree")]
+    fn tree_pointer_visual_uses_the_platform_row_geometry() {
+        let widget = WidgetId::new(96);
+        let node = crate::ZsTreeNodeId::new(2);
+        let roots =
+            [crate::ZsTreeNode::new(1, "Root").children([crate::ZsTreeNode::new(node, "Child")])];
+        let expanded = std::collections::BTreeSet::from([crate::ZsTreeNodeId::new(1)]);
+        let render = crate::zs_tree_view_render_plan(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 220,
+                height: 96,
+            },
+            &roots,
+            &expanded,
+            Some(node),
+            crate::ZsTreePlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let row = render.rows[1].bounds;
+        let kind = ViewHitTargetKind::TreeNode { node };
+        let interaction = ViewInteractionPlan::new([ViewHitTarget::with_kind(widget, row, kind)]);
+        let mut plan = crate::zs_tree_view_native_draw_plan(&render);
+
+        assert_eq!(
+            decorate_native_pointer_visuals(
+                &mut plan,
+                &interaction,
+                Some((widget, kind)),
+                None,
+                Dpi::standard(),
+            ),
+            1
+        );
+        assert!(matches!(
+            plan.commands.get(1),
+            Some(NativeDrawCommand::RoundFill {
+                rect,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 14,
+                },
+                ..
             }) if *rect == row
         ));
     }

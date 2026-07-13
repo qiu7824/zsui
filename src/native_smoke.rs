@@ -124,6 +124,9 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_auto_suggest_highlight_change_count: usize,
     pub native_view_auto_suggest_submit_count: usize,
     pub native_view_auto_suggest_clear_count: usize,
+    pub native_view_tree_expansion_change_count: usize,
+    pub native_view_tree_selection_count: usize,
+    pub native_view_tree_invoke_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -219,6 +222,9 @@ impl NativeHostSmokeInteractionReport {
             native_view_auto_suggest_highlight_change_count: 0,
             native_view_auto_suggest_submit_count: 0,
             native_view_auto_suggest_clear_count: 0,
+            native_view_tree_expansion_change_count: 0,
+            native_view_tree_selection_count: 0,
+            native_view_tree_invoke_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -368,6 +374,24 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} auto-suggest clear event(s)",
                 report.native_view_auto_suggest_clear_count
+            ));
+        }
+        if report.native_view_tree_expansion_change_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} tree expansion event(s)",
+                report.native_view_tree_expansion_change_count
+            ));
+        }
+        if report.native_view_tree_selection_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} strong-id tree selection event(s)",
+                report.native_view_tree_selection_count
+            ));
+        }
+        if report.native_view_tree_invoke_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} tree invocation event(s)",
+                report.native_view_tree_invoke_count
             ));
         }
         if report.native_view_combo_expanded_change_count > 0 {
@@ -527,6 +551,9 @@ impl NativeHostSmokeInteractionReport {
                 .native_view_auto_suggest_highlight_change_count,
             native_view_auto_suggest_submit_count: report.native_view_auto_suggest_submit_count,
             native_view_auto_suggest_clear_count: report.native_view_auto_suggest_clear_count,
+            native_view_tree_expansion_change_count: report.native_view_tree_expansion_change_count,
+            native_view_tree_selection_count: report.native_view_tree_selection_count,
+            native_view_tree_invoke_count: report.native_view_tree_invoke_count,
             native_view_combo_expanded_change_count: report.native_view_combo_expanded_change_count,
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
@@ -1181,6 +1208,9 @@ mod tests {
             native_view_auto_suggest_highlight_change_count: 0,
             native_view_auto_suggest_submit_count: 0,
             native_view_auto_suggest_clear_count: 0,
+            native_view_tree_expansion_change_count: 0,
+            native_view_tree_selection_count: 0,
+            native_view_tree_invoke_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,

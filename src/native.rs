@@ -16,7 +16,8 @@ use crate::native_input_visuals::{
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
-    feature = "toggle-button"
+    feature = "toggle-button",
+    feature = "tree"
 ))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
@@ -874,6 +875,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_auto_suggest_highlight_change_count: usize,
     pub native_view_auto_suggest_submit_count: usize,
     pub native_view_auto_suggest_clear_count: usize,
+    pub native_view_tree_expansion_change_count: usize,
+    pub native_view_tree_selection_count: usize,
+    pub native_view_tree_invoke_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -976,6 +980,9 @@ impl NativeWindowSmokeRunReport {
             native_view_auto_suggest_highlight_change_count: 0,
             native_view_auto_suggest_submit_count: 0,
             native_view_auto_suggest_clear_count: 0,
+            native_view_tree_expansion_change_count: 0,
+            native_view_tree_selection_count: 0,
+            native_view_tree_invoke_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1037,7 +1044,8 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
@@ -1046,7 +1054,8 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     pointer_pressed: Option<NativePointerVisualKey>,
     #[cfg(feature = "password-box")]
@@ -1127,7 +1136,8 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     pub pointer_visual_changed: bool,
     pub hit_target_count: usize,
@@ -1160,6 +1170,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub auto_suggest_submitted: bool,
     #[cfg(feature = "auto-suggest")]
     pub auto_suggest_cleared: bool,
+    #[cfg(feature = "tree")]
+    pub tree_expansion_changed: bool,
+    #[cfg(feature = "tree")]
+    pub tree_selection_changed: bool,
+    #[cfg(feature = "tree")]
+    pub tree_invoked: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1216,7 +1232,8 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             pointer_hover: None,
             #[cfg(any(
@@ -1225,7 +1242,8 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             pointer_pressed: None,
             #[cfg(feature = "password-box")]
@@ -1409,7 +1427,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
@@ -1503,7 +1522,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         {
             let hovered = self
@@ -1602,7 +1622,8 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
@@ -1619,7 +1640,8 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
-                feature = "toggle-button"
+                feature = "toggle-button",
+                feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
@@ -1637,7 +1659,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
@@ -1658,6 +1681,52 @@ impl NativeViewInputRuntime {
         self.focus_target(target, &mut report);
         if target.kind.accepts_text_input() {
             return report;
+        }
+
+        #[cfg(feature = "tree")]
+        match target.kind {
+            crate::ViewHitTargetKind::TreeNodeExpander { node } => {
+                let Some(row) = self
+                    .widget_tree_view_state(target.widget)
+                    .and_then(|state| state.row(node))
+                else {
+                    return report;
+                };
+                if row.expandable {
+                    report.tree_expansion_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::TreeNodeExpandedChanged {
+                            widget: target.widget,
+                            node,
+                            expanded: !row.expanded,
+                        },
+                        report,
+                    );
+                }
+                return report;
+            }
+            crate::ViewHitTargetKind::TreeNode { node } => {
+                let selected = self
+                    .widget_tree_view_state(target.widget)
+                    .and_then(|state| state.selected);
+                report.tree_selection_changed = selected != Some(node);
+                report.tree_invoked = true;
+                let report = self.dispatch_view_event(
+                    ViewEvent::TreeNodeSelected {
+                        widget: target.widget,
+                        node,
+                    },
+                    report,
+                );
+                return self.dispatch_view_event(
+                    ViewEvent::TreeNodeInvoked {
+                        widget: target.widget,
+                        node,
+                    },
+                    report,
+                );
+            }
+            _ => {}
         }
 
         let event = self.activation_event(target);
@@ -1725,7 +1794,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
         self.populate_text_report(&mut report);
@@ -1754,7 +1824,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         {
             self.update_pointer_visual_state(None, None, &mut report);
@@ -1766,7 +1837,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         )))]
         {
             report
@@ -1947,6 +2019,107 @@ impl NativeViewInputRuntime {
                     );
                 }
                 _ => {}
+            }
+        }
+
+        #[cfg(feature = "tree")]
+        if target.kind == crate::ViewHitTargetKind::TreeView {
+            let Some(state) = self.widget_tree_view_state(widget) else {
+                return report;
+            };
+            let select = match key {
+                NativeViewKey::Up => state.relative_visible(-1),
+                NativeViewKey::Down => state.relative_visible(1),
+                NativeViewKey::Home => state.first_visible(),
+                NativeViewKey::End => state.last_visible(),
+                NativeViewKey::Space => state.selected.or_else(|| state.first_visible()),
+                _ => None,
+            };
+            if let Some(node) = select {
+                report.handled = true;
+                report.tree_selection_changed = state.selected != Some(node);
+                if report.tree_selection_changed {
+                    return self
+                        .dispatch_view_event(ViewEvent::TreeNodeSelected { widget, node }, report);
+                }
+                return report;
+            }
+
+            if key == NativeViewKey::Left {
+                let Some(node) = state.selected.or_else(|| state.first_visible()) else {
+                    return report;
+                };
+                let Some(row) = state.row(node) else {
+                    return report;
+                };
+                report.handled = true;
+                if row.expandable && row.expanded {
+                    report.tree_expansion_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::TreeNodeExpandedChanged {
+                            widget,
+                            node,
+                            expanded: false,
+                        },
+                        report,
+                    );
+                }
+                if let Some(parent) = row.parent {
+                    report.tree_selection_changed = state.selected != Some(parent);
+                    return self.dispatch_view_event(
+                        ViewEvent::TreeNodeSelected {
+                            widget,
+                            node: parent,
+                        },
+                        report,
+                    );
+                }
+                return report;
+            }
+
+            if key == NativeViewKey::Right {
+                let Some(node) = state.selected.or_else(|| state.first_visible()) else {
+                    return report;
+                };
+                let Some(row) = state.row(node) else {
+                    return report;
+                };
+                report.handled = true;
+                if row.expandable && !row.expanded {
+                    report.tree_expansion_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::TreeNodeExpandedChanged {
+                            widget,
+                            node,
+                            expanded: true,
+                        },
+                        report,
+                    );
+                }
+                if let Some(child) = state.first_visible_child(node) {
+                    report.tree_selection_changed = state.selected != Some(child);
+                    return self.dispatch_view_event(
+                        ViewEvent::TreeNodeSelected {
+                            widget,
+                            node: child,
+                        },
+                        report,
+                    );
+                }
+                return report;
+            }
+
+            if key == NativeViewKey::Enter {
+                let Some(node) = state
+                    .selected
+                    .filter(|selected| state.row(*selected).is_some())
+                else {
+                    return report;
+                };
+                report.handled = true;
+                report.tree_invoked = true;
+                return self
+                    .dispatch_view_event(ViewEvent::TreeNodeInvoked { widget, node }, report);
             }
         }
 
@@ -2555,7 +2728,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         self.update_pointer_visual_state(None, None, &mut report);
         #[cfg(feature = "password-box")]
@@ -2739,7 +2913,8 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
-            feature = "toggle-button"
+            feature = "toggle-button",
+            feature = "tree"
         ))]
         if let Some(interaction_plan) = self.current_interaction_plan() {
             decorate_native_pointer_visuals(
@@ -2860,7 +3035,8 @@ impl NativeViewInputRuntime {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
-        feature = "toggle-button"
+        feature = "toggle-button",
+        feature = "tree"
     ))]
     fn update_pointer_visual_state(
         &mut self,
@@ -3366,6 +3542,18 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "tree")]
+    fn widget_tree_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTreeViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tree_view_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tree_view_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -3790,6 +3978,9 @@ fn record_windows_win32_view_input_report(
         input.auto_suggest_highlight_change_count;
     report.native_view_auto_suggest_submit_count += input.auto_suggest_submit_count;
     report.native_view_auto_suggest_clear_count += input.auto_suggest_clear_count;
+    report.native_view_tree_expansion_change_count += input.tree_expansion_change_count;
+    report.native_view_tree_selection_count += input.tree_selection_count;
+    report.native_view_tree_invoke_count += input.tree_invoke_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -6982,6 +7173,114 @@ mod tests {
         });
         assert!(cleared.auto_suggest_cleared);
         assert_eq!(runtime.widget_text_value(widget).as_deref(), Some(""));
+    }
+
+    #[cfg(feature = "tree")]
+    #[test]
+    fn native_view_runtime_routes_tree_pointer_and_hierarchical_keyboard_navigation() {
+        #[derive(Clone)]
+        enum Msg {
+            Selected(crate::ZsTreeNodeId),
+            Expanded(crate::ZsTreeExpansionChange),
+            Invoked(crate::ZsTreeNodeId),
+        }
+        struct State {
+            selected: Option<crate::ZsTreeNodeId>,
+            expanded: std::collections::BTreeSet<crate::ZsTreeNodeId>,
+            invoked: Option<crate::ZsTreeNodeId>,
+        }
+
+        let widget = crate::WidgetId::new(185);
+        let root = crate::ZsTreeNodeId::new(1);
+        let folder = crate::ZsTreeNodeId::new(2);
+        let leaf = crate::ZsTreeNodeId::new(3);
+        let builder = native_window("Platform Tree").size(360, 260).stateful_view(
+            State {
+                selected: Some(folder),
+                expanded: std::collections::BTreeSet::from([root]),
+                invoked: None,
+            },
+            move |state| {
+                crate::tree_view([crate::ZsTreeNode::new(root, "Workspace")
+                    .icon(crate::ZsIcon::Folder)
+                    .children([
+                        crate::ZsTreeNode::new(folder, "src")
+                            .icon(crate::ZsIcon::Folder)
+                            .children([crate::ZsTreeNode::new(leaf, "lib.rs")]),
+                        crate::ZsTreeNode::new(4, "Cargo.toml"),
+                    ])])
+                .id(widget)
+                .expanded_tree_nodes(state.expanded.iter().copied())
+                .selected_tree_node(state.selected)
+                .on_tree_select(Msg::Selected)
+                .on_tree_expansion_change(Msg::Expanded)
+                .on_tree_invoke(Msg::Invoked)
+            },
+            |state, message, _cx| match message {
+                Msg::Selected(node) => state.selected = Some(node),
+                Msg::Expanded(change) => {
+                    if change.expanded {
+                        state.expanded.insert(change.node);
+                    } else {
+                        state.expanded.remove(&change.node);
+                    }
+                }
+                Msg::Invoked(node) => state.invoked = Some(node),
+            },
+        );
+        let expander = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::TreeNodeExpander { node: folder }
+                })
+            })
+            .expect("collapsed folder should expose disclosure geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let expanded = runtime.dispatch_pointer_click(Point {
+            x: expander.bounds.x + expander.bounds.width / 2,
+            y: expander.bounds.y + expander.bounds.height / 2,
+        });
+        assert!(expanded.tree_expansion_changed);
+        assert!(runtime
+            .widget_tree_view_state(widget)
+            .is_some_and(|state| state.row(folder).is_some_and(|row| row.expanded)));
+
+        let leaf_row = runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets
+                    .iter()
+                    .copied()
+                    .find(|target| target.kind == crate::ViewHitTargetKind::TreeNode { node: leaf })
+            })
+            .expect("expanded folder should expose its leaf row");
+        let invoked = runtime.dispatch_pointer_click(Point {
+            x: leaf_row.bounds.x + leaf_row.bounds.width / 2,
+            y: leaf_row.bounds.y + leaf_row.bounds.height / 2,
+        });
+        assert!(invoked.tree_selection_changed);
+        assert!(invoked.tree_invoked);
+        assert_eq!(
+            runtime
+                .widget_tree_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(leaf)
+        );
+
+        let parent = runtime.dispatch_key(NativeViewKey::Left);
+        assert!(parent.tree_selection_changed);
+        assert_eq!(
+            runtime
+                .widget_tree_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(folder)
+        );
+        let collapsed = runtime.dispatch_key(NativeViewKey::Left);
+        assert!(collapsed.tree_expansion_changed);
+        let keyboard = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(keyboard.tree_invoked);
     }
 
     #[cfg(feature = "combo")]

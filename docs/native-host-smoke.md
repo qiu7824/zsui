@@ -265,6 +265,30 @@ and [GTK4 SearchEntry](https://docs.gtk.org/gtk4/class.SearchEntry.html)
 references. AppKit and GTK4 target-machine interaction screenshots remain
 required.
 
+The independently selectable TreeView smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,tree,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-tree --tree-view
+```
+
+It renders an application-owned hierarchy with globally unique
+`ZsTreeNodeId` values, semantic folder/file icons and an unrealized-child node.
+The route expands with a pointer disclosure, moves selection with Down, invokes
+with Enter, collapses or selects a parent with Left, expands with Right and
+finally selects and invokes a leaf with the pointer. Expansion, selection and
+invocation have separate typed messages and smoke counters; child rows are
+ordinary draw/hit-plan entries rather than native child widgets or a mutable
+backend registry. Windows uses WinUI-like row metrics, macOS uses compact
+disclosure triangles and accent selection, and GTK uses TreeExpander-style
+indentation. These choices follow the official [WinUI TreeView](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/tree-view),
+[Apple disclosure-control](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls),
+[Apple focus and selection](https://developer.apple.com/design/human-interface-guidelines/focus-and-selection/),
+[GTK4 TreeExpander](https://docs.gtk.org/gtk4/class.TreeExpander.html) and
+[GTK4 list-widget](https://docs.gtk.org/gtk4/section-list-widget.html)
+guidance. The Windows smoke must report no failed or unhandled input and must
+capture the selected hierarchy; AppKit and GTK4 target-machine interaction
+screenshots remain required.
+
 The dedicated typed ComboBox smoke path is:
 
 ```powershell

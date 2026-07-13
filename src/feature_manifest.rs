@@ -152,6 +152,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "list widget declarations",
         ),
         ZsuiCargoFeature::new(
+            "tree",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-list"],
+            "typed hierarchical rows with strong IDs and self-drawn platform disclosure profiles",
+        ),
+        ZsuiCargoFeature::new(
             "virtual-list",
             Widget,
             false,
@@ -528,6 +536,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "progress",
                 "progress-ring",
                 "auto-suggest",
+                "tree",
                 "combo",
                 "date-picker",
                 "time-picker",
@@ -633,6 +642,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"progress"));
         assert!(all_widgets.enables.contains(&"progress-ring"));
         assert!(all_widgets.enables.contains(&"auto-suggest"));
+        assert!(all_widgets.enables.contains(&"tree"));
         assert!(all_widgets.enables.contains(&"combo"));
         assert!(all_widgets.enables.contains(&"date-picker"));
         assert!(all_widgets.enables.contains(&"time-picker"));
