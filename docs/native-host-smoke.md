@@ -204,6 +204,20 @@ keyboard, then reopens the popup. The Windows artifact must capture
 their own metric profiles through the same `ZsTime` event path, while actual
 target-machine screenshots remain a separate gate.
 
+The dedicated typed Grid layout smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,button,label,grid,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-grid --grid-view
+```
+
+It lays out fixed and weighted fractional tracks, independent row/column gaps,
+an explicit three-column header span, a two-column content span and a typed
+button hit target from the same DPI-aware geometry. The Windows artifact must
+capture `window.png`, route the `grid_apply` command without an unhandled click
+and keep all six target-smoke files valid. AppKit and GTK4 consume the same
+layout, paint and hit bounds, while their target screenshots remain separate
+gates.
+
 The default `--view` and `--scroll-view` paths exercise
 `NativeWindowBuilder::ui_command_view(...)`, record
 draw-plan command counts in `interaction.json`, post `WM_LBUTTONUP`, hit-test

@@ -13,7 +13,8 @@ use zsui::checkbox;
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
-    all(feature = "tabs", feature = "label")
+    all(feature = "tabs", feature = "label"),
+    all(feature = "grid", feature = "button", feature = "label")
 ))]
 use zsui::column;
 #[cfg(feature = "combo")]
@@ -35,7 +36,8 @@ use zsui::textbox;
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
-    all(feature = "tabs", feature = "label")
+    all(feature = "tabs", feature = "label"),
+    all(feature = "grid", feature = "button", feature = "label")
 ))]
 use zsui::CommandId;
 #[cfg(any(
@@ -49,6 +51,8 @@ use zsui::CommandId;
 use zsui::NativeViewKey;
 #[cfg(feature = "date-picker")]
 use zsui::{date_picker, ZsDate, ZsuiThemeMode};
+#[cfg(all(feature = "grid", feature = "button", feature = "label"))]
+use zsui::{grid, ZsGridCell, ZsGridFraction, ZsGridSpan, ZsGridTrack};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
@@ -70,7 +74,8 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
-    all(feature = "tabs", feature = "label")
+    all(feature = "tabs", feature = "label"),
+    all(feature = "grid", feature = "button", feature = "label")
 ))]
 use zsui::{Point, UiCommand, WidgetId};
 
@@ -88,6 +93,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--tray" || arg == "--status-item"),
         args.iter()
             .any(|arg| arg == "--menu" || arg == "--window-menu"),
+        args.iter()
+            .any(|arg| arg == "--grid-view" || arg == "--grid"),
         args.iter().any(|arg| arg == "--view"),
         args.iter()
             .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
@@ -124,6 +131,7 @@ fn run_smoke(
     artifact_root: Option<&str>,
     include_status_item: bool,
     include_window_menu: bool,
+    include_grid_view: bool,
     include_typed_view: bool,
     include_scroll_view: bool,
     include_slider_view: bool,
@@ -172,6 +180,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "tabs", feature = "label")))]
     if include_tabs_view {
         return Err("--tabs-view requires the tabs and label features".to_string());
+    }
+    #[cfg(not(all(feature = "grid", feature = "button", feature = "label")))]
+    if include_grid_view {
+        return Err("--grid-view requires the grid, button and label features".to_string());
     }
     let artifact_root = artifact_root.unwrap_or("target/native-host-smoke");
     let artifact_dir = PathBuf::from(artifact_root).join(platform.platform_name());
@@ -297,12 +309,18 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Right)
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "grid", feature = "button", feature = "label"))]
+    if include_grid_view {
+        smoke_options = smoke_options.native_view_click(Point { x: 390, y: 312 });
+    }
 
     let builder = native_window("ZSUI Smoke").size(
         520,
         if include_date_picker_view {
             480
         } else if include_time_picker_view {
+            360
+        } else if include_grid_view {
             360
         } else {
             320
@@ -314,7 +332,9 @@ fn run_smoke(
         builder
     }
     .ui_command_executor(NativeWindowRuntimeDriver::new());
-    let builder = if include_slider_view {
+    let builder = if include_grid_view {
+        attach_grid_view(builder)
+    } else if include_slider_view {
         attach_slider_view(builder)
     } else if include_radio_view {
         attach_radio_view(builder)
@@ -352,6 +372,66 @@ fn run_smoke(
         "artifacts": write_report,
     }))
     .map_err(|err| err.to_string())
+}
+
+#[cfg(all(feature = "grid", feature = "button", feature = "label"))]
+fn attach_grid_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.ui_command_view(
+        grid(
+            [
+                ZsGridTrack::fixed(zsui::Dp::new(128.0)),
+                ZsGridTrack::FLEX,
+                ZsGridTrack::fraction(ZsGridFraction::TWO),
+            ],
+            [
+                ZsGridTrack::fixed(zsui::Dp::new(44.0)),
+                ZsGridTrack::FLEX,
+                ZsGridTrack::fixed(zsui::Dp::new(48.0)),
+            ],
+            [
+                ZsGridCell::new(
+                    0,
+                    0,
+                    text::<UiCommand>("ZSUI typed Grid smoke")
+                        .padding(zsui::Dp::new(10.0))
+                        .bg(zsui::ThemeColorToken::SurfaceRaised),
+                )
+                .column_span(ZsGridSpan::THREE),
+                ZsGridCell::new(
+                    1,
+                    0,
+                    text("Navigation")
+                        .padding(zsui::Dp::new(12.0))
+                        .bg(zsui::ThemeColorToken::Control),
+                ),
+                ZsGridCell::new(
+                    1,
+                    1,
+                    text("Flexible content spans two columns")
+                        .padding(zsui::Dp::new(12.0))
+                        .bg(zsui::ThemeColorToken::SurfaceRaised),
+                )
+                .column_span(ZsGridSpan::TWO),
+                ZsGridCell::new(2, 0, text("Status").padding(zsui::Dp::new(12.0)))
+                    .column_span(ZsGridSpan::TWO),
+                ZsGridCell::new(
+                    2,
+                    2,
+                    button("Apply")
+                        .id(WidgetId::new(17))
+                        .on_click(UiCommand::app(CommandId("zsui.native_smoke.grid_apply"))),
+                ),
+            ],
+        )
+        .padding(zsui::Dp::new(24.0))
+        .column_gap(zsui::Dp::new(12.0))
+        .row_gap(zsui::Dp::new(10.0)),
+    )
+}
+
+#[cfg(not(all(feature = "grid", feature = "button", feature = "label")))]
+fn attach_grid_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
 }
 
 #[cfg(all(feature = "slider", feature = "label"))]

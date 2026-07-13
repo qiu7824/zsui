@@ -13,6 +13,7 @@ $singleFeatures = @(
     "window",
     "button",
     "label",
+    "grid",
     "widgets-base",
     "widgets-input",
     "widgets-list",
@@ -61,7 +62,7 @@ $singleFeatures = @(
 )
 
 $featureSets = @(
-    "button,label",
+    "button,label,grid",
     "textbox,checkbox,toggle,slider,radio,progress,combo,date-picker,time-picker,tabs",
     "list,table",
     "virtual-list,paged-list,label",

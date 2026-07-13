@@ -421,6 +421,8 @@ pub use view::checkbox;
 pub use view::combo_box;
 #[cfg(feature = "date-picker")]
 pub use view::date_picker;
+#[cfg(feature = "grid")]
+pub use view::grid;
 #[cfg(feature = "list")]
 pub use view::list;
 #[cfg(feature = "radio")]
@@ -456,6 +458,8 @@ pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+#[cfg(feature = "grid")]
+pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTrack};
 #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 pub use widget_render::ZsPopupPlacement;
 #[cfg(feature = "combo")]

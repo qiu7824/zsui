@@ -114,6 +114,12 @@ history remain authoritative for implementation status.
   popup shares viewport flipping and clamping with other overlays; its expanded
   state and changes remain explicit typed application messages. System-locale
   clock selection and non-Windows target proof remain readiness gaps.
+- Grid is an independent `grid` Cargo feature. Its public contract uses typed
+  fixed/fractional tracks and nonzero spans; the shared layout pass owns row/
+  column gaps, explicit cell/span geometry, DPI conversion, paint bounds and
+  hit-test bounds for all three desktop renderers. Every canonical child is a
+  typed `ZsGridCell`; overlapping cells retain declaration order. Content-sized
+  tracks, baseline alignment and non-Windows target proof remain readiness gaps.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

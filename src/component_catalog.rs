@@ -154,6 +154,11 @@ const TIME_PICKER_GAPS: &[&str] = &[
     "accessibility value and picker-column providers",
     "AppKit and GTK4 target interaction smoke",
 ];
+const GRID_GAPS: &[&str] = &[
+    "content-sized automatic tracks and baseline alignment",
+    "accessibility grouping semantics",
+    "AppKit and GTK4 target layout smoke",
+];
 const TABS_GAPS: &[&str] = &[
     "accessibility tab-list and tab-panel providers",
     "document-tab close, reorder and overflow behavior",
@@ -205,10 +210,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "grid",
         "Grid",
         Layout,
-        NotStarted,
-        None,
+        FirstPass,
+        Some("grid"),
         "src/view.rs",
-        NEW_COMPONENT_GAPS
+        GRID_GAPS
     ),
     component!(
         "border",
@@ -636,7 +641,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 14);
+        assert!(summary.not_started_count >= 13);
         assert!(summary.missing_component_names.contains(&"tree"));
         assert!(summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));

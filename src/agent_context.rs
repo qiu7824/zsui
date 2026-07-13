@@ -331,6 +331,12 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
 }
 
 pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
+    let component_catalog = zsui_component_catalog_summary();
+    let component_library_percent = if component_catalog.total_count == 0 {
+        100
+    } else {
+        ((component_catalog.runtime_surface_count * 100) / component_catalog.total_count) as u8
+    };
     vec![
         ZsuiCompletionArea {
             area_name: "foundation_contracts",
@@ -353,11 +359,11 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "component_library",
-            percent_complete: 56,
-            status_name: "twenty_seven_first_pass_surfaces_out_of_forty_eight_catalogued_components",
+            percent_complete: component_library_percent,
+            status_name: "component_catalog_runtime_surface_ratio",
             source_path: "src/component_catalog.rs",
             missing_before_complete: vec![
-                "grid and repeater layout",
+                "content-sized grid tracks and richer repeater layout",
                 "tree and data grid runtime",
                 "number picker and advanced selection inputs",
                 "progress info bar tooltip and teaching tip",
@@ -900,9 +906,19 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 28);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 29);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 6);
-        assert_eq!(context.readiness.component_catalog.not_started_count, 14);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 13);
+        let component_area = context
+            .completion_areas
+            .iter()
+            .find(|area| area.area_name == "component_library")
+            .expect("component completion area should exist");
+        assert_eq!(
+            usize::from(component_area.percent_complete),
+            context.readiness.component_catalog.runtime_surface_count * 100
+                / context.readiness.component_catalog.total_count
+        );
         assert!(context
             .readiness
             .rust_first_goal_names

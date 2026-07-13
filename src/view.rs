@@ -250,6 +250,159 @@ pub enum ViewStackDirection {
     Column,
 }
 
+#[cfg(feature = "grid")]
+/// A validated positive weight for a fractional Grid track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ZsGridFraction(u16);
+
+#[cfg(feature = "grid")]
+impl ZsGridFraction {
+    pub const ONE: Self = Self(1);
+    pub const TWO: Self = Self(2);
+    pub const THREE: Self = Self(3);
+    pub const FOUR: Self = Self(4);
+
+    pub fn new(weight: u16) -> crate::ZsuiResult<Self> {
+        if weight == 0 {
+            return Err(crate::ZsuiError::invalid_spec(
+                "grid.fraction",
+                "fractional track weight must be greater than zero",
+            ));
+        }
+        Ok(Self(weight))
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+}
+
+#[cfg(feature = "grid")]
+/// A validated nonzero number of Grid tracks covered by a child.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ZsGridSpan(u16);
+
+#[cfg(feature = "grid")]
+impl ZsGridSpan {
+    pub const ONE: Self = Self(1);
+    pub const TWO: Self = Self(2);
+    pub const THREE: Self = Self(3);
+    pub const FOUR: Self = Self(4);
+
+    pub fn new(track_count: u16) -> crate::ZsuiResult<Self> {
+        if track_count == 0 {
+            return Err(crate::ZsuiError::invalid_spec(
+                "grid.span",
+                "grid span must cover at least one track",
+            ));
+        }
+        Ok(Self(track_count))
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+}
+
+#[cfg(feature = "grid")]
+/// The zero-based row/column position and typed span of a Grid child.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ZsGridPlacement {
+    pub row: usize,
+    pub column: usize,
+    pub row_span: ZsGridSpan,
+    pub column_span: ZsGridSpan,
+}
+
+#[cfg(feature = "grid")]
+impl ZsGridPlacement {
+    pub const fn new(row: usize, column: usize) -> Self {
+        Self {
+            row,
+            column,
+            row_span: ZsGridSpan::ONE,
+            column_span: ZsGridSpan::ONE,
+        }
+    }
+
+    pub const fn with_spans(mut self, row_span: ZsGridSpan, column_span: ZsGridSpan) -> Self {
+        self.row_span = row_span;
+        self.column_span = column_span;
+        self
+    }
+
+    pub const fn with_row_span(mut self, row_span: ZsGridSpan) -> Self {
+        self.row_span = row_span;
+        self
+    }
+
+    pub const fn with_column_span(mut self, column_span: ZsGridSpan) -> Self {
+        self.column_span = column_span;
+        self
+    }
+}
+
+#[cfg(feature = "grid")]
+/// One fixed-DP or weighted fractional Grid track.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ZsGridTrack {
+    Fixed(Dp),
+    Fraction(ZsGridFraction),
+}
+
+#[cfg(feature = "grid")]
+impl ZsGridTrack {
+    pub const FLEX: Self = Self::Fraction(ZsGridFraction::ONE);
+
+    pub const fn fixed(size: Dp) -> Self {
+        Self::Fixed(size)
+    }
+
+    pub const fn fraction(weight: ZsGridFraction) -> Self {
+        Self::Fraction(weight)
+    }
+}
+
+#[cfg(feature = "grid")]
+impl Default for ZsGridTrack {
+    fn default() -> Self {
+        Self::FLEX
+    }
+}
+
+#[cfg(feature = "grid")]
+/// One explicitly placed child cell in a [`grid`] declaration.
+#[derive(Debug, Clone)]
+pub struct ZsGridCell<Msg> {
+    pub placement: ZsGridPlacement,
+    pub content: ViewNode<Msg>,
+}
+
+#[cfg(feature = "grid")]
+impl<Msg> ZsGridCell<Msg> {
+    pub fn new(row: usize, column: usize, content: ViewNode<Msg>) -> Self {
+        Self {
+            placement: ZsGridPlacement::new(row, column),
+            content,
+        }
+    }
+
+    pub fn placement(mut self, placement: ZsGridPlacement) -> Self {
+        self.placement = placement;
+        self
+    }
+
+    pub fn row_span(mut self, span: ZsGridSpan) -> Self {
+        self.placement.row_span = span;
+        self
+    }
+
+    pub fn column_span(mut self, span: ZsGridSpan) -> Self {
+        self.placement.column_span = span;
+        self
+    }
+}
+
 #[cfg(feature = "date-picker")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsDatePickerState {
@@ -413,6 +566,14 @@ pub enum ViewNodeKind<Msg> {
         loading: bool,
         show_placeholders: bool,
     },
+    #[cfg(feature = "grid")]
+    Grid {
+        columns: Vec<ZsGridTrack>,
+        rows: Vec<ZsGridTrack>,
+        placements: Vec<ZsGridPlacement>,
+        column_gap: Option<Dp>,
+        row_gap: Option<Dp>,
+    },
     Stack {
         direction: ViewStackDirection,
     },
@@ -511,6 +672,24 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn gap(mut self, gap: Dp) -> Self {
         self.style.gap = Some(gap);
+        self
+    }
+
+    #[cfg(feature = "grid")]
+    /// Overrides the Grid's horizontal spacing; `.gap(...)` remains the fallback.
+    pub fn column_gap(mut self, gap: Dp) -> Self {
+        if let ViewNodeKind::Grid { column_gap, .. } = &mut self.kind {
+            *column_gap = Some(gap);
+        }
+        self
+    }
+
+    #[cfg(feature = "grid")]
+    /// Overrides the Grid's vertical spacing; `.gap(...)` remains the fallback.
+    pub fn row_gap(mut self, gap: Dp) -> Self {
+        if let ViewNodeKind::Grid { row_gap, .. } = &mut self.kind {
+            *row_gap = Some(gap);
+        }
         self
     }
 
@@ -983,6 +1162,30 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
         direction: ViewStackDirection::Column,
     })
     .children(children)
+}
+
+#[cfg(feature = "grid")]
+/// Creates a two-dimensional Grid using shared DPI-aware layout geometry.
+///
+/// Every [`ZsGridCell`] carries an explicit zero-based placement, matching the
+/// row/column attachment model shared by WinUI Grid, AppKit Grid View and
+/// GTK4 Grid. Explicit overlaps retain declaration order for painting and hit
+/// testing.
+pub fn grid<Msg>(
+    columns: impl IntoIterator<Item = ZsGridTrack>,
+    rows: impl IntoIterator<Item = ZsGridTrack>,
+    items: impl IntoIterator<Item = ZsGridCell<Msg>>,
+) -> ViewNode<Msg> {
+    let items = items.into_iter().collect::<Vec<_>>();
+    let placements = items.iter().map(|item| item.placement).collect();
+    ViewNode::<Msg>::new(ViewNodeKind::Grid {
+        columns: columns.into_iter().collect(),
+        rows: rows.into_iter().collect(),
+        placements,
+        column_gap: None,
+        row_gap: None,
+    })
+    .children(items.into_iter().map(|item| item.content))
 }
 
 #[cfg(feature = "list")]
@@ -2897,6 +3100,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 cx.finish_node(self);
                 return;
             }
+            #[cfg(feature = "grid")]
+            ViewNodeKind::Grid { .. } => {}
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
@@ -3895,8 +4100,203 @@ fn split_child_bounds<Msg>(
                 child_count
             ]
         }
+        #[cfg(feature = "grid")]
+        ViewNodeKind::Grid {
+            columns,
+            rows,
+            placements,
+            column_gap,
+            row_gap,
+        } => split_grid_child_bounds(
+            bounds,
+            columns,
+            rows,
+            placements,
+            children.len(),
+            column_gap
+                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .unwrap_or(gap),
+            row_gap
+                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .unwrap_or(gap),
+            dpi,
+        ),
         _ => vec![bounds; child_count],
     }
+}
+
+#[cfg(feature = "grid")]
+fn split_grid_child_bounds(
+    bounds: Rect,
+    columns: &[ZsGridTrack],
+    rows: &[ZsGridTrack],
+    placements: &[ZsGridPlacement],
+    child_count: usize,
+    column_gap: i32,
+    row_gap: i32,
+    dpi: Dpi,
+) -> Vec<Rect> {
+    let column_lengths = allocate_grid_track_lengths(bounds.width, column_gap, columns, dpi);
+    let row_lengths = allocate_grid_track_lengths(bounds.height, row_gap, rows, dpi);
+    (0..child_count)
+        .map(|index| {
+            placements
+                .get(index)
+                .and_then(|placement| {
+                    grid_placement_bounds(
+                        bounds,
+                        &column_lengths,
+                        &row_lengths,
+                        column_gap,
+                        row_gap,
+                        *placement,
+                    )
+                })
+                .unwrap_or(Rect {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: 0,
+                    height: 0,
+                })
+        })
+        .collect()
+}
+
+#[cfg(feature = "grid")]
+fn allocate_grid_track_lengths(total: i32, gap: i32, tracks: &[ZsGridTrack], dpi: Dpi) -> Vec<i32> {
+    if tracks.is_empty() {
+        return Vec::new();
+    }
+    let total = total.max(0);
+    let total_gap = gap
+        .max(0)
+        .saturating_mul(tracks.len().saturating_sub(1) as i32)
+        .min(total);
+    let available = total.saturating_sub(total_gap);
+    let requested = tracks
+        .iter()
+        .map(|track| match track {
+            ZsGridTrack::Fixed(size) => Some(size.to_px(dpi).round_i32().max(0)),
+            ZsGridTrack::Fraction(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let fixed_total = requested
+        .iter()
+        .flatten()
+        .fold(0i32, |total, value| total.saturating_add(*value));
+    let mut lengths = vec![0; tracks.len()];
+
+    if fixed_total >= available && fixed_total > 0 {
+        let fixed_indices = requested
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.map(|value| (index, value)))
+            .collect::<Vec<_>>();
+        let mut assigned = 0;
+        for (position, (index, value)) in fixed_indices.iter().enumerate() {
+            let length = if position + 1 == fixed_indices.len() {
+                available.saturating_sub(assigned)
+            } else {
+                ((i64::from(*value) * i64::from(available)) / i64::from(fixed_total))
+                    .clamp(0, i64::from(i32::MAX)) as i32
+            };
+            lengths[*index] = length;
+            assigned = assigned.saturating_add(length);
+        }
+        return lengths;
+    }
+
+    for (index, value) in requested.iter().enumerate() {
+        if let Some(value) = value {
+            lengths[index] = *value;
+        }
+    }
+
+    let fractional_indices = tracks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, track)| match track {
+            ZsGridTrack::Fraction(weight) => Some((index, weight.get())),
+            ZsGridTrack::Fixed(_) => None,
+        })
+        .collect::<Vec<_>>();
+    if fractional_indices.is_empty() {
+        return lengths;
+    }
+    let remaining = available.saturating_sub(fixed_total).max(0);
+    let total_weight = fractional_indices.iter().fold(0u64, |total, (_, weight)| {
+        total.saturating_add(u64::from(*weight))
+    });
+    let mut assigned = 0;
+    for (position, (index, weight)) in fractional_indices.iter().enumerate() {
+        let length = if position + 1 == fractional_indices.len() {
+            remaining.saturating_sub(assigned)
+        } else {
+            ((remaining as u128 * u128::from(*weight)) / u128::from(total_weight))
+                .min(i32::MAX as u128) as i32
+        };
+        lengths[*index] = length;
+        assigned = assigned.saturating_add(length);
+    }
+    lengths
+}
+
+#[cfg(feature = "grid")]
+fn grid_placement_bounds(
+    bounds: Rect,
+    column_lengths: &[i32],
+    row_lengths: &[i32],
+    column_gap: i32,
+    row_gap: i32,
+    placement: ZsGridPlacement,
+) -> Option<Rect> {
+    let (x, width) = grid_axis_span(
+        bounds.x,
+        column_lengths,
+        column_gap,
+        placement.column,
+        placement.column_span,
+    )?;
+    let (y, height) = grid_axis_span(
+        bounds.y,
+        row_lengths,
+        row_gap,
+        placement.row,
+        placement.row_span,
+    )?;
+    Some(Rect {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
+#[cfg(feature = "grid")]
+fn grid_axis_span(
+    origin: i32,
+    lengths: &[i32],
+    gap: i32,
+    start: usize,
+    span: ZsGridSpan,
+) -> Option<(i32, i32)> {
+    if start >= lengths.len() {
+        return None;
+    }
+    let gap = gap.max(0);
+    let before = lengths[..start]
+        .iter()
+        .fold(0i32, |total, length| total.saturating_add(*length))
+        .saturating_add(gap.saturating_mul(start as i32));
+    let end = start
+        .saturating_add(usize::from(span.get()))
+        .min(lengths.len());
+    let covered_tracks = end.saturating_sub(start);
+    let length = lengths[start..end]
+        .iter()
+        .fold(0i32, |total, length| total.saturating_add(*length))
+        .saturating_add(gap.saturating_mul(covered_tracks.saturating_sub(1) as i32));
+    Some((origin.saturating_add(before), length.max(0)))
 }
 
 fn split_column_child_bounds<Msg>(
@@ -4220,6 +4620,185 @@ mod tests {
         assert_eq!(navigation_bounds.width, 240);
         assert_eq!(content_bounds.x, 252);
         assert_eq!(content_bounds.width, 708);
+    }
+
+    #[test]
+    #[cfg(feature = "grid")]
+    fn grid_layout_honors_typed_tracks_spans_and_independent_gaps() {
+        let header = WidgetId::new(72);
+        let content = WidgetId::new(73);
+        let action = WidgetId::new(74);
+        let mut view: ViewNode<()> = grid(
+            [
+                ZsGridTrack::fixed(Dp::new(120.0)),
+                ZsGridTrack::FLEX,
+                ZsGridTrack::fraction(ZsGridFraction::TWO),
+            ],
+            [
+                ZsGridTrack::fixed(Dp::new(40.0)),
+                ZsGridTrack::FLEX,
+                ZsGridTrack::fixed(Dp::new(60.0)),
+            ],
+            [
+                ZsGridCell::new(0, 0, spacer().id(header)).column_span(ZsGridSpan::THREE),
+                ZsGridCell::new(1, 1, spacer().id(content)).column_span(ZsGridSpan::TWO),
+                ZsGridCell::new(2, 2, spacer().id(action)),
+            ],
+        )
+        .column_gap(Dp::new(10.0))
+        .row_gap(Dp::new(8.0));
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 600,
+                height: 300,
+            },
+            Dpi::standard(),
+        );
+
+        let output = view.layout(&mut layout);
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("grid child should be laid out")
+                .bounds
+        };
+
+        assert_eq!(
+            bounds_for(header),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 600,
+                height: 40,
+            }
+        );
+        assert_eq!(
+            bounds_for(content),
+            Rect {
+                x: 130,
+                y: 48,
+                width: 470,
+                height: 184,
+            }
+        );
+        assert_eq!(
+            bounds_for(action),
+            Rect {
+                x: 293,
+                y: 240,
+                width: 307,
+                height: 60,
+            }
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "grid")]
+    fn grid_explicit_placement_scales_fixed_tracks_with_dpi_and_bounds_invalid_cells() {
+        let first = WidgetId::new(75);
+        let second = WidgetId::new(76);
+        let explicit = WidgetId::new(77);
+        let invalid = WidgetId::new(79);
+        let mut view: ViewNode<()> = grid(
+            [ZsGridTrack::fixed(Dp::new(40.0)), ZsGridTrack::FLEX],
+            [ZsGridTrack::FLEX, ZsGridTrack::FLEX],
+            [
+                ZsGridCell::new(1, 0, spacer().id(first)),
+                ZsGridCell::new(1, 1, spacer().id(second)),
+                ZsGridCell::new(0, 0, spacer().id(explicit)).column_span(ZsGridSpan::TWO),
+                ZsGridCell::new(4, 4, spacer().id(invalid)),
+            ],
+        )
+        .gap(Dp::new(8.0));
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 300,
+                height: 180,
+            },
+            Dpi::new(144.0),
+        );
+
+        let output = view.layout(&mut layout);
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("grid child should be laid out")
+                .bounds
+        };
+
+        assert_eq!(
+            bounds_for(explicit),
+            Rect {
+                x: 10,
+                y: 20,
+                width: 300,
+                height: 84,
+            }
+        );
+        assert_eq!(
+            bounds_for(first),
+            Rect {
+                x: 10,
+                y: 116,
+                width: 60,
+                height: 84,
+            }
+        );
+        assert_eq!(bounds_for(second).width, 228);
+        assert_eq!(bounds_for(second).x, 82);
+        assert_eq!(bounds_for(invalid).width, 0);
+        assert_eq!(bounds_for(invalid).height, 0);
+        assert!(ZsGridFraction::new(0).is_err());
+        assert!(ZsGridSpan::new(0).is_err());
+    }
+
+    #[test]
+    #[cfg(all(feature = "grid", feature = "button"))]
+    fn grid_layout_drives_shared_paint_and_typed_hit_geometry() {
+        let behind = WidgetId::new(80);
+        let action = WidgetId::new(78);
+        let mut view: ViewNode<Msg> = grid(
+            [
+                ZsGridTrack::FLEX,
+                ZsGridTrack::fraction(ZsGridFraction::TWO),
+            ],
+            [ZsGridTrack::FLEX, ZsGridTrack::FLEX],
+            [
+                ZsGridCell::new(0, 0, spacer()),
+                ZsGridCell::new(1, 1, button("Behind").id(behind).on_click(Msg::SaveClicked)),
+                ZsGridCell::new(1, 1, button("Apply").id(action).on_click(Msg::SaveClicked)),
+            ],
+        )
+        .gap(Dp::new(6.0));
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 306,
+                height: 206,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let interaction = view.interaction_plan();
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+
+        view.paint(&mut paint);
+
+        assert_eq!(
+            interaction.click_event_at(Point { x: 205, y: 155 }),
+            Some(ViewEvent::Click { widget: action })
+        );
+        assert_eq!(interaction.hit_target_count(), 2);
+        assert!(paint.plan().text_count() >= 2);
     }
 
     #[test]

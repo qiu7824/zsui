@@ -104,6 +104,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "label/text component declarations and renderer-backed Label component",
         ),
         ZsuiCargoFeature::new(
+            "grid",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "typed row/column grid layout with fixed and fractional tracks, gaps and spans",
+        ),
+        ZsuiCargoFeature::new(
             "widgets-base",
             Widget,
             false,
@@ -455,6 +463,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             vec![
                 "button",
                 "label",
+                "grid",
                 "scroll",
                 "list",
                 "virtual-list",
@@ -546,12 +555,18 @@ mod tests {
     #[test]
     fn widget_profile_is_opt_in_not_default() {
         let manifest = zsui_feature_manifest();
+        let grid = manifest
+            .iter()
+            .find(|feature| feature.name == "grid")
+            .expect("grid feature should be listed");
         let all_widgets = manifest
             .iter()
             .find(|feature| feature.name == "all-widgets")
             .expect("all-widgets feature should be listed");
 
+        assert!(!grid.default_enabled);
         assert!(!all_widgets.default_enabled);
+        assert!(all_widgets.enables.contains(&"grid"));
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"toggle"));
         assert!(all_widgets.enables.contains(&"slider"));

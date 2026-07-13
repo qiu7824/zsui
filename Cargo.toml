@@ -34,6 +34,7 @@ default = ["window", "button", "label"]
 window = ["windows-win32", "macos-appkit", "linux-gtk"]
 button = ["widgets-base"]
 label = ["widgets-base"]
+grid = ["widgets-base"]
 widgets-base = []
 widgets-input = []
 widgets-list = []
@@ -77,7 +78,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "label", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "slider", "radio", "progress", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
+all-widgets = ["button", "label", "grid", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "slider", "radio", "progress", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",
