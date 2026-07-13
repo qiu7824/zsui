@@ -5,8 +5,8 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
-    NSColor, NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey, NSEnterCharacter,
-    NSEvent, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold,
+    NSColor, NSColorSpace, NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey,
+    NSEnterCharacter, NSEvent, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold,
     NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName,
     NSGraphicsContext, NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode,
     NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSRightArrowFunctionKey,
@@ -239,11 +239,27 @@ define_class!(
                     context.invalidateCharacterCoordinates();
                 }
             }
-            let system_prefers_dark = appkit_system_prefers_dark(self.mtm());
+            let (system_prefers_dark, system_high_contrast) =
+                appkit_system_appearance(self.mtm());
             let plan = self.ivars().plan.borrow();
-            let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);
+            let palette = NativeDrawPalette::for_system_appearance(
+                plan.theme_mode,
+                system_prefers_dark,
+                system_high_contrast,
+                system_high_contrast
+                    .then(appkit_semantic_high_contrast_palette)
+                    .flatten(),
+            );
             let mut sink = MacosAppKitDrawSink::new(palette);
             sink.draw_plan(&plan);
+        }
+
+        #[unsafe(method(viewDidChangeEffectiveAppearance))]
+        fn view_did_change_effective_appearance(&self) {
+            unsafe {
+                let _: () = msg_send![super(self), viewDidChangeEffectiveAppearance];
+            }
+            self.setNeedsDisplay(true);
         }
 
         #[unsafe(method(mouseDown:))]
@@ -812,11 +828,45 @@ fn char_index_to_utf16_offset(text: &str, index: usize) -> usize {
     text.chars().take(index).map(char::len_utf16).sum()
 }
 
-fn appkit_system_prefers_dark(mtm: MainThreadMarker) -> bool {
+fn appkit_system_appearance(mtm: MainThreadMarker) -> (bool, bool) {
     let application = objc2_app_kit::NSApplication::sharedApplication(mtm);
-    application
-        .effectiveAppearance()
-        .name()
-        .to_string()
-        .contains("Dark")
+    appkit_appearance_flags(&application.effectiveAppearance().name().to_string())
+}
+
+fn appkit_appearance_flags(name: &str) -> (bool, bool) {
+    (name.contains("Dark"), name.contains("HighContrast"))
+}
+
+fn appkit_semantic_high_contrast_palette() -> Option<NativeDrawPalette> {
+    let primary_text = appkit_native_color(&NSColor::labelColor())?;
+    let surface = appkit_native_color(&NSColor::windowBackgroundColor())?;
+    Some(NativeDrawPalette {
+        primary_text,
+        secondary_text: primary_text,
+        disabled_text: appkit_native_color(&NSColor::disabledControlTextColor())?,
+        accent: appkit_native_color(&NSColor::selectedContentBackgroundColor())?,
+        accent_text: appkit_native_color(&NSColor::selectedControlTextColor())?,
+        surface,
+        surface_raised: appkit_native_color(&NSColor::controlBackgroundColor())?,
+        control: appkit_native_color(&NSColor::controlBackgroundColor())?,
+        border: appkit_native_color(&NSColor::separatorColor())?,
+        success: appkit_native_color(&NSColor::systemGreenColor())?,
+        warning: appkit_native_color(&NSColor::systemOrangeColor())?,
+        danger: appkit_native_color(&NSColor::systemRedColor())?,
+        high_contrast: true,
+    })
+}
+
+fn appkit_native_color(color: &NSColor) -> Option<Color> {
+    let color = color.colorUsingColorSpace(&NSColorSpace::deviceRGBColorSpace())?;
+    Some(Color::rgba(
+        appkit_color_channel(color.redComponent()),
+        appkit_color_channel(color.greenComponent()),
+        appkit_color_channel(color.blueComponent()),
+        appkit_color_channel(color.alphaComponent()),
+    ))
+}
+
+fn appkit_color_channel(value: f64) -> u8 {
+    (value * 255.0).round().clamp(0.0, 255.0) as u8
 }

@@ -132,6 +132,13 @@ the shared native view runtime. Its transient visual state is keyed by typed
 `ViewHitTargetKind` values and decorates the self-drawn plan with semantic theme
 roles; backends must not replace it with platform controls or retain a second
 widget-state registry.
+Treat `ZsuiThemeMode::HighContrast` as a distinct accessibility appearance,
+not as an alias for the current light/dark palette. System mode must honor an
+active OS high-contrast request even when application state asked for light or
+dark. Win32 resolves `COLOR_WINDOW`/`COLOR_WINDOWTEXT` and
+`COLOR_HIGHLIGHT`/`COLOR_HIGHLIGHTTEXT`; AppKit and GTK4 resolve their current
+semantic colors. Keep the shared black/white palette only as a deterministic
+fallback when a backend cannot provide those values.
 The feature-gated `scroll` container offsets its child content, clips hit
 targets to the viewport and emits `PushClip`/`PopClip` draw commands; backend
 renderers should preserve that clipping boundary before adding wheel/touch

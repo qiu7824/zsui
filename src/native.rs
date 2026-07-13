@@ -794,6 +794,7 @@ pub struct NativeWindowSmokeRunReport {
     pub screenshot_error: Option<String>,
     pub draw_plan_requested: bool,
     pub draw_plan_window_count: usize,
+    pub high_contrast_draw_plan_window_count: usize,
     pub draw_command_count: usize,
     pub text_command_count: usize,
     pub native_view_hit_target_count: usize,
@@ -888,6 +889,7 @@ impl NativeWindowSmokeRunReport {
             screenshot_error: None,
             draw_plan_requested: false,
             draw_plan_window_count: 0,
+            high_contrast_draw_plan_window_count: 0,
             draw_command_count: 0,
             text_command_count: 0,
             native_view_hit_target_count: 0,
@@ -2646,6 +2648,11 @@ fn record_draw_plan_smoke(
     draw_plans: &[Option<NativeDrawPlan>],
 ) {
     report.draw_plan_window_count = draw_plans.iter().filter(|plan| plan.is_some()).count();
+    report.high_contrast_draw_plan_window_count = draw_plans
+        .iter()
+        .filter_map(|plan| plan.as_ref())
+        .filter(|plan| plan.theme_mode == crate::ZsuiThemeMode::HighContrast)
+        .count();
     report.draw_plan_requested = report.draw_plan_window_count > 0;
     report.draw_command_count = draw_plans
         .iter()

@@ -583,13 +583,35 @@ impl WindowsGdiPalette {
     }
 
     pub const fn resolve_fill(self, fill: NativeDrawFill) -> Color {
+        self.resolve_fill_with_contrast(fill, false)
+    }
+
+    pub const fn resolve_fill_with_contrast(
+        self,
+        fill: NativeDrawFill,
+        high_contrast: bool,
+    ) -> Color {
         match fill {
             NativeDrawFill::Color(color) => color,
             NativeDrawFill::Role(role) => self.resolve(role),
             NativeDrawFill::RoleWithAlpha { role, alpha } => {
+                let alpha = if high_contrast {
+                    high_contrast_alpha(alpha)
+                } else {
+                    alpha
+                };
                 blend_color(self.resolve(role), self.surface, alpha)
             }
         }
+    }
+}
+
+const fn high_contrast_alpha(alpha: u8) -> u8 {
+    match alpha {
+        0 => 0,
+        1..=20 => 64,
+        21..=63 => 112,
+        alpha => alpha,
     }
 }
 
@@ -696,6 +718,7 @@ pub struct WindowsGdiDrawSink {
     style_resolver: WindowsGdiStyleResolver,
     system_icon_font: WindowsSystemIconFont,
     operation_log: Vec<NativeDrawCommandOperation>,
+    high_contrast: bool,
 }
 
 impl WindowsGdiDrawSink {
@@ -704,6 +727,14 @@ impl WindowsGdiDrawSink {
     }
 
     pub fn with_palette(dc: HDC, palette: WindowsGdiPalette) -> Self {
+        Self::with_palette_and_contrast(dc, palette, false)
+    }
+
+    pub fn with_palette_and_contrast(
+        dc: HDC,
+        palette: WindowsGdiPalette,
+        high_contrast: bool,
+    ) -> Self {
         let system_icon_font = detect_windows_system_icon_font(dc);
         let icon_font_family = system_icon_font
             .font_family()
@@ -715,6 +746,7 @@ impl WindowsGdiDrawSink {
                 .with_icon_font_family(icon_font_family),
             system_icon_font,
             operation_log: Vec::new(),
+            high_contrast,
         }
     }
 
@@ -741,8 +773,13 @@ impl WindowsGdiDrawSink {
             return;
         }
         let rect = to_win_rect(rect);
-        let fill = self.palette.resolve_fill(fill);
-        let stroke_color = stroke.map(|stroke| self.palette.resolve_fill(stroke));
+        let fill = self
+            .palette
+            .resolve_fill_with_contrast(fill, self.high_contrast);
+        let stroke_color = stroke.map(|stroke| {
+            self.palette
+                .resolve_fill_with_contrast(stroke, self.high_contrast)
+        });
         if unsafe {
             draw_round_rect_antialiased(self.renderer.hdc(), rect, fill, stroke_color, radius)
         } {
@@ -883,16 +920,22 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
         self.operation_log.push(command.operation());
         match command {
             NativeDrawCommand::FillRect { rect, fill } => {
-                self.renderer
-                    .fill_rect(*rect, self.palette.resolve_fill(*fill));
+                self.renderer.fill_rect(
+                    *rect,
+                    self.palette
+                        .resolve_fill_with_contrast(*fill, self.high_contrast),
+                );
             }
             NativeDrawCommand::StrokeRect {
                 rect,
                 stroke,
                 width,
-            } => self
-                .renderer
-                .stroke_rect(*rect, self.palette.resolve_fill(*stroke), *width),
+            } => self.renderer.stroke_rect(
+                *rect,
+                self.palette
+                    .resolve_fill_with_contrast(*stroke, self.high_contrast),
+                *width,
+            ),
             NativeDrawCommand::RoundRect {
                 rect,
                 fill,
@@ -1240,6 +1283,15 @@ mod tests {
         assert!(subtle.r < palette.surface.r);
         assert!(subtle.b > palette.surface.b - 12);
         assert_eq!(subtle.a, 255);
+
+        let high_contrast_hover = palette.resolve_fill_with_contrast(
+            NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 14,
+            },
+            true,
+        );
+        assert_eq!(high_contrast_hover, Color::rgb(189, 189, 189));
     }
 
     #[test]

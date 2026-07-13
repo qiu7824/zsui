@@ -146,7 +146,6 @@ const COMBO_GAPS: &[&str] = &[
 ];
 const DATE_PICKER_GAPS: &[&str] = &[
     "localized date, month and weekday formatting",
-    "high-contrast visual states",
     "accessibility value and calendar-grid providers",
     "AppKit and GTK4 platform-style metrics and target interaction smoke",
 ];

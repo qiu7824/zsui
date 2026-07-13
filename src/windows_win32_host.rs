@@ -28,7 +28,7 @@ use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
 };
 use crate::{
-    native_status_menu_command_from_menu, Command, FileDialogService, FileDialogSpec,
+    native_status_menu_command_from_menu, Color, Command, FileDialogService, FileDialogSpec,
     HostCapabilities, MenuItemSpec, MenuSpec, NativeAppIconResource, NativeDrawPlan,
     NativeMainWindowHandles, NativeMainWindowHost, NativeMainWindowHostOperation,
     NativeMainWindowPresentMode, NativeMainWindowPresentation, NativeMainWindowRequest,
@@ -48,11 +48,15 @@ use windows_sys::Win32::{
     },
     Graphics::{
         Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE},
-        Gdi::{BeginPaint, EndPaint, InvalidateRect, ScreenToClient, UpdateWindow, PAINTSTRUCT},
+        Gdi::{
+            BeginPaint, EndPaint, GetSysColor, InvalidateRect, ScreenToClient, UpdateWindow,
+            COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT, COLOR_WINDOW, COLOR_WINDOWTEXT, PAINTSTRUCT,
+        },
     },
     System::LibraryLoader::GetModuleHandleW,
     System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD},
     UI::{
+        Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
         Controls::Dialogs::{
             CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_ALLOWMULTISELECT,
             OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT,
@@ -82,21 +86,22 @@ use windows_sys::Win32::{
             GetSystemMetrics, GetWindowLongPtrW, GetWindowLongW, GetWindowRect, IsWindow,
             KillTimer, LoadCursorW, LoadImageW, PostMessageW, PostQuitMessage, RegisterClassExW,
             SendMessageW, SetForegroundWindow, SetMenu, SetTimer, SetWindowLongPtrW,
-            SetWindowLongW, SetWindowPos, ShowWindow, TrackPopupMenu, TranslateAcceleratorW,
-            TranslateMessage, ACCEL, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW,
-            CW_USEDEFAULT, FALT, FCONTROL, FSHIFT, FVIRTKEY, GWLP_USERDATA, GWL_EXSTYLE, HACCEL,
-            HCURSOR, HICON, HMENU, HTCAPTION, HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW,
-            IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MF_CHECKED, MF_GRAYED, MF_POPUP,
-            MF_SEPARATOR, MF_STRING, MSG, SC_MOVE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON,
-            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
-            SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-            WM_APP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND,
+            SetWindowLongW, SetWindowPos, ShowWindow, SystemParametersInfoW, TrackPopupMenu,
+            TranslateAcceleratorW, TranslateMessage, ACCEL, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW,
+            CS_VREDRAW, CW_USEDEFAULT, FALT, FCONTROL, FSHIFT, FVIRTKEY, GWLP_USERDATA,
+            GWL_EXSTYLE, HACCEL, HCURSOR, HICON, HMENU, HTCAPTION, HWND_TOPMOST, ICON_BIG,
+            ICON_SMALL, IDC_ARROW, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MF_CHECKED,
+            MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, SC_MOVE, SM_CXICON, SM_CXSMICON,
+            SM_CYICON, SM_CYSMICON, SPI_GETHIGHCONTRAST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
+            SW_SHOWNOACTIVATE, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP,
+            WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND,
             WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
             WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-            WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND,
-            WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION, WS_CLIPCHILDREN,
-            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE,
+            WM_SYSCOMMAND, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION,
+            WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX,
+            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -4849,13 +4854,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
-        WM_SETTINGCHANGE | WM_THEMECHANGED => {
+        WM_SETTINGCHANGE | WM_SYSCOLORCHANGE | WM_THEMECHANGED => {
             if let Some(plan) = window_draw_plan(hwnd) {
-                if plan.theme_mode == crate::ZsuiThemeMode::System {
-                    apply_windows_win32_window_theme(hwnd, plan.theme_mode);
-                    InvalidateRect(hwnd, null(), 0);
-                    return 0;
-                }
+                apply_windows_win32_window_theme(hwnd, plan.theme_mode);
+                InvalidateRect(hwnd, null(), 0);
+                return 0;
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
@@ -5104,10 +5107,22 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
     if GetClientRect(hwnd, &mut rect) != 0 {
         let draw_plan = window_draw_plan(hwnd);
         let palette = windows_palette_for_draw_plan(draw_plan.as_ref());
+        let high_contrast = resolved_windows_theme_mode(
+            draw_plan
+                .as_ref()
+                .map(|plan| plan.theme_mode)
+                .unwrap_or(crate::ZsuiThemeMode::System),
+        ) == crate::ZsuiThemeMode::HighContrast;
         if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
-            paint_win32_surface(buffered.hdc(), rect, palette, draw_plan.as_ref());
+            paint_win32_surface(
+                buffered.hdc(),
+                rect,
+                palette,
+                high_contrast,
+                draw_plan.as_ref(),
+            );
         } else {
-            paint_win32_surface(target, rect, palette, draw_plan.as_ref());
+            paint_win32_surface(target, rect, palette, high_contrast, draw_plan.as_ref());
         }
     }
 
@@ -5121,19 +5136,33 @@ fn windows_palette_for_draw_plan(draw_plan: Option<&NativeDrawPlan>) -> WindowsG
             .map(|plan| plan.theme_mode)
             .unwrap_or(crate::ZsuiThemeMode::System),
     ) {
+        crate::ZsuiThemeMode::HighContrast => windows_high_contrast_palette(),
         crate::ZsuiThemeMode::Dark => WindowsGdiPalette::from_theme(&crate::ZsuiTheme::dark()),
         _ => WindowsGdiPalette::default(),
     }
 }
 
 fn resolved_windows_theme_mode(theme_mode: crate::ZsuiThemeMode) -> crate::ZsuiThemeMode {
-    match theme_mode {
-        crate::ZsuiThemeMode::System => windows_system_theme_mode(),
-        mode => mode,
+    resolved_windows_theme_mode_for_system(theme_mode, windows_system_theme_mode())
+}
+
+fn resolved_windows_theme_mode_for_system(
+    theme_mode: crate::ZsuiThemeMode,
+    system_mode: crate::ZsuiThemeMode,
+) -> crate::ZsuiThemeMode {
+    if system_mode == crate::ZsuiThemeMode::HighContrast {
+        crate::ZsuiThemeMode::HighContrast
+    } else if theme_mode == crate::ZsuiThemeMode::System {
+        system_mode
+    } else {
+        theme_mode
     }
 }
 
 pub fn windows_system_theme_mode() -> crate::ZsuiThemeMode {
+    if windows_system_high_contrast() {
+        return crate::ZsuiThemeMode::HighContrast;
+    }
     let subkey = wide_null("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
     let value_name = wide_null("AppsUseLightTheme");
     let mut value = 1u32;
@@ -5154,6 +5183,51 @@ pub fn windows_system_theme_mode() -> crate::ZsuiThemeMode {
     } else {
         crate::ZsuiThemeMode::Light
     }
+}
+
+pub fn windows_system_high_contrast() -> bool {
+    let mut high_contrast = HIGHCONTRASTW {
+        cbSize: size_of::<HIGHCONTRASTW>() as u32,
+        dwFlags: 0,
+        lpszDefaultScheme: null_mut(),
+    };
+    unsafe {
+        SystemParametersInfoW(
+            SPI_GETHIGHCONTRAST,
+            high_contrast.cbSize,
+            &mut high_contrast as *mut HIGHCONTRASTW as _,
+            0,
+        ) != 0
+            && high_contrast.dwFlags & HCF_HIGHCONTRASTON != 0
+    }
+}
+
+fn windows_high_contrast_palette() -> WindowsGdiPalette {
+    let surface = windows_system_color(COLOR_WINDOW);
+    let primary_text = windows_system_color(COLOR_WINDOWTEXT);
+    WindowsGdiPalette {
+        primary_text,
+        secondary_text: primary_text,
+        disabled_text: primary_text,
+        accent: windows_system_color(COLOR_HIGHLIGHT),
+        accent_text: windows_system_color(COLOR_HIGHLIGHTTEXT),
+        surface,
+        surface_raised: surface,
+        control: surface,
+        border: primary_text,
+        success: primary_text,
+        warning: primary_text,
+        danger: primary_text,
+    }
+}
+
+fn windows_system_color(index: i32) -> Color {
+    let color = unsafe { GetSysColor(index) };
+    Color::rgb(
+        (color & 0xff) as u8,
+        ((color >> 8) & 0xff) as u8,
+        ((color >> 16) & 0xff) as u8,
+    )
 }
 
 fn apply_windows_win32_window_theme(hwnd: HWND, theme_mode: crate::ZsuiThemeMode) {
@@ -5178,13 +5252,14 @@ unsafe fn paint_win32_surface(
     dc: windows_sys::Win32::Graphics::Gdi::HDC,
     rect: RECT,
     palette: WindowsGdiPalette,
+    high_contrast: bool,
     draw_plan: Option<&NativeDrawPlan>,
 ) {
     let mut renderer = WindowsGdiRenderer::new(dc);
     renderer.fill_rect(rect_from_win(rect), palette.surface);
     drop(renderer);
     if let Some(plan) = draw_plan {
-        let mut sink = WindowsGdiDrawSink::with_palette(dc, palette);
+        let mut sink = WindowsGdiDrawSink::with_palette_and_contrast(dc, palette, high_contrast);
         sink.draw_native_plan(plan);
     }
 }
@@ -5214,6 +5289,37 @@ mod tests {
             palette.primary_text,
             crate::ZsuiTheme::dark().colors.text_primary
         );
+    }
+
+    #[test]
+    fn high_contrast_system_mode_overrides_explicit_light_or_dark_preferences() {
+        assert_eq!(
+            resolved_windows_theme_mode_for_system(
+                crate::ZsuiThemeMode::Light,
+                crate::ZsuiThemeMode::HighContrast,
+            ),
+            crate::ZsuiThemeMode::HighContrast
+        );
+        assert_eq!(
+            resolved_windows_theme_mode_for_system(
+                crate::ZsuiThemeMode::System,
+                crate::ZsuiThemeMode::Dark,
+            ),
+            crate::ZsuiThemeMode::Dark
+        );
+    }
+
+    #[test]
+    fn high_contrast_palette_uses_user_selected_system_color_pairs() {
+        let palette = windows_high_contrast_palette();
+        assert_eq!(palette.surface, windows_system_color(COLOR_WINDOW));
+        assert_eq!(palette.primary_text, windows_system_color(COLOR_WINDOWTEXT));
+        assert_eq!(palette.accent, windows_system_color(COLOR_HIGHLIGHT));
+        assert_eq!(
+            palette.accent_text,
+            windows_system_color(COLOR_HIGHLIGHTTEXT)
+        );
+        assert_eq!(palette.border, palette.primary_text);
     }
 
     #[test]

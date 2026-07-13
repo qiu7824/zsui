@@ -56,14 +56,33 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 sync_linux_gtk_ime(area, &runtime, &ime);
             }
             let plan = plan.borrow();
-            let system_prefers_dark = gtk::Settings::default()
-                .map(|settings| settings.is_gtk_application_prefer_dark_theme())
-                .unwrap_or(false);
-            let palette = NativeDrawPalette::for_mode(plan.theme_mode, system_prefers_dark);
+            let (system_prefers_dark, system_high_contrast) = linux_gtk_system_appearance();
+            let palette = NativeDrawPalette::for_system_appearance(
+                plan.theme_mode,
+                system_prefers_dark,
+                system_high_contrast,
+                system_high_contrast
+                    .then(|| linux_gtk_semantic_high_contrast_palette(area))
+                    .flatten(),
+            );
             let mut sink = LinuxGtkDrawSink::new(area, context, palette);
             sink.draw_plan(&plan);
         }
     });
+    if let Some(settings) = gtk::Settings::default() {
+        let area = drawing_area.downgrade();
+        settings.connect_gtk_theme_name_notify(move |_settings| {
+            if let Some(area) = area.upgrade() {
+                area.queue_draw();
+            }
+        });
+        let area = drawing_area.downgrade();
+        settings.connect_gtk_application_prefer_dark_theme_notify(move |_settings| {
+            if let Some(area) = area.upgrade() {
+                area.queue_draw();
+            }
+        });
+    }
     let gesture = gtk::GestureClick::new();
     gesture.set_button(gtk::gdk::BUTTON_PRIMARY);
     gesture.connect_pressed({
@@ -454,6 +473,91 @@ fn gtk_coordinate(value: f64) -> i32 {
     value
         .round()
         .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+}
+
+fn linux_gtk_system_appearance() -> (bool, bool) {
+    let Some(settings) = gtk::Settings::default() else {
+        return (false, false);
+    };
+    let theme_name = settings
+        .gtk_theme_name()
+        .map(|name| name.to_ascii_lowercase())
+        .unwrap_or_default();
+    (
+        settings.is_gtk_application_prefer_dark_theme()
+            || theme_name.contains("dark")
+            || theme_name.contains("inverse"),
+        linux_gtk_theme_name_is_high_contrast(&theme_name),
+    )
+}
+
+fn linux_gtk_theme_name_is_high_contrast(theme_name: &str) -> bool {
+    let compact = theme_name
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>();
+    compact.contains("highcontrast")
+}
+
+#[allow(deprecated)]
+fn linux_gtk_semantic_high_contrast_palette(area: &gtk::DrawingArea) -> Option<NativeDrawPalette> {
+    let context = area.style_context();
+    let primary_text = linux_gtk_color(context.color());
+    let surface = linux_gtk_lookup_color(
+        &context,
+        &["window_bg_color", "theme_bg_color", "view_bg_color"],
+    )?;
+    let accent = linux_gtk_lookup_color(
+        &context,
+        &[
+            "accent_bg_color",
+            "theme_selected_bg_color",
+            "theme_selected_bg_color_breeze",
+        ],
+    )?;
+    let accent_text =
+        linux_gtk_lookup_color(&context, &["accent_fg_color", "theme_selected_fg_color"])?;
+    let control = linux_gtk_lookup_color(
+        &context,
+        &["view_bg_color", "theme_base_color", "window_bg_color"],
+    )
+    .unwrap_or(surface);
+    Some(NativeDrawPalette {
+        primary_text,
+        secondary_text: primary_text,
+        disabled_text: primary_text,
+        accent,
+        accent_text,
+        surface,
+        surface_raised: control,
+        control,
+        border: primary_text,
+        success: primary_text,
+        warning: primary_text,
+        danger: primary_text,
+        high_contrast: true,
+    })
+}
+
+#[allow(deprecated)]
+fn linux_gtk_lookup_color(context: &gtk::StyleContext, names: &[&str]) -> Option<Color> {
+    names
+        .iter()
+        .find_map(|name| context.lookup_color(name))
+        .map(linux_gtk_color)
+}
+
+fn linux_gtk_color(color: gtk::gdk::RGBA) -> Color {
+    Color::rgba(
+        linux_gtk_color_channel(color.red()),
+        linux_gtk_color_channel(color.green()),
+        linux_gtk_color_channel(color.blue()),
+        linux_gtk_color_channel(color.alpha()),
+    )
+}
+
+fn linux_gtk_color_channel(value: f32) -> u8 {
+    (value * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
 pub struct LinuxGtkTextLayout {

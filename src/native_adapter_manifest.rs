@@ -388,7 +388,7 @@ fn native_ui_capability_readiness(
             Renderer | TextLayout => (
                 Ready,
                 "src/windows_gdi_renderer.rs",
-                "Win32 draw commands and text layout are connected to the buffered GDI renderer",
+                "Win32 draw commands, text layout and user-selected high-contrast system colors are connected to the buffered GDI renderer",
             ),
             MainWindow | TransientWindow => (
                 FirstPass,
@@ -430,7 +430,7 @@ fn native_ui_capability_readiness(
             Renderer | TextLayout => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NativeDrawPlan commands, clipping, SF Symbols and semantic NSString text are connected to an AppKit NSView; target visual proof remains pending",
+                "NativeDrawPlan commands, clipping, SF Symbols, semantic NSString text and effective high-contrast NSColor resolution are connected to an AppKit NSView; target visual proof remains pending",
             ),
             MainWindow => (
                 FirstPass,
@@ -472,7 +472,7 @@ fn native_ui_capability_readiness(
             Renderer | TextLayout => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "NativeDrawPlan commands, clipping, themed icons and Pango text are connected to a GTK4 DrawingArea/Cairo surface; Wayland/X11 visual proof remains pending",
+                "NativeDrawPlan commands, clipping, themed icons, Pango text and high-contrast theme colors are connected to a GTK4 DrawingArea/Cairo surface; Wayland/X11 visual proof remains pending",
             ),
             MainWindow => (
                 FirstPass,

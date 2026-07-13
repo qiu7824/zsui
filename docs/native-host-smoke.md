@@ -198,6 +198,12 @@ pointer down/up input through the Win32 host and records
 `native_view_pointer_visual_change_count`; a nonzero count proves that the
 semantic hover/pressed decoration reached the buffered native draw plan without
 claiming the still-pending AppKit/GTK4 target runs.
+Pass `--date-picker-high-contrast` to render the same typed DatePicker path with
+`ZsuiThemeMode::HighContrast`. The smoke report must record
+`high_contrast_draw_plan_window_count=1`, retain nonzero pointer-visual changes,
+capture `window.png`, and finish without failed or unhandled UI commands. This
+proves the explicit Windows high-contrast renderer path; toggling the operating
+system accessibility setting and AppKit/GTK4 target runs remain separate gates.
 When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`
 and a command-backed scroll target, Win32 also records mouse-wheel scroll
 counters and the emitted scroll `UiCommand`. The default `--view` example does

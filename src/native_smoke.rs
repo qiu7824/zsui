@@ -73,6 +73,7 @@ pub struct NativeHostSmokeInteractionReport {
     pub screenshot_captured: bool,
     pub draw_plan_requested: bool,
     pub draw_plan_window_count: usize,
+    pub high_contrast_draw_plan_window_count: usize,
     pub draw_command_count: usize,
     pub text_command_count: usize,
     pub window_menu_requested_count: usize,
@@ -146,6 +147,7 @@ impl NativeHostSmokeInteractionReport {
             screenshot_captured: false,
             draw_plan_requested: false,
             draw_plan_window_count: 0,
+            high_contrast_draw_plan_window_count: 0,
             draw_command_count: 0,
             text_command_count: 0,
             window_menu_requested_count: 0,
@@ -229,6 +231,12 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native draw plan attached to {} window(s) with {} command(s)",
                 report.draw_plan_window_count, report.draw_command_count
+            ));
+        }
+        if report.high_contrast_draw_plan_window_count > 0 {
+            notes.push(format!(
+                "native draw plan requested high-contrast rendering for {} window(s)",
+                report.high_contrast_draw_plan_window_count
             ));
         }
         if report.window_menu_requested_count > 0 {
@@ -371,6 +379,7 @@ impl NativeHostSmokeInteractionReport {
             screenshot_captured: report.screenshot_captured,
             draw_plan_requested: report.draw_plan_requested,
             draw_plan_window_count: report.draw_plan_window_count,
+            high_contrast_draw_plan_window_count: report.high_contrast_draw_plan_window_count,
             draw_command_count: report.draw_command_count,
             text_command_count: report.text_command_count,
             window_menu_requested_count: report.window_menu_requested_count,
@@ -1009,6 +1018,7 @@ mod tests {
             screenshot_error: None,
             draw_plan_requested: true,
             draw_plan_window_count: 1,
+            high_contrast_draw_plan_window_count: 1,
             draw_command_count: 3,
             text_command_count: 1,
             native_view_hit_target_count: 1,
@@ -1108,6 +1118,7 @@ mod tests {
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
         assert!(interaction_json.contains("\"native_view_focus_visual_count\": 1"));
+        assert!(interaction_json.contains("\"high_contrast_draw_plan_window_count\": 1"));
         assert!(interaction_json.contains("\"native_view_pointer_visual_change_count\": 2"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_focus_only_count\": 1"));

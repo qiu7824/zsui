@@ -66,6 +66,11 @@ history remain authoritative for implementation status.
   explanatory text and action regions—not a product-specific settings page.
 - Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
   GTK4 to present native platform character.
+- High contrast is an accessibility appearance, not a dark-theme alias.
+  System mode must override an application's light/dark preference when the OS
+  requests high contrast. Win32 uses `SPI_GETHIGHCONTRAST` plus user-selected
+  `GetSysColor` pairs; AppKit and GTK4 resolve their semantic appearance/theme
+  colors. The deterministic shared palette is only a backend fallback.
 - DatePicker resolves its today marker from the operating system's local time
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.

@@ -34,8 +34,15 @@ use zsui::textbox;
     all(feature = "date-picker", feature = "label")
 ))]
 use zsui::CommandId;
+#[cfg(any(
+    all(feature = "button", feature = "label"),
+    all(feature = "slider", feature = "label"),
+    all(feature = "radio", feature = "label"),
+    all(feature = "combo", feature = "label")
+))]
+use zsui::NativeViewKey;
 #[cfg(feature = "date-picker")]
-use zsui::{date_picker, ZsDate};
+use zsui::{date_picker, ZsDate, ZsuiThemeMode};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
@@ -53,10 +60,11 @@ use zsui::{slider, SliderRange};
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label")
 ))]
-use zsui::{NativeViewKey, Point, UiCommand, WidgetId};
+use zsui::{Point, UiCommand, WidgetId};
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
+    let date_picker_high_contrast = args.iter().any(|arg| arg == "--date-picker-high-contrast");
     let non_flag_args = args
         .iter()
         .filter(|arg| !arg.starts_with("--"))
@@ -80,7 +88,9 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
-            .any(|arg| arg == "--date-picker-view" || arg == "--date-picker"),
+            .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
+            || date_picker_high_contrast,
+        date_picker_high_contrast,
     ) {
         Ok(json) => {
             println!("{json}");
@@ -105,6 +115,7 @@ fn run_smoke(
     include_progress_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
+    date_picker_high_contrast: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -260,7 +271,7 @@ fn run_smoke(
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
-        attach_date_picker_view(builder)
+        attach_date_picker_view(builder, date_picker_high_contrast)
     } else if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
@@ -453,13 +464,21 @@ struct DatePickerSmokeState {
 }
 
 #[cfg(all(feature = "date-picker", feature = "label"))]
-fn attach_date_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+fn attach_date_picker_view(
+    builder: NativeWindowBuilder,
+    high_contrast: bool,
+) -> NativeWindowBuilder {
+    let theme_mode = if high_contrast {
+        ZsuiThemeMode::HighContrast
+    } else {
+        ZsuiThemeMode::System
+    };
     builder.stateful_view(
         DatePickerSmokeState {
             value: ZsDate::new(2026, 7, 13).expect("smoke date should be valid"),
             expanded: true,
         },
-        |state| {
+        move |state| {
             column([
                 text::<DatePickerSmokeMsg>("ZSUI DatePicker smoke").height(zsui::Dp::new(28.0)),
                 date_picker(state.value)
@@ -471,6 +490,7 @@ fn attach_date_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder 
             ])
             .padding(zsui::Dp::new(24.0))
             .gap(zsui::Dp::new(12.0))
+            .theme_mode(theme_mode)
         },
         |state, message, cx| match message {
             DatePickerSmokeMsg::Changed(next) => {
@@ -485,7 +505,10 @@ fn attach_date_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder 
 }
 
 #[cfg(not(all(feature = "date-picker", feature = "label")))]
-fn attach_date_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+fn attach_date_picker_view(
+    builder: NativeWindowBuilder,
+    _high_contrast: bool,
+) -> NativeWindowBuilder {
     builder
 }
 

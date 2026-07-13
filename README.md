@@ -265,8 +265,8 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 组件目录当前记录 48 个 WinUI 风格家族：26 个已有第一阶段运行面，7 个只有
 契约，15 个尚未开始。DatePicker 已具备强类型日期、范围约束、本地时区“今天”标记、
 窗口边缘自动翻转与水平约束的日历弹层、外部点击与焦点丢失关闭、点击与键盘路由、
-语义主题绘制、跨 Win32/AppKit/GTK4 的自绘悬停与按下状态，以及 Windows WinUI 3
-风格 smoke；不会用组合外壳冒充
+语义主题绘制、跨 Win32/AppKit/GTK4 的自绘悬停与按下/高对比度状态，以及 Windows
+WinUI 3 风格普通与高对比度 smoke；不会用组合外壳冒充
 TreeView、DataGrid、WebView 等尚未完成的独立控件。
 
 查看机器可读目录：
@@ -396,7 +396,7 @@ Linux/macOS 桌面目标。
 
 ## 当前边界
 
-- Windows 仍需更完整的 UI Automation、暗色/高对比度和高级输入证据
+- Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
 - 通用文本编辑器、文件对话框和文档生命周期服务仍需继续收口
 - DatePicker 仍缺本地化、辅助功能及 AppKit/GTK4 风格与目标机证据；TreeView、DataGrid、WebView 等高级控件尚未完整实现
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据

@@ -17,20 +17,50 @@ pub(crate) struct NativeDrawPalette {
     pub success: Color,
     pub warning: Color,
     pub danger: Color,
+    pub high_contrast: bool,
 }
 
 impl NativeDrawPalette {
     pub(crate) fn for_mode(mode: ZsuiThemeMode, system_prefers_dark: bool) -> Self {
-        let dark = match mode {
-            ZsuiThemeMode::Dark => true,
-            ZsuiThemeMode::Light => false,
-            ZsuiThemeMode::System | ZsuiThemeMode::HighContrast => system_prefers_dark,
-        };
-        Self::from_theme(&if dark {
-            ZsuiTheme::dark()
+        match mode {
+            ZsuiThemeMode::HighContrast => Self::high_contrast(system_prefers_dark),
+            ZsuiThemeMode::Dark => Self::from_theme(&ZsuiTheme::dark()),
+            ZsuiThemeMode::Light => Self::from_theme(&ZsuiTheme::light()),
+            ZsuiThemeMode::System if system_prefers_dark => Self::from_theme(&ZsuiTheme::dark()),
+            ZsuiThemeMode::System => Self::from_theme(&ZsuiTheme::light()),
+        }
+    }
+
+    pub(crate) fn for_system_appearance(
+        mode: ZsuiThemeMode,
+        system_prefers_dark: bool,
+        system_high_contrast: bool,
+        native_high_contrast: Option<Self>,
+    ) -> Self {
+        if system_high_contrast {
+            native_high_contrast.unwrap_or_else(|| Self::high_contrast(system_prefers_dark))
         } else {
-            ZsuiTheme::light()
-        })
+            Self::for_mode(mode, system_prefers_dark)
+        }
+    }
+
+    pub(crate) fn high_contrast(dark: bool) -> Self {
+        let theme = ZsuiTheme::high_contrast(dark);
+        Self {
+            primary_text: theme.colors.text_primary,
+            secondary_text: theme.colors.text_primary,
+            disabled_text: theme.colors.text_primary,
+            accent: theme.colors.accent,
+            accent_text: theme.colors.accent_text,
+            surface: theme.colors.surface,
+            surface_raised: theme.colors.surface_raised,
+            control: theme.colors.control,
+            border: theme.colors.border,
+            success: theme.colors.success,
+            warning: theme.colors.warning,
+            danger: theme.colors.danger,
+            high_contrast: true,
+        }
     }
 
     pub(crate) fn from_theme(theme: &ZsuiTheme) -> Self {
@@ -47,6 +77,7 @@ impl NativeDrawPalette {
             success: theme.colors.success,
             warning: theme.colors.warning,
             danger: theme.colors.danger,
+            high_contrast: false,
         }
     }
 
@@ -72,9 +103,23 @@ impl NativeDrawPalette {
             NativeDrawFill::Color(color) => color,
             NativeDrawFill::Role(role) => self.resolve(role),
             NativeDrawFill::RoleWithAlpha { role, alpha } => {
+                let alpha = if self.high_contrast {
+                    high_contrast_alpha(alpha)
+                } else {
+                    alpha
+                };
                 blend_color(self.resolve(role), self.surface, alpha)
             }
         }
+    }
+}
+
+const fn high_contrast_alpha(alpha: u8) -> u8 {
+    match alpha {
+        0 => 0,
+        1..=20 => 64,
+        21..=63 => 112,
+        alpha => alpha,
     }
 }
 
@@ -162,6 +207,33 @@ mod tests {
                 alpha: 0,
             }),
             palette.surface
+        );
+    }
+
+    #[test]
+    fn high_contrast_mode_and_system_override_do_not_fall_back_to_normal_dark_theme() {
+        let explicit = NativeDrawPalette::for_mode(ZsuiThemeMode::HighContrast, true);
+        assert_eq!(explicit.surface, Color::rgb(0, 0, 0));
+        assert_eq!(explicit.primary_text, Color::rgb(255, 255, 255));
+        assert_eq!(explicit.disabled_text, explicit.primary_text);
+
+        let native = NativeDrawPalette {
+            accent: Color::rgb(1, 2, 3),
+            ..explicit
+        };
+        let system = NativeDrawPalette::for_system_appearance(
+            ZsuiThemeMode::Light,
+            false,
+            true,
+            Some(native),
+        );
+        assert_eq!(system, native);
+        assert_eq!(
+            explicit.resolve_fill(NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 14,
+            }),
+            Color::rgb(64, 64, 64)
         );
     }
 

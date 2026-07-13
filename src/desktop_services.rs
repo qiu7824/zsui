@@ -216,8 +216,20 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::SystemTheme,
                 CapabilitySupport::partial(
-                    "system theme detection and repaint are connected; live-change proof is pending",
+                    "light/dark and SPI_GETHIGHCONTRAST detection, user-selected GetSysColor pairs and repaint on system color/theme changes are connected; live OS setting-change proof is pending",
                 ),
+            )
+            .with_support(
+                DesktopCapability::SystemTheme,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "effective AppKit light/dark/high-contrast appearances, semantic NSColor resolution and appearance-change repaint are connected; target live-change proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit system appearance support",
+                    )
+                },
             )
             .with_support(
                 DesktopCapability::NativeIcons,
@@ -346,6 +358,18 @@ impl DesktopCapabilities {
                 } else {
                     CapabilitySupport::unsupported(
                         "enable macos-appkit to compile NSSavePanel",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::SystemTheme,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK light/dark/high-contrast theme detection, semantic theme-color lookup and settings-change repaint are connected; Wayland/X11 live-change proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK system appearance support",
                     )
                 },
             )

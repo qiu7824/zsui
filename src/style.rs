@@ -187,6 +187,48 @@ impl ZsuiTheme {
         }
     }
 
+    /// Returns the deterministic fallback used when a backend cannot resolve
+    /// the operating system's user-selected high-contrast colors.
+    ///
+    /// Native desktop renderers should prefer their platform semantic colors
+    /// while the system high-contrast appearance is active.
+    pub fn high_contrast(dark: bool) -> Self {
+        let (surface, text_primary, accent, accent_text) = if dark {
+            (
+                Color::rgb(0, 0, 0),
+                Color::rgb(255, 255, 255),
+                Color::rgb(255, 255, 0),
+                Color::rgb(0, 0, 0),
+            )
+        } else {
+            (
+                Color::rgb(255, 255, 255),
+                Color::rgb(0, 0, 0),
+                Color::rgb(0, 0, 128),
+                Color::rgb(255, 255, 255),
+            )
+        };
+        Self {
+            colors: ZsuiColorTokens {
+                surface,
+                surface_raised: surface,
+                text_primary,
+                text_secondary: text_primary,
+                accent,
+                control: surface,
+                border: text_primary,
+                accent_text,
+                success: text_primary,
+                warning: text_primary,
+                danger: text_primary,
+            },
+            radius: ZsuiRadiusTokens::default(),
+            spacing: ZsuiSpacingTokens::default(),
+            typography: ZsuiTypographyTokens::default(),
+            controls: ZsuiControlMetrics::default(),
+        }
+    }
+
     pub fn color(&self, token: ThemeColorToken) -> Color {
         match token {
             ThemeColorToken::Surface => self.colors.surface,
@@ -330,5 +372,22 @@ mod tests {
             theme.control_metric(ControlMetricToken::StandardHeight),
             Dp::new(32.0)
         );
+    }
+
+    #[test]
+    fn high_contrast_fallback_keeps_text_borders_and_selection_unambiguous() {
+        let dark = ZsuiTheme::high_contrast(true);
+        assert_eq!(dark.colors.surface, Color::rgb(0, 0, 0));
+        assert_eq!(dark.colors.text_primary, Color::rgb(255, 255, 255));
+        assert_eq!(dark.colors.border, dark.colors.text_primary);
+        assert_eq!(dark.colors.accent, Color::rgb(255, 255, 0));
+        assert_eq!(dark.colors.accent_text, dark.colors.surface);
+
+        let light = ZsuiTheme::high_contrast(false);
+        assert_eq!(light.colors.surface, Color::rgb(255, 255, 255));
+        assert_eq!(light.colors.text_primary, Color::rgb(0, 0, 0));
+        assert_eq!(light.colors.border, light.colors.text_primary);
+        assert_ne!(light.colors.accent, light.colors.surface);
+        assert_ne!(light.colors.accent_text, light.colors.accent);
     }
 }
