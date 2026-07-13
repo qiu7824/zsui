@@ -111,6 +111,23 @@ zsui::native_window("Example").size(900, 620).run()?;
 # Ok::<(), zsui::ZsuiError>(())
 ```
 
+Input controls use the same strongly typed message path. For example, a Slider
+can constrain its value to an explicit range and step:
+
+```rust,no_run
+use zsui::{slider, SliderRange, ViewNode};
+
+#[derive(Clone)]
+enum Msg {
+    VolumeChanged(f32),
+}
+
+fn volume_control(value: f32) -> ViewNode<Msg> {
+    slider(value, SliderRange::new(0.0, 100.0).step(5.0))
+        .on_slide(Msg::VolumeChanged)
+}
+```
+
 Attach a typed Rust view to the same native window path:
 
 ```rust,no_run
@@ -212,6 +229,7 @@ zsui = { version = "0.1", default-features = false, features = [
     "window",
     "button",
     "toggle",
+    "slider",
     "list",
     "scroll",
     "dark-mode",

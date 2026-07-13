@@ -11,7 +11,7 @@ milestones must not be used as overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 84% complete.
-- Component library: about 44% complete (21 first-pass runtime surfaces out of
+- Component library: about 46% complete (22 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 86% complete.
 - Feature-pruned architecture: about 51% complete.

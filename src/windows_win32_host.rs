@@ -1778,6 +1778,8 @@ pub struct WindowsWin32ViewInputRoute {
     focused_widget: Option<crate::WidgetId>,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
+    #[cfg(feature = "slider")]
+    slider_drag: Option<crate::WidgetId>,
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
@@ -1799,6 +1801,8 @@ impl WindowsWin32ViewInputRoute {
             focused_widget: None,
             text_edit: None,
             text_drag: None,
+            #[cfg(feature = "slider")]
+            slider_drag: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1817,6 +1821,8 @@ impl WindowsWin32ViewInputRoute {
             focused_widget: None,
             text_edit: None,
             text_drag: None,
+            #[cfg(feature = "slider")]
+            slider_drag: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1881,11 +1887,23 @@ impl WindowsWin32ViewInputRoute {
         let Some(target) = self.interaction_plan.hit_target_at(point) else {
             return report;
         };
+        #[cfg(feature = "slider")]
+        if target.kind == crate::ViewHitTargetKind::Slider {
+            self.text_drag = None;
+            self.focus_target(target, &mut report);
+            self.slider_drag = Some(target.widget);
+            report.slider_drag_active = true;
+            return self.dispatch_slider_pointer(target, point, report);
+        }
         if !matches!(
             target.kind,
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
         ) {
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             return report;
         }
 
@@ -1924,6 +1942,15 @@ impl WindowsWin32ViewInputRoute {
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         let Some(drag) = self.text_drag else {
+            #[cfg(feature = "slider")]
+            if let Some(widget) = self.slider_drag {
+                if let Some(target) = self.interaction_plan.hit_target_for_widget(widget) {
+                    report.pointer_move_count = 1;
+                    report.slider_drag_active = true;
+                    return self.dispatch_slider_pointer(target, point, report);
+                }
+                self.slider_drag = None;
+            }
             return report;
         };
         let Some(target) = self.interaction_plan.hit_target_for_widget(drag.widget) else {
@@ -1968,6 +1995,20 @@ impl WindowsWin32ViewInputRoute {
             report.events.push("win32_view_text_pointer_up".to_string());
             return report;
         }
+        #[cfg(feature = "slider")]
+        if self.slider_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            report.pointer_move_count = 0;
+            self.slider_drag = None;
+            report.handled = true;
+            report.pointer_up_count = 1;
+            report.slider_drag_count = 1;
+            report.slider_drag_active = false;
+            report
+                .events
+                .push("win32_view_slider_pointer_up".to_string());
+            return report;
+        }
         let mut report = self.dispatch_click(point);
         report.pointer_up_count = 1;
         report
@@ -1975,6 +2016,8 @@ impl WindowsWin32ViewInputRoute {
 
     fn cancel_pointer_drag(&mut self) -> WindowsWin32ViewInputDispatchReport {
         let had_drag = self.text_drag.take().is_some();
+        #[cfg(feature = "slider")]
+        let had_drag = had_drag | self.slider_drag.take().is_some();
         WindowsWin32ViewInputDispatchReport {
             handled: had_drag,
             hit_target_count: self.hit_target_count(),
@@ -1984,6 +2027,41 @@ impl WindowsWin32ViewInputRoute {
                 .collect(),
             ..WindowsWin32ViewInputDispatchReport::default()
         }
+    }
+
+    #[cfg(feature = "slider")]
+    fn dispatch_slider_pointer(
+        &mut self,
+        target: crate::ViewHitTarget,
+        point: crate::Point,
+        mut report: WindowsWin32ViewInputDispatchReport,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let Some((current, range)) = self.widget_slider_state(target.widget) else {
+            self.slider_drag = None;
+            return report;
+        };
+        let track = crate::zs_slider_render_plan(target.bounds, 0.0, self.dpi).track;
+        let fraction = point.x.saturating_sub(track.x) as f32 / track.width.max(1) as f32;
+        let value = range.value_at_fraction(fraction);
+        report.handled = true;
+        report.slider_drag_active = self.slider_drag.is_some();
+        if (value - current).abs() <= f32::EPSILON {
+            return report;
+        }
+        report.slider_value_change_count = 1;
+        report.events.push(format!(
+            "win32_view_slider_changed:{}:{value}",
+            target.widget.0
+        ));
+        report.event_count = 1;
+        self.dispatch_event(
+            crate::ViewEvent::SliderChanged {
+                widget: target.widget,
+                value,
+            },
+            &mut report,
+        );
+        report
     }
 
     fn dispatch_text_input(&mut self, text: &str) -> WindowsWin32ViewInputDispatchReport {
@@ -2150,6 +2228,42 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "slider")]
+        if target.kind == crate::ViewHitTargetKind::Slider {
+            let Some((current, range)) = self.widget_slider_state(widget) else {
+                return report;
+            };
+            let delta = if shift { 10 } else { 1 };
+            let value = match virtual_key {
+                key if key == u32::from(VK_LEFT) || key == u32::from(VK_DOWN) => {
+                    Some(range.offset_steps(current, -delta))
+                }
+                key if key == u32::from(VK_RIGHT) || key == u32::from(VK_UP) => {
+                    Some(range.offset_steps(current, delta))
+                }
+                key if key == u32::from(VK_HOME) => Some(range.min()),
+                key if key == u32::from(VK_END) => Some(range.max()),
+                _ => None,
+            };
+            if let Some(value) = value {
+                report.handled = true;
+                report.slider_keyboard_change_count = 1;
+                if (value - current).abs() <= f32::EPSILON {
+                    return report;
+                }
+                report.slider_value_change_count = 1;
+                report.event_count = 1;
+                report
+                    .events
+                    .push(format!("win32_view_slider_key:{}:{value}", widget.0));
+                self.dispatch_event(
+                    crate::ViewEvent::SliderChanged { widget, value },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
         #[cfg(feature = "list")]
         if matches!(virtual_key, ZSUI_WIN32_VK_UP | ZSUI_WIN32_VK_DOWN) {
             let offset = if virtual_key == ZSUI_WIN32_VK_UP {
@@ -2308,6 +2422,10 @@ impl WindowsWin32ViewInputRoute {
             return;
         }
         self.text_drag = None;
+        #[cfg(feature = "slider")]
+        {
+            self.slider_drag = None;
+        }
         self.focused_widget = Some(target.widget);
         self.ensure_text_edit_for_target(target);
         report.focus_count = 1;
@@ -2334,6 +2452,10 @@ impl WindowsWin32ViewInputRoute {
         };
         self.text_edit = None;
         self.text_drag = None;
+        #[cfg(feature = "slider")]
+        {
+            self.slider_drag = None;
+        }
         if self.rebuild_pending_draw_plan() {
             report.focus_visual_count = 1;
         }
@@ -2484,6 +2606,18 @@ impl WindowsWin32ViewInputRoute {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_checked_value(widget))
+            })
+    }
+
+    #[cfg(feature = "slider")]
+    fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_slider_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_slider_state(widget))
             })
     }
 
@@ -2661,6 +2795,10 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub text_caret: Option<usize>,
     pub text_drag_count: usize,
     pub text_drag_active: bool,
+    pub slider_value_change_count: usize,
+    pub slider_keyboard_change_count: usize,
+    pub slider_drag_count: usize,
+    pub slider_drag_active: bool,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -2710,6 +2848,10 @@ impl WindowsWin32ViewInputDispatchReport {
         self.text_caret = next.text_caret.or(self.text_caret);
         self.text_drag_count += next.text_drag_count;
         self.text_drag_active = next.text_drag_active;
+        self.slider_value_change_count += next.slider_value_change_count;
+        self.slider_keyboard_change_count += next.slider_keyboard_change_count;
+        self.slider_drag_count += next.slider_drag_count;
+        self.slider_drag_active = next.slider_drag_active;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -5071,6 +5213,61 @@ mod tests {
 
         assert_eq!(replaced.text_caret, Some(2));
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
+    }
+
+    #[test]
+    #[cfg(feature = "slider")]
+    fn window_view_input_route_drags_and_steps_slider() {
+        fn changed(_: f32) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.slider_changed"))
+        }
+
+        let widget = crate::WidgetId::new(34);
+        let range = crate::SliderRange::new(0.0, 100.0).step(5.0);
+        let target = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 32,
+            },
+            crate::ViewHitTargetKind::Slider,
+        );
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([target]),
+            crate::slider(0.0, range).id(widget).on_slide(changed),
+        );
+        let track = crate::zs_slider_render_plan(target.bounds, 0.0, crate::Dpi::standard()).track;
+
+        let pressed = route.dispatch_pointer_down(
+            crate::Point {
+                x: track.x + track.width / 4,
+                y: 16,
+            },
+            false,
+        );
+        let dragged = route.dispatch_pointer_move(crate::Point {
+            x: track.x + track.width * 3 / 4,
+            y: 16,
+        });
+        let released = route.dispatch_pointer_up(crate::Point {
+            x: track.x + track.width * 3 / 4,
+            y: 16,
+        });
+        let stepped = route.dispatch_key_down(u32::from(VK_LEFT));
+
+        assert!(pressed.handled);
+        assert_eq!(pressed.slider_value_change_count, 1);
+        assert!(pressed.slider_drag_active);
+        assert_eq!(dragged.slider_value_change_count, 1);
+        assert_eq!(dragged.pointer_move_count, 1);
+        assert_eq!(released.slider_drag_count, 1);
+        assert!(!released.slider_drag_active);
+        assert_eq!(stepped.slider_keyboard_change_count, 1);
+        assert_eq!(stepped.slider_value_change_count, 1);
+        assert_eq!(route.widget_slider_state(widget), Some((70.0, range)));
+        assert_eq!(route.pending_ui_commands.len(), 3);
     }
 
     #[test]

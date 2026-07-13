@@ -424,10 +424,14 @@ pub use view::{
     ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
     ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
+#[cfg(feature = "slider")]
+pub use view::{slider, SliderRange};
 #[cfg(feature = "virtual-list")]
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+#[cfg(feature = "slider")]
+pub use widget_render::{zs_slider_native_draw_plan, zs_slider_render_plan, ZsSliderRenderPlan};
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]

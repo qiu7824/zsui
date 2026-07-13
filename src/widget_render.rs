@@ -106,6 +106,88 @@ pub fn zs_toggle_native_draw_plan(plan: &ZsToggleRenderPlan) -> NativeDrawPlan {
     ])
 }
 
+#[cfg(feature = "slider")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsSliderRenderPlan {
+    pub bounds: Rect,
+    pub track: Rect,
+    pub filled_track: Rect,
+    pub thumb: Rect,
+    pub track_radius: i32,
+    pub thumb_radius: i32,
+}
+
+#[cfg(feature = "slider")]
+pub fn zs_slider_render_plan(bounds: Rect, fraction: f32, dpi: Dpi) -> ZsSliderRenderPlan {
+    let thumb_size = scale(16, dpi).min(bounds.height.max(1)).max(1);
+    let thumb_radius = (thumb_size / 2).max(1);
+    let track_height = scale(4, dpi).min(bounds.height.max(1)).max(1);
+    let track_x = bounds.x.saturating_add(thumb_radius);
+    let track_width = bounds
+        .width
+        .saturating_sub(thumb_radius.saturating_mul(2))
+        .max(1);
+    let track_y = bounds
+        .y
+        .saturating_add((bounds.height.saturating_sub(track_height)) / 2);
+    let track = Rect {
+        x: track_x,
+        y: track_y,
+        width: track_width,
+        height: track_height,
+    };
+    let fraction = if fraction.is_finite() {
+        fraction.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let filled_width = ((track_width as f32) * fraction).round() as i32;
+    let thumb_center = track_x.saturating_add(filled_width);
+    let thumb = Rect {
+        x: thumb_center.saturating_sub(thumb_radius),
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(thumb_size)) / 2),
+        width: thumb_size,
+        height: thumb_size,
+    };
+    ZsSliderRenderPlan {
+        bounds,
+        track,
+        filled_track: Rect {
+            x: track.x,
+            y: track.y,
+            width: filled_width.max(1),
+            height: track.height,
+        },
+        thumb,
+        track_radius: (track_height / 2).max(1),
+        thumb_radius,
+    }
+}
+
+#[cfg(feature = "slider")]
+pub fn zs_slider_native_draw_plan(plan: &ZsSliderRenderPlan) -> NativeDrawPlan {
+    NativeDrawPlan::new([
+        NativeDrawCommand::RoundFill {
+            rect: plan.track,
+            fill: NativeDrawFill::Role(ColorRole::Control),
+            radius: plan.track_radius,
+        },
+        NativeDrawCommand::RoundFill {
+            rect: plan.filled_track,
+            fill: NativeDrawFill::Role(ColorRole::Accent),
+            radius: plan.track_radius,
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.thumb,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+            radius: plan.thumb_radius,
+        },
+    ])
+}
+
 fn scale(value: i32, dpi: Dpi) -> i32 {
     Dp::new(value as f32).to_px(dpi).round_i32().max(1)
 }
@@ -133,5 +215,43 @@ mod tests {
         assert_eq!(off.track.height, 20);
         assert!(off.knob.x < on.knob.x);
         assert_eq!(zs_toggle_native_draw_plan(&on).command_count(), 2);
+    }
+
+    #[cfg(feature = "slider")]
+    #[test]
+    fn slider_geometry_maps_fraction_to_semantic_track_and_thumb() {
+        let plan = zs_slider_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 32,
+            },
+            0.25,
+            Dpi::standard(),
+        );
+
+        assert_eq!(plan.track.x, 8);
+        assert_eq!(plan.track.width, 184);
+        assert_eq!(plan.filled_track.width, 46);
+        assert_eq!(plan.thumb.x, 46);
+        assert!(matches!(
+            zs_slider_native_draw_plan(&plan).commands.as_slice(),
+            [
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::Role(ColorRole::Control),
+                    ..
+                },
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::Role(ColorRole::Accent),
+                    ..
+                },
+                NativeDrawCommand::RoundRect {
+                    fill: NativeDrawFill::Role(ColorRole::Surface),
+                    stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+                    ..
+                }
+            ]
+        ));
     }
 }

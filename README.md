@@ -110,6 +110,22 @@ fn main() -> zsui::ZsuiResult<()> {
 
 普通应用不需要接触 `HWND`、消息循环或 GDI 句柄。
 
+输入控件继续沿用同一套强类型消息，例如按步长约束的 Slider：
+
+```rust,no_run
+use zsui::{slider, SliderRange, ViewNode};
+
+#[derive(Clone)]
+enum Msg {
+    VolumeChanged(f32),
+}
+
+fn volume_control(value: f32) -> ViewNode<Msg> {
+    slider(value, SliderRange::new(0.0, 100.0).step(5.0))
+        .on_slide(Msg::VolumeChanged)
+}
+```
+
 ## 强类型状态与消息
 
 ```rust,no_run
@@ -193,8 +209,8 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 基础 View | 文本、按钮、输入、复选、开关、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个 WinUI 风格家族：21 个已有第一阶段运行面，8 个只有
-契约，19 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
+组件目录当前记录 48 个 WinUI 风格家族：22 个已有第一阶段运行面，8 个只有
+契约，18 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
 TreeView、DataGrid、WebView 等尚未完成的独立控件。
 
 查看机器可读目录：

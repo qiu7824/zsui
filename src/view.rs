@@ -1,3 +1,5 @@
+#[cfg(feature = "slider")]
+use std::ops::RangeInclusive;
 use std::{
     fmt,
     marker::PhantomData,
@@ -39,6 +41,91 @@ impl From<WidgetId> for ComponentId {
 impl From<ComponentId> for WidgetId {
     fn from(value: ComponentId) -> Self {
         Self(value.0)
+    }
+}
+
+#[cfg(feature = "slider")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SliderRange {
+    min: f32,
+    max: f32,
+    step: f32,
+}
+
+#[cfg(feature = "slider")]
+impl SliderRange {
+    pub fn new(min: f32, max: f32) -> Self {
+        let min = if min.is_finite() { min } else { 0.0 };
+        let max = if max.is_finite() { max } else { 100.0 };
+        let (min, mut max) = if min <= max { (min, max) } else { (max, min) };
+        if (max - min).abs() <= f32::EPSILON {
+            max = min + 1.0;
+        }
+        let step = ((max - min) / 100.0).max(f32::EPSILON);
+        Self { min, max, step }
+    }
+
+    pub fn step(mut self, step: f32) -> Self {
+        if step.is_finite() && step > 0.0 {
+            self.step = step.min(self.max - self.min);
+        }
+        self
+    }
+
+    pub const fn min(self) -> f32 {
+        self.min
+    }
+
+    pub const fn max(self) -> f32 {
+        self.max
+    }
+
+    pub const fn step_size(self) -> f32 {
+        self.step
+    }
+
+    pub fn clamp(self, value: f32) -> f32 {
+        if value.is_finite() {
+            value.clamp(self.min, self.max)
+        } else {
+            self.min
+        }
+    }
+
+    pub fn snap(self, value: f32) -> f32 {
+        let value = self.clamp(value);
+        if value <= self.min {
+            return self.min;
+        }
+        if value >= self.max {
+            return self.max;
+        }
+        let steps = ((value - self.min) / self.step).round();
+        self.clamp(self.min + steps * self.step)
+    }
+
+    pub fn fraction(self, value: f32) -> f32 {
+        ((self.clamp(value) - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+    }
+
+    pub fn value_at_fraction(self, fraction: f32) -> f32 {
+        let fraction = if fraction.is_finite() {
+            fraction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.snap(self.min + (self.max - self.min) * fraction)
+    }
+
+    pub fn offset_steps(self, value: f32, steps: i32) -> f32 {
+        self.snap(self.clamp(value) + self.step * steps as f32)
+    }
+}
+
+#[cfg(feature = "slider")]
+impl From<RangeInclusive<f32>> for SliderRange {
+    fn from(range: RangeInclusive<f32>) -> Self {
+        Self::new(*range.start(), *range.end())
     }
 }
 
@@ -138,6 +225,12 @@ pub enum ViewNodeKind<Msg> {
     Toggle {
         checked: bool,
         on_toggle: Option<fn(bool) -> Msg>,
+    },
+    #[cfg(feature = "slider")]
+    Slider {
+        value: f32,
+        range: SliderRange,
+        on_slide: Option<fn(f32) -> Msg>,
     },
     #[cfg(feature = "list")]
     List {
@@ -330,6 +423,14 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    #[cfg(feature = "slider")]
+    pub fn on_slide(mut self, message: fn(f32) -> Msg) -> Self {
+        if let ViewNodeKind::Slider { on_slide, .. } = &mut self.kind {
+            *on_slide = Some(message);
+        }
+        self
+    }
+
     #[cfg(feature = "list")]
     pub fn selected_index(mut self, index: Option<usize>) -> Self {
         match &mut self.kind {
@@ -483,6 +584,16 @@ pub fn toggle<Msg>(checked: bool) -> ViewNode<Msg> {
     })
 }
 
+#[cfg(feature = "slider")]
+pub fn slider<Msg>(value: f32, range: impl Into<SliderRange>) -> ViewNode<Msg> {
+    let range = range.into();
+    ViewNode::new(ViewNodeKind::Slider {
+        value: range.snap(value),
+        range,
+        on_slide: None,
+    })
+}
+
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Stack {
         direction: ViewStackDirection::Row,
@@ -571,6 +682,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         checked: bool,
     },
+    #[cfg(feature = "slider")]
+    SliderChanged {
+        widget: WidgetId,
+        value: f32,
+    },
     #[cfg(feature = "scroll")]
     ScrollBy {
         widget: WidgetId,
@@ -615,6 +731,8 @@ pub enum ViewHitTargetKind {
     TextEditor,
     Checkbox,
     Toggle,
+    #[cfg(feature = "slider")]
+    Slider,
     #[cfg(feature = "scroll")]
     Scroll,
 }
@@ -799,6 +917,8 @@ trait LiveViewDriver: Send {
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
+    #[cfg(feature = "slider")]
+    fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
     #[cfg(feature = "list")]
     fn widget_list_relative_widget(
         &self,
@@ -848,6 +968,11 @@ impl SharedLiveViewRuntime {
 
     pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.lock().widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "slider")]
+    pub fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)> {
+        self.lock().widget_slider_state(widget)
     }
 
     #[cfg(feature = "list")]
@@ -1014,6 +1139,11 @@ where
 
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.view.widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "slider")]
+    fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)> {
+        self.view.widget_slider_state(widget)
     }
 
     #[cfg(feature = "list")]
@@ -1319,6 +1449,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(*next_checked));
                     }
                 }
+                #[cfg(feature = "slider")]
+                (
+                    ViewNodeKind::Slider {
+                        value,
+                        range,
+                        on_slide,
+                    },
+                    ViewEvent::SliderChanged {
+                        value: next_value, ..
+                    },
+                ) => {
+                    *value = range.snap(*next_value);
+                    if let Some(message) = on_slide {
+                        cx.emit(message(*value));
+                    }
+                }
                 #[cfg(feature = "scroll")]
                 (
                     ViewNodeKind::Scroll {
@@ -1497,6 +1643,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "slider")]
+            ViewNodeKind::Slider { value, range, .. } => {
+                let plan = crate::zs_slider_render_plan(bounds, range.fraction(*value), cx.dpi);
+                for command in crate::zs_slider_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "list")]
             ViewNodeKind::List { selected_index, .. } => {
                 if let Some(bounds) = selected_index
@@ -1601,6 +1754,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::Click { widget })
             | (Some(id), ViewEvent::TextChanged { widget, .. })
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
+            #[cfg(feature = "slider")]
+            (Some(id), ViewEvent::SliderChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             (None, _) => false,
@@ -1650,6 +1805,18 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_checked_value(widget))
+    }
+
+    #[cfg(feature = "slider")]
+    pub fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::Slider { value, range, .. } = &self.kind {
+                return Some((*value, *range));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_slider_state(widget))
     }
 
     #[cfg(feature = "list")]
@@ -1791,6 +1958,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Checkbox { .. } => ViewHitTargetKind::Checkbox,
             #[cfg(feature = "toggle")]
             ViewNodeKind::Toggle { .. } => ViewHitTargetKind::Toggle,
+            #[cfg(feature = "slider")]
+            ViewNodeKind::Slider { .. } => ViewHitTargetKind::Slider,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
@@ -2130,6 +2299,7 @@ mod tests {
         feature = "textbox",
         feature = "checkbox",
         feature = "toggle",
+        feature = "slider",
         feature = "list"
     ))]
     #[derive(Debug, Clone, PartialEq)]
@@ -2140,6 +2310,8 @@ mod tests {
         NameChanged(String),
         #[cfg(any(feature = "checkbox", feature = "toggle"))]
         DarkModeChanged(bool),
+        #[cfg(feature = "slider")]
+        VolumeChanged(f32),
         #[cfg(feature = "list")]
         RowSelected(usize),
         #[cfg(feature = "scroll")]
@@ -2413,6 +2585,47 @@ mod tests {
         assert_eq!(view.hit_target_kind(), ViewHitTargetKind::Toggle);
         assert_eq!(paint.plan().command_count(), 2);
         assert_eq!(events.into_messages(), vec![Msg::DarkModeChanged(true)]);
+    }
+
+    #[test]
+    #[cfg(feature = "slider")]
+    fn slider_clamps_snaps_routes_typed_value_and_paints_shared_geometry() {
+        let slider_id = WidgetId::new(6);
+        let range = SliderRange::new(0.0, 10.0).step(0.5);
+        let mut view = slider(12.0, range)
+            .id(slider_id)
+            .on_slide(Msg::VolumeChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 32,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::SliderChanged {
+                widget: slider_id,
+                value: 4.74,
+            },
+        );
+
+        assert_eq!(view.widget_slider_state(slider_id), Some((4.5, range)));
+        assert_eq!(view.hit_target_kind(), ViewHitTargetKind::Slider);
+        assert_eq!(paint.plan().command_count(), 3);
+        assert_eq!(events.into_messages(), vec![Msg::VolumeChanged(4.5)]);
+        assert_eq!(range.value_at_fraction(0.26), 2.5);
+        assert_eq!(range.offset_steps(4.5, 1), 5.0);
+
+        let uneven = SliderRange::new(0.0, 1.0).step(0.3);
+        assert_eq!(uneven.value_at_fraction(1.0), 1.0);
+        assert_eq!(uneven.offset_steps(0.9, 1), 1.0);
     }
 
     #[test]

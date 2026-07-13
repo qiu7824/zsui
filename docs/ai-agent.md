@@ -36,8 +36,8 @@ and is not part of normal task context.
   explicit features or optional dependencies.
 - Windows is the strongest real runtime today. macOS/Linux are first-pass
   desktop paths. Android/Harmony still require real runtime and device proof.
-- The component catalog currently tracks 48 families: 21 first-pass runtime,
-  8 contract-only and 19 not started. Composite shells do not change that count.
+- The component catalog currently tracks 48 families: 22 first-pass runtime,
+  8 contract-only and 18 not started. Composite shells do not change that count.
 
 ## Task Router
 
@@ -119,6 +119,7 @@ Target-specific completion additionally requires the artifact rules in
 
 Load these only when the selected pack requests them:
 
+- `docs/ai/project-memory.md`: durable product decisions and user priorities
 - `docs/ai/reference.md`: full readiness and public-surface reference
 - `src/agent_context.rs`: machine-readable readiness model
 - `docs/skills/zsui-native-ui/`: detailed native-host workflow

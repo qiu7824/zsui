@@ -99,6 +99,24 @@ The dedicated typed scroll smoke path is:
 cargo run --features "scroll,label" --example native_smoke_run -- windows --scroll-view
 ```
 
+The dedicated typed slider smoke path is:
+
+```powershell
+cargo run --features "window,label,slider,windows-win32" --example native_smoke_run -- windows --slider-view
+```
+
+It presses the shared slider track, drags the thumb, releases pointer capture
+and sends a Left key step through the same strongly typed `SliderChanged`
+route used by AppKit and GTK4. The smoke runner attaches the framework runtime
+executor, so each emitted `UiCommand` must be executed without an unhandled
+command. The Windows interaction artifact records value
+changes, keyboard changes and completed drags as
+`native_view_slider_value_change_count`,
+`native_view_slider_keyboard_change_count` and
+`native_view_slider_drag_count`. AppKit and GTK4 use their native mouse/gesture
+and keyboard callbacks with the shared runtime, but still require target-machine
+interaction artifacts before their slider path is considered proven.
+
 That path exercises `NativeWindowBuilder::ui_command_view(...)`, records
 draw-plan command counts in `interaction.json`, posts `WM_LBUTTONUP`, hit-tests
 through `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and

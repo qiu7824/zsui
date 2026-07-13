@@ -126,6 +126,11 @@ const VIRTUAL_LIST_GAPS: &[&str] = &[
     "non-Windows runtime smoke",
 ];
 const PLATFORM_GAPS: &[&str] = &["native platform binding", "target interaction smoke"];
+const SLIDER_GAPS: &[&str] = &[
+    "accessibility range-value provider",
+    "AppKit and GTK4 target interaction smoke",
+    "touch and precision-trackpad tuning",
+];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
     "dark and high-contrast target smoke",
@@ -334,10 +339,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "slider",
         "Slider",
         Input,
-        NotStarted,
-        None,
+        FirstPass,
+        Some("slider"),
         "src/view.rs",
-        NEW_COMPONENT_GAPS
+        SLIDER_GAPS
     ),
     component!(
         "number_box",

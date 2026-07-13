@@ -1,24 +1,36 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use serde_json::json;
+#[cfg(feature = "button")]
+use zsui::button;
 #[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
 use zsui::checkbox;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
 #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
 use zsui::scroll;
+#[cfg(feature = "label")]
+use zsui::text;
 #[cfg(all(feature = "button", feature = "label", feature = "textbox"))]
 use zsui::textbox;
-#[cfg(all(feature = "button", feature = "label"))]
-use zsui::NativeViewKey;
-#[cfg(all(feature = "button", feature = "label"))]
-use zsui::{button, column, text, CommandId, Point, UiCommand, WidgetId};
+#[cfg(any(
+    all(feature = "button", feature = "label"),
+    all(feature = "slider", feature = "label")
+))]
+use zsui::CommandId;
+#[cfg(any(
+    all(feature = "button", feature = "label"),
+    all(feature = "slider", feature = "label")
+))]
+use zsui::{column, NativeViewKey, Point, UiCommand, WidgetId};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
     NativeHostSmokeInteractionReport, NativeUiPlatform, NativeWindowBuilder,
-    NativeWindowSmokeRunOptions, TraySpec,
+    NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, TraySpec,
 };
+#[cfg(feature = "slider")]
+use zsui::{slider, SliderRange};
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -36,6 +48,8 @@ fn main() -> ExitCode {
         args.iter().any(|arg| arg == "--view"),
         args.iter()
             .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
+        args.iter()
+            .any(|arg| arg == "--slider-view" || arg == "--slider"),
     ) {
         Ok(json) => {
             println!("{json}");
@@ -55,6 +69,7 @@ fn run_smoke(
     include_window_menu: bool,
     include_typed_view: bool,
     include_scroll_view: bool,
+    include_slider_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -65,6 +80,10 @@ fn run_smoke(
             platform.platform_name(),
             current.platform_name()
         ));
+    }
+    #[cfg(not(all(feature = "slider", feature = "label")))]
+    if include_slider_view {
+        return Err("--slider-view requires the slider and label features".to_string());
     }
 
     let artifact_root = artifact_root.unwrap_or("target/native-host-smoke");
@@ -143,14 +162,23 @@ fn run_smoke(
     if include_scroll_view {
         smoke_options = smoke_options.native_view_scroll(Point { x: 260, y: 220 }, 48);
     }
+    #[cfg(all(feature = "slider", feature = "label"))]
+    if include_slider_view {
+        smoke_options = smoke_options
+            .native_view_drag(Point { x: 100, y: 84 }, Point { x: 400, y: 84 })
+            .native_view_key_down(NativeViewKey::Left);
+    }
 
     let builder = native_window("ZSUI Smoke").size(520, 320);
     let builder = if include_window_menu {
         builder.menu(smoke_window_menu())
     } else {
         builder
-    };
-    let builder = if include_scroll_view {
+    }
+    .ui_command_executor(NativeWindowRuntimeDriver::new());
+    let builder = if include_slider_view {
+        attach_slider_view(builder)
+    } else if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
         attach_typed_view(builder)
@@ -174,6 +202,31 @@ fn run_smoke(
         "artifacts": write_report,
     }))
     .map_err(|err| err.to_string())
+}
+
+#[cfg(all(feature = "slider", feature = "label"))]
+fn attach_slider_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.ui_command_view(
+        column([
+            text::<UiCommand>("ZSUI Slider Smoke").height(zsui::Dp::new(28.0)),
+            slider(25.0, SliderRange::new(0.0, 100.0).step(5.0))
+                .id(WidgetId::new(10))
+                .height(zsui::Dp::new(40.0))
+                .on_slide(native_smoke_slider_changed),
+        ])
+        .padding(zsui::Dp::new(24.0))
+        .gap(zsui::Dp::new(12.0)),
+    )
+}
+
+#[cfg(not(all(feature = "slider", feature = "label")))]
+fn attach_slider_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(all(feature = "slider", feature = "label"))]
+fn native_smoke_slider_changed(_: f32) -> UiCommand {
+    UiCommand::app(CommandId("zsui.native_smoke.slider_changed"))
 }
 
 fn smoke_window_menu() -> MenuSpec {

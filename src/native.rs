@@ -731,6 +731,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_pointer_move_count: usize,
     pub native_view_pointer_up_count: usize,
     pub native_view_text_drag_count: usize,
+    pub native_view_slider_value_change_count: usize,
+    pub native_view_slider_keyboard_change_count: usize,
+    pub native_view_slider_drag_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -813,6 +816,9 @@ impl NativeWindowSmokeRunReport {
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
             native_view_text_drag_count: 0,
+            native_view_slider_value_change_count: 0,
+            native_view_slider_keyboard_change_count: 0,
+            native_view_slider_drag_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -853,6 +859,8 @@ pub(crate) struct NativeViewInputRuntime {
     focused_widget: Option<crate::WidgetId>,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
+    #[cfg(feature = "slider")]
+    slider_drag: Option<crate::WidgetId>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
@@ -881,6 +889,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub text_caret: Option<usize>,
     pub text_selection_changed: bool,
     pub text_drag_active: bool,
+    #[cfg(feature = "slider")]
+    pub slider_value: Option<f32>,
+    #[cfg(feature = "slider")]
+    pub slider_value_changed: bool,
+    #[cfg(feature = "slider")]
+    pub slider_drag_active: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -908,6 +922,8 @@ impl NativeViewInputRuntime {
             focused_widget: None,
             text_edit: None,
             text_drag: None,
+            #[cfg(feature = "slider")]
+            slider_drag: None,
             ime_preedit: None,
             app_command_executor,
             ui_command_executor,
@@ -978,6 +994,10 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             self.ime_preedit = None;
             report.focus_visual_changed = true;
         }
@@ -1025,6 +1045,10 @@ impl NativeViewInputRuntime {
         if self.text_drag.take().is_some() {
             return report;
         }
+        #[cfg(feature = "slider")]
+        if self.slider_drag.take().is_some() {
+            return report;
+        }
         self.dispatch_pointer_up(point)
     }
 
@@ -1041,11 +1065,23 @@ impl NativeViewInputRuntime {
         let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
             return report;
         };
+        #[cfg(feature = "slider")]
+        if target.kind == crate::ViewHitTargetKind::Slider {
+            self.text_drag = None;
+            self.focus_target(target, &mut report);
+            self.slider_drag = Some(target.widget);
+            report.slider_drag_active = true;
+            return self.dispatch_slider_pointer(target, point, report);
+        }
         if !matches!(
             target.kind,
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
         ) {
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             return report;
         }
 
@@ -1080,6 +1116,17 @@ impl NativeViewInputRuntime {
             ..NativeViewInputDispatchReport::default()
         };
         let Some(drag) = self.text_drag else {
+            #[cfg(feature = "slider")]
+            if let Some(widget) = self.slider_drag {
+                if let Some(target) = self
+                    .current_interaction_plan()
+                    .and_then(|plan| plan.hit_target_for_widget(widget))
+                {
+                    report.slider_drag_active = true;
+                    return self.dispatch_slider_pointer(target, point, report);
+                }
+                self.slider_drag = None;
+            }
             return report;
         };
         let Some(target) = self
@@ -1116,6 +1163,14 @@ impl NativeViewInputRuntime {
             report.text_drag_active = false;
             return report;
         }
+        #[cfg(feature = "slider")]
+        if self.slider_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            self.slider_drag = None;
+            report.handled = true;
+            report.slider_drag_active = false;
+            return report;
+        }
 
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
@@ -1141,11 +1196,15 @@ impl NativeViewInputRuntime {
 
     pub(crate) fn cancel_pointer_drag(&mut self) -> NativeViewInputDispatchReport {
         let had_drag = self.text_drag.take().is_some();
+        #[cfg(feature = "slider")]
+        let had_drag = had_drag | self.slider_drag.take().is_some();
         let mut report = NativeViewInputDispatchReport {
             handled: had_drag,
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             text_drag_active: false,
+            #[cfg(feature = "slider")]
+            slider_drag_active: false,
             ..NativeViewInputDispatchReport::default()
         };
         self.populate_text_report(&mut report);
@@ -1185,6 +1244,10 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             report.focused_widget = None;
             return report;
         };
@@ -1219,6 +1282,35 @@ impl NativeViewInputRuntime {
                 report.redraw_plan = self.current_composed_draw_plan();
                 self.populate_text_report(&mut report);
                 return report;
+            }
+        }
+
+        #[cfg(feature = "slider")]
+        if target.kind == crate::ViewHitTargetKind::Slider {
+            let delta = if shift { 10 } else { 1 };
+            let Some((current, range)) = self.widget_slider_state(widget) else {
+                return report;
+            };
+            let value = match key {
+                NativeViewKey::Left | NativeViewKey::Down => {
+                    Some(range.offset_steps(current, -delta))
+                }
+                NativeViewKey::Right | NativeViewKey::Up => {
+                    Some(range.offset_steps(current, delta))
+                }
+                NativeViewKey::Home => Some(range.min()),
+                NativeViewKey::End => Some(range.max()),
+                _ => None,
+            };
+            if let Some(value) = value {
+                report.handled = true;
+                report.slider_value = Some(value);
+                if (value - current).abs() <= f32::EPSILON {
+                    return report;
+                }
+                report.slider_value_changed = true;
+                return self
+                    .dispatch_view_event(ViewEvent::SliderChanged { widget, value }, report);
             }
         }
 
@@ -1273,6 +1365,10 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             report.focused_widget = None;
             return report;
         };
@@ -1431,6 +1527,10 @@ impl NativeViewInputRuntime {
         let had_focus = self.focused_widget.take().is_some();
         self.text_edit = None;
         self.text_drag = None;
+        #[cfg(feature = "slider")]
+        {
+            self.slider_drag = None;
+        }
         let had_preedit = self.ime_preedit.take().is_some();
         NativeViewInputDispatchReport {
             handled: had_focus || had_preedit,
@@ -1497,6 +1597,10 @@ impl NativeViewInputRuntime {
         }
         self.ime_preedit = None;
         self.text_drag = None;
+        #[cfg(feature = "slider")]
+        {
+            self.slider_drag = None;
+        }
         self.focused_widget = Some(target.widget);
         self.ensure_text_edit_for_target(target);
         report.focused_widget = Some(target.widget.0);
@@ -1604,6 +1708,10 @@ impl NativeViewInputRuntime {
         let Some(widget) = self.focused_widget else {
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             return;
         };
         let Some(target) = self
@@ -1612,6 +1720,10 @@ impl NativeViewInputRuntime {
         else {
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             return;
         };
         self.ensure_text_edit_for_target(target);
@@ -1625,6 +1737,36 @@ impl NativeViewInputRuntime {
         };
         report.text_selection = Some(selection.ordered());
         report.text_caret = Some(selection.caret);
+    }
+
+    #[cfg(feature = "slider")]
+    fn dispatch_slider_pointer(
+        &mut self,
+        target: crate::ViewHitTarget,
+        point: Point,
+        mut report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        let Some((current, range)) = self.widget_slider_state(target.widget) else {
+            self.slider_drag = None;
+            return report;
+        };
+        let track = crate::zs_slider_render_plan(target.bounds, 0.0, self.dpi).track;
+        let fraction = point.x.saturating_sub(track.x) as f32 / track.width.max(1) as f32;
+        let value = range.value_at_fraction(fraction);
+        report.handled = true;
+        report.slider_value = Some(value);
+        report.slider_drag_active = self.slider_drag.is_some();
+        if (value - current).abs() <= f32::EPSILON {
+            return report;
+        }
+        report.slider_value_changed = true;
+        self.dispatch_view_event(
+            ViewEvent::SliderChanged {
+                widget: target.widget,
+                value,
+            },
+            report,
+        )
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
@@ -1662,6 +1804,18 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_checked_value(widget))
+            })
+    }
+
+    #[cfg(feature = "slider")]
+    fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_slider_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_slider_state(widget))
             })
     }
 
@@ -1741,6 +1895,10 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "slider")]
+            {
+                self.slider_drag = None;
+            }
             self.ime_preedit = None;
             report.focus_visual_changed = true;
         }
@@ -1923,6 +2081,9 @@ fn record_windows_win32_view_input_report(
     report.native_view_pointer_move_count += input.pointer_move_count;
     report.native_view_pointer_up_count += input.pointer_up_count;
     report.native_view_text_drag_count += input.text_drag_count;
+    report.native_view_slider_value_change_count += input.slider_value_change_count;
+    report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
+    report.native_view_slider_drag_count += input.slider_drag_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -4572,6 +4733,65 @@ mod tests {
         assert_eq!(runtime.focused_text_input_value().as_deref(), Some("A🙂Z"));
     }
 
+    #[cfg(feature = "slider")]
+    #[test]
+    fn native_view_runtime_routes_slider_drag_and_keyboard_steps() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(f32),
+        }
+
+        let slider_id = crate::WidgetId::new(81);
+        let range = crate::SliderRange::new(0.0, 100.0).step(5.0);
+        let builder = native_window("Platform Slider")
+            .size(360, 220)
+            .stateful_view(
+                0.0_f32,
+                move |value| {
+                    crate::slider(*value, range)
+                        .id(slider_id)
+                        .on_slide(Msg::Changed)
+                },
+                |value, message, _cx| match message {
+                    Msg::Changed(next) => *value = next,
+                },
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(slider_id))
+            .expect("slider should have pointer geometry");
+        let track = crate::zs_slider_render_plan(target.bounds, 0.0, Dpi::standard()).track;
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pressed = runtime.dispatch_pointer_down(
+            Point {
+                x: track.x + track.width / 4,
+                y: target.bounds.y + target.bounds.height / 2,
+            },
+            false,
+        );
+        let dragged = runtime.dispatch_pointer_move(Point {
+            x: track.x + track.width * 3 / 4,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        let released = runtime.dispatch_pointer_up(Point {
+            x: track.x + track.width * 3 / 4,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        let left = runtime.dispatch_key(NativeViewKey::Left);
+        let coarse_right = runtime.dispatch_key_with_shift(NativeViewKey::Right, true);
+
+        assert!(pressed.handled);
+        assert_eq!(pressed.slider_value, Some(25.0));
+        assert!(pressed.slider_drag_active);
+        assert_eq!(dragged.slider_value, Some(75.0));
+        assert!(dragged.slider_value_changed);
+        assert!(!released.slider_drag_active);
+        assert_eq!(left.slider_value, Some(70.0));
+        assert_eq!(coarse_right.slider_value, Some(100.0));
+        assert_eq!(runtime.widget_slider_state(slider_id), Some((100.0, range)));
+    }
+
     #[cfg(all(feature = "label", feature = "textbox"))]
     #[test]
     fn native_view_runtime_keeps_ime_preedit_provisional_until_commit() {
@@ -4835,6 +5055,9 @@ mod tests {
         assert_eq!(report.native_view_pointer_move_count, 0);
         assert_eq!(report.native_view_pointer_up_count, 0);
         assert_eq!(report.native_view_text_drag_count, 0);
+        assert_eq!(report.native_view_slider_value_change_count, 0);
+        assert_eq!(report.native_view_slider_keyboard_change_count, 0);
+        assert_eq!(report.native_view_slider_drag_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);
         assert_eq!(report.native_view_keyboard_selection_count, 0);
