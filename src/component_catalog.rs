@@ -142,6 +142,12 @@ const TOGGLE_BUTTON_GAPS: &[&str] = &[
     "accessibility toggle-button role and checked-state provider",
     "AppKit and GTK4 target interaction smoke",
 ];
+const PASSWORD_BOX_GAPS: &[&str] = &[
+    "Caps Lock warning and accessibility secure-text role/provider",
+    "Windows Alt+F8 press-and-hold reveal shortcut",
+    "platform memory-lock integration beyond owned-value zeroization",
+    "AppKit and GTK4 target interaction smoke",
+];
 const RADIO_GAPS: &[&str] = &[
     "accessibility selection provider",
     "AppKit and GTK4 target interaction smoke",
@@ -356,10 +362,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "password_box",
         "PasswordBox",
         Input,
-        ContractOnly,
-        Some("settings"),
-        "src/control_protocol.rs",
-        PLATFORM_GAPS
+        FirstPass,
+        Some("password-box"),
+        "src/password_box.rs + src/view.rs + src/native_input_visuals.rs",
+        PASSWORD_BOX_GAPS
     ),
     component!(
         "combo_box",

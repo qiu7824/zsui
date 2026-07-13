@@ -40,10 +40,11 @@ pub enum ZsIcon {
     Calendar,
     ChevronLeft,
     ChevronRight,
+    PasswordReveal,
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -82,6 +83,7 @@ impl ZsIcon {
         Self::Calendar,
         Self::ChevronLeft,
         Self::ChevronRight,
+        Self::PasswordReveal,
     ];
 
     pub const fn asset_name(self) -> &'static str {
@@ -122,6 +124,7 @@ impl ZsIcon {
             Self::Calendar => "calendar",
             Self::ChevronLeft => "chevron-left",
             Self::ChevronRight => "chevron-right",
+            Self::PasswordReveal => "password-reveal",
         }
     }
 
@@ -163,6 +166,7 @@ impl ZsIcon {
             Self::Calendar => "x-office-calendar-symbolic",
             Self::ChevronLeft => "pan-start-symbolic",
             Self::ChevronRight => "pan-end-symbolic",
+            Self::PasswordReveal => "view-reveal-symbolic",
         }
     }
 
@@ -205,6 +209,7 @@ impl ZsIcon {
             Self::Calendar => "\u{E787}",
             Self::ChevronLeft => "\u{E76B}",
             Self::ChevronRight => "\u{E76C}",
+            Self::PasswordReveal => "\u{E890}",
         }
     }
 
@@ -253,6 +258,7 @@ impl ZsIcon {
             Self::Calendar => "calendar.svg",
             Self::ChevronLeft => "chevron-left.svg",
             Self::ChevronRight => "chevron-right.svg",
+            Self::PasswordReveal => "password-reveal.svg",
         }
     }
 
@@ -317,6 +323,9 @@ impl ZsIcon {
             Self::ChevronRight => {
                 include_bytes!("../assets/fluent-system-icons/regular/chevron-right.svg")
             }
+            Self::PasswordReveal => {
+                include_bytes!("../assets/fluent-system-icons/regular/password-reveal.svg")
+            }
         }
     }
 
@@ -359,6 +368,7 @@ impl ZsIcon {
             Self::Calendar => "calendar",
             Self::ChevronLeft => "chevron.left",
             Self::ChevronRight => "chevron.right",
+            Self::PasswordReveal => "eye",
         }
     }
 
@@ -404,6 +414,7 @@ impl ZsIcon {
             | Self::Calendar
             | Self::ChevronLeft
             | Self::ChevronRight => None,
+            Self::PasswordReveal => None,
         }
     }
 }

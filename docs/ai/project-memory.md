@@ -128,6 +128,17 @@ history remain authoritative for implementation status.
   select internal metric profiles modeled on NumberBox/NSStepper/SpinButton;
   locale formatting, expression input, accessibility and non-Windows target
   proof remain explicit readiness gaps.
+- PasswordBox is an independent `password-box` Cargo feature and stays on the
+  shared self-drawn tree. `ZsPassword` zeroizes its owned allocation on drop,
+  always redacts `Debug`, and deliberately does not implement serialization;
+  password events and secure draw commands omit their value when serialized.
+  Hidden plans, IME surrounding/preedit reports and text geometry contain only
+  one mask glyph per Unicode scalar. Windows defaults to press-and-hold Peek;
+  macOS and GTK default to Hidden, and all platforms select internal metric and
+  semantic-icon profiles without native child controls. Renderer APIs are the
+  explicit clear-text boundary. OS text stacks may still make transient copies;
+  locked memory, Alt+F8, full accessibility/caps-lock signaling and non-Windows
+  target smoke remain readiness gaps.
 - ToggleButton is an independent `toggle-button` Cargo feature and reuses the
   shared explicit Boolean `Toggled` message path rather than inheriting Button
   behavior or storing state in a backend. It remains self-drawn: Windows,

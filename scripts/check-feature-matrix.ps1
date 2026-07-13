@@ -23,6 +23,7 @@ $singleFeatures = @(
     "virtual-list",
     "paged-list",
     "textbox",
+    "password-box",
     "checkbox",
     "toggle",
     "slider",
@@ -65,7 +66,7 @@ $singleFeatures = @(
 
 $featureSets = @(
     "button,label,grid",
-    "textbox,checkbox,toggle,toggle-button,slider,number-box,radio,progress,combo,date-picker,time-picker,tabs",
+    "textbox,password-box,checkbox,toggle,toggle-button,slider,number-box,radio,progress,combo,date-picker,time-picker,tabs",
     "list,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",

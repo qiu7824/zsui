@@ -8,10 +8,11 @@ use crate::workbench::ZsWorkbenchSpec;
 
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
-    native_text_visual_geometry,
+    native_text_visual_geometry, native_text_visual_target,
 };
 #[cfg(any(
     feature = "date-picker",
+    feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button"
@@ -20,9 +21,8 @@ use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
 use crate::native_text_edit::{
-    char_to_byte_index, delete_backward, delete_forward, insert_text, move_selection,
-    set_pointer_selection, NativeTextDragState, NativeTextEditState, NativeTextMovement,
-    NativeTextSelection,
+    apply_text_input, char_to_byte_index, move_selection, set_pointer_selection,
+    NativeTextDragState, NativeTextEditState, NativeTextMovement, NativeTextSelection,
 };
 use crate::{
     app::{app, ZsuiApp, ZsuiAppRuntime},
@@ -1014,6 +1014,7 @@ pub(crate) struct NativeViewInputRuntime {
     slider_drag: Option<crate::WidgetId>,
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
@@ -1021,22 +1022,77 @@ pub(crate) struct NativeViewInputRuntime {
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
     ))]
     pointer_pressed: Option<NativePointerVisualKey>,
+    #[cfg(feature = "password-box")]
+    password_peek: Option<crate::WidgetId>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct NativeViewImePreedit {
     widget: crate::WidgetId,
-    text: String,
+    text: NativeViewImeText,
     selection: Option<(usize, usize)>,
     replacement: NativeTextSelection,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum NativeViewImeText {
+    Plain(String),
+    #[cfg(feature = "password-box")]
+    Secure(crate::ZsPassword),
+}
+
+impl NativeViewImeText {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Plain(text) => text,
+            #[cfg(feature = "password-box")]
+            Self::Secure(text) => text.as_str(),
+        }
+    }
+
+    fn report_text(&self) -> String {
+        match self {
+            Self::Plain(text) => text.clone(),
+            #[cfg(feature = "password-box")]
+            Self::Secure(text) => crate::mask_password(text.as_str()),
+        }
+    }
+
+    #[cfg(feature = "password-box")]
+    fn is_secure(&self) -> bool {
+        matches!(self, Self::Secure(_))
+    }
+}
+
+impl std::fmt::Debug for NativeViewImeText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plain(text) => formatter.debug_tuple("Plain").field(text).finish(),
+            #[cfg(feature = "password-box")]
+            Self::Secure(_) => formatter.write_str("Secure(<redacted>)"),
+        }
+    }
+}
+
+impl std::fmt::Debug for NativeViewImePreedit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("NativeViewImePreedit")
+            .field("widget", &self.widget)
+            .field("text", &self.text)
+            .field("selection", &self.selection)
+            .field("replacement", &self.replacement)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1046,6 +1102,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub focus_visual_changed: bool,
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
@@ -1122,6 +1179,7 @@ impl NativeViewInputRuntime {
             slider_drag: None,
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -1129,11 +1187,14 @@ impl NativeViewInputRuntime {
             pointer_hover: None,
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
             ))]
             pointer_pressed: None,
+            #[cfg(feature = "password-box")]
+            password_peek: None,
             ime_preedit: None,
             app_command_executor,
             ui_command_executor,
@@ -1186,7 +1247,10 @@ impl NativeViewInputRuntime {
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
-            ime_preedit_text: self.ime_preedit.as_ref().map(|state| state.text.clone()),
+            ime_preedit_text: self
+                .ime_preedit
+                .as_ref()
+                .map(|state| state.text.report_text()),
             ime_selection: self.ime_preedit.as_ref().and_then(|state| state.selection),
             ..NativeViewInputDispatchReport::default()
         };
@@ -1237,7 +1301,10 @@ impl NativeViewInputRuntime {
         }
         report.hit_target_count = self.hit_target_count();
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
-        report.ime_preedit_text = self.ime_preedit.as_ref().map(|state| state.text.clone());
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
         report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
         report.ime_caret_rect = self.text_input_caret_rect();
         self.populate_text_report(&mut report);
@@ -1246,12 +1313,12 @@ impl NativeViewInputRuntime {
 
     pub(crate) fn focused_text_input_value(&self) -> Option<String> {
         let target = self.focused_text_input_target()?;
-        self.widget_text_value(target.widget)
+        self.widget_display_text_value(target.widget)
     }
 
     pub(crate) fn focused_text_input_snapshot(&self) -> Option<(String, NativeTextSelection)> {
         let target = self.focused_text_input_target()?;
-        let value = self.widget_text_value(target.widget)?;
+        let value = self.widget_display_text_value(target.widget)?;
         let selection = self
             .text_edit
             .filter(|state| state.widget == target.widget)
@@ -1266,6 +1333,8 @@ impl NativeViewInputRuntime {
 
     pub(crate) fn text_input_caret_rect(&self) -> Option<Rect> {
         let target = self.focused_text_input_target()?;
+        let interaction = self.current_interaction_plan()?;
+        let target = native_text_visual_target(target, &interaction);
         let (value, selection) = self.focused_text_input_snapshot()?;
         Some(native_text_visual_geometry(target, &value, selection, self.dpi).caret)
     }
@@ -1296,6 +1365,7 @@ impl NativeViewInputRuntime {
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1308,6 +1378,14 @@ impl NativeViewInputRuntime {
         let Some(target) = target else {
             return report;
         };
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBoxReveal {
+            self.text_drag = None;
+            self.password_peek = Some(target.widget);
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+            return report;
+        }
         #[cfg(feature = "slider")]
         if target.kind == crate::ViewHitTargetKind::Slider {
             self.text_drag = None;
@@ -1328,12 +1406,18 @@ impl NativeViewInputRuntime {
         report.handled = true;
         self.ime_preedit = None;
         self.focus_target(target, &mut report);
-        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(target.widget)
+            .unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
-        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let visual_target = self
+            .current_interaction_plan()
+            .map(|interaction| native_text_visual_target(target, &interaction))
+            .unwrap_or(target);
+        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
         self.text_edit = Some(state);
@@ -1357,6 +1441,7 @@ impl NativeViewInputRuntime {
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1367,6 +1452,22 @@ impl NativeViewInputRuntime {
                 .and_then(|plan| plan.hit_target_at(point))
                 .and_then(native_pointer_visual_key);
             self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
+        }
+        #[cfg(feature = "password-box")]
+        if let Some(widget) = self.password_peek {
+            let still_peeking = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_at(point))
+                .is_some_and(|target| {
+                    target.widget == widget
+                        && target.kind == crate::ViewHitTargetKind::PasswordBoxReveal
+                });
+            if !still_peeking {
+                self.password_peek = None;
+                report.handled = true;
+                report.redraw_plan = self.current_composed_draw_plan();
+            }
+            return report;
         }
         let Some(drag) = self.text_drag else {
             #[cfg(feature = "slider")]
@@ -1389,12 +1490,18 @@ impl NativeViewInputRuntime {
             self.text_drag = None;
             return report;
         };
-        let value = self.widget_text_value(drag.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(drag.widget)
+            .unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == drag.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
-        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let visual_target = self
+            .current_interaction_plan()
+            .map(|interaction| native_text_visual_target(target, &interaction))
+            .unwrap_or(target);
+        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
         self.text_edit = Some(state);
         report.handled = true;
@@ -1409,6 +1516,22 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_pointer_up(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "password-box")]
+        if self.password_peek.take().is_some() {
+            let mut report = NativeViewInputDispatchReport {
+                handled: true,
+                hit_target_count: self.hit_target_count(),
+                focused_widget: self.focused_widget.map(|widget| widget.0),
+                redraw_plan: self.current_composed_draw_plan(),
+                ..NativeViewInputDispatchReport::default()
+            };
+            let hovered = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_at(point))
+                .and_then(native_pointer_visual_key);
+            self.update_pointer_visual_state(hovered, None, &mut report);
+            return report;
+        }
         if self.text_drag.is_some() {
             let mut report = self.dispatch_pointer_move(point);
             self.text_drag = None;
@@ -1416,6 +1539,7 @@ impl NativeViewInputRuntime {
             report.text_drag_active = false;
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -1431,6 +1555,7 @@ impl NativeViewInputRuntime {
             report.slider_drag_active = false;
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -1447,6 +1572,7 @@ impl NativeViewInputRuntime {
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1501,6 +1627,8 @@ impl NativeViewInputRuntime {
 
     pub(crate) fn cancel_pointer_drag(&mut self) -> NativeViewInputDispatchReport {
         let had_drag = self.text_drag.take().is_some();
+        #[cfg(feature = "password-box")]
+        let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
         let mut report = NativeViewInputDispatchReport {
@@ -1514,6 +1642,7 @@ impl NativeViewInputRuntime {
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1524,13 +1653,18 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_pointer_leave(&mut self) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "password-box")]
+        let had_password_peek = self.password_peek.take().is_some();
         let report = NativeViewInputDispatchReport {
+            #[cfg(feature = "password-box")]
+            handled: had_password_peek,
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1542,6 +1676,7 @@ impl NativeViewInputRuntime {
         }
         #[cfg(not(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1643,7 +1778,7 @@ impl NativeViewInputRuntime {
                 _ => None,
             };
             if let Some(movement) = movement {
-                let value = self.widget_text_value(widget).unwrap_or_default();
+                let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
                     .filter(|state| state.widget == widget)
@@ -2066,56 +2201,53 @@ impl NativeViewInputRuntime {
             return report;
         }
 
+        #[cfg(feature = "password-box")]
+        let mut password = (target.kind == crate::ViewHitTargetKind::PasswordBox)
+            .then(|| self.widget_password_value(widget).unwrap_or_default());
+        #[cfg(feature = "password-box")]
+        let mut value = zeroize::Zeroizing::new(
+            password
+                .as_ref()
+                .map(|password| password.as_str().to_owned())
+                .unwrap_or_else(|| self.widget_text_value(widget).unwrap_or_default()),
+        );
+        #[cfg(not(feature = "password-box"))]
         let mut value = self.widget_text_value(widget).unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
         state.clamp(&value);
-        let mut handled = false;
-        let mut text_changed = false;
-        let mut selection_changed = false;
-        let mut previous_was_carriage_return = false;
-        for ch in text.chars() {
-            let edit = match ch {
-                '\u{8}' => delete_backward(&mut value, &mut state.selection),
-                '\u{7f}' => delete_forward(&mut value, &mut state.selection),
-                '\r' if target.kind == crate::ViewHitTargetKind::TextEditor => {
-                    previous_was_carriage_return = true;
-                    insert_text(&mut value, &mut state.selection, "\n")
-                }
-                '\n' if target.kind == crate::ViewHitTargetKind::TextEditor
-                    && !previous_was_carriage_return =>
-                {
-                    insert_text(&mut value, &mut state.selection, "\n")
-                }
-                ch if !ch.is_control() => {
-                    let mut buffer = [0_u8; 4];
-                    insert_text(
-                        &mut value,
-                        &mut state.selection,
-                        ch.encode_utf8(&mut buffer),
-                    )
-                }
-                _ => Default::default(),
-            };
-            handled |= edit.handled;
-            text_changed |= edit.text_changed;
-            selection_changed |= edit.selection_changed;
-            if ch != '\r' {
-                previous_was_carriage_return = false;
-            }
-        }
-        if !handled {
+        let edit = apply_text_input(
+            &mut value,
+            &mut state.selection,
+            text,
+            target.kind == crate::ViewHitTargetKind::TextEditor,
+        );
+        if !edit.handled {
             return report;
         }
         report.handled = true;
-        report.text_selection_changed = selection_changed;
+        report.text_selection_changed = edit.selection_changed;
         self.text_edit = Some(state);
-        if text_changed {
+        if edit.text_changed {
+            #[cfg(feature = "password-box")]
+            if let Some(password) = &mut password {
+                *password.as_string_mut() = std::mem::take(&mut *value);
+                return self.dispatch_view_event(
+                    ViewEvent::PasswordChanged {
+                        widget,
+                        value: password.clone(),
+                    },
+                    report,
+                );
+            }
+            #[cfg(feature = "password-box")]
+            let value = std::mem::take(&mut *value);
             self.dispatch_view_event(ViewEvent::TextChanged { widget, value }, report)
         } else {
-            report.redraw_plan = selection_changed
+            report.redraw_plan = edit
+                .selection_changed
                 .then(|| self.current_composed_draw_plan())
                 .flatten();
             self.populate_text_report(&mut report);
@@ -2148,7 +2280,9 @@ impl NativeViewInputRuntime {
             let end = end.min(char_count);
             (start.min(end), start.max(end))
         });
-        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(target.widget)
+            .unwrap_or_default();
         let mut edit_state = self
             .text_edit
             .filter(|state| state.widget == target.widget)
@@ -2161,14 +2295,23 @@ impl NativeViewInputRuntime {
             .filter(|preedit| preedit.widget == target.widget)
             .map(|preedit| preedit.replacement)
             .unwrap_or(edit_state.selection);
+        #[cfg(feature = "password-box")]
+        let preedit_text = if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            NativeViewImeText::Secure(crate::ZsPassword::from(text))
+        } else {
+            NativeViewImeText::Plain(text.to_string())
+        };
+        #[cfg(not(feature = "password-box"))]
+        let preedit_text = NativeViewImeText::Plain(text.to_string());
+        let report_text = preedit_text.report_text();
         self.ime_preedit = Some(NativeViewImePreedit {
             widget: target.widget,
-            text: text.to_string(),
+            text: preedit_text,
             selection,
             replacement,
         });
         report.handled = true;
-        report.ime_preedit_text = Some(text.to_string());
+        report.ime_preedit_text = Some(report_text);
         report.ime_selection = selection;
         report.redraw_plan = self.current_composed_draw_plan();
         report
@@ -2229,6 +2372,8 @@ impl NativeViewInputRuntime {
         let had_focus = self.focused_widget.take().is_some();
         self.text_edit = None;
         self.text_drag = None;
+        #[cfg(feature = "password-box")]
+        let had_password_peek = self.password_peek.take().is_some();
         #[cfg(feature = "combo")]
         self.combo_type_ahead.reset();
         #[cfg(feature = "slider")]
@@ -2238,11 +2383,14 @@ impl NativeViewInputRuntime {
         let had_preedit = self.ime_preedit.take().is_some();
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
         ))]
         self.update_pointer_visual_state(None, None, &mut report);
+        #[cfg(feature = "password-box")]
+        let had_preedit = had_preedit | had_password_peek;
         report.handled |= had_focus || had_preedit;
         report.focus_visual_changed = had_focus;
         report.hit_target_count = self.hit_target_count();
@@ -2391,6 +2539,7 @@ impl NativeViewInputRuntime {
         let mut plan = plan;
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2404,10 +2553,16 @@ impl NativeViewInputRuntime {
                 self.dpi,
             );
         }
+        #[cfg(feature = "password-box")]
+        self.compose_password_peek(&mut plan);
         if let (Some(target), Some((value, selection))) = (
             self.focused_text_input_target(),
             self.focused_text_input_snapshot(),
         ) {
+            let target = self
+                .current_interaction_plan()
+                .map(|interaction| native_text_visual_target(target, &interaction))
+                .unwrap_or(target);
             decorate_native_text_edit_visuals(&mut plan, target, &value, selection, self.dpi);
         }
         let mut plan = self.compose_ime_preedit(plan);
@@ -2419,6 +2574,7 @@ impl NativeViewInputRuntime {
 
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
@@ -2449,12 +2605,53 @@ impl NativeViewInputRuntime {
         else {
             return plan;
         };
+        #[cfg(feature = "password-box")]
+        if preedit.text.is_secure() {
+            let mut committed = self
+                .widget_password_value(preedit.widget)
+                .unwrap_or_default();
+            let (start, end) = preedit.replacement.clamp(committed.as_str()).ordered();
+            let start_byte = char_to_byte_index(committed.as_str(), start);
+            let end_byte = char_to_byte_index(committed.as_str(), end);
+            committed
+                .as_string_mut()
+                .replace_range(start_byte..end_byte, preedit.text.as_str());
+            let masked = crate::mask_password(committed.as_str());
+            let mut decorated = false;
+            for command in plan.commands.iter_mut().rev() {
+                match command {
+                    NativeDrawCommand::SecureText(command)
+                        if rect_contains_rect(target.bounds, command.bounds) =>
+                    {
+                        command.replace_value(committed.clone());
+                        decorated = true;
+                        break;
+                    }
+                    NativeDrawCommand::Text(text)
+                        if rect_contains_rect(target.bounds, text.bounds) =>
+                    {
+                        text.text = masked.clone();
+                        decorated = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            if decorated {
+                plan.push(NativeDrawCommand::StrokeRect {
+                    rect: target.bounds,
+                    stroke: NativeDrawFill::Role(crate::ColorRole::Accent),
+                    width: 2,
+                });
+            }
+            return plan;
+        }
         let committed = self.widget_text_value(preedit.widget).unwrap_or_default();
         let (start, end) = preedit.replacement.clamp(&committed).ordered();
         let start_byte = char_to_byte_index(&committed, start);
         let end_byte = char_to_byte_index(&committed, end);
         let mut composed = committed.clone();
-        composed.replace_range(start_byte..end_byte, &preedit.text);
+        composed.replace_range(start_byte..end_byte, preedit.text.as_str());
         let mut decorated = false;
         for command in plan.commands.iter_mut().rev() {
             let NativeDrawCommand::Text(text) = command else {
@@ -2476,13 +2673,45 @@ impl NativeViewInputRuntime {
         plan
     }
 
+    #[cfg(feature = "password-box")]
+    fn compose_password_peek(&self, plan: &mut NativeDrawPlan) {
+        let Some(widget) = self.password_peek else {
+            return;
+        };
+        let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|interaction| interaction.hit_target_for_widget(widget))
+        else {
+            return;
+        };
+        let Some(value) = self.widget_password_value(widget) else {
+            return;
+        };
+        for command in plan.commands.iter_mut().rev() {
+            let NativeDrawCommand::Text(text) = command else {
+                continue;
+            };
+            if !rect_contains_rect(target.bounds, text.bounds) {
+                continue;
+            }
+            let bounds = text.bounds;
+            let style = text.style;
+            *command = NativeDrawCommand::SecureText(crate::NativeDrawSecureTextCommand::new(
+                value, bounds, style, true,
+            ));
+            break;
+        }
+    }
+
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
         if !target.kind.accepts_text_input() {
             self.text_edit = None;
             self.text_drag = None;
             return;
         }
-        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(target.widget)
+            .unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == target.widget)
@@ -2698,6 +2927,26 @@ impl NativeViewInputRuntime {
                     .as_ref()
                     .and_then(|view| view.widget_text_value(widget).map(str::to_string))
             })
+    }
+
+    #[cfg(feature = "password-box")]
+    fn widget_password_value(&self, widget: crate::WidgetId) -> Option<crate::ZsPassword> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_password_value(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_password_value(widget).cloned())
+            })
+    }
+
+    fn widget_display_text_value(&self, widget: crate::WidgetId) -> Option<String> {
+        #[cfg(feature = "password-box")]
+        if let Some(password) = self.widget_password_value(widget) {
+            return Some(crate::mask_password(password.as_str()));
+        }
+        self.widget_text_value(widget)
     }
 
     fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
@@ -3000,7 +3249,10 @@ impl NativeViewInputRuntime {
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
-        report.ime_preedit_text = self.ime_preedit.as_ref().map(|state| state.text.clone());
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
         report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
         report.ime_caret_rect = self.text_input_caret_rect();
         self.populate_text_report(&mut report);
@@ -6744,6 +6996,125 @@ mod tests {
                 matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. } if *rect == target.bounds)
             })
         }));
+    }
+
+    #[cfg(feature = "password-box")]
+    #[test]
+    fn native_view_runtime_keeps_password_input_ime_and_peek_redacted() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(crate::ZsPassword),
+        }
+
+        let widget = crate::WidgetId::new(780);
+        let initial_secret = "vault🙂";
+        let builder = native_window("Secure input").size(360, 120).stateful_view(
+            crate::ZsPassword::from(initial_secret),
+            move |value| {
+                crate::password_box(value)
+                    .id(widget)
+                    .height(crate::Dp::new(36.0))
+                    .reveal_mode(crate::ZsPasswordRevealMode::Peek)
+                    .on_password_change(Msg::Changed)
+            },
+            |value, message, _cx| match message {
+                Msg::Changed(next) => *value = next,
+            },
+        );
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("password box should expose interaction geometry");
+        let input = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::PasswordBox)
+            .expect("password box should expose an input target");
+        let reveal = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::PasswordBoxReveal)
+            .expect("peek mode should expose a reveal target");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: reveal.bounds.x - 4,
+            y: input.bounds.y + input.bounds.height / 2,
+        });
+
+        let typed = runtime.dispatch_text_input("中");
+        let typed_secret = "vault🙂中";
+        assert!(typed.handled);
+        assert_eq!(typed.message_count, 1);
+        assert_eq!(
+            runtime
+                .widget_password_value(widget)
+                .map(|value| value.as_str().to_owned())
+                .as_deref(),
+            Some(typed_secret)
+        );
+        assert_eq!(
+            runtime.focused_text_input_value().as_deref(),
+            Some("•••••••")
+        );
+        assert!(!format!("{typed:?}").contains(typed_secret));
+        assert!(!serde_json::to_string(
+            typed
+                .redraw_plan
+                .as_ref()
+                .expect("typing should redraw the password box")
+        )
+        .expect("password redraw should serialize redacted")
+        .contains(typed_secret));
+
+        let preedit = runtime.dispatch_ime_preedit("文", Some((1, 1)));
+        assert_eq!(preedit.ime_preedit_text.as_deref(), Some("•"));
+        assert!(!format!("{preedit:?}").contains('文'));
+        assert!(preedit.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(
+                |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "••••••••"),
+            )
+        }));
+        let committed = runtime.dispatch_ime_commit("文");
+        let committed_secret = "vault🙂中文";
+        assert!(committed.handled);
+        assert_eq!(committed.message_count, 1);
+        assert_eq!(
+            runtime.focused_text_input_value().as_deref(),
+            Some("••••••••")
+        );
+
+        let reveal_point = Point {
+            x: reveal.bounds.x + reveal.bounds.width / 2,
+            y: reveal.bounds.y + reveal.bounds.height / 2,
+        };
+        let pressed = runtime.dispatch_pointer_down(reveal_point, false);
+        let pressed_plan = pressed
+            .redraw_plan
+            .as_ref()
+            .expect("pressing reveal should redraw clear text at the renderer boundary");
+        assert!(pressed_plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::SecureText(command) if command.character_count() == 8
+        )));
+        assert!(!format!("{pressed_plan:?}").contains(committed_secret));
+        assert!(!serde_json::to_string(pressed_plan)
+            .expect("peek draw plan should serialize redacted")
+            .contains(committed_secret));
+
+        let released = runtime.dispatch_pointer_up(reveal_point);
+        let released_plan = released
+            .redraw_plan
+            .as_ref()
+            .expect("releasing reveal should restore the mask");
+        assert!(released_plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "••••••••"
+        )));
+        assert!(!released_plan
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::SecureText(_))));
     }
 
     #[cfg(all(feature = "label", feature = "textbox"))]

@@ -84,6 +84,8 @@ pub mod native_smoke;
 mod native_text_edit;
 #[cfg(feature = "paged-list")]
 pub mod paged_list;
+#[cfg(feature = "password-box")]
+pub mod password_box;
 pub mod product_adapter;
 pub mod render_protocol;
 pub mod settings;
@@ -363,6 +365,12 @@ pub use paged_list::{
     paged_list, Page, PageIndex, PageLoadError, PageRequest, PagedDataSource, PagedItem,
     PagedListAnchor, PagedListConfig, PagedListSnapshot, PagedListState,
 };
+#[cfg(feature = "password-box")]
+pub use password_box::{
+    mask_password, zs_password_box_native_draw_plan, zs_password_box_render_plan, ZsPassword,
+    ZsPasswordBoxMetrics, ZsPasswordBoxPlatformStyle, ZsPasswordBoxRenderPlan,
+    ZsPasswordRevealMode,
+};
 pub use product_adapter::{
     product_adapter_reuse_checklist, product_adapter_runtime_smoke_example_names,
     required_product_adapter_surface_names, required_product_adapter_task_names,
@@ -376,6 +384,8 @@ pub use product_adapter::{
     PRODUCT_ADAPTER_SMOKE_COMMAND, REQUIRED_PRODUCT_ADAPTER_SURFACES,
     REQUIRED_PRODUCT_ADAPTER_TASKS, ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
 };
+#[cfg(feature = "password-box")]
+pub use render_protocol::NativeDrawSecureTextCommand;
 pub use render_protocol::{
     required_native_draw_command_operation_names, Color, ColorRole, HorizontalAlign,
     NativeDrawCommand, NativeDrawCommandOperation, NativeDrawCommandSink, NativeDrawFill,
@@ -427,6 +437,8 @@ pub use view::grid;
 pub use view::list;
 #[cfg(feature = "number-box")]
 pub use view::number_box;
+#[cfg(feature = "password-box")]
+pub use view::password_box;
 #[cfg(feature = "radio")]
 pub use view::radio_button;
 #[cfg(feature = "scroll")]

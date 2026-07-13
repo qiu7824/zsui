@@ -156,6 +156,27 @@ execute each emitted `UiCommand` without failure or an unhandled command, and
 finish with a nonzero live-view revision. AppKit and GTK4 share the typed
 draft/commit path but still require target-machine interaction evidence.
 
+The dedicated secure PasswordBox smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,password-box,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-password-box --password-box-view
+```
+
+It focuses the self-drawn field, inserts Unicode-safe committed text through
+the real Win32 route, then presses and releases the trailing reveal target.
+Windows follows the official [PasswordBox](https://learn.microsoft.com/en-us/uwp/api/windows.ui.xaml.controls.passwordbox?view=winrt-26100)
+and [PasswordRevealMode](https://learn.microsoft.com/en-us/uwp/api/windows.ui.xaml.controls.passwordbox.passwordrevealmode?view=winrt-26100)
+press-and-hold Peek model. macOS defaults to a hidden field following
+[NSSecureTextField](https://developer.apple.com/documentation/appkit/nssecuretextfield),
+while GTK follows [GtkPasswordEntry](https://docs.gtk.org/gtk4/class.PasswordEntry.html)
+and keeps its optional peek affordance disabled by default. The shared draw
+plan, event JSON, IME report and smoke artifacts must not contain the secret;
+only the renderer receives it at the final platform text call. The Windows
+artifact must expose two hit targets, capture `window.png`, handle four text
+inputs and both pointer pairs, execute all four typed `UiCommand` values, and
+finish with no command errors. Alt+F8, caps-lock/accessibility signaling,
+locked memory and target-machine AppKit/GTK evidence remain explicit gaps.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

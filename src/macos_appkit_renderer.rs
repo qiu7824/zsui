@@ -722,6 +722,15 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                 path.fill();
             }
             NativeDrawCommand::Text(command) => self.draw_text(command),
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(command) => {
+                let rendered = command.rendered_text();
+                self.draw_text(&NativeDrawTextCommand::new(
+                    rendered.as_str(),
+                    command.bounds,
+                    command.style,
+                ));
+            }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
             NativeDrawCommand::PushClip { rect } => {
                 NSGraphicsContext::saveGraphicsState_class();

@@ -10,6 +10,7 @@ use zsui::checkbox;
     all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
+    all(feature = "password-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "progress", feature = "label"),
     all(feature = "combo", feature = "label"),
@@ -38,6 +39,7 @@ use zsui::toggle_button;
     all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
+    all(feature = "password-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
@@ -69,6 +71,8 @@ use zsui::{
 };
 #[cfg(feature = "number-box")]
 use zsui::{number_box, ZsNumberRange};
+#[cfg(feature = "password-box")]
+use zsui::{password_box, ZsPassword, ZsPasswordRevealMode};
 #[cfg(feature = "progress")]
 use zsui::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
@@ -82,6 +86,7 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
     all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
+    all(feature = "password-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
@@ -116,6 +121,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--slider-view" || arg == "--slider"),
         args.iter()
             .any(|arg| arg == "--number-box-view" || arg == "--number-box"),
+        args.iter()
+            .any(|arg| arg == "--password-box-view" || arg == "--password-box"),
         args.iter()
             .any(|arg| arg == "--radio-view" || arg == "--radio"),
         args.iter()
@@ -153,6 +160,7 @@ fn run_smoke(
     include_scroll_view: bool,
     include_slider_view: bool,
     include_number_box_view: bool,
+    include_password_box_view: bool,
     include_radio_view: bool,
     include_progress_view: bool,
     include_combo_view: bool,
@@ -184,6 +192,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "number-box", feature = "label")))]
     if include_number_box_view {
         return Err("--number-box-view requires the number-box and label features".to_string());
+    }
+    #[cfg(not(all(feature = "password-box", feature = "label")))]
+    if include_password_box_view {
+        return Err("--password-box-view requires the password-box and label features".to_string());
     }
     #[cfg(not(all(feature = "radio", feature = "label")))]
     if include_radio_view {
@@ -312,6 +324,13 @@ fn run_smoke(
             .native_view_text_input("42.5")
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "password-box", feature = "label"))]
+    if include_password_box_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 420, y: 84 })
+            .native_view_text_input("ZSUI")
+            .native_view_click(Point { x: 480, y: 84 });
+    }
     #[cfg(all(feature = "radio", feature = "label"))]
     if include_radio_view {
         smoke_options = smoke_options
@@ -383,6 +402,8 @@ fn run_smoke(
         attach_toggle_button_view(builder)
     } else if include_number_box_view {
         attach_number_box_view(builder)
+    } else if include_password_box_view {
+        attach_password_box_view(builder)
     } else if include_slider_view {
         attach_slider_view(builder)
     } else if include_radio_view {
@@ -587,6 +608,45 @@ fn attach_number_box_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "number-box", feature = "label")))]
 fn attach_number_box_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(all(feature = "password-box", feature = "label"))]
+#[derive(Clone)]
+enum PasswordBoxSmokeMsg {
+    Changed(ZsPassword),
+}
+
+#[cfg(all(feature = "password-box", feature = "label"))]
+fn attach_password_box_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        ZsPassword::from("A🙂"),
+        |value| {
+            column([
+                text::<PasswordBoxSmokeMsg>("ZSUI PasswordBox Smoke").height(zsui::Dp::new(28.0)),
+                password_box(value)
+                    .id(WidgetId::new(20))
+                    .height(zsui::Dp::new(36.0))
+                    .reveal_mode(ZsPasswordRevealMode::Peek)
+                    .on_password_change(PasswordBoxSmokeMsg::Changed),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+            .bg(zsui::ThemeColorToken::Surface)
+        },
+        |value, message, cx| match message {
+            PasswordBoxSmokeMsg::Changed(next) => {
+                *value = next;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.password_box_changed",
+                )));
+            }
+        },
+    )
+}
+
+#[cfg(not(all(feature = "password-box", feature = "label")))]
+fn attach_password_box_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

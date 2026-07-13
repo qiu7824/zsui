@@ -14,9 +14,11 @@ use std::{
 use crate::native::NativeComboTypeAheadState;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
+    native_text_visual_target,
 };
 #[cfg(any(
     feature = "date-picker",
+    feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button"
@@ -25,8 +27,8 @@ use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
 use crate::native_text_edit::{
-    delete_backward, delete_forward, insert_text, move_selection, set_pointer_selection,
-    NativeTextDragState, NativeTextEditState, NativeTextMovement,
+    apply_text_input, move_selection, set_pointer_selection, NativeTextDragState,
+    NativeTextEditState, NativeTextMovement,
 };
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
@@ -1801,6 +1803,7 @@ pub struct WindowsWin32ViewInputRoute {
     slider_drag: Option<crate::WidgetId>,
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
@@ -1808,11 +1811,14 @@ pub struct WindowsWin32ViewInputRoute {
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
     ))]
     pointer_pressed: Option<NativePointerVisualKey>,
+    #[cfg(feature = "password-box")]
+    password_peek: Option<crate::WidgetId>,
     surface: Option<crate::Rect>,
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
@@ -1842,6 +1848,7 @@ impl WindowsWin32ViewInputRoute {
             slider_drag: None,
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -1849,11 +1856,14 @@ impl WindowsWin32ViewInputRoute {
             pointer_hover: None,
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
             ))]
             pointer_pressed: None,
+            #[cfg(feature = "password-box")]
+            password_peek: None,
             surface,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
@@ -1879,6 +1889,7 @@ impl WindowsWin32ViewInputRoute {
             slider_drag: None,
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -1886,11 +1897,14 @@ impl WindowsWin32ViewInputRoute {
             pointer_hover: None,
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
             ))]
             pointer_pressed: None,
+            #[cfg(feature = "password-box")]
+            password_peek: None,
             surface: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
@@ -1935,6 +1949,10 @@ impl WindowsWin32ViewInputRoute {
         };
 
         report.handled = true;
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBoxReveal {
+            return report;
+        }
         #[cfg(feature = "combo")]
         if matches!(
             target.kind,
@@ -1965,6 +1983,7 @@ impl WindowsWin32ViewInputRoute {
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -1977,6 +1996,14 @@ impl WindowsWin32ViewInputRoute {
         let Some(target) = target else {
             return report;
         };
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBoxReveal {
+            self.text_drag = None;
+            self.password_peek = Some(target.widget);
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+            return report;
+        }
         #[cfg(feature = "slider")]
         if target.kind == crate::ViewHitTargetKind::Slider {
             self.text_drag = None;
@@ -1995,12 +2022,15 @@ impl WindowsWin32ViewInputRoute {
         }
 
         self.focus_target(target, &mut report);
-        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(target.widget)
+            .unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
-        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
         self.text_edit = Some(state);
@@ -2030,6 +2060,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2040,6 +2071,22 @@ impl WindowsWin32ViewInputRoute {
                 .hit_target_at(point)
                 .and_then(native_pointer_visual_key);
             self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
+        }
+        #[cfg(feature = "password-box")]
+        if let Some(widget) = self.password_peek {
+            let still_peeking = self
+                .interaction_plan
+                .hit_target_at(point)
+                .is_some_and(|target| {
+                    target.widget == widget
+                        && target.kind == crate::ViewHitTargetKind::PasswordBoxReveal
+                });
+            if !still_peeking {
+                self.password_peek = None;
+                report.handled = true;
+                self.rebuild_pending_draw_plan();
+            }
+            return report;
         }
         let Some(drag) = self.text_drag else {
             #[cfg(feature = "slider")]
@@ -2057,12 +2104,15 @@ impl WindowsWin32ViewInputRoute {
             self.text_drag = None;
             return report;
         };
-        let value = self.widget_text_value(drag.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(drag.widget)
+            .unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == drag.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
-        let index = native_text_index_for_point(target, &value, point, self.dpi);
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
         self.text_edit = Some(state);
         report.handled = true;
@@ -2081,6 +2131,22 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn dispatch_pointer_up(&mut self, point: crate::Point) -> WindowsWin32ViewInputDispatchReport {
+        #[cfg(feature = "password-box")]
+        if self.password_peek.take().is_some() {
+            let mut report = WindowsWin32ViewInputDispatchReport {
+                handled: true,
+                hit_target_count: self.hit_target_count(),
+                pointer_up_count: 1,
+                ..WindowsWin32ViewInputDispatchReport::default()
+            };
+            self.rebuild_pending_draw_plan();
+            let hovered = self
+                .interaction_plan
+                .hit_target_at(point)
+                .and_then(native_pointer_visual_key);
+            self.update_pointer_visual_state(hovered, None, &mut report);
+            return report;
+        }
         if self.text_drag.is_some() {
             let mut report = self.dispatch_pointer_move(point);
             report.pointer_move_count = 0;
@@ -2095,6 +2161,7 @@ impl WindowsWin32ViewInputRoute {
             report.events.push("win32_view_text_pointer_up".to_string());
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -2116,6 +2183,7 @@ impl WindowsWin32ViewInputRoute {
                 .push("win32_view_slider_pointer_up".to_string());
             #[cfg(any(
                 feature = "date-picker",
+                feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button"
@@ -2127,6 +2195,7 @@ impl WindowsWin32ViewInputRoute {
         report.pointer_up_count = 1;
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2143,6 +2212,8 @@ impl WindowsWin32ViewInputRoute {
 
     fn cancel_pointer_drag(&mut self) -> WindowsWin32ViewInputDispatchReport {
         let had_drag = self.text_drag.take().is_some();
+        #[cfg(feature = "password-box")]
+        let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
         let report = WindowsWin32ViewInputDispatchReport {
@@ -2156,6 +2227,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2167,6 +2239,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(not(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2177,12 +2250,17 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn dispatch_pointer_leave(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        #[cfg(feature = "password-box")]
+        let had_password_peek = self.password_peek.take().is_some();
         let report = WindowsWin32ViewInputDispatchReport {
+            #[cfg(feature = "password-box")]
+            handled: had_password_peek,
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2194,6 +2272,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(not(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -2308,62 +2387,67 @@ impl WindowsWin32ViewInputRoute {
             return report;
         }
 
+        #[cfg(feature = "password-box")]
+        let mut password = (target.kind == crate::ViewHitTargetKind::PasswordBox)
+            .then(|| self.widget_password_value(widget).unwrap_or_default());
+        #[cfg(feature = "password-box")]
+        let mut value = zeroize::Zeroizing::new(
+            password
+                .as_ref()
+                .map(|password| password.as_str().to_owned())
+                .unwrap_or_else(|| self.widget_text_value(widget).unwrap_or_default()),
+        );
+        #[cfg(not(feature = "password-box"))]
         let mut value = self.widget_text_value(widget).unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
         state.clamp(&value);
-        let mut accepted = 0;
-        let mut text_changed = false;
-        let mut selection_changed = false;
+        let multiline = target.kind == crate::ViewHitTargetKind::TextEditor;
         let mut previous_was_carriage_return = false;
-        for ch in text.chars() {
-            let edit = match ch {
-                '\u{8}' => delete_backward(&mut value, &mut state.selection),
-                '\u{7f}' => delete_forward(&mut value, &mut state.selection),
-                '\r' if target.kind == crate::ViewHitTargetKind::TextEditor => {
-                    previous_was_carriage_return = true;
-                    insert_text(&mut value, &mut state.selection, "\n")
-                }
-                '\n' if target.kind == crate::ViewHitTargetKind::TextEditor
-                    && !previous_was_carriage_return =>
-                {
-                    insert_text(&mut value, &mut state.selection, "\n")
-                }
-                ch if !ch.is_control() => {
-                    let mut buffer = [0_u8; 4];
-                    insert_text(
-                        &mut value,
-                        &mut state.selection,
-                        ch.encode_utf8(&mut buffer),
-                    )
-                }
-                _ => Default::default(),
-            };
-            accepted += usize::from(edit.handled);
-            text_changed |= edit.text_changed;
-            selection_changed |= edit.selection_changed;
-            if ch != '\r' {
-                previous_was_carriage_return = false;
-            }
-        }
+        let accepted = text
+            .chars()
+            .filter(|ch| {
+                let accepted = matches!(*ch, '\u{8}' | '\u{7f}')
+                    || (multiline
+                        && (*ch == '\r' || (*ch == '\n' && !previous_was_carriage_return)))
+                    || !ch.is_control();
+                previous_was_carriage_return = *ch == '\r';
+                accepted
+            })
+            .count();
+        let edit = apply_text_input(&mut value, &mut state.selection, text, multiline);
 
-        if accepted == 0 {
+        if !edit.handled {
             return report;
         }
 
         self.text_edit = Some(state);
         report.text_input_count = accepted;
-        report.text_selection_change_count = usize::from(selection_changed);
+        report.text_selection_change_count = usize::from(edit.selection_changed);
         report.text_caret = Some(state.selection.caret);
         report
             .events
             .push(format!("win32_view_text_changed:{}", widget.0));
-        if text_changed {
+        if edit.text_changed {
             report.event_count = 1;
+            #[cfg(feature = "password-box")]
+            if let Some(password) = &mut password {
+                *password.as_string_mut() = std::mem::take(&mut *value);
+                self.dispatch_event(
+                    crate::ViewEvent::PasswordChanged {
+                        widget,
+                        value: password.clone(),
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+            #[cfg(feature = "password-box")]
+            let value = std::mem::take(&mut *value);
             self.dispatch_event(crate::ViewEvent::TextChanged { widget, value }, &mut report);
-        } else if selection_changed {
+        } else if edit.selection_changed {
             self.rebuild_pending_draw_plan();
         }
         report
@@ -2458,7 +2542,7 @@ impl WindowsWin32ViewInputRoute {
                 _ => None,
             };
             if let Some(movement) = movement {
-                let value = self.widget_text_value(widget).unwrap_or_default();
+                let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
                     .filter(|state| state.widget == widget)
@@ -3067,6 +3151,10 @@ impl WindowsWin32ViewInputRoute {
             self.dispatch_event(crate::ViewEvent::NumberBoxCommit { widget }, report);
         }
         self.text_drag = None;
+        #[cfg(feature = "password-box")]
+        {
+            self.password_peek = None;
+        }
         #[cfg(feature = "combo")]
         self.combo_type_ahead.reset();
         #[cfg(feature = "slider")]
@@ -3095,8 +3183,13 @@ impl WindowsWin32ViewInputRoute {
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         self.dismiss_popup_overlays_except(None, &mut report);
+        #[cfg(feature = "password-box")]
+        {
+            self.password_peek = None;
+        }
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -3141,7 +3234,9 @@ impl WindowsWin32ViewInputRoute {
             self.text_drag = None;
             return;
         }
-        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let value = self
+            .widget_display_text_value(target.widget)
+            .unwrap_or_default();
         let mut state = self
             .text_edit
             .filter(|state| state.widget == target.widget)
@@ -3473,6 +3568,26 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "password-box")]
+    fn widget_password_value(&self, widget: crate::WidgetId) -> Option<crate::ZsPassword> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_password_value(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_password_value(widget).cloned())
+            })
+    }
+
+    fn widget_display_text_value(&self, widget: crate::WidgetId) -> Option<String> {
+        #[cfg(feature = "password-box")]
+        if let Some(password) = self.widget_password_value(widget) {
+            return Some(crate::mask_password(password.as_str()));
+        }
+        self.widget_text_value(widget)
+    }
+
     fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
         self.live_view
             .as_ref()
@@ -3741,6 +3856,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "date-picker",
+            feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button"
@@ -3752,8 +3868,11 @@ impl WindowsWin32ViewInputRoute {
             self.pointer_pressed,
             self.dpi,
         );
+        #[cfg(feature = "password-box")]
+        self.compose_password_peek(&mut plan);
         if let (Some(target), Some(state)) = (self.focused_target(), self.text_edit) {
-            if let Some(value) = self.widget_text_value(target.widget) {
+            if let Some(value) = self.widget_display_text_value(target.widget) {
+                let target = native_text_visual_target(target, &self.interaction_plan);
                 decorate_native_text_edit_visuals(
                     &mut plan,
                     target,
@@ -3773,8 +3892,36 @@ impl WindowsWin32ViewInputRoute {
         true
     }
 
+    #[cfg(feature = "password-box")]
+    fn compose_password_peek(&self, plan: &mut NativeDrawPlan) {
+        let Some(widget) = self.password_peek else {
+            return;
+        };
+        let Some(target) = self.interaction_plan.hit_target_for_widget(widget) else {
+            return;
+        };
+        let Some(value) = self.widget_password_value(widget) else {
+            return;
+        };
+        for command in plan.commands.iter_mut().rev() {
+            let crate::NativeDrawCommand::Text(text) = command else {
+                continue;
+            };
+            if !crate::native_input_visuals::rect_contains(target.bounds, text.bounds) {
+                continue;
+            }
+            let bounds = text.bounds;
+            let style = text.style;
+            *command = crate::NativeDrawCommand::SecureText(
+                crate::NativeDrawSecureTextCommand::new(value, bounds, style, true),
+            );
+            break;
+        }
+    }
+
     #[cfg(any(
         feature = "date-picker",
+        feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button"
@@ -6396,6 +6543,95 @@ mod tests {
         assert_eq!(aggregate.text_input_count, 2);
         assert_eq!(aggregate.ui_command_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(feature = "password-box")]
+    fn window_view_input_route_keeps_password_text_and_peek_plans_redacted() {
+        fn password_changed(_: crate::ZsPassword) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.password_changed"))
+        }
+
+        let widget = crate::WidgetId::new(1010);
+        let initial_secret = "A🙂";
+        let mut view = crate::password_box(initial_secret)
+            .id(widget)
+            .height(crate::Dp::new(36.0))
+            .reveal_mode(crate::ZsPasswordRevealMode::Peek)
+            .on_password_change(password_changed);
+        let mut layout = crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 36,
+            },
+            crate::Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let interaction = view.interaction_plan();
+        let input = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::PasswordBox)
+            .expect("password box should expose a Win32 input target");
+        let reveal = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::PasswordBoxReveal)
+            .expect("password box should expose a Win32 reveal target");
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+        route.dispatch_click(crate::Point {
+            x: input.bounds.x + 2,
+            y: input.bounds.y + input.bounds.height / 2,
+        });
+
+        let typed = route.dispatch_text_input("中");
+        let current_secret = "A🙂中";
+        assert_eq!(typed.text_input_count, 1);
+        assert_eq!(
+            typed.ui_command_ids,
+            vec!["zsui.test.win32.password_changed"]
+        );
+        assert_eq!(
+            route
+                .widget_password_value(widget)
+                .map(|value| value.as_str().to_owned())
+                .as_deref(),
+            Some(current_secret)
+        );
+        assert!(!format!("{typed:?}").contains(current_secret));
+        let _ = route.take_pending_draw_plan();
+
+        let reveal_point = crate::Point {
+            x: reveal.bounds.x + reveal.bounds.width / 2,
+            y: reveal.bounds.y + reveal.bounds.height / 2,
+        };
+        let pressed = route.dispatch_pointer_down(reveal_point, false);
+        let pressed_plan = route
+            .take_pending_draw_plan()
+            .expect("Win32 reveal press should rebuild the draw plan");
+        assert!(pressed.handled);
+        assert!(pressed_plan.commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::SecureText(command) if command.character_count() == 3
+        )));
+        assert!(!format!("{pressed_plan:?}").contains(current_secret));
+        assert!(!serde_json::to_string(&pressed_plan)
+            .expect("Win32 peek plan should serialize redacted")
+            .contains(current_secret));
+
+        let released = route.dispatch_pointer_up(reveal_point);
+        let released_plan = route
+            .take_pending_draw_plan()
+            .expect("Win32 reveal release should restore the mask");
+        assert!(released.handled);
+        assert!(released_plan.commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Text(text) if text.text == "•••"
+        )));
     }
 
     #[test]

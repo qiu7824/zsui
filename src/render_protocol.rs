@@ -241,6 +241,50 @@ pub struct NativeDrawTextCommand {
     pub style: SemanticTextStyle,
 }
 
+#[cfg(feature = "password-box")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeDrawSecureTextCommand {
+    #[serde(skip, default)]
+    value: crate::ZsPassword,
+    pub bounds: Rect,
+    pub style: SemanticTextStyle,
+    pub revealed: bool,
+}
+
+#[cfg(feature = "password-box")]
+impl NativeDrawSecureTextCommand {
+    pub fn new(
+        value: crate::ZsPassword,
+        bounds: Rect,
+        style: SemanticTextStyle,
+        revealed: bool,
+    ) -> Self {
+        Self {
+            value,
+            bounds,
+            style,
+            revealed,
+        }
+    }
+
+    pub fn character_count(&self) -> usize {
+        self.value.char_count()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn rendered_text(&self) -> zeroize::Zeroizing<String> {
+        zeroize::Zeroizing::new(if self.revealed {
+            self.value.as_str().to_owned()
+        } else {
+            crate::mask_password(self.value.as_str())
+        })
+    }
+
+    pub(crate) fn replace_value(&mut self, value: crate::ZsPassword) {
+        self.value = value;
+    }
+}
+
 impl NativeDrawTextCommand {
     pub fn new(text: impl Into<String>, bounds: Rect, style: SemanticTextStyle) -> Self {
         Self {
@@ -304,6 +348,8 @@ pub enum NativeDrawCommand {
         radius: i32,
     },
     Text(NativeDrawTextCommand),
+    #[cfg(feature = "password-box")]
+    SecureText(NativeDrawSecureTextCommand),
     Icon(NativeDrawIconCommand),
     PushClip {
         rect: Rect,
@@ -319,6 +365,8 @@ impl NativeDrawCommand {
             Self::RoundRect { .. } => NativeDrawCommandOperation::RoundRect,
             Self::RoundFill { .. } => NativeDrawCommandOperation::RoundFill,
             Self::Text(_) => NativeDrawCommandOperation::DrawText,
+            #[cfg(feature = "password-box")]
+            Self::SecureText(_) => NativeDrawCommandOperation::DrawText,
             Self::Icon(_) => NativeDrawCommandOperation::DrawIcon,
             Self::PushClip { .. } => NativeDrawCommandOperation::PushClip,
             Self::PopClip => NativeDrawCommandOperation::PopClip,

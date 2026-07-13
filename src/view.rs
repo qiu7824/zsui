@@ -628,6 +628,12 @@ pub enum ViewNodeKind<Msg> {
         multiline: bool,
         on_change: Option<fn(String) -> Msg>,
     },
+    #[cfg(feature = "password-box")]
+    PasswordBox {
+        value: crate::ZsPassword,
+        reveal_mode: crate::ZsPasswordRevealMode,
+        on_change: Option<fn(crate::ZsPassword) -> Msg>,
+    },
     #[cfg(feature = "checkbox")]
     Checkbox {
         label: String,
@@ -905,6 +911,22 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_change(mut self, message: fn(String) -> Msg) -> Self {
         if let ViewNodeKind::Textbox { on_change, .. } = &mut self.kind {
             *on_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn on_password_change(mut self, message: fn(crate::ZsPassword) -> Msg) -> Self {
+        if let ViewNodeKind::PasswordBox { on_change, .. } = &mut self.kind {
+            *on_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn reveal_mode(mut self, mode: crate::ZsPasswordRevealMode) -> Self {
+        if let ViewNodeKind::PasswordBox { reveal_mode, .. } = &mut self.kind {
+            *reveal_mode = mode;
         }
         self
     }
@@ -1238,6 +1260,15 @@ pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
     })
 }
 
+#[cfg(feature = "password-box")]
+pub fn password_box<Msg>(value: impl Into<crate::ZsPassword>) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::PasswordBox {
+        value: value.into(),
+        reveal_mode: crate::ZsPasswordRevealMode::platform_default(),
+        on_change: None,
+    })
+}
+
 #[cfg(feature = "checkbox")]
 pub fn checkbox<Msg>(label: impl Into<String>, checked: bool) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Checkbox {
@@ -1481,6 +1512,12 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: String,
     },
+    #[cfg(feature = "password-box")]
+    PasswordChanged {
+        widget: WidgetId,
+        #[serde(skip, default)]
+        value: crate::ZsPassword,
+    },
     Toggled {
         widget: WidgetId,
         checked: bool,
@@ -1601,6 +1638,10 @@ pub enum ViewHitTargetKind {
     ToggleButton,
     Textbox,
     TextEditor,
+    #[cfg(feature = "password-box")]
+    PasswordBox,
+    #[cfg(feature = "password-box")]
+    PasswordBoxReveal,
     Checkbox,
     Toggle,
     #[cfg(feature = "slider")]
@@ -1784,6 +1825,10 @@ impl ViewInteractionPlan {
 
 impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
+        #[cfg(feature = "password-box")]
+        if self.kind == ViewHitTargetKind::PasswordBoxReveal {
+            return false;
+        }
         #[cfg(feature = "number-box")]
         if matches!(
             self.kind,
@@ -1815,6 +1860,8 @@ impl ViewHitTarget {
 impl ViewHitTargetKind {
     pub(crate) fn accepts_text_input(self) -> bool {
         let accepts = matches!(self, Self::Textbox | Self::TextEditor);
+        #[cfg(feature = "password-box")]
+        let accepts = accepts || self == Self::PasswordBox;
         #[cfg(feature = "number-box")]
         let accepts = accepts || self == Self::NumberBox;
         accepts
@@ -1919,6 +1966,8 @@ trait LiveViewDriver: Send {
     fn interaction_plan(&self) -> ViewInteractionPlan;
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
+    #[cfg(feature = "password-box")]
+    fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword>;
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "radio")]
     fn widget_radio_is_tab_stop(&self, widget: WidgetId) -> Option<bool>;
@@ -1997,6 +2046,11 @@ impl SharedLiveViewRuntime {
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
         self.lock().widget_text_value(widget)
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword> {
+        self.lock().widget_password_value(widget)
     }
 
     pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
@@ -2226,6 +2280,11 @@ where
 
     fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
         self.view.widget_text_value(widget).map(str::to_string)
+    }
+
+    #[cfg(feature = "password-box")]
+    fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword> {
+        self.view.widget_password_value(widget).cloned()
     }
 
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
@@ -2841,6 +2900,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(next_value.clone()));
                     }
                 }
+                #[cfg(feature = "password-box")]
+                (
+                    ViewNodeKind::PasswordBox {
+                        value, on_change, ..
+                    },
+                    ViewEvent::PasswordChanged {
+                        value: next_value, ..
+                    },
+                ) => {
+                    *value = next_value.clone();
+                    if let Some(message) = on_change {
+                        cx.emit(message(next_value.clone()));
+                    }
+                }
                 #[cfg(feature = "checkbox")]
                 (
                     ViewNodeKind::Checkbox {
@@ -3202,6 +3275,24 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     text_style,
                 )));
             }
+            #[cfg(feature = "password-box")]
+            ViewNodeKind::PasswordBox {
+                value, reveal_mode, ..
+            } => {
+                let plan = crate::zs_password_box_render_plan(
+                    bounds,
+                    *reveal_mode,
+                    !value.is_empty(),
+                    crate::ZsPasswordBoxPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in
+                    crate::zs_password_box_native_draw_plan(&plan, value, *reveal_mode, false)
+                        .commands
+                {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { label, checked, .. } => {
                 let check_bounds = Rect {
@@ -3521,6 +3612,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::Click { widget })
             | (Some(id), ViewEvent::TextChanged { widget, .. })
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
+            #[cfg(feature = "password-box")]
+            (Some(id), ViewEvent::PasswordChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "slider")]
             (Some(id), ViewEvent::SliderChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "number-box")]
@@ -3582,6 +3675,18 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_text_value(widget))
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn widget_password_value(&self, widget: WidgetId) -> Option<&crate::ZsPassword> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::PasswordBox { value, .. } = &self.kind {
+                return Some(value);
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_password_value(widget))
     }
 
     pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
@@ -4061,6 +4166,34 @@ impl<Msg> ViewNode<Msg> {
             }
         }
 
+        #[cfg(feature = "password-box")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::PasswordBox {
+                value, reveal_mode, ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan = crate::zs_password_box_render_plan(
+                bounds,
+                *reveal_mode,
+                !value.is_empty(),
+                crate::ZsPasswordBoxPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            if let Some(bounds) = plan
+                .reveal_button
+                .and_then(|bounds| clipped_rect(bounds, clip))
+            {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::PasswordBoxReveal,
+                ));
+            }
+        }
+
         #[cfg(feature = "scroll")]
         let clips_children = matches!(self.kind, ViewNodeKind::Scroll { .. });
         #[cfg(all(feature = "scroll", feature = "virtual-list"))]
@@ -4407,6 +4540,8 @@ impl<Msg> ViewNode<Msg> {
                     ViewHitTargetKind::Textbox
                 }
             }
+            #[cfg(feature = "password-box")]
+            ViewNodeKind::PasswordBox { .. } => ViewHitTargetKind::PasswordBox,
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { .. } => ViewHitTargetKind::Checkbox,
             #[cfg(feature = "toggle")]
@@ -4969,6 +5104,7 @@ mod tests {
         feature = "button",
         feature = "toggle-button",
         feature = "textbox",
+        feature = "password-box",
         feature = "checkbox",
         feature = "toggle",
         feature = "slider",
@@ -4986,6 +5122,8 @@ mod tests {
         SaveClicked,
         #[cfg(feature = "textbox")]
         NameChanged(String),
+        #[cfg(feature = "password-box")]
+        PasswordChanged(crate::ZsPassword),
         #[cfg(any(feature = "checkbox", feature = "toggle", feature = "toggle-button"))]
         DarkModeChanged(bool),
         #[cfg(feature = "slider")]
@@ -5399,6 +5537,68 @@ mod tests {
         assert_eq!(
             events.into_messages(),
             vec![Msg::NameChanged("ZSUI".to_string())]
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "password-box")]
+    fn password_box_routes_redacted_value_and_exposes_a_separate_reveal_target() {
+        let widget = WidgetId::new(3);
+        let secret = "vault🙂";
+        let next_secret = "next中";
+        let mut view = password_box(secret)
+            .id(widget)
+            .height(Dp::new(36.0))
+            .reveal_mode(crate::ZsPasswordRevealMode::Peek)
+            .on_password_change(Msg::PasswordChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 36,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let interaction = view.interaction_plan();
+
+        assert_eq!(
+            view.widget_password_value(widget)
+                .map(crate::ZsPassword::as_str),
+            Some(secret)
+        );
+        assert!(interaction.hit_targets.iter().any(|target| {
+            target.widget == widget && target.kind == ViewHitTargetKind::PasswordBox
+        }));
+        assert!(interaction.hit_targets.iter().any(|target| {
+            target.widget == widget && target.kind == ViewHitTargetKind::PasswordBoxReveal
+        }));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "••••••"
+        )));
+        assert!(!format!("{:?}", paint.plan()).contains(secret));
+        assert!(!serde_json::to_string(paint.plan())
+            .expect("password draw plan should serialize redacted")
+            .contains(secret));
+
+        let event = ViewEvent::PasswordChanged {
+            widget,
+            value: crate::ZsPassword::from(next_secret),
+        };
+        assert!(!format!("{event:?}").contains(next_secret));
+        assert!(!serde_json::to_string(&event)
+            .expect("password event should serialize redacted")
+            .contains(next_secret));
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &event);
+
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::PasswordChanged(crate::ZsPassword::from(next_secret))]
         );
     }
 

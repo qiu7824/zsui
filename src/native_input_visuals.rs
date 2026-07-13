@@ -10,6 +10,30 @@ pub(crate) struct NativeTextVisualGeometry {
     pub selections: Vec<Rect>,
 }
 
+pub(crate) fn native_text_visual_target(
+    target: ViewHitTarget,
+    interaction: &ViewInteractionPlan,
+) -> ViewHitTarget {
+    #[cfg(feature = "password-box")]
+    {
+        let mut target = target;
+        if target.kind == ViewHitTargetKind::PasswordBox {
+            if let Some(reveal) = interaction.hit_targets.iter().find(|candidate| {
+                candidate.widget == target.widget
+                    && candidate.kind == ViewHitTargetKind::PasswordBoxReveal
+            }) {
+                target.bounds.width = reveal.bounds.x.saturating_sub(target.bounds.x).max(0);
+            }
+        }
+        target
+    }
+    #[cfg(not(feature = "password-box"))]
+    {
+        let _ = interaction;
+        target
+    }
+}
+
 pub(crate) fn native_text_visual_geometry(
     target: ViewHitTarget,
     value: &str,
@@ -146,9 +170,13 @@ pub(crate) fn decorate_native_text_edit_visuals(
 ) -> NativeTextVisualGeometry {
     let geometry = native_text_visual_geometry(target, value, selection, dpi);
     if !geometry.selections.is_empty() {
-        let text_index = plan.commands.iter().rposition(|command| {
-            matches!(command, NativeDrawCommand::Text(text)
-                if text.text == value && rect_contains(target.bounds, text.bounds))
+        let text_index = plan.commands.iter().rposition(|command| match command {
+            NativeDrawCommand::Text(text) => {
+                text.text == value && rect_contains(target.bounds, text.bounds)
+            }
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
+            _ => false,
         });
         let insertion_index = text_index.unwrap_or(plan.commands.len());
         for (offset, rect) in geometry.selections.iter().copied().enumerate() {
@@ -198,6 +226,7 @@ pub(crate) fn decorate_native_focus_ring(
 
 #[cfg(any(
     feature = "date-picker",
+    feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button"
@@ -206,6 +235,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
 #[cfg(any(
     feature = "date-picker",
+    feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button"
@@ -214,6 +244,8 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     let supported = false;
     #[cfg(feature = "toggle-button")]
     let supported = supported || target.kind == ViewHitTargetKind::ToggleButton;
+    #[cfg(feature = "password-box")]
+    let supported = supported || target.kind == ViewHitTargetKind::PasswordBoxReveal;
     #[cfg(feature = "date-picker")]
     let supported = supported
         || matches!(
@@ -236,6 +268,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
 
 #[cfg(any(
     feature = "date-picker",
+    feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button"
@@ -367,6 +400,7 @@ struct NativeTextVisualMetrics {
 
 fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisualMetrics {
     let inset = Dp::new(8.0).to_px(dpi).round_i32().max(1);
+    let bounds = target.bounds;
     #[cfg(feature = "number-box")]
     let bounds = if target.kind == ViewHitTargetKind::NumberBox {
         crate::zs_number_box_render_plan(
@@ -376,10 +410,8 @@ fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisu
         )
         .text_bounds
     } else {
-        target.bounds
+        bounds
     };
-    #[cfg(not(feature = "number-box"))]
-    let bounds = target.bounds;
     NativeTextVisualMetrics {
         text_bounds: Rect {
             x: bounds.x.saturating_add(inset),
@@ -431,7 +463,7 @@ fn text_position(value: &str, index: usize, multiline: bool) -> (usize, usize) {
     (row, column)
 }
 
-fn rect_contains(outer: Rect, inner: Rect) -> bool {
+pub(crate) fn rect_contains(outer: Rect, inner: Rect) -> bool {
     inner.x >= outer.x
         && inner.y >= outer.y
         && inner.x.saturating_add(inner.width) <= outer.x.saturating_add(outer.width)
@@ -735,6 +767,39 @@ mod tests {
                 }
             ]
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "password-box")]
+    fn password_text_geometry_reserves_space_only_when_reveal_target_exists() {
+        let widget = WidgetId::new(920);
+        let target = ViewHitTarget::with_kind(
+            widget,
+            Rect {
+                x: 10,
+                y: 0,
+                width: 200,
+                height: 36,
+            },
+            ViewHitTargetKind::PasswordBox,
+        );
+        let hidden = ViewInteractionPlan::new([target]);
+        assert_eq!(native_text_visual_target(target, &hidden).bounds.width, 200);
+
+        let peek = ViewInteractionPlan::new([
+            target,
+            ViewHitTarget::with_kind(
+                widget,
+                Rect {
+                    x: 178,
+                    y: 0,
+                    width: 32,
+                    height: 36,
+                },
+                ViewHitTargetKind::PasswordBoxReveal,
+            ),
+        ]);
+        assert_eq!(native_text_visual_target(target, &peek).bounds.width, 168);
     }
 
     #[test]

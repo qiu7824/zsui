@@ -176,6 +176,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "text input component declarations",
         ),
         ZsuiCargoFeature::new(
+            "password-box",
+            Widget,
+            false,
+            vec!["zeroize"],
+            vec!["widgets-input"],
+            "single-line secure input with redacted state, platform reveal policy and self-drawn native profiles",
+        ),
+        ZsuiCargoFeature::new(
             "toggle-button",
             Widget,
             false,
@@ -486,6 +494,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "virtual-list",
                 "paged-list",
                 "textbox",
+                "password-box",
                 "checkbox",
                 "toggle",
                 "slider",
@@ -566,6 +575,7 @@ mod tests {
         assert!(names.contains(&"windows-gdi"));
         assert!(names.contains(&"macos-appkit"));
         assert!(names.contains(&"linux-gtk"));
+        assert!(names.contains(&"password-box"));
         assert!(!names.contains(&"button"));
         assert!(!names.contains(&"label"));
     }
@@ -586,6 +596,7 @@ mod tests {
         assert!(!all_widgets.default_enabled);
         assert!(all_widgets.enables.contains(&"grid"));
         assert!(all_widgets.enables.contains(&"textbox"));
+        assert!(all_widgets.enables.contains(&"password-box"));
         assert!(all_widgets.enables.contains(&"toggle-button"));
         assert!(all_widgets.enables.contains(&"toggle"));
         assert!(all_widgets.enables.contains(&"slider"));

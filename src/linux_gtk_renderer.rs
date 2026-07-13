@@ -850,6 +850,15 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 let _ = self.context.fill();
             }
             NativeDrawCommand::Text(command) => self.draw_text(command),
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(command) => {
+                let rendered = command.rendered_text();
+                self.draw_text(&NativeDrawTextCommand::new(
+                    rendered.as_str(),
+                    command.bounds,
+                    command.style,
+                ));
+            }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
             NativeDrawCommand::PushClip { rect } => self.push_clip(*rect),
             NativeDrawCommand::PopClip => self.pop_clip(),

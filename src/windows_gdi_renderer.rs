@@ -946,6 +946,15 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
                 self.draw_round_rect(*rect, *fill, None, *radius);
             }
             NativeDrawCommand::Text(command) => self.draw_text_command(command),
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(command) => {
+                let rendered = command.rendered_text();
+                self.draw_text_command(&NativeDrawTextCommand::new(
+                    rendered.as_str(),
+                    command.bounds,
+                    command.style,
+                ));
+            }
             NativeDrawCommand::Icon(command) => self.draw_icon_command(command),
             NativeDrawCommand::PushClip { rect } => self.renderer.push_clip(*rect),
             NativeDrawCommand::PopClip => self.renderer.pop_clip(),

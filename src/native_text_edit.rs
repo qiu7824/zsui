@@ -77,6 +77,41 @@ pub(crate) struct NativeTextEditResult {
     pub selection_changed: bool,
 }
 
+pub(crate) fn apply_text_input(
+    value: &mut String,
+    selection: &mut NativeTextSelection,
+    text: &str,
+    multiline: bool,
+) -> NativeTextEditResult {
+    let mut result = NativeTextEditResult::default();
+    let mut previous_was_carriage_return = false;
+    for ch in text.chars() {
+        let edit = match ch {
+            '\u{8}' => delete_backward(value, selection),
+            '\u{7f}' => delete_forward(value, selection),
+            '\r' if multiline => {
+                previous_was_carriage_return = true;
+                insert_text(value, selection, "\n")
+            }
+            '\n' if multiline && !previous_was_carriage_return => {
+                insert_text(value, selection, "\n")
+            }
+            ch if !ch.is_control() => {
+                let mut buffer = [0_u8; 4];
+                insert_text(value, selection, ch.encode_utf8(&mut buffer))
+            }
+            _ => NativeTextEditResult::default(),
+        };
+        result.handled |= edit.handled;
+        result.text_changed |= edit.text_changed;
+        result.selection_changed |= edit.selection_changed;
+        if ch != '\r' {
+            previous_was_carriage_return = false;
+        }
+    }
+    result
+}
+
 pub(crate) fn insert_text(
     value: &mut String,
     selection: &mut NativeTextSelection,
