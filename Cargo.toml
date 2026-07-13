@@ -47,6 +47,7 @@ slider = ["widgets-input"]
 radio = ["widgets-input"]
 progress = ["widgets-base"]
 combo = ["widgets-input"]
+date-picker = ["widgets-input"]
 table = ["list", "scroll"]
 dark-mode = []
 style = []
@@ -73,7 +74,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "label", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "slider", "radio", "progress", "combo", "table", "workbench"]
+all-widgets = ["button", "label", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "slider", "radio", "progress", "combo", "date-picker", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",

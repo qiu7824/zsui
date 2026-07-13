@@ -2327,6 +2327,59 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "date-picker")]
+        if target.kind == crate::ViewHitTargetKind::DatePicker {
+            let Some(state) = self.widget_date_picker_state(widget) else {
+                return report;
+            };
+            let expanded = match virtual_key {
+                ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE => Some(!state.expanded),
+                key if key == u32::from(VK_ESCAPE) && state.expanded => Some(false),
+                _ => None,
+            };
+            if let Some(expanded) = expanded {
+                report.handled = true;
+                report.keyboard_activation_count = usize::from(matches!(
+                    virtual_key,
+                    ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE
+                ));
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_date_picker_expanded:{}:{expanded}",
+                    widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::DatePickerExpandedChanged { widget, expanded },
+                    &mut report,
+                );
+                return report;
+            }
+            let value = match virtual_key {
+                key if key == u32::from(VK_LEFT) => Some(state.value.add_days(-1)),
+                key if key == u32::from(VK_RIGHT) => Some(state.value.add_days(1)),
+                key if key == u32::from(VK_UP) => Some(state.value.add_days(-7)),
+                key if key == u32::from(VK_DOWN) => Some(state.value.add_days(7)),
+                key if key == u32::from(VK_HOME) => Some(state.value.first_day_of_month()),
+                key if key == u32::from(VK_END) => {
+                    Some(state.value.first_day_of_month().add_months(1).add_days(-1))
+                }
+                _ => None,
+            };
+            if let Some(value) = value {
+                let value = value.clamp(state.minimum, state.maximum);
+                report.handled = true;
+                if value == state.value {
+                    return report;
+                }
+                report.event_count = 1;
+                report
+                    .events
+                    .push(format!("win32_view_date_picker_key:{}:{value}", widget.0));
+                self.dispatch_event(crate::ViewEvent::DateChanged { widget, value }, &mut report);
+                return report;
+            }
+        }
+
         #[cfg(feature = "list")]
         if matches!(virtual_key, ZSUI_WIN32_VK_UP | ZSUI_WIN32_VK_DOWN) {
             let offset = if virtual_key == ZSUI_WIN32_VK_UP {
@@ -2562,6 +2615,68 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "date-picker")]
+        match target.kind {
+            crate::ViewHitTargetKind::DatePickerDay { date } => {
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_date_picker_selected:{}:{date}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::DateChanged {
+                        widget: target.widget,
+                        value: date,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::DatePickerPreviousMonth
+            | crate::ViewHitTargetKind::DatePickerNextMonth => {
+                let Some(state) = self.widget_date_picker_state(target.widget) else {
+                    return;
+                };
+                let offset = if target.kind == crate::ViewHitTargetKind::DatePickerPreviousMonth {
+                    -1
+                } else {
+                    1
+                };
+                let month = state.visible_month.add_months(offset);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_date_picker_month:{}:{month}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::DatePickerMonthChanged {
+                        widget: target.widget,
+                        month,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::DatePicker => {
+                let expanded = self
+                    .widget_date_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_date_picker_expanded:{}:{}",
+                    target.widget.0, !expanded
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::DatePickerExpandedChanged {
+                        widget: target.widget,
+                        expanded: !expanded,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
         #[cfg(feature = "combo")]
         match target.kind {
             crate::ViewHitTargetKind::ComboBoxOption { index } => {
@@ -2757,6 +2872,21 @@ impl WindowsWin32ViewInputRoute {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_combo_state(widget))
+            })
+    }
+
+    #[cfg(feature = "date-picker")]
+    fn widget_date_picker_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsDatePickerState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_date_picker_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_date_picker_state(widget))
             })
     }
 
@@ -5506,6 +5636,98 @@ mod tests {
         assert_eq!(keyboard.combo_keyboard_selection_count, 1);
         assert_eq!(keyboard.combo_expanded_change_count, 1);
         assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
+    }
+
+    #[test]
+    #[cfg(feature = "date-picker")]
+    fn window_view_input_route_selects_and_navigates_date_picker() {
+        fn changed(_: crate::ZsDate) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.date_changed"))
+        }
+        fn expanded(_: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.date_expanded"))
+        }
+
+        let widget = crate::WidgetId::new(37);
+        let initial = crate::ZsDate::new(2026, 7, 13).unwrap();
+        let selected = crate::ZsDate::new(2026, 7, 14).unwrap();
+        let header = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 32,
+            },
+            crate::ViewHitTargetKind::DatePicker,
+        );
+        let previous = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 160,
+                y: 40,
+                width: 40,
+                height: 48,
+            },
+            crate::ViewHitTargetKind::DatePickerPreviousMonth,
+        );
+        let day = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 80,
+                y: 120,
+                width: 40,
+                height: 40,
+            },
+            crate::ViewHitTargetKind::DatePickerDay { date: selected },
+        );
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([header, previous, day]),
+            crate::date_picker(initial)
+                .id(widget)
+                .on_date_change(changed)
+                .on_expanded_change(expanded),
+        );
+
+        let opened = route.dispatch_click(crate::Point { x: 20, y: 16 });
+        assert_eq!(opened.event_count, 1);
+        assert_eq!(opened.ui_command_count, 1);
+        assert!(
+            route
+                .widget_date_picker_state(widget)
+                .expect("date picker state")
+                .expanded
+        );
+
+        let previous_month = route.dispatch_click(crate::Point { x: 180, y: 64 });
+        assert_eq!(previous_month.event_count, 1);
+        assert_eq!(previous_month.ui_command_count, 0);
+        assert_eq!(
+            route
+                .widget_date_picker_state(widget)
+                .expect("date picker state")
+                .visible_month,
+            crate::ZsDate::new(2026, 6, 1).unwrap()
+        );
+
+        let selection = route.dispatch_click(crate::Point { x: 100, y: 140 });
+        assert_eq!(selection.event_count, 1);
+        assert_eq!(selection.ui_command_count, 2);
+        assert_eq!(
+            route
+                .widget_date_picker_state(widget)
+                .map(|state| state.value),
+            Some(selected)
+        );
+
+        let keyboard = route.dispatch_key_down(u32::from(VK_RIGHT));
+        assert_eq!(keyboard.event_count, 1);
+        assert_eq!(
+            route
+                .widget_date_picker_state(widget)
+                .map(|state| state.value),
+            Some(crate::ZsDate::new(2026, 7, 15).unwrap())
+        );
     }
 
     #[test]

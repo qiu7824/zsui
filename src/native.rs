@@ -1394,6 +1394,44 @@ impl NativeViewInputRuntime {
             }
         }
 
+        #[cfg(feature = "date-picker")]
+        if target.kind == crate::ViewHitTargetKind::DatePicker {
+            let Some(state) = self.widget_date_picker_state(widget) else {
+                return report;
+            };
+            let expanded = match key {
+                NativeViewKey::Enter | NativeViewKey::Space => Some(!state.expanded),
+                NativeViewKey::Escape if state.expanded => Some(false),
+                _ => None,
+            };
+            if let Some(expanded) = expanded {
+                report.handled = true;
+                return self.dispatch_view_event(
+                    ViewEvent::DatePickerExpandedChanged { widget, expanded },
+                    report,
+                );
+            }
+            let value = match key {
+                NativeViewKey::Left => Some(state.value.add_days(-1)),
+                NativeViewKey::Right => Some(state.value.add_days(1)),
+                NativeViewKey::Up => Some(state.value.add_days(-7)),
+                NativeViewKey::Down => Some(state.value.add_days(7)),
+                NativeViewKey::Home => Some(state.value.first_day_of_month()),
+                NativeViewKey::End => {
+                    Some(state.value.first_day_of_month().add_months(1).add_days(-1))
+                }
+                _ => None,
+            };
+            if let Some(value) = value {
+                let value = value.clamp(state.minimum, state.maximum);
+                report.handled = true;
+                if value == state.value {
+                    return report;
+                }
+                return self.dispatch_view_event(ViewEvent::DateChanged { widget, value }, report);
+            }
+        }
+
         #[cfg(feature = "list")]
         if matches!(key, NativeViewKey::Up | NativeViewKey::Down) {
             let offset = if key == NativeViewKey::Up { -1 } else { 1 };
@@ -1860,6 +1898,51 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "date-picker")]
+        match target.kind {
+            crate::ViewHitTargetKind::DatePickerDay { date } => {
+                return ViewEvent::DateChanged {
+                    widget: target.widget,
+                    value: date,
+                };
+            }
+            crate::ViewHitTargetKind::DatePickerPreviousMonth => {
+                let month = self
+                    .widget_date_picker_state(target.widget)
+                    .map(|state| state.visible_month.add_months(-1))
+                    .unwrap_or_else(|| {
+                        crate::ZsDate::new(crate::ZsDate::MIN_YEAR, 1, 1)
+                            .expect("minimum date is valid")
+                    });
+                return ViewEvent::DatePickerMonthChanged {
+                    widget: target.widget,
+                    month,
+                };
+            }
+            crate::ViewHitTargetKind::DatePickerNextMonth => {
+                let month = self
+                    .widget_date_picker_state(target.widget)
+                    .map(|state| state.visible_month.add_months(1))
+                    .unwrap_or_else(|| {
+                        crate::ZsDate::new(crate::ZsDate::MAX_YEAR, 12, 1)
+                            .expect("maximum date is valid")
+                    });
+                return ViewEvent::DatePickerMonthChanged {
+                    widget: target.widget,
+                    month,
+                };
+            }
+            crate::ViewHitTargetKind::DatePicker => {
+                let expanded = self
+                    .widget_date_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+                return ViewEvent::DatePickerExpandedChanged {
+                    widget: target.widget,
+                    expanded: !expanded,
+                };
+            }
+            _ => {}
+        }
         #[cfg(feature = "combo")]
         match target.kind {
             crate::ViewHitTargetKind::ComboBoxOption { index } => {
@@ -1943,6 +2026,21 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_combo_state(widget))
+            })
+    }
+
+    #[cfg(feature = "date-picker")]
+    fn widget_date_picker_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsDatePickerState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_date_picker_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_date_picker_state(widget))
             })
     }
 
@@ -5055,6 +5153,90 @@ mod tests {
         assert_eq!(
             runtime.widget_combo_state(combo_id),
             Some((Some(2), 3, false))
+        );
+    }
+
+    #[cfg(feature = "date-picker")]
+    #[test]
+    fn native_view_runtime_opens_selects_and_navigates_date_picker() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(crate::ZsDate),
+        }
+
+        let widget = crate::WidgetId::new(85);
+        let initial = crate::ZsDate::new(2026, 7, 13).unwrap();
+        let builder = native_window("Platform DatePicker")
+            .size(520, 480)
+            .stateful_view(
+                initial,
+                move |value| {
+                    crate::date_picker(*value)
+                        .id(widget)
+                        .height(Dp::new(32.0))
+                        .on_date_change(Msg::Changed)
+                },
+                |value, message, _cx| match message {
+                    Msg::Changed(next) => *value = next,
+                },
+            );
+        let header = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .expect("date picker header should have hit geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let opened = runtime.dispatch_pointer_click(Point {
+            x: header.bounds.x + 12,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
+        assert!(opened.handled);
+        assert!(opened.redraw_plan.is_some());
+        assert!(
+            runtime
+                .widget_date_picker_state(widget)
+                .expect("date picker state")
+                .expanded
+        );
+
+        let next = crate::ZsDate::new(2026, 7, 14).unwrap();
+        let day = runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.into_iter().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::DatePickerDay { date: next }
+                })
+            })
+            .expect("expanded date picker should expose day hit geometry");
+        let selected = runtime.dispatch_pointer_click(Point {
+            x: day.bounds.x + day.bounds.width / 2,
+            y: day.bounds.y + day.bounds.height / 2,
+        });
+        assert!(selected.handled);
+        assert_eq!(selected.message_count, 1);
+        assert_eq!(
+            runtime
+                .widget_date_picker_state(widget)
+                .map(|state| state.value),
+            Some(next)
+        );
+
+        runtime.dispatch_key(NativeViewKey::Space);
+        let closed = runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(closed.handled);
+        assert!(
+            !runtime
+                .widget_date_picker_state(widget)
+                .expect("date picker state")
+                .expanded
+        );
+        let moved = runtime.dispatch_key(NativeViewKey::Right);
+        assert!(moved.handled);
+        assert_eq!(
+            runtime
+                .widget_date_picker_state(widget)
+                .map(|state| state.value),
+            Some(crate::ZsDate::new(2026, 7, 15).unwrap())
         );
     }
 

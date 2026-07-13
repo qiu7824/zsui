@@ -16,6 +16,8 @@ use crate::render_protocol::TextRole;
     feature = "radio"
 ))]
 use crate::render_protocol::{NativeDrawTextCommand, SemanticTextStyle};
+#[cfg(feature = "date-picker")]
+use crate::ZsDate;
 use crate::{
     geometry::{ComponentId, Dp, Dpi, LayoutNode, LayoutOutput, Point, Rect},
     render_protocol::{ColorRole, NativeDrawCommand, NativeDrawFill, NativeDrawPlan},
@@ -244,6 +246,16 @@ pub enum ViewStackDirection {
     Column,
 }
 
+#[cfg(feature = "date-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsDatePickerState {
+    pub value: ZsDate,
+    pub minimum: ZsDate,
+    pub maximum: ZsDate,
+    pub visible_month: ZsDate,
+    pub expanded: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum ViewNodeKind<Msg> {
     #[doc(hidden)]
@@ -298,6 +310,16 @@ pub enum ViewNodeKind<Msg> {
         expanded: bool,
         placeholder: Option<String>,
         on_select: Option<fn(usize) -> Msg>,
+        on_expanded_change: Option<fn(bool) -> Msg>,
+    },
+    #[cfg(feature = "date-picker")]
+    DatePicker {
+        value: ZsDate,
+        minimum: ZsDate,
+        maximum: ZsDate,
+        visible_month: ZsDate,
+        expanded: bool,
+        on_date_change: Option<fn(ZsDate) -> Msg>,
         on_expanded_change: Option<fn(bool) -> Msg>,
     },
     #[cfg(feature = "list")]
@@ -532,10 +554,14 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(feature = "combo")]
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
     pub fn expanded(mut self, is_expanded: bool) -> Self {
-        if let ViewNodeKind::ComboBox { expanded, .. } = &mut self.kind {
-            *expanded = is_expanded;
+        match &mut self.kind {
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox { expanded, .. } => *expanded = is_expanded,
+            #[cfg(feature = "date-picker")]
+            ViewNodeKind::DatePicker { expanded, .. } => *expanded = is_expanded,
+            _ => {}
         }
         self
     }
@@ -548,13 +574,49 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(feature = "combo")]
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
     pub fn on_expanded_change(mut self, message: fn(bool) -> Msg) -> Self {
-        if let ViewNodeKind::ComboBox {
-            on_expanded_change, ..
+        match &mut self.kind {
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox {
+                on_expanded_change, ..
+            } => *on_expanded_change = Some(message),
+            #[cfg(feature = "date-picker")]
+            ViewNodeKind::DatePicker {
+                on_expanded_change, ..
+            } => *on_expanded_change = Some(message),
+            _ => {}
+        }
+        self
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn date_range(mut self, minimum: ZsDate, maximum: ZsDate) -> Self {
+        if let ViewNodeKind::DatePicker {
+            value,
+            minimum: current_minimum,
+            maximum: current_maximum,
+            visible_month,
+            ..
         } = &mut self.kind
         {
-            *on_expanded_change = Some(message);
+            let (minimum, maximum) = if minimum <= maximum {
+                (minimum, maximum)
+            } else {
+                (maximum, minimum)
+            };
+            *current_minimum = minimum;
+            *current_maximum = maximum;
+            *value = (*value).clamp(minimum, maximum);
+            *visible_month = clamp_visible_month(*visible_month, minimum, maximum);
+        }
+        self
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn on_date_change(mut self, message: fn(ZsDate) -> Msg) -> Self {
+        if let ViewNodeKind::DatePicker { on_date_change, .. } = &mut self.kind {
+            *on_date_change = Some(message);
         }
         self
     }
@@ -738,6 +800,21 @@ where
     })
 }
 
+#[cfg(feature = "date-picker")]
+pub fn date_picker<Msg>(value: ZsDate) -> ViewNode<Msg> {
+    let minimum = ZsDate::new(ZsDate::MIN_YEAR, 1, 1).expect("minimum date is valid");
+    let maximum = ZsDate::new(ZsDate::MAX_YEAR, 12, 31).expect("maximum date is valid");
+    ViewNode::new(ViewNodeKind::DatePicker {
+        value,
+        minimum,
+        maximum,
+        visible_month: value.first_day_of_month(),
+        expanded: false,
+        on_date_change: None,
+        on_expanded_change: None,
+    })
+}
+
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Stack {
         direction: ViewStackDirection::Row,
@@ -845,6 +922,21 @@ pub enum ViewEvent {
         widget: WidgetId,
         index: usize,
     },
+    #[cfg(feature = "date-picker")]
+    DatePickerExpandedChanged {
+        widget: WidgetId,
+        expanded: bool,
+    },
+    #[cfg(feature = "date-picker")]
+    DatePickerMonthChanged {
+        widget: WidgetId,
+        month: ZsDate,
+    },
+    #[cfg(feature = "date-picker")]
+    DateChanged {
+        widget: WidgetId,
+        value: ZsDate,
+    },
     #[cfg(feature = "scroll")]
     ScrollBy {
         widget: WidgetId,
@@ -899,6 +991,16 @@ pub enum ViewHitTargetKind {
     ComboBoxOption {
         index: usize,
     },
+    #[cfg(feature = "date-picker")]
+    DatePicker,
+    #[cfg(feature = "date-picker")]
+    DatePickerDay {
+        date: ZsDate,
+    },
+    #[cfg(feature = "date-picker")]
+    DatePickerPreviousMonth,
+    #[cfg(feature = "date-picker")]
+    DatePickerNextMonth,
     #[cfg(feature = "scroll")]
     Scroll,
 }
@@ -997,6 +1099,15 @@ impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
         #[cfg(feature = "combo")]
         if matches!(self.kind, ViewHitTargetKind::ComboBoxOption { .. }) {
+            return false;
+        }
+        #[cfg(feature = "date-picker")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::DatePickerDay { .. }
+                | ViewHitTargetKind::DatePickerPreviousMonth
+                | ViewHitTargetKind::DatePickerNextMonth
+        ) {
             return false;
         }
         true
@@ -1106,6 +1217,8 @@ trait LiveViewDriver: Send {
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
+    #[cfg(feature = "date-picker")]
+    fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState>;
     #[cfg(feature = "list")]
     fn widget_list_relative_widget(
         &self,
@@ -1165,6 +1278,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "combo")]
     pub fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.lock().widget_combo_state(widget)
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState> {
+        self.lock().widget_date_picker_state(widget)
     }
 
     #[cfg(feature = "list")]
@@ -1302,7 +1420,9 @@ where
         self.view.event(&mut event_cx, event);
         let messages = event_cx.into_messages();
         if messages.is_empty() {
+            self.revision = self.revision.saturating_add(1);
             return LiveViewUpdate {
+                redraw: true,
                 revision: self.revision,
                 ..LiveViewUpdate::default()
             };
@@ -1341,6 +1461,11 @@ where
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.view.widget_combo_state(widget)
+    }
+
+    #[cfg(feature = "date-picker")]
+    fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState> {
+        self.view.widget_date_picker_state(widget)
     }
 
     #[cfg(feature = "list")]
@@ -1421,7 +1546,7 @@ impl ViewPaintCx {
 
     fn finish_node<Msg>(&mut self, _root: &ViewNode<Msg>) {
         self.paint_depth = self.paint_depth.saturating_sub(1);
-        #[cfg(feature = "combo")]
+        #[cfg(any(feature = "combo", feature = "date-picker"))]
         if self.paint_depth == 0 {
             _root.paint_overlays(self);
         }
@@ -1631,6 +1756,40 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
         }
 
+        #[cfg(feature = "date-picker")]
+        if let (
+            ViewNodeKind::DatePicker {
+                value,
+                minimum,
+                maximum,
+                visible_month,
+                expanded,
+                on_date_change,
+                on_expanded_change,
+            },
+            ViewEvent::DateChanged {
+                value: next_value, ..
+            },
+        ) = (&mut self.kind, event)
+        {
+            let next_value = (*next_value).clamp(*minimum, *maximum);
+            let changed = *value != next_value;
+            let was_expanded = *expanded;
+            *value = next_value;
+            *visible_month = next_value.first_day_of_month();
+            *expanded = false;
+            if changed {
+                if let Some(message) = on_date_change {
+                    cx.emit(message(next_value));
+                }
+            }
+            if was_expanded {
+                if let Some(message) = on_expanded_change {
+                    cx.emit(message(false));
+                }
+            }
+        }
+
         if self.event_targets_self(event) {
             #[cfg(feature = "virtual-list")]
             let list_bounds = self
@@ -1731,6 +1890,40 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if let Some(message) = on_expanded_change {
                         cx.emit(message(*next_expanded));
                     }
+                }
+                #[cfg(feature = "date-picker")]
+                (
+                    ViewNodeKind::DatePicker {
+                        value,
+                        visible_month,
+                        expanded,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::DatePickerExpandedChanged {
+                        expanded: next_expanded,
+                        ..
+                    },
+                ) => {
+                    *expanded = *next_expanded;
+                    if *next_expanded {
+                        *visible_month = value.first_day_of_month();
+                    }
+                    if let Some(message) = on_expanded_change {
+                        cx.emit(message(*next_expanded));
+                    }
+                }
+                #[cfg(feature = "date-picker")]
+                (
+                    ViewNodeKind::DatePicker {
+                        minimum,
+                        maximum,
+                        visible_month,
+                        ..
+                    },
+                    ViewEvent::DatePickerMonthChanged { month, .. },
+                ) => {
+                    *visible_month = clamp_visible_month(*month, *minimum, *maximum);
                 }
                 #[cfg(feature = "scroll")]
                 (
@@ -1908,6 +2101,28 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Toggle { checked, .. } => {
                 let plan = crate::zs_toggle_render_plan(bounds, false, *checked, cx.dpi);
                 for command in crate::zs_toggle_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
+            #[cfg(feature = "date-picker")]
+            ViewNodeKind::DatePicker {
+                value,
+                minimum,
+                maximum,
+                visible_month,
+                ..
+            } => {
+                let plan = crate::zs_date_picker_render_plan(
+                    bounds,
+                    *value,
+                    *visible_month,
+                    *minimum,
+                    *maximum,
+                    false,
+                    cx.dpi,
+                );
+                for command in crate::zs_date_picker_header_native_draw_plan(&plan, *value).commands
+                {
                     cx.draw(command);
                 }
             }
@@ -2090,6 +2305,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. }) => id == *widget,
+            #[cfg(feature = "date-picker")]
+            (Some(id), ViewEvent::DatePickerExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::DatePickerMonthChanged { widget, .. })
+            | (Some(id), ViewEvent::DateChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             (None, _) => false,
@@ -2108,7 +2327,7 @@ impl<Msg> ViewNode<Msg> {
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
         let mut hit_targets = Vec::new();
         self.collect_hit_targets(&mut hit_targets, None);
-        #[cfg(feature = "combo")]
+        #[cfg(any(feature = "combo", feature = "date-picker"))]
         self.collect_overlay_hit_targets(&mut hit_targets);
         ViewInteractionPlan { hit_targets }
     }
@@ -2175,6 +2394,32 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_combo_state(widget))
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::DatePicker {
+                value,
+                minimum,
+                maximum,
+                visible_month,
+                expanded,
+                ..
+            } = &self.kind
+            {
+                return Some(ZsDatePickerState {
+                    value: *value,
+                    minimum: *minimum,
+                    maximum: *maximum,
+                    visible_month: *visible_month,
+                    expanded: *expanded,
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_date_picker_state(widget))
     }
 
     #[cfg(feature = "list")]
@@ -2306,8 +2551,9 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
-    #[cfg(feature = "combo")]
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
     fn collect_overlay_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>) {
+        #[cfg(feature = "combo")]
         if let (
             Some(widget),
             Some(bounds),
@@ -2333,13 +2579,61 @@ impl<Msg> ViewNode<Msg> {
                     }),
             );
         }
+        #[cfg(feature = "date-picker")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::DatePicker {
+                value,
+                minimum,
+                maximum,
+                visible_month,
+                expanded: true,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan = crate::zs_date_picker_render_plan(
+                bounds,
+                *value,
+                *visible_month,
+                *minimum,
+                *maximum,
+                true,
+                self.layout_dpi,
+            );
+            if let Some(bounds) = plan.previous_button {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::DatePickerPreviousMonth,
+                ));
+            }
+            if let Some(bounds) = plan.next_button {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::DatePickerNextMonth,
+                ));
+            }
+            hit_targets.extend(plan.day_cells.into_iter().filter(|cell| cell.enabled).map(
+                |cell| {
+                    ViewHitTarget::with_kind(
+                        widget,
+                        cell.bounds,
+                        ViewHitTargetKind::DatePickerDay { date: cell.date },
+                    )
+                },
+            ));
+        }
         for child in &self.children {
             child.collect_overlay_hit_targets(hit_targets);
         }
     }
 
-    #[cfg(feature = "combo")]
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx) {
+        #[cfg(feature = "combo")]
         if let (
             Some(bounds),
             ViewNodeKind::ComboBox {
@@ -2354,6 +2648,34 @@ impl<Msg> ViewNode<Msg> {
             for command in
                 crate::zs_combo_box_popup_native_draw_plan(&plan, options, *selected_index, cx.dpi)
                     .commands
+            {
+                cx.draw(command);
+            }
+        }
+        #[cfg(feature = "date-picker")]
+        if let (
+            Some(bounds),
+            ViewNodeKind::DatePicker {
+                value,
+                minimum,
+                maximum,
+                visible_month,
+                expanded: true,
+                ..
+            },
+        ) = (self.bounds, &self.kind)
+        {
+            let plan = crate::zs_date_picker_render_plan(
+                bounds,
+                *value,
+                *visible_month,
+                *minimum,
+                *maximum,
+                true,
+                cx.dpi,
+            );
+            for command in
+                crate::zs_date_picker_popup_native_draw_plan(&plan, *visible_month, cx.dpi).commands
             {
                 cx.draw(command);
             }
@@ -2385,6 +2707,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::RadioButton { .. } => ViewHitTargetKind::RadioButton,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
+            #[cfg(feature = "date-picker")]
+            ViewNodeKind::DatePicker { .. } => ViewHitTargetKind::DatePicker,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
@@ -2646,6 +2970,19 @@ fn allocate_axis_lengths<Msg>(
     lengths
 }
 
+#[cfg(feature = "date-picker")]
+fn clamp_visible_month(month: ZsDate, minimum: ZsDate, maximum: ZsDate) -> ZsDate {
+    let (minimum, maximum) = if minimum <= maximum {
+        (minimum, maximum)
+    } else {
+        (maximum, minimum)
+    };
+    month
+        .first_day_of_month()
+        .max(minimum.first_day_of_month())
+        .min(maximum.first_day_of_month())
+}
+
 fn inset_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     let padding = padding
         .map(|value| value.to_px(dpi).round_i32().max(0))
@@ -2727,6 +3064,7 @@ mod tests {
         feature = "slider",
         feature = "radio",
         feature = "combo",
+        feature = "date-picker",
         feature = "list"
     ))]
     #[derive(Debug, Clone, PartialEq)]
@@ -2745,6 +3083,10 @@ mod tests {
         ComboSelected(usize),
         #[cfg(feature = "combo")]
         ComboExpanded(bool),
+        #[cfg(feature = "date-picker")]
+        DateChanged(ZsDate),
+        #[cfg(feature = "date-picker")]
+        DateExpanded(bool),
         #[cfg(feature = "list")]
         RowSelected(usize),
         #[cfg(feature = "scroll")]
@@ -3208,6 +3550,81 @@ mod tests {
         assert_eq!(
             view.widget_combo_state(WidgetId::new(10)),
             Some((None, 1, false))
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "date-picker")]
+    fn date_picker_routes_typed_range_month_and_overlay_selection() {
+        let widget = WidgetId::new(12);
+        let value = ZsDate::new(2026, 7, 13).unwrap();
+        let minimum = ZsDate::new(2026, 7, 10).unwrap();
+        let maximum = ZsDate::new(2026, 8, 20).unwrap();
+        let mut view = date_picker(value)
+            .id(widget)
+            .height(Dp::new(32.0))
+            .date_range(minimum, maximum)
+            .expanded(true)
+            .on_date_change(Msg::DateChanged)
+            .on_expanded_change(Msg::DateExpanded);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 24,
+                y: 64,
+                width: 472,
+                height: 32,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        let next_day = ZsDate::new(2026, 7, 14).unwrap();
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == ViewHitTargetKind::DatePickerDay { date: next_day } }));
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::DatePicker)
+        );
+
+        let mut month_events = ViewEventCx::new();
+        view.event(
+            &mut month_events,
+            &ViewEvent::DatePickerMonthChanged {
+                widget,
+                month: ZsDate::new(2026, 8, 1).unwrap(),
+            },
+        );
+        assert!(month_events.messages().is_empty());
+        assert_eq!(
+            view.widget_date_picker_state(widget)
+                .expect("date picker state")
+                .visible_month,
+            ZsDate::new(2026, 8, 1).unwrap()
+        );
+
+        let mut selection_events = ViewEventCx::new();
+        view.event(
+            &mut selection_events,
+            &ViewEvent::DateChanged {
+                widget,
+                value: ZsDate::new(2026, 8, 31).unwrap(),
+            },
+        );
+        assert_eq!(
+            selection_events.into_messages(),
+            vec![Msg::DateChanged(maximum), Msg::DateExpanded(false)]
+        );
+        assert_eq!(
+            view.widget_date_picker_state(widget),
+            Some(ZsDatePickerState {
+                value: maximum,
+                minimum,
+                maximum,
+                visible_month: maximum.first_day_of_month(),
+                expanded: false,
+            })
         );
     }
 

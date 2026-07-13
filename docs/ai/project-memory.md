@@ -38,6 +38,13 @@ history remain authoritative for implementation status.
 
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
+- Built-in controls follow ZSUI's self-drawn rendering path and adapt their
+  visual metrics and behavior to the target platform. On Windows, WinUI 3 and
+  Fluent resources are the design reference; classic `comctl32` visuals must
+  not be presented as modern Windows styling.
+- Platform-native style does not imply embedding a second widget tree. Shared
+  Rust code owns typed state, messages and layout, while the render backend
+  maps platform style tokens into the existing buffered paint path.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
 - Treat antialiasing, DPI, IME, scrolling, margins and window services as

@@ -148,6 +148,14 @@ const COMBO_GAPS: &[&str] = &[
     "accessibility expanded and selection providers",
     "AppKit and GTK4 target interaction smoke",
 ];
+const DATE_PICKER_GAPS: &[&str] = &[
+    "localized date, month and weekday formatting",
+    "viewport-aware popup flipping and clamping",
+    "outside-click and focus-loss dismissal",
+    "hover, pressed, today and high-contrast visual states",
+    "accessibility value and calendar-grid providers",
+    "AppKit and GTK4 platform-style metrics and target interaction smoke",
+];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
     "dark and high-contrast target smoke",
@@ -383,10 +391,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "date_picker",
         "DatePicker",
         Input,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("date-picker"),
+        "src/date.rs + src/view.rs + src/widget_render.rs",
+        DATE_PICKER_GAPS
     ),
     component!(
         "time_picker",

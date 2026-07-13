@@ -249,11 +249,12 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本、按钮、输入、复选、开关、滑块、单选、进度、列表、滚动和强类型事件 | 对应 widget feature |
+| 基础 View | 文本、按钮、输入、复选、开关、滑块、单选、进度、组合框、自绘日期选择、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个 WinUI 风格家族：24 个已有第一阶段运行面，8 个只有
-契约，16 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
+组件目录当前记录 48 个 WinUI 风格家族：26 个已有第一阶段运行面，7 个只有
+契约，15 个尚未开始。DatePicker 已具备强类型日期、范围约束、日历弹层、点击与
+键盘路由、主题绘制和 Windows WinUI 3 风格 smoke；不会用组合外壳冒充
 TreeView、DataGrid、WebView 等尚未完成的独立控件。
 
 查看机器可读目录：
@@ -385,7 +386,7 @@ Linux/macOS 桌面目标。
 
 - Windows 仍需更完整的 UI Automation、暗色/高对比度和高级输入证据
 - 通用文本编辑器、文件对话框和文档生命周期服务仍需继续收口
-- DatePicker、TreeView、DataGrid、WebView 等高级控件尚未完整实现
+- DatePicker 仍缺本地化、辅助功能及 AppKit/GTK4 风格与目标机证据；TreeView、DataGrid、WebView 等高级控件尚未完整实现
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
 - 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块
 

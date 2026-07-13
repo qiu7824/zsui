@@ -20,6 +20,8 @@ pub mod component_protocol;
 pub mod components;
 pub mod control_protocol;
 pub mod core;
+#[cfg(feature = "date-picker")]
+pub mod date;
 pub mod desktop_services;
 #[cfg(feature = "document-shell")]
 pub mod document_shell;
@@ -152,6 +154,8 @@ pub use core::{
     AppEvent, Command, DialogButtons, DialogLevel, DialogResponse, FileDialogFilter,
     FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId, ZsuiError, ZsuiResult,
 };
+#[cfg(feature = "date-picker")]
+pub use date::{days_in_month, is_leap_year, ZsDate};
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
     DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
@@ -409,6 +413,8 @@ pub use view::button;
 pub use view::checkbox;
 #[cfg(feature = "combo")]
 pub use view::combo_box;
+#[cfg(feature = "date-picker")]
+pub use view::date_picker;
 #[cfg(feature = "list")]
 pub use view::list;
 #[cfg(feature = "radio")]
@@ -423,6 +429,8 @@ pub use view::text_editor;
 pub use view::textbox;
 #[cfg(feature = "toggle")]
 pub use view::toggle;
+#[cfg(feature = "date-picker")]
+pub use view::ZsDatePickerState;
 pub use view::{
     column, live_view_runtime, row, spacer, AppCx, LiveViewUpdate, SharedLiveViewRuntime, View,
     ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
@@ -440,6 +448,11 @@ pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport
 pub use widget_render::{
     zs_combo_box_header_native_draw_plan, zs_combo_box_popup_native_draw_plan,
     zs_combo_box_render_plan, ZsComboBoxRenderPlan,
+};
+#[cfg(feature = "date-picker")]
+pub use widget_render::{
+    zs_date_picker_header_native_draw_plan, zs_date_picker_popup_native_draw_plan,
+    zs_date_picker_render_plan, ZsDatePickerDayCell, ZsDatePickerRenderPlan,
 };
 #[cfg(feature = "progress")]
 pub use widget_render::{

@@ -27,6 +27,7 @@ $singleFeatures = @(
     "radio",
     "progress",
     "combo",
+    "date-picker",
     "table",
     "dark-mode",
     "style",
@@ -59,7 +60,7 @@ $singleFeatures = @(
 
 $featureSets = @(
     "button,label",
-    "textbox,checkbox,toggle,slider,radio,progress,combo",
+    "textbox,checkbox,toggle,slider,radio,progress,combo,date-picker",
     "list,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",
