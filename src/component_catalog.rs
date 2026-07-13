@@ -136,6 +136,11 @@ const RADIO_GAPS: &[&str] = &[
     "accessibility selection provider",
     "AppKit and GTK4 target interaction smoke",
 ];
+const PROGRESS_GAPS: &[&str] = &[
+    "indeterminate animation",
+    "accessibility range-value provider",
+    "AppKit and GTK4 target screenshot smoke",
+];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
     "dark and high-contrast target smoke",
@@ -452,10 +457,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "progress_bar",
         "ProgressBar",
         Feedback,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("progress"),
+        "src/widget_render.rs",
+        PROGRESS_GAPS
     ),
     component!(
         "progress_ring",

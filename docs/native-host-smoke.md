@@ -131,9 +131,21 @@ values to execute without failures or unhandled commands. AppKit and GTK4
 consume the same `RadioSelected` event through their native pointer and key
 callbacks; their target-machine interaction evidence remains pending.
 
+The dedicated determinate ProgressBar smoke path is:
+
+```powershell
+cargo run --no-default-features --features "window,label,progress,windows-win32" --example native_smoke_run -- windows --progress-view
+```
+
+It attaches a 65% progress value through `ProgressRange`, paints the shared
+semantic track/fill plan through the buffered Win32 renderer, captures the
+window and keeps the feedback-only control out of the hit-test plan. AppKit and
+GTK4 consume the same draw commands; target screenshots for those hosts and the
+separate indeterminate-animation mode remain pending.
+
 The default `--view` and `--scroll-view` paths exercise
 `NativeWindowBuilder::ui_command_view(...)`, record
-draw-plan command counts in `interaction.json`, posts `WM_LBUTTONUP`, hit-tests
+draw-plan command counts in `interaction.json`, post `WM_LBUTTONUP`, hit-test
 through `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and
 records the emitted command ids. When an executor is attached it also records
 executed, failed, unhandled and emitted-event counts instead of treating command

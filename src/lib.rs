@@ -426,12 +426,18 @@ pub use view::{
     ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
     ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
+#[cfg(feature = "progress")]
+pub use view::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
 #[cfg(feature = "virtual-list")]
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+#[cfg(feature = "progress")]
+pub use widget_render::{
+    zs_progress_bar_native_draw_plan, zs_progress_bar_render_plan, ZsProgressBarRenderPlan,
+};
 #[cfg(feature = "radio")]
 pub use widget_render::{zs_radio_native_draw_plan, zs_radio_render_plan, ZsRadioRenderPlan};
 #[cfg(feature = "slider")]

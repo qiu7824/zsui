@@ -143,6 +143,16 @@ fn mode_option(mode: Mode, current: Mode) -> ViewNode<ModeMsg> {
 }
 ```
 
+确定进度使用独立范围，不需要启用 Slider：
+
+```rust,no_run
+use zsui::{progress_bar, ProgressRange, ViewNode};
+
+fn download_progress(percent: f32) -> ViewNode<()> {
+    progress_bar(percent, ProgressRange::new(0.0, 100.0))
+}
+```
+
 ## 强类型状态与消息
 
 ```rust,no_run
@@ -223,11 +233,11 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本、按钮、输入、复选、开关、滑块、单选、列表、滚动和强类型事件 | 对应 widget feature |
+| 基础 View | 文本、按钮、输入、复选、开关、滑块、单选、进度、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个 WinUI 风格家族：23 个已有第一阶段运行面，8 个只有
-契约，17 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
+组件目录当前记录 48 个 WinUI 风格家族：24 个已有第一阶段运行面，8 个只有
+契约，16 个尚未开始。组合外壳可以投入示例使用，但不会被拿来冒充 DatePicker、
 TreeView、DataGrid、WebView 等尚未完成的独立控件。
 
 查看机器可读目录：

@@ -250,6 +250,64 @@ pub fn zs_radio_native_draw_plan(plan: &ZsRadioRenderPlan) -> NativeDrawPlan {
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(feature = "progress")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsProgressBarRenderPlan {
+    pub bounds: Rect,
+    pub track: Rect,
+    pub filled_track: Option<Rect>,
+    pub radius: i32,
+}
+
+#[cfg(feature = "progress")]
+pub fn zs_progress_bar_render_plan(
+    bounds: Rect,
+    fraction: f32,
+    dpi: Dpi,
+) -> ZsProgressBarRenderPlan {
+    let track_height = scale(4, dpi).min(bounds.height.max(1)).max(1);
+    let track = Rect {
+        x: bounds.x,
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(track_height)) / 2),
+        width: bounds.width.max(1),
+        height: track_height,
+    };
+    let fraction = if fraction.is_finite() {
+        fraction.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let filled_width = ((track.width as f32) * fraction).round() as i32;
+    ZsProgressBarRenderPlan {
+        bounds,
+        track,
+        filled_track: (filled_width > 0).then_some(Rect {
+            width: filled_width.min(track.width),
+            ..track
+        }),
+        radius: (track_height / 2).max(1),
+    }
+}
+
+#[cfg(feature = "progress")]
+pub fn zs_progress_bar_native_draw_plan(plan: &ZsProgressBarRenderPlan) -> NativeDrawPlan {
+    let mut commands = vec![NativeDrawCommand::RoundFill {
+        rect: plan.track,
+        fill: NativeDrawFill::Role(ColorRole::Control),
+        radius: plan.radius,
+    }];
+    if let Some(filled_track) = plan.filled_track {
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: filled_track,
+            fill: NativeDrawFill::Role(ColorRole::Accent),
+            radius: plan.radius,
+        });
+    }
+    NativeDrawPlan::new(commands)
+}
+
 fn scale(value: i32, dpi: Dpi) -> i32 {
     Dp::new(value as f32).to_px(dpi).round_i32().max(1)
 }
@@ -338,6 +396,32 @@ mod tests {
         assert_eq!(
             zs_radio_native_draw_plan(&zs_radio_render_plan(plan.bounds, false, Dpi::standard()))
                 .command_count(),
+            1
+        );
+    }
+
+    #[cfg(feature = "progress")]
+    #[test]
+    fn progress_geometry_clamps_fill_and_omits_zero_accent() {
+        let bounds = Rect {
+            x: 4,
+            y: 8,
+            width: 200,
+            height: 32,
+        };
+        let plan = zs_progress_bar_render_plan(bounds, 0.625, Dpi::standard());
+
+        assert_eq!(plan.track.width, 200);
+        assert_eq!(plan.track.height, 4);
+        assert_eq!(plan.filled_track.expect("determinate fill").width, 125);
+        assert_eq!(zs_progress_bar_native_draw_plan(&plan).command_count(), 2);
+        assert_eq!(
+            zs_progress_bar_native_draw_plan(&zs_progress_bar_render_plan(
+                bounds,
+                0.0,
+                Dpi::standard()
+            ))
+            .command_count(),
             1
         );
     }

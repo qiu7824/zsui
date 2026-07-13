@@ -5,6 +5,13 @@ use serde_json::json;
 use zsui::button;
 #[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
 use zsui::checkbox;
+#[cfg(any(
+    all(feature = "button", feature = "label"),
+    all(feature = "slider", feature = "label"),
+    all(feature = "radio", feature = "label"),
+    all(feature = "progress", feature = "label")
+))]
+use zsui::column;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
 #[cfg(feature = "radio")]
@@ -21,20 +28,22 @@ use zsui::textbox;
     all(feature = "radio", feature = "label")
 ))]
 use zsui::CommandId;
-#[cfg(any(
-    all(feature = "button", feature = "label"),
-    all(feature = "slider", feature = "label"),
-    all(feature = "radio", feature = "label")
-))]
-use zsui::{column, NativeViewKey, Point, UiCommand, WidgetId};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
     NativeHostSmokeInteractionReport, NativeUiPlatform, NativeWindowBuilder,
     NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, TraySpec,
 };
+#[cfg(feature = "progress")]
+use zsui::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
 use zsui::{slider, SliderRange};
+#[cfg(any(
+    all(feature = "button", feature = "label"),
+    all(feature = "slider", feature = "label"),
+    all(feature = "radio", feature = "label")
+))]
+use zsui::{NativeViewKey, Point, UiCommand, WidgetId};
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -56,6 +65,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--slider-view" || arg == "--slider"),
         args.iter()
             .any(|arg| arg == "--radio-view" || arg == "--radio"),
+        args.iter()
+            .any(|arg| arg == "--progress-view" || arg == "--progress"),
     ) {
         Ok(json) => {
             println!("{json}");
@@ -77,6 +88,7 @@ fn run_smoke(
     include_scroll_view: bool,
     include_slider_view: bool,
     include_radio_view: bool,
+    include_progress_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -95,6 +107,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "radio", feature = "label")))]
     if include_radio_view {
         return Err("--radio-view requires the radio and label features".to_string());
+    }
+    #[cfg(not(all(feature = "progress", feature = "label")))]
+    if include_progress_view {
+        return Err("--progress-view requires the progress and label features".to_string());
     }
 
     let artifact_root = artifact_root.unwrap_or("target/native-host-smoke");
@@ -197,6 +213,8 @@ fn run_smoke(
         attach_slider_view(builder)
     } else if include_radio_view {
         attach_radio_view(builder)
+    } else if include_progress_view {
+        attach_progress_view(builder)
     } else if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
@@ -286,6 +304,23 @@ fn attach_radio_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "radio", feature = "label")))]
 fn attach_radio_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(all(feature = "progress", feature = "label"))]
+fn attach_progress_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.view(
+        column([
+            text::<()>("ZSUI ProgressBar Smoke").height(zsui::Dp::new(28.0)),
+            progress_bar::<()>(65.0, ProgressRange::new(0.0, 100.0)).height(zsui::Dp::new(32.0)),
+        ])
+        .padding(zsui::Dp::new(24.0))
+        .gap(zsui::Dp::new(12.0)),
+    )
+}
+
+#[cfg(not(all(feature = "progress", feature = "label")))]
+fn attach_progress_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

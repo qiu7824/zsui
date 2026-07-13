@@ -146,6 +146,17 @@ fn mode_option(mode: Mode, current: Mode) -> ViewNode<ModeMsg> {
 }
 ```
 
+Determinate progress uses its own range and does not require the Slider
+feature:
+
+```rust,no_run
+use zsui::{progress_bar, ProgressRange, ViewNode};
+
+fn download_progress(percent: f32) -> ViewNode<()> {
+    progress_bar(percent, ProgressRange::new(0.0, 100.0))
+}
+```
+
 Attach a typed Rust view to the same native window path:
 
 ```rust,no_run
@@ -249,6 +260,7 @@ zsui = { version = "0.1", default-features = false, features = [
     "toggle",
     "slider",
     "radio",
+    "progress",
     "list",
     "scroll",
     "dark-mode",

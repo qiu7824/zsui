@@ -1,4 +1,4 @@
-#[cfg(feature = "slider")]
+#[cfg(any(feature = "slider", feature = "progress"))]
 use std::ops::RangeInclusive;
 use std::{
     fmt,
@@ -130,6 +130,53 @@ impl From<RangeInclusive<f32>> for SliderRange {
     }
 }
 
+#[cfg(feature = "progress")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ProgressRange {
+    min: f32,
+    max: f32,
+}
+
+#[cfg(feature = "progress")]
+impl ProgressRange {
+    pub fn new(min: f32, max: f32) -> Self {
+        let min = if min.is_finite() { min } else { 0.0 };
+        let max = if max.is_finite() { max } else { 100.0 };
+        let (min, mut max) = if min <= max { (min, max) } else { (max, min) };
+        if (max - min).abs() <= f32::EPSILON {
+            max = min + 1.0;
+        }
+        Self { min, max }
+    }
+
+    pub const fn min(self) -> f32 {
+        self.min
+    }
+
+    pub const fn max(self) -> f32 {
+        self.max
+    }
+
+    pub fn clamp(self, value: f32) -> f32 {
+        if value.is_finite() {
+            value.clamp(self.min, self.max)
+        } else {
+            self.min
+        }
+    }
+
+    pub fn fraction(self, value: f32) -> f32 {
+        ((self.clamp(value) - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+    }
+}
+
+#[cfg(feature = "progress")]
+impl From<RangeInclusive<f32>> for ProgressRange {
+    fn from(range: RangeInclusive<f32>) -> Self {
+        Self::new(*range.start(), *range.end())
+    }
+}
+
 #[cfg(feature = "virtual-list")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VirtualListRange {
@@ -238,6 +285,11 @@ pub enum ViewNodeKind<Msg> {
         value: f32,
         range: SliderRange,
         on_slide: Option<fn(f32) -> Msg>,
+    },
+    #[cfg(feature = "progress")]
+    ProgressBar {
+        value: f32,
+        range: ProgressRange,
     },
     #[cfg(feature = "list")]
     List {
@@ -615,6 +667,15 @@ pub fn radio_button<Msg>(label: impl Into<String>, selected: bool) -> ViewNode<M
         label: label.into(),
         selected,
         on_choose: None,
+    })
+}
+
+#[cfg(feature = "progress")]
+pub fn progress_bar<Msg>(value: f32, range: impl Into<ProgressRange>) -> ViewNode<Msg> {
+    let range = range.into();
+    ViewNode::new(ViewNodeKind::ProgressBar {
+        value: range.clamp(value),
+        range,
     })
 }
 
@@ -1723,6 +1784,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     SemanticTextStyle::body(),
                 )));
             }
+            #[cfg(feature = "progress")]
+            ViewNodeKind::ProgressBar { value, range } => {
+                let plan =
+                    crate::zs_progress_bar_render_plan(bounds, range.fraction(*value), cx.dpi);
+                for command in crate::zs_progress_bar_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "list")]
             ViewNodeKind::List { selected_index, .. } => {
                 if let Some(bounds) = selected_index
@@ -1992,13 +2061,19 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
-        if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
-            if let Some(bounds) = clipped_rect(bounds, clip) {
-                hit_targets.push(ViewHitTarget::with_kind(
-                    widget,
-                    bounds,
-                    self.hit_target_kind(),
-                ));
+        #[cfg(feature = "progress")]
+        let accepts_input = !matches!(self.kind, ViewNodeKind::ProgressBar { .. });
+        #[cfg(not(feature = "progress"))]
+        let accepts_input = true;
+        if accepts_input {
+            if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
+                if let Some(bounds) = clipped_rect(bounds, clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        self.hit_target_kind(),
+                    ));
+                }
             }
         }
 
@@ -2743,6 +2818,35 @@ mod tests {
         assert!(matches!(
             view.kind,
             ViewNodeKind::RadioButton { selected: true, .. }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "progress")]
+    fn progress_bar_normalizes_range_clamps_state_and_paints_fraction() {
+        let range = ProgressRange::new(100.0, 0.0);
+        let mut view = progress_bar::<()>(125.0, range).id(WidgetId::new(8));
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 32,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert_eq!(range.min(), 0.0);
+        assert_eq!(range.max(), 100.0);
+        assert_eq!(range.fraction(25.0), 0.25);
+        assert_eq!(paint.plan().command_count(), 2);
+        assert_eq!(view.interaction_plan().hit_target_count(), 0);
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::ProgressBar { value: 100.0, .. }
         ));
     }
 
