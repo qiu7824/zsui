@@ -9,10 +9,12 @@ the full readiness report during bootstrap.
 1. Read this file only.
 2. Match the task to one context pack below.
 3. Run `scripts/ai-context.ps1 -Pack <id>`.
-4. Read the returned `required` files and search inside them with `rg`.
-5. Read `optional` files only when a concrete question remains unanswered.
-6. Add a second pack only when the task genuinely crosses ownership boundaries.
-7. Run the verification commands returned by the selected pack.
+4. Read `docs/ai/project-memory.md` for durable decisions that must survive
+   across tasks; do not use it as implementation-status evidence.
+5. Read the returned `required` files and search inside them with `rg`.
+6. Read `optional` files only when a concrete question remains unanswered.
+7. Add a second pack only when the task genuinely crosses ownership boundaries.
+8. Run the verification commands returned by the selected pack.
 
 The routing source of truth is `docs/ai/context-packs.json`. This file stays
 small on purpose; detailed readiness material lives in `docs/ai/reference.md`
@@ -119,7 +121,6 @@ Target-specific completion additionally requires the artifact rules in
 
 Load these only when the selected pack requests them:
 
-- `docs/ai/project-memory.md`: durable product decisions and user priorities
 - `docs/ai/reference.md`: full readiness and public-surface reference
 - `src/agent_context.rs`: machine-readable readiness model
 - `docs/skills/zsui-native-ui/`: detailed native-host workflow

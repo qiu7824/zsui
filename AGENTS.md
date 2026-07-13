@@ -4,6 +4,8 @@
 
 - Read `docs/ai-agent.md` first and nothing else until the task is classified.
 - Select one pack with `scripts/ai-context.ps1 -Pack <id>`.
+- After classification, read `docs/ai/project-memory.md` before implementation
+  so durable product decisions and user priorities are not lost between tasks.
 - Read required paths first. Read optional paths only when blocked by a concrete
   unanswered question.
 - Use `rg` to locate symbols and read focused ranges. Do not recursively dump
