@@ -512,6 +512,7 @@ pub struct ZsDatePickerDayCell {
     pub in_display_month: bool,
     pub enabled: bool,
     pub selected: bool,
+    pub today: bool,
 }
 
 #[cfg(feature = "date-picker")]
@@ -553,6 +554,32 @@ pub fn zs_date_picker_render_plan(
         visible_month,
         minimum,
         maximum,
+        None,
+        expanded,
+        dpi,
+        None,
+    )
+}
+
+#[cfg(feature = "date-picker")]
+#[allow(clippy::too_many_arguments)]
+pub fn zs_date_picker_render_plan_with_today(
+    bounds: Rect,
+    value: ZsDate,
+    visible_month: ZsDate,
+    minimum: ZsDate,
+    maximum: ZsDate,
+    today: Option<ZsDate>,
+    expanded: bool,
+    dpi: Dpi,
+) -> ZsDatePickerRenderPlan {
+    zs_date_picker_render_plan_impl(
+        bounds,
+        value,
+        visible_month,
+        minimum,
+        maximum,
+        today,
         expanded,
         dpi,
         None,
@@ -577,6 +604,33 @@ pub fn zs_date_picker_render_plan_in_viewport(
         visible_month,
         minimum,
         maximum,
+        None,
+        expanded,
+        dpi,
+        Some(viewport),
+    )
+}
+
+#[cfg(feature = "date-picker")]
+#[allow(clippy::too_many_arguments)]
+pub fn zs_date_picker_render_plan_in_viewport_with_today(
+    bounds: Rect,
+    value: ZsDate,
+    visible_month: ZsDate,
+    minimum: ZsDate,
+    maximum: ZsDate,
+    today: Option<ZsDate>,
+    expanded: bool,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsDatePickerRenderPlan {
+    zs_date_picker_render_plan_impl(
+        bounds,
+        value,
+        visible_month,
+        minimum,
+        maximum,
+        today,
         expanded,
         dpi,
         Some(viewport),
@@ -591,6 +645,7 @@ fn zs_date_picker_render_plan_impl(
     visible_month: ZsDate,
     minimum: ZsDate,
     maximum: ZsDate,
+    today: Option<ZsDate>,
     expanded: bool,
     dpi: Dpi,
     viewport: Option<Rect>,
@@ -711,6 +766,7 @@ fn zs_date_picker_render_plan_impl(
                     && date.month() == visible_month.month(),
                 enabled: date >= minimum && date <= maximum,
                 selected: date == value,
+                today: today == Some(date),
             });
         }
     }
@@ -820,11 +876,12 @@ pub fn zs_date_picker_popup_native_draw_plan(
         )));
     }
     for cell in &plan.day_cells {
-        if cell.selected {
+        let highlighted = cell.selected || (cell.today && cell.enabled);
+        if highlighted {
             let diameter = scale(32, dpi)
                 .min(cell.bounds.width)
                 .min(cell.bounds.height);
-            commands.push(NativeDrawCommand::RoundFill {
+            commands.push(NativeDrawCommand::RoundRect {
                 rect: Rect {
                     x: cell.bounds.x + (cell.bounds.width - diameter) / 2,
                     y: cell.bounds.y + (cell.bounds.height - diameter) / 2,
@@ -832,12 +889,14 @@ pub fn zs_date_picker_popup_native_draw_plan(
                     height: diameter,
                 },
                 fill: NativeDrawFill::Role(ColorRole::Accent),
+                stroke: (cell.selected && cell.today)
+                    .then_some(NativeDrawFill::Role(ColorRole::AccentText)),
                 radius: diameter / 2,
             });
         }
         let color = if !cell.enabled {
             ColorRole::DisabledText
-        } else if cell.selected {
+        } else if highlighted {
             ColorRole::AccentText
         } else if cell.in_display_month {
             ColorRole::PrimaryText
@@ -1121,7 +1180,7 @@ mod tests {
     #[test]
     fn date_picker_geometry_uses_winui_metrics_and_typed_calendar_cells() {
         let value = ZsDate::new(2026, 7, 13).unwrap();
-        let plan = zs_date_picker_render_plan(
+        let plan = zs_date_picker_render_plan_with_today(
             Rect {
                 x: 24,
                 y: 64,
@@ -1132,6 +1191,7 @@ mod tests {
             value.first_day_of_month(),
             ZsDate::new(2026, 6, 15).unwrap(),
             ZsDate::new(2026, 8, 20).unwrap(),
+            Some(ZsDate::new(2026, 7, 14).unwrap()),
             true,
             Dpi::standard(),
         );
@@ -1150,6 +1210,11 @@ mod tests {
             plan.day_cells.iter().filter(|cell| cell.selected).count(),
             1
         );
+        assert_eq!(plan.day_cells.iter().filter(|cell| cell.today).count(), 1);
+        assert!(plan
+            .day_cells
+            .iter()
+            .any(|cell| cell.today && !cell.selected && cell.enabled));
         assert!(matches!(
             zs_date_picker_header_native_draw_plan(&plan, value)
                 .commands
@@ -1170,7 +1235,7 @@ mod tests {
                 Dpi::standard()
             )
             .command_count(),
-            54
+            55
         );
     }
 

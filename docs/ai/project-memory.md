@@ -66,6 +66,9 @@ history remain authoritative for implementation status.
   explanatory text and action regions—not a product-specific settings page.
 - Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
   GTK4 to present native platform character.
+- DatePicker resolves its today marker from the operating system's local time
+  zone when the optional control is constructed, while exposing an explicit
+  typed override for deterministic applications and tests.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

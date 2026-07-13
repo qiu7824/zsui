@@ -318,6 +318,7 @@ pub enum ViewNodeKind<Msg> {
         minimum: ZsDate,
         maximum: ZsDate,
         visible_month: ZsDate,
+        today: Option<ZsDate>,
         expanded: bool,
         on_date_change: Option<fn(ZsDate) -> Msg>,
         on_expanded_change: Option<fn(bool) -> Msg>,
@@ -621,6 +622,15 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    /// Overrides the local-clock date used for the CalendarView today marker.
+    #[cfg(feature = "date-picker")]
+    pub fn today(mut self, today: ZsDate) -> Self {
+        if let ViewNodeKind::DatePicker { today: current, .. } = &mut self.kind {
+            *current = Some(today);
+        }
+        self
+    }
+
     #[cfg(feature = "scroll")]
     pub fn scroll_y(mut self, offset_y: Dp) -> Self {
         match &mut self.kind {
@@ -809,6 +819,7 @@ pub fn date_picker<Msg>(value: ZsDate) -> ViewNode<Msg> {
         minimum,
         maximum,
         visible_month: value.first_day_of_month(),
+        today: ZsDate::today_local().ok(),
         expanded: false,
         on_date_change: None,
         on_expanded_change: None,
@@ -1807,6 +1818,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 expanded,
                 on_date_change,
                 on_expanded_change,
+                ..
             },
             ViewEvent::DateChanged {
                 value: next_value, ..
@@ -2151,14 +2163,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 minimum,
                 maximum,
                 visible_month,
+                today,
                 ..
             } => {
-                let plan = crate::zs_date_picker_render_plan(
+                let plan = crate::zs_date_picker_render_plan_with_today(
                     bounds,
                     *value,
                     *visible_month,
                     *minimum,
                     *maximum,
+                    *today,
                     false,
                     cx.dpi,
                 );
@@ -2645,6 +2659,7 @@ impl<Msg> ViewNode<Msg> {
                 minimum,
                 maximum,
                 visible_month,
+                today,
                 expanded: true,
                 ..
             },
@@ -2652,23 +2667,25 @@ impl<Msg> ViewNode<Msg> {
         {
             let plan = viewport.map_or_else(
                 || {
-                    crate::zs_date_picker_render_plan(
+                    crate::zs_date_picker_render_plan_with_today(
                         bounds,
                         *value,
                         *visible_month,
                         *minimum,
                         *maximum,
+                        *today,
                         true,
                         self.layout_dpi,
                     )
                 },
                 |viewport| {
-                    crate::zs_date_picker_render_plan_in_viewport(
+                    crate::zs_date_picker_render_plan_in_viewport_with_today(
                         bounds,
                         *value,
                         *visible_month,
                         *minimum,
                         *maximum,
+                        *today,
                         true,
                         self.layout_dpi,
                         viewport,
@@ -2745,6 +2762,7 @@ impl<Msg> ViewNode<Msg> {
                 minimum,
                 maximum,
                 visible_month,
+                today,
                 expanded: true,
                 ..
             },
@@ -2752,23 +2770,25 @@ impl<Msg> ViewNode<Msg> {
         {
             let plan = viewport.map_or_else(
                 || {
-                    crate::zs_date_picker_render_plan(
+                    crate::zs_date_picker_render_plan_with_today(
                         bounds,
                         *value,
                         *visible_month,
                         *minimum,
                         *maximum,
+                        *today,
                         true,
                         cx.dpi,
                     )
                 },
                 |viewport| {
-                    crate::zs_date_picker_render_plan_in_viewport(
+                    crate::zs_date_picker_render_plan_in_viewport_with_today(
                         bounds,
                         *value,
                         *visible_month,
                         *minimum,
                         *maximum,
+                        *today,
                         true,
                         cx.dpi,
                         viewport,
@@ -3705,6 +3725,7 @@ mod tests {
             .id(widget)
             .height(Dp::new(32.0))
             .date_range(minimum, maximum)
+            .today(ZsDate::new(2026, 7, 14).unwrap())
             .expanded(true)
             .on_date_change(Msg::DateChanged)
             .on_expanded_change(Msg::DateExpanded);
@@ -3727,6 +3748,23 @@ mod tests {
         assert_eq!(
             interaction.first_focus_target().map(|target| target.kind),
             Some(ViewHitTargetKind::DatePicker)
+        );
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert_eq!(
+            paint
+                .plan()
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    NativeDrawCommand::RoundRect {
+                        fill: NativeDrawFill::Role(ColorRole::Accent),
+                        ..
+                    }
+                ))
+                .count(),
+            2
         );
 
         let mut month_events = ViewEventCx::new();

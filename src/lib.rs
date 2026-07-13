@@ -454,8 +454,9 @@ pub use widget_render::{
 #[cfg(feature = "date-picker")]
 pub use widget_render::{
     zs_date_picker_header_native_draw_plan, zs_date_picker_popup_native_draw_plan,
-    zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport, ZsDatePickerDayCell,
-    ZsDatePickerRenderPlan,
+    zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport,
+    zs_date_picker_render_plan_in_viewport_with_today, zs_date_picker_render_plan_with_today,
+    ZsDatePickerDayCell, ZsDatePickerRenderPlan,
 };
 #[cfg(feature = "progress")]
 pub use widget_render::{

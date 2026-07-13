@@ -118,6 +118,15 @@ impl ZsDate {
     pub fn iso_string(self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
+
+    /// Returns today's date in the operating system's local time zone.
+    #[cfg(feature = "date-picker")]
+    pub fn today_local() -> ZsuiResult<Self> {
+        use chrono::Datelike;
+
+        let today = chrono::Local::now().date_naive();
+        Self::new(today.year(), today.month() as u8, today.day() as u8)
+    }
 }
 
 impl fmt::Display for ZsDate {
@@ -224,5 +233,15 @@ mod tests {
         ] {
             assert_eq!(ZsDate::from_unix_days(date.unix_days()), date);
         }
+    }
+
+    #[cfg(feature = "date-picker")]
+    #[test]
+    fn local_today_is_a_valid_supported_date() {
+        let today = ZsDate::today_local().expect("local clock date should be representable");
+
+        assert!((ZsDate::MIN_YEAR..=ZsDate::MAX_YEAR).contains(&today.year()));
+        assert!((1..=12).contains(&today.month()));
+        assert!((1..=today.days_in_month()).contains(&today.day()));
     }
 }
