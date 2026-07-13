@@ -900,9 +900,9 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 27);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 28);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 6);
-        assert_eq!(context.readiness.component_catalog.not_started_count, 15);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 14);
         assert!(context
             .readiness
             .rust_first_goal_names

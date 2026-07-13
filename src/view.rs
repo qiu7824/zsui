@@ -24,6 +24,8 @@ use crate::{
     style::{ThemeColorToken, ZsuiThemeMode},
     Command, UiCommand,
 };
+#[cfg(feature = "time-picker")]
+use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime, ZsTimePickerPlatformStyle};
 #[cfg(feature = "tabs")]
 use crate::{ZsTabId, ZsTabSpec};
 use serde::{Deserialize, Serialize};
@@ -258,6 +260,15 @@ pub struct ZsDatePickerState {
     pub expanded: bool,
 }
 
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTimePickerState {
+    pub value: ZsTime,
+    pub minute_increment: ZsMinuteIncrement,
+    pub clock: ZsClockFormat,
+    pub expanded: bool,
+}
+
 #[cfg(feature = "tabs")]
 #[derive(Debug, Clone)]
 pub struct ZsTabItem<Msg> {
@@ -359,6 +370,15 @@ pub enum ViewNodeKind<Msg> {
         today: Option<ZsDate>,
         expanded: bool,
         on_date_change: Option<fn(ZsDate) -> Msg>,
+        on_expanded_change: Option<fn(bool) -> Msg>,
+    },
+    #[cfg(feature = "time-picker")]
+    TimePicker {
+        value: ZsTime,
+        minute_increment: ZsMinuteIncrement,
+        clock: ZsClockFormat,
+        expanded: bool,
+        on_time_change: Option<fn(ZsTime) -> Msg>,
         on_expanded_change: Option<fn(bool) -> Msg>,
     },
     #[cfg(feature = "tabs")]
@@ -603,13 +623,15 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     pub fn expanded(mut self, is_expanded: bool) -> Self {
         match &mut self.kind {
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { expanded, .. } => *expanded = is_expanded,
             #[cfg(feature = "date-picker")]
             ViewNodeKind::DatePicker { expanded, .. } => *expanded = is_expanded,
+            #[cfg(feature = "time-picker")]
+            ViewNodeKind::TimePicker { expanded, .. } => *expanded = is_expanded,
             _ => {}
         }
         self
@@ -623,7 +645,7 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     pub fn on_expanded_change(mut self, message: fn(bool) -> Msg) -> Self {
         match &mut self.kind {
             #[cfg(feature = "combo")]
@@ -632,6 +654,10 @@ impl<Msg: Clone> ViewNode<Msg> {
             } => *on_expanded_change = Some(message),
             #[cfg(feature = "date-picker")]
             ViewNodeKind::DatePicker {
+                on_expanded_change, ..
+            } => *on_expanded_change = Some(message),
+            #[cfg(feature = "time-picker")]
+            ViewNodeKind::TimePicker {
                 on_expanded_change, ..
             } => *on_expanded_change = Some(message),
             _ => {}
@@ -675,6 +701,36 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn today(mut self, today: ZsDate) -> Self {
         if let ViewNodeKind::DatePicker { today: current, .. } = &mut self.kind {
             *current = Some(today);
+        }
+        self
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn minute_increment(mut self, increment: ZsMinuteIncrement) -> Self {
+        if let ViewNodeKind::TimePicker {
+            value,
+            minute_increment,
+            ..
+        } = &mut self.kind
+        {
+            *minute_increment = increment;
+            *value = value.snap(increment);
+        }
+        self
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn clock_format(mut self, clock: ZsClockFormat) -> Self {
+        if let ViewNodeKind::TimePicker { clock: current, .. } = &mut self.kind {
+            *current = clock;
+        }
+        self
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn on_time_change(mut self, message: fn(ZsTime) -> Msg) -> Self {
+        if let ViewNodeKind::TimePicker { on_time_change, .. } = &mut self.kind {
+            *on_time_change = Some(message);
         }
         self
     }
@@ -882,6 +938,18 @@ pub fn date_picker<Msg>(value: ZsDate) -> ViewNode<Msg> {
     })
 }
 
+#[cfg(feature = "time-picker")]
+pub fn time_picker<Msg>(value: ZsTime) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::TimePicker {
+        value,
+        minute_increment: ZsMinuteIncrement::ONE,
+        clock: ZsTimePickerPlatformStyle::current().default_clock(),
+        expanded: false,
+        on_time_change: None,
+        on_expanded_change: None,
+    })
+}
+
 #[cfg(feature = "tabs")]
 pub fn tab_view<Msg>(
     items: impl IntoIterator<Item = ZsTabItem<Msg>>,
@@ -1030,12 +1098,22 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: ZsDate,
     },
+    #[cfg(feature = "time-picker")]
+    TimePickerExpandedChanged {
+        widget: WidgetId,
+        expanded: bool,
+    },
+    #[cfg(feature = "time-picker")]
+    TimeChanged {
+        widget: WidgetId,
+        value: ZsTime,
+    },
     #[cfg(feature = "tabs")]
     TabSelected {
         widget: WidgetId,
         tab: ZsTabId,
     },
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     DismissPopupOverlays {
         except: Option<WidgetId>,
     },
@@ -1103,6 +1181,12 @@ pub enum ViewHitTargetKind {
     DatePickerPreviousMonth,
     #[cfg(feature = "date-picker")]
     DatePickerNextMonth,
+    #[cfg(feature = "time-picker")]
+    TimePicker,
+    #[cfg(feature = "time-picker")]
+    TimePickerChoice {
+        value: ZsTime,
+    },
     #[cfg(feature = "tabs")]
     Tab {
         tab_view: WidgetId,
@@ -1265,6 +1349,10 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "time-picker")]
+        if matches!(self.kind, ViewHitTargetKind::TimePickerChoice { .. }) {
+            return false;
+        }
         true
     }
 }
@@ -1390,6 +1478,8 @@ trait LiveViewDriver: Send {
     ) -> Option<usize>;
     #[cfg(feature = "date-picker")]
     fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState>;
+    #[cfg(feature = "time-picker")]
+    fn widget_time_picker_state(&self, widget: WidgetId) -> Option<ZsTimePickerState>;
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState>;
     #[cfg(feature = "tabs")]
@@ -1489,6 +1579,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "date-picker")]
     pub fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState> {
         self.lock().widget_date_picker_state(widget)
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn widget_time_picker_state(&self, widget: WidgetId) -> Option<ZsTimePickerState> {
+        self.lock().widget_time_picker_state(widget)
     }
 
     #[cfg(feature = "tabs")]
@@ -1715,6 +1810,11 @@ where
         self.view.widget_date_picker_state(widget)
     }
 
+    #[cfg(feature = "time-picker")]
+    fn widget_time_picker_state(&self, widget: WidgetId) -> Option<ZsTimePickerState> {
+        self.view.widget_time_picker_state(widget)
+    }
+
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
         self.view.widget_tab_header_state(widget)
@@ -1807,7 +1907,7 @@ impl ViewPaintCx {
 
     fn finish_node<Msg>(&mut self, _root: &ViewNode<Msg>) {
         self.paint_depth = self.paint_depth.saturating_sub(1);
-        #[cfg(any(feature = "combo", feature = "date-picker"))]
+        #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
         if self.paint_depth == 0 {
             _root.paint_overlays(self, None);
         }
@@ -2016,7 +2116,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             return;
         }
 
-        #[cfg(any(feature = "combo", feature = "date-picker"))]
+        #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
         if let ViewEvent::DismissPopupOverlays { except } = event {
             let should_dismiss = self.id.is_some() && self.id != *except;
             #[cfg(feature = "combo")]
@@ -2030,6 +2130,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if *expanded {
                         *expanded = false;
                         self.combo_first_visible_option = None;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "time-picker")]
+            if should_dismiss {
+                if let ViewNodeKind::TimePicker {
+                    expanded,
+                    on_expanded_change,
+                    ..
+                } = &mut self.kind
+                {
+                    if *expanded {
+                        *expanded = false;
                         if let Some(message) = on_expanded_change {
                             cx.emit(message(false));
                         }
@@ -2195,6 +2311,31 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
         }
 
+        #[cfg(feature = "time-picker")]
+        if let (
+            ViewNodeKind::TimePicker {
+                value,
+                minute_increment,
+                on_time_change,
+                ..
+            },
+            ViewEvent::TimeChanged {
+                widget,
+                value: next_value,
+            },
+        ) = (&mut self.kind, event)
+        {
+            if self.id == Some(*widget) {
+                let next_value = next_value.snap(*minute_increment);
+                if *value != next_value {
+                    *value = next_value;
+                    if let Some(message) = on_time_change {
+                        cx.emit(message(next_value));
+                    }
+                }
+            }
+        }
+
         if self.event_targets_self(event) {
             #[cfg(feature = "virtual-list")]
             let list_bounds = self
@@ -2330,6 +2471,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     ViewEvent::DatePickerMonthChanged { month, .. },
                 ) => {
                     *visible_month = clamp_visible_month(*month, *minimum, *maximum);
+                }
+                #[cfg(feature = "time-picker")]
+                (
+                    ViewNodeKind::TimePicker {
+                        expanded,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::TimePickerExpandedChanged {
+                        expanded: next_expanded,
+                        ..
+                    },
+                ) => {
+                    if *expanded != *next_expanded {
+                        *expanded = *next_expanded;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(*next_expanded));
+                        }
+                    }
                 }
                 #[cfg(feature = "scroll")]
                 (
@@ -2507,6 +2667,27 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Toggle { checked, .. } => {
                 let plan = crate::zs_toggle_render_plan(bounds, false, *checked, cx.dpi);
                 for command in crate::zs_toggle_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
+            #[cfg(feature = "time-picker")]
+            ViewNodeKind::TimePicker {
+                value,
+                minute_increment,
+                clock,
+                ..
+            } => {
+                let plan = crate::zs_time_picker_render_plan(
+                    bounds,
+                    *value,
+                    *minute_increment,
+                    *clock,
+                    false,
+                    ZsTimePickerPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_time_picker_header_native_draw_plan(&plan, *value).commands
+                {
                     cx.draw(command);
                 }
             }
@@ -2744,11 +2925,14 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::DatePickerExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::DatePickerMonthChanged { widget, .. })
             | (Some(id), ViewEvent::DateChanged { widget, .. }) => id == *widget,
+            #[cfg(feature = "time-picker")]
+            (Some(id), ViewEvent::TimePickerExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::TimeChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "tabs")]
             (Some(id), ViewEvent::TabSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
-            #[cfg(any(feature = "combo", feature = "date-picker"))]
+            #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
             (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
             (None, _) => false,
         }
@@ -2766,7 +2950,7 @@ impl<Msg> ViewNode<Msg> {
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
         let mut hit_targets = Vec::new();
         self.collect_hit_targets(&mut hit_targets, None);
-        #[cfg(any(feature = "combo", feature = "date-picker"))]
+        #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
         self.collect_overlay_hit_targets(&mut hit_targets, None);
         ViewInteractionPlan { hit_targets }
     }
@@ -2957,6 +3141,30 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_date_picker_state(widget))
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn widget_time_picker_state(&self, widget: WidgetId) -> Option<ZsTimePickerState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::TimePicker {
+                value,
+                minute_increment,
+                clock,
+                expanded,
+                ..
+            } = &self.kind
+            {
+                return Some(ZsTimePickerState {
+                    value: *value,
+                    minute_increment: *minute_increment,
+                    clock: *clock,
+                    expanded: *expanded,
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_time_picker_state(widget))
     }
 
     #[cfg(feature = "tabs")]
@@ -3200,7 +3408,7 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     fn collect_overlay_hit_targets(
         &self,
         hit_targets: &mut Vec<ViewHitTarget>,
@@ -3322,13 +3530,61 @@ impl<Msg> ViewNode<Msg> {
                 },
             ));
         }
+        #[cfg(feature = "time-picker")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::TimePicker {
+                value,
+                minute_increment,
+                clock,
+                expanded: true,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan = viewport.map_or_else(
+                || {
+                    crate::zs_time_picker_render_plan(
+                        bounds,
+                        *value,
+                        *minute_increment,
+                        *clock,
+                        true,
+                        ZsTimePickerPlatformStyle::current(),
+                        self.layout_dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_time_picker_render_plan_in_viewport(
+                        bounds,
+                        *value,
+                        *minute_increment,
+                        *clock,
+                        true,
+                        ZsTimePickerPlatformStyle::current(),
+                        self.layout_dpi,
+                        viewport,
+                    )
+                },
+            );
+            hit_targets.extend(plan.choices.into_iter().map(|choice| {
+                ViewHitTarget::with_kind(
+                    widget,
+                    choice.bounds,
+                    ViewHitTargetKind::TimePickerChoice {
+                        value: choice.value,
+                    },
+                )
+            }));
+        }
         let child_viewport = viewport.or(self.bounds);
         for child in &self.children {
             child.collect_overlay_hit_targets(hit_targets, child_viewport);
         }
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
         #[cfg(feature = "combo")]
         if let (
@@ -3418,6 +3674,47 @@ impl<Msg> ViewNode<Msg> {
                 cx.draw(command);
             }
         }
+        #[cfg(feature = "time-picker")]
+        if let (
+            Some(bounds),
+            ViewNodeKind::TimePicker {
+                value,
+                minute_increment,
+                clock,
+                expanded: true,
+                ..
+            },
+        ) = (self.bounds, &self.kind)
+        {
+            let plan = viewport.map_or_else(
+                || {
+                    crate::zs_time_picker_render_plan(
+                        bounds,
+                        *value,
+                        *minute_increment,
+                        *clock,
+                        true,
+                        ZsTimePickerPlatformStyle::current(),
+                        cx.dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_time_picker_render_plan_in_viewport(
+                        bounds,
+                        *value,
+                        *minute_increment,
+                        *clock,
+                        true,
+                        ZsTimePickerPlatformStyle::current(),
+                        cx.dpi,
+                        viewport,
+                    )
+                },
+            );
+            for command in crate::zs_time_picker_popup_native_draw_plan(&plan).commands {
+                cx.draw(command);
+            }
+        }
         let child_viewport = viewport.or(self.bounds);
         for child in &self.children {
             child.paint_overlays(cx, child_viewport);
@@ -3448,6 +3745,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
             ViewNodeKind::DatePicker { .. } => ViewHitTargetKind::DatePicker,
+            #[cfg(feature = "time-picker")]
+            ViewNodeKind::TimePicker { .. } => ViewHitTargetKind::TimePicker,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
@@ -3804,6 +4103,7 @@ mod tests {
         feature = "radio",
         feature = "combo",
         feature = "date-picker",
+        feature = "time-picker",
         feature = "tabs",
         feature = "list"
     ))]
@@ -3827,6 +4127,10 @@ mod tests {
         DateChanged(ZsDate),
         #[cfg(feature = "date-picker")]
         DateExpanded(bool),
+        #[cfg(feature = "time-picker")]
+        TimeChanged(ZsTime),
+        #[cfg(feature = "time-picker")]
+        TimeExpanded(bool),
         #[cfg(feature = "tabs")]
         TabSelected(ZsTabId),
         #[cfg(feature = "list")]
@@ -4577,6 +4881,89 @@ mod tests {
                 visible_month: maximum.first_day_of_month(),
                 expanded: false,
             })
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "time-picker")]
+    fn time_picker_routes_typed_increment_popup_and_selection() {
+        let widget = WidgetId::new(13);
+        let initial = ZsTime::new(18, 15).unwrap();
+        let selected = ZsTime::new(18, 30).unwrap();
+        let mut view = time_picker(initial)
+            .id(widget)
+            .height(Dp::new(32.0))
+            .minute_increment(ZsMinuteIncrement::FIFTEEN)
+            .clock_format(ZsClockFormat::TwentyFourHour)
+            .expanded(true)
+            .on_time_change(Msg::TimeChanged)
+            .on_expanded_change(Msg::TimeExpanded);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 24,
+                y: 180,
+                width: 240,
+                height: 32,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert!(interaction.hit_targets.iter().any(|target| {
+            target.kind == ViewHitTargetKind::TimePickerChoice { value: selected }
+        }));
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::TimePicker)
+        );
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(crate::NativeDrawIconCommand {
+                icon: crate::ZsIcon::ChevronDown,
+                ..
+            })
+        )));
+
+        let mut selection_events = ViewEventCx::new();
+        view.event(
+            &mut selection_events,
+            &ViewEvent::TimeChanged {
+                widget,
+                value: selected,
+            },
+        );
+        assert_eq!(
+            selection_events.into_messages(),
+            vec![Msg::TimeChanged(selected)]
+        );
+        assert_eq!(
+            view.widget_time_picker_state(widget),
+            Some(ZsTimePickerState {
+                value: selected,
+                minute_increment: ZsMinuteIncrement::FIFTEEN,
+                clock: ZsClockFormat::TwentyFourHour,
+                expanded: true,
+            })
+        );
+
+        let mut expanded_events = ViewEventCx::new();
+        view.event(
+            &mut expanded_events,
+            &ViewEvent::TimePickerExpandedChanged {
+                widget,
+                expanded: false,
+            },
+        );
+        assert_eq!(
+            expanded_events.into_messages(),
+            vec![Msg::TimeExpanded(false)]
+        );
+        assert_eq!(
+            view.widget_time_picker_state(widget)
+                .map(|state| state.expanded),
+            Some(false)
         );
     }
 

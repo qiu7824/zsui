@@ -15,7 +15,7 @@ use crate::native::NativeComboTypeAheadState;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
 };
-#[cfg(any(feature = "date-picker", feature = "tabs"))]
+#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
@@ -1793,9 +1793,9 @@ pub struct WindowsWin32ViewInputRoute {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     pointer_hover: Option<NativePointerVisualKey>,
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     pointer_pressed: Option<NativePointerVisualKey>,
     surface: Option<crate::Rect>,
     dpi: crate::Dpi,
@@ -1824,9 +1824,9 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             pointer_hover: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             pointer_pressed: None,
             surface,
             dpi: crate::Dpi::standard(),
@@ -1851,9 +1851,9 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             pointer_hover: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             pointer_pressed: None,
             surface: None,
             dpi: crate::Dpi::standard(),
@@ -1930,7 +1930,7 @@ impl WindowsWin32ViewInputRoute {
         };
         let target = self.interaction_plan.hit_target_at(point);
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             target.and_then(native_pointer_visual_key),
@@ -1993,7 +1993,7 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         {
             let hovered = self
                 .interaction_plan
@@ -2053,7 +2053,7 @@ impl WindowsWin32ViewInputRoute {
             report.text_drag_count = usize::from(completed_selection);
             report.text_drag_active = false;
             report.events.push("win32_view_text_pointer_up".to_string());
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -2069,13 +2069,13 @@ impl WindowsWin32ViewInputRoute {
             report
                 .events
                 .push("win32_view_slider_pointer_up".to_string());
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
         let mut report = self.dispatch_click(point);
         report.pointer_up_count = 1;
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         {
             let hovered = self
                 .interaction_plan
@@ -2099,13 +2099,13 @@ impl WindowsWin32ViewInputRoute {
                 .collect(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         {
             let mut report = report;
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             report
         }
-        #[cfg(not(any(feature = "date-picker", feature = "tabs")))]
+        #[cfg(not(any(feature = "date-picker", feature = "tabs", feature = "time-picker")))]
         {
             report
         }
@@ -2116,13 +2116,13 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         {
             let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
-        #[cfg(not(any(feature = "date-picker", feature = "tabs")))]
+        #[cfg(not(any(feature = "date-picker", feature = "tabs", feature = "time-picker")))]
         {
             report
         }
@@ -2662,6 +2662,63 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "time-picker")]
+        if target.kind == crate::ViewHitTargetKind::TimePicker {
+            let Some(state) = self.widget_time_picker_state(widget) else {
+                return report;
+            };
+            let expanded = match virtual_key {
+                ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE => Some(!state.expanded),
+                key if key == u32::from(VK_ESCAPE) && state.expanded => Some(false),
+                _ => None,
+            };
+            if let Some(expanded) = expanded {
+                report.handled = true;
+                report.keyboard_activation_count = usize::from(matches!(
+                    virtual_key,
+                    ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE
+                ));
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_time_picker_expanded:{}:{expanded}",
+                    widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TimePickerExpandedChanged { widget, expanded },
+                    &mut report,
+                );
+                return report;
+            }
+            let minute_step = i32::from(state.minute_increment.get());
+            let value = match virtual_key {
+                key if key == u32::from(VK_LEFT) => Some(state.value.add_minutes_wrapping(-60)),
+                key if key == u32::from(VK_RIGHT) => Some(state.value.add_minutes_wrapping(60)),
+                key if key == u32::from(VK_UP) => {
+                    Some(state.value.add_minutes_wrapping(-minute_step))
+                }
+                key if key == u32::from(VK_DOWN) => {
+                    Some(state.value.add_minutes_wrapping(minute_step))
+                }
+                key if key == u32::from(VK_HOME) => Some(crate::ZsTime::MIDNIGHT),
+                key if key == u32::from(VK_END) => {
+                    crate::ZsTime::new(23, 60 - state.minute_increment.get()).ok()
+                }
+                _ => None,
+            };
+            if let Some(value) = value {
+                report.handled = true;
+                if value == state.value {
+                    return report;
+                }
+                report.event_count = 1;
+                report
+                    .events
+                    .push(format!("win32_view_time_picker_key:{}:{value}", widget.0));
+                self.dispatch_event(crate::ViewEvent::TimeChanged { widget, value }, &mut report);
+                return report;
+            }
+        }
+
         #[cfg(feature = "list")]
         if matches!(virtual_key, ZSUI_WIN32_VK_UP | ZSUI_WIN32_VK_DOWN) {
             let offset = if virtual_key == ZSUI_WIN32_VK_UP {
@@ -2914,7 +2971,7 @@ impl WindowsWin32ViewInputRoute {
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         self.dismiss_popup_overlays_except(None, &mut report);
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(None, None, &mut report);
         let Some(widget) = self.focused_widget.take() else {
             return report;
@@ -2964,6 +3021,43 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "time-picker")]
+        match target.kind {
+            crate::ViewHitTargetKind::TimePickerChoice { value } => {
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_time_picker_selected:{}:{value}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TimeChanged {
+                        widget: target.widget,
+                        value,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::TimePicker => {
+                let expanded = self
+                    .widget_time_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_time_picker_expanded:{}:{}",
+                    target.widget.0, !expanded
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TimePickerExpandedChanged {
+                        widget: target.widget,
+                        expanded: !expanded,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
         #[cfg(feature = "date-picker")]
         match target.kind {
             crate::ViewHitTargetKind::DatePickerDay { date } => {
@@ -3341,7 +3435,7 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     fn dismiss_popup_overlays_except(
         &mut self,
         except: Option<crate::WidgetId>,
@@ -3368,6 +3462,10 @@ impl WindowsWin32ViewInputRoute {
                 crate::ViewHitTargetKind::DatePicker => self
                     .widget_date_picker_state(target.widget)
                     .is_some_and(|state| state.expanded),
+                #[cfg(feature = "time-picker")]
+                crate::ViewHitTargetKind::TimePicker => self
+                    .widget_time_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded),
                 _ => false,
             }
         });
@@ -3386,7 +3484,7 @@ impl WindowsWin32ViewInputRoute {
         self.dispatch_event(crate::ViewEvent::DismissPopupOverlays { except }, report);
     }
 
-    #[cfg(not(any(feature = "combo", feature = "date-picker")))]
+    #[cfg(not(any(feature = "combo", feature = "date-picker", feature = "time-picker")))]
     fn dismiss_popup_overlays_except(
         &mut self,
         _except: Option<crate::WidgetId>,
@@ -3406,6 +3504,21 @@ impl WindowsWin32ViewInputRoute {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_date_picker_state(widget))
+            })
+    }
+
+    #[cfg(feature = "time-picker")]
+    fn widget_time_picker_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsTimePickerState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_time_picker_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_time_picker_state(widget))
             })
     }
 
@@ -3463,7 +3576,7 @@ impl WindowsWin32ViewInputRoute {
         } else {
             return false;
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         decorate_native_pointer_visuals(
             &mut plan,
             &self.interaction_plan,
@@ -3492,7 +3605,7 @@ impl WindowsWin32ViewInputRoute {
         true
     }
 
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     fn update_pointer_visual_state(
         &mut self,
         hovered: Option<NativePointerVisualKey>,
@@ -6635,6 +6748,93 @@ mod tests {
                 .widget_date_picker_state(widget)
                 .expect("date picker state")
                 .expanded
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "time-picker")]
+    fn window_view_input_route_selects_and_navigates_time_picker() {
+        fn changed(_: crate::ZsTime) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.time_changed"))
+        }
+        fn expanded(_: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.time_expanded"))
+        }
+
+        let widget = crate::WidgetId::new(38);
+        let initial = crate::ZsTime::new(9, 30).unwrap();
+        let selected = crate::ZsTime::new(9, 45).unwrap();
+        let header = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 32,
+            },
+            crate::ViewHitTargetKind::TimePicker,
+        );
+        let choice = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 80,
+                y: 120,
+                width: 80,
+                height: 40,
+            },
+            crate::ViewHitTargetKind::TimePickerChoice { value: selected },
+        );
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([header, choice]),
+            crate::time_picker(initial)
+                .id(widget)
+                .minute_increment(crate::ZsMinuteIncrement::FIFTEEN)
+                .clock_format(crate::ZsClockFormat::TwentyFourHour)
+                .on_time_change(changed)
+                .on_expanded_change(expanded),
+        );
+
+        let header_point = crate::Point { x: 20, y: 16 };
+        let hovered = route.dispatch_pointer_move(header_point);
+        assert!(hovered.handled);
+        assert_eq!(hovered.pointer_visual_change_count, 1);
+        let opened = route.dispatch_click(header_point);
+        assert_eq!(opened.event_count, 1);
+        assert_eq!(opened.ui_command_count, 1);
+        assert!(
+            route
+                .widget_time_picker_state(widget)
+                .expect("time picker state")
+                .expanded
+        );
+
+        let selection = route.dispatch_click(crate::Point { x: 100, y: 140 });
+        assert_eq!(selection.event_count, 1);
+        assert_eq!(selection.ui_command_count, 1);
+        assert_eq!(
+            route
+                .widget_time_picker_state(widget)
+                .map(|state| (state.value, state.expanded)),
+            Some((selected, true))
+        );
+
+        let closed = route.dispatch_key_down(u32::from(VK_ESCAPE));
+        assert_eq!(closed.event_count, 1);
+        assert_eq!(closed.ui_command_count, 1);
+        assert_eq!(
+            route
+                .widget_time_picker_state(widget)
+                .map(|state| state.expanded),
+            Some(false)
+        );
+        let keyboard = route.dispatch_key_down(u32::from(VK_DOWN));
+        assert_eq!(keyboard.event_count, 1);
+        assert_eq!(keyboard.ui_command_count, 1);
+        assert_eq!(
+            route
+                .widget_time_picker_state(widget)
+                .map(|state| state.value),
+            Some(crate::ZsTime::new(10, 0).unwrap())
         );
     }
 

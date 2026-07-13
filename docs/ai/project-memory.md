@@ -108,6 +108,12 @@ history remain authoritative for implementation status.
   adjacent page. GTK4 arrow keys plus Home/End move header focus, Space selects,
   and Ctrl+PageUp/Ctrl+PageDown changes page. Application code and the public
   API contain no platform `cfg`.
+- TimePicker uses validated `ZsTime` and `ZsMinuteIncrement` values. It is an
+  independent `time-picker` Cargo feature, stays on the shared self-drawn path,
+  and selects Windows, macOS or GTK metric profiles internally. The picker
+  popup shares viewport flipping and clamping with other overlays; its expanded
+  state and changes remain explicit typed application messages. System-locale
+  clock selection and non-Windows target proof remain readiness gaps.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

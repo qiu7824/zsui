@@ -149,6 +149,11 @@ const DATE_PICKER_GAPS: &[&str] = &[
     "accessibility value and calendar-grid providers",
     "AppKit and GTK4 platform-style metrics and target interaction smoke",
 ];
+const TIME_PICKER_GAPS: &[&str] = &[
+    "system-locale clock selection and localized labels",
+    "accessibility value and picker-column providers",
+    "AppKit and GTK4 target interaction smoke",
+];
 const TABS_GAPS: &[&str] = &[
     "accessibility tab-list and tab-panel providers",
     "document-tab close, reorder and overflow behavior",
@@ -398,10 +403,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "time_picker",
         "TimePicker",
         Input,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("time-picker"),
+        "src/time.rs + src/view.rs + src/widget_render.rs",
+        TIME_PICKER_GAPS
     ),
     component!(
         "color_picker",
@@ -631,7 +636,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 15);
+        assert!(summary.not_started_count >= 14);
         assert!(summary.missing_component_names.contains(&"tree"));
         assert!(summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));

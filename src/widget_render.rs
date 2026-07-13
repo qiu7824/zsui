@@ -3,21 +3,28 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "date-picker")]
 use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
-#[cfg(any(feature = "date-picker", feature = "tabs"))]
+#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 use crate::{HorizontalAlign, TextRole, TextWeight};
-#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
-#[cfg(any(feature = "combo", feature = "date-picker", feature = "tabs"))]
+#[cfg(any(
+    feature = "combo",
+    feature = "date-picker",
+    feature = "tabs",
+    feature = "time-picker"
+))]
 use crate::{NativeDrawTextCommand, SemanticTextStyle};
+#[cfg(feature = "time-picker")]
+use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
 
-#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsPopupPlacement {
     Below,
     Above,
 }
 
-#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ZsPlacedPopup {
     bounds: Rect,
@@ -1350,7 +1357,444 @@ pub fn zs_date_picker_popup_native_draw_plan(
     NativeDrawPlan::new(commands)
 }
 
-#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsTimePickerPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "time-picker")]
+impl ZsTimePickerPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Macos
+        } else {
+            Self::Gtk
+        }
+    }
+
+    pub const fn default_clock(self) -> ZsClockFormat {
+        match self {
+            Self::Windows => ZsClockFormat::TwelveHour,
+            Self::Macos | Self::Gtk => ZsClockFormat::TwentyFourHour,
+        }
+    }
+}
+
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsTimePickerMetrics {
+    pub popup_width: Dp,
+    pub row_height: Dp,
+    pub visible_rows: usize,
+    pub text_padding: Dp,
+    pub icon_column_width: Dp,
+    pub popup_gap: Dp,
+    pub control_radius: Dp,
+    pub overlay_radius: Dp,
+}
+
+#[cfg(feature = "time-picker")]
+impl ZsTimePickerMetrics {
+    pub const fn for_platform(platform: ZsTimePickerPlatformStyle) -> Self {
+        match platform {
+            ZsTimePickerPlatformStyle::Windows => Self {
+                popup_width: Dp::new(280.0),
+                row_height: Dp::new(40.0),
+                visible_rows: 5,
+                text_padding: Dp::new(12.0),
+                icon_column_width: Dp::new(32.0),
+                popup_gap: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                overlay_radius: Dp::new(8.0),
+            },
+            ZsTimePickerPlatformStyle::Macos => Self {
+                popup_width: Dp::new(216.0),
+                row_height: Dp::new(30.0),
+                visible_rows: 3,
+                text_padding: Dp::new(10.0),
+                icon_column_width: Dp::new(26.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(10.0),
+            },
+            ZsTimePickerPlatformStyle::Gtk => Self {
+                popup_width: Dp::new(240.0),
+                row_height: Dp::new(36.0),
+                visible_rows: 3,
+                text_padding: Dp::new(12.0),
+                icon_column_width: Dp::new(34.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(12.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsTimePickerSegment {
+    Hour,
+    Minute,
+    Period,
+}
+
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTimePickerChoice {
+    pub bounds: Rect,
+    pub value: ZsTime,
+    pub segment: ZsTimePickerSegment,
+    pub label: String,
+    pub selected: bool,
+}
+
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTimePickerRenderPlan {
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+    pub icon_bounds: Rect,
+    pub popup: Option<Rect>,
+    pub popup_placement: Option<ZsPopupPlacement>,
+    pub column_bounds: Vec<Rect>,
+    pub choices: Vec<ZsTimePickerChoice>,
+    pub platform: ZsTimePickerPlatformStyle,
+    pub clock: ZsClockFormat,
+    pub control_radius: i32,
+    pub overlay_radius: i32,
+}
+
+#[cfg(feature = "time-picker")]
+pub fn zs_time_picker_render_plan(
+    bounds: Rect,
+    value: ZsTime,
+    increment: ZsMinuteIncrement,
+    clock: ZsClockFormat,
+    expanded: bool,
+    platform: ZsTimePickerPlatformStyle,
+    dpi: Dpi,
+) -> ZsTimePickerRenderPlan {
+    zs_time_picker_render_plan_impl(
+        bounds, value, increment, clock, expanded, platform, dpi, None,
+    )
+}
+
+#[cfg(feature = "time-picker")]
+#[allow(clippy::too_many_arguments)]
+pub fn zs_time_picker_render_plan_in_viewport(
+    bounds: Rect,
+    value: ZsTime,
+    increment: ZsMinuteIncrement,
+    clock: ZsClockFormat,
+    expanded: bool,
+    platform: ZsTimePickerPlatformStyle,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsTimePickerRenderPlan {
+    zs_time_picker_render_plan_impl(
+        bounds,
+        value,
+        increment,
+        clock,
+        expanded,
+        platform,
+        dpi,
+        Some(viewport),
+    )
+}
+
+#[cfg(feature = "time-picker")]
+#[allow(clippy::too_many_arguments)]
+fn zs_time_picker_render_plan_impl(
+    bounds: Rect,
+    value: ZsTime,
+    increment: ZsMinuteIncrement,
+    clock: ZsClockFormat,
+    expanded: bool,
+    platform: ZsTimePickerPlatformStyle,
+    dpi: Dpi,
+    viewport: Option<Rect>,
+) -> ZsTimePickerRenderPlan {
+    let value = value.snap(increment);
+    let metrics = ZsTimePickerMetrics::for_platform(platform);
+    let icon_column_width = metrics
+        .icon_column_width
+        .to_px(dpi)
+        .round_i32()
+        .max(1)
+        .min(bounds.width.max(1));
+    let text_padding = metrics
+        .text_padding
+        .to_px(dpi)
+        .round_i32()
+        .max(1)
+        .min(bounds.width.max(1) / 3);
+    let icon_size = scale(12, dpi).min(bounds.height.max(1)).max(1);
+    let icon_column_x = bounds
+        .x
+        .saturating_add(bounds.width)
+        .saturating_sub(icon_column_width);
+    let icon_bounds = Rect {
+        x: icon_column_x.saturating_add((icon_column_width.saturating_sub(icon_size)) / 2),
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(icon_size)) / 2),
+        width: icon_size,
+        height: icon_size,
+    };
+    let text_x = bounds.x.saturating_add(text_padding);
+    let text_bounds = Rect {
+        x: text_x,
+        y: bounds.y,
+        width: icon_column_x.saturating_sub(text_x).max(0),
+        height: bounds.height,
+    };
+
+    let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
+    let border_inset = scale(1, dpi);
+    let popup_height = row_height
+        .saturating_mul(metrics.visible_rows.max(1) as i32)
+        .saturating_add(border_inset.saturating_mul(2));
+    let placed_popup = expanded.then(|| {
+        place_popup(
+            bounds,
+            metrics.popup_width.to_px(dpi).round_i32().max(1),
+            popup_height,
+            metrics.popup_gap.to_px(dpi).round_i32().max(0),
+            viewport,
+        )
+    });
+    let popup = placed_popup.map(|placed| placed.bounds);
+    let mut column_bounds = Vec::new();
+    let mut choices = Vec::new();
+    if let Some(popup) = popup {
+        let content = Rect {
+            x: popup.x.saturating_add(border_inset),
+            y: popup.y.saturating_add(border_inset),
+            width: popup.width.saturating_sub(border_inset.saturating_mul(2)),
+            height: popup.height.saturating_sub(border_inset.saturating_mul(2)),
+        };
+        let column_count = if clock == ZsClockFormat::TwelveHour {
+            3
+        } else {
+            2
+        };
+        let column_left = |column: i32| content.x + content.width * column / column_count;
+        let column_right = |column: i32| content.x + content.width * (column + 1) / column_count;
+        for column in 0..column_count {
+            column_bounds.push(Rect {
+                x: column_left(column),
+                y: content.y,
+                width: column_right(column).saturating_sub(column_left(column)),
+                height: content.height,
+            });
+        }
+
+        let middle = metrics.visible_rows as i32 / 2;
+        for row in 0..metrics.visible_rows as i32 {
+            let offset = row - middle;
+            let hour = match clock {
+                ZsClockFormat::TwentyFourHour => {
+                    (i32::from(value.hour()) + offset).rem_euclid(24) as u8
+                }
+                ZsClockFormat::TwelveHour => {
+                    let display_hour = match value.hour() % 12 {
+                        0 => 12,
+                        hour => hour,
+                    };
+                    let candidate = (i32::from(display_hour) - 1 + offset).rem_euclid(12) as u8 + 1;
+                    candidate % 12 + if value.hour() >= 12 { 12 } else { 0 }
+                }
+            };
+            let next = value.with_hour(hour).expect("rendered hour is valid");
+            choices.push(ZsTimePickerChoice {
+                bounds: Rect {
+                    x: column_bounds[0].x,
+                    y: content.y.saturating_add(row_height.saturating_mul(row)),
+                    width: column_bounds[0].width,
+                    height: row_height,
+                },
+                value: next,
+                segment: ZsTimePickerSegment::Hour,
+                label: match clock {
+                    ZsClockFormat::TwentyFourHour => format!("{hour:02}"),
+                    ZsClockFormat::TwelveHour => match hour % 12 {
+                        0 => "12".to_string(),
+                        hour => hour.to_string(),
+                    },
+                },
+                selected: hour == value.hour(),
+            });
+
+            let minute = (i32::from(value.minute())
+                + offset.saturating_mul(i32::from(increment.get())))
+            .rem_euclid(60) as u8;
+            let next = value.with_minute(minute).expect("rendered minute is valid");
+            choices.push(ZsTimePickerChoice {
+                bounds: Rect {
+                    x: column_bounds[1].x,
+                    y: content.y.saturating_add(row_height.saturating_mul(row)),
+                    width: column_bounds[1].width,
+                    height: row_height,
+                },
+                value: next,
+                segment: ZsTimePickerSegment::Minute,
+                label: format!("{minute:02}"),
+                selected: minute == value.minute(),
+            });
+        }
+
+        if clock == ZsClockFormat::TwelveHour {
+            let period_column = column_bounds[2];
+            let period_height = row_height.min(period_column.height / 2).max(1);
+            let start_y = period_column
+                .y
+                .saturating_add((period_column.height.saturating_sub(period_height * 2)) / 2);
+            for (index, afternoon) in [false, true].into_iter().enumerate() {
+                let hour = value.hour() % 12 + if afternoon { 12 } else { 0 };
+                choices.push(ZsTimePickerChoice {
+                    bounds: Rect {
+                        x: period_column.x,
+                        y: start_y.saturating_add(period_height.saturating_mul(index as i32)),
+                        width: period_column.width,
+                        height: period_height,
+                    },
+                    value: value
+                        .with_hour(hour)
+                        .expect("rendered period hour is valid"),
+                    segment: ZsTimePickerSegment::Period,
+                    label: if afternoon { "PM" } else { "AM" }.to_string(),
+                    selected: afternoon == (value.hour() >= 12),
+                });
+            }
+        }
+    }
+
+    ZsTimePickerRenderPlan {
+        bounds,
+        text_bounds,
+        icon_bounds,
+        popup,
+        popup_placement: placed_popup.map(|placed| placed.placement),
+        column_bounds,
+        choices,
+        platform,
+        clock,
+        control_radius: metrics.control_radius.to_px(dpi).round_i32().max(1),
+        overlay_radius: metrics.overlay_radius.to_px(dpi).round_i32().max(1),
+    }
+}
+
+#[cfg(feature = "time-picker")]
+pub fn zs_time_picker_header_native_draw_plan(
+    plan: &ZsTimePickerRenderPlan,
+    value: ZsTime,
+) -> NativeDrawPlan {
+    let fill = match plan.platform {
+        ZsTimePickerPlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Surface),
+        ZsTimePickerPlatformStyle::Windows | ZsTimePickerPlatformStyle::Gtk => {
+            NativeDrawFill::Role(ColorRole::Control)
+        }
+    };
+    NativeDrawPlan::new([
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill,
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.control_radius,
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            value.format(plan.clock),
+            plan.text_bounds,
+            SemanticTextStyle::body(),
+        )),
+        NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                ZsIcon::ChevronDown,
+                plan.icon_bounds,
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(ColorRole::PrimaryText),
+        ),
+    ])
+}
+
+#[cfg(feature = "time-picker")]
+pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> NativeDrawPlan {
+    let Some(popup) = plan.popup else {
+        return NativeDrawPlan::default();
+    };
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: popup,
+        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+        stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+        radius: plan.overlay_radius,
+    }];
+    for column in plan.column_bounds.iter().skip(1) {
+        commands.push(NativeDrawCommand::FillRect {
+            rect: Rect {
+                x: column.x,
+                y: column.y.saturating_add(4),
+                width: 1,
+                height: column.height.saturating_sub(8).max(1),
+            },
+            fill: NativeDrawFill::Role(ColorRole::Border),
+        });
+    }
+    for choice in &plan.choices {
+        if choice.selected {
+            let fill = match plan.platform {
+                ZsTimePickerPlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Accent),
+                ZsTimePickerPlatformStyle::Windows => NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 48,
+                },
+                ZsTimePickerPlatformStyle::Gtk => NativeDrawFill::Role(ColorRole::Control),
+            };
+            commands.push(NativeDrawCommand::RoundFill {
+                rect: Rect {
+                    x: choice.bounds.x.saturating_add(4),
+                    y: choice.bounds.y.saturating_add(3),
+                    width: choice.bounds.width.saturating_sub(8).max(1),
+                    height: choice.bounds.height.saturating_sub(6).max(1),
+                },
+                fill,
+                radius: plan.control_radius,
+            });
+        }
+        let color = if choice.selected && plan.platform == ZsTimePickerPlatformStyle::Macos {
+            ColorRole::AccentText
+        } else if choice.selected {
+            ColorRole::PrimaryText
+        } else {
+            ColorRole::SecondaryText
+        };
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            &choice.label,
+            choice.bounds,
+            SemanticTextStyle {
+                role: TextRole::Body,
+                color,
+                weight: if choice.selected {
+                    TextWeight::Semibold
+                } else {
+                    TextWeight::Regular
+                },
+                horizontal_align: HorizontalAlign::Center,
+                ..SemanticTextStyle::body()
+            },
+        )));
+    }
+    NativeDrawPlan::new(commands)
+}
+
+#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 fn place_popup(
     anchor: Rect,
     requested_width: i32,
@@ -1858,5 +2302,113 @@ mod tests {
             .day_cells
             .iter()
             .all(|cell| cell.bounds.x >= 208 && cell.bounds.x < 800));
+    }
+
+    #[cfg(feature = "time-picker")]
+    #[test]
+    fn time_picker_uses_platform_metrics_and_typed_segment_choices() {
+        let value = ZsTime::new(18, 15).unwrap();
+        let bounds = Rect {
+            x: 24,
+            y: 64,
+            width: 240,
+            height: 32,
+        };
+        let windows = zs_time_picker_render_plan(
+            bounds,
+            value,
+            ZsMinuteIncrement::FIFTEEN,
+            ZsClockFormat::TwelveHour,
+            true,
+            ZsTimePickerPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.popup_placement, Some(ZsPopupPlacement::Below));
+        assert_eq!(windows.popup.unwrap().width, 280);
+        assert_eq!(windows.column_bounds.len(), 3);
+        assert_eq!(windows.choices.len(), 12);
+        assert_eq!(
+            windows
+                .choices
+                .iter()
+                .filter(|choice| choice.selected)
+                .count(),
+            3
+        );
+        assert!(windows.choices.iter().any(|choice| {
+            choice.segment == ZsTimePickerSegment::Minute
+                && choice.label == "30"
+                && choice.value == ZsTime::new(18, 30).unwrap()
+        }));
+        assert!(matches!(
+            zs_time_picker_header_native_draw_plan(&windows, value)
+                .commands
+                .as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::Text(_),
+                NativeDrawCommand::Icon(NativeDrawIconCommand {
+                    icon: ZsIcon::ChevronDown,
+                    ..
+                })
+            ]
+        ));
+
+        let macos = zs_time_picker_render_plan(
+            bounds,
+            value,
+            ZsMinuteIncrement::FIFTEEN,
+            ZsClockFormat::TwentyFourHour,
+            true,
+            ZsTimePickerPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_time_picker_render_plan(
+            bounds,
+            value,
+            ZsMinuteIncrement::FIFTEEN,
+            ZsClockFormat::TwentyFourHour,
+            true,
+            ZsTimePickerPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+        assert_eq!(macos.column_bounds.len(), 2);
+        assert_eq!(macos.choices.len(), 6);
+        assert_eq!(macos.control_radius, 6);
+        assert_eq!(gtk.popup.unwrap().width, 240);
+        assert_eq!(gtk.overlay_radius, 12);
+    }
+
+    #[cfg(feature = "time-picker")]
+    #[test]
+    fn time_picker_popup_flips_and_clamps_with_shared_viewport_placement() {
+        let plan = zs_time_picker_render_plan_in_viewport(
+            Rect {
+                x: 250,
+                y: 220,
+                width: 120,
+                height: 32,
+            },
+            ZsTime::new(9, 30).unwrap(),
+            ZsMinuteIncrement::THIRTY,
+            ZsClockFormat::TwentyFourHour,
+            true,
+            ZsTimePickerPlatformStyle::Gtk,
+            Dpi::standard(),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 280,
+            },
+        );
+
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Above));
+        assert_eq!(plan.popup.unwrap().x, 60);
+        assert!(plan
+            .choices
+            .iter()
+            .all(|choice| choice.bounds.x >= 60 && choice.bounds.x < 300));
     }
 }

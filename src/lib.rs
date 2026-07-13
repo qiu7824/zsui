@@ -89,6 +89,8 @@ pub mod render_protocol;
 pub mod settings;
 pub mod shell_layout;
 pub mod style;
+#[cfg(feature = "time-picker")]
+pub mod time;
 pub mod timer_protocol;
 pub mod tray;
 pub mod ui_surface_protocol;
@@ -403,6 +405,8 @@ pub use style::{
     ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, ZSUI_FLUENT_SMALL_ICON_SIZE,
     ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
 };
+#[cfg(feature = "time-picker")]
+pub use time::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
 pub use timer_protocol::{
     main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
     SettingsTimerIds, SettingsTimerTask,
@@ -429,10 +433,14 @@ pub use view::text;
 pub use view::text_editor;
 #[cfg(feature = "textbox")]
 pub use view::textbox;
+#[cfg(feature = "time-picker")]
+pub use view::time_picker;
 #[cfg(feature = "toggle")]
 pub use view::toggle;
 #[cfg(feature = "date-picker")]
 pub use view::ZsDatePickerState;
+#[cfg(feature = "time-picker")]
+pub use view::ZsTimePickerState;
 pub use view::{
     column, live_view_runtime, row, spacer, AppCx, LiveViewUpdate, SharedLiveViewRuntime, View,
     ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
@@ -448,7 +456,7 @@ pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
-#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 pub use widget_render::ZsPopupPlacement;
 #[cfg(feature = "combo")]
 pub use widget_render::{
@@ -476,6 +484,12 @@ pub use widget_render::{zs_slider_native_draw_plan, zs_slider_render_plan, ZsSli
 pub use widget_render::{
     zs_tab_view_native_draw_plan, zs_tab_view_render_plan, ZsTabHeaderRenderPlan,
     ZsTabPlatformStyle, ZsTabViewMetrics, ZsTabViewRenderPlan,
+};
+#[cfg(feature = "time-picker")]
+pub use widget_render::{
+    zs_time_picker_header_native_draw_plan, zs_time_picker_popup_native_draw_plan,
+    zs_time_picker_render_plan, zs_time_picker_render_plan_in_viewport, ZsTimePickerChoice,
+    ZsTimePickerMetrics, ZsTimePickerPlatformStyle, ZsTimePickerRenderPlan, ZsTimePickerSegment,
 };
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};

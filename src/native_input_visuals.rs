@@ -196,10 +196,10 @@ pub(crate) fn decorate_native_focus_ring(
     Some(ring)
 }
 
-#[cfg(any(feature = "date-picker", feature = "tabs"))]
+#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
-#[cfg(any(feature = "date-picker", feature = "tabs"))]
+#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
     let supported = false;
     #[cfg(feature = "date-picker")]
@@ -213,10 +213,16 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
         );
     #[cfg(feature = "tabs")]
     let supported = supported || matches!(target.kind, ViewHitTargetKind::Tab { .. });
+    #[cfg(feature = "time-picker")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::TimePicker | ViewHitTargetKind::TimePickerChoice { .. }
+        );
     supported.then_some((target.widget, target.kind))
 }
 
-#[cfg(any(feature = "date-picker", feature = "tabs"))]
+#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 pub(crate) fn decorate_native_pointer_visuals(
     plan: &mut NativeDrawPlan,
     interaction_plan: &ViewInteractionPlan,
@@ -523,6 +529,69 @@ mod tests {
                 stroke: Some(NativeDrawFill::Role(ColorRole::PrimaryText)),
                 ..
             })
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "time-picker")]
+    fn time_picker_choice_pointer_visual_stays_below_popup_text() {
+        let widget = WidgetId::new(96);
+        let choice = Rect {
+            x: 80,
+            y: 40,
+            width: 80,
+            height: 40,
+        };
+        let target = ViewHitTarget::with_kind(
+            widget,
+            choice,
+            ViewHitTargetKind::TimePickerChoice {
+                value: crate::ZsTime::new(9, 45).unwrap(),
+            },
+        );
+        let interaction = ViewInteractionPlan::new([target]);
+        let mut plan = NativeDrawPlan::new([
+            NativeDrawCommand::RoundRect {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 240,
+                    height: 122,
+                },
+                fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                radius: 8,
+            },
+            NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+                "45",
+                choice,
+                crate::SemanticTextStyle::body(),
+            )),
+        ]);
+
+        assert_eq!(
+            decorate_native_pointer_visuals(
+                &mut plan,
+                &interaction,
+                Some((widget, target.kind)),
+                None,
+                Dpi::standard(),
+            ),
+            1
+        );
+        assert!(matches!(
+            plan.commands.as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::PrimaryText,
+                        alpha: 14,
+                    },
+                    ..
+                },
+                NativeDrawCommand::Text(_),
+            ]
         ));
     }
 

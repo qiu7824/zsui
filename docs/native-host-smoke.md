@@ -190,6 +190,20 @@ AppKit and GTK4 consume the same typed selection path with their platform arrow
 selection behavior, but still require target-machine screenshots and
 interaction artifacts.
 
+The dedicated strongly typed TimePicker smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,time-picker,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-time-picker --time-picker-view
+```
+
+It starts with the self-drawn picker open, chooses a 15-minute value through a
+typed popup hit target, closes with Escape, adjusts minutes and hours from the
+keyboard, then reopens the popup. The Windows artifact must capture
+`window.png`, keep all pointer/key inputs handled, execute all emitted
+`UiCommand` values, and retain a nonzero live-view revision. AppKit and GTK4 use
+their own metric profiles through the same `ZsTime` event path, while actual
+target-machine screenshots remain a separate gate.
+
 The default `--view` and `--scroll-view` paths exercise
 `NativeWindowBuilder::ui_command_view(...)`, record
 draw-plan command counts in `interaction.json`, post `WM_LBUTTONUP`, hit-test

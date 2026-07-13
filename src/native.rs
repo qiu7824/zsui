@@ -10,7 +10,7 @@ use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
     native_text_visual_geometry,
 };
-#[cfg(any(feature = "date-picker", feature = "tabs"))]
+#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
@@ -1007,9 +1007,9 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     pointer_hover: Option<NativePointerVisualKey>,
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     pointer_pressed: Option<NativePointerVisualKey>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
@@ -1029,7 +1029,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
     pub surface_changed: bool,
     pub focus_visual_changed: bool,
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     pub pointer_visual_changed: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
@@ -1100,9 +1100,9 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             pointer_hover: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             pointer_pressed: None,
             ime_preedit: None,
             app_command_executor,
@@ -1264,7 +1264,7 @@ impl NativeViewInputRuntime {
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             target.and_then(native_pointer_visual_key),
@@ -1323,7 +1323,7 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         {
             let hovered = self
                 .current_interaction_plan()
@@ -1377,7 +1377,7 @@ impl NativeViewInputRuntime {
             self.text_drag = None;
             report.handled = true;
             report.text_drag_active = false;
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -1387,7 +1387,7 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
             report.handled = true;
             report.slider_drag_active = false;
-            #[cfg(any(feature = "date-picker", feature = "tabs"))]
+            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -1398,7 +1398,7 @@ impl NativeViewInputRuntime {
         };
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             None,
@@ -1463,7 +1463,7 @@ impl NativeViewInputRuntime {
             slider_drag_active: false,
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
         self.populate_text_report(&mut report);
         report
@@ -1475,13 +1475,13 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         {
             let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
-        #[cfg(not(any(feature = "date-picker", feature = "tabs")))]
+        #[cfg(not(any(feature = "date-picker", feature = "tabs", feature = "time-picker")))]
         {
             report
         }
@@ -1805,6 +1805,44 @@ impl NativeViewInputRuntime {
             }
         }
 
+        #[cfg(feature = "time-picker")]
+        if target.kind == crate::ViewHitTargetKind::TimePicker {
+            let Some(state) = self.widget_time_picker_state(widget) else {
+                return report;
+            };
+            let expanded = match key {
+                NativeViewKey::Enter | NativeViewKey::Space => Some(!state.expanded),
+                NativeViewKey::Escape if state.expanded => Some(false),
+                _ => None,
+            };
+            if let Some(expanded) = expanded {
+                report.handled = true;
+                return self.dispatch_view_event(
+                    ViewEvent::TimePickerExpandedChanged { widget, expanded },
+                    report,
+                );
+            }
+            let minute_step = i32::from(state.minute_increment.get());
+            let value = match key {
+                NativeViewKey::Left => Some(state.value.add_minutes_wrapping(-60)),
+                NativeViewKey::Right => Some(state.value.add_minutes_wrapping(60)),
+                NativeViewKey::Up => Some(state.value.add_minutes_wrapping(-minute_step)),
+                NativeViewKey::Down => Some(state.value.add_minutes_wrapping(minute_step)),
+                NativeViewKey::Home => Some(crate::ZsTime::MIDNIGHT),
+                NativeViewKey::End => {
+                    crate::ZsTime::new(23, 60 - state.minute_increment.get()).ok()
+                }
+                _ => None,
+            };
+            if let Some(value) = value {
+                report.handled = true;
+                if value == state.value {
+                    return report;
+                }
+                return self.dispatch_view_event(ViewEvent::TimeChanged { widget, value }, report);
+            }
+        }
+
         #[cfg(feature = "list")]
         if matches!(key, NativeViewKey::Up | NativeViewKey::Down) {
             let offset = if key == NativeViewKey::Up { -1 } else { 1 };
@@ -2093,7 +2131,7 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
         }
         let had_preedit = self.ime_preedit.take().is_some();
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(None, None, &mut report);
         report.handled |= had_focus || had_preedit;
         report.focus_visual_changed = had_focus;
@@ -2236,7 +2274,7 @@ impl NativeViewInputRuntime {
 
     fn compose_input_visuals(&self, plan: NativeDrawPlan) -> NativeDrawPlan {
         let mut plan = plan;
-        #[cfg(any(feature = "date-picker", feature = "tabs"))]
+        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         if let Some(interaction_plan) = self.current_interaction_plan() {
             decorate_native_pointer_visuals(
                 &mut plan,
@@ -2259,7 +2297,7 @@ impl NativeViewInputRuntime {
         plan
     }
 
-    #[cfg(any(feature = "date-picker", feature = "tabs"))]
+    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
     fn update_pointer_visual_state(
         &mut self,
         hovered: Option<NativePointerVisualKey>,
@@ -2397,6 +2435,25 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "time-picker")]
+        match target.kind {
+            crate::ViewHitTargetKind::TimePickerChoice { value } => {
+                return ViewEvent::TimeChanged {
+                    widget: target.widget,
+                    value,
+                };
+            }
+            crate::ViewHitTargetKind::TimePicker => {
+                let expanded = self
+                    .widget_time_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+                return ViewEvent::TimePickerExpandedChanged {
+                    widget: target.widget,
+                    expanded: !expanded,
+                };
+            }
+            _ => {}
+        }
         #[cfg(feature = "date-picker")]
         match target.kind {
             crate::ViewHitTargetKind::DatePickerDay { date } => {
@@ -2625,7 +2682,7 @@ impl NativeViewInputRuntime {
             })
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
     fn dismiss_popup_overlays_except(
         &mut self,
         except: Option<crate::WidgetId>,
@@ -2647,6 +2704,10 @@ impl NativeViewInputRuntime {
                 crate::ViewHitTargetKind::DatePicker => self
                     .widget_date_picker_state(target.widget)
                     .is_some_and(|state| state.expanded),
+                #[cfg(feature = "time-picker")]
+                crate::ViewHitTargetKind::TimePicker => self
+                    .widget_time_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded),
                 _ => false,
             }
         });
@@ -2667,7 +2728,7 @@ impl NativeViewInputRuntime {
         self.dispatch_view_event(crate::ViewEvent::DismissPopupOverlays { except }, report)
     }
 
-    #[cfg(not(any(feature = "combo", feature = "date-picker")))]
+    #[cfg(not(any(feature = "combo", feature = "date-picker", feature = "time-picker")))]
     fn dismiss_popup_overlays_except(
         &mut self,
         _except: Option<crate::WidgetId>,
@@ -2688,6 +2749,21 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_date_picker_state(widget))
+            })
+    }
+
+    #[cfg(feature = "time-picker")]
+    fn widget_time_picker_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsTimePickerState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_time_picker_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_time_picker_state(widget))
             })
     }
 
@@ -6283,6 +6359,109 @@ mod tests {
                 .widget_date_picker_state(widget)
                 .map(|state| state.value),
             Some(crate::ZsDate::new(2026, 7, 15).unwrap())
+        );
+    }
+
+    #[cfg(feature = "time-picker")]
+    #[test]
+    fn native_view_runtime_opens_selects_and_navigates_time_picker() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(crate::ZsTime),
+            Expanded(bool),
+        }
+        struct State {
+            value: crate::ZsTime,
+            expanded: bool,
+        }
+
+        let widget = crate::WidgetId::new(86);
+        let initial = crate::ZsTime::new(9, 30).unwrap();
+        let builder = native_window("Platform TimePicker")
+            .size(420, 320)
+            .stateful_view(
+                State {
+                    value: initial,
+                    expanded: false,
+                },
+                move |state| {
+                    crate::time_picker(state.value)
+                        .id(widget)
+                        .height(Dp::new(32.0))
+                        .minute_increment(crate::ZsMinuteIncrement::FIFTEEN)
+                        .clock_format(crate::ZsClockFormat::TwentyFourHour)
+                        .expanded(state.expanded)
+                        .on_time_change(Msg::Changed)
+                        .on_expanded_change(Msg::Expanded)
+                },
+                |state, message, _cx| match message {
+                    Msg::Changed(next) => state.value = next,
+                    Msg::Expanded(expanded) => state.expanded = expanded,
+                },
+            );
+        let header = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .expect("time picker header should have hit geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let opened = runtime.dispatch_pointer_click(Point {
+            x: header.bounds.x + 12,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
+        assert!(opened.handled);
+        assert!(
+            runtime
+                .widget_time_picker_state(widget)
+                .expect("time picker state")
+                .expanded
+        );
+
+        let selected = crate::ZsTime::new(9, 45).unwrap();
+        let choice = runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.into_iter().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::TimePickerChoice { value: selected }
+                })
+            })
+            .expect("expanded time picker should expose minute choice geometry");
+        let changed = runtime.dispatch_pointer_click(Point {
+            x: choice.bounds.x + choice.bounds.width / 2,
+            y: choice.bounds.y + choice.bounds.height / 2,
+        });
+        assert!(changed.handled);
+        assert_eq!(changed.message_count, 1);
+        assert_eq!(
+            runtime
+                .widget_time_picker_state(widget)
+                .map(|state| (state.value, state.expanded)),
+            Some((selected, true))
+        );
+
+        let closed = runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(closed.handled);
+        assert_eq!(
+            runtime
+                .widget_time_picker_state(widget)
+                .map(|state| state.expanded),
+            Some(false)
+        );
+        let minute = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(minute.handled);
+        assert_eq!(
+            runtime
+                .widget_time_picker_state(widget)
+                .map(|state| state.value),
+            Some(crate::ZsTime::new(10, 0).unwrap())
+        );
+        let hour = runtime.dispatch_key(NativeViewKey::Right);
+        assert!(hour.handled);
+        assert_eq!(
+            runtime
+                .widget_time_picker_state(widget)
+                .map(|state| state.value),
+            Some(crate::ZsTime::new(11, 0).unwrap())
         );
     }
 

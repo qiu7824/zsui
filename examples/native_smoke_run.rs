@@ -12,6 +12,7 @@ use zsui::checkbox;
     all(feature = "progress", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
+    all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
 ))]
 use zsui::column;
@@ -33,6 +34,7 @@ use zsui::textbox;
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
+    all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
 ))]
 use zsui::CommandId;
@@ -41,6 +43,7 @@ use zsui::CommandId;
     all(feature = "slider", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
+    all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
 ))]
 use zsui::NativeViewKey;
@@ -58,12 +61,15 @@ use zsui::{progress_bar, ProgressRange};
 use zsui::{slider, SliderRange};
 #[cfg(feature = "tabs")]
 use zsui::{tab_view, ZsTabId, ZsTabItem};
+#[cfg(feature = "time-picker")]
+use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
+    all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
 ))]
 use zsui::{Point, UiCommand, WidgetId};
@@ -98,6 +104,8 @@ fn main() -> ExitCode {
             || date_picker_high_contrast,
         date_picker_high_contrast,
         args.iter()
+            .any(|arg| arg == "--time-picker-view" || arg == "--time-picker"),
+        args.iter()
             .any(|arg| arg == "--tabs-view" || arg == "--tabs"),
     ) {
         Ok(json) => {
@@ -124,6 +132,7 @@ fn run_smoke(
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
+    include_time_picker_view: bool,
     include_tabs_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
@@ -155,6 +164,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "date-picker", feature = "label")))]
     if include_date_picker_view {
         return Err("--date-picker-view requires the date-picker and label features".to_string());
+    }
+    #[cfg(not(all(feature = "time-picker", feature = "label")))]
+    if include_time_picker_view {
+        return Err("--time-picker-view requires the time-picker and label features".to_string());
     }
     #[cfg(not(all(feature = "tabs", feature = "label")))]
     if include_tabs_view {
@@ -266,6 +279,15 @@ fn run_smoke(
             .native_view_click(Point { x: 130, y: 284 })
             .native_view_click(Point { x: 100, y: 80 });
     }
+    #[cfg(all(feature = "time-picker", feature = "label"))]
+    if include_time_picker_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 164, y: 241 })
+            .native_view_key_down(NativeViewKey::Escape)
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_click(Point { x: 100, y: 80 });
+    }
     #[cfg(all(feature = "tabs", feature = "label"))]
     if include_tabs_view {
         smoke_options = smoke_options
@@ -276,8 +298,16 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Enter);
     }
 
-    let builder =
-        native_window("ZSUI Smoke").size(520, if include_date_picker_view { 480 } else { 320 });
+    let builder = native_window("ZSUI Smoke").size(
+        520,
+        if include_date_picker_view {
+            480
+        } else if include_time_picker_view {
+            360
+        } else {
+            320
+        },
+    );
     let builder = if include_window_menu {
         builder.menu(smoke_window_menu())
     } else {
@@ -294,6 +324,8 @@ fn run_smoke(
         attach_combo_view(builder)
     } else if include_date_picker_view {
         attach_date_picker_view(builder, date_picker_high_contrast)
+    } else if include_time_picker_view {
+        attach_time_picker_view(builder)
     } else if include_tabs_view {
         attach_tabs_view(builder)
     } else if include_scroll_view {
@@ -528,6 +560,58 @@ fn attach_date_picker_view(
     )
 }
 
+#[cfg(all(feature = "time-picker", feature = "label"))]
+#[derive(Clone)]
+enum TimePickerSmokeMsg {
+    Changed(ZsTime),
+    Expanded(bool),
+}
+
+#[cfg(all(feature = "time-picker", feature = "label"))]
+struct TimePickerSmokeState {
+    value: ZsTime,
+    expanded: bool,
+}
+
+#[cfg(all(feature = "time-picker", feature = "label"))]
+fn attach_time_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        TimePickerSmokeState {
+            value: ZsTime::new(9, 30).expect("smoke time should be valid"),
+            expanded: true,
+        },
+        |state| {
+            column([
+                text::<TimePickerSmokeMsg>("ZSUI TimePicker smoke").height(zsui::Dp::new(28.0)),
+                time_picker(state.value)
+                    .id(WidgetId::new(16))
+                    .height(zsui::Dp::new(32.0))
+                    .minute_increment(ZsMinuteIncrement::FIFTEEN)
+                    .clock_format(ZsClockFormat::TwentyFourHour)
+                    .expanded(state.expanded)
+                    .on_time_change(TimePickerSmokeMsg::Changed)
+                    .on_expanded_change(TimePickerSmokeMsg::Expanded),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            TimePickerSmokeMsg::Changed(next) => {
+                state.value = next;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.time_picker_changed",
+                )));
+            }
+            TimePickerSmokeMsg::Expanded(expanded) => {
+                state.expanded = expanded;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.time_picker_expanded",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "tabs", feature = "label"))]
 #[derive(Clone)]
 enum TabsSmokeMsg {
@@ -596,6 +680,11 @@ fn attach_tabs_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "tabs", feature = "label")))]
 fn attach_tabs_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "time-picker", feature = "label")))]
+fn attach_time_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 
