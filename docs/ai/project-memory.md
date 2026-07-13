@@ -48,6 +48,9 @@ history remain authoritative for implementation status.
 - Popup controls use one shared, DPI-aware viewport placement result for both
   painting and hit testing. Window-edge flipping and horizontal clamping stay
   in the framework instead of being reimplemented by individual backends.
+- Expanded popup state is dismissed through the shared typed View event path
+  on outside pointer input, focus traversal and window focus loss. Backends
+  must not keep a separate popup-open flag or bypass application messages.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
 - Treat antialiasing, DPI, IME, scrolling, margins and window services as

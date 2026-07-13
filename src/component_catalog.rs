@@ -142,14 +142,12 @@ const PROGRESS_GAPS: &[&str] = &[
     "AppKit and GTK4 target screenshot smoke",
 ];
 const COMBO_GAPS: &[&str] = &[
-    "outside-click and focus-loss dismissal",
     "long-option scrolling and type-ahead search",
     "accessibility expanded and selection providers",
     "AppKit and GTK4 target interaction smoke",
 ];
 const DATE_PICKER_GAPS: &[&str] = &[
     "localized date, month and weekday formatting",
-    "outside-click and focus-loss dismissal",
     "hover, pressed, today and high-contrast visual states",
     "accessibility value and calendar-grid providers",
     "AppKit and GTK4 platform-style metrics and target interaction smoke",

@@ -1853,11 +1853,15 @@ impl WindowsWin32ViewInputRoute {
             click_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        let Some(target) = self.interaction_plan.hit_target_at(point) else {
-            report.unhandled_click_count = 1;
-            report
-                .events
-                .push(format!("win32_view_click_missed:{}:{}", point.x, point.y));
+        let target = self.interaction_plan.hit_target_at(point);
+        self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
+        let Some(target) = target else {
+            if !report.handled {
+                report.unhandled_click_count = 1;
+                report
+                    .events
+                    .push(format!("win32_view_click_missed:{}:{}", point.x, point.y));
+            }
             return report;
         };
 
@@ -1884,7 +1888,9 @@ impl WindowsWin32ViewInputRoute {
             pointer_down_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        let Some(target) = self.interaction_plan.hit_target_at(point) else {
+        let target = self.interaction_plan.hit_target_at(point);
+        self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
+        let Some(target) = target else {
             return report;
         };
         #[cfg(feature = "slider")]
@@ -2524,6 +2530,7 @@ impl WindowsWin32ViewInputRoute {
             return;
         };
 
+        self.dismiss_popup_overlays_except(Some(target.widget), report);
         self.focus_target(target, report);
         report.focus_traversal_count = 1;
         report.events.push(format!(
@@ -2569,6 +2576,7 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        self.dismiss_popup_overlays_except(None, &mut report);
         let Some(widget) = self.focused_widget.take() else {
             return report;
         };
@@ -2774,11 +2782,11 @@ impl WindowsWin32ViewInputRoute {
     ) {
         if let Some(live_view) = &self.live_view {
             let update = live_view.dispatch_event(&event);
-            report.message_count = update.message_count;
-            report.ui_command_count = update.ui_commands.len();
-            report.app_command_count = update.commands.len();
+            report.message_count += update.message_count;
+            report.ui_command_count += update.ui_commands.len();
+            report.app_command_count += update.commands.len();
             report.live_view_revision = update.revision;
-            report.quit_requested = update.quit_requested;
+            report.quit_requested |= update.quit_requested;
             for command in update.commands {
                 report
                     .app_command_names
@@ -2817,14 +2825,18 @@ impl WindowsWin32ViewInputRoute {
         };
         view.event(&mut event_cx, &event);
         let commands = event_cx.into_messages();
-        report.message_count = commands.len();
-        report.ui_command_count = commands.len();
+        report.message_count += commands.len();
+        report.ui_command_count += commands.len();
         for command in commands {
             report.ui_command_ids.push(command.id.0);
             report
                 .events
                 .push(format!("win32_view_ui_command:{}", command.id.0));
             self.pending_ui_commands.push(command);
+        }
+        let next_interaction_plan = view.interaction_plan();
+        if next_interaction_plan.hit_target_count() > 0 {
+            self.interaction_plan = next_interaction_plan;
         }
         self.rebuild_pending_draw_plan();
     }
@@ -2873,6 +2885,59 @@ impl WindowsWin32ViewInputRoute {
                     .as_ref()
                     .and_then(|view| view.widget_combo_state(widget))
             })
+    }
+
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    fn dismiss_popup_overlays_except(
+        &mut self,
+        except: Option<crate::WidgetId>,
+        report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
+        #[cfg(feature = "combo")]
+        let combo_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
+            Some(target.widget) != except
+                && target.kind == crate::ViewHitTargetKind::ComboBox
+                && self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded)
+        });
+        let should_dismiss = self.interaction_plan.hit_targets.iter().any(|target| {
+            if Some(target.widget) == except {
+                return false;
+            }
+            match target.kind {
+                #[cfg(feature = "combo")]
+                crate::ViewHitTargetKind::ComboBox => self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded),
+                #[cfg(feature = "date-picker")]
+                crate::ViewHitTargetKind::DatePicker => self
+                    .widget_date_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded),
+                _ => false,
+            }
+        });
+        if !should_dismiss {
+            return;
+        }
+        #[cfg(feature = "combo")]
+        {
+            report.combo_expanded_change_count += usize::from(combo_was_dismissed);
+        }
+        report.handled = true;
+        report.event_count += 1;
+        report
+            .events
+            .push("win32_view_popup_overlays_dismissed".to_string());
+        self.dispatch_event(crate::ViewEvent::DismissPopupOverlays { except }, report);
+    }
+
+    #[cfg(not(any(feature = "combo", feature = "date-picker")))]
+    fn dismiss_popup_overlays_except(
+        &mut self,
+        _except: Option<crate::WidgetId>,
+        _report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
     }
 
     #[cfg(feature = "date-picker")]
@@ -5636,6 +5701,19 @@ mod tests {
         assert_eq!(keyboard.combo_keyboard_selection_count, 1);
         assert_eq!(keyboard.combo_expanded_change_count, 1);
         assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
+
+        route.dispatch_key_down(u32::from(VK_SPACE));
+        let outside = route.dispatch_pointer_down(crate::Point { x: 260, y: 200 }, false);
+        assert!(outside.handled);
+        assert_eq!(outside.event_count, 1);
+        assert_eq!(outside.ui_command_count, 1);
+        assert_eq!(outside.combo_expanded_change_count, 1);
+        assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
+
+        route.dispatch_click(crate::Point { x: 10, y: 18 });
+        let blurred = route.dispatch_blur();
+        assert!(blurred.handled);
+        assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
     }
 
     #[test]
@@ -5727,6 +5805,16 @@ mod tests {
                 .widget_date_picker_state(widget)
                 .map(|state| state.value),
             Some(crate::ZsDate::new(2026, 7, 15).unwrap())
+        );
+
+        route.dispatch_click(crate::Point { x: 20, y: 16 });
+        let blurred = route.dispatch_blur();
+        assert!(blurred.handled);
+        assert!(
+            !route
+                .widget_date_picker_state(widget)
+                .expect("date picker state")
+                .expanded
         );
     }
 

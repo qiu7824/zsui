@@ -937,6 +937,10 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: ZsDate,
     },
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    DismissPopupOverlays {
+        except: Option<WidgetId>,
+    },
     #[cfg(feature = "scroll")]
     ScrollBy {
         widget: WidgetId,
@@ -1682,6 +1686,43 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(any(feature = "combo", feature = "date-picker"))]
+        if let ViewEvent::DismissPopupOverlays { except } = event {
+            let should_dismiss = self.id.is_some() && self.id != *except;
+            #[cfg(feature = "combo")]
+            if should_dismiss {
+                if let ViewNodeKind::ComboBox {
+                    expanded,
+                    on_expanded_change,
+                    ..
+                } = &mut self.kind
+                {
+                    if *expanded {
+                        *expanded = false;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "date-picker")]
+            if should_dismiss {
+                if let ViewNodeKind::DatePicker {
+                    expanded,
+                    on_expanded_change,
+                    ..
+                } = &mut self.kind
+                {
+                    if *expanded {
+                        *expanded = false;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                }
+            }
+        }
+
         #[cfg(feature = "list")]
         if let (
             ViewNodeKind::List {
@@ -2311,6 +2352,8 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::DateChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
+            #[cfg(any(feature = "combo", feature = "date-picker"))]
+            (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
             (None, _) => false,
         }
     }
@@ -3724,6 +3767,53 @@ mod tests {
                 expanded: false,
             })
         );
+    }
+
+    #[test]
+    #[cfg(all(feature = "combo", feature = "date-picker"))]
+    fn dismiss_popup_overlays_closes_every_expanded_control_except_the_owner() {
+        let combo = WidgetId::new(90);
+        let date = WidgetId::new(91);
+        let value = ZsDate::new(2026, 7, 13).unwrap();
+        let mut view = column([
+            combo_box(["One", "Two"], Some(0))
+                .id(combo)
+                .expanded(true)
+                .on_expanded_change(Msg::ComboExpanded),
+            date_picker(value)
+                .id(date)
+                .expanded(true)
+                .on_expanded_change(Msg::DateExpanded),
+        ]);
+
+        let mut date_dismissed = ViewEventCx::new();
+        view.event(
+            &mut date_dismissed,
+            &ViewEvent::DismissPopupOverlays {
+                except: Some(combo),
+            },
+        );
+        assert_eq!(
+            date_dismissed.into_messages(),
+            vec![Msg::DateExpanded(false)]
+        );
+        assert_eq!(view.widget_combo_state(combo), Some((Some(0), 2, true)));
+        assert_eq!(
+            view.widget_date_picker_state(date)
+                .map(|state| state.expanded),
+            Some(false)
+        );
+
+        let mut all_dismissed = ViewEventCx::new();
+        view.event(
+            &mut all_dismissed,
+            &ViewEvent::DismissPopupOverlays { except: None },
+        );
+        assert_eq!(
+            all_dismissed.into_messages(),
+            vec![Msg::ComboExpanded(false)]
+        );
+        assert_eq!(view.widget_combo_state(combo), Some((Some(0), 2, false)));
     }
 
     #[test]

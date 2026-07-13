@@ -124,6 +124,9 @@ Expanded ComboBox and DatePicker overlays derive paint commands and hit
 targets from the same viewport-aware render plan. Keep its DPI-scaled
 below/above flip and horizontal window clamping intact in every desktop host;
 do not apply a second backend-local popup offset.
+Route outside pointer presses, focus traversal and native window focus loss
+through `DismissPopupOverlays`; this closes owner-drawn overlays and preserves
+the same typed expanded-state messages on Win32, AppKit and GTK4.
 The feature-gated `scroll` container offsets its child content, clips hit
 targets to the viewport and emits `PushClip`/`PopClip` draw commands; backend
 renderers should preserve that clipping boundary before adding wheel/touch

@@ -1080,7 +1080,9 @@ impl NativeViewInputRuntime {
             ..NativeViewInputDispatchReport::default()
         };
         let interaction_plan = self.current_interaction_plan();
-        let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
+        let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
+        report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
+        let Some(target) = target else {
             return report;
         };
         #[cfg(feature = "slider")]
@@ -1266,6 +1268,7 @@ impl NativeViewInputRuntime {
             let offset = if shift { -1 } else { 1 };
             if let Some(target) = interaction_plan.next_focus_target(self.focused_widget, offset) {
                 report.handled = true;
+                report = self.dismiss_popup_overlays_except(Some(target.widget), report);
                 self.focus_target(target, &mut report);
             }
             return report;
@@ -1652,6 +1655,13 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn blur_focus(&mut self) -> NativeViewInputDispatchReport {
+        let mut report = self.dismiss_popup_overlays_except(
+            None,
+            NativeViewInputDispatchReport {
+                hit_target_count: self.hit_target_count(),
+                ..NativeViewInputDispatchReport::default()
+            },
+        );
         let had_focus = self.focused_widget.take().is_some();
         self.text_edit = None;
         self.text_drag = None;
@@ -1660,15 +1670,14 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
         }
         let had_preedit = self.ime_preedit.take().is_some();
-        NativeViewInputDispatchReport {
-            handled: had_focus || had_preedit,
-            focus_visual_changed: had_focus,
-            hit_target_count: self.hit_target_count(),
-            redraw_plan: (had_focus || had_preedit)
-                .then(|| self.current_composed_draw_plan())
-                .flatten(),
-            ..NativeViewInputDispatchReport::default()
+        report.handled |= had_focus || had_preedit;
+        report.focus_visual_changed = had_focus;
+        report.hit_target_count = self.hit_target_count();
+        if report.handled {
+            report.redraw_plan = self.current_composed_draw_plan();
         }
+        report.focused_widget = None;
+        report
     }
 
     pub(crate) fn dispatch_pointer_scroll(
@@ -2027,6 +2036,57 @@ impl NativeViewInputRuntime {
                     .as_ref()
                     .and_then(|view| view.widget_combo_state(widget))
             })
+    }
+
+    #[cfg(any(feature = "combo", feature = "date-picker"))]
+    fn dismiss_popup_overlays_except(
+        &mut self,
+        except: Option<crate::WidgetId>,
+        mut report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        let Some(interaction_plan) = self.current_interaction_plan() else {
+            return report;
+        };
+        let should_dismiss = interaction_plan.hit_targets.iter().any(|target| {
+            if Some(target.widget) == except {
+                return false;
+            }
+            match target.kind {
+                #[cfg(feature = "combo")]
+                crate::ViewHitTargetKind::ComboBox => self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded),
+                #[cfg(feature = "date-picker")]
+                crate::ViewHitTargetKind::DatePicker => self
+                    .widget_date_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded),
+                _ => false,
+            }
+        });
+        if !should_dismiss {
+            return report;
+        }
+        #[cfg(feature = "combo")]
+        {
+            report.combo_expanded_changed |= interaction_plan.hit_targets.iter().any(|target| {
+                Some(target.widget) != except
+                    && target.kind == crate::ViewHitTargetKind::ComboBox
+                    && self
+                        .widget_combo_state(target.widget)
+                        .is_some_and(|(_, _, expanded)| expanded)
+            });
+        }
+        report.handled = true;
+        self.dispatch_view_event(crate::ViewEvent::DismissPopupOverlays { except }, report)
+    }
+
+    #[cfg(not(any(feature = "combo", feature = "date-picker")))]
+    fn dismiss_popup_overlays_except(
+        &mut self,
+        _except: Option<crate::WidgetId>,
+        report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        report
     }
 
     #[cfg(feature = "date-picker")]
@@ -5095,12 +5155,15 @@ mod tests {
                     expanded: true,
                 },
                 move |state| {
-                    crate::combo_box(["Balanced", "Fast", "Quiet"], state.selected)
-                        .id(combo_id)
-                        .height(Dp::new(36.0))
-                        .expanded(state.expanded)
-                        .on_select(Msg::Selected)
-                        .on_expanded_change(Msg::Expanded)
+                    crate::column([
+                        crate::combo_box(["Balanced", "Fast", "Quiet"], state.selected)
+                            .id(combo_id)
+                            .height(Dp::new(36.0))
+                            .expanded(state.expanded)
+                            .on_select(Msg::Selected)
+                            .on_expanded_change(Msg::Expanded),
+                        crate::spacer(),
+                    ])
                 },
                 |state, message, _cx| match message {
                     Msg::Selected(index) => state.selected = Some(index),
@@ -5115,7 +5178,23 @@ mod tests {
                 })
             })
             .expect("expanded combo should expose option hit geometry");
+        let header = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(combo_id))
+            .expect("combo should expose header hit geometry");
         let mut runtime = builder.native_view_input_runtime();
+
+        let dismissed = runtime.dispatch_pointer_down(Point { x: 340, y: 220 }, false);
+        assert!(dismissed.handled);
+        assert!(dismissed.combo_expanded_changed);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(0), 3, false))
+        );
+        runtime.dispatch_pointer_click(Point {
+            x: header.bounds.x + 8,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
 
         let pointer = runtime.dispatch_pointer_click(Point {
             x: option.bounds.x + 8,
@@ -5147,6 +5226,16 @@ mod tests {
         );
 
         runtime.dispatch_key(NativeViewKey::Space);
+        let blurred = runtime.blur_focus();
+        assert!(blurred.handled);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(2), 3, false))
+        );
+        runtime.dispatch_pointer_click(Point {
+            x: header.bounds.x + 12,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
         let closed = runtime.dispatch_key(NativeViewKey::Escape);
         assert!(closed.handled);
         assert!(closed.combo_expanded_changed);
@@ -5222,6 +5311,18 @@ mod tests {
         );
 
         runtime.dispatch_key(NativeViewKey::Space);
+        let blurred = runtime.blur_focus();
+        assert!(blurred.handled);
+        assert!(
+            !runtime
+                .widget_date_picker_state(widget)
+                .expect("date picker state")
+                .expanded
+        );
+        runtime.dispatch_pointer_click(Point {
+            x: header.bounds.x + 12,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
         let closed = runtime.dispatch_key(NativeViewKey::Escape);
         assert!(closed.handled);
         assert!(
