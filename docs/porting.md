@@ -132,6 +132,15 @@ the shared native view runtime. Its transient visual state is keyed by typed
 `ViewHitTargetKind` values and decorates the self-drawn plan with semantic theme
 roles; backends must not replace it with platform controls or retain a second
 widget-state registry.
+Treat `tab_view(...)` as one shared self-drawn tab list and page host, not as a
+request to create native child controls. Preserve `ZsTabId` identity and lay
+out, paint, hit-test and dispatch only the selected page. On Windows,
+Left/Right move tab-header focus without wrapping, Enter/Space selects and
+Ctrl+Tab/Ctrl+Shift+Tab selects cyclically. On AppKit, Left/Right select
+adjacent pages. On GTK4, Left/Right and Home/End move header focus, Space
+selects, and Ctrl+PageUp/Ctrl+PageDown changes the current page. Backends choose
+their internal `ZsTabPlatformStyle`; application code must not branch on the
+platform.
 Treat `ZsuiThemeMode::HighContrast` as a distinct accessibility appearance,
 not as an alias for the current light/dark palette. System mode must honor an
 active OS high-contrast request even when application state asked for light or

@@ -143,7 +143,9 @@ pub use component_catalog::{
 pub use component_protocol::Component;
 #[cfg(feature = "label")]
 pub use components::Label;
-pub use components::{UiNode, UiNodeKind, UiStackDirection, ZsTabSpec};
+pub use components::{UiNode, UiNodeKind, UiStackDirection};
+#[cfg(feature = "tabs")]
+pub use components::{ZsTabId, ZsTabSpec};
 pub use control_protocol::{
     NativeControlFamily, NativeControlMapper, NativeControlMapperOperation,
     NativeSettingsControlHost, SettingsComponentKind, SettingsControlHostOperation,
@@ -440,6 +442,8 @@ pub use view::{
 pub use view::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
+#[cfg(feature = "tabs")]
+pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 #[cfg(feature = "virtual-list")]
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
@@ -468,6 +472,11 @@ pub use widget_render::{
 pub use widget_render::{zs_radio_native_draw_plan, zs_radio_render_plan, ZsRadioRenderPlan};
 #[cfg(feature = "slider")]
 pub use widget_render::{zs_slider_native_draw_plan, zs_slider_render_plan, ZsSliderRenderPlan};
+#[cfg(feature = "tabs")]
+pub use widget_render::{
+    zs_tab_view_native_draw_plan, zs_tab_view_render_plan, ZsTabHeaderRenderPlan,
+    ZsTabPlatformStyle, ZsTabViewMetrics, ZsTabViewRenderPlan,
+};
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]

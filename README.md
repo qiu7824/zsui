@@ -179,6 +179,28 @@ fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
 通过框架内部强类型事件滚动可见窗口，不要求应用维护滚动偏移，也不依赖
 `scroll` feature。
 
+Tabs 使用独立的 `ZsTabId` 作为身份，标签文字不是事件键；只有当前页面参与
+布局、绘制、命中测试和事件分发。Windows 上方向键只移动页签焦点，按
+Enter/Space 选中，Ctrl+Tab 循环切换；AppKit 方向键直接切换页面，GTK4 用
+方向键/Home/End 移动页签焦点、Space 选中，并支持 Ctrl+PageUp/PageDown
+切页。应用代码不需要平台 `cfg`：
+
+```rust,no_run
+use zsui::{tab_view, text, ViewNode, WidgetId, ZsTabId, ZsTabItem};
+
+#[derive(Clone)]
+enum Msg { SelectTab(ZsTabId) }
+
+fn pages(selected: ZsTabId) -> ViewNode<Msg> {
+    tab_view([
+        ZsTabItem::new(ZsTabId::new(1), "常规", text("常规设置")),
+        ZsTabItem::new(ZsTabId::new(2), "高级", text("高级设置")),
+    ], Some(selected))
+        .id(WidgetId::new(10))
+        .on_tab_select(Msg::SelectTab)
+}
+```
+
 ## 强类型状态与消息
 
 ```rust,no_run
@@ -249,7 +271,8 @@ zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, feat
 未开启的可选依赖不会进入构建；同一依赖图中的 Cargo feature 会取并集，因此
 ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定后继续拆分较大的
 控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
-删除已启用 crate 中的每一个未调用符号。
+删除已启用 crate 中的每一个未调用符号。`tabs`、`date-picker` 等控件均可单独
+开启；`all-widgets` 和 `full` 只在应用显式选择时才会打包全部能力。
 
 ## 已有应用外壳
 
@@ -259,14 +282,15 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本、按钮、输入、复选、开关、滑块、单选、进度、组合框、自绘日期选择、列表、滚动和强类型事件 | 对应 widget feature |
+| 基础 View | 文本、按钮、输入、复选、开关、滑块、单选、进度、组合框、自绘日期选择、标签页、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个 WinUI 风格家族：26 个已有第一阶段运行面，7 个只有
+组件目录当前记录 48 个 WinUI 风格家族：27 个已有第一阶段运行面，6 个只有
 契约，15 个尚未开始。DatePicker 已具备强类型日期、范围约束、本地时区“今天”标记、
 窗口边缘自动翻转与水平约束的日历弹层、外部点击与焦点丢失关闭、点击与键盘路由、
 语义主题绘制、跨 Win32/AppKit/GTK4 的自绘悬停与按下/高对比度状态，以及 Windows
-WinUI 3 风格普通与高对比度 smoke；不会用组合外壳冒充
+WinUI 3 风格普通与高对比度 smoke；Tabs 已具备强类型标签 ID、单一活动页、
+三平台原生键盘策略、自绘平台指标及 Windows 指针/键盘 smoke；不会用组合外壳冒充
 TreeView、DataGrid、WebView 等尚未完成的独立控件。
 
 查看机器可读目录：

@@ -173,6 +173,23 @@ execute without failures or unhandled commands. AppKit and GTK4 feed committed
 text and pointer scroll into the same shared typed runtime, while their
 target-machine evidence remains pending.
 
+The dedicated strongly typed Tabs smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,tabs,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-tabs --tabs-view
+```
+
+It clicks the second `ZsTabId`, rebuilds the stateful view with only that page
+laid out and painted, then exercises Windows header focus with Left/Right and
+selection with Space/Enter. The artifact must record nonzero
+`native_view_tab_selection_count`,
+`native_view_tab_keyboard_selection_count`, and
+`native_view_tab_keyboard_focus_only_count`, plus zero failed or unhandled UI
+commands. Ctrl+Tab/Ctrl+Shift+Tab cycling is covered by the native route tests.
+AppKit and GTK4 consume the same typed selection path with their platform arrow
+selection behavior, but still require target-machine screenshots and
+interaction artifacts.
+
 The default `--view` and `--scroll-view` paths exercise
 `NativeWindowBuilder::ui_command_view(...)`, record
 draw-plan command counts in `interaction.json`, post `WM_LBUTTONUP`, hit-test

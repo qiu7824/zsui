@@ -368,7 +368,11 @@ define_class!(
             let mut runtime = self.ivars().runtime.borrow_mut();
             let report = match code {
                 Some(code) if code == NSTabCharacter => {
-                    runtime.dispatch_key_with_shift(crate::NativeViewKey::Tab, shift)
+                    runtime.dispatch_key_with_modifiers(
+                        crate::NativeViewKey::Tab,
+                        shift,
+                        command_or_control,
+                    )
                 }
                 Some(code)
                     if code == NSCarriageReturnCharacter || code == NSEnterCharacter =>

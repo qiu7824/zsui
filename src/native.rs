@@ -10,7 +10,7 @@ use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
     native_text_visual_geometry,
 };
-#[cfg(feature = "date-picker")]
+#[cfg(any(feature = "date-picker", feature = "tabs"))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
@@ -525,6 +525,25 @@ pub enum NativeViewKey {
     Right,
     Home,
     End,
+    PageUp,
+    PageDown,
+}
+
+#[cfg(feature = "tabs")]
+fn native_tab_cycle_offset(
+    platform: crate::ZsTabPlatformStyle,
+    key: NativeViewKey,
+    shift: bool,
+    control: bool,
+) -> Option<isize> {
+    match (platform, key, control) {
+        (crate::ZsTabPlatformStyle::Windows, NativeViewKey::Tab, true) => {
+            Some(if shift { -1 } else { 1 })
+        }
+        (crate::ZsTabPlatformStyle::Gtk, NativeViewKey::PageUp, true) => Some(-1),
+        (crate::ZsTabPlatformStyle::Gtk, NativeViewKey::PageDown, true) => Some(1),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "combo")]
@@ -628,6 +647,8 @@ impl NativeViewKey {
             Self::Right => "right",
             Self::Home => "home",
             Self::End => "end",
+            Self::PageUp => "page_up",
+            Self::PageDown => "page_down",
         }
     }
 }
@@ -841,6 +862,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_combo_keyboard_selection_count: usize,
     pub native_view_combo_type_ahead_match_count: usize,
     pub native_view_combo_scroll_count: usize,
+    pub native_view_tab_selection_count: usize,
+    pub native_view_tab_keyboard_selection_count: usize,
+    pub native_view_tab_keyboard_focus_only_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -936,6 +960,9 @@ impl NativeWindowSmokeRunReport {
             native_view_combo_keyboard_selection_count: 0,
             native_view_combo_type_ahead_match_count: 0,
             native_view_combo_scroll_count: 0,
+            native_view_tab_selection_count: 0,
+            native_view_tab_keyboard_selection_count: 0,
+            native_view_tab_keyboard_focus_only_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -980,9 +1007,9 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     pointer_hover: Option<NativePointerVisualKey>,
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     pointer_pressed: Option<NativePointerVisualKey>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
@@ -1002,7 +1029,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
     pub surface_changed: bool,
     pub focus_visual_changed: bool,
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     pub pointer_visual_changed: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
@@ -1036,6 +1063,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub combo_type_ahead_matched: bool,
     #[cfg(feature = "combo")]
     pub combo_scrolled: bool,
+    #[cfg(feature = "tabs")]
+    pub tab_selection_changed: bool,
+    #[cfg(feature = "tabs")]
+    pub tab_keyboard_selection_changed: bool,
+    #[cfg(feature = "tabs")]
+    pub tab_keyboard_focus_only: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -1067,9 +1100,9 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             pointer_hover: None,
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             pointer_pressed: None,
             ime_preedit: None,
             app_command_executor,
@@ -1231,7 +1264,7 @@ impl NativeViewInputRuntime {
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             target.and_then(native_pointer_visual_key),
@@ -1290,7 +1323,7 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         {
             let hovered = self
                 .current_interaction_plan()
@@ -1344,7 +1377,7 @@ impl NativeViewInputRuntime {
             self.text_drag = None;
             report.handled = true;
             report.text_drag_active = false;
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -1354,7 +1387,7 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
             report.handled = true;
             report.slider_drag_active = false;
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -1365,7 +1398,7 @@ impl NativeViewInputRuntime {
         };
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             None,
@@ -1407,6 +1440,12 @@ impl NativeViewInputRuntime {
             }
             _ => {}
         }
+        #[cfg(feature = "tabs")]
+        if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+            report.tab_selection_changed = self
+                .widget_tab_header_state(target.widget)
+                .is_some_and(|state| !state.selected);
+        }
 
         self.dispatch_view_event(event, report)
     }
@@ -1424,7 +1463,7 @@ impl NativeViewInputRuntime {
             slider_drag_active: false,
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
         self.populate_text_report(&mut report);
         report
@@ -1436,13 +1475,13 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         {
             let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
-        #[cfg(not(feature = "date-picker"))]
+        #[cfg(not(any(feature = "date-picker", feature = "tabs")))]
         {
             report
         }
@@ -1466,7 +1505,7 @@ impl NativeViewInputRuntime {
         shift: bool,
         control: bool,
     ) -> NativeViewInputDispatchReport {
-        #[cfg(not(feature = "radio"))]
+        #[cfg(not(any(feature = "radio", feature = "tabs")))]
         let _ = control;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
@@ -1476,7 +1515,7 @@ impl NativeViewInputRuntime {
         let Some(interaction_plan) = self.current_interaction_plan() else {
             return report;
         };
-        if key == NativeViewKey::Tab {
+        if key == NativeViewKey::Tab && !control {
             let offset = if shift { -1 } else { 1 };
             if let Some(target) =
                 interaction_plan.next_focus_target_where(self.focused_widget, offset, |target| {
@@ -1493,6 +1532,30 @@ impl NativeViewInputRuntime {
         let Some(widget) = self.focused_widget else {
             return report;
         };
+
+        #[cfg(feature = "tabs")]
+        let tab_cycle_offset =
+            native_tab_cycle_offset(crate::ZsTabPlatformStyle::current(), key, shift, control);
+        #[cfg(feature = "tabs")]
+        if let Some(offset) = tab_cycle_offset {
+            let Some((tab_view, tab)) = self.widget_tab_cycle_target(widget, offset) else {
+                return report;
+            };
+            report.handled = true;
+            report.tab_selection_changed = true;
+            report.tab_keyboard_selection_changed = true;
+            if let Some(target) = interaction_plan.hit_target_for_widget(crate::WidgetId(tab.0)) {
+                self.focus_target(target, &mut report);
+            }
+            return self.dispatch_view_event(
+                ViewEvent::TabSelected {
+                    widget: tab_view,
+                    tab,
+                },
+                report,
+            );
+        }
+
         let Some(target) = interaction_plan.hit_target_for_widget(widget) else {
             self.focused_widget = None;
             self.text_edit = None;
@@ -1654,6 +1717,56 @@ impl NativeViewInputRuntime {
             }
         }
 
+        #[cfg(feature = "tabs")]
+        if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+            let Some(state) = self.widget_tab_header_state(widget) else {
+                return report;
+            };
+            let platform = crate::ZsTabPlatformStyle::current();
+            let next_widget = match key {
+                NativeViewKey::Left => state.previous,
+                NativeViewKey::Right => state.next,
+                NativeViewKey::Home if platform.supports_home_end_focus() => Some(state.first),
+                NativeViewKey::End if platform.supports_home_end_focus() => Some(state.last),
+                _ => None,
+            };
+            let navigation_key = matches!(key, NativeViewKey::Left | NativeViewKey::Right)
+                || (platform.supports_home_end_focus()
+                    && matches!(key, NativeViewKey::Home | NativeViewKey::End));
+            if navigation_key {
+                report.handled = true;
+                let Some(next_widget) = next_widget else {
+                    return report;
+                };
+                if next_widget == widget {
+                    return report;
+                }
+                let Some(next_target) = interaction_plan.hit_target_for_widget(next_widget) else {
+                    return report;
+                };
+                self.focus_target(next_target, &mut report);
+                let Some(next_state) = self.widget_tab_header_state(next_widget) else {
+                    return report;
+                };
+                if platform.arrow_selects() {
+                    report.tab_selection_changed = !next_state.selected;
+                    report.tab_keyboard_selection_changed = !next_state.selected;
+                    if !next_state.selected {
+                        return self.dispatch_view_event(
+                            ViewEvent::TabSelected {
+                                widget: next_state.tab_view,
+                                tab: next_state.tab,
+                            },
+                            report,
+                        );
+                    }
+                } else {
+                    report.tab_keyboard_focus_only = true;
+                }
+                return report;
+            }
+        }
+
         #[cfg(feature = "date-picker")]
         if target.kind == crate::ViewHitTargetKind::DatePicker {
             let Some(state) = self.widget_date_picker_state(widget) else {
@@ -1725,11 +1838,28 @@ impl NativeViewInputRuntime {
                 (target.kind, key),
                 (crate::ViewHitTargetKind::RadioButton, NativeViewKey::Space)
             );
+        #[cfg(feature = "tabs")]
+        let activates = activates
+            || matches!(
+                (target.kind, key),
+                (
+                    crate::ViewHitTargetKind::Tab { .. },
+                    NativeViewKey::Enter | NativeViewKey::Space
+                )
+            );
         if activates {
             report.handled = true;
             #[cfg(feature = "radio")]
             if target.kind == crate::ViewHitTargetKind::RadioButton {
                 report.radio_selection_changed = true;
+            }
+            #[cfg(feature = "tabs")]
+            if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+                let changed = self
+                    .widget_tab_header_state(target.widget)
+                    .is_some_and(|state| !state.selected);
+                report.tab_selection_changed = changed;
+                report.tab_keyboard_selection_changed = changed;
             }
             return self.dispatch_view_event(self.activation_event(target), report);
         }
@@ -1963,7 +2093,7 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
         }
         let had_preedit = self.ime_preedit.take().is_some();
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         self.update_pointer_visual_state(None, None, &mut report);
         report.handled |= had_focus || had_preedit;
         report.focus_visual_changed = had_focus;
@@ -2106,7 +2236,7 @@ impl NativeViewInputRuntime {
 
     fn compose_input_visuals(&self, plan: NativeDrawPlan) -> NativeDrawPlan {
         let mut plan = plan;
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         if let Some(interaction_plan) = self.current_interaction_plan() {
             decorate_native_pointer_visuals(
                 &mut plan,
@@ -2129,7 +2259,7 @@ impl NativeViewInputRuntime {
         plan
     }
 
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     fn update_pointer_visual_state(
         &mut self,
         hovered: Option<NativePointerVisualKey>,
@@ -2337,6 +2467,13 @@ impl NativeViewInputRuntime {
                 widget: target.widget,
             };
         }
+        #[cfg(feature = "tabs")]
+        if let crate::ViewHitTargetKind::Tab { tab_view, tab, .. } = target.kind {
+            return ViewEvent::TabSelected {
+                widget: tab_view,
+                tab,
+            };
+        }
         if matches!(
             target.kind,
             crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
@@ -2375,7 +2512,7 @@ impl NativeViewInputRuntime {
     }
 
     fn widget_accepts_tab_focus(&self, target: crate::ViewHitTarget) -> bool {
-        #[cfg(not(feature = "radio"))]
+        #[cfg(not(any(feature = "radio", feature = "tabs")))]
         let _ = target;
         #[cfg(feature = "radio")]
         if target.kind == crate::ViewHitTargetKind::RadioButton {
@@ -2389,6 +2526,12 @@ impl NativeViewInputRuntime {
                         .and_then(|view| view.widget_radio_is_tab_stop(target.widget))
                 })
                 .unwrap_or(true);
+        }
+        #[cfg(feature = "tabs")]
+        if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+            return self
+                .widget_tab_header_state(target.widget)
+                .is_none_or(|state| state.selected);
         }
         true
     }
@@ -2407,6 +2550,37 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_radio_relative_widget(widget, navigation, offset))
+            })
+    }
+
+    #[cfg(feature = "tabs")]
+    fn widget_tab_header_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::view::ZsTabHeaderState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tab_header_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tab_header_state(widget))
+            })
+    }
+
+    #[cfg(feature = "tabs")]
+    fn widget_tab_cycle_target(
+        &self,
+        focused: crate::WidgetId,
+        offset: isize,
+    ) -> Option<(crate::WidgetId, crate::ZsTabId)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tab_cycle_target(focused, offset))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tab_cycle_target(focused, offset))
             })
     }
 
@@ -2798,6 +2972,9 @@ fn record_windows_win32_view_input_report(
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
     report.native_view_combo_type_ahead_match_count += input.combo_type_ahead_match_count;
     report.native_view_combo_scroll_count += input.combo_scroll_count;
+    report.native_view_tab_selection_count += input.tab_selection_count;
+    report.native_view_tab_keyboard_selection_count += input.tab_keyboard_selection_count;
+    report.native_view_tab_keyboard_focus_only_count += input.tab_keyboard_focus_only_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -2891,6 +3068,8 @@ fn windows_wparam_from_native_view_key(key: NativeViewKey) -> usize {
         NativeViewKey::Right => 0x27,
         NativeViewKey::Home => 0x24,
         NativeViewKey::End => 0x23,
+        NativeViewKey::PageUp => 0x21,
+        NativeViewKey::PageDown => 0x22,
     }
 }
 
@@ -5575,6 +5754,171 @@ mod tests {
         assert_eq!(tabbed.focused_widget, Some(first.0));
         assert_eq!(runtime.widget_checked_value(first), Some(true));
         assert_eq!(runtime.widget_checked_value(second), Some(false));
+    }
+
+    #[cfg(all(feature = "tabs", feature = "label"))]
+    #[test]
+    fn native_view_runtime_routes_platform_tab_pointer_focus_and_selection() {
+        #[derive(Clone)]
+        enum Msg {
+            Selected(crate::ZsTabId),
+        }
+
+        let tab_view_id = crate::WidgetId::new(90);
+        let general = crate::ZsTabId::new(91);
+        let advanced = crate::ZsTabId::new(92);
+        let builder = native_window("Platform Tabs").size(420, 260).stateful_view(
+            general,
+            move |selected| {
+                crate::tab_view(
+                    [
+                        crate::ZsTabItem::new(general, "General", crate::text("General content")),
+                        crate::ZsTabItem::new(
+                            advanced,
+                            "Advanced",
+                            crate::text("Advanced content"),
+                        ),
+                    ],
+                    Some(*selected),
+                )
+                .id(tab_view_id)
+                .on_tab_select(Msg::Selected)
+            },
+            |selected, message, _cx| match message {
+                Msg::Selected(tab) => *selected = tab,
+            },
+        );
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("tabs should expose header interaction geometry");
+        let first = interaction
+            .hit_target_for_widget(crate::WidgetId(general.0))
+            .expect("first tab should be interactive");
+        let second = interaction
+            .hit_target_for_widget(crate::WidgetId(advanced.0))
+            .expect("second tab should be interactive");
+        let second_point = Point {
+            x: second.bounds.x + second.bounds.width / 2,
+            y: second.bounds.y + second.bounds.height / 2,
+        };
+        let mut runtime = builder.native_view_input_runtime();
+
+        let hovered = runtime.dispatch_pointer_move(second_point);
+        let pressed = runtime.dispatch_pointer_down(second_point, false);
+        let selected = runtime.dispatch_pointer_up(second_point);
+
+        assert!(hovered.pointer_visual_changed);
+        assert!(pressed.pointer_visual_changed);
+        assert!(selected.tab_selection_changed);
+        assert_eq!(selected.focused_widget, Some(advanced.0));
+        assert_eq!(
+            runtime
+                .live_view
+                .as_ref()
+                .and_then(|view| view.widget_tab_header_state(crate::WidgetId(advanced.0)))
+                .map(|state| state.selected),
+            Some(true)
+        );
+        runtime.dispatch_pointer_down(second_point, false);
+        let reselected = runtime.dispatch_pointer_up(second_point);
+        assert!(!reselected.tab_selection_changed);
+        assert_eq!(reselected.message_count, 0);
+
+        let left = runtime.dispatch_key(NativeViewKey::Left);
+        assert!(left.handled);
+        assert_eq!(left.focused_widget, Some(general.0));
+
+        match crate::ZsTabPlatformStyle::current() {
+            crate::ZsTabPlatformStyle::Windows => {
+                assert!(left.tab_keyboard_focus_only);
+                assert!(!left.tab_selection_changed);
+                let activated = runtime.dispatch_key(NativeViewKey::Space);
+                assert!(activated.tab_selection_changed);
+                assert!(activated.tab_keyboard_selection_changed);
+                let cycled = runtime.dispatch_key_with_modifiers(NativeViewKey::Tab, false, true);
+                assert!(cycled.handled);
+                assert!(cycled.tab_selection_changed);
+                assert_eq!(cycled.focused_widget, Some(advanced.0));
+            }
+            crate::ZsTabPlatformStyle::Macos => {
+                assert!(left.tab_selection_changed);
+                assert!(left.tab_keyboard_selection_changed);
+                let right = runtime.dispatch_key(NativeViewKey::Right);
+                assert!(right.tab_selection_changed);
+                assert_eq!(right.focused_widget, Some(advanced.0));
+            }
+            crate::ZsTabPlatformStyle::Gtk => {
+                assert!(left.tab_keyboard_focus_only);
+                assert!(!left.tab_selection_changed);
+                let activated = runtime.dispatch_key(NativeViewKey::Space);
+                assert!(activated.tab_selection_changed);
+                let cycled =
+                    runtime.dispatch_key_with_modifiers(NativeViewKey::PageDown, false, true);
+                assert!(cycled.handled);
+                assert!(cycled.tab_selection_changed);
+                assert_eq!(cycled.focused_widget, Some(advanced.0));
+            }
+        }
+        assert!(first.bounds.x < second.bounds.x);
+    }
+
+    #[cfg(feature = "tabs")]
+    #[test]
+    fn tab_cycle_shortcuts_follow_each_platform_contract() {
+        assert_eq!(
+            native_tab_cycle_offset(
+                crate::ZsTabPlatformStyle::Windows,
+                NativeViewKey::Tab,
+                false,
+                true,
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            native_tab_cycle_offset(
+                crate::ZsTabPlatformStyle::Windows,
+                NativeViewKey::Tab,
+                true,
+                true,
+            ),
+            Some(-1)
+        );
+        assert_eq!(
+            native_tab_cycle_offset(
+                crate::ZsTabPlatformStyle::Gtk,
+                NativeViewKey::PageUp,
+                false,
+                true,
+            ),
+            Some(-1)
+        );
+        assert_eq!(
+            native_tab_cycle_offset(
+                crate::ZsTabPlatformStyle::Gtk,
+                NativeViewKey::PageDown,
+                false,
+                true,
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            native_tab_cycle_offset(
+                crate::ZsTabPlatformStyle::Gtk,
+                NativeViewKey::Tab,
+                false,
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            native_tab_cycle_offset(
+                crate::ZsTabPlatformStyle::Macos,
+                NativeViewKey::Tab,
+                false,
+                true,
+            ),
+            None
+        );
     }
 
     #[cfg(feature = "combo")]

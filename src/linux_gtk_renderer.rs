@@ -304,12 +304,16 @@ pub(crate) fn install_linux_gtk_draw_plan(
             );
             let mut runtime_state = runtime.borrow_mut();
             let report = match key {
-                gtk::gdk::Key::Tab => {
-                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Tab, shift)
-                }
-                gtk::gdk::Key::ISO_Left_Tab => {
-                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Tab, true)
-                }
+                gtk::gdk::Key::Tab => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Tab,
+                    shift,
+                    control,
+                ),
+                gtk::gdk::Key::ISO_Left_Tab => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Tab,
+                    true,
+                    control,
+                ),
                 gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
                     let report = runtime_state.dispatch_key(crate::NativeViewKey::Enter);
                     if report.handled {
@@ -352,6 +356,16 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 gtk::gdk::Key::End => {
                     runtime_state.dispatch_key_with_shift(crate::NativeViewKey::End, shift)
                 }
+                gtk::gdk::Key::Page_Up => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::PageUp,
+                    shift,
+                    control,
+                ),
+                gtk::gdk::Key::Page_Down => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::PageDown,
+                    shift,
+                    control,
+                ),
                 gtk::gdk::Key::BackSpace => runtime_state.dispatch_text_input("\u{8}"),
                 gtk::gdk::Key::Delete => runtime_state.dispatch_text_input("\u{7f}"),
                 _ if !command_or_control => key

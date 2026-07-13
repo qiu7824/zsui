@@ -86,7 +86,21 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_event_count: usize,
     pub native_view_message_count: usize,
     pub native_view_ui_command_count: usize,
+    pub native_view_ui_command_executed_count: usize,
+    pub native_view_ui_command_failed_count: usize,
+    pub native_view_ui_command_unhandled_count: usize,
+    pub native_view_ui_command_event_count: usize,
+    pub native_view_ui_command_errors: Vec<String>,
+    pub native_view_app_command_count: usize,
+    pub native_view_app_command_executed_count: usize,
+    pub native_view_app_command_failed_count: usize,
+    pub native_view_app_command_unhandled_count: usize,
+    pub native_view_app_command_event_count: usize,
+    pub native_view_app_command_names: Vec<&'static str>,
+    pub native_view_app_command_errors: Vec<String>,
     pub native_view_ui_command_ids: Vec<&'static str>,
+    pub native_view_live_revision: u64,
+    pub native_view_quit_requested: bool,
     pub native_view_unhandled_click_count: usize,
     pub native_view_focus_count: usize,
     pub native_view_focus_visual_count: usize,
@@ -111,6 +125,9 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_combo_keyboard_selection_count: usize,
     pub native_view_combo_type_ahead_match_count: usize,
     pub native_view_combo_scroll_count: usize,
+    pub native_view_tab_selection_count: usize,
+    pub native_view_tab_keyboard_selection_count: usize,
+    pub native_view_tab_keyboard_focus_only_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -160,7 +177,21 @@ impl NativeHostSmokeInteractionReport {
             native_view_event_count: 0,
             native_view_message_count: 0,
             native_view_ui_command_count: 0,
+            native_view_ui_command_executed_count: 0,
+            native_view_ui_command_failed_count: 0,
+            native_view_ui_command_unhandled_count: 0,
+            native_view_ui_command_event_count: 0,
+            native_view_ui_command_errors: Vec::new(),
+            native_view_app_command_count: 0,
+            native_view_app_command_executed_count: 0,
+            native_view_app_command_failed_count: 0,
+            native_view_app_command_unhandled_count: 0,
+            native_view_app_command_event_count: 0,
+            native_view_app_command_names: Vec::new(),
+            native_view_app_command_errors: Vec::new(),
             native_view_ui_command_ids: Vec::new(),
+            native_view_live_revision: 0,
+            native_view_quit_requested: false,
             native_view_unhandled_click_count: 0,
             native_view_focus_count: 0,
             native_view_focus_visual_count: 0,
@@ -185,6 +216,9 @@ impl NativeHostSmokeInteractionReport {
             native_view_combo_keyboard_selection_count: 0,
             native_view_combo_type_ahead_match_count: 0,
             native_view_combo_scroll_count: 0,
+            native_view_tab_selection_count: 0,
+            native_view_tab_keyboard_selection_count: 0,
+            native_view_tab_keyboard_focus_only_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -252,6 +286,14 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} click(s) into {} UI command(s)",
                 report.native_view_event_count, report.native_view_ui_command_count
+            ));
+        }
+        if report.native_view_ui_command_count > 0 {
+            notes.push(format!(
+                "UI command executor completed {}, failed {} and left {} unhandled",
+                report.native_view_ui_command_executed_count,
+                report.native_view_ui_command_failed_count,
+                report.native_view_ui_command_unhandled_count
             ));
         }
         if report.native_view_text_input_count > 0 {
@@ -326,6 +368,24 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_combo_scroll_count
             ));
         }
+        if report.native_view_tab_selection_count > 0 {
+            notes.push(format!(
+                "native tab selection changes: {}",
+                report.native_view_tab_selection_count
+            ));
+        }
+        if report.native_view_tab_keyboard_selection_count > 0 {
+            notes.push(format!(
+                "native tab keyboard selection changes: {}",
+                report.native_view_tab_keyboard_selection_count
+            ));
+        }
+        if report.native_view_tab_keyboard_focus_only_count > 0 {
+            notes.push(format!(
+                "native tab keyboard focus-only moves: {}",
+                report.native_view_tab_keyboard_focus_only_count
+            ));
+        }
         if report.native_view_selection_count > 0 {
             notes.push(format!(
                 "native view input smoke routed {} list selection event(s)",
@@ -392,7 +452,21 @@ impl NativeHostSmokeInteractionReport {
             native_view_event_count: report.native_view_event_count,
             native_view_message_count: report.native_view_message_count,
             native_view_ui_command_count: report.native_view_ui_command_count,
+            native_view_ui_command_executed_count: report.native_view_ui_command_executed_count,
+            native_view_ui_command_failed_count: report.native_view_ui_command_failed_count,
+            native_view_ui_command_unhandled_count: report.native_view_ui_command_unhandled_count,
+            native_view_ui_command_event_count: report.native_view_ui_command_event_count,
+            native_view_ui_command_errors: report.native_view_ui_command_errors.clone(),
+            native_view_app_command_count: report.native_view_app_command_count,
+            native_view_app_command_executed_count: report.native_view_app_command_executed_count,
+            native_view_app_command_failed_count: report.native_view_app_command_failed_count,
+            native_view_app_command_unhandled_count: report.native_view_app_command_unhandled_count,
+            native_view_app_command_event_count: report.native_view_app_command_event_count,
+            native_view_app_command_names: report.native_view_app_command_names.clone(),
+            native_view_app_command_errors: report.native_view_app_command_errors.clone(),
             native_view_ui_command_ids: report.native_view_ui_command_ids.clone(),
+            native_view_live_revision: report.native_view_live_revision,
+            native_view_quit_requested: report.native_view_quit_requested,
             native_view_unhandled_click_count: report.native_view_unhandled_click_count,
             native_view_focus_count: report.native_view_focus_count,
             native_view_focus_visual_count: report.native_view_focus_visual_count,
@@ -422,6 +496,11 @@ impl NativeHostSmokeInteractionReport {
             native_view_combo_type_ahead_match_count: report
                 .native_view_combo_type_ahead_match_count,
             native_view_combo_scroll_count: report.native_view_combo_scroll_count,
+            native_view_tab_selection_count: report.native_view_tab_selection_count,
+            native_view_tab_keyboard_selection_count: report
+                .native_view_tab_keyboard_selection_count,
+            native_view_tab_keyboard_focus_only_count: report
+                .native_view_tab_keyboard_focus_only_count,
             native_view_toggle_count: report.native_view_toggle_count,
             native_view_selection_count: report.native_view_selection_count,
             native_view_keyboard_selection_count: report.native_view_keyboard_selection_count,
@@ -1065,6 +1144,9 @@ mod tests {
             native_view_combo_keyboard_selection_count: 0,
             native_view_combo_type_ahead_match_count: 0,
             native_view_combo_scroll_count: 1,
+            native_view_tab_selection_count: 1,
+            native_view_tab_keyboard_selection_count: 1,
+            native_view_tab_keyboard_focus_only_count: 1,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -1117,12 +1199,19 @@ mod tests {
         assert!(interaction_json.contains("\"status_menu_command_routed\": true"));
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_ui_command_executed_count\": 0"));
+        assert!(interaction_json.contains("\"native_view_ui_command_unhandled_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_ui_command_errors\": []"));
+        assert!(interaction_json.contains("\"native_view_live_revision\": 0"));
         assert!(interaction_json.contains("\"native_view_focus_visual_count\": 1"));
         assert!(interaction_json.contains("\"high_contrast_draw_plan_window_count\": 1"));
         assert!(interaction_json.contains("\"native_view_pointer_visual_change_count\": 2"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_focus_only_count\": 1"));
         assert!(interaction_json.contains("\"native_view_combo_scroll_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_tab_selection_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_tab_keyboard_selection_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_tab_keyboard_focus_only_count\": 1"));
         assert!(interaction_json.contains("zsui.test.save"));
         assert!(interaction_json.contains("auto_close_elapsed"));
     }

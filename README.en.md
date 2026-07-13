@@ -22,18 +22,16 @@ ZSUI is a Rust-first native system UI framework.
 It is intentionally declaration-first: application code describes windows,
 tray/status menus, commands, hotkeys, settings pages and host capabilities in
 Rust, while each platform host translates those declarations to Win32, AppKit,
-GTK/libadwaita or mobile hosts.
+GTK4 or mobile hosts.
 
-ZSUI is not a browser shell and not yet a full self-drawn widget kit. Product
-behavior stays in the product crate; ZSUI owns portable UI specs,
-WinUI-like navigation/card layout contracts, command/event ids, capability
-reporting and host traits.
-Today the concrete runtime in this crate is the minimal `NativeWindowHost`.
-On Windows it enters the Win32/GDI path from
-`src/windows_win32_host.rs` and uses a buffered no-flicker paint pipeline:
+ZSUI is not a browser shell. Product behavior stays in the product crate;
+ZSUI owns a feature-gated self-drawn widget tree, typed state and messages,
+layout, semantic themes, rendering, input routing and native services.
+Windows uses the Win32/GDI path with a buffered no-flicker paint pipeline:
 `WM_ERASEBKGND` is suppressed and paint goes through a buffered top-down DIB
-when available. macOS and Linux still use the `winit_desktop` first-pass
-runtime. Complete AppKit and GTK host implementations are still pending.
+when available. macOS and Linux have real first-pass AppKit and GTK4
+host/render/input paths; target-machine proof is still incomplete and is not
+substituted by the optional winit fallback.
 
 <p align="center">
   <img src="docs/images/workbench.png" alt="ZSUI workbench" width="100%">
@@ -174,6 +172,27 @@ fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
 }
 ```
 
+Tabs use `ZsTabId` instead of label strings as identity, and only the selected
+page participates in layout, paint, hit testing and event dispatch. Platform
+keyboard conventions stay inside the backend, so application code needs no
+platform `cfg`:
+
+```rust,no_run
+use zsui::{tab_view, text, ViewNode, WidgetId, ZsTabId, ZsTabItem};
+
+#[derive(Clone)]
+enum Msg { SelectTab(ZsTabId) }
+
+fn pages(selected: ZsTabId) -> ViewNode<Msg> {
+    tab_view([
+        ZsTabItem::new(ZsTabId::new(1), "General", text("General settings")),
+        ZsTabItem::new(ZsTabId::new(2), "Advanced", text("Advanced settings")),
+    ], Some(selected))
+        .id(WidgetId::new(10))
+        .on_tab_select(Msg::SelectTab)
+}
+```
+
 Attach a typed Rust view to the same native window path:
 
 ```rust,no_run
@@ -288,10 +307,12 @@ The intended shape is Rust-style compile-on-demand: default features stay small
 (`window`, `button`, `label`), heavy backend dependencies are optional, and
 advanced widgets are behind explicit feature gates. This is feature/crate based
 trimming, not a promise that Cargo magically removes every unused symbol inside
-an enabled crate. The `window` feature selects Win32 on Windows and Winit on
-macOS/Linux through target-specific dependencies, so the one-line window entry
-does not require an extra backend feature on supported desktop targets. Cargo
-features are additive across the dependency graph, so
+an enabled crate. Controls such as `tabs` and `date-picker` can be selected
+individually; `all-widgets` and `full` are included only when an application
+explicitly opts in. The `window` feature selects Win32, AppKit or GTK4 through
+target-specific dependencies, so the one-line window entry does not require an
+extra backend feature on supported desktop targets. Cargo features are additive
+across the dependency graph, so
 large widgets and heavy native backends should move toward split crates or
 feature modules such as `zsui-core`, `zsui-shell`, `zsui-render`,
 `zsui-style`, `zsui-widgets-base`, `zsui-widgets-input`,

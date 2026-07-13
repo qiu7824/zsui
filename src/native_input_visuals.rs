@@ -196,22 +196,27 @@ pub(crate) fn decorate_native_focus_ring(
     Some(ring)
 }
 
-#[cfg(feature = "date-picker")]
+#[cfg(any(feature = "date-picker", feature = "tabs"))]
 pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
-#[cfg(feature = "date-picker")]
+#[cfg(any(feature = "date-picker", feature = "tabs"))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
-    matches!(
-        target.kind,
-        ViewHitTargetKind::DatePicker
-            | ViewHitTargetKind::DatePickerDay { .. }
-            | ViewHitTargetKind::DatePickerPreviousMonth
-            | ViewHitTargetKind::DatePickerNextMonth
-    )
-    .then_some((target.widget, target.kind))
+    let supported = false;
+    #[cfg(feature = "date-picker")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::DatePicker
+                | ViewHitTargetKind::DatePickerDay { .. }
+                | ViewHitTargetKind::DatePickerPreviousMonth
+                | ViewHitTargetKind::DatePickerNextMonth
+        );
+    #[cfg(feature = "tabs")]
+    let supported = supported || matches!(target.kind, ViewHitTargetKind::Tab { .. });
+    supported.then_some((target.widget, target.kind))
 }
 
-#[cfg(feature = "date-picker")]
+#[cfg(any(feature = "date-picker", feature = "tabs"))]
 pub(crate) fn decorate_native_pointer_visuals(
     plan: &mut NativeDrawPlan,
     interaction_plan: &ViewInteractionPlan,
@@ -236,6 +241,7 @@ pub(crate) fn decorate_native_pointer_visuals(
         return 0;
     };
 
+    #[cfg(feature = "date-picker")]
     if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
         if let Some(command) = plan.commands.iter_mut().find(|command| {
             matches!(command, NativeDrawCommand::RoundRect { rect, fill: NativeDrawFill::Role(ColorRole::Accent), .. }
@@ -260,6 +266,7 @@ pub(crate) fn decorate_native_pointer_visuals(
     let Some(backdrop_index) = backdrop_index else {
         return 0;
     };
+    #[cfg(feature = "date-picker")]
     let rect = match kind {
         ViewHitTargetKind::DatePickerDay { .. } => {
             let diameter = Dp::new(32.0)
@@ -277,7 +284,13 @@ pub(crate) fn decorate_native_pointer_visuals(
         }
         _ => target.bounds,
     };
-    let radius = if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
+    #[cfg(not(feature = "date-picker"))]
+    let rect = target.bounds;
+    #[cfg(feature = "date-picker")]
+    let is_date_cell = matches!(kind, ViewHitTargetKind::DatePickerDay { .. });
+    #[cfg(not(feature = "date-picker"))]
+    let is_date_cell = false;
+    let radius = if is_date_cell {
         rect.width.min(rect.height) / 2
     } else {
         Dp::new(4.0).to_px(dpi).round_i32().max(1)

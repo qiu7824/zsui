@@ -11,7 +11,8 @@ use zsui::checkbox;
     all(feature = "radio", feature = "label"),
     all(feature = "progress", feature = "label"),
     all(feature = "combo", feature = "label"),
-    all(feature = "date-picker", feature = "label")
+    all(feature = "date-picker", feature = "label"),
+    all(feature = "tabs", feature = "label")
 ))]
 use zsui::column;
 #[cfg(feature = "combo")]
@@ -31,14 +32,16 @@ use zsui::textbox;
     all(feature = "slider", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
-    all(feature = "date-picker", feature = "label")
+    all(feature = "date-picker", feature = "label"),
+    all(feature = "tabs", feature = "label")
 ))]
 use zsui::CommandId;
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "radio", feature = "label"),
-    all(feature = "combo", feature = "label")
+    all(feature = "combo", feature = "label"),
+    all(feature = "tabs", feature = "label")
 ))]
 use zsui::NativeViewKey;
 #[cfg(feature = "date-picker")]
@@ -53,12 +56,15 @@ use zsui::{
 use zsui::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
 use zsui::{slider, SliderRange};
+#[cfg(feature = "tabs")]
+use zsui::{tab_view, ZsTabId, ZsTabItem};
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
-    all(feature = "date-picker", feature = "label")
+    all(feature = "date-picker", feature = "label"),
+    all(feature = "tabs", feature = "label")
 ))]
 use zsui::{Point, UiCommand, WidgetId};
 
@@ -91,6 +97,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
             || date_picker_high_contrast,
         date_picker_high_contrast,
+        args.iter()
+            .any(|arg| arg == "--tabs-view" || arg == "--tabs"),
     ) {
         Ok(json) => {
             println!("{json}");
@@ -116,6 +124,7 @@ fn run_smoke(
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
+    include_tabs_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -146,6 +155,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "date-picker", feature = "label")))]
     if include_date_picker_view {
         return Err("--date-picker-view requires the date-picker and label features".to_string());
+    }
+    #[cfg(not(all(feature = "tabs", feature = "label")))]
+    if include_tabs_view {
+        return Err("--tabs-view requires the tabs and label features".to_string());
     }
     let artifact_root = artifact_root.unwrap_or("target/native-host-smoke");
     let artifact_dir = PathBuf::from(artifact_root).join(platform.platform_name());
@@ -253,6 +266,15 @@ fn run_smoke(
             .native_view_click(Point { x: 130, y: 284 })
             .native_view_click(Point { x: 100, y: 80 });
     }
+    #[cfg(all(feature = "tabs", feature = "label"))]
+    if include_tabs_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 170, y: 80 })
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_key_down(NativeViewKey::Space)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
 
     let builder =
         native_window("ZSUI Smoke").size(520, if include_date_picker_view { 480 } else { 320 });
@@ -272,6 +294,8 @@ fn run_smoke(
         attach_combo_view(builder)
     } else if include_date_picker_view {
         attach_date_picker_view(builder, date_picker_high_contrast)
+    } else if include_tabs_view {
+        attach_tabs_view(builder)
     } else if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
@@ -502,6 +526,77 @@ fn attach_date_picker_view(
             DatePickerSmokeMsg::Expanded(expanded) => state.expanded = expanded,
         },
     )
+}
+
+#[cfg(all(feature = "tabs", feature = "label"))]
+#[derive(Clone)]
+enum TabsSmokeMsg {
+    Selected(ZsTabId),
+}
+
+#[cfg(all(feature = "tabs", feature = "label"))]
+fn attach_tabs_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    let general = ZsTabId::new(151);
+    let advanced = ZsTabId::new(152);
+    let about = ZsTabId::new(153);
+    builder.stateful_view(
+        general,
+        move |selected| {
+            column([
+                text::<TabsSmokeMsg>("ZSUI Tabs smoke").height(zsui::Dp::new(28.0)),
+                tab_view(
+                    [
+                        ZsTabItem::new(
+                            general,
+                            "General",
+                            column([
+                                text("General settings"),
+                                text("Shared Rust state owns the active page."),
+                            ])
+                            .padding(zsui::Dp::new(16.0))
+                            .gap(zsui::Dp::new(8.0)),
+                        ),
+                        ZsTabItem::new(
+                            advanced,
+                            "Advanced",
+                            column([
+                                text("Advanced settings"),
+                                text("Pointer and keyboard selection use typed messages."),
+                            ])
+                            .padding(zsui::Dp::new(16.0))
+                            .gap(zsui::Dp::new(8.0)),
+                        ),
+                        ZsTabItem::new(
+                            about,
+                            "About",
+                            column([
+                                text("ZSUI v0.2"),
+                                text("Self-drawn with platform-specific tab behavior."),
+                            ])
+                            .padding(zsui::Dp::new(16.0))
+                            .gap(zsui::Dp::new(8.0)),
+                        ),
+                    ],
+                    Some(*selected),
+                )
+                .id(WidgetId::new(15))
+                .on_tab_select(TabsSmokeMsg::Selected),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |selected, message, cx| match message {
+            TabsSmokeMsg::Selected(tab) => {
+                *selected = tab;
+                cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.tabs_selected")));
+            }
+        },
+    )
+}
+
+#[cfg(not(all(feature = "tabs", feature = "label")))]
+fn attach_tabs_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
 }
 
 #[cfg(not(all(feature = "date-picker", feature = "label")))]

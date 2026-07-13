@@ -97,6 +97,17 @@ history remain authoritative for implementation status.
   internal window through typed `ComboBoxScrolled` events on Win32, AppKit and
   GTK4 without exposing backend state or requiring the general `scroll`
   feature.
+- Tabs use `ZsTabId` rather than label text or positional indices as the public
+  identity. Exactly one valid tab page is active; only that page participates
+  in layout, paint, hit testing and event dispatch, while selection changes
+  return through the application's typed `on_tab_select` message.
+- Tabs remain self-drawn and use internal platform metric profiles rather than
+  native child controls. Windows follows the WinUI interaction split: Left and
+  Right move header focus without wrapping, Enter or Space selects, and
+  Ctrl+Tab/Ctrl+Shift+Tab select cyclically. AppKit arrow keys select the
+  adjacent page. GTK4 arrow keys plus Home/End move header focus, Space selects,
+  and Ctrl+PageUp/Ctrl+PageDown changes page. Application code and the public
+  API contain no platform `cfg`.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

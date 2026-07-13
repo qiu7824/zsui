@@ -15,7 +15,7 @@ use crate::native::NativeComboTypeAheadState;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
 };
-#[cfg(feature = "date-picker")]
+#[cfg(any(feature = "date-picker", feature = "tabs"))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
@@ -1793,10 +1793,11 @@ pub struct WindowsWin32ViewInputRoute {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     pointer_hover: Option<NativePointerVisualKey>,
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     pointer_pressed: Option<NativePointerVisualKey>,
+    surface: Option<crate::Rect>,
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
@@ -1811,6 +1812,7 @@ impl WindowsWin32ViewInputRoute {
         interaction_plan: ViewInteractionPlan,
         ui_command_view: ViewNode<UiCommand>,
     ) -> Self {
+        let surface = ui_command_view.bounds();
         Self {
             interaction_plan,
             ui_command_view: Some(ui_command_view),
@@ -1822,10 +1824,11 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             pointer_hover: None,
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             pointer_pressed: None,
+            surface,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1848,10 +1851,11 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             pointer_hover: None,
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             pointer_pressed: None,
+            surface: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1926,7 +1930,7 @@ impl WindowsWin32ViewInputRoute {
         };
         let target = self.interaction_plan.hit_target_at(point);
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             target.and_then(native_pointer_visual_key),
@@ -1989,7 +1993,7 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         {
             let hovered = self
                 .interaction_plan
@@ -2049,7 +2053,7 @@ impl WindowsWin32ViewInputRoute {
             report.text_drag_count = usize::from(completed_selection);
             report.text_drag_active = false;
             report.events.push("win32_view_text_pointer_up".to_string());
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -2065,13 +2069,13 @@ impl WindowsWin32ViewInputRoute {
             report
                 .events
                 .push("win32_view_slider_pointer_up".to_string());
-            #[cfg(feature = "date-picker")]
+            #[cfg(any(feature = "date-picker", feature = "tabs"))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
         let mut report = self.dispatch_click(point);
         report.pointer_up_count = 1;
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         {
             let hovered = self
                 .interaction_plan
@@ -2095,13 +2099,13 @@ impl WindowsWin32ViewInputRoute {
                 .collect(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         {
             let mut report = report;
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             report
         }
-        #[cfg(not(feature = "date-picker"))]
+        #[cfg(not(any(feature = "date-picker", feature = "tabs")))]
         {
             report
         }
@@ -2112,13 +2116,13 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         {
             let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
-        #[cfg(not(feature = "date-picker"))]
+        #[cfg(not(any(feature = "date-picker", feature = "tabs")))]
         {
             report
         }
@@ -2311,14 +2315,14 @@ impl WindowsWin32ViewInputRoute {
         shift: bool,
         control: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
-        #[cfg(not(feature = "radio"))]
+        #[cfg(not(any(feature = "radio", feature = "tabs")))]
         let _ = control;
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             key_down_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
-        if virtual_key == ZSUI_WIN32_VK_TAB {
+        if virtual_key == ZSUI_WIN32_VK_TAB && !control {
             self.dispatch_focus_traversal(if shift { -1 } else { 1 }, &mut report);
             return report;
         }
@@ -2330,6 +2334,36 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_key_without_focus:{virtual_key}"));
             return report;
         };
+
+        #[cfg(feature = "tabs")]
+        if virtual_key == ZSUI_WIN32_VK_TAB && control {
+            let offset = if shift { -1 } else { 1 };
+            let Some((tab_view, tab)) = self.widget_tab_cycle_target(widget, offset) else {
+                report.unhandled_key_count = 1;
+                return report;
+            };
+            report.handled = true;
+            report.tab_selection_count = 1;
+            report.tab_keyboard_selection_count = 1;
+            report.event_count = 1;
+            if let Some(target) = self
+                .interaction_plan
+                .hit_target_for_widget(crate::WidgetId(tab.0))
+            {
+                self.focus_target(target, &mut report);
+            }
+            report
+                .events
+                .push(format!("win32_view_tab_cycle:{}:{}", tab_view.0, tab.0));
+            self.dispatch_event(
+                crate::ViewEvent::TabSelected {
+                    widget: tab_view,
+                    tab,
+                },
+                &mut report,
+            );
+            return report;
+        }
         let Some(target) = self.interaction_plan.hit_target_for_widget(widget) else {
             report.unhandled_key_count = 1;
             report.events.push(format!(
@@ -2539,6 +2573,42 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "tabs")]
+        if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+            let Some(state) = self.widget_tab_header_state(widget) else {
+                return report;
+            };
+            let next_widget = match virtual_key {
+                key if key == u32::from(VK_LEFT) => state.previous,
+                key if key == u32::from(VK_RIGHT) => state.next,
+                _ => None,
+            };
+            if matches!(
+                virtual_key,
+                key if key == u32::from(VK_LEFT)
+                    || key == u32::from(VK_RIGHT)
+            ) {
+                report.handled = true;
+                let Some(next_widget) = next_widget else {
+                    return report;
+                };
+                if next_widget == widget {
+                    return report;
+                }
+                let Some(next_target) = self.interaction_plan.hit_target_for_widget(next_widget)
+                else {
+                    return report;
+                };
+                self.focus_target(next_target, &mut report);
+                report.tab_keyboard_focus_only_count = 1;
+                report.events.push(format!(
+                    "win32_view_tab_key_focus:{}:{}",
+                    widget.0, next_widget.0
+                ));
+                return report;
+            }
+        }
+
         #[cfg(feature = "date-picker")]
         if target.kind == crate::ViewHitTargetKind::DatePicker {
             let Some(state) = self.widget_date_picker_state(widget) else {
@@ -2639,8 +2709,25 @@ impl WindowsWin32ViewInputRoute {
                 (target.kind, virtual_key),
                 (crate::ViewHitTargetKind::RadioButton, ZSUI_WIN32_VK_SPACE)
             );
+        #[cfg(feature = "tabs")]
+        let activates = activates
+            || matches!(
+                (target.kind, virtual_key),
+                (
+                    crate::ViewHitTargetKind::Tab { .. },
+                    ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE
+                )
+            );
         if activates {
             report.keyboard_activation_count = 1;
+            #[cfg(feature = "tabs")]
+            if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+                let changed = self
+                    .widget_tab_header_state(target.widget)
+                    .is_some_and(|state| !state.selected);
+                report.tab_selection_count = usize::from(changed);
+                report.tab_keyboard_selection_count = usize::from(changed);
+            }
             report.events.push(format!(
                 "win32_view_key_activate:{}:{virtual_key}",
                 target.widget.0
@@ -2827,7 +2914,7 @@ impl WindowsWin32ViewInputRoute {
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         self.dismiss_popup_overlays_except(None, &mut report);
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         self.update_pointer_visual_state(None, None, &mut report);
         let Some(widget) = self.focused_widget.take() else {
             return report;
@@ -2997,6 +3084,25 @@ impl WindowsWin32ViewInputRoute {
             );
             return;
         }
+        #[cfg(feature = "tabs")]
+        if let crate::ViewHitTargetKind::Tab { tab_view, tab, .. } = target.kind {
+            report.tab_selection_count = usize::from(
+                self.widget_tab_header_state(target.widget)
+                    .is_some_and(|state| !state.selected),
+            );
+            report.event_count = 1;
+            report
+                .events
+                .push(format!("win32_view_tab_selected:{}:{}", tab_view.0, tab.0));
+            self.dispatch_event(
+                crate::ViewEvent::TabSelected {
+                    widget: tab_view,
+                    tab,
+                },
+                report,
+            );
+            return;
+        }
         let event = if matches!(
             target.kind,
             crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
@@ -3088,6 +3194,10 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_ui_command:{}", command.id.0));
             self.pending_ui_commands.push(command);
         }
+        if let Some(surface) = self.surface {
+            let mut layout = crate::ViewLayoutCx::new(surface, self.dpi);
+            view.layout(&mut layout);
+        }
         let next_interaction_plan = view.interaction_plan();
         if next_interaction_plan.hit_target_count() > 0 {
             self.interaction_plan = next_interaction_plan;
@@ -3118,7 +3228,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn widget_accepts_tab_focus(&self, target: crate::ViewHitTarget) -> bool {
-        #[cfg(not(feature = "radio"))]
+        #[cfg(not(any(feature = "radio", feature = "tabs")))]
         let _ = target;
         #[cfg(feature = "radio")]
         if target.kind == crate::ViewHitTargetKind::RadioButton {
@@ -3132,6 +3242,12 @@ impl WindowsWin32ViewInputRoute {
                         .and_then(|view| view.widget_radio_is_tab_stop(target.widget))
                 })
                 .unwrap_or(true);
+        }
+        #[cfg(feature = "tabs")]
+        if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
+            return self
+                .widget_tab_header_state(target.widget)
+                .is_none_or(|state| state.selected);
         }
         true
     }
@@ -3150,6 +3266,37 @@ impl WindowsWin32ViewInputRoute {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_radio_relative_widget(widget, navigation, offset))
+            })
+    }
+
+    #[cfg(feature = "tabs")]
+    fn widget_tab_header_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::view::ZsTabHeaderState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tab_header_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tab_header_state(widget))
+            })
+    }
+
+    #[cfg(feature = "tabs")]
+    fn widget_tab_cycle_target(
+        &self,
+        focused: crate::WidgetId,
+        offset: isize,
+    ) -> Option<(crate::WidgetId, crate::ZsTabId)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tab_cycle_target(focused, offset))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tab_cycle_target(focused, offset))
             })
     }
 
@@ -3316,7 +3463,7 @@ impl WindowsWin32ViewInputRoute {
         } else {
             return false;
         };
-        #[cfg(feature = "date-picker")]
+        #[cfg(any(feature = "date-picker", feature = "tabs"))]
         decorate_native_pointer_visuals(
             &mut plan,
             &self.interaction_plan,
@@ -3345,7 +3492,7 @@ impl WindowsWin32ViewInputRoute {
         true
     }
 
-    #[cfg(feature = "date-picker")]
+    #[cfg(any(feature = "date-picker", feature = "tabs"))]
     fn update_pointer_visual_state(
         &mut self,
         hovered: Option<NativePointerVisualKey>,
@@ -3411,15 +3558,24 @@ impl WindowsWin32ViewInputRoute {
 
     fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
         self.dpi = dpi;
-        let Some(live_view) = &self.live_view else {
-            return false;
-        };
-        if !live_view.set_surface(bounds, dpi) {
-            return false;
+        self.surface = Some(bounds);
+        let mut changed = false;
+        if let Some(live_view) = &self.live_view {
+            if live_view.set_surface(bounds, dpi) {
+                self.interaction_plan = live_view.interaction_plan();
+                changed = true;
+            }
         }
-        self.interaction_plan = live_view.interaction_plan();
-        self.rebuild_pending_draw_plan();
-        true
+        if let Some(view) = &mut self.ui_command_view {
+            let mut layout = crate::ViewLayoutCx::new(bounds, dpi);
+            view.layout(&mut layout);
+            self.interaction_plan = view.interaction_plan();
+            changed = true;
+        }
+        if changed {
+            self.rebuild_pending_draw_plan();
+        }
+        changed
     }
 }
 
@@ -3474,6 +3630,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub combo_keyboard_selection_count: usize,
     pub combo_type_ahead_match_count: usize,
     pub combo_scroll_count: usize,
+    pub tab_selection_count: usize,
+    pub tab_keyboard_selection_count: usize,
+    pub tab_keyboard_focus_only_count: usize,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -3536,6 +3695,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
         self.combo_type_ahead_match_count += next.combo_type_ahead_match_count;
         self.combo_scroll_count += next.combo_scroll_count;
+        self.tab_selection_count += next.tab_selection_count;
+        self.tab_keyboard_selection_count += next.tab_keyboard_selection_count;
+        self.tab_keyboard_focus_only_count += next.tab_keyboard_focus_only_count;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -6140,6 +6302,86 @@ mod tests {
         assert_eq!(tabbed.focused_widget, Some(first.0));
         assert_eq!(route.widget_checked_value(first), Some(true));
         assert_eq!(route.widget_checked_value(second), Some(false));
+    }
+
+    #[test]
+    #[cfg(all(feature = "tabs", feature = "label"))]
+    fn window_view_input_route_routes_tab_pointer_focus_activation_and_ctrl_tab() {
+        fn selected(_: crate::ZsTabId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.tabs.selected"))
+        }
+
+        let tab_view_id = crate::WidgetId::new(340);
+        let general = crate::ZsTabId::new(341);
+        let advanced = crate::ZsTabId::new(342);
+        let mut view = crate::tab_view(
+            [
+                crate::ZsTabItem::new(general, "General", crate::text("General content")),
+                crate::ZsTabItem::new(advanced, "Advanced", crate::text("Advanced content")),
+            ],
+            Some(general),
+        )
+        .id(tab_view_id)
+        .on_tab_select(selected);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 420,
+                height: 260,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let second = interaction
+            .hit_target_for_widget(crate::WidgetId(advanced.0))
+            .expect("second tab should expose a hit target");
+        let second_point = crate::Point {
+            x: second.bounds.x + second.bounds.width / 2,
+            y: second.bounds.y + second.bounds.height / 2,
+        };
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        let hovered = route.dispatch_pointer_move(second_point);
+        let pressed = route.dispatch_pointer_down(second_point, false);
+        let pointer = route.dispatch_pointer_up(second_point);
+
+        assert_eq!(hovered.pointer_visual_change_count, 1);
+        assert_eq!(pressed.pointer_visual_change_count, 1);
+        assert_eq!(pointer.tab_selection_count, 1);
+        assert_eq!(pointer.ui_command_count, 1);
+        assert_eq!(pointer.focused_widget, Some(advanced.0));
+        assert_eq!(
+            route
+                .ui_command_view
+                .as_ref()
+                .and_then(|view| view.widget_tab_view_state(tab_view_id))
+                .and_then(|state| state.selected),
+            Some(advanced)
+        );
+
+        let focus_only = route.dispatch_key_down(u32::from(VK_LEFT));
+        assert_eq!(focus_only.tab_keyboard_focus_only_count, 1);
+        assert_eq!(focus_only.tab_selection_count, 0);
+        assert_eq!(focus_only.focused_widget, Some(general.0));
+
+        let keyboard = route.dispatch_key_down(u32::from(VK_SPACE));
+        assert_eq!(keyboard.tab_selection_count, 1);
+        assert_eq!(keyboard.tab_keyboard_selection_count, 1);
+        assert_eq!(
+            route
+                .ui_command_view
+                .as_ref()
+                .and_then(|view| view.widget_tab_view_state(tab_view_id))
+                .and_then(|state| state.selected),
+            Some(general)
+        );
+
+        let cycled = route.dispatch_key_down_with_modifiers(u32::from(VK_TAB), false, true);
+        assert_eq!(cycled.tab_selection_count, 1);
+        assert_eq!(cycled.tab_keyboard_selection_count, 1);
+        assert_eq!(cycled.focused_widget, Some(advanced.0));
+        assert!(route.take_pending_draw_plan().is_some());
     }
 
     #[test]

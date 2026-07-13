@@ -24,6 +24,8 @@ use crate::{
     style::{ThemeColorToken, ZsuiThemeMode},
     Command, UiCommand,
 };
+#[cfg(feature = "tabs")]
+use crate::{ZsTabId, ZsTabSpec};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -256,6 +258,42 @@ pub struct ZsDatePickerState {
     pub expanded: bool,
 }
 
+#[cfg(feature = "tabs")]
+#[derive(Debug, Clone)]
+pub struct ZsTabItem<Msg> {
+    pub spec: ZsTabSpec,
+    pub content: ViewNode<Msg>,
+}
+
+#[cfg(feature = "tabs")]
+impl<Msg> ZsTabItem<Msg> {
+    pub fn new(id: ZsTabId, label: impl Into<String>, content: ViewNode<Msg>) -> Self {
+        Self {
+            spec: ZsTabSpec::new(id, label),
+            content,
+        }
+    }
+}
+
+#[cfg(feature = "tabs")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTabViewState {
+    pub selected: Option<ZsTabId>,
+    pub tab_count: usize,
+}
+
+#[cfg(feature = "tabs")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ZsTabHeaderState {
+    pub tab_view: WidgetId,
+    pub tab: ZsTabId,
+    pub selected: bool,
+    pub previous: Option<WidgetId>,
+    pub next: Option<WidgetId>,
+    pub first: WidgetId,
+    pub last: WidgetId,
+}
+
 #[derive(Debug, Clone)]
 pub enum ViewNodeKind<Msg> {
     #[doc(hidden)]
@@ -322,6 +360,12 @@ pub enum ViewNodeKind<Msg> {
         expanded: bool,
         on_date_change: Option<fn(ZsDate) -> Msg>,
         on_expanded_change: Option<fn(bool) -> Msg>,
+    },
+    #[cfg(feature = "tabs")]
+    Tabs {
+        tabs: Vec<ZsTabSpec>,
+        selected: Option<ZsTabId>,
+        on_select: Option<fn(ZsTabId) -> Msg>,
     },
     #[cfg(feature = "list")]
     List {
@@ -480,7 +524,7 @@ impl<Msg> ViewNode<Msg> {
             .min()
     }
 
-    #[cfg(feature = "virtual-list")]
+    #[cfg(any(feature = "tabs", feature = "virtual-list"))]
     fn clear_layout_bounds(&mut self) {
         self.bounds = None;
         for child in &mut self.children {
@@ -631,6 +675,14 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn today(mut self, today: ZsDate) -> Self {
         if let ViewNodeKind::DatePicker { today: current, .. } = &mut self.kind {
             *current = Some(today);
+        }
+        self
+    }
+
+    #[cfg(feature = "tabs")]
+    pub fn on_tab_select(mut self, message: fn(ZsTabId) -> Msg) -> Self {
+        if let ViewNodeKind::Tabs { on_select, .. } = &mut self.kind {
+            *on_select = Some(message);
         }
         self
     }
@@ -830,6 +882,27 @@ pub fn date_picker<Msg>(value: ZsDate) -> ViewNode<Msg> {
     })
 }
 
+#[cfg(feature = "tabs")]
+pub fn tab_view<Msg>(
+    items: impl IntoIterator<Item = ZsTabItem<Msg>>,
+    selected: Option<ZsTabId>,
+) -> ViewNode<Msg> {
+    let items = items.into_iter().collect::<Vec<_>>();
+    let tabs = items
+        .iter()
+        .map(|item| item.spec.clone())
+        .collect::<Vec<_>>();
+    let selected = selected
+        .filter(|selected| tabs.iter().any(|tab| tab.id == *selected))
+        .or_else(|| tabs.first().map(|tab| tab.id));
+    ViewNode::new(ViewNodeKind::Tabs {
+        tabs,
+        selected,
+        on_select: None,
+    })
+    .children(items.into_iter().map(|item| item.content))
+}
+
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Stack {
         direction: ViewStackDirection::Row,
@@ -957,6 +1030,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: ZsDate,
     },
+    #[cfg(feature = "tabs")]
+    TabSelected {
+        widget: WidgetId,
+        tab: ZsTabId,
+    },
     #[cfg(any(feature = "combo", feature = "date-picker"))]
     DismissPopupOverlays {
         except: Option<WidgetId>,
@@ -1025,6 +1103,12 @@ pub enum ViewHitTargetKind {
     DatePickerPreviousMonth,
     #[cfg(feature = "date-picker")]
     DatePickerNextMonth,
+    #[cfg(feature = "tabs")]
+    Tab {
+        tab_view: WidgetId,
+        tab: ZsTabId,
+        index: usize,
+    },
     #[cfg(feature = "scroll")]
     Scroll,
 }
@@ -1306,6 +1390,14 @@ trait LiveViewDriver: Send {
     ) -> Option<usize>;
     #[cfg(feature = "date-picker")]
     fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState>;
+    #[cfg(feature = "tabs")]
+    fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState>;
+    #[cfg(feature = "tabs")]
+    fn widget_tab_cycle_target(
+        &self,
+        focused: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, ZsTabId)>;
     #[cfg(feature = "list")]
     fn widget_list_relative_widget(
         &self,
@@ -1397,6 +1489,20 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "date-picker")]
     pub fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState> {
         self.lock().widget_date_picker_state(widget)
+    }
+
+    #[cfg(feature = "tabs")]
+    pub(crate) fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
+        self.lock().widget_tab_header_state(widget)
+    }
+
+    #[cfg(feature = "tabs")]
+    pub(crate) fn widget_tab_cycle_target(
+        &self,
+        focused: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, ZsTabId)> {
+        self.lock().widget_tab_cycle_target(focused, offset)
     }
 
     #[cfg(feature = "list")]
@@ -1609,6 +1715,20 @@ where
         self.view.widget_date_picker_state(widget)
     }
 
+    #[cfg(feature = "tabs")]
+    fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
+        self.view.widget_tab_header_state(widget)
+    }
+
+    #[cfg(feature = "tabs")]
+    fn widget_tab_cycle_target(
+        &self,
+        focused: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, ZsTabId)> {
+        self.view.widget_tab_cycle_target(focused, offset)
+    }
+
     #[cfg(feature = "list")]
     fn widget_list_relative_widget(
         &self,
@@ -1700,6 +1820,49 @@ pub trait View<Msg> {
     fn paint(&self, cx: &mut ViewPaintCx);
 }
 
+#[cfg(feature = "tabs")]
+impl<Msg: Clone> ViewNode<Msg> {
+    fn layout_tabs(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        self.bounds = Some(cx.bounds);
+        self.layout_dpi = cx.dpi;
+        let (tabs, selected) = match &self.kind {
+            ViewNodeKind::Tabs { tabs, selected, .. } => (tabs, *selected),
+            _ => unreachable!("tab layout requires a tab view node"),
+        };
+        let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
+        let selected_index = selected
+            .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+        let plan = crate::zs_tab_view_render_plan(
+            cx.bounds,
+            &labels,
+            selected_index,
+            crate::ZsTabPlatformStyle::current(),
+            cx.dpi,
+        );
+        for child in &mut self.children {
+            child.clear_layout_bounds();
+        }
+        let mut children = Vec::new();
+        if let Some(id) = self.id {
+            children.push(LayoutNode {
+                component: id.into(),
+                bounds: cx.bounds,
+            });
+        }
+        if let Some(child) = selected_index.and_then(|index| self.children.get_mut(index)) {
+            let mut child_cx = ViewLayoutCx {
+                bounds: plan.content_bounds,
+                dpi: cx.dpi,
+            };
+            children.extend(child.layout(&mut child_cx).children);
+        }
+        LayoutOutput {
+            bounds: cx.bounds,
+            children,
+        }
+    }
+}
+
 #[cfg(feature = "virtual-list")]
 impl<Msg: Clone> ViewNode<Msg> {
     fn layout_virtual_list(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
@@ -1786,6 +1949,10 @@ impl<Msg: Clone> ViewNode<Msg> {
 
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        #[cfg(feature = "tabs")]
+        if matches!(self.kind, ViewNodeKind::Tabs { .. }) {
+            return self.layout_tabs(cx);
+        }
         #[cfg(feature = "virtual-list")]
         if matches!(self.kind, ViewNodeKind::VirtualList { .. }) {
             return self.layout_virtual_list(cx);
@@ -1823,6 +1990,32 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "tabs")]
+        if let ViewNodeKind::Tabs {
+            tabs,
+            selected,
+            on_select,
+        } = &mut self.kind
+        {
+            if let ViewEvent::TabSelected { widget, tab } = event {
+                if self.id == Some(*widget)
+                    && tabs.iter().any(|candidate| candidate.id == *tab)
+                    && *selected != Some(*tab)
+                {
+                    *selected = Some(*tab);
+                    if let Some(message) = on_select {
+                        cx.emit(message(*tab));
+                    }
+                }
+            }
+            let selected_index = (*selected)
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            if let Some(child) = selected_index.and_then(|index| self.children.get_mut(index)) {
+                child.event(cx, event);
+            }
+            return;
+        }
+
         #[cfg(any(feature = "combo", feature = "date-picker"))]
         if let ViewEvent::DismissPopupOverlays { except } = event {
             let should_dismiss = self.id.is_some() && self.id != *except;
@@ -2406,6 +2599,32 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "tabs")]
+            ViewNodeKind::Tabs { tabs, selected, .. } => {
+                let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
+                let selected_index = selected.and_then(|selected| {
+                    tabs.iter().position(|candidate| candidate.id == selected)
+                });
+                let plan = crate::zs_tab_view_render_plan(
+                    bounds,
+                    &labels,
+                    selected_index,
+                    crate::ZsTabPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_tab_view_native_draw_plan(&plan, &labels).commands {
+                    cx.draw(command);
+                }
+                if let Some(child) = selected_index.and_then(|index| self.children.get(index)) {
+                    cx.draw(NativeDrawCommand::PushClip {
+                        rect: plan.content_bounds,
+                    });
+                    child.paint(cx);
+                    cx.draw(NativeDrawCommand::PopClip);
+                }
+                cx.finish_node(self);
+                return;
+            }
             #[cfg(feature = "list")]
             ViewNodeKind::List { selected_index, .. } => {
                 if let Some(bounds) = selected_index
@@ -2525,6 +2744,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::DatePickerExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::DatePickerMonthChanged { widget, .. })
             | (Some(id), ViewEvent::DateChanged { widget, .. }) => id == *widget,
+            #[cfg(feature = "tabs")]
+            (Some(id), ViewEvent::TabSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             #[cfg(any(feature = "combo", feature = "date-picker"))]
@@ -2533,7 +2754,7 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
-    #[cfg(any(feature = "list", feature = "scroll"))]
+    #[cfg(any(feature = "list", feature = "scroll", feature = "tabs"))]
     fn contains_widget(&self, widget: WidgetId) -> bool {
         self.id == Some(widget)
             || self
@@ -2738,6 +2959,82 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_date_picker_state(widget))
     }
 
+    #[cfg(feature = "tabs")]
+    pub fn widget_tab_view_state(&self, widget: WidgetId) -> Option<ZsTabViewState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
+                return Some(ZsTabViewState {
+                    selected: *selected,
+                    tab_count: tabs.len(),
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_tab_view_state(widget))
+    }
+
+    #[cfg(feature = "tabs")]
+    pub(crate) fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
+        if let (Some(tab_view), ViewNodeKind::Tabs { tabs, selected, .. }) = (self.id, &self.kind) {
+            if let Some((index, tab)) = tabs
+                .iter()
+                .enumerate()
+                .find(|(_, tab)| WidgetId(tab.id.0) == widget)
+            {
+                return Some(ZsTabHeaderState {
+                    tab_view,
+                    tab: tab.id,
+                    selected: *selected == Some(tab.id),
+                    previous: index
+                        .checked_sub(1)
+                        .and_then(|index| tabs.get(index))
+                        .map(|tab| WidgetId(tab.id.0)),
+                    next: tabs
+                        .get(index.saturating_add(1))
+                        .map(|tab| WidgetId(tab.id.0)),
+                    first: WidgetId(tabs.first().expect("matched tab list is non-empty").id.0),
+                    last: WidgetId(tabs.last().expect("matched tab list is non-empty").id.0),
+                });
+            }
+            let selected_index = selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            return selected_index
+                .and_then(|index| self.children.get(index))
+                .and_then(|child| child.widget_tab_header_state(widget));
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_tab_header_state(widget))
+    }
+
+    #[cfg(feature = "tabs")]
+    pub(crate) fn widget_tab_cycle_target(
+        &self,
+        focused: WidgetId,
+        offset: isize,
+    ) -> Option<(WidgetId, ZsTabId)> {
+        if let (Some(tab_view), ViewNodeKind::Tabs { tabs, selected, .. }) = (self.id, &self.kind) {
+            let selected_index = selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            let focused_header = tabs.iter().any(|tab| WidgetId(tab.id.0) == focused);
+            let focused_content = selected_index
+                .and_then(|index| self.children.get(index))
+                .is_some_and(|child| child.contains_widget(focused));
+            if (focused_header || focused_content) && !tabs.is_empty() {
+                let current = selected_index.unwrap_or(0) as isize;
+                let next = (current + offset).rem_euclid(tabs.len() as isize) as usize;
+                return Some((tab_view, tabs[next].id));
+            }
+            return selected_index
+                .and_then(|index| self.children.get(index))
+                .and_then(|child| child.widget_tab_cycle_target(focused, offset));
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_tab_cycle_target(focused, offset))
+    }
+
     #[cfg(feature = "list")]
     pub fn widget_list_index(&self, widget: WidgetId) -> Option<usize> {
         if matches!(self.kind, ViewNodeKind::List { .. }) {
@@ -2832,6 +3129,42 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "tabs")]
+        if let (Some(tab_view), Some(bounds), ViewNodeKind::Tabs { tabs, selected, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
+            let selected_index = selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            let plan = crate::zs_tab_view_render_plan(
+                bounds,
+                &labels,
+                selected_index,
+                crate::ZsTabPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            hit_targets.extend(plan.headers.iter().zip(tabs).filter_map(|(header, tab)| {
+                clipped_rect(header.bounds, clip).map(|bounds| {
+                    ViewHitTarget::with_kind(
+                        WidgetId(tab.id.0),
+                        bounds,
+                        ViewHitTargetKind::Tab {
+                            tab_view,
+                            tab: tab.id,
+                            index: tabs
+                                .iter()
+                                .position(|candidate| candidate.id == tab.id)
+                                .unwrap_or(0),
+                        },
+                    )
+                })
+            }));
+            if let Some(child) = selected_index.and_then(|index| self.children.get(index)) {
+                child.collect_hit_targets(hit_targets, clipped_rect(plan.content_bounds, clip));
+            }
+            return;
+        }
+
         #[cfg(feature = "progress")]
         let accepts_input = !matches!(self.kind, ViewNodeKind::ProgressBar { .. });
         #[cfg(not(feature = "progress"))]
@@ -3471,6 +3804,7 @@ mod tests {
         feature = "radio",
         feature = "combo",
         feature = "date-picker",
+        feature = "tabs",
         feature = "list"
     ))]
     #[derive(Debug, Clone, PartialEq)]
@@ -3493,6 +3827,8 @@ mod tests {
         DateChanged(ZsDate),
         #[cfg(feature = "date-picker")]
         DateExpanded(bool),
+        #[cfg(feature = "tabs")]
+        TabSelected(ZsTabId),
         #[cfg(feature = "list")]
         RowSelected(usize),
         #[cfg(feature = "scroll")]
@@ -4573,6 +4909,100 @@ mod tests {
         assert!(update.redraw);
         assert_eq!(update.revision, 1);
         assert_eq!(runtime.background_poll_interval_ms(), None);
+    }
+
+    #[test]
+    #[cfg(all(feature = "tabs", feature = "label"))]
+    fn tab_view_keeps_one_active_page_and_routes_strongly_typed_selection() {
+        let tab_view_id = WidgetId::new(200);
+        let general = ZsTabId::new(201);
+        let advanced = ZsTabId::new(202);
+        let about = ZsTabId::new(203);
+        let general_content = WidgetId::new(211);
+        let advanced_content = WidgetId::new(212);
+        let mut view = tab_view(
+            [
+                ZsTabItem::new(
+                    general,
+                    "General",
+                    text("General content").id(general_content),
+                ),
+                ZsTabItem::new(
+                    advanced,
+                    "Advanced",
+                    text("Advanced content").id(advanced_content),
+                ),
+                ZsTabItem::new(about, "About", text("About content")),
+            ],
+            Some(general),
+        )
+        .id(tab_view_id)
+        .on_tab_select(Msg::TabSelected);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 420,
+                height: 260,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+
+        let interactions = view.interaction_plan();
+        assert_eq!(
+            interactions
+                .hit_targets
+                .iter()
+                .filter(|target| matches!(target.kind, ViewHitTargetKind::Tab { .. }))
+                .count(),
+            3
+        );
+        assert!(interactions
+            .hit_target_for_widget(general_content)
+            .is_some());
+        assert!(interactions
+            .hit_target_for_widget(advanced_content)
+            .is_none());
+        assert!(view
+            .widget_tab_header_state(WidgetId(general.0))
+            .is_some_and(|state| state.selected));
+        assert!(view
+            .widget_tab_header_state(WidgetId(advanced.0))
+            .is_some_and(|state| !state.selected));
+        assert_eq!(
+            view.widget_tab_cycle_target(general_content, 1),
+            Some((tab_view_id, advanced))
+        );
+
+        let mut event_cx = ViewEventCx::new();
+        view.event(
+            &mut event_cx,
+            &ViewEvent::TabSelected {
+                widget: tab_view_id,
+                tab: advanced,
+            },
+        );
+        assert_eq!(event_cx.messages(), &[Msg::TabSelected(advanced)]);
+        assert_eq!(
+            view.widget_tab_view_state(tab_view_id),
+            Some(ZsTabViewState {
+                selected: Some(advanced),
+                tab_count: 3,
+            })
+        );
+
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "Advanced content"
+        )));
+        assert!(!paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "General content"
+        )));
     }
 
     #[test]

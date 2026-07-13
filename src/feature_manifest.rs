@@ -216,6 +216,22 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "explicit-state combo header, popup overlay and typed pointer or keyboard selection",
         ),
         ZsuiCargoFeature::new(
+            "date-picker",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "calendar date picker with typed date state, popup month navigation and selection",
+        ),
+        ZsuiCargoFeature::new(
+            "tabs",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "self-drawn tab view with strong tab ids, selected content and platform keyboard behavior",
+        ),
+        ZsuiCargoFeature::new(
             "table",
             Widget,
             false,
@@ -442,6 +458,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "radio",
                 "progress",
                 "combo",
+                "date-picker",
+                "tabs",
                 "table",
                 "workbench",
             ],
@@ -531,6 +549,8 @@ mod tests {
         assert!(all_widgets.enables.contains(&"radio"));
         assert!(all_widgets.enables.contains(&"progress"));
         assert!(all_widgets.enables.contains(&"combo"));
+        assert!(all_widgets.enables.contains(&"date-picker"));
+        assert!(all_widgets.enables.contains(&"tabs"));
         assert!(all_widgets.enables.contains(&"table"));
         assert!(all_widgets.enables.contains(&"workbench"));
     }

@@ -3,15 +3,31 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "button", feature = "checkbox", feature = "toggle"))]
 use crate::core::Command;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ZsTabSpec {
-    pub id: &'static str,
-    pub label: &'static str,
+#[cfg(feature = "tabs")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ZsTabId(pub u64);
+
+#[cfg(feature = "tabs")]
+impl ZsTabId {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
 }
 
+#[cfg(feature = "tabs")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ZsTabSpec {
+    pub id: ZsTabId,
+    pub label: String,
+}
+
+#[cfg(feature = "tabs")]
 impl ZsTabSpec {
-    pub const fn new(id: &'static str, label: &'static str) -> Self {
-        Self { id, label }
+    pub fn new(id: ZsTabId, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            label: label.into(),
+        }
     }
 }
 

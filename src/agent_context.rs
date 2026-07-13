@@ -341,20 +341,20 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "declaration_api",
-            percent_complete: 84,
-            status_name: "fluent_tokens_semantic_icons_workbench_and_calculator_declarations_ready",
+            percent_complete: 85,
+            status_name: "fluent_tokens_semantic_icons_system_high_contrast_and_composite_declarations_ready",
             source_path: "src/workbench.rs",
             missing_before_complete: vec![
                 "native component bindings",
-                "system theme accent and high-contrast binding",
+                "system accent binding",
                 "layout measurement",
                 "full menu/settings native binding",
             ],
         },
         ZsuiCompletionArea {
             area_name: "component_library",
-            percent_complete: 52,
-            status_name: "twenty_five_first_pass_surfaces_out_of_forty_eight_catalogued_components",
+            percent_complete: 56,
+            status_name: "twenty_seven_first_pass_surfaces_out_of_forty_eight_catalogued_components",
             source_path: "src/component_catalog.rs",
             missing_before_complete: vec![
                 "grid and repeater layout",
@@ -449,8 +449,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "native_smoke_verification",
-            percent_complete: 82,
-            status_name: "win32_workbench_and_stateful_view_smoke_recorded",
+            percent_complete: 83,
+            status_name: "win32_stateful_controls_tabs_and_high_contrast_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
                 "required tray/menu target smoke artifacts with user popup interaction",
@@ -900,8 +900,8 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 26);
-        assert_eq!(context.readiness.component_catalog.contract_only_count, 7);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 27);
+        assert_eq!(context.readiness.component_catalog.contract_only_count, 6);
         assert_eq!(context.readiness.component_catalog.not_started_count, 15);
         assert!(context
             .readiness

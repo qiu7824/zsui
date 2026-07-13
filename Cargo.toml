@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/qiu7824/zsui"
-description = "Rust-first native system UI declarations and host contracts."
+description = "Rust-first feature-gated native UI framework for Win32, AppKit, and GTK4."
 readme = "README.md"
 
 [dependencies]
@@ -49,6 +49,7 @@ radio = ["widgets-input"]
 progress = ["widgets-base"]
 combo = ["widgets-input"]
 date-picker = ["widgets-input", "dep:chrono"]
+tabs = ["widgets-base"]
 table = ["list", "scroll"]
 dark-mode = []
 style = []
@@ -75,7 +76,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "label", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "slider", "radio", "progress", "combo", "date-picker", "table", "workbench"]
+all-widgets = ["button", "label", "scroll", "list", "virtual-list", "paged-list", "textbox", "checkbox", "toggle", "slider", "radio", "progress", "combo", "date-picker", "tabs", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",

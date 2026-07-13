@@ -149,6 +149,11 @@ const DATE_PICKER_GAPS: &[&str] = &[
     "accessibility value and calendar-grid providers",
     "AppKit and GTK4 platform-style metrics and target interaction smoke",
 ];
+const TABS_GAPS: &[&str] = &[
+    "accessibility tab-list and tab-panel providers",
+    "document-tab close, reorder and overflow behavior",
+    "AppKit and GTK4 target interaction smoke",
+];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
     "dark and high-contrast target smoke",
@@ -249,10 +254,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "tabs",
         "TabView",
         Navigation,
-        ContractOnly,
-        None,
-        "src/components.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("tabs"),
+        "src/components.rs + src/view.rs + src/widget_render.rs",
+        TABS_GAPS
     ),
     component!(
         "breadcrumb",
