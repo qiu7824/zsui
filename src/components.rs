@@ -285,6 +285,15 @@ mod label_tests {
     impl Renderer for RecordingRenderer {
         fn fill_rect(&mut self, _rect: Rect, _color: Color) {}
         fn stroke_rect(&mut self, _rect: Rect, _color: Color, _width: i32) {}
+        fn stroke_arc(
+            &mut self,
+            _rect: Rect,
+            _color: Color,
+            _width: i32,
+            _start_degrees: i16,
+            _sweep_degrees: i16,
+        ) {
+        }
         fn draw_text(&mut self, run: &TextRun, _style: &TextStyle) {
             self.text.push(run.text.clone());
         }

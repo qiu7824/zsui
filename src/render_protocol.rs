@@ -187,6 +187,14 @@ pub const REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS: [TextLayoutHostOperation; 2] = [
 pub trait Renderer {
     fn fill_rect(&mut self, rect: Rect, color: Color);
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: i32);
+    fn stroke_arc(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        width: i32,
+        start_degrees: i16,
+        sweep_degrees: i16,
+    );
     fn draw_text(&mut self, run: &TextRun, style: &TextStyle);
     fn push_clip(&mut self, rect: Rect);
     fn pop_clip(&mut self);
@@ -196,6 +204,7 @@ pub trait Renderer {
 pub enum RendererHostOperation {
     FillRect,
     StrokeRect,
+    StrokeArc,
     DrawText,
     PushClip,
     PopClip,
@@ -206,6 +215,7 @@ impl RendererHostOperation {
         match self {
             Self::FillRect => "fill_rect",
             Self::StrokeRect => "stroke_rect",
+            Self::StrokeArc => "stroke_arc",
             Self::DrawText => "draw_text",
             Self::PushClip => "push_clip",
             Self::PopClip => "pop_clip",
@@ -213,9 +223,10 @@ impl RendererHostOperation {
     }
 }
 
-pub const REQUIRED_RENDERER_HOST_OPERATIONS: [RendererHostOperation; 5] = [
+pub const REQUIRED_RENDERER_HOST_OPERATIONS: [RendererHostOperation; 6] = [
     RendererHostOperation::FillRect,
     RendererHostOperation::StrokeRect,
+    RendererHostOperation::StrokeArc,
     RendererHostOperation::DrawText,
     RendererHostOperation::PushClip,
     RendererHostOperation::PopClip,
@@ -336,6 +347,13 @@ pub enum NativeDrawCommand {
         stroke: NativeDrawFill,
         width: i32,
     },
+    StrokeArc {
+        rect: Rect,
+        stroke: NativeDrawFill,
+        width: i32,
+        start_degrees: i16,
+        sweep_degrees: i16,
+    },
     RoundRect {
         rect: Rect,
         fill: NativeDrawFill,
@@ -362,6 +380,7 @@ impl NativeDrawCommand {
         match self {
             Self::FillRect { .. } => NativeDrawCommandOperation::FillRect,
             Self::StrokeRect { .. } => NativeDrawCommandOperation::StrokeRect,
+            Self::StrokeArc { .. } => NativeDrawCommandOperation::StrokeArc,
             Self::RoundRect { .. } => NativeDrawCommandOperation::RoundRect,
             Self::RoundFill { .. } => NativeDrawCommandOperation::RoundFill,
             Self::Text(_) => NativeDrawCommandOperation::DrawText,
@@ -378,6 +397,7 @@ impl NativeDrawCommand {
 pub enum NativeDrawCommandOperation {
     FillRect,
     StrokeRect,
+    StrokeArc,
     RoundRect,
     RoundFill,
     DrawText,
@@ -391,6 +411,7 @@ impl NativeDrawCommandOperation {
         match self {
             Self::FillRect => "draw_fill_rect",
             Self::StrokeRect => "draw_stroke_rect",
+            Self::StrokeArc => "draw_stroke_arc",
             Self::RoundRect => "draw_round_rect",
             Self::RoundFill => "draw_round_fill",
             Self::DrawText => "draw_text",
@@ -401,9 +422,10 @@ impl NativeDrawCommandOperation {
     }
 }
 
-pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 8] = [
+pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 9] = [
     NativeDrawCommandOperation::FillRect,
     NativeDrawCommandOperation::StrokeRect,
+    NativeDrawCommandOperation::StrokeArc,
     NativeDrawCommandOperation::RoundRect,
     NativeDrawCommandOperation::RoundFill,
     NativeDrawCommandOperation::DrawText,

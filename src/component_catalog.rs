@@ -162,6 +162,11 @@ const PROGRESS_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target screenshot smoke",
 ];
+const PROGRESS_RING_GAPS: &[&str] = &[
+    "accessibility progress role and determinate value provider",
+    "system reduced-motion preference",
+    "AppKit and GTK4 target animation screenshot smoke",
+];
 const COMBO_GAPS: &[&str] = &[
     "accessibility expanded and selection providers",
     "AppKit and GTK4 target interaction smoke",
@@ -511,10 +516,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "progress_ring",
         "ProgressRing",
         Feedback,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("progress-ring"),
+        "src/progress.rs + src/view.rs + three desktop renderers",
+        PROGRESS_RING_GAPS
     ),
     component!(
         "info_bar",
@@ -663,9 +668,9 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 10);
+        assert!(summary.not_started_count >= 9);
         assert!(summary.missing_component_names.contains(&"tree"));
-        assert!(summary.missing_component_names.contains(&"progress_ring"));
+        assert!(!summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));
         assert!(!summary.missing_component_names.contains(&"toggle_button"));
     }

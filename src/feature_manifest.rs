@@ -248,6 +248,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "determinate progress range, semantic paint and feedback-only hit behavior",
         ),
         ZsuiCargoFeature::new(
+            "progress-ring",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "independently selectable determinate/indeterminate ring with platform metrics and native animation timers",
+        ),
+        ZsuiCargoFeature::new(
             "combo",
             Widget,
             false,
@@ -510,6 +518,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "number-box",
                 "radio",
                 "progress",
+                "progress-ring",
                 "combo",
                 "date-picker",
                 "time-picker",
@@ -613,6 +622,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"number-box"));
         assert!(all_widgets.enables.contains(&"radio"));
         assert!(all_widgets.enables.contains(&"progress"));
+        assert!(all_widgets.enables.contains(&"progress-ring"));
         assert!(all_widgets.enables.contains(&"combo"));
         assert!(all_widgets.enables.contains(&"date-picker"));
         assert!(all_widgets.enables.contains(&"time-picker"));

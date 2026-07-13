@@ -29,8 +29,7 @@ use crate::{
 struct ZsuiAppKitDrawViewIvars {
     plan: RefCell<NativeDrawPlan>,
     runtime: RefCell<crate::native::NativeViewInputRuntime>,
-    #[cfg(feature = "tooltip")]
-    tooltip_timer: RefCell<Option<Retained<NSTimer>>>,
+    runtime_timer: RefCell<Option<Retained<NSTimer>>>,
     marked_text: RefCell<String>,
     marked_selection: Cell<Option<(usize, usize)>>,
     ime_dispatched: Cell<bool>,
@@ -42,11 +41,10 @@ define_class!(
     #[ivars = ZsuiAppKitDrawViewIvars]
     struct ZsuiAppKitDrawView;
 
-    #[cfg(feature = "tooltip")]
     impl ZsuiAppKitDrawView {
-        #[unsafe(method(zsuiTooltipTick:))]
-        fn zsui_tooltip_tick(&self, _timer: &NSTimer) {
-            self.ivars().tooltip_timer.borrow_mut().take();
+        #[unsafe(method(zsuiRuntimeTick:))]
+        fn zsui_runtime_tick(&self, _timer: &NSTimer) {
+            self.ivars().runtime_timer.borrow_mut().take();
             let report = self.ivars().runtime.borrow_mut().refresh_transient_view();
             self.apply_input_report(report);
         }
@@ -490,13 +488,11 @@ impl ZsuiAppKitDrawView {
                 context.discardMarkedText();
             }
         }
-        #[cfg(feature = "tooltip")]
-        self.schedule_tooltip_tick();
+        self.schedule_runtime_tick();
     }
 
-    #[cfg(feature = "tooltip")]
-    fn schedule_tooltip_tick(&self) {
-        if let Some(timer) = self.ivars().tooltip_timer.borrow_mut().take() {
+    fn schedule_runtime_tick(&self) {
+        if let Some(timer) = self.ivars().runtime_timer.borrow_mut().take() {
             timer.invalidate();
         }
         let Some(delay_ms) = self.ivars().runtime.borrow().transient_poll_interval_ms() else {
@@ -506,12 +502,12 @@ impl ZsuiAppKitDrawView {
             NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
                 delay_ms.max(1) as f64 / 1_000.0,
                 self,
-                objc2::sel!(zsuiTooltipTick:),
+                objc2::sel!(zsuiRuntimeTick:),
                 None,
                 false,
             )
         };
-        *self.ivars().tooltip_timer.borrow_mut() = Some(timer);
+        *self.ivars().runtime_timer.borrow_mut() = Some(timer);
     }
 
     fn new(
@@ -523,8 +519,7 @@ impl ZsuiAppKitDrawView {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars {
             plan: RefCell::new(plan),
             runtime: RefCell::new(runtime),
-            #[cfg(feature = "tooltip")]
-            tooltip_timer: RefCell::new(None),
+            runtime_timer: RefCell::new(None),
             marked_text: RefCell::new(String::new()),
             marked_selection: Cell::new(None),
             ime_dispatched: Cell::new(false),
@@ -568,6 +563,7 @@ pub(crate) fn install_macos_appkit_draw_plan(
     view.install_pointer_tracking();
     window.setAcceptsMouseMovedEvents(true);
     window.setContentView(Some(&view));
+    view.schedule_runtime_tick();
     view.setNeedsDisplay(true);
 }
 
@@ -724,6 +720,30 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
             } => {
                 appkit_color(self.palette.resolve_fill(*stroke)).setStroke();
                 let path = NSBezierPath::bezierPathWithRect(appkit_rect(*rect));
+                path.setLineWidth(f64::from((*width).max(1)));
+                path.stroke();
+            }
+            NativeDrawCommand::StrokeArc {
+                rect,
+                stroke,
+                width,
+                start_degrees,
+                sweep_degrees,
+            } => {
+                let center = NSPoint::new(
+                    f64::from(rect.x) + f64::from(rect.width) / 2.0,
+                    f64::from(rect.y) + f64::from(rect.height) / 2.0,
+                );
+                let radius = f64::from(rect.width.min(rect.height).max(0)) / 2.0;
+                let path = NSBezierPath::bezierPath();
+                path.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise(
+                    center,
+                    radius,
+                    f64::from(*start_degrees),
+                    f64::from(start_degrees.saturating_add(*sweep_degrees)),
+                    true,
+                );
+                appkit_color(self.palette.resolve_fill(*stroke)).setStroke();
                 path.setLineWidth(f64::from((*width).max(1)));
                 path.stroke();
             }

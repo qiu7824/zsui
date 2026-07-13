@@ -1012,6 +1012,7 @@ pub(crate) struct NativeViewInputRuntime {
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
+    animation_epoch: Option<std::time::Instant>,
     focused_widget: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
@@ -1179,6 +1180,7 @@ impl NativeViewInputRuntime {
             interaction_plan,
             ui_command_view,
             live_view,
+            animation_epoch: Some(std::time::Instant::now()),
             focused_widget: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::default(),
@@ -2609,7 +2611,11 @@ impl NativeViewInputRuntime {
             runtime.draw_plan()
         } else {
             let view = self.ui_command_view.as_ref()?;
-            let mut paint_cx = ViewPaintCx::new(self.dpi);
+            let elapsed = self
+                .animation_epoch
+                .map(|epoch| epoch.elapsed())
+                .unwrap_or_default();
+            let mut paint_cx = ViewPaintCx::with_animation_elapsed(self.dpi, elapsed);
             view.paint(&mut paint_cx);
             paint_cx.into_plan()
         };
@@ -2676,22 +2682,59 @@ impl NativeViewInputRuntime {
         plan.commands.extend(overlay.commands);
     }
 
-    #[cfg(feature = "tooltip")]
     pub(crate) fn transient_poll_interval_ms(&self) -> Option<u64> {
-        self.tooltip.poll_interval_ms(std::time::Instant::now())
+        let live_interval = self
+            .live_view
+            .as_ref()
+            .and_then(SharedLiveViewRuntime::background_poll_interval_ms);
+        let static_interval = self
+            .ui_command_view
+            .as_ref()
+            .and_then(ViewNode::background_poll_interval_ms);
+        #[cfg(feature = "tooltip")]
+        {
+            return live_interval
+                .into_iter()
+                .chain(static_interval)
+                .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
+                .min();
+        }
+        #[cfg(not(feature = "tooltip"))]
+        live_interval.into_iter().chain(static_interval).min()
     }
 
-    #[cfg(feature = "tooltip")]
     pub(crate) fn refresh_transient_view(&mut self) -> NativeViewInputDispatchReport {
         self.refresh_transient_view_at(std::time::Instant::now())
     }
 
-    #[cfg(feature = "tooltip")]
     fn refresh_transient_view_at(
         &mut self,
         now: std::time::Instant,
     ) -> NativeViewInputDispatchReport {
-        let changed = self.tooltip.refresh(now);
+        #[cfg(not(feature = "tooltip"))]
+        let _ = now;
+        let mut changed = false;
+        if self
+            .live_view
+            .as_ref()
+            .and_then(SharedLiveViewRuntime::background_poll_interval_ms)
+            .is_some()
+        {
+            if let Some(runtime) = &self.live_view {
+                let update = runtime.refresh();
+                self.interaction_plan = Some(runtime.interaction_plan());
+                changed |= update.redraw;
+            }
+        }
+        changed |= self
+            .ui_command_view
+            .as_ref()
+            .and_then(ViewNode::background_poll_interval_ms)
+            .is_some();
+        #[cfg(feature = "tooltip")]
+        {
+            changed |= self.tooltip.refresh(now);
+        }
         NativeViewInputDispatchReport {
             handled: changed,
             hit_target_count: self.hit_target_count(),

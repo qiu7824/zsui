@@ -225,8 +225,24 @@ cargo run --no-default-features --features "window,label,progress,windows-win32"
 It attaches a 65% progress value through `ProgressRange`, paints the shared
 semantic track/fill plan through the buffered Win32 renderer, captures the
 window and keeps the feedback-only control out of the hit-test plan. AppKit and
-GTK4 consume the same draw commands; target screenshots for those hosts and the
-separate indeterminate-animation mode remain pending.
+GTK4 consume the same draw commands; target screenshots for those hosts remain
+pending.
+
+The independently selectable ProgressRing smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,progress-ring,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-progress-ring --progress-ring-view
+```
+
+It places an active indeterminate ring beside a 65% determinate ring, captures
+the buffered Win32 window and records repeated live-view background refreshes
+while keeping the feedback controls out of the hit-test plan. The shared arc
+command is rendered with GDI+, NSBezierPath or Cairo, and the host loop uses a
+Win32 timer, owned `NSTimer` or cancellable GLib timeout respectively. The
+behavior follows the official [WinUI progress-control guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/progress-controls),
+[AppKit `NSProgressIndicator`](https://developer.apple.com/documentation/appkit/nsprogressindicator)
+and [GTK4 `GtkSpinner`](https://docs.gtk.org/gtk4/class.Spinner.html). macOS and
+Linux target-machine animation screenshots remain required.
 
 The dedicated typed ComboBox smoke path is:
 

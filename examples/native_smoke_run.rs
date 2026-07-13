@@ -14,6 +14,7 @@ use zsui::checkbox;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "progress", feature = "label"),
+    all(feature = "progress-ring", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -25,6 +26,8 @@ use zsui::column;
 use zsui::combo_box;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
+#[cfg(all(feature = "progress", feature = "label"))]
+use zsui::progress_bar;
 #[cfg(feature = "radio")]
 use zsui::radio_button;
 #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
@@ -62,6 +65,11 @@ use zsui::CommandId;
     all(feature = "tabs", feature = "label")
 ))]
 use zsui::NativeViewKey;
+#[cfg(any(
+    all(feature = "progress", feature = "label"),
+    all(feature = "progress-ring", feature = "label")
+))]
+use zsui::ProgressRange;
 #[cfg(feature = "date-picker")]
 use zsui::{date_picker, ZsDate, ZsuiThemeMode};
 #[cfg(all(feature = "grid", feature = "button", feature = "label"))]
@@ -76,8 +84,8 @@ use zsui::{
 use zsui::{number_box, ZsNumberRange};
 #[cfg(feature = "password-box")]
 use zsui::{password_box, ZsPassword, ZsPasswordRevealMode};
-#[cfg(feature = "progress")]
-use zsui::{progress_bar, ProgressRange};
+#[cfg(all(feature = "progress-ring", feature = "label"))]
+use zsui::{progress_ring, ZsProgressRingSpec};
 #[cfg(feature = "slider")]
 use zsui::{slider, SliderRange};
 #[cfg(feature = "tabs")]
@@ -134,6 +142,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--progress-view" || arg == "--progress"),
         args.iter()
+            .any(|arg| arg == "--progress-ring-view" || arg == "--progress-ring"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -170,6 +180,7 @@ fn run_smoke(
     include_tooltip_view: bool,
     include_radio_view: bool,
     include_progress_view: bool,
+    include_progress_ring_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -215,6 +226,12 @@ fn run_smoke(
     #[cfg(not(all(feature = "progress", feature = "label")))]
     if include_progress_view {
         return Err("--progress-view requires the progress and label features".to_string());
+    }
+    #[cfg(not(all(feature = "progress-ring", feature = "label")))]
+    if include_progress_ring_view {
+        return Err(
+            "--progress-ring-view requires the progress-ring and label features".to_string(),
+        );
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -427,6 +444,8 @@ fn run_smoke(
         attach_radio_view(builder)
     } else if include_progress_view {
         attach_progress_view(builder)
+    } else if include_progress_ring_view {
+        attach_progress_ring_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -743,6 +762,31 @@ fn attach_progress_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     )
 }
 
+#[cfg(all(feature = "progress-ring", feature = "label"))]
+fn attach_progress_ring_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        (),
+        |_| {
+            column([
+                text::<()>("ZSUI ProgressRing Smoke").height(zsui::Dp::new(28.0)),
+                zsui::row([
+                    progress_ring::<()>(ZsProgressRingSpec::indeterminate()),
+                    progress_ring::<()>(ZsProgressRingSpec::determinate(
+                        65.0,
+                        ProgressRange::new(0.0, 100.0),
+                    )),
+                    zsui::spacer(),
+                ])
+                .height(zsui::Dp::new(48.0))
+                .gap(zsui::Dp::new(16.0)),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |_, _, _| {},
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1014,6 +1058,11 @@ fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "progress", feature = "label")))]
 fn attach_progress_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "progress-ring", feature = "label")))]
+fn attach_progress_ring_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

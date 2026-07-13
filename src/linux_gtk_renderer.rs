@@ -32,8 +32,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
     drawing_area.set_focusable(true);
     let plan = Rc::new(RefCell::new(plan));
     let runtime = Rc::new(RefCell::new(runtime));
-    #[cfg(feature = "tooltip")]
-    let tooltip_timer = Rc::new(RefCell::new(None));
+    let runtime_timer = Rc::new(RefCell::new(None));
     let ime = gtk::IMMulticontext::new();
     ime.set_client_widget(Some(&drawing_area));
     ime.set_use_preedit(true);
@@ -170,8 +169,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
-        #[cfg(feature = "tooltip")]
-        let tooltip_timer = Rc::clone(&tooltip_timer);
+        let runtime_timer = Rc::clone(&runtime_timer);
         move |_motion, x, y| {
             let report = runtime.borrow_mut().dispatch_pointer_move(crate::Point {
                 x: gtk_coordinate(x),
@@ -187,14 +185,13 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     application.as_ref(),
                 );
             }
-            #[cfg(feature = "tooltip")]
-            schedule_linux_gtk_tooltip_tick(
+            schedule_linux_gtk_runtime_tick(
                 &area,
                 &plan,
                 &runtime,
                 &ime,
                 application.clone(),
-                &tooltip_timer,
+                &runtime_timer,
             );
         }
     });
@@ -204,8 +201,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
-        #[cfg(feature = "tooltip")]
-        let tooltip_timer = Rc::clone(&tooltip_timer);
+        let runtime_timer = Rc::clone(&runtime_timer);
         move |_motion| {
             let report = runtime.borrow_mut().dispatch_pointer_leave();
             if report.handled {
@@ -218,14 +214,13 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     application.as_ref(),
                 );
             }
-            #[cfg(feature = "tooltip")]
-            schedule_linux_gtk_tooltip_tick(
+            schedule_linux_gtk_runtime_tick(
                 &area,
                 &plan,
                 &runtime,
                 &ime,
                 application.clone(),
-                &tooltip_timer,
+                &runtime_timer,
             );
         }
     });
@@ -318,8 +313,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
-        #[cfg(feature = "tooltip")]
-        let tooltip_timer = Rc::clone(&tooltip_timer);
+        let runtime_timer = Rc::clone(&runtime_timer);
         move |_controller, key, _keycode, modifiers| {
             let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
             let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -412,14 +406,13 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 application.as_ref(),
             );
             reset_linux_gtk_ime_if_no_text_target(&runtime, &ime);
-            #[cfg(feature = "tooltip")]
-            schedule_linux_gtk_tooltip_tick(
+            schedule_linux_gtk_runtime_tick(
                 &area,
                 &plan,
                 &runtime,
                 &ime,
                 application.clone(),
-                &tooltip_timer,
+                &runtime_timer,
             );
             if handled {
                 gtk::glib::Propagation::Stop
@@ -453,10 +446,17 @@ pub(crate) fn install_linux_gtk_draw_plan(
     });
     drawing_area.add_controller(focus);
     window.set_child(Some(&drawing_area));
+    schedule_linux_gtk_runtime_tick(
+        &drawing_area,
+        &plan,
+        &runtime,
+        &ime,
+        window.application(),
+        &runtime_timer,
+    );
 }
 
-#[cfg(feature = "tooltip")]
-fn schedule_linux_gtk_tooltip_tick(
+fn schedule_linux_gtk_runtime_tick(
     area: &gtk::DrawingArea,
     plan: &Rc<RefCell<NativeDrawPlan>>,
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
@@ -488,7 +488,7 @@ fn schedule_linux_gtk_tooltip_tick(
                 &ime,
                 application.as_ref(),
             );
-            schedule_linux_gtk_tooltip_tick(
+            schedule_linux_gtk_runtime_tick(
                 &area,
                 &plan,
                 &runtime,
@@ -904,6 +904,26 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 self.set_source(self.palette.resolve_fill(*stroke));
                 self.context.set_line_width(f64::from((*width).max(1)));
                 self.add_rect(*rect);
+                let _ = self.context.stroke();
+            }
+            NativeDrawCommand::StrokeArc {
+                rect,
+                stroke,
+                width,
+                start_degrees,
+                sweep_degrees,
+            } => {
+                self.set_source(self.palette.resolve_fill(*stroke));
+                self.context.set_line_width(f64::from((*width).max(1)));
+                let start = f64::from(*start_degrees).to_radians();
+                let end = f64::from(start_degrees.saturating_add(*sweep_degrees)).to_radians();
+                self.context.arc(
+                    f64::from(rect.x) + f64::from(rect.width) / 2.0,
+                    f64::from(rect.y) + f64::from(rect.height) / 2.0,
+                    f64::from(rect.width.min(rect.height).max(0)) / 2.0,
+                    start,
+                    end,
+                );
                 let _ = self.context.stroke();
             }
             NativeDrawCommand::RoundRect {

@@ -1,4 +1,4 @@
-#[cfg(any(feature = "slider", feature = "progress", feature = "number-box"))]
+#[cfg(any(feature = "slider", feature = "number-box"))]
 use std::ops::RangeInclusive;
 use std::{
     fmt,
@@ -279,53 +279,6 @@ pub struct ZsNumberBoxState {
     pub value: Option<f64>,
     pub draft: String,
     pub valid: bool,
-}
-
-#[cfg(feature = "progress")]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct ProgressRange {
-    min: f32,
-    max: f32,
-}
-
-#[cfg(feature = "progress")]
-impl ProgressRange {
-    pub fn new(min: f32, max: f32) -> Self {
-        let min = if min.is_finite() { min } else { 0.0 };
-        let max = if max.is_finite() { max } else { 100.0 };
-        let (min, mut max) = if min <= max { (min, max) } else { (max, min) };
-        if (max - min).abs() <= f32::EPSILON {
-            max = min + 1.0;
-        }
-        Self { min, max }
-    }
-
-    pub const fn min(self) -> f32 {
-        self.min
-    }
-
-    pub const fn max(self) -> f32 {
-        self.max
-    }
-
-    pub fn clamp(self, value: f32) -> f32 {
-        if value.is_finite() {
-            value.clamp(self.min, self.max)
-        } else {
-            self.min
-        }
-    }
-
-    pub fn fraction(self, value: f32) -> f32 {
-        ((self.clamp(value) - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
-    }
-}
-
-#[cfg(feature = "progress")]
-impl From<RangeInclusive<f32>> for ProgressRange {
-    fn from(range: RangeInclusive<f32>) -> Self {
-        Self::new(*range.start(), *range.end())
-    }
 }
 
 #[cfg(feature = "virtual-list")]
@@ -669,7 +622,11 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "progress")]
     ProgressBar {
         value: f32,
-        range: ProgressRange,
+        range: crate::ProgressRange,
+    },
+    #[cfg(feature = "progress-ring")]
+    ProgressRing {
+        spec: crate::ZsProgressRingSpec,
     },
     #[cfg(feature = "combo")]
     ComboBox {
@@ -901,6 +858,13 @@ impl<Msg> ViewNode<Msg> {
     }
 
     pub fn background_poll_interval_ms(&self) -> Option<u64> {
+        #[cfg(feature = "progress-ring")]
+        if matches!(
+            self.kind,
+            ViewNodeKind::ProgressRing { spec } if spec.is_animating()
+        ) {
+            return Some(16);
+        }
         #[cfg(feature = "virtual-list")]
         if matches!(self.kind, ViewNodeKind::VirtualList { loading: true, .. }) {
             return Some(33);
@@ -1349,12 +1313,23 @@ pub fn radio_button<Msg>(label: impl Into<String>, selected: bool) -> ViewNode<M
 }
 
 #[cfg(feature = "progress")]
-pub fn progress_bar<Msg>(value: f32, range: impl Into<ProgressRange>) -> ViewNode<Msg> {
+pub fn progress_bar<Msg>(value: f32, range: impl Into<crate::ProgressRange>) -> ViewNode<Msg> {
     let range = range.into();
     ViewNode::new(ViewNodeKind::ProgressBar {
         value: range.clamp(value),
         range,
     })
+}
+
+#[cfg(feature = "progress-ring")]
+pub fn progress_ring<Msg>(spec: crate::ZsProgressRingSpec) -> ViewNode<Msg> {
+    let metrics = crate::zs_progress_ring_metrics(
+        crate::ZsProgressRingPlatformStyle::current(),
+        spec.size_value(),
+    );
+    ViewNode::new(ViewNodeKind::ProgressRing { spec })
+        .width(metrics.diameter)
+        .height(metrics.diameter)
 }
 
 #[cfg(feature = "combo")]
@@ -2234,6 +2209,7 @@ where
     bounds: Rect,
     dpi: Dpi,
     revision: u64,
+    animation_epoch: std::time::Instant,
 }
 
 impl<State, Msg, ViewFn, UpdateFn> TypedLiveViewDriver<State, Msg, ViewFn, UpdateFn>
@@ -2252,6 +2228,7 @@ where
             bounds,
             dpi,
             revision: 0,
+            animation_epoch: std::time::Instant::now(),
         };
         driver.layout();
         driver
@@ -2298,7 +2275,7 @@ where
     }
 
     fn draw_plan(&self) -> NativeDrawPlan {
-        let mut cx = ViewPaintCx::new(self.dpi);
+        let mut cx = ViewPaintCx::with_animation_elapsed(self.dpi, self.animation_epoch.elapsed());
         self.view.paint(&mut cx);
         cx.into_plan()
     }
@@ -2460,6 +2437,7 @@ pub struct ViewPaintCx {
     pub dpi: Dpi,
     plan: NativeDrawPlan,
     paint_depth: usize,
+    animation_elapsed_ms: u64,
 }
 
 impl ViewPaintCx {
@@ -2468,7 +2446,14 @@ impl ViewPaintCx {
             dpi,
             plan: NativeDrawPlan::default(),
             paint_depth: 0,
+            animation_elapsed_ms: 0,
         }
+    }
+
+    pub(crate) fn with_animation_elapsed(dpi: Dpi, elapsed: std::time::Duration) -> Self {
+        let mut cx = Self::new(dpi);
+        cx.animation_elapsed_ms = elapsed.as_millis().min(u128::from(u64::MAX)) as u64;
+        cx
     }
 
     pub fn draw(&mut self, command: NativeDrawCommand) {
@@ -3515,6 +3500,19 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "progress-ring")]
+            ViewNodeKind::ProgressRing { spec } => {
+                let plan = crate::zs_progress_ring_render_plan(
+                    *spec,
+                    bounds,
+                    crate::ZsProgressRingPlatformStyle::current(),
+                    cx.dpi,
+                    cx.animation_elapsed_ms,
+                );
+                for command in crate::zs_progress_ring_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 options,
@@ -4192,9 +4190,17 @@ impl<Msg> ViewNode<Msg> {
             return;
         }
 
+        #[cfg(any(feature = "progress", feature = "progress-ring"))]
+        let mut accepts_input = true;
         #[cfg(feature = "progress")]
-        let accepts_input = !matches!(self.kind, ViewNodeKind::ProgressBar { .. });
-        #[cfg(not(feature = "progress"))]
+        {
+            accepts_input &= !matches!(self.kind, ViewNodeKind::ProgressBar { .. });
+        }
+        #[cfg(feature = "progress-ring")]
+        {
+            accepts_input &= !matches!(self.kind, ViewNodeKind::ProgressRing { .. });
+        }
+        #[cfg(not(any(feature = "progress", feature = "progress-ring")))]
         let accepts_input = true;
         if accepts_input {
             if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
@@ -6052,7 +6058,7 @@ mod tests {
     #[test]
     #[cfg(feature = "progress")]
     fn progress_bar_normalizes_range_clamps_state_and_paints_fraction() {
-        let range = ProgressRange::new(100.0, 0.0);
+        let range = crate::ProgressRange::new(100.0, 0.0);
         let mut view = progress_bar::<()>(125.0, range).id(WidgetId::new(8));
         let mut layout = ViewLayoutCx::new(
             Rect {
@@ -6075,6 +6081,47 @@ mod tests {
         assert!(matches!(
             view.kind,
             ViewNodeKind::ProgressBar { value: 100.0, .. }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "progress-ring")]
+    fn progress_ring_animates_without_becoming_a_hit_target() {
+        let mut view =
+            progress_ring::<()>(crate::ZsProgressRingSpec::indeterminate()).id(WidgetId::new(81));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 64,
+            },
+            Dpi::standard(),
+        ));
+        let mut first =
+            ViewPaintCx::with_animation_elapsed(Dpi::standard(), std::time::Duration::ZERO);
+        view.paint(&mut first);
+        let mut half = ViewPaintCx::with_animation_elapsed(
+            Dpi::standard(),
+            std::time::Duration::from_millis(500),
+        );
+        view.paint(&mut half);
+
+        assert_eq!(view.background_poll_interval_ms(), Some(16));
+        assert_eq!(view.interaction_plan().hit_target_count(), 0);
+        assert!(matches!(
+            first.plan().commands.as_slice(),
+            [NativeDrawCommand::StrokeArc {
+                start_degrees: -90,
+                ..
+            }]
+        ));
+        assert!(matches!(
+            half.plan().commands.as_slice(),
+            [NativeDrawCommand::StrokeArc {
+                start_degrees: 90,
+                ..
+            }]
         ));
     }
 

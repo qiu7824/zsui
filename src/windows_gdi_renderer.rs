@@ -140,6 +140,16 @@ unsafe extern "system" {
     fn GdipClosePathFigure(path: *mut c_void) -> i32;
     fn GdipFillPath(graphics: *mut c_void, brush: *mut c_void, path: *mut c_void) -> i32;
     fn GdipDrawPath(graphics: *mut c_void, pen: *mut c_void, path: *mut c_void) -> i32;
+    fn GdipDrawArcI(
+        graphics: *mut c_void,
+        pen: *mut c_void,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        start_angle: f32,
+        sweep_angle: f32,
+    ) -> i32;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -301,6 +311,53 @@ unsafe fn draw_round_rect_antialiased(
     ok
 }
 
+unsafe fn draw_arc_antialiased(
+    hdc: HDC,
+    rect: RECT,
+    color: Color,
+    width: i32,
+    start_degrees: i16,
+    sweep_degrees: i16,
+) -> bool {
+    if ensure_gdiplus_startup().is_none()
+        || hdc.is_null()
+        || rect.right <= rect.left
+        || rect.bottom <= rect.top
+        || sweep_degrees == 0
+    {
+        return false;
+    }
+    let mut graphics = std::ptr::null_mut();
+    if GdipCreateFromHDC(hdc, &mut graphics) != 0 || graphics.is_null() {
+        return false;
+    }
+    let _ = GdipSetSmoothingMode(graphics, GDIP_SMOOTHING_MODE_ANTI_ALIAS);
+    let mut pen = std::ptr::null_mut();
+    let created = GdipCreatePen1(
+        color_to_argb(color),
+        width.max(1) as f32,
+        GDIP_UNIT_PIXEL,
+        &mut pen,
+    ) == 0
+        && !pen.is_null();
+    let drawn = created
+        && GdipDrawArcI(
+            graphics,
+            pen,
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            f32::from(start_degrees),
+            f32::from(sweep_degrees),
+        ) == 0;
+    if !pen.is_null() {
+        let _ = GdipDeletePen(pen);
+    }
+    let _ = GdipDeleteGraphics(graphics);
+    drawn
+}
+
 struct WindowsGdiOwnedObject {
     object: HGDIOBJ,
 }
@@ -452,6 +509,29 @@ impl Renderer for WindowsGdiRenderer {
                 rect.bottom -= 1;
             }
         }
+    }
+
+    fn stroke_arc(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        width: i32,
+        start_degrees: i16,
+        sweep_degrees: i16,
+    ) {
+        if !self.has_dc() {
+            return;
+        }
+        let _ = unsafe {
+            draw_arc_antialiased(
+                self.dc,
+                to_win_rect(rect),
+                color,
+                width,
+                start_degrees,
+                sweep_degrees,
+            )
+        };
     }
 
     fn draw_text(&mut self, run: &TextRun, style: &TextStyle) {
@@ -935,6 +1015,20 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
                 self.palette
                     .resolve_fill_with_contrast(*stroke, self.high_contrast),
                 *width,
+            ),
+            NativeDrawCommand::StrokeArc {
+                rect,
+                stroke,
+                width,
+                start_degrees,
+                sweep_degrees,
+            } => self.renderer.stroke_arc(
+                *rect,
+                self.palette
+                    .resolve_fill_with_contrast(*stroke, self.high_contrast),
+                *width,
+                *start_degrees,
+                *sweep_degrees,
             ),
             NativeDrawCommand::RoundRect {
                 rect,

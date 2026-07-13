@@ -87,6 +87,8 @@ pub mod paged_list;
 #[cfg(feature = "password-box")]
 pub mod password_box;
 pub mod product_adapter;
+#[cfg(any(feature = "progress", feature = "progress-ring"))]
+pub mod progress;
 pub mod render_protocol;
 pub mod settings;
 pub mod shell_layout;
@@ -386,6 +388,14 @@ pub use product_adapter::{
     PRODUCT_ADAPTER_SMOKE_COMMAND, REQUIRED_PRODUCT_ADAPTER_SURFACES,
     REQUIRED_PRODUCT_ADAPTER_TASKS, ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
 };
+#[cfg(any(feature = "progress", feature = "progress-ring"))]
+pub use progress::ProgressRange;
+#[cfg(feature = "progress-ring")]
+pub use progress::{
+    zs_progress_ring_metrics, zs_progress_ring_native_draw_plan, zs_progress_ring_render_plan,
+    ZsProgressRingMetrics, ZsProgressRingMode, ZsProgressRingPlatformStyle,
+    ZsProgressRingRenderPlan, ZsProgressRingSize, ZsProgressRingSpec,
+};
 #[cfg(feature = "password-box")]
 pub use render_protocol::NativeDrawSecureTextCommand;
 pub use render_protocol::{
@@ -446,6 +456,10 @@ pub use view::list;
 pub use view::number_box;
 #[cfg(feature = "password-box")]
 pub use view::password_box;
+#[cfg(feature = "progress")]
+pub use view::progress_bar;
+#[cfg(feature = "progress-ring")]
+pub use view::progress_ring;
 #[cfg(feature = "radio")]
 pub use view::radio_button;
 #[cfg(feature = "scroll")]
@@ -473,8 +487,6 @@ pub use view::{
     ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
     ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
-#[cfg(feature = "progress")]
-pub use view::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
 #[cfg(feature = "tabs")]

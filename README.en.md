@@ -155,6 +155,17 @@ fn download_progress(percent: f32) -> ViewNode<()> {
 }
 ```
 
+Circular waiting feedback uses the independent `progress-ring` feature and does
+not pull in ProgressBar:
+
+```rust,no_run
+use zsui::{progress_ring, ViewNode, ZsProgressRingSpec};
+
+fn connecting() -> ViewNode<()> {
+    progress_ring(ZsProgressRingSpec::indeterminate())
+}
+```
+
 ComboBox selection and expansion also stay in explicit application state, and
 overlay options return strongly typed messages:
 
@@ -307,7 +318,7 @@ The intended shape is Rust-style compile-on-demand: default features stay small
 (`window`, `button`, `label`), heavy backend dependencies are optional, and
 advanced widgets are behind explicit feature gates. This is feature/crate based
 trimming, not a promise that Cargo magically removes every unused symbol inside
-an enabled crate. Controls such as `password-box`, `tooltip`, `tabs` and
+an enabled crate. Controls such as `password-box`, `tooltip`, `progress-ring`, `tabs` and
 `date-picker` can be selected
 individually; `all-widgets` and `full` are included only when an application
 explicitly opts in. The `window` feature selects Win32, AppKit or GTK4 through

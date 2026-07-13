@@ -148,6 +148,16 @@ history remain authoritative for implementation status.
   one-shot main-loop timers. Auto placement prefers centered above the pointer,
   flips and clamps inside the current viewport. A top-level overflow popup,
   accessibility relationship and non-Windows target proof remain readiness gaps.
+- ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
+  in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
+  mode and semantic size explicit, while inactive rings reserve layout space and
+  remain absent from paint and hit testing. One shared `StrokeArc` command feeds
+  antialiased GDI+, NSBezierPath and Cairo drawing. Active indeterminate rings
+  use the framework background interval through Win32 timers, owned `NSTimer`
+  and cancellable GLib sources rather than application messages or backend
+  widget state. Windows follows the documented 20-DP minimum and accent ring;
+  macOS/GTK select internal spinner metrics. Reduced-motion handling,
+  accessibility and non-Windows target animation proof remain readiness gaps.
 - Every new component remains opt-in through its own Cargo feature. Default
   features stay `window`, `button` and `label`; `all-widgets`/`full` are explicit
   profile choices and must not become implicit dependencies of component APIs.

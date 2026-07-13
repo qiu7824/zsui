@@ -204,6 +204,16 @@ fn download_progress(percent: f32) -> ViewNode<()> {
 }
 ```
 
+环形等待反馈使用独立的 `progress-ring` feature；不需要把 ProgressBar 一起打包：
+
+```rust,no_run
+use zsui::{progress_ring, ViewNode, ZsProgressRingSpec};
+
+fn connecting() -> ViewNode<()> {
+    progress_ring(ZsProgressRingSpec::indeterminate())
+}
+```
+
 ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
 
 ```rust,no_run
@@ -320,7 +330,7 @@ zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, feat
 ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定后继续拆分较大的
 控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
 删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
-`password-box`、`tooltip`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
+`password-box`、`tooltip`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
 开启；`all-widgets` 和 `full` 只在应用显式选择时才会打包全部能力。
 
 ## 已有应用外壳
@@ -331,11 +341,11 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本、按钮、保持状态按钮、强类型二维 Grid、文本/密码输入、附着式提示、复选、开关、滑块、可编辑数值框、单选、进度、组合框、自绘日期/时间选择、标签页、列表、滚动和强类型事件 | 对应 widget feature |
+| 基础 View | 文本、按钮、保持状态按钮、强类型二维 Grid、文本/密码输入、附着式提示、复选、开关、滑块、可编辑数值框、单选、进度条/进度环、组合框、自绘日期/时间选择、标签页、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个 WinUI 风格家族：33 个已有第一阶段运行面，5 个只有
-契约，10 个尚未开始。独立 `grid` feature 已提供固定/比例轨道、独立行列间距、
+组件目录当前记录 48 个 WinUI 风格家族：34 个已有第一阶段运行面，5 个只有
+契约，9 个尚未开始。独立 `grid` feature 已提供固定/比例轨道、独立行列间距、
 强类型显式单元格/跨度、DPI 缩放以及共享绘制/命中几何。DatePicker 已具备强类型日期、范围约束、本地时区“今天”标记、
 窗口边缘自动翻转与水平约束的日历弹层、外部点击与焦点丢失关闭、点击与键盘路由、
 语义主题绘制、跨 Win32/AppKit/GTK4 的自绘悬停与按下/高对比度状态，以及 Windows
@@ -353,6 +363,9 @@ ToolTip 通过 `.tooltip(...)` 或 `.tooltip_spec(...)` 附着到具有稳定 ID
 不增加命中目标，也不嵌入平台子控件。它按 Windows/macOS/GTK 内部指标自绘，支持
 延迟悬停、键盘焦点立即显示、自动翻转/窗口内约束和定时关闭；Windows 已有真实
 缓冲绘制截图，跨窗口边界弹出、完整无障碍关系和 macOS/GTK 目标机证据仍待完成。
+独立 `progress-ring` feature 提供非交互的确定/不确定进度环，共享抗锯齿圆弧命令，
+按 WinUI、AppKit 与 GTK4 的内部尺寸和速度配置自绘。三平台事件循环均由框架定时器
+推进动画；Windows 已有真实缓冲绘制截图，macOS/GTK 目标机动画证据仍待补齐。
 
 查看机器可读目录：
 
