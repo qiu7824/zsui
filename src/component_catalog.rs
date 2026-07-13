@@ -141,6 +141,13 @@ const PROGRESS_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target screenshot smoke",
 ];
+const COMBO_GAPS: &[&str] = &[
+    "viewport-aware popup flipping and clamping",
+    "outside-click and focus-loss dismissal",
+    "long-option scrolling and type-ahead search",
+    "accessibility expanded and selection providers",
+    "AppKit and GTK4 target interaction smoke",
+];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
     "dark and high-contrast target smoke",
@@ -331,10 +338,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "combo_box",
         "ComboBox",
         Input,
-        ContractOnly,
-        Some("settings"),
-        "src/native_hosts.rs",
-        PLATFORM_GAPS
+        FirstPass,
+        Some("combo"),
+        "src/view.rs",
+        COMBO_GAPS
     ),
     component!(
         "radio_button",

@@ -353,13 +353,13 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "component_library",
-            percent_complete: 42,
-            status_name: "twenty_first_pass_surfaces_out_of_forty_eight_catalogued_components",
+            percent_complete: 52,
+            status_name: "twenty_five_first_pass_surfaces_out_of_forty_eight_catalogued_components",
             source_path: "src/component_catalog.rs",
             missing_before_complete: vec![
                 "grid and repeater layout",
                 "tree and data grid runtime",
-                "slider number picker and selection inputs",
+                "number picker and advanced selection inputs",
                 "progress info bar tooltip and teaching tip",
                 "content dialog flyout and command palette runtime",
                 "workbench native input and live composer routing",
@@ -900,8 +900,8 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 24);
-        assert_eq!(context.readiness.component_catalog.contract_only_count, 8);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 25);
+        assert_eq!(context.readiness.component_catalog.contract_only_count, 7);
         assert_eq!(context.readiness.component_catalog.not_started_count, 16);
         assert!(context
             .readiness

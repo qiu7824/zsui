@@ -157,6 +157,23 @@ fn download_progress(percent: f32) -> ViewNode<()> {
 }
 ```
 
+ComboBox selection and expansion also stay in explicit application state, and
+overlay options return strongly typed messages:
+
+```rust,no_run
+use zsui::{combo_box, ViewNode};
+
+#[derive(Clone)]
+enum Msg { Selected(usize), Expanded(bool) }
+
+fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
+    combo_box(["Balanced", "Performance", "Quiet"], selected)
+        .expanded(expanded)
+        .on_select(Msg::Selected)
+        .on_expanded_change(Msg::Expanded)
+}
+```
+
 Attach a typed Rust view to the same native window path:
 
 ```rust,no_run

@@ -36,10 +36,11 @@ pub enum ZsIcon {
     Edit,
     Group,
     Phrase,
+    ChevronDown,
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 35] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -74,6 +75,7 @@ impl ZsIcon {
         Self::Edit,
         Self::Group,
         Self::Phrase,
+        Self::ChevronDown,
     ];
 
     pub const fn asset_name(self) -> &'static str {
@@ -110,6 +112,7 @@ impl ZsIcon {
             Self::Copy => "copy",
             Self::Paste => "paste",
             Self::Edit => "edit",
+            Self::ChevronDown => "chevron-down",
         }
     }
 
@@ -147,6 +150,7 @@ impl ZsIcon {
             Self::Copy => "edit-copy-symbolic",
             Self::Paste => "edit-paste-symbolic",
             Self::Edit => "document-edit-symbolic",
+            Self::ChevronDown => "pan-down-symbolic",
         }
     }
 
@@ -185,6 +189,7 @@ impl ZsIcon {
             Self::Paste => "\u{E77F}",
             Self::Edit => "\u{E70F}",
             Self::Group => "\u{E902}",
+            Self::ChevronDown => "\u{E70D}",
         }
     }
 
@@ -229,6 +234,7 @@ impl ZsIcon {
             Self::Edit => "edit.svg",
             Self::Group => "group.svg",
             Self::Phrase => "phrase.svg",
+            Self::ChevronDown => "chevron-down.svg",
         }
     }
 
@@ -283,6 +289,9 @@ impl ZsIcon {
             Self::Edit => include_bytes!("../assets/fluent-system-icons/regular/edit.svg"),
             Self::Group => include_bytes!("../assets/fluent-system-icons/regular/group.svg"),
             Self::Phrase => include_bytes!("../assets/fluent-system-icons/regular/phrase.svg"),
+            Self::ChevronDown => {
+                include_bytes!("../assets/fluent-system-icons/regular/chevron-down.svg")
+            }
         }
     }
 
@@ -321,6 +330,7 @@ impl ZsIcon {
             Self::Paste => "doc.on.clipboard",
             Self::Edit => "pencil",
             Self::Group => "person.2",
+            Self::ChevronDown => "chevron.down",
         }
     }
 
@@ -361,7 +371,8 @@ impl ZsIcon {
             | Self::Cut
             | Self::Copy
             | Self::Paste
-            | Self::Edit => None,
+            | Self::Edit
+            | Self::ChevronDown => None,
         }
     }
 }

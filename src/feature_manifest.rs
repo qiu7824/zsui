@@ -184,6 +184,38 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "owner-drawn toggle declarations and typed View input",
         ),
         ZsuiCargoFeature::new(
+            "slider",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "range-normalized slider layout, paint and typed pointer or keyboard input",
+        ),
+        ZsuiCargoFeature::new(
+            "radio",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "explicit-state radio button layout, paint and typed selection input",
+        ),
+        ZsuiCargoFeature::new(
+            "progress",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "determinate progress range, semantic paint and feedback-only hit behavior",
+        ),
+        ZsuiCargoFeature::new(
+            "combo",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "explicit-state combo header, popup overlay and typed pointer or keyboard selection",
+        ),
+        ZsuiCargoFeature::new(
             "table",
             Widget,
             false,
@@ -406,6 +438,10 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "textbox",
                 "checkbox",
                 "toggle",
+                "slider",
+                "radio",
+                "progress",
+                "combo",
                 "table",
                 "workbench",
             ],
@@ -491,6 +527,10 @@ mod tests {
         assert!(!all_widgets.default_enabled);
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"toggle"));
+        assert!(all_widgets.enables.contains(&"slider"));
+        assert!(all_widgets.enables.contains(&"radio"));
+        assert!(all_widgets.enables.contains(&"progress"));
+        assert!(all_widgets.enables.contains(&"combo"));
         assert!(all_widgets.enables.contains(&"table"));
         assert!(all_widgets.enables.contains(&"workbench"));
     }

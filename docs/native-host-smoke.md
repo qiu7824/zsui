@@ -143,6 +143,22 @@ window and keeps the feedback-only control out of the hit-test plan. AppKit and
 GTK4 consume the same draw commands; target screenshots for those hosts and the
 separate indeterminate-animation mode remain pending.
 
+The dedicated typed ComboBox smoke path is:
+
+```powershell
+cargo run --no-default-features --features "window,label,combo,windows-win32" --example native_smoke_run -- windows --combo-view
+```
+
+It begins expanded, selects an overlay option with the pointer, reopens with
+Space, selects another option with Down, and reopens for the screenshot. The
+popup is painted after ordinary siblings and its option hit targets have
+overlay priority without becoming extra Tab stops. The interaction artifact
+records `native_view_combo_expanded_change_count`,
+`native_view_combo_selection_count`, and
+`native_view_combo_keyboard_selection_count`; all emitted `UiCommand` values
+must execute without failures or unhandled commands. AppKit and GTK4 use the
+same shared typed runtime, while their target-machine evidence remains pending.
+
 The default `--view` and `--scroll-view` paths exercise
 `NativeWindowBuilder::ui_command_view(...)`, record
 draw-plan command counts in `interaction.json`, post `WM_LBUTTONUP`, hit-test

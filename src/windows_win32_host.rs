@@ -2132,6 +2132,7 @@ impl WindowsWin32ViewInputRoute {
                 previous_was_carriage_return = false;
             }
         }
+
         if accepted == 0 {
             return report;
         }
@@ -2258,6 +2259,68 @@ impl WindowsWin32ViewInputRoute {
                     .push(format!("win32_view_slider_key:{}:{value}", widget.0));
                 self.dispatch_event(
                     crate::ViewEvent::SliderChanged { widget, value },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
+        #[cfg(feature = "combo")]
+        if target.kind == crate::ViewHitTargetKind::ComboBox {
+            let Some((selected, option_count, expanded)) = self.widget_combo_state(widget) else {
+                return report;
+            };
+            let expanded_event = match virtual_key {
+                ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE => Some(!expanded),
+                key if key == u32::from(VK_ESCAPE) && expanded => Some(false),
+                _ => None,
+            };
+            if let Some(next_expanded) = expanded_event {
+                report.handled = true;
+                report.combo_expanded_change_count = 1;
+                if matches!(virtual_key, ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE) {
+                    report.keyboard_activation_count = 1;
+                }
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_combo_expanded:{}:{next_expanded}",
+                    widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ComboBoxExpandedChanged {
+                        widget,
+                        expanded: next_expanded,
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+
+            let next_index = match virtual_key {
+                key if key == u32::from(VK_UP) && option_count > 0 => {
+                    Some(selected.unwrap_or(option_count).saturating_sub(1))
+                }
+                key if key == u32::from(VK_DOWN) && option_count > 0 => {
+                    Some(selected.map_or(0, |index| index.saturating_add(1).min(option_count - 1)))
+                }
+                key if key == u32::from(VK_HOME) && option_count > 0 => Some(0),
+                key if key == u32::from(VK_END) && option_count > 0 => Some(option_count - 1),
+                _ => None,
+            };
+            if let Some(index) = next_index {
+                report.handled = true;
+                if selected == Some(index) {
+                    return report;
+                }
+                report.combo_selection_count = 1;
+                report.combo_keyboard_selection_count = 1;
+                report.combo_expanded_change_count = usize::from(expanded);
+                report.event_count = 1;
+                report
+                    .events
+                    .push(format!("win32_view_combo_key_select:{}:{index}", widget.0));
+                self.dispatch_event(
+                    crate::ViewEvent::ComboBoxSelected { widget, index },
                     &mut report,
                 );
                 return report;
@@ -2499,6 +2562,49 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "combo")]
+        match target.kind {
+            crate::ViewHitTargetKind::ComboBoxOption { index } => {
+                let expanded = self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded);
+                report.combo_selection_count = 1;
+                report.combo_expanded_change_count = usize::from(expanded);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_combo_selected:{}:{index}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ComboBoxSelected {
+                        widget: target.widget,
+                        index,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::ComboBox => {
+                let expanded = self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded);
+                report.combo_expanded_change_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_combo_expanded:{}:{}",
+                    target.widget.0, !expanded
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ComboBoxExpandedChanged {
+                        widget: target.widget,
+                        expanded: !expanded,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
         #[cfg(feature = "radio")]
         if target.kind == crate::ViewHitTargetKind::RadioButton {
             report.radio_selection_count = 1;
@@ -2639,6 +2745,18 @@ impl WindowsWin32ViewInputRoute {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_slider_state(widget))
+            })
+    }
+
+    #[cfg(feature = "combo")]
+    fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_combo_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_combo_state(widget))
             })
     }
 
@@ -2821,6 +2939,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_drag_count: usize,
     pub slider_drag_active: bool,
     pub radio_selection_count: usize,
+    pub combo_expanded_change_count: usize,
+    pub combo_selection_count: usize,
+    pub combo_keyboard_selection_count: usize,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -2875,6 +2996,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_drag_count += next.slider_drag_count;
         self.slider_drag_active = next.slider_drag_active;
         self.radio_selection_count += next.radio_selection_count;
+        self.combo_expanded_change_count += next.combo_expanded_change_count;
+        self.combo_selection_count += next.combo_selection_count;
+        self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -5324,6 +5448,64 @@ mod tests {
         assert_eq!(keyboard.radio_selection_count, 1);
         assert_eq!(keyboard.keyboard_activation_count, 1);
         assert_eq!(route.widget_checked_value(widget), Some(true));
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn window_view_input_route_selects_combo_overlay_and_keyboard_option() {
+        fn selected(_index: usize) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.combo_selected"))
+        }
+        fn expanded(_expanded: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.combo_expanded"))
+        }
+
+        let widget = crate::WidgetId::new(36);
+        let header = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 36,
+            },
+            crate::ViewHitTargetKind::ComboBox,
+        );
+        let option = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 0,
+                y: 76,
+                width: 200,
+                height: 36,
+            },
+            crate::ViewHitTargetKind::ComboBoxOption { index: 1 },
+        );
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([header, option]),
+            crate::combo_box(["Balanced", "Fast", "Quiet"], Some(0))
+                .id(widget)
+                .expanded(true)
+                .on_select(selected)
+                .on_expanded_change(expanded),
+        );
+
+        let pointer = route.dispatch_click(crate::Point { x: 10, y: 90 });
+        assert_eq!(pointer.combo_selection_count, 1);
+        assert_eq!(pointer.combo_expanded_change_count, 1);
+        assert_eq!(pointer.ui_command_count, 2);
+        assert_eq!(route.widget_combo_state(widget), Some((Some(1), 3, false)));
+
+        let opened = route.dispatch_key_down(u32::from(VK_SPACE));
+        assert_eq!(opened.combo_expanded_change_count, 1);
+        assert_eq!(opened.keyboard_activation_count, 1);
+        assert_eq!(route.widget_combo_state(widget), Some((Some(1), 3, true)));
+
+        let keyboard = route.dispatch_key_down(u32::from(VK_DOWN));
+        assert_eq!(keyboard.combo_selection_count, 1);
+        assert_eq!(keyboard.combo_keyboard_selection_count, 1);
+        assert_eq!(keyboard.combo_expanded_change_count, 1);
+        assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
     }
 
     #[test]

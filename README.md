@@ -153,6 +153,22 @@ fn download_progress(percent: f32) -> ViewNode<()> {
 }
 ```
 
+ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
+
+```rust,no_run
+use zsui::{combo_box, ViewNode};
+
+#[derive(Clone)]
+enum Msg { Selected(usize), Expanded(bool) }
+
+fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
+    combo_box(["均衡", "性能", "安静"], selected)
+        .expanded(expanded)
+        .on_select(Msg::Selected)
+        .on_expanded_change(Msg::Expanded)
+}
+```
+
 ## 强类型状态与消息
 
 ```rust,no_run

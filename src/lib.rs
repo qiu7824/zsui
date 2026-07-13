@@ -407,6 +407,8 @@ pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 pub use view::button;
 #[cfg(feature = "checkbox")]
 pub use view::checkbox;
+#[cfg(feature = "combo")]
+pub use view::combo_box;
 #[cfg(feature = "list")]
 pub use view::list;
 #[cfg(feature = "radio")]
@@ -434,6 +436,11 @@ pub use view::{slider, SliderRange};
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+#[cfg(feature = "combo")]
+pub use widget_render::{
+    zs_combo_box_header_native_draw_plan, zs_combo_box_popup_native_draw_plan,
+    zs_combo_box_render_plan, ZsComboBoxRenderPlan,
+};
 #[cfg(feature = "progress")]
 pub use widget_render::{
     zs_progress_bar_native_draw_plan, zs_progress_bar_render_plan, ZsProgressBarRenderPlan,

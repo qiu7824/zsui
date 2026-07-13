@@ -11,7 +11,7 @@ milestones must not be used as overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 84% complete.
-- Component library: about 50% complete (24 first-pass runtime surfaces out of
+- Component library: about 52% complete (25 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 86% complete.
 - Feature-pruned architecture: about 51% complete.
@@ -37,8 +37,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 24 families have
-a first-pass runtime surface, 8 are contract-only and 16 are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: 25 families have
+a first-pass runtime surface, 7 are contract-only and 16 are not started. A
 composite workbench does not make its underlying missing controls complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
@@ -239,6 +239,16 @@ selection in native smoke. Win32 `WM_MOUSEWHEEL` can route into typed
 `ScrollBy` events for `scroll` containers and reusable command IDs. Broader
 pointer routing, touch/inertial scroll, IME/composition input and macOS/Linux
 input dispatch are still pending.
+The feature-gated `combo_box(...)` owns explicit selected and expanded state,
+emits typed selection/expansion messages, and paints its popup in a final
+overlay pass so later layout siblings cannot cover it. Overlay option hit
+targets win normal hit testing without becoming duplicate Tab stops. Win32 and
+the shared AppKit/GTK4 input runtime route pointer selection plus
+Enter/Space/Up/Down/Home/End/Escape keyboard behavior; the dedicated
+`native_smoke_run --combo-view` path records real Windows selection, keyboard
+selection, expansion, command execution and screenshot evidence. Viewport
+flipping, outside-click/focus-loss dismissal, long-option scrolling,
+accessibility providers and AppKit/GTK4 target-machine evidence remain open.
 The feature-gated `toggle(...)` widget reuses `ZsToggleRenderPlan`. The same track/knob/DPI
 geometry drives Shell accessories and normal View painting, while Win32 click
 and Space activation emit typed `Toggled` messages. The stateful native smoke
@@ -495,11 +505,13 @@ stable context without reading prose:
   auto-closes it and can capture `window.png` on Windows when
   `NativeWindowSmokeRunOptions::screenshot_file(...)` is set. The
   `native_smoke_run --view` example also records typed-view draw-plan command
-  counts plus Win32 click/text/toggle/list-selection/keyboard, Tab focus
+  counts plus Win32 click/text/toggle/list/combo selection/keyboard, Tab focus
   traversal and keyboard-list selection to `UiCommand` routing in the smoke
   report. `NativeWindowSmokeRunOptions::native_view_scroll(...)` and the Win32
   input route can also record scroll counters when a smoke path supplies a
   scroll target; `native_smoke_run --scroll-view` exercises that path.
+  `native_smoke_run --combo-view` additionally proves popup overlay painting,
+  pointer selection and keyboard selection/expansion counters.
 - `review_native_host_smoke_artifacts(platform)`: checks the artifact directory,
   validates JSON files and reports whether target smoke proof is complete.
 

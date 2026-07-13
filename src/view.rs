@@ -291,6 +291,15 @@ pub enum ViewNodeKind<Msg> {
         value: f32,
         range: ProgressRange,
     },
+    #[cfg(feature = "combo")]
+    ComboBox {
+        options: Vec<String>,
+        selected_index: Option<usize>,
+        expanded: bool,
+        placeholder: Option<String>,
+        on_select: Option<fn(usize) -> Msg>,
+        on_expanded_change: Option<fn(bool) -> Msg>,
+    },
     #[cfg(feature = "list")]
     List {
         selected_index: Option<usize>,
@@ -509,13 +518,43 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(feature = "list")]
+    #[cfg(any(feature = "list", feature = "combo"))]
     pub fn on_select(mut self, message: fn(usize) -> Msg) -> Self {
         match &mut self.kind {
+            #[cfg(feature = "list")]
             ViewNodeKind::List { on_select, .. } => *on_select = Some(message),
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { on_select, .. } => *on_select = Some(message),
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox { on_select, .. } => *on_select = Some(message),
             _ => {}
+        }
+        self
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn expanded(mut self, is_expanded: bool) -> Self {
+        if let ViewNodeKind::ComboBox { expanded, .. } = &mut self.kind {
+            *expanded = is_expanded;
+        }
+        self
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
+        if let ViewNodeKind::ComboBox { placeholder, .. } = &mut self.kind {
+            *placeholder = Some(text.into());
+        }
+        self
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn on_expanded_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::ComboBox {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(message);
         }
         self
     }
@@ -679,6 +718,26 @@ pub fn progress_bar<Msg>(value: f32, range: impl Into<ProgressRange>) -> ViewNod
     })
 }
 
+#[cfg(feature = "combo")]
+pub fn combo_box<T, Msg>(
+    options: impl IntoIterator<Item = T>,
+    selected_index: Option<usize>,
+) -> ViewNode<Msg>
+where
+    T: Into<String>,
+{
+    let options = options.into_iter().map(Into::into).collect::<Vec<_>>();
+    let selected_index = selected_index.filter(|index| *index < options.len());
+    ViewNode::new(ViewNodeKind::ComboBox {
+        options,
+        selected_index,
+        expanded: false,
+        placeholder: None,
+        on_select: None,
+        on_expanded_change: None,
+    })
+}
+
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Stack {
         direction: ViewStackDirection::Row,
@@ -776,6 +835,16 @@ pub enum ViewEvent {
     RadioSelected {
         widget: WidgetId,
     },
+    #[cfg(feature = "combo")]
+    ComboBoxExpandedChanged {
+        widget: WidgetId,
+        expanded: bool,
+    },
+    #[cfg(feature = "combo")]
+    ComboBoxSelected {
+        widget: WidgetId,
+        index: usize,
+    },
     #[cfg(feature = "scroll")]
     ScrollBy {
         widget: WidgetId,
@@ -824,6 +893,12 @@ pub enum ViewHitTargetKind {
     Slider,
     #[cfg(feature = "radio")]
     RadioButton,
+    #[cfg(feature = "combo")]
+    ComboBox,
+    #[cfg(feature = "combo")]
+    ComboBoxOption {
+        index: usize,
+    },
     #[cfg(feature = "scroll")]
     Scroll,
 }
@@ -882,7 +957,10 @@ impl ViewInteractionPlan {
     }
 
     pub fn first_focus_target(&self) -> Option<ViewHitTarget> {
-        self.hit_targets.first().copied()
+        self.hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.accepts_focus())
     }
 
     pub fn next_focus_target(
@@ -890,13 +968,19 @@ impl ViewInteractionPlan {
         current: Option<WidgetId>,
         offset: isize,
     ) -> Option<ViewHitTarget> {
-        let len = self.hit_targets.len();
+        let focus_targets = self
+            .hit_targets
+            .iter()
+            .copied()
+            .filter(ViewHitTarget::accepts_focus)
+            .collect::<Vec<_>>();
+        let len = focus_targets.len();
         if len == 0 {
             return None;
         }
 
         let current_index = current.and_then(|widget| {
-            self.hit_targets
+            focus_targets
                 .iter()
                 .position(|target| target.widget == widget)
         });
@@ -905,7 +989,17 @@ impl ViewInteractionPlan {
             None if offset < 0 => len - 1,
             None => 0,
         };
-        self.hit_targets.get(next_index).copied()
+        focus_targets.get(next_index).copied()
+    }
+}
+
+impl ViewHitTarget {
+    fn accepts_focus(&self) -> bool {
+        #[cfg(feature = "combo")]
+        if matches!(self.kind, ViewHitTargetKind::ComboBoxOption { .. }) {
+            return false;
+        }
+        true
     }
 }
 
@@ -1010,6 +1104,8 @@ trait LiveViewDriver: Send {
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
+    #[cfg(feature = "combo")]
+    fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "list")]
     fn widget_list_relative_widget(
         &self,
@@ -1064,6 +1160,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "slider")]
     pub fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)> {
         self.lock().widget_slider_state(widget)
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
+        self.lock().widget_combo_state(widget)
     }
 
     #[cfg(feature = "list")]
@@ -1237,6 +1338,11 @@ where
         self.view.widget_slider_state(widget)
     }
 
+    #[cfg(feature = "combo")]
+    fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
+        self.view.widget_combo_state(widget)
+    }
+
     #[cfg(feature = "list")]
     fn widget_list_relative_widget(
         &self,
@@ -1285,6 +1391,7 @@ where
 pub struct ViewPaintCx {
     pub dpi: Dpi,
     plan: NativeDrawPlan,
+    paint_depth: usize,
 }
 
 impl ViewPaintCx {
@@ -1292,6 +1399,7 @@ impl ViewPaintCx {
         Self {
             dpi,
             plan: NativeDrawPlan::default(),
+            paint_depth: 0,
         }
     }
 
@@ -1309,6 +1417,14 @@ impl ViewPaintCx {
 
     pub fn set_theme_mode(&mut self, theme_mode: ZsuiThemeMode) {
         self.plan.theme_mode = theme_mode;
+    }
+
+    fn finish_node<Msg>(&mut self, _root: &ViewNode<Msg>) {
+        self.paint_depth = self.paint_depth.saturating_sub(1);
+        #[cfg(feature = "combo")]
+        if self.paint_depth == 0 {
+            _root.paint_overlays(self);
+        }
     }
 }
 
@@ -1408,6 +1524,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         if matches!(self.kind, ViewNodeKind::VirtualList { .. }) {
             return self.layout_virtual_list(cx);
         }
+
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
         let mut children = Vec::new();
@@ -1481,6 +1598,34 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *selected_index = Some(index);
                     if let Some(message) = on_select {
                         cx.emit(message(index));
+                    }
+                }
+            }
+        }
+
+        #[cfg(feature = "combo")]
+        if let (
+            ViewNodeKind::ComboBox {
+                options,
+                selected_index,
+                expanded,
+                on_select,
+                on_expanded_change,
+                ..
+            },
+            ViewEvent::ComboBoxSelected { index, .. },
+        ) = (&mut self.kind, event)
+        {
+            if *index < options.len() {
+                *selected_index = Some(*index);
+                let was_expanded = *expanded;
+                *expanded = false;
+                if let Some(message) = on_select {
+                    cx.emit(message(*index));
+                }
+                if was_expanded {
+                    if let Some(message) = on_expanded_change {
+                        cx.emit(message(false));
                     }
                 }
             }
@@ -1570,6 +1715,23 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message);
                     }
                 }
+                #[cfg(feature = "combo")]
+                (
+                    ViewNodeKind::ComboBox {
+                        expanded,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::ComboBoxExpandedChanged {
+                        expanded: next_expanded,
+                        ..
+                    },
+                ) => {
+                    *expanded = *next_expanded;
+                    if let Some(message) = on_expanded_change {
+                        cx.emit(message(*next_expanded));
+                    }
+                }
                 #[cfg(feature = "scroll")]
                 (
                     ViewNodeKind::Scroll {
@@ -1645,6 +1807,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         let Some(bounds) = self.bounds else {
             return;
         };
+        cx.paint_depth = cx.paint_depth.saturating_add(1);
 
         if let Some(theme_mode) = self.style.theme_mode {
             cx.set_theme_mode(theme_mode);
@@ -1792,6 +1955,27 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox {
+                options,
+                selected_index,
+                placeholder,
+                ..
+            } => {
+                let plan = crate::zs_combo_box_render_plan(bounds, options.len(), false, cx.dpi);
+                let selected_text = selected_index
+                    .and_then(|index| options.get(index))
+                    .map(String::as_str);
+                for command in crate::zs_combo_box_header_native_draw_plan(
+                    &plan,
+                    selected_text,
+                    placeholder.as_deref(),
+                )
+                .commands
+                {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "list")]
             ViewNodeKind::List { selected_index, .. } => {
                 if let Some(bounds) = selected_index
@@ -1870,6 +2054,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     child.paint(cx);
                 }
                 cx.draw(NativeDrawCommand::PopClip);
+                cx.finish_node(self);
                 return;
             }
             #[cfg(feature = "scroll")]
@@ -1879,6 +2064,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     child.paint(cx);
                 }
                 cx.draw(NativeDrawCommand::PopClip);
+                cx.finish_node(self);
                 return;
             }
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
@@ -1887,6 +2073,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         for child in &self.children {
             child.paint(cx);
         }
+        cx.finish_node(self);
     }
 }
 
@@ -1900,6 +2087,9 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::SliderChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "radio")]
             (Some(id), ViewEvent::RadioSelected { widget }) => id == *widget,
+            #[cfg(feature = "combo")]
+            (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::ComboBoxSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             (None, _) => false,
@@ -1918,6 +2108,8 @@ impl<Msg> ViewNode<Msg> {
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
         let mut hit_targets = Vec::new();
         self.collect_hit_targets(&mut hit_targets, None);
+        #[cfg(feature = "combo")]
+        self.collect_overlay_hit_targets(&mut hit_targets);
         ViewInteractionPlan { hit_targets }
     }
 
@@ -1965,6 +2157,24 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_slider_state(widget))
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::ComboBox {
+                options,
+                selected_index,
+                expanded,
+                ..
+            } = &self.kind
+            {
+                return Some((*selected_index, options.len(), *expanded));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_combo_state(widget))
     }
 
     #[cfg(feature = "list")]
@@ -2096,6 +2306,63 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
+    #[cfg(feature = "combo")]
+    fn collect_overlay_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>) {
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::ComboBox {
+                options,
+                expanded: true,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan =
+                crate::zs_combo_box_render_plan(bounds, options.len(), true, self.layout_dpi);
+            hit_targets.extend(
+                plan.option_rows
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, bounds)| {
+                        ViewHitTarget::with_kind(
+                            widget,
+                            bounds,
+                            ViewHitTargetKind::ComboBoxOption { index },
+                        )
+                    }),
+            );
+        }
+        for child in &self.children {
+            child.collect_overlay_hit_targets(hit_targets);
+        }
+    }
+
+    #[cfg(feature = "combo")]
+    fn paint_overlays(&self, cx: &mut ViewPaintCx) {
+        if let (
+            Some(bounds),
+            ViewNodeKind::ComboBox {
+                options,
+                selected_index,
+                expanded: true,
+                ..
+            },
+        ) = (self.bounds, &self.kind)
+        {
+            let plan = crate::zs_combo_box_render_plan(bounds, options.len(), true, cx.dpi);
+            for command in
+                crate::zs_combo_box_popup_native_draw_plan(&plan, options, *selected_index, cx.dpi)
+                    .commands
+            {
+                cx.draw(command);
+            }
+        }
+        for child in &self.children {
+            child.paint_overlays(cx);
+        }
+    }
+
     fn hit_target_kind(&self) -> ViewHitTargetKind {
         match &self.kind {
             #[cfg(feature = "button")]
@@ -2116,6 +2383,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Slider { .. } => ViewHitTargetKind::Slider,
             #[cfg(feature = "radio")]
             ViewNodeKind::RadioButton { .. } => ViewHitTargetKind::RadioButton,
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
@@ -2457,6 +2726,7 @@ mod tests {
         feature = "toggle",
         feature = "slider",
         feature = "radio",
+        feature = "combo",
         feature = "list"
     ))]
     #[derive(Debug, Clone, PartialEq)]
@@ -2471,6 +2741,10 @@ mod tests {
         VolumeChanged(f32),
         #[cfg(feature = "radio")]
         ChoiceSelected(&'static str),
+        #[cfg(feature = "combo")]
+        ComboSelected(usize),
+        #[cfg(feature = "combo")]
+        ComboExpanded(bool),
         #[cfg(feature = "list")]
         RowSelected(usize),
         #[cfg(feature = "scroll")]
@@ -2848,6 +3122,93 @@ mod tests {
             view.kind,
             ViewNodeKind::ProgressBar { value: 100.0, .. }
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn combo_box_routes_overlay_selection_and_paints_above_later_siblings() {
+        let combo_id = WidgetId::new(9);
+        let mut view = column([
+            combo_box(["Balanced", "Fast", "Quiet"], Some(0))
+                .id(combo_id)
+                .height(Dp::new(36.0))
+                .expanded(true)
+                .on_select(Msg::ComboSelected)
+                .on_expanded_change(Msg::ComboExpanded),
+            spacer().bg(ThemeColorToken::Control),
+        ]);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 160,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+
+        let interaction = view.interaction_plan();
+        let option = interaction
+            .hit_targets
+            .iter()
+            .find(|target| target.kind == ViewHitTargetKind::ComboBoxOption { index: 1 })
+            .copied()
+            .expect("expanded option should be in the overlay hit plan");
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::ComboBox)
+        );
+        assert_eq!(
+            interaction.target_kind_at(Point {
+                x: option.bounds.x + 8,
+                y: option.bounds.y + option.bounds.height / 2,
+            }),
+            Some(ViewHitTargetKind::ComboBoxOption { index: 1 })
+        );
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ComboBoxSelected {
+                widget: combo_id,
+                index: 1,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ComboSelected(1), Msg::ComboExpanded(false)]
+        );
+        assert_eq!(view.widget_combo_state(combo_id), Some((Some(1), 3, false)));
+
+        let mut expanded = combo_box::<_, ()>(["One", "Two"], Some(0))
+            .id(combo_id)
+            .expanded(true);
+        expanded.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 36,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        expanded.paint(&mut paint);
+        assert!(matches!(
+            paint.plan().commands.last(),
+            Some(NativeDrawCommand::Text(text)) if text.text == "Two"
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn combo_box_rejects_out_of_range_initial_selection() {
+        let view = combo_box::<_, ()>(["One"], Some(7)).id(WidgetId::new(10));
+        assert_eq!(
+            view.widget_combo_state(WidgetId::new(10)),
+            Some((None, 1, false))
+        );
     }
 
     #[test]

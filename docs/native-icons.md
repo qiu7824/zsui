@@ -49,6 +49,10 @@ let source = resolve_native_icon(&PlatformName::Linux, ZsIcon::Copy, &|source| {
 # Ok::<(), zsui::ZsuiError>(())
 ```
 
+Built-in controls also use semantic values. For example, ComboBox requests
+`ZsIcon::ChevronDown`, which resolves to Segoe Fluent/MDL2, `chevron.down`, or
+`pan-down-symbolic` before using the MIT SVG fallback.
+
 ## Runtime status
 
 - Windows: font detection and semantic glyph drawing are connected to the GDI

@@ -509,6 +509,7 @@ impl NativeSettingsItemUpdateHost for NativeWindowRuntimeDriver {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NativeViewKey {
     Enter,
+    Escape,
     Tab,
     Space,
     Up,
@@ -523,6 +524,7 @@ impl NativeViewKey {
     pub const fn key_name(self) -> &'static str {
         match self {
             Self::Enter => "enter",
+            Self::Escape => "escape",
             Self::Tab => "tab",
             Self::Space => "space",
             Self::Up => "up",
@@ -735,6 +737,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
     pub native_view_radio_selection_count: usize,
+    pub native_view_combo_expanded_change_count: usize,
+    pub native_view_combo_selection_count: usize,
+    pub native_view_combo_keyboard_selection_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -821,6 +826,9 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
             native_view_radio_selection_count: 0,
+            native_view_combo_expanded_change_count: 0,
+            native_view_combo_selection_count: 0,
+            native_view_combo_keyboard_selection_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -899,6 +907,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub slider_drag_active: bool,
     #[cfg(feature = "radio")]
     pub radio_selection_changed: bool,
+    #[cfg(feature = "combo")]
+    pub combo_expanded_changed: bool,
+    #[cfg(feature = "combo")]
+    pub combo_selection_changed: bool,
+    #[cfg(feature = "combo")]
+    pub combo_keyboard_selection_changed: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -1199,6 +1213,17 @@ impl NativeViewInputRuntime {
         if target.kind == crate::ViewHitTargetKind::RadioButton {
             report.radio_selection_changed = true;
         }
+        #[cfg(feature = "combo")]
+        match target.kind {
+            crate::ViewHitTargetKind::ComboBox => report.combo_expanded_changed = true,
+            crate::ViewHitTargetKind::ComboBoxOption { .. } => {
+                report.combo_selection_changed = true;
+                report.combo_expanded_changed = self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded);
+            }
+            _ => {}
+        }
 
         self.dispatch_view_event(event, report)
     }
@@ -1320,6 +1345,52 @@ impl NativeViewInputRuntime {
                 report.slider_value_changed = true;
                 return self
                     .dispatch_view_event(ViewEvent::SliderChanged { widget, value }, report);
+            }
+        }
+
+        #[cfg(feature = "combo")]
+        if target.kind == crate::ViewHitTargetKind::ComboBox {
+            let Some((selected, option_count, expanded)) = self.widget_combo_state(widget) else {
+                return report;
+            };
+            let expanded_event = match key {
+                NativeViewKey::Enter | NativeViewKey::Space => Some(!expanded),
+                NativeViewKey::Escape if expanded => Some(false),
+                _ => None,
+            };
+            if let Some(next_expanded) = expanded_event {
+                report.handled = true;
+                report.combo_expanded_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ComboBoxExpandedChanged {
+                        widget,
+                        expanded: next_expanded,
+                    },
+                    report,
+                );
+            }
+
+            let next_index = match key {
+                NativeViewKey::Up if option_count > 0 => {
+                    Some(selected.unwrap_or(option_count).saturating_sub(1))
+                }
+                NativeViewKey::Down if option_count > 0 => {
+                    Some(selected.map_or(0, |index| index.saturating_add(1).min(option_count - 1)))
+                }
+                NativeViewKey::Home if option_count > 0 => Some(0),
+                NativeViewKey::End if option_count > 0 => Some(option_count - 1),
+                _ => None,
+            };
+            if let Some(index) = next_index {
+                report.handled = true;
+                if selected == Some(index) {
+                    return report;
+                }
+                report.combo_selection_changed = true;
+                report.combo_keyboard_selection_changed = true;
+                report.combo_expanded_changed = expanded;
+                return self
+                    .dispatch_view_event(ViewEvent::ComboBoxSelected { widget, index }, report);
             }
         }
 
@@ -1789,6 +1860,25 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "combo")]
+        match target.kind {
+            crate::ViewHitTargetKind::ComboBoxOption { index } => {
+                return ViewEvent::ComboBoxSelected {
+                    widget: target.widget,
+                    index,
+                };
+            }
+            crate::ViewHitTargetKind::ComboBox => {
+                let expanded = self
+                    .widget_combo_state(target.widget)
+                    .is_some_and(|(_, _, expanded)| expanded);
+                return ViewEvent::ComboBoxExpandedChanged {
+                    widget: target.widget,
+                    expanded: !expanded,
+                };
+            }
+            _ => {}
+        }
         #[cfg(feature = "radio")]
         if target.kind == crate::ViewHitTargetKind::RadioButton {
             return ViewEvent::RadioSelected {
@@ -1841,6 +1931,18 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_slider_state(widget))
+            })
+    }
+
+    #[cfg(feature = "combo")]
+    fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_combo_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_combo_state(widget))
             })
     }
 
@@ -2110,6 +2212,9 @@ fn record_windows_win32_view_input_report(
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
     report.native_view_slider_drag_count += input.slider_drag_count;
     report.native_view_radio_selection_count += input.radio_selection_count;
+    report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
+    report.native_view_combo_selection_count += input.combo_selection_count;
+    report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -2194,6 +2299,7 @@ fn windows_wparam_from_scroll_delta_y(delta_y: i32) -> usize {
 fn windows_wparam_from_native_view_key(key: NativeViewKey) -> usize {
     match key {
         NativeViewKey::Enter => 0x0d,
+        NativeViewKey::Escape => 0x1b,
         NativeViewKey::Tab => 0x09,
         NativeViewKey::Space => 0x20,
         NativeViewKey::Up => 0x26,
@@ -4867,6 +4973,89 @@ mod tests {
         assert!(keyboard.radio_selection_changed);
         assert_eq!(runtime.widget_checked_value(first), Some(false));
         assert_eq!(runtime.widget_checked_value(second), Some(true));
+    }
+
+    #[cfg(feature = "combo")]
+    #[test]
+    fn native_view_runtime_selects_combo_overlay_and_routes_keyboard_state() {
+        #[derive(Clone)]
+        enum Msg {
+            Selected(usize),
+            Expanded(bool),
+        }
+        struct State {
+            selected: Option<usize>,
+            expanded: bool,
+        }
+
+        let combo_id = crate::WidgetId::new(84);
+        let builder = native_window("Platform Combo")
+            .size(360, 240)
+            .stateful_view(
+                State {
+                    selected: Some(0),
+                    expanded: true,
+                },
+                move |state| {
+                    crate::combo_box(["Balanced", "Fast", "Quiet"], state.selected)
+                        .id(combo_id)
+                        .height(Dp::new(36.0))
+                        .expanded(state.expanded)
+                        .on_select(Msg::Selected)
+                        .on_expanded_change(Msg::Expanded)
+                },
+                |state, message, _cx| match message {
+                    Msg::Selected(index) => state.selected = Some(index),
+                    Msg::Expanded(expanded) => state.expanded = expanded,
+                },
+            );
+        let option = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::ComboBoxOption { index: 1 }
+                })
+            })
+            .expect("expanded combo should expose option hit geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pointer = runtime.dispatch_pointer_click(Point {
+            x: option.bounds.x + 8,
+            y: option.bounds.y + option.bounds.height / 2,
+        });
+        assert!(pointer.handled);
+        assert!(pointer.combo_selection_changed);
+        assert!(pointer.combo_expanded_changed);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(1), 3, false))
+        );
+
+        let opened = runtime.dispatch_key(NativeViewKey::Space);
+        assert!(opened.handled);
+        assert!(opened.combo_expanded_changed);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(1), 3, true))
+        );
+
+        let selected = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(selected.handled);
+        assert!(selected.combo_selection_changed);
+        assert!(selected.combo_keyboard_selection_changed);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(2), 3, false))
+        );
+
+        runtime.dispatch_key(NativeViewKey::Space);
+        let closed = runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(closed.handled);
+        assert!(closed.combo_expanded_changed);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(2), 3, false))
+        );
     }
 
     #[cfg(all(feature = "label", feature = "textbox"))]

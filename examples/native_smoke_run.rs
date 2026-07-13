@@ -9,9 +9,12 @@ use zsui::checkbox;
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "radio", feature = "label"),
-    all(feature = "progress", feature = "label")
+    all(feature = "progress", feature = "label"),
+    all(feature = "combo", feature = "label")
 ))]
 use zsui::column;
+#[cfg(feature = "combo")]
+use zsui::combo_box;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
 #[cfg(feature = "radio")]
@@ -25,7 +28,8 @@ use zsui::textbox;
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
-    all(feature = "radio", feature = "label")
+    all(feature = "radio", feature = "label"),
+    all(feature = "combo", feature = "label")
 ))]
 use zsui::CommandId;
 use zsui::{
@@ -41,7 +45,8 @@ use zsui::{slider, SliderRange};
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
-    all(feature = "radio", feature = "label")
+    all(feature = "radio", feature = "label"),
+    all(feature = "combo", feature = "label")
 ))]
 use zsui::{NativeViewKey, Point, UiCommand, WidgetId};
 
@@ -67,6 +72,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--radio-view" || arg == "--radio"),
         args.iter()
             .any(|arg| arg == "--progress-view" || arg == "--progress"),
+        args.iter()
+            .any(|arg| arg == "--combo-view" || arg == "--combo"),
     ) {
         Ok(json) => {
             println!("{json}");
@@ -89,6 +96,7 @@ fn run_smoke(
     include_slider_view: bool,
     include_radio_view: bool,
     include_progress_view: bool,
+    include_combo_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -111,6 +119,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "progress", feature = "label")))]
     if include_progress_view {
         return Err("--progress-view requires the progress and label features".to_string());
+    }
+    #[cfg(not(all(feature = "combo", feature = "label")))]
+    if include_combo_view {
+        return Err("--combo-view requires the combo and label features".to_string());
     }
 
     let artifact_root = artifact_root.unwrap_or("target/native-host-smoke");
@@ -201,6 +213,14 @@ fn run_smoke(
             .native_view_click(Point { x: 100, y: 124 })
             .native_view_key_down(NativeViewKey::Space);
     }
+    #[cfg(all(feature = "combo", feature = "label"))]
+    if include_combo_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 100, y: 158 })
+            .native_view_key_down(NativeViewKey::Space)
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Space);
+    }
 
     let builder = native_window("ZSUI Smoke").size(520, 320);
     let builder = if include_window_menu {
@@ -215,6 +235,8 @@ fn run_smoke(
         attach_radio_view(builder)
     } else if include_progress_view {
         attach_progress_view(builder)
+    } else if include_combo_view {
+        attach_combo_view(builder)
     } else if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
@@ -317,6 +339,61 @@ fn attach_progress_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
         .padding(zsui::Dp::new(24.0))
         .gap(zsui::Dp::new(12.0)),
     )
+}
+
+#[cfg(all(feature = "combo", feature = "label"))]
+#[derive(Clone)]
+enum ComboSmokeMsg {
+    Selected(usize),
+    Expanded(bool),
+}
+
+#[cfg(all(feature = "combo", feature = "label"))]
+struct ComboSmokeState {
+    selected: Option<usize>,
+    expanded: bool,
+}
+
+#[cfg(all(feature = "combo", feature = "label"))]
+fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        ComboSmokeState {
+            selected: Some(0),
+            expanded: true,
+        },
+        |state| {
+            column([
+                text::<ComboSmokeMsg>("ZSUI ComboBox Smoke").height(zsui::Dp::new(28.0)),
+                combo_box(["Balanced", "Fast", "Quiet"], state.selected)
+                    .id(WidgetId::new(13))
+                    .height(zsui::Dp::new(36.0))
+                    .expanded(state.expanded)
+                    .on_select(ComboSmokeMsg::Selected)
+                    .on_expanded_change(ComboSmokeMsg::Expanded),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            ComboSmokeMsg::Selected(index) => {
+                state.selected = Some(index);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.combo_selected",
+                )));
+            }
+            ComboSmokeMsg::Expanded(expanded) => {
+                state.expanded = expanded;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.combo_expanded",
+                )));
+            }
+        },
+    )
+}
+
+#[cfg(not(all(feature = "combo", feature = "label")))]
+fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
 }
 
 #[cfg(not(all(feature = "progress", feature = "label")))]

@@ -38,8 +38,8 @@ and is not part of normal task context.
   explicit features or optional dependencies.
 - Windows is the strongest real runtime today. macOS/Linux are first-pass
   desktop paths. Android/Harmony still require real runtime and device proof.
-- The component catalog currently tracks 48 families: 24 first-pass runtime,
-  8 contract-only and 16 not started. Composite shells do not change that count.
+- The component catalog currently tracks 48 families: 25 first-pass runtime,
+  7 contract-only and 16 not started. Composite shells do not change that count.
 
 ## Task Router
 

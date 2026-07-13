@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
+#[cfg(feature = "combo")]
+use crate::{
+    NativeDrawIconCommand, NativeDrawTextCommand, NativeIconColorMode, SemanticTextStyle, ZsIcon,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsToggleRenderPlan {
@@ -308,6 +312,157 @@ pub fn zs_progress_bar_native_draw_plan(plan: &ZsProgressBarRenderPlan) -> Nativ
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(feature = "combo")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsComboBoxRenderPlan {
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+    pub icon_bounds: Rect,
+    pub popup: Option<Rect>,
+    pub option_rows: Vec<Rect>,
+    pub radius: i32,
+}
+
+#[cfg(feature = "combo")]
+pub fn zs_combo_box_render_plan(
+    bounds: Rect,
+    option_count: usize,
+    expanded: bool,
+    dpi: Dpi,
+) -> ZsComboBoxRenderPlan {
+    let horizontal_padding = scale(12, dpi).min(bounds.width.max(1) / 3).max(1);
+    let icon_size = scale(16, dpi).min(bounds.height.max(1)).max(1);
+    let icon_right = bounds
+        .x
+        .saturating_add(bounds.width)
+        .saturating_sub(horizontal_padding);
+    let icon_bounds = Rect {
+        x: icon_right.saturating_sub(icon_size),
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(icon_size)) / 2),
+        width: icon_size,
+        height: icon_size,
+    };
+    let text_right = icon_bounds.x.saturating_sub(scale(8, dpi));
+    let text_x = bounds.x.saturating_add(horizontal_padding);
+    let text_bounds = Rect {
+        x: text_x,
+        y: bounds.y,
+        width: text_right.saturating_sub(text_x).max(0),
+        height: bounds.height,
+    };
+    let row_height = bounds.height.max(scale(32, dpi)).max(1);
+    let popup_gap = scale(4, dpi);
+    let popup = (expanded && option_count > 0).then_some(Rect {
+        x: bounds.x,
+        y: bounds
+            .y
+            .saturating_add(bounds.height)
+            .saturating_add(popup_gap),
+        width: bounds.width.max(1),
+        height: row_height.saturating_mul(option_count.min(i32::MAX as usize) as i32),
+    });
+    let option_rows = popup
+        .map(|popup| {
+            (0..option_count)
+                .map(|index| Rect {
+                    x: popup.x,
+                    y: popup.y.saturating_add(
+                        row_height.saturating_mul(i32::try_from(index).unwrap_or(i32::MAX)),
+                    ),
+                    width: popup.width,
+                    height: row_height,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    ZsComboBoxRenderPlan {
+        bounds,
+        text_bounds,
+        icon_bounds,
+        popup,
+        option_rows,
+        radius: scale(6, dpi),
+    }
+}
+
+#[cfg(feature = "combo")]
+pub fn zs_combo_box_header_native_draw_plan(
+    plan: &ZsComboBoxRenderPlan,
+    selected_text: Option<&str>,
+    placeholder: Option<&str>,
+) -> NativeDrawPlan {
+    let label = selected_text.or(placeholder).unwrap_or_default();
+    let mut text_style = SemanticTextStyle::body();
+    if selected_text.is_none() {
+        text_style.color = ColorRole::SecondaryText;
+    }
+    NativeDrawPlan::new([
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.radius,
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            label,
+            plan.text_bounds,
+            text_style,
+        )),
+        NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                ZsIcon::ChevronDown,
+                plan.icon_bounds,
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(ColorRole::SecondaryText),
+        ),
+    ])
+}
+
+#[cfg(feature = "combo")]
+pub fn zs_combo_box_popup_native_draw_plan(
+    plan: &ZsComboBoxRenderPlan,
+    options: &[String],
+    selected: Option<usize>,
+    dpi: Dpi,
+) -> NativeDrawPlan {
+    let Some(popup) = plan.popup else {
+        return NativeDrawPlan::default();
+    };
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: popup,
+        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+        stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+        radius: plan.radius,
+    }];
+    let padding = scale(12, dpi);
+    for (index, (label, row)) in options.iter().zip(&plan.option_rows).enumerate() {
+        if selected == Some(index) {
+            commands.push(NativeDrawCommand::RoundFill {
+                rect: *row,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 36,
+                },
+                radius: plan.radius,
+            });
+        }
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            label,
+            Rect {
+                x: row.x.saturating_add(padding),
+                y: row.y,
+                width: row.width.saturating_sub(padding.saturating_mul(2)),
+                height: row.height,
+            },
+            SemanticTextStyle::body(),
+        )));
+    }
+    NativeDrawPlan::new(commands)
+}
+
 fn scale(value: i32, dpi: Dpi) -> i32 {
     Dp::new(value as f32).to_px(dpi).round_i32().max(1)
 }
@@ -424,5 +579,51 @@ mod tests {
             .command_count(),
             1
         );
+    }
+
+    #[cfg(feature = "combo")]
+    #[test]
+    fn combo_geometry_separates_header_popup_rows_and_semantic_icon() {
+        let bounds = Rect {
+            x: 12,
+            y: 20,
+            width: 220,
+            height: 36,
+        };
+        let plan = zs_combo_box_render_plan(bounds, 3, true, Dpi::standard());
+        let popup = plan
+            .popup
+            .expect("expanded combo should have popup geometry");
+
+        assert_eq!(popup.y, 60);
+        assert_eq!(popup.height, 108);
+        assert_eq!(plan.option_rows.len(), 3);
+        assert_eq!(plan.option_rows[1].y, 96);
+        assert!(matches!(
+            zs_combo_box_header_native_draw_plan(&plan, Some("Balanced"), None)
+                .commands
+                .as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::Text(_),
+                NativeDrawCommand::Icon(NativeDrawIconCommand {
+                    icon: ZsIcon::ChevronDown,
+                    ..
+                })
+            ]
+        ));
+        assert_eq!(
+            zs_combo_box_popup_native_draw_plan(
+                &plan,
+                &["Balanced".into(), "Fast".into(), "Quiet".into()],
+                Some(1),
+                Dpi::standard(),
+            )
+            .command_count(),
+            5
+        );
+        assert!(zs_combo_box_render_plan(bounds, 3, false, Dpi::standard())
+            .popup
+            .is_none());
     }
 }
