@@ -365,7 +365,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             missing_before_complete: vec![
                 "content-sized grid tracks and richer repeater layout",
                 "tree and data grid runtime",
-                "number picker and advanced selection inputs",
+                "advanced selection inputs",
                 "progress info bar tooltip and teaching tip",
                 "content dialog flyout and command palette runtime",
                 "workbench native input and live composer routing",
@@ -906,9 +906,9 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 29);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 30);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 6);
-        assert_eq!(context.readiness.component_catalog.not_started_count, 13);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 12);
         let component_area = context
             .completion_areas
             .iter()

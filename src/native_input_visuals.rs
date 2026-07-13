@@ -330,20 +330,25 @@ struct NativeTextVisualMetrics {
 
 fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisualMetrics {
     let inset = Dp::new(8.0).to_px(dpi).round_i32().max(1);
+    #[cfg(feature = "number-box")]
+    let bounds = if target.kind == ViewHitTargetKind::NumberBox {
+        crate::zs_number_box_render_plan(
+            target.bounds,
+            crate::ZsNumberBoxPlatformStyle::current(),
+            dpi,
+        )
+        .text_bounds
+    } else {
+        target.bounds
+    };
+    #[cfg(not(feature = "number-box"))]
+    let bounds = target.bounds;
     NativeTextVisualMetrics {
         text_bounds: Rect {
-            x: target.bounds.x.saturating_add(inset),
-            y: target.bounds.y.saturating_add(inset),
-            width: target
-                .bounds
-                .width
-                .saturating_sub(inset.saturating_mul(2))
-                .max(1),
-            height: target
-                .bounds
-                .height
-                .saturating_sub(inset.saturating_mul(2))
-                .max(1),
+            x: bounds.x.saturating_add(inset),
+            y: bounds.y.saturating_add(inset),
+            width: bounds.width.saturating_sub(inset.saturating_mul(2)).max(1),
+            height: bounds.height.saturating_sub(inset.saturating_mul(2)).max(1),
         },
         character_width: Dp::new(8.0).to_px(dpi).round_i32().max(1),
         line_height: Dp::new(18.0).to_px(dpi).round_i32().max(1),

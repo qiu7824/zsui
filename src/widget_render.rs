@@ -10,6 +10,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 #[cfg(any(
     feature = "combo",
     feature = "date-picker",
+    feature = "number-box",
     feature = "tabs",
     feature = "time-picker"
 ))]
@@ -214,6 +215,214 @@ pub fn zs_slider_native_draw_plan(plan: &ZsSliderRenderPlan) -> NativeDrawPlan {
             stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
             radius: plan.thumb_radius,
         },
+    ])
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsNumberBoxPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "number-box")]
+impl ZsNumberBoxPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Macos
+        } else {
+            Self::Gtk
+        }
+    }
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsNumberBoxMetrics {
+    pub button_width: Dp,
+    pub button_gap: Dp,
+    pub text_inset: Dp,
+    pub radius: Dp,
+    pub horizontal_buttons: bool,
+}
+
+#[cfg(feature = "number-box")]
+impl ZsNumberBoxMetrics {
+    pub const fn for_platform(platform: ZsNumberBoxPlatformStyle) -> Self {
+        match platform {
+            ZsNumberBoxPlatformStyle::Windows => Self {
+                button_width: Dp::new(32.0),
+                button_gap: Dp::new(0.0),
+                text_inset: Dp::new(8.0),
+                radius: Dp::new(4.0),
+                horizontal_buttons: true,
+            },
+            ZsNumberBoxPlatformStyle::Macos => Self {
+                button_width: Dp::new(18.0),
+                button_gap: Dp::new(4.0),
+                text_inset: Dp::new(7.0),
+                radius: Dp::new(5.0),
+                horizontal_buttons: false,
+            },
+            ZsNumberBoxPlatformStyle::Gtk => Self {
+                button_width: Dp::new(32.0),
+                button_gap: Dp::new(0.0),
+                text_inset: Dp::new(8.0),
+                radius: Dp::new(5.0),
+                horizontal_buttons: true,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsNumberBoxRenderPlan {
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+    pub decrement_button: Rect,
+    pub increment_button: Rect,
+    pub radius: i32,
+    pub platform: ZsNumberBoxPlatformStyle,
+}
+
+#[cfg(feature = "number-box")]
+pub fn zs_number_box_render_plan(
+    bounds: Rect,
+    platform: ZsNumberBoxPlatformStyle,
+    dpi: Dpi,
+) -> ZsNumberBoxRenderPlan {
+    let metrics = ZsNumberBoxMetrics::for_platform(platform);
+    let button_width = metrics
+        .button_width
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.width.max(1))
+        .max(1);
+    let gap = metrics.button_gap.to_px(dpi).round_i32().max(0);
+    let inset = metrics.text_inset.to_px(dpi).round_i32().max(0);
+    let trailing_width = if metrics.horizontal_buttons {
+        button_width.saturating_mul(2)
+    } else {
+        button_width
+    };
+    let buttons_x = bounds
+        .x
+        .saturating_add(bounds.width.saturating_sub(trailing_width));
+    let (decrement_button, increment_button) = if metrics.horizontal_buttons {
+        (
+            Rect {
+                x: buttons_x,
+                y: bounds.y,
+                width: button_width,
+                height: bounds.height,
+            },
+            Rect {
+                x: buttons_x.saturating_add(button_width),
+                y: bounds.y,
+                width: button_width,
+                height: bounds.height,
+            },
+        )
+    } else {
+        let upper_height = (bounds.height / 2).max(1);
+        (
+            Rect {
+                x: buttons_x,
+                y: bounds.y.saturating_add(upper_height),
+                width: button_width,
+                height: bounds.height.saturating_sub(upper_height).max(1),
+            },
+            Rect {
+                x: buttons_x,
+                y: bounds.y,
+                width: button_width,
+                height: upper_height,
+            },
+        )
+    };
+    ZsNumberBoxRenderPlan {
+        bounds,
+        text_bounds: Rect {
+            x: bounds.x.saturating_add(inset),
+            y: bounds.y,
+            width: bounds
+                .width
+                .saturating_sub(trailing_width)
+                .saturating_sub(gap)
+                .saturating_sub(inset.saturating_mul(2))
+                .max(0),
+            height: bounds.height,
+        },
+        decrement_button,
+        increment_button,
+        radius: metrics.radius.to_px(dpi).round_i32().max(1),
+        platform,
+    }
+}
+
+#[cfg(feature = "number-box")]
+pub fn zs_number_box_native_draw_plan(
+    plan: &ZsNumberBoxRenderPlan,
+    text: &str,
+    valid: bool,
+    decrement_enabled: bool,
+    increment_enabled: bool,
+) -> NativeDrawPlan {
+    let stroke = if valid {
+        ColorRole::Control
+    } else {
+        ColorRole::Danger
+    };
+    let (decrement_label, increment_label) = match plan.platform {
+        ZsNumberBoxPlatformStyle::Gtk => ("−", "+"),
+        ZsNumberBoxPlatformStyle::Windows | ZsNumberBoxPlatformStyle::Macos => ("▼", "▲"),
+    };
+    let mut decrement_style = SemanticTextStyle::body();
+    decrement_style.color = if decrement_enabled {
+        ColorRole::PrimaryText
+    } else {
+        ColorRole::SecondaryText
+    };
+    let mut increment_style = SemanticTextStyle::body();
+    increment_style.color = if increment_enabled {
+        ColorRole::PrimaryText
+    } else {
+        ColorRole::SecondaryText
+    };
+    NativeDrawPlan::new([
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: Some(NativeDrawFill::Role(stroke)),
+            radius: plan.radius,
+        },
+        NativeDrawCommand::FillRect {
+            rect: plan.decrement_button,
+            fill: NativeDrawFill::Role(ColorRole::Control),
+        },
+        NativeDrawCommand::FillRect {
+            rect: plan.increment_button,
+            fill: NativeDrawFill::Role(ColorRole::Control),
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            text,
+            plan.text_bounds,
+            SemanticTextStyle::body(),
+        )),
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            decrement_label,
+            plan.decrement_button,
+            decrement_style,
+        )),
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            increment_label,
+            plan.increment_button,
+            increment_style,
+        )),
     ])
 }
 
@@ -1862,6 +2071,43 @@ fn scale(value: i32, dpi: Dpi) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "number-box")]
+    #[test]
+    fn number_box_render_plan_preserves_each_platform_stepper_shape() {
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 180,
+            height: 36,
+        };
+        let windows =
+            zs_number_box_render_plan(bounds, ZsNumberBoxPlatformStyle::Windows, Dpi::standard());
+        let macos =
+            zs_number_box_render_plan(bounds, ZsNumberBoxPlatformStyle::Macos, Dpi::standard());
+        let gtk = zs_number_box_render_plan(bounds, ZsNumberBoxPlatformStyle::Gtk, Dpi::standard());
+
+        assert_eq!(windows.increment_button.y, windows.decrement_button.y);
+        assert!(windows.increment_button.x > windows.decrement_button.x);
+        assert_eq!(macos.increment_button.width, 18);
+        assert_eq!(macos.increment_button.x, macos.decrement_button.x);
+        assert!(macos.increment_button.y < macos.decrement_button.y);
+        assert_eq!(gtk.increment_button.y, gtk.decrement_button.y);
+        assert!(gtk.increment_button.x > gtk.decrement_button.x);
+        assert_eq!(windows.radius, 4);
+        assert_eq!(gtk.radius, 5);
+        assert_eq!(
+            zs_number_box_native_draw_plan(&windows, "12.5", true, true, true).command_count(),
+            6
+        );
+        assert!(matches!(
+            zs_number_box_native_draw_plan(&windows, "-", false, false, true).commands[0],
+            NativeDrawCommand::RoundRect {
+                stroke: Some(NativeDrawFill::Role(ColorRole::Danger)),
+                ..
+            }
+        ));
+    }
 
     #[cfg(feature = "tabs")]
     #[test]

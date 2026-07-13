@@ -1,4 +1,4 @@
-#[cfg(any(feature = "slider", feature = "progress"))]
+#[cfg(any(feature = "slider", feature = "progress", feature = "number-box"))]
 use std::ops::RangeInclusive;
 use std::{
     fmt,
@@ -134,6 +134,151 @@ impl From<RangeInclusive<f32>> for SliderRange {
     fn from(range: RangeInclusive<f32>) -> Self {
         Self::new(*range.start(), *range.end())
     }
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZsNumberRange {
+    min: f64,
+    max: f64,
+    step: f64,
+    large_step: f64,
+}
+
+#[cfg(feature = "number-box")]
+impl ZsNumberRange {
+    pub fn new(min: f64, max: f64) -> Self {
+        let min = if min.is_finite() { min } else { 0.0 };
+        let max = if max.is_finite() { max } else { 100.0 };
+        let (min, mut max) = if min <= max { (min, max) } else { (max, min) };
+        if (max - min).abs() <= f64::EPSILON {
+            max = min + 1.0;
+        }
+        let span = max - min;
+        Self {
+            min,
+            max,
+            step: (span / 100.0).max(f64::EPSILON),
+            large_step: (span / 10.0).max(f64::EPSILON),
+        }
+    }
+
+    pub fn step(mut self, step: f64) -> Self {
+        if step.is_finite() && step > 0.0 {
+            self.step = step.min(self.max - self.min);
+        }
+        self
+    }
+
+    pub fn large_step(mut self, step: f64) -> Self {
+        if step.is_finite() && step > 0.0 {
+            self.large_step = step.min(self.max - self.min);
+        }
+        self
+    }
+
+    pub const fn min(self) -> f64 {
+        self.min
+    }
+
+    pub const fn max(self) -> f64 {
+        self.max
+    }
+
+    pub const fn step_size(self) -> f64 {
+        self.step
+    }
+
+    pub const fn large_step_size(self) -> f64 {
+        self.large_step
+    }
+
+    pub fn contains(self, value: f64) -> bool {
+        value.is_finite() && value >= self.min && value <= self.max
+    }
+
+    pub fn clamp(self, value: f64) -> f64 {
+        if value.is_finite() {
+            value.clamp(self.min, self.max)
+        } else {
+            self.min
+        }
+    }
+
+    pub fn offset(self, value: f64, steps: i32, large: bool, wraps: bool) -> f64 {
+        let increment = if large { self.large_step } else { self.step };
+        let requested = self.clamp(value) + increment * f64::from(steps);
+        if wraps {
+            if requested > self.max {
+                return self.min;
+            }
+            if requested < self.min {
+                return self.max;
+            }
+        }
+        self.clamp(requested)
+    }
+}
+
+#[cfg(feature = "number-box")]
+impl From<RangeInclusive<f64>> for ZsNumberRange {
+    fn from(range: RangeInclusive<f64>) -> Self {
+        Self::new(*range.start(), *range.end())
+    }
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZsNumberFormat {
+    fraction_digits: u8,
+}
+
+#[cfg(feature = "number-box")]
+impl ZsNumberFormat {
+    pub const fn new(fraction_digits: u8) -> Self {
+        Self {
+            fraction_digits: if fraction_digits > 12 {
+                12
+            } else {
+                fraction_digits
+            },
+        }
+    }
+
+    pub const fn fraction_digits(self) -> u8 {
+        self.fraction_digits
+    }
+
+    pub fn format(self, value: Option<f64>) -> String {
+        value
+            .filter(|value| value.is_finite())
+            .map_or_else(String::new, |value| {
+                format!("{:.*}", usize::from(self.fraction_digits), value)
+            })
+    }
+
+    pub fn parse(self, text: &str) -> Option<f64> {
+        let _ = self;
+        text.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+    }
+}
+
+#[cfg(feature = "number-box")]
+impl Default for ZsNumberFormat {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ZsNumberBoxState {
+    pub value: Option<f64>,
+    pub draft: String,
+    pub valid: bool,
 }
 
 #[cfg(feature = "progress")]
@@ -500,6 +645,15 @@ pub enum ViewNodeKind<Msg> {
         range: SliderRange,
         on_slide: Option<fn(f32) -> Msg>,
     },
+    #[cfg(feature = "number-box")]
+    NumberBox {
+        value: Option<f64>,
+        draft: String,
+        range: ZsNumberRange,
+        format: ZsNumberFormat,
+        wraps: bool,
+        on_change: Option<fn(Option<f64>) -> Msg>,
+    },
     #[cfg(feature = "progress")]
     ProgressBar {
         value: f32,
@@ -765,6 +919,37 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_slide(mut self, message: fn(f32) -> Msg) -> Self {
         if let ViewNodeKind::Slider { on_slide, .. } = &mut self.kind {
             *on_slide = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "number-box")]
+    pub fn on_number_change(mut self, message: fn(Option<f64>) -> Msg) -> Self {
+        if let ViewNodeKind::NumberBox { on_change, .. } = &mut self.kind {
+            *on_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "number-box")]
+    pub fn fraction_digits(mut self, digits: u8) -> Self {
+        if let ViewNodeKind::NumberBox {
+            value,
+            draft,
+            format,
+            ..
+        } = &mut self.kind
+        {
+            *format = ZsNumberFormat::new(digits);
+            *draft = format.format(*value);
+        }
+        self
+    }
+
+    #[cfg(feature = "number-box")]
+    pub fn wraps(mut self, should_wrap: bool) -> Self {
+        if let ViewNodeKind::NumberBox { wraps, .. } = &mut self.kind {
+            *wraps = should_wrap;
         }
         self
     }
@@ -1063,6 +1248,27 @@ pub fn slider<Msg>(value: f32, range: impl Into<SliderRange>) -> ViewNode<Msg> {
     })
 }
 
+#[cfg(feature = "number-box")]
+pub fn number_box<Msg>(
+    value: impl Into<Option<f64>>,
+    range: impl Into<ZsNumberRange>,
+) -> ViewNode<Msg> {
+    let range = range.into();
+    let value = value
+        .into()
+        .filter(|value| value.is_finite())
+        .map(|value| range.clamp(value));
+    let format = ZsNumberFormat::default();
+    ViewNode::new(ViewNodeKind::NumberBox {
+        value,
+        draft: format.format(value),
+        range,
+        format,
+        wraps: false,
+        on_change: None,
+    })
+}
+
 #[cfg(feature = "radio")]
 pub fn radio_button<Msg>(label: impl Into<String>, selected: bool) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::RadioButton {
@@ -1267,6 +1473,20 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: f32,
     },
+    #[cfg(feature = "number-box")]
+    NumberBoxStep {
+        widget: WidgetId,
+        steps: i32,
+        large: bool,
+    },
+    #[cfg(feature = "number-box")]
+    NumberBoxCommit {
+        widget: WidgetId,
+    },
+    #[cfg(feature = "number-box")]
+    NumberBoxReset {
+        widget: WidgetId,
+    },
     #[cfg(feature = "radio")]
     RadioSelected {
         widget: WidgetId,
@@ -1366,6 +1586,12 @@ pub enum ViewHitTargetKind {
     Toggle,
     #[cfg(feature = "slider")]
     Slider,
+    #[cfg(feature = "number-box")]
+    NumberBox,
+    #[cfg(feature = "number-box")]
+    NumberBoxDecrement,
+    #[cfg(feature = "number-box")]
+    NumberBoxIncrement,
     #[cfg(feature = "radio")]
     RadioButton,
     #[cfg(feature = "combo")]
@@ -1539,6 +1765,13 @@ impl ViewInteractionPlan {
 
 impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
+        #[cfg(feature = "number-box")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::NumberBoxDecrement | ViewHitTargetKind::NumberBoxIncrement
+        ) {
+            return false;
+        }
         #[cfg(feature = "combo")]
         if matches!(self.kind, ViewHitTargetKind::ComboBoxOption { .. }) {
             return false;
@@ -1557,6 +1790,15 @@ impl ViewHitTarget {
             return false;
         }
         true
+    }
+}
+
+impl ViewHitTargetKind {
+    pub(crate) fn accepts_text_input(self) -> bool {
+        let accepts = matches!(self, Self::Textbox | Self::TextEditor);
+        #[cfg(feature = "number-box")]
+        let accepts = accepts || self == Self::NumberBox;
+        accepts
     }
 }
 
@@ -2609,6 +2851,83 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(*value));
                     }
                 }
+                #[cfg(feature = "number-box")]
+                (
+                    ViewNodeKind::NumberBox { draft, .. },
+                    ViewEvent::TextChanged {
+                        value: next_draft, ..
+                    },
+                ) => {
+                    *draft = next_draft.clone();
+                }
+                #[cfg(feature = "number-box")]
+                (
+                    ViewNodeKind::NumberBox {
+                        value,
+                        draft,
+                        range,
+                        format,
+                        wraps,
+                        on_change,
+                    },
+                    ViewEvent::NumberBoxStep { steps, large, .. },
+                ) => {
+                    let current = format
+                        .parse(draft)
+                        .filter(|candidate| range.contains(*candidate))
+                        .or(*value)
+                        .unwrap_or_else(|| range.min());
+                    let next_value = Some(range.offset(current, *steps, *large, *wraps));
+                    let changed = *value != next_value;
+                    *value = next_value;
+                    *draft = format.format(next_value);
+                    if changed {
+                        if let Some(message) = on_change {
+                            cx.emit(message(next_value));
+                        }
+                    }
+                }
+                #[cfg(feature = "number-box")]
+                (
+                    ViewNodeKind::NumberBox {
+                        value,
+                        draft,
+                        range,
+                        format,
+                        on_change,
+                        ..
+                    },
+                    ViewEvent::NumberBoxCommit { .. },
+                ) => {
+                    let next_value = if draft.trim().is_empty() {
+                        None
+                    } else {
+                        format
+                            .parse(draft)
+                            .map(|candidate| range.clamp(candidate))
+                            .or(*value)
+                    };
+                    let changed = *value != next_value;
+                    *value = next_value;
+                    *draft = format.format(next_value);
+                    if changed {
+                        if let Some(message) = on_change {
+                            cx.emit(message(next_value));
+                        }
+                    }
+                }
+                #[cfg(feature = "number-box")]
+                (
+                    ViewNodeKind::NumberBox {
+                        value,
+                        draft,
+                        format,
+                        ..
+                    },
+                    ViewEvent::NumberBoxReset { .. },
+                ) => {
+                    *draft = format.format(*value);
+                }
                 #[cfg(feature = "radio")]
                 (
                     ViewNodeKind::RadioButton {
@@ -2925,6 +3244,44 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "number-box")]
+            ViewNodeKind::NumberBox {
+                value,
+                draft,
+                range,
+                format,
+                wraps,
+                ..
+            } => {
+                let valid = draft.trim().is_empty()
+                    || format
+                        .parse(draft)
+                        .is_some_and(|candidate| range.contains(candidate));
+                let plan = crate::zs_number_box_render_plan(
+                    bounds,
+                    crate::ZsNumberBoxPlatformStyle::current(),
+                    cx.dpi,
+                );
+                let current = format
+                    .parse(draft)
+                    .filter(|candidate| range.contains(*candidate))
+                    .or(*value);
+                let decrement_enabled =
+                    *wraps || current.is_some_and(|current| current > range.min());
+                let increment_enabled =
+                    *wraps || current.map_or(true, |current| current < range.max());
+                for command in crate::zs_number_box_native_draw_plan(
+                    &plan,
+                    draft,
+                    valid,
+                    decrement_enabled,
+                    increment_enabled,
+                )
+                .commands
+                {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "radio")]
             ViewNodeKind::RadioButton {
                 label, selected, ..
@@ -3120,6 +3477,10 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
             #[cfg(feature = "slider")]
             (Some(id), ViewEvent::SliderChanged { widget, .. }) => id == *widget,
+            #[cfg(feature = "number-box")]
+            (Some(id), ViewEvent::NumberBoxStep { widget, .. })
+            | (Some(id), ViewEvent::NumberBoxCommit { widget })
+            | (Some(id), ViewEvent::NumberBoxReset { widget }) => id == *widget,
             #[cfg(feature = "radio")]
             (Some(id), ViewEvent::RadioSelected { widget }) => id == *widget,
             #[cfg(feature = "combo")]
@@ -3165,6 +3526,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "textbox")]
             if let ViewNodeKind::Textbox { value, .. } = &self.kind {
                 return Some(value);
+            }
+            #[cfg(feature = "number-box")]
+            if let ViewNodeKind::NumberBox { draft, .. } = &self.kind {
+                return Some(draft);
             }
         }
 
@@ -3276,6 +3641,33 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_slider_state(widget))
+    }
+
+    #[cfg(feature = "number-box")]
+    pub fn widget_number_box_state(&self, widget: WidgetId) -> Option<ZsNumberBoxState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::NumberBox {
+                value,
+                draft,
+                range,
+                format,
+                ..
+            } = &self.kind
+            {
+                let valid = draft.trim().is_empty()
+                    || format
+                        .parse(draft)
+                        .is_some_and(|candidate| range.contains(candidate));
+                return Some(ZsNumberBoxState {
+                    value: *value,
+                    draft: draft.clone(),
+                    valid,
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_number_box_state(widget))
     }
 
     #[cfg(feature = "combo")]
@@ -3591,6 +3983,31 @@ impl<Msg> ViewNode<Msg> {
                         self.hit_target_kind(),
                     ));
                 }
+            }
+        }
+
+        #[cfg(feature = "number-box")]
+        if let (Some(widget), Some(bounds), ViewNodeKind::NumberBox { .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let plan = crate::zs_number_box_render_plan(
+                bounds,
+                crate::ZsNumberBoxPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            if let Some(bounds) = clipped_rect(plan.decrement_button, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::NumberBoxDecrement,
+                ));
+            }
+            if let Some(bounds) = clipped_rect(plan.increment_button, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::NumberBoxIncrement,
+                ));
             }
         }
 
@@ -3944,6 +4361,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Toggle { .. } => ViewHitTargetKind::Toggle,
             #[cfg(feature = "slider")]
             ViewNodeKind::Slider { .. } => ViewHitTargetKind::Slider,
+            #[cfg(feature = "number-box")]
+            ViewNodeKind::NumberBox { .. } => ViewHitTargetKind::NumberBox,
             #[cfg(feature = "radio")]
             ViewNodeKind::RadioButton { .. } => ViewHitTargetKind::RadioButton,
             #[cfg(feature = "combo")]
@@ -4500,6 +4919,7 @@ mod tests {
         feature = "checkbox",
         feature = "toggle",
         feature = "slider",
+        feature = "number-box",
         feature = "radio",
         feature = "combo",
         feature = "date-picker",
@@ -4517,6 +4937,8 @@ mod tests {
         DarkModeChanged(bool),
         #[cfg(feature = "slider")]
         VolumeChanged(f32),
+        #[cfg(feature = "number-box")]
+        NumberChanged(Option<f64>),
         #[cfg(feature = "radio")]
         ChoiceSelected(&'static str),
         #[cfg(feature = "combo")]
@@ -5026,6 +5448,69 @@ mod tests {
         let uneven = SliderRange::new(0.0, 1.0).step(0.3);
         assert_eq!(uneven.value_at_fraction(1.0), 1.0);
         assert_eq!(uneven.offset_steps(0.9, 1), 1.0);
+    }
+
+    #[test]
+    #[cfg(feature = "number-box")]
+    fn number_box_preserves_invalid_draft_and_routes_typed_steps() {
+        let number_id = WidgetId::new(61);
+        let range = ZsNumberRange::new(-10.0, 10.0).step(0.5).large_step(5.0);
+        let mut view = number_box(Some(2.5), range)
+            .id(number_id)
+            .height(Dp::new(36.0))
+            .fraction_digits(1)
+            .on_number_change(Msg::NumberChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 36,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut events = ViewEventCx::new();
+
+        view.event(
+            &mut events,
+            &ViewEvent::TextChanged {
+                widget: number_id,
+                value: "-".to_string(),
+            },
+        );
+        assert_eq!(
+            view.widget_number_box_state(number_id),
+            Some(ZsNumberBoxState {
+                value: Some(2.5),
+                draft: "-".to_string(),
+                valid: false,
+            })
+        );
+
+        view.event(
+            &mut events,
+            &ViewEvent::NumberBoxStep {
+                widget: number_id,
+                steps: 1,
+                large: false,
+            },
+        );
+        assert_eq!(
+            view.widget_number_box_state(number_id),
+            Some(ZsNumberBoxState {
+                value: Some(3.0),
+                draft: "3.0".to_string(),
+                valid: true,
+            })
+        );
+        assert_eq!(events.into_messages(), vec![Msg::NumberChanged(Some(3.0))]);
+        assert_eq!(view.hit_target_kind(), ViewHitTargetKind::NumberBox);
+        assert_eq!(view.interaction_plan().hit_target_count(), 3);
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert_eq!(paint.plan().command_count(), 6);
     }
 
     #[test]

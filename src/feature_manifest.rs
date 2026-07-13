@@ -200,6 +200,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "range-normalized slider layout, paint and typed pointer or keyboard input",
         ),
         ZsuiCargoFeature::new(
+            "number-box",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "editable finite number input with validated range, platform-style steppers and typed commit events",
+        ),
+        ZsuiCargoFeature::new(
             "radio",
             Widget,
             false,
@@ -472,6 +480,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "checkbox",
                 "toggle",
                 "slider",
+                "number-box",
                 "radio",
                 "progress",
                 "combo",
@@ -570,6 +579,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"toggle"));
         assert!(all_widgets.enables.contains(&"slider"));
+        assert!(all_widgets.enables.contains(&"number-box"));
         assert!(all_widgets.enables.contains(&"radio"));
         assert!(all_widgets.enables.contains(&"progress"));
         assert!(all_widgets.enables.contains(&"combo"));

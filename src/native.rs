@@ -1281,10 +1281,7 @@ impl NativeViewInputRuntime {
             report.slider_drag_active = true;
             return self.dispatch_slider_pointer(target, point, report);
         }
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if !target.kind.accepts_text_input() {
             self.text_drag = None;
             #[cfg(feature = "slider")]
             {
@@ -1416,10 +1413,7 @@ impl NativeViewInputRuntime {
             self.combo_type_ahead.reset();
         }
         self.focus_target(target, &mut report);
-        if matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if target.kind.accepts_text_input() {
             return report;
         }
 
@@ -1570,10 +1564,7 @@ impl NativeViewInputRuntime {
             return report;
         };
 
-        if matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if target.kind.accepts_text_input() {
             let movement = match key {
                 NativeViewKey::Left => Some(NativeTextMovement::Left),
                 NativeViewKey::Right => Some(NativeTextMovement::Right),
@@ -1629,6 +1620,39 @@ impl NativeViewInputRuntime {
                 report.slider_value_changed = true;
                 return self
                     .dispatch_view_event(ViewEvent::SliderChanged { widget, value }, report);
+            }
+        }
+
+        #[cfg(feature = "number-box")]
+        if target.kind == crate::ViewHitTargetKind::NumberBox {
+            let event = match key {
+                NativeViewKey::Down => Some(ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: -1,
+                    large: shift,
+                }),
+                NativeViewKey::Up => Some(ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: 1,
+                    large: shift,
+                }),
+                NativeViewKey::PageDown => Some(ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: -1,
+                    large: true,
+                }),
+                NativeViewKey::PageUp => Some(ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: 1,
+                    large: true,
+                }),
+                NativeViewKey::Enter => Some(ViewEvent::NumberBoxCommit { widget }),
+                NativeViewKey::Escape => Some(ViewEvent::NumberBoxReset { widget }),
+                _ => None,
+            };
+            if let Some(event) = event {
+                report.handled = true;
+                return self.dispatch_view_event(event, report);
             }
         }
 
@@ -1962,10 +1986,7 @@ impl NativeViewInputRuntime {
             report.combo_expanded_changed = expanded;
             return self.dispatch_view_event(ViewEvent::ComboBoxSelected { widget, index }, report);
         }
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if !target.kind.accepts_text_input() {
             return report;
         }
 
@@ -2121,6 +2142,14 @@ impl NativeViewInputRuntime {
                 ..NativeViewInputDispatchReport::default()
             },
         );
+        #[cfg(feature = "number-box")]
+        if let Some(widget) = self.focused_widget.filter(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(*widget))
+                .is_some_and(|target| target.kind == crate::ViewHitTargetKind::NumberBox)
+        }) {
+            report = self.dispatch_view_event(ViewEvent::NumberBoxCommit { widget }, report);
+        }
         let had_focus = self.focused_widget.take().is_some();
         self.text_edit = None;
         self.text_drag = None;
@@ -2231,6 +2260,16 @@ impl NativeViewInputRuntime {
             self.populate_text_report(report);
             return;
         }
+        #[cfg(feature = "number-box")]
+        if let Some(widget) = self.focused_widget.filter(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(*widget))
+                .is_some_and(|current| current.kind == crate::ViewHitTargetKind::NumberBox)
+        }) {
+            let current_report = std::mem::take(report);
+            *report =
+                self.dispatch_view_event(ViewEvent::NumberBoxCommit { widget }, current_report);
+        }
         self.ime_preedit = None;
         self.text_drag = None;
         #[cfg(feature = "combo")]
@@ -2252,12 +2291,7 @@ impl NativeViewInputRuntime {
         let widget = self.focused_widget?;
         self.current_interaction_plan()
             .and_then(|plan| plan.hit_target_for_widget(widget))
-            .filter(|target| {
-                matches!(
-                    target.kind,
-                    crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-                )
-            })
+            .filter(|target| target.kind.accepts_text_input())
     }
 
     fn current_composed_draw_plan(&self) -> Option<NativeDrawPlan> {
@@ -2352,10 +2386,7 @@ impl NativeViewInputRuntime {
     }
 
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if !target.kind.accepts_text_input() {
             self.text_edit = None;
             self.text_drag = None;
             return;
@@ -2435,6 +2466,24 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "number-box")]
+        match target.kind {
+            crate::ViewHitTargetKind::NumberBoxDecrement => {
+                return ViewEvent::NumberBoxStep {
+                    widget: target.widget,
+                    steps: -1,
+                    large: false,
+                };
+            }
+            crate::ViewHitTargetKind::NumberBoxIncrement => {
+                return ViewEvent::NumberBoxStep {
+                    widget: target.widget,
+                    steps: 1,
+                    large: false,
+                };
+            }
+            _ => {}
+        }
         #[cfg(feature = "time-picker")]
         match target.kind {
             crate::ViewHitTargetKind::TimePickerChoice { value } => {
@@ -5022,11 +5071,8 @@ fn capture_win32_hwnd_png(
     use std::{ffi::c_void, mem, path::Path};
     use windows_sys::Win32::{
         Foundation::RECT,
-        Graphics::Gdi::{
-            BitBlt, GetDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, RGBQUAD,
-            SRCCOPY,
-        },
-        UI::WindowsAndMessaging::GetClientRect,
+        Graphics::Gdi::{GetDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, RGBQUAD},
+        UI::WindowsAndMessaging::{GetClientRect, SendMessageW, WM_PRINTCLIENT},
     };
 
     let mut rect = RECT {
@@ -5045,21 +5091,11 @@ fn capture_win32_hwnd_png(
     let window_dc = Win32WindowDeviceContext::acquire(hwnd)?;
     let memory_dc = Win32CompatibleDeviceContext::create(window_dc.hdc())?;
     let bitmap = Win32CompatibleBitmap::create(window_dc.hdc(), width, height)?;
-    let _selected_bitmap = Win32SelectedGdiObject::select(memory_dc.hdc(), bitmap.object());
+    let selected_bitmap = Win32SelectedGdiObject::select(memory_dc.hdc(), bitmap.object());
 
-    let blit_ok = unsafe {
-        BitBlt(
-            memory_dc.hdc(),
-            0,
-            0,
-            width,
-            height,
-            window_dc.hdc(),
-            0,
-            0,
-            SRCCOPY,
-        )
-    };
+    unsafe {
+        SendMessageW(hwnd, WM_PRINTCLIENT, memory_dc.hdc() as usize, 0);
+    }
     let mut bitmap_info = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -5082,25 +5118,18 @@ fn capture_win32_hwnd_png(
         }; 1],
     };
     let mut bgra = vec![0u8; width as usize * height as usize * 4];
-    let dib_lines = if blit_ok != 0 {
-        unsafe {
-            GetDIBits(
-                memory_dc.hdc(),
-                bitmap.handle(),
-                0,
-                height as u32,
-                bgra.as_mut_ptr().cast::<c_void>(),
-                &mut bitmap_info,
-                DIB_RGB_COLORS,
-            )
-        }
-    } else {
-        0
+    drop(selected_bitmap);
+    let dib_lines = unsafe {
+        GetDIBits(
+            memory_dc.hdc(),
+            bitmap.handle(),
+            0,
+            height as u32,
+            bgra.as_mut_ptr().cast::<c_void>(),
+            &mut bitmap_info,
+            DIB_RGB_COLORS,
+        )
     };
-
-    if blit_ok == 0 {
-        return Err("BitBlt failed".to_string());
-    }
     if dib_lines == 0 {
         return Err("GetDIBits failed".to_string());
     }
@@ -5760,6 +5789,63 @@ mod tests {
         assert_eq!(left.slider_value, Some(70.0));
         assert_eq!(coarse_right.slider_value, Some(100.0));
         assert_eq!(runtime.widget_slider_state(slider_id), Some((100.0, range)));
+    }
+
+    #[cfg(feature = "number-box")]
+    #[test]
+    fn native_view_runtime_edits_and_steps_number_box() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(Option<f64>),
+        }
+
+        let number_id = crate::WidgetId::new(810);
+        let range = crate::ZsNumberRange::new(-10.0, 10.0)
+            .step(0.5)
+            .large_step(5.0);
+        let builder = native_window("Platform NumberBox")
+            .size(360, 220)
+            .stateful_view(
+                Some(2.5_f64),
+                move |value| {
+                    crate::number_box(*value, range)
+                        .id(number_id)
+                        .height(Dp::new(36.0))
+                        .fraction_digits(1)
+                        .on_number_change(Msg::Changed)
+                },
+                |value, message, _cx| match message {
+                    Msg::Changed(next) => *value = next,
+                },
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(number_id))
+            .expect("number box should have text geometry");
+        let render = crate::zs_number_box_render_plan(
+            target.bounds,
+            crate::ZsNumberBoxPlatformStyle::current(),
+            Dpi::standard(),
+        );
+        let mut runtime = builder.native_view_input_runtime();
+
+        let incremented = runtime.dispatch_pointer_click(Point {
+            x: render.increment_button.x + render.increment_button.width / 2,
+            y: render.increment_button.y + render.increment_button.height / 2,
+        });
+        let stepped = runtime.dispatch_key(NativeViewKey::Up);
+        let page_stepped = runtime.dispatch_key(NativeViewKey::PageUp);
+        let cleared = runtime.dispatch_text_input("\u{8}\u{8}\u{8}");
+        let typed = runtime.dispatch_text_input("-1.5");
+        let committed = runtime.dispatch_key(NativeViewKey::Enter);
+
+        assert!(incremented.handled);
+        assert!(stepped.handled);
+        assert!(page_stepped.handled);
+        assert!(cleared.handled);
+        assert!(typed.handled);
+        assert!(committed.handled);
+        assert_eq!(runtime.focused_text_input_value().as_deref(), Some("-1.5"));
     }
 
     #[cfg(feature = "radio")]

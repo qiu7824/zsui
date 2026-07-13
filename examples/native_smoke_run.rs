@@ -8,6 +8,7 @@ use zsui::checkbox;
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
+    all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "progress", feature = "label"),
     all(feature = "combo", feature = "label"),
@@ -32,6 +33,7 @@ use zsui::textbox;
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
+    all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
@@ -43,6 +45,7 @@ use zsui::CommandId;
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
+    all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -59,6 +62,8 @@ use zsui::{
     NativeHostSmokeInteractionReport, NativeUiPlatform, NativeWindowBuilder,
     NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, TraySpec,
 };
+#[cfg(feature = "number-box")]
+use zsui::{number_box, ZsNumberRange};
 #[cfg(feature = "progress")]
 use zsui::{progress_bar, ProgressRange};
 #[cfg(feature = "slider")]
@@ -70,6 +75,7 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
 #[cfg(any(
     all(feature = "button", feature = "label"),
     all(feature = "slider", feature = "label"),
+    all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
@@ -100,6 +106,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
         args.iter()
             .any(|arg| arg == "--slider-view" || arg == "--slider"),
+        args.iter()
+            .any(|arg| arg == "--number-box-view" || arg == "--number-box"),
         args.iter()
             .any(|arg| arg == "--radio-view" || arg == "--radio"),
         args.iter()
@@ -135,6 +143,7 @@ fn run_smoke(
     include_typed_view: bool,
     include_scroll_view: bool,
     include_slider_view: bool,
+    include_number_box_view: bool,
     include_radio_view: bool,
     include_progress_view: bool,
     include_combo_view: bool,
@@ -156,6 +165,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "slider", feature = "label")))]
     if include_slider_view {
         return Err("--slider-view requires the slider and label features".to_string());
+    }
+    #[cfg(not(all(feature = "number-box", feature = "label")))]
+    if include_number_box_view {
+        return Err("--number-box-view requires the number-box and label features".to_string());
     }
     #[cfg(not(all(feature = "radio", feature = "label")))]
     if include_radio_view {
@@ -267,6 +280,16 @@ fn run_smoke(
             .native_view_drag(Point { x: 100, y: 84 }, Point { x: 400, y: 84 })
             .native_view_key_down(NativeViewKey::Left);
     }
+    #[cfg(all(feature = "number-box", feature = "label"))]
+    if include_number_box_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 482, y: 72 })
+            .native_view_key_down(NativeViewKey::Up)
+            .native_view_key_down(NativeViewKey::PageUp)
+            .native_view_text_input("\u{8}\u{8}\u{8}\u{8}")
+            .native_view_text_input("42.5")
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "radio", feature = "label"))]
     if include_radio_view {
         smoke_options = smoke_options
@@ -334,6 +357,8 @@ fn run_smoke(
     .ui_command_executor(NativeWindowRuntimeDriver::new());
     let builder = if include_grid_view {
         attach_grid_view(builder)
+    } else if include_number_box_view {
+        attach_number_box_view(builder)
     } else if include_slider_view {
         attach_slider_view(builder)
     } else if include_radio_view {
@@ -457,6 +482,46 @@ fn attach_slider_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 #[cfg(all(feature = "slider", feature = "label"))]
 fn native_smoke_slider_changed(_: f32) -> UiCommand {
     UiCommand::app(CommandId("zsui.native_smoke.slider_changed"))
+}
+
+#[cfg(all(feature = "number-box", feature = "label"))]
+#[derive(Clone)]
+enum NumberBoxSmokeMsg {
+    Changed(Option<f64>),
+}
+
+#[cfg(all(feature = "number-box", feature = "label"))]
+fn attach_number_box_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    let range = ZsNumberRange::new(-100.0, 100.0).step(0.5).large_step(10.0);
+    builder.stateful_view(
+        Some(12.5_f64),
+        move |value| {
+            column([
+                text::<NumberBoxSmokeMsg>("ZSUI NumberBox Smoke").height(zsui::Dp::new(28.0)),
+                number_box(*value, range)
+                    .id(WidgetId::new(18))
+                    .height(zsui::Dp::new(40.0))
+                    .fraction_digits(1)
+                    .on_number_change(NumberBoxSmokeMsg::Changed),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+            .bg(zsui::ThemeColorToken::Surface)
+        },
+        |value, message, cx| match message {
+            NumberBoxSmokeMsg::Changed(next) => {
+                *value = next;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.number_box_changed",
+                )));
+            }
+        },
+    )
+}
+
+#[cfg(not(all(feature = "number-box", feature = "label")))]
+fn attach_number_box_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
 }
 
 #[cfg(all(feature = "radio", feature = "label"))]

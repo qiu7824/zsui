@@ -131,6 +131,12 @@ const SLIDER_GAPS: &[&str] = &[
     "AppKit and GTK4 target interaction smoke",
     "touch and precision-trackpad tuning",
 ];
+const NUMBER_BOX_GAPS: &[&str] = &[
+    "localized decimal formatting and expression evaluation",
+    "accessibility spin-button and range-value provider",
+    "button hover/pressed polish, press-and-hold autorepeat, mouse-wheel stepping and macOS modifier stepping",
+    "AppKit and GTK4 target interaction smoke",
+];
 const RADIO_GAPS: &[&str] = &[
     "accessibility selection provider",
     "AppKit and GTK4 target interaction smoke",
@@ -381,10 +387,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "number_box",
         "NumberBox",
         Input,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("number-box"),
+        "src/view.rs + src/widget_render.rs",
+        NUMBER_BOX_GAPS
     ),
     component!(
         "auto_suggest",
@@ -641,7 +647,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 13);
+        assert!(summary.not_started_count >= 12);
         assert!(summary.missing_component_names.contains(&"tree"));
         assert!(summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));

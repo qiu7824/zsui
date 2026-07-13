@@ -117,6 +117,26 @@ changes, keyboard changes and completed drags as
 and keyboard callbacks with the shared runtime, but still require target-machine
 interaction artifacts before their slider path is considered proven.
 
+The dedicated editable NumberBox smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,number-box,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-number-box --number-box-view
+```
+
+It clicks the trailing increment segment, applies small and large keyboard
+steps, clears and replaces the editable draft, then commits `42.5` with Enter.
+The self-drawn header chooses Windows inline down/up buttons, an AppKit-style
+compact vertical two-segment stepper or GTK horizontal decrement/increment
+buttons internally; application code has no platform branch. The behavior and
+shape profiles follow the official [Windows NumberBox](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/number-box),
+[Apple stepper](https://developer.apple.com/design/human-interface-guidelines/steppers),
+and [GTK SpinButton](https://docs.gtk.org/gtk4/class.SpinButton.html) contracts.
+The Windows artifact must capture
+`window.png`, expose three hit targets, keep every pointer/key input handled,
+execute each emitted `UiCommand` without failure or an unhandled command, and
+finish with a nonzero live-view revision. AppKit and GTK4 share the typed
+draft/commit path but still require target-machine interaction evidence.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

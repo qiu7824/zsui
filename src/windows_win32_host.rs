@@ -98,10 +98,10 @@ use windows_sys::Win32::{
             WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_DPICHANGED, WM_ERASEBKGND,
             WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
             WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-            WM_NCDESTROY, WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE,
-            WM_SYSCOMMAND, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC, WS_CAPTION,
-            WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZEBOX,
-            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            WM_NCDESTROY, WM_PAINT, WM_PRINTCLIENT, WM_SETICON, WM_SETTINGCHANGE, WM_SIZE,
+            WM_SYSCOLORCHANGE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WNDPROC,
+            WS_CAPTION, WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+            WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -1907,10 +1907,7 @@ impl WindowsWin32ViewInputRoute {
             self.combo_type_ahead.reset();
         }
         self.focus_target(target, &mut report);
-        if matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if target.kind.accepts_text_input() {
             return report;
         }
 
@@ -1947,10 +1944,7 @@ impl WindowsWin32ViewInputRoute {
             report.slider_drag_active = true;
             return self.dispatch_slider_pointer(target, point, report);
         }
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if !target.kind.accepts_text_input() {
             self.text_drag = None;
             #[cfg(feature = "slider")]
             {
@@ -2225,10 +2219,7 @@ impl WindowsWin32ViewInputRoute {
             );
             return report;
         }
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if !target.kind.accepts_text_input() {
             report.events.push(format!(
                 "win32_view_text_without_textbox_focus:{}",
                 widget.0
@@ -2372,10 +2363,7 @@ impl WindowsWin32ViewInputRoute {
             return report;
         };
 
-        if matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if target.kind.accepts_text_input() {
             if virtual_key == u32::from(VK_DELETE) {
                 let mut edit = self.dispatch_text_input("\u{7f}");
                 edit.key_down_count = 1;
@@ -2446,6 +2434,47 @@ impl WindowsWin32ViewInputRoute {
                     crate::ViewEvent::SliderChanged { widget, value },
                     &mut report,
                 );
+                return report;
+            }
+        }
+
+        #[cfg(feature = "number-box")]
+        if target.kind == crate::ViewHitTargetKind::NumberBox {
+            let event = match virtual_key {
+                key if key == u32::from(VK_DOWN) => Some(crate::ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: -1,
+                    large: shift,
+                }),
+                key if key == u32::from(VK_UP) => Some(crate::ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: 1,
+                    large: shift,
+                }),
+                key if key == u32::from(VK_NEXT) => Some(crate::ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: -1,
+                    large: true,
+                }),
+                key if key == u32::from(VK_PRIOR) => Some(crate::ViewEvent::NumberBoxStep {
+                    widget,
+                    steps: 1,
+                    large: true,
+                }),
+                ZSUI_WIN32_VK_RETURN => Some(crate::ViewEvent::NumberBoxCommit { widget }),
+                key if key == u32::from(VK_ESCAPE) => {
+                    Some(crate::ViewEvent::NumberBoxReset { widget })
+                }
+                _ => None,
+            };
+            if let Some(event) = event {
+                report.handled = true;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_number_box_key:{}:{virtual_key}",
+                    widget.0
+                ));
+                self.dispatch_event(event, &mut report);
                 return report;
             }
         }
@@ -2942,6 +2971,14 @@ impl WindowsWin32ViewInputRoute {
             report.text_caret = self.text_edit.map(|state| state.selection.caret);
             return;
         }
+        #[cfg(feature = "number-box")]
+        if let Some(widget) = self.focused_widget.filter(|widget| {
+            self.interaction_plan
+                .hit_target_for_widget(*widget)
+                .is_some_and(|current| current.kind == crate::ViewHitTargetKind::NumberBox)
+        }) {
+            self.dispatch_event(crate::ViewEvent::NumberBoxCommit { widget }, report);
+        }
         self.text_drag = None;
         #[cfg(feature = "combo")]
         self.combo_type_ahead.reset();
@@ -2973,6 +3010,14 @@ impl WindowsWin32ViewInputRoute {
         self.dismiss_popup_overlays_except(None, &mut report);
         #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
         self.update_pointer_visual_state(None, None, &mut report);
+        #[cfg(feature = "number-box")]
+        if let Some(widget) = self.focused_widget.filter(|widget| {
+            self.interaction_plan
+                .hit_target_for_widget(*widget)
+                .is_some_and(|target| target.kind == crate::ViewHitTargetKind::NumberBox)
+        }) {
+            self.dispatch_event(crate::ViewEvent::NumberBoxCommit { widget }, &mut report);
+        }
         let Some(widget) = self.focused_widget.take() else {
             return report;
         };
@@ -2999,10 +3044,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
+        if !target.kind.accepts_text_input() {
             self.text_edit = None;
             self.text_drag = None;
             return;
@@ -3021,6 +3063,32 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "number-box")]
+        match target.kind {
+            crate::ViewHitTargetKind::NumberBoxDecrement
+            | crate::ViewHitTargetKind::NumberBoxIncrement => {
+                let steps = if target.kind == crate::ViewHitTargetKind::NumberBoxIncrement {
+                    1
+                } else {
+                    -1
+                };
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_number_box_step:{}:{steps}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::NumberBoxStep {
+                        widget: target.widget,
+                        steps,
+                        large: false,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
         #[cfg(feature = "time-picker")]
         match target.kind {
             crate::ViewHitTargetKind::TimePickerChoice { value } => {
@@ -5276,6 +5344,7 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_PAINT => paint_no_flicker_background(hwnd),
+        WM_PRINTCLIENT => paint_window_client_to_dc(hwnd, wparam as _),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
@@ -5343,10 +5412,7 @@ unsafe fn position_windows_ime_candidate(hwnd: HWND) {
     let Some(target) = windows_win32_window_focused_target(hwnd) else {
         return;
     };
-    if !matches!(
-        target.kind,
-        crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-    ) {
+    if !target.kind.accepts_text_input() {
         return;
     }
     let context = ImmGetContext(hwnd);
@@ -5380,29 +5446,45 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
 
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
-        let draw_plan = window_draw_plan(hwnd);
-        let palette = windows_palette_for_draw_plan(draw_plan.as_ref());
-        let high_contrast = resolved_windows_theme_mode(
-            draw_plan
-                .as_ref()
-                .map(|plan| plan.theme_mode)
-                .unwrap_or(crate::ZsuiThemeMode::System),
-        ) == crate::ZsuiThemeMode::HighContrast;
         if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
-            paint_win32_surface(
-                buffered.hdc(),
-                rect,
-                palette,
-                high_contrast,
-                draw_plan.as_ref(),
-            );
+            paint_window_client_rect_to_dc(hwnd, buffered.hdc(), rect);
         } else {
-            paint_win32_surface(target, rect, palette, high_contrast, draw_plan.as_ref());
+            paint_window_client_rect_to_dc(hwnd, target, rect);
         }
     }
 
     EndPaint(hwnd, &ps);
     0
+}
+
+unsafe fn paint_window_client_to_dc(
+    hwnd: HWND,
+    target: windows_sys::Win32::Graphics::Gdi::HDC,
+) -> LRESULT {
+    if target.is_null() {
+        return 0;
+    }
+    let mut rect: RECT = zeroed();
+    if GetClientRect(hwnd, &mut rect) != 0 {
+        paint_window_client_rect_to_dc(hwnd, target, rect);
+    }
+    0
+}
+
+unsafe fn paint_window_client_rect_to_dc(
+    hwnd: HWND,
+    target: windows_sys::Win32::Graphics::Gdi::HDC,
+    rect: RECT,
+) {
+    let draw_plan = window_draw_plan(hwnd);
+    let palette = windows_palette_for_draw_plan(draw_plan.as_ref());
+    let high_contrast = resolved_windows_theme_mode(
+        draw_plan
+            .as_ref()
+            .map(|plan| plan.theme_mode)
+            .unwrap_or(crate::ZsuiThemeMode::System),
+    ) == crate::ZsuiThemeMode::HighContrast;
+    paint_win32_surface(target, rect, palette, high_contrast, draw_plan.as_ref());
 }
 
 fn windows_palette_for_draw_plan(draw_plan: Option<&NativeDrawPlan>) -> WindowsGdiPalette {
@@ -6349,6 +6431,67 @@ mod tests {
         assert_eq!(stepped.slider_keyboard_change_count, 1);
         assert_eq!(stepped.slider_value_change_count, 1);
         assert_eq!(route.widget_slider_state(widget), Some((70.0, range)));
+        assert_eq!(route.pending_ui_commands.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "number-box")]
+    fn window_view_input_route_edits_commits_and_steps_number_box() {
+        fn changed(_: Option<f64>) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.number_box_changed"))
+        }
+
+        let widget = crate::WidgetId::new(340);
+        let bounds = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 36,
+        };
+        let render = crate::zs_number_box_render_plan(
+            bounds,
+            crate::ZsNumberBoxPlatformStyle::Windows,
+            crate::Dpi::standard(),
+        );
+        let plan = crate::ViewInteractionPlan::new([
+            crate::ViewHitTarget::with_kind(widget, bounds, crate::ViewHitTargetKind::NumberBox),
+            crate::ViewHitTarget::with_kind(
+                widget,
+                render.decrement_button,
+                crate::ViewHitTargetKind::NumberBoxDecrement,
+            ),
+            crate::ViewHitTarget::with_kind(
+                widget,
+                render.increment_button,
+                crate::ViewHitTargetKind::NumberBoxIncrement,
+            ),
+        ]);
+        let range = crate::ZsNumberRange::new(0.0, 10.0)
+            .step(0.5)
+            .large_step(5.0);
+        let mut route = WindowsWin32ViewInputRoute::new(
+            plan,
+            crate::number_box(Some(2.5), range)
+                .id(widget)
+                .fraction_digits(1)
+                .on_number_change(changed),
+        );
+
+        let incremented = route.dispatch_click(crate::Point {
+            x: render.increment_button.x + render.increment_button.width / 2,
+            y: render.increment_button.y + render.increment_button.height / 2,
+        });
+        let stepped = route.dispatch_key_down(u32::from(VK_UP));
+        let cleared = route.dispatch_text_input("\u{8}\u{8}\u{8}");
+        let typed = route.dispatch_text_input("9.5");
+        let committed = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+
+        assert!(incremented.handled);
+        assert!(stepped.handled);
+        assert_eq!(cleared.text_input_count, 3);
+        assert_eq!(typed.text_input_count, 3);
+        assert!(committed.handled);
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("9.5"));
         assert_eq!(route.pending_ui_commands.len(), 3);
     }
 

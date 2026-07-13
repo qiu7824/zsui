@@ -120,6 +120,14 @@ history remain authoritative for implementation status.
   hit-test bounds for all three desktop renderers. Every canonical child is a
   typed `ZsGridCell`; overlapping cells retain declaration order. Content-sized
   tracks, baseline alignment and non-Windows target proof remain readiness gaps.
+- NumberBox is an independent `number-box` Cargo feature and stays on the shared
+  self-drawn path. `ZsNumberRange` validates finite bounds and small/large steps;
+  the editable draft is kept separate from committed `Option<f64>` application
+  state so partial input is not reformatted mid-edit. Enter, focus loss, pointer
+  steppers and Up/Down/PageUp/PageDown route typed events. Windows, macOS and GTK
+  select internal metric profiles modeled on NumberBox/NSStepper/SpinButton;
+  locale formatting, expression input, accessibility and non-Windows target
+  proof remain explicit readiness gaps.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

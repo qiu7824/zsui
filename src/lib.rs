@@ -425,6 +425,8 @@ pub use view::date_picker;
 pub use view::grid;
 #[cfg(feature = "list")]
 pub use view::list;
+#[cfg(feature = "number-box")]
+pub use view::number_box;
 #[cfg(feature = "radio")]
 pub use view::radio_button;
 #[cfg(feature = "scroll")]
@@ -460,6 +462,8 @@ pub use view::{virtual_list, virtual_list_viewport};
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
 #[cfg(feature = "grid")]
 pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTrack};
+#[cfg(feature = "number-box")]
+pub use view::{ZsNumberBoxState, ZsNumberFormat, ZsNumberRange};
 #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 pub use widget_render::ZsPopupPlacement;
 #[cfg(feature = "combo")]
@@ -475,6 +479,11 @@ pub use widget_render::{
     zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport,
     zs_date_picker_render_plan_in_viewport_with_today, zs_date_picker_render_plan_with_today,
     ZsDatePickerDayCell, ZsDatePickerRenderPlan,
+};
+#[cfg(feature = "number-box")]
+pub use widget_render::{
+    zs_number_box_native_draw_plan, zs_number_box_render_plan, ZsNumberBoxMetrics,
+    ZsNumberBoxPlatformStyle, ZsNumberBoxRenderPlan,
 };
 #[cfg(feature = "progress")]
 pub use widget_render::{
