@@ -142,7 +142,6 @@ const PROGRESS_GAPS: &[&str] = &[
     "AppKit and GTK4 target screenshot smoke",
 ];
 const COMBO_GAPS: &[&str] = &[
-    "viewport-aware popup flipping and clamping",
     "outside-click and focus-loss dismissal",
     "long-option scrolling and type-ahead search",
     "accessibility expanded and selection providers",
@@ -150,7 +149,6 @@ const COMBO_GAPS: &[&str] = &[
 ];
 const DATE_PICKER_GAPS: &[&str] = &[
     "localized date, month and weekday formatting",
-    "viewport-aware popup flipping and clamping",
     "outside-click and focus-loss dismissal",
     "hover, pressed, today and high-contrast visual states",
     "accessibility value and calendar-grid providers",

@@ -45,6 +45,9 @@ history remain authoritative for implementation status.
 - Platform-native style does not imply embedding a second widget tree. Shared
   Rust code owns typed state, messages and layout, while the render backend
   maps platform style tokens into the existing buffered paint path.
+- Popup controls use one shared, DPI-aware viewport placement result for both
+  painting and hit testing. Window-edge flipping and horizontal clamping stay
+  in the framework instead of being reimplemented by individual backends.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
 - Treat antialiasing, DPI, IME, scrolling, margins and window services as

@@ -8,6 +8,20 @@ use crate::{
     NativeDrawIconCommand, NativeDrawTextCommand, NativeIconColorMode, SemanticTextStyle, ZsIcon,
 };
 
+#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsPopupPlacement {
+    Below,
+    Above,
+}
+
+#[cfg(any(feature = "combo", feature = "date-picker"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ZsPlacedPopup {
+    bounds: Rect,
+    placement: ZsPopupPlacement,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsToggleRenderPlan {
     pub bounds: Rect,
@@ -321,6 +335,7 @@ pub struct ZsComboBoxRenderPlan {
     pub text_bounds: Rect,
     pub icon_bounds: Rect,
     pub popup: Option<Rect>,
+    pub popup_placement: Option<ZsPopupPlacement>,
     pub option_rows: Vec<Rect>,
     pub radius: i32,
 }
@@ -331,6 +346,28 @@ pub fn zs_combo_box_render_plan(
     option_count: usize,
     expanded: bool,
     dpi: Dpi,
+) -> ZsComboBoxRenderPlan {
+    zs_combo_box_render_plan_impl(bounds, option_count, expanded, dpi, None)
+}
+
+#[cfg(feature = "combo")]
+pub fn zs_combo_box_render_plan_in_viewport(
+    bounds: Rect,
+    option_count: usize,
+    expanded: bool,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsComboBoxRenderPlan {
+    zs_combo_box_render_plan_impl(bounds, option_count, expanded, dpi, Some(viewport))
+}
+
+#[cfg(feature = "combo")]
+fn zs_combo_box_render_plan_impl(
+    bounds: Rect,
+    option_count: usize,
+    expanded: bool,
+    dpi: Dpi,
+    viewport: Option<Rect>,
 ) -> ZsComboBoxRenderPlan {
     let horizontal_padding = scale(12, dpi).min(bounds.width.max(1) / 3).max(1);
     let icon_size = scale(16, dpi).min(bounds.height.max(1)).max(1);
@@ -356,15 +393,16 @@ pub fn zs_combo_box_render_plan(
     };
     let row_height = bounds.height.max(scale(32, dpi)).max(1);
     let popup_gap = scale(4, dpi);
-    let popup = (expanded && option_count > 0).then_some(Rect {
-        x: bounds.x,
-        y: bounds
-            .y
-            .saturating_add(bounds.height)
-            .saturating_add(popup_gap),
-        width: bounds.width.max(1),
-        height: row_height.saturating_mul(option_count.min(i32::MAX as usize) as i32),
+    let placed_popup = (expanded && option_count > 0).then(|| {
+        place_popup(
+            bounds,
+            bounds.width.max(1),
+            row_height.saturating_mul(option_count.min(i32::MAX as usize) as i32),
+            popup_gap,
+            viewport,
+        )
     });
+    let popup = placed_popup.map(|placed| placed.bounds);
     let option_rows = popup
         .map(|popup| {
             (0..option_count)
@@ -384,6 +422,7 @@ pub fn zs_combo_box_render_plan(
         text_bounds,
         icon_bounds,
         popup,
+        popup_placement: placed_popup.map(|placed| placed.placement),
         option_rows,
         radius: scale(6, dpi),
     }
@@ -482,6 +521,7 @@ pub struct ZsDatePickerRenderPlan {
     pub text_bounds: Rect,
     pub icon_bounds: Rect,
     pub popup: Option<Rect>,
+    pub popup_placement: Option<ZsPopupPlacement>,
     pub month_label_bounds: Option<Rect>,
     pub previous_button: Option<Rect>,
     pub next_button: Option<Rect>,
@@ -506,6 +546,54 @@ pub fn zs_date_picker_render_plan(
     maximum: ZsDate,
     expanded: bool,
     dpi: Dpi,
+) -> ZsDatePickerRenderPlan {
+    zs_date_picker_render_plan_impl(
+        bounds,
+        value,
+        visible_month,
+        minimum,
+        maximum,
+        expanded,
+        dpi,
+        None,
+    )
+}
+
+#[cfg(feature = "date-picker")]
+#[allow(clippy::too_many_arguments)]
+pub fn zs_date_picker_render_plan_in_viewport(
+    bounds: Rect,
+    value: ZsDate,
+    visible_month: ZsDate,
+    minimum: ZsDate,
+    maximum: ZsDate,
+    expanded: bool,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsDatePickerRenderPlan {
+    zs_date_picker_render_plan_impl(
+        bounds,
+        value,
+        visible_month,
+        minimum,
+        maximum,
+        expanded,
+        dpi,
+        Some(viewport),
+    )
+}
+
+#[cfg(feature = "date-picker")]
+#[allow(clippy::too_many_arguments)]
+fn zs_date_picker_render_plan_impl(
+    bounds: Rect,
+    value: ZsDate,
+    visible_month: ZsDate,
+    minimum: ZsDate,
+    maximum: ZsDate,
+    expanded: bool,
+    dpi: Dpi,
+    viewport: Option<Rect>,
 ) -> ZsDatePickerRenderPlan {
     let (minimum, maximum) = if minimum <= maximum {
         (minimum, maximum)
@@ -548,15 +636,9 @@ pub fn zs_date_picker_render_plan(
         .saturating_add(weekday_height)
         .saturating_add(day_height.saturating_mul(6))
         .saturating_add(border_inset.saturating_mul(2));
-    let popup = expanded.then_some(Rect {
-        x: bounds.x,
-        y: bounds
-            .y
-            .saturating_add(bounds.height)
-            .saturating_add(popup_gap),
-        width: popup_width,
-        height: popup_height,
-    });
+    let placed_popup =
+        expanded.then(|| place_popup(bounds, popup_width, popup_height, popup_gap, viewport));
+    let popup = placed_popup.map(|placed| placed.bounds);
 
     let mut month_label_bounds = None;
     let mut previous_button = None;
@@ -638,6 +720,7 @@ pub fn zs_date_picker_render_plan(
         text_bounds,
         icon_bounds,
         popup,
+        popup_placement: placed_popup.map(|placed| placed.placement),
         month_label_bounds,
         previous_button,
         next_button,
@@ -774,6 +857,67 @@ pub fn zs_date_picker_popup_native_draw_plan(
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(any(feature = "combo", feature = "date-picker"))]
+fn place_popup(
+    anchor: Rect,
+    requested_width: i32,
+    requested_height: i32,
+    gap: i32,
+    viewport: Option<Rect>,
+) -> ZsPlacedPopup {
+    let requested_width = requested_width.max(1);
+    let requested_height = requested_height.max(1);
+    let below_y = anchor.y.saturating_add(anchor.height).saturating_add(gap);
+    let Some(viewport) = viewport.filter(|viewport| viewport.width > 0 && viewport.height > 0)
+    else {
+        return ZsPlacedPopup {
+            bounds: Rect {
+                x: anchor.x,
+                y: below_y,
+                width: requested_width,
+                height: requested_height,
+            },
+            placement: ZsPopupPlacement::Below,
+        };
+    };
+
+    let viewport_right = viewport.x.saturating_add(viewport.width);
+    let viewport_bottom = viewport.y.saturating_add(viewport.height);
+    let width = requested_width.min(viewport.width).max(1);
+    let minimum_x = viewport.x;
+    let maximum_x = viewport_right.saturating_sub(width).max(minimum_x);
+    let x = anchor.x.clamp(minimum_x, maximum_x);
+    let above_bottom = anchor.y.saturating_sub(gap);
+    let above_y = above_bottom.saturating_sub(requested_height);
+    let available_below = viewport_bottom.saturating_sub(below_y).max(0);
+    let available_above = above_bottom.saturating_sub(viewport.y).max(0);
+    let fits_below = requested_height <= available_below;
+    let fits_above = requested_height <= available_above;
+    let placement = if fits_below || (!fits_above && available_below >= available_above) {
+        ZsPopupPlacement::Below
+    } else {
+        ZsPopupPlacement::Above
+    };
+    let mut y = match placement {
+        ZsPopupPlacement::Below => below_y,
+        ZsPopupPlacement::Above => above_y,
+    };
+    if requested_height <= viewport.height {
+        y = y.clamp(viewport.y, viewport_bottom.saturating_sub(requested_height));
+    } else {
+        y = viewport.y;
+    }
+    ZsPlacedPopup {
+        bounds: Rect {
+            x,
+            y,
+            width,
+            height: requested_height,
+        },
+        placement,
+    }
+}
+
 fn scale(value: i32, dpi: Dpi) -> i32 {
     Dp::new(value as f32).to_px(dpi).round_i32().max(1)
 }
@@ -908,6 +1052,7 @@ mod tests {
 
         assert_eq!(popup.y, 60);
         assert_eq!(popup.height, 108);
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Below));
         assert_eq!(plan.option_rows.len(), 3);
         assert_eq!(plan.option_rows[1].y, 96);
         assert!(matches!(
@@ -938,6 +1083,40 @@ mod tests {
             .is_none());
     }
 
+    #[cfg(feature = "combo")]
+    #[test]
+    fn combo_popup_flips_above_and_clamps_to_viewport_right_edge() {
+        let plan = zs_combo_box_render_plan_in_viewport(
+            Rect {
+                x: 250,
+                y: 180,
+                width: 100,
+                height: 32,
+            },
+            3,
+            true,
+            Dpi::standard(),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 240,
+            },
+        );
+
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Above));
+        assert_eq!(
+            plan.popup,
+            Some(Rect {
+                x: 200,
+                y: 80,
+                width: 100,
+                height: 96,
+            })
+        );
+        assert_eq!(plan.option_rows[2].y, 144);
+    }
+
     #[cfg(feature = "date-picker")]
     #[test]
     fn date_picker_geometry_uses_winui_metrics_and_typed_calendar_cells() {
@@ -960,6 +1139,7 @@ mod tests {
         assert_eq!(plan.control_radius, 4);
         assert_eq!(plan.overlay_radius, 8);
         assert_eq!(plan.icon_bounds.width, 12);
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Below));
         assert_eq!(plan.popup.unwrap().y, 100);
         assert_eq!(plan.popup.unwrap().width, 296);
         assert_eq!(plan.popup.unwrap().height, 332);
@@ -992,5 +1172,47 @@ mod tests {
             .command_count(),
             54
         );
+    }
+
+    #[cfg(feature = "date-picker")]
+    #[test]
+    fn date_picker_popup_flips_above_and_clamps_to_viewport_at_scaled_dpi() {
+        let value = ZsDate::new(2026, 7, 13).unwrap();
+        let plan = zs_date_picker_render_plan_in_viewport(
+            Rect {
+                x: 520,
+                y: 720,
+                width: 200,
+                height: 64,
+            },
+            value,
+            value.first_day_of_month(),
+            ZsDate::new(1900, 1, 1).unwrap(),
+            ZsDate::new(2100, 12, 31).unwrap(),
+            true,
+            Dpi::new(192.0),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 960,
+            },
+        );
+
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Above));
+        assert_eq!(
+            plan.popup,
+            Some(Rect {
+                x: 208,
+                y: 48,
+                width: 592,
+                height: 664,
+            })
+        );
+        assert_eq!(plan.day_cells.len(), 42);
+        assert!(plan
+            .day_cells
+            .iter()
+            .all(|cell| cell.bounds.x >= 208 && cell.bounds.x < 800));
     }
 }

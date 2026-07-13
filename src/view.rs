@@ -1548,7 +1548,7 @@ impl ViewPaintCx {
         self.paint_depth = self.paint_depth.saturating_sub(1);
         #[cfg(any(feature = "combo", feature = "date-picker"))]
         if self.paint_depth == 0 {
-            _root.paint_overlays(self);
+            _root.paint_overlays(self, None);
         }
     }
 }
@@ -2328,7 +2328,7 @@ impl<Msg> ViewNode<Msg> {
         let mut hit_targets = Vec::new();
         self.collect_hit_targets(&mut hit_targets, None);
         #[cfg(any(feature = "combo", feature = "date-picker"))]
-        self.collect_overlay_hit_targets(&mut hit_targets);
+        self.collect_overlay_hit_targets(&mut hit_targets, None);
         ViewInteractionPlan { hit_targets }
     }
 
@@ -2552,7 +2552,11 @@ impl<Msg> ViewNode<Msg> {
     }
 
     #[cfg(any(feature = "combo", feature = "date-picker"))]
-    fn collect_overlay_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>) {
+    fn collect_overlay_hit_targets(
+        &self,
+        hit_targets: &mut Vec<ViewHitTarget>,
+        viewport: Option<Rect>,
+    ) {
         #[cfg(feature = "combo")]
         if let (
             Some(widget),
@@ -2564,8 +2568,18 @@ impl<Msg> ViewNode<Msg> {
             },
         ) = (self.id, self.bounds, &self.kind)
         {
-            let plan =
-                crate::zs_combo_box_render_plan(bounds, options.len(), true, self.layout_dpi);
+            let plan = viewport.map_or_else(
+                || crate::zs_combo_box_render_plan(bounds, options.len(), true, self.layout_dpi),
+                |viewport| {
+                    crate::zs_combo_box_render_plan_in_viewport(
+                        bounds,
+                        options.len(),
+                        true,
+                        self.layout_dpi,
+                        viewport,
+                    )
+                },
+            );
             hit_targets.extend(
                 plan.option_rows
                     .into_iter()
@@ -2593,14 +2607,30 @@ impl<Msg> ViewNode<Msg> {
             },
         ) = (self.id, self.bounds, &self.kind)
         {
-            let plan = crate::zs_date_picker_render_plan(
-                bounds,
-                *value,
-                *visible_month,
-                *minimum,
-                *maximum,
-                true,
-                self.layout_dpi,
+            let plan = viewport.map_or_else(
+                || {
+                    crate::zs_date_picker_render_plan(
+                        bounds,
+                        *value,
+                        *visible_month,
+                        *minimum,
+                        *maximum,
+                        true,
+                        self.layout_dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_date_picker_render_plan_in_viewport(
+                        bounds,
+                        *value,
+                        *visible_month,
+                        *minimum,
+                        *maximum,
+                        true,
+                        self.layout_dpi,
+                        viewport,
+                    )
+                },
             );
             if let Some(bounds) = plan.previous_button {
                 hit_targets.push(ViewHitTarget::with_kind(
@@ -2626,13 +2656,14 @@ impl<Msg> ViewNode<Msg> {
                 },
             ));
         }
+        let child_viewport = viewport.or(self.bounds);
         for child in &self.children {
-            child.collect_overlay_hit_targets(hit_targets);
+            child.collect_overlay_hit_targets(hit_targets, child_viewport);
         }
     }
 
     #[cfg(any(feature = "combo", feature = "date-picker"))]
-    fn paint_overlays(&self, cx: &mut ViewPaintCx) {
+    fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
         #[cfg(feature = "combo")]
         if let (
             Some(bounds),
@@ -2644,7 +2675,18 @@ impl<Msg> ViewNode<Msg> {
             },
         ) = (self.bounds, &self.kind)
         {
-            let plan = crate::zs_combo_box_render_plan(bounds, options.len(), true, cx.dpi);
+            let plan = viewport.map_or_else(
+                || crate::zs_combo_box_render_plan(bounds, options.len(), true, cx.dpi),
+                |viewport| {
+                    crate::zs_combo_box_render_plan_in_viewport(
+                        bounds,
+                        options.len(),
+                        true,
+                        cx.dpi,
+                        viewport,
+                    )
+                },
+            );
             for command in
                 crate::zs_combo_box_popup_native_draw_plan(&plan, options, *selected_index, cx.dpi)
                     .commands
@@ -2665,14 +2707,30 @@ impl<Msg> ViewNode<Msg> {
             },
         ) = (self.bounds, &self.kind)
         {
-            let plan = crate::zs_date_picker_render_plan(
-                bounds,
-                *value,
-                *visible_month,
-                *minimum,
-                *maximum,
-                true,
-                cx.dpi,
+            let plan = viewport.map_or_else(
+                || {
+                    crate::zs_date_picker_render_plan(
+                        bounds,
+                        *value,
+                        *visible_month,
+                        *minimum,
+                        *maximum,
+                        true,
+                        cx.dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_date_picker_render_plan_in_viewport(
+                        bounds,
+                        *value,
+                        *visible_month,
+                        *minimum,
+                        *maximum,
+                        true,
+                        cx.dpi,
+                        viewport,
+                    )
+                },
             );
             for command in
                 crate::zs_date_picker_popup_native_draw_plan(&plan, *visible_month, cx.dpi).commands
@@ -2680,8 +2738,9 @@ impl<Msg> ViewNode<Msg> {
                 cx.draw(command);
             }
         }
+        let child_viewport = viewport.or(self.bounds);
         for child in &self.children {
-            child.paint_overlays(cx);
+            child.paint_overlays(cx, child_viewport);
         }
     }
 
@@ -3551,6 +3610,45 @@ mod tests {
             view.widget_combo_state(WidgetId::new(10)),
             Some((None, 1, false))
         );
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn combo_box_overlay_paint_and_hits_share_viewport_flipped_geometry() {
+        let widget = WidgetId::new(11);
+        let mut view = column([
+            spacer(),
+            combo_box::<_, ()>(["One", "Two", "Three"], None)
+                .id(widget)
+                .height(Dp::new(32.0))
+                .expanded(true),
+        ])
+        .gap(Dp::new(4.0));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+
+        let option = view
+            .interaction_plan()
+            .hit_targets
+            .into_iter()
+            .find(|target| target.kind == ViewHitTargetKind::ComboBoxOption { index: 1 })
+            .expect("second option should be hittable in the flipped popup");
+        assert_eq!(option.bounds.y, 140);
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect { rect, .. }
+                if *rect == Rect { x: 0, y: 108, width: 300, height: 96 }
+        )));
     }
 
     #[test]

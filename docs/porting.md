@@ -120,6 +120,10 @@ The first-pass typed view layer is `src/view.rs`: hosts should treat
 `View<Msg>`, `WidgetId`, `ViewEventCx`, `ViewInteractionPlan` and
 `ViewPaintCx` as the direction for future event and paint routing instead of
 introducing string event buses or global widget registries.
+Expanded ComboBox and DatePicker overlays derive paint commands and hit
+targets from the same viewport-aware render plan. Keep its DPI-scaled
+below/above flip and horizontal window clamping intact in every desktop host;
+do not apply a second backend-local popup offset.
 The feature-gated `scroll` container offsets its child content, clips hit
 targets to the viewport and emits `PushClip`/`PopClip` draw commands; backend
 renderers should preserve that clipping boundary before adding wheel/touch

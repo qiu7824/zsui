@@ -444,15 +444,18 @@ pub use view::{slider, SliderRange};
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+#[cfg(any(feature = "combo", feature = "date-picker"))]
+pub use widget_render::ZsPopupPlacement;
 #[cfg(feature = "combo")]
 pub use widget_render::{
     zs_combo_box_header_native_draw_plan, zs_combo_box_popup_native_draw_plan,
-    zs_combo_box_render_plan, ZsComboBoxRenderPlan,
+    zs_combo_box_render_plan, zs_combo_box_render_plan_in_viewport, ZsComboBoxRenderPlan,
 };
 #[cfg(feature = "date-picker")]
 pub use widget_render::{
     zs_date_picker_header_native_draw_plan, zs_date_picker_popup_native_draw_plan,
-    zs_date_picker_render_plan, ZsDatePickerDayCell, ZsDatePickerRenderPlan,
+    zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport, ZsDatePickerDayCell,
+    ZsDatePickerRenderPlan,
 };
 #[cfg(feature = "progress")]
 pub use widget_render::{
