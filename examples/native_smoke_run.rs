@@ -223,7 +223,8 @@ fn run_smoke(
         smoke_options = smoke_options
             .native_view_click(Point { x: 100, y: 124 })
             .native_view_key_down(NativeViewKey::Space)
-            .native_view_key_down(NativeViewKey::Up);
+            .native_view_key_down(NativeViewKey::Up)
+            .native_view_key_down(NativeViewKey::Tab);
     }
     #[cfg(all(feature = "combo", feature = "label"))]
     if include_combo_view {

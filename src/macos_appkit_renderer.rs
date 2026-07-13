@@ -306,6 +306,7 @@ define_class!(
         fn key_down(&self, event: &NSEvent) {
             let modifiers = event.modifierFlags();
             let shift = modifiers.contains(NSEventModifierFlags::Shift);
+            let control = modifiers.contains(NSEventModifierFlags::Control);
             let command_or_control = modifiers
                 .intersects(NSEventModifierFlags::Command | NSEventModifierFlags::Control);
             let unmodified = event
@@ -351,15 +352,21 @@ define_class!(
                     }
                 }
                 Some(code) if code == NSUpArrowFunctionKey => {
-                    runtime.dispatch_key(crate::NativeViewKey::Up)
+                    runtime.dispatch_key_with_modifiers(crate::NativeViewKey::Up, shift, control)
                 }
                 Some(code) if code == NSDownArrowFunctionKey => {
-                    runtime.dispatch_key(crate::NativeViewKey::Down)
+                    runtime.dispatch_key_with_modifiers(crate::NativeViewKey::Down, shift, control)
                 }
-                Some(code) if code == NSLeftArrowFunctionKey => runtime
-                    .dispatch_key_with_shift(crate::NativeViewKey::Left, shift),
-                Some(code) if code == NSRightArrowFunctionKey => runtime
-                    .dispatch_key_with_shift(crate::NativeViewKey::Right, shift),
+                Some(code) if code == NSLeftArrowFunctionKey => runtime.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Left,
+                    shift,
+                    control,
+                ),
+                Some(code) if code == NSRightArrowFunctionKey => runtime.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Right,
+                    shift,
+                    control,
+                ),
                 Some(code) if code == NSHomeFunctionKey => runtime
                     .dispatch_key_with_shift(crate::NativeViewKey::Home, shift),
                 Some(code) if code == NSEndFunctionKey => runtime

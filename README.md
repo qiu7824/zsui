@@ -127,8 +127,9 @@ fn volume_control(value: f32) -> ViewNode<Msg> {
 ```
 
 RadioButton 不维护全局注册表；同一 `row` 或 `column` 的直接子项会形成局部分组，
-框架即时保证互斥，并按 WinUI 规则提供不循环的方向键导航。应用仍用显式状态
-持久化最终选择：
+框架即时保证互斥，并按 WinUI 规则提供单一 Tab 停靠点和不循环的方向键导航；
+普通方向键让选择跟随焦点，Ctrl+方向键只移动焦点。应用仍用显式状态持久化最终
+选择：
 
 ```rust,no_run
 use zsui::{radio_button, ViewNode};

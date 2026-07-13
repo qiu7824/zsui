@@ -1138,6 +1138,32 @@ impl ViewInteractionPlan {
         };
         focus_targets.get(next_index).copied()
     }
+
+    pub(crate) fn next_focus_target_where(
+        &self,
+        current: Option<WidgetId>,
+        offset: isize,
+        mut accepts_tab_focus: impl FnMut(ViewHitTarget) -> bool,
+    ) -> Option<ViewHitTarget> {
+        let len = self.hit_targets.len();
+        if len == 0 || offset == 0 {
+            return None;
+        }
+        let step = offset.signum();
+        let start = current
+            .and_then(|widget| {
+                self.hit_targets
+                    .iter()
+                    .position(|target| target.widget == widget)
+            })
+            .map(|index| index as isize)
+            .unwrap_or(if step < 0 { 0 } else { -1 });
+        (1..=len).find_map(|distance| {
+            let index = (start + step * distance as isize).rem_euclid(len as isize) as usize;
+            let target = self.hit_targets[index];
+            (target.accepts_focus() && accepts_tab_focus(target)).then_some(target)
+        })
+    }
 }
 
 impl ViewHitTarget {
@@ -1259,6 +1285,8 @@ trait LiveViewDriver: Send {
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "radio")]
+    fn widget_radio_is_tab_stop(&self, widget: WidgetId) -> Option<bool>;
+    #[cfg(feature = "radio")]
     fn widget_radio_relative_widget(
         &self,
         widget: WidgetId,
@@ -1327,6 +1355,11 @@ impl SharedLiveViewRuntime {
 
     pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.lock().widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "radio")]
+    pub(crate) fn widget_radio_is_tab_stop(&self, widget: WidgetId) -> Option<bool> {
+        self.lock().widget_radio_is_tab_stop(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -1532,6 +1565,11 @@ where
 
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.view.widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "radio")]
+    fn widget_radio_is_tab_stop(&self, widget: WidgetId) -> Option<bool> {
+        self.view.widget_radio_is_tab_stop(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2544,6 +2582,36 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_checked_value(widget))
+    }
+
+    #[cfg(feature = "radio")]
+    pub(crate) fn widget_radio_is_tab_stop(&self, widget: WidgetId) -> Option<bool> {
+        if matches!(&self.kind, ViewNodeKind::Stack { .. }) {
+            let mut radio_widgets = self.children.iter().filter_map(|child| {
+                if let ViewNodeKind::RadioButton { selected, .. } = &child.kind {
+                    child.id.map(|id| (id, *selected))
+                } else {
+                    None
+                }
+            });
+            if let Some(first) = radio_widgets.next() {
+                let mut group = vec![first];
+                group.extend(radio_widgets);
+                if group.iter().any(|(candidate, _)| *candidate == widget) {
+                    let tab_stop = group
+                        .iter()
+                        .find_map(|(candidate, selected)| selected.then_some(*candidate))
+                        .unwrap_or(first.0);
+                    return Some(widget == tab_stop);
+                }
+            }
+        }
+        if self.id == Some(widget) && matches!(&self.kind, ViewNodeKind::RadioButton { .. }) {
+            return Some(true);
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_radio_is_tab_stop(widget))
     }
 
     #[cfg(feature = "radio")]
@@ -3809,12 +3877,16 @@ mod tests {
             vertical.widget_radio_relative_widget(third, ViewStackDirection::Column, 1),
             Some(third)
         );
+        assert_eq!(vertical.widget_radio_is_tab_stop(first), Some(true));
+        assert_eq!(vertical.widget_radio_is_tab_stop(second), Some(false));
 
         let mut events = ViewEventCx::new();
         vertical.event(&mut events, &ViewEvent::RadioSelected { widget: second });
         assert_eq!(vertical.widget_checked_value(first), Some(false));
         assert_eq!(vertical.widget_checked_value(second), Some(true));
         assert_eq!(vertical.widget_checked_value(third), Some(false));
+        assert_eq!(vertical.widget_radio_is_tab_stop(first), Some(false));
+        assert_eq!(vertical.widget_radio_is_tab_stop(second), Some(true));
         assert_eq!(
             events.into_messages(),
             vec![Msg::ChoiceSelected("performance")]

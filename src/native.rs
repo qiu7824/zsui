@@ -829,6 +829,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_drag_count: usize,
     pub native_view_radio_selection_count: usize,
     pub native_view_radio_keyboard_selection_count: usize,
+    pub native_view_radio_keyboard_focus_only_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -921,6 +922,7 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_drag_count: 0,
             native_view_radio_selection_count: 0,
             native_view_radio_keyboard_selection_count: 0,
+            native_view_radio_keyboard_focus_only_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1008,6 +1010,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub radio_selection_changed: bool,
     #[cfg(feature = "radio")]
     pub radio_keyboard_selection_changed: bool,
+    #[cfg(feature = "radio")]
+    pub radio_keyboard_focus_only: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1382,7 +1386,7 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_key(&mut self, key: NativeViewKey) -> NativeViewInputDispatchReport {
-        self.dispatch_key_with_shift(key, false)
+        self.dispatch_key_with_modifiers(key, false, false)
     }
 
     pub(crate) fn dispatch_key_with_shift(
@@ -1390,6 +1394,17 @@ impl NativeViewInputRuntime {
         key: NativeViewKey,
         shift: bool,
     ) -> NativeViewInputDispatchReport {
+        self.dispatch_key_with_modifiers(key, shift, false)
+    }
+
+    pub(crate) fn dispatch_key_with_modifiers(
+        &mut self,
+        key: NativeViewKey,
+        shift: bool,
+        control: bool,
+    ) -> NativeViewInputDispatchReport {
+        #[cfg(not(feature = "radio"))]
+        let _ = control;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
@@ -1400,7 +1415,11 @@ impl NativeViewInputRuntime {
         };
         if key == NativeViewKey::Tab {
             let offset = if shift { -1 } else { 1 };
-            if let Some(target) = interaction_plan.next_focus_target(self.focused_widget, offset) {
+            if let Some(target) =
+                interaction_plan.next_focus_target_where(self.focused_widget, offset, |target| {
+                    self.widget_accepts_tab_focus(target)
+                })
+            {
                 report.handled = true;
                 report = self.dismiss_popup_overlays_except(Some(target.widget), report);
                 self.focus_target(target, &mut report);
@@ -1557,6 +1576,10 @@ impl NativeViewInputRuntime {
                     return report;
                 };
                 self.focus_target(next_target, &mut report);
+                if control {
+                    report.radio_keyboard_focus_only = true;
+                    return report;
+                }
                 report.radio_selection_changed = true;
                 report.radio_keyboard_selection_changed = true;
                 return self.dispatch_view_event(
@@ -2259,6 +2282,25 @@ impl NativeViewInputRuntime {
             })
     }
 
+    fn widget_accepts_tab_focus(&self, target: crate::ViewHitTarget) -> bool {
+        #[cfg(not(feature = "radio"))]
+        let _ = target;
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            return self
+                .live_view
+                .as_ref()
+                .and_then(|runtime| runtime.widget_radio_is_tab_stop(target.widget))
+                .or_else(|| {
+                    self.ui_command_view
+                        .as_ref()
+                        .and_then(|view| view.widget_radio_is_tab_stop(target.widget))
+                })
+                .unwrap_or(true);
+        }
+        true
+    }
+
     #[cfg(feature = "radio")]
     fn widget_radio_relative_widget(
         &self,
@@ -2652,6 +2694,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_slider_drag_count += input.slider_drag_count;
     report.native_view_radio_selection_count += input.radio_selection_count;
     report.native_view_radio_keyboard_selection_count += input.radio_keyboard_selection_count;
+    report.native_view_radio_keyboard_focus_only_count += input.radio_keyboard_focus_only_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -5411,6 +5454,8 @@ mod tests {
         let moved = runtime.dispatch_key(NativeViewKey::Up);
         let boundary = runtime.dispatch_key(NativeViewKey::Up);
         let horizontal = runtime.dispatch_key(NativeViewKey::Left);
+        let focus_only = runtime.dispatch_key_with_modifiers(NativeViewKey::Down, false, true);
+        let tabbed = runtime.dispatch_key(NativeViewKey::Tab);
 
         assert!(selected.handled);
         assert!(selected.radio_selection_changed);
@@ -5424,6 +5469,12 @@ mod tests {
         assert!(!boundary.radio_selection_changed);
         assert!(horizontal.handled);
         assert!(!horizontal.radio_selection_changed);
+        assert!(focus_only.handled);
+        assert!(focus_only.radio_keyboard_focus_only);
+        assert!(!focus_only.radio_selection_changed);
+        assert_eq!(focus_only.focused_widget, Some(second.0));
+        assert!(tabbed.handled);
+        assert_eq!(tabbed.focused_widget, Some(first.0));
         assert_eq!(runtime.widget_checked_value(first), Some(true));
         assert_eq!(runtime.widget_checked_value(second), Some(false));
     }
@@ -6027,6 +6078,7 @@ mod tests {
         assert_eq!(report.native_view_slider_drag_count, 0);
         assert_eq!(report.native_view_radio_selection_count, 0);
         assert_eq!(report.native_view_radio_keyboard_selection_count, 0);
+        assert_eq!(report.native_view_radio_keyboard_focus_only_count, 0);
         assert_eq!(report.native_view_combo_scroll_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);

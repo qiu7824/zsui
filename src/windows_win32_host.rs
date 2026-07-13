@@ -62,9 +62,9 @@ use windows_sys::Win32::{
             },
             KeyboardAndMouse::{
                 GetKeyState, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER,
-                TME_LEAVE, TRACKMOUSEEVENT, VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1,
-                VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE,
-                VK_TAB, VK_UP,
+                TME_LEAVE, TRACKMOUSEEVENT, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
+                VK_ESCAPE, VK_F1, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT,
+                VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
             },
         },
         Shell::{
@@ -2220,7 +2220,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn dispatch_key_down(&mut self, virtual_key: u32) -> WindowsWin32ViewInputDispatchReport {
-        self.dispatch_key_down_with_shift(virtual_key, false)
+        self.dispatch_key_down_with_modifiers(virtual_key, false, false)
     }
 
     fn dispatch_key_down_with_shift(
@@ -2228,6 +2228,17 @@ impl WindowsWin32ViewInputRoute {
         virtual_key: u32,
         shift: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_key_down_with_modifiers(virtual_key, shift, false)
+    }
+
+    fn dispatch_key_down_with_modifiers(
+        &mut self,
+        virtual_key: u32,
+        shift: bool,
+        control: bool,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        #[cfg(not(feature = "radio"))]
+        let _ = control;
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             key_down_count: 1,
@@ -2429,6 +2440,14 @@ impl WindowsWin32ViewInputRoute {
                     return report;
                 };
                 self.focus_target(next_target, &mut report);
+                if control {
+                    report.radio_keyboard_focus_only_count = 1;
+                    report.events.push(format!(
+                        "win32_view_radio_key_focus_only:{}:{}",
+                        widget.0, next_widget.0
+                    ));
+                    return report;
+                }
                 report.radio_selection_count = 1;
                 report.radio_keyboard_selection_count = 1;
                 report.event_count = 1;
@@ -2672,9 +2691,11 @@ impl WindowsWin32ViewInputRoute {
         offset: isize,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
-        let Some(target) = self
-            .interaction_plan
-            .next_focus_target(self.focused_widget, offset)
+        let Some(target) =
+            self.interaction_plan
+                .next_focus_target_where(self.focused_widget, offset, |target| {
+                    self.widget_accepts_tab_focus(target)
+                })
         else {
             report.unhandled_key_count = 1;
             report
@@ -3020,6 +3041,25 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    fn widget_accepts_tab_focus(&self, target: crate::ViewHitTarget) -> bool {
+        #[cfg(not(feature = "radio"))]
+        let _ = target;
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            return self
+                .live_view
+                .as_ref()
+                .and_then(|runtime| runtime.widget_radio_is_tab_stop(target.widget))
+                .or_else(|| {
+                    self.ui_command_view
+                        .as_ref()
+                        .and_then(|view| view.widget_radio_is_tab_stop(target.widget))
+                })
+                .unwrap_or(true);
+        }
+        true
+    }
+
     #[cfg(feature = "radio")]
     fn widget_radio_relative_widget(
         &self,
@@ -3326,6 +3366,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_drag_active: bool,
     pub radio_selection_count: usize,
     pub radio_keyboard_selection_count: usize,
+    pub radio_keyboard_focus_only_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -3386,6 +3427,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_drag_active = next.slider_drag_active;
         self.radio_selection_count += next.radio_selection_count;
         self.radio_keyboard_selection_count += next.radio_keyboard_selection_count;
+        self.radio_keyboard_focus_only_count += next.radio_keyboard_focus_only_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -3610,6 +3652,17 @@ pub fn dispatch_windows_win32_window_view_key_down_with_shift(
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| {
         route.dispatch_key_down_with_shift(virtual_key, shift)
+    })
+}
+
+fn dispatch_windows_win32_window_view_key_down_with_modifiers(
+    hwnd: HWND,
+    virtual_key: u32,
+    shift: bool,
+    control: bool,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_key_down_with_modifiers(virtual_key, shift, control)
     })
 }
 
@@ -4807,10 +4860,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
-        WM_KEYDOWN => match dispatch_windows_win32_window_view_key_down_with_shift(
+        WM_KEYDOWN => match dispatch_windows_win32_window_view_key_down_with_modifiers(
             hwnd,
             wparam as u32,
             (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
+            (GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0,
         ) {
             Some(report) if report.unhandled_key_count == 0 => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -5847,6 +5901,8 @@ mod tests {
         });
         let keyboard = route.dispatch_key_down(u32::from(VK_SPACE));
         let arrow = route.dispatch_key_down(u32::from(VK_UP));
+        let focus_only = route.dispatch_key_down_with_modifiers(u32::from(VK_DOWN), false, true);
+        let tabbed = route.dispatch_key_down(u32::from(VK_TAB));
 
         assert_eq!(pointer.radio_selection_count, 1);
         assert_eq!(pointer.ui_command_count, 1);
@@ -5859,6 +5915,15 @@ mod tests {
             .events
             .iter()
             .any(|event| event == "win32_view_radio_key_select:36:35"));
+        assert_eq!(focus_only.radio_keyboard_focus_only_count, 1);
+        assert_eq!(focus_only.radio_selection_count, 0);
+        assert_eq!(focus_only.focused_widget, Some(second.0));
+        assert!(focus_only
+            .events
+            .iter()
+            .any(|event| event == "win32_view_radio_key_focus_only:35:36"));
+        assert_eq!(tabbed.focus_traversal_count, 1);
+        assert_eq!(tabbed.focused_widget, Some(first.0));
         assert_eq!(route.widget_checked_value(first), Some(true));
         assert_eq!(route.widget_checked_value(second), Some(false));
     }

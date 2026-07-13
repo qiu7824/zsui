@@ -126,13 +126,17 @@ cargo run --no-default-features --features "window,label,radio,windows-win32" --
 It starts with one selected option, clicks a sibling option, rebuilds the
 stateful view so the selection remains mutually exclusive, activates the
 focused option with Space, then presses Up to move focus and selection back to
-the previous logical option without wrapping. The artifact records the common
-selection route in `native_view_radio_selection_count` and the directional
-keyboard route in `native_view_radio_keyboard_selection_count`; all emitted
+the previous logical option without wrapping. A final Tab stays on that
+selected option because it is the group's only Tab stop. The artifact records
+the common selection route in `native_view_radio_selection_count`, the
+directional keyboard route in `native_view_radio_keyboard_selection_count` and
+the Tab route in `native_view_focus_traversal_count`; all emitted
 `UiCommand` values must execute without failures or unhandled commands. AppKit
-and GTK4 consume the same `RadioSelected` event and group navigation through
-their native pointer and key callbacks; their target-machine interaction
-evidence remains pending.
+and GTK4 consume the same `RadioSelected` event, single-group Tab stop and
+group navigation through their native pointer and key callbacks. Ctrl+arrow
+focus-only navigation does not emit a selection message and is reported
+separately by `native_view_radio_keyboard_focus_only_count` when exercised;
+AppKit and GTK4 target-machine interaction evidence remains pending.
 
 The dedicated determinate ProgressBar smoke path is:
 

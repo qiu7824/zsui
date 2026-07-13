@@ -243,6 +243,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let ime = ime.clone();
         move |_controller, key, _keycode, modifiers| {
             let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+            let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
             let command_or_control = modifiers.intersects(
                 gtk::gdk::ModifierType::CONTROL_MASK
                     | gtk::gdk::ModifierType::SUPER_MASK
@@ -272,14 +273,26 @@ pub(crate) fn install_linux_gtk_draw_plan(
                         runtime_state.dispatch_text_input(" ")
                     }
                 }
-                gtk::gdk::Key::Up => runtime_state.dispatch_key(crate::NativeViewKey::Up),
-                gtk::gdk::Key::Down => runtime_state.dispatch_key(crate::NativeViewKey::Down),
-                gtk::gdk::Key::Left => {
-                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Left, shift)
-                }
-                gtk::gdk::Key::Right => {
-                    runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Right, shift)
-                }
+                gtk::gdk::Key::Up => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Up,
+                    shift,
+                    control,
+                ),
+                gtk::gdk::Key::Down => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Down,
+                    shift,
+                    control,
+                ),
+                gtk::gdk::Key::Left => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Left,
+                    shift,
+                    control,
+                ),
+                gtk::gdk::Key::Right => runtime_state.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::Right,
+                    shift,
+                    control,
+                ),
                 gtk::gdk::Key::Home => {
                     runtime_state.dispatch_key_with_shift(crate::NativeViewKey::Home, shift)
                 }

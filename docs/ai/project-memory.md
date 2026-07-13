@@ -70,10 +70,12 @@ history remain authoritative for implementation status.
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.
 - Direct RadioButton children of the same row or column form a local group
-  without a global registry. Ordinary arrow navigation follows WinUI logical
-  order, does not wrap at group boundaries, moves focus and selection together,
-  and still routes the chosen option through the application's typed message so
-  explicit state remains authoritative.
+  without a global registry. The selected option, or otherwise the first
+  option, is the group's single Tab stop. Ordinary arrow navigation follows
+  WinUI logical order, does not wrap at group boundaries, and moves focus and
+  selection together; Ctrl+arrow moves focus only. Selection still routes
+  through the application's typed message so explicit state remains
+  authoritative.
 - ComboBox type-ahead consumes each backend's committed text input through one
   shared one-second, case-insensitive prefix buffer. Repeated single characters
   cycle from the current selection, and matches route through the existing
