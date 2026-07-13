@@ -1,5 +1,8 @@
 use serde::Serialize;
 
+#[cfg(feature = "combo")]
+use std::time::{Duration, Instant};
+
 #[cfg(feature = "workbench")]
 use crate::workbench::ZsWorkbenchSpec;
 
@@ -520,6 +523,94 @@ pub enum NativeViewKey {
     End,
 }
 
+#[cfg(feature = "combo")]
+const NATIVE_COMBO_TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1_000);
+
+#[cfg(feature = "combo")]
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NativeComboTypeAheadState {
+    widget: Option<crate::WidgetId>,
+    query: String,
+    last_input: Option<Instant>,
+}
+
+#[cfg(feature = "combo")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeComboTypeAheadQuery {
+    pub(crate) text: String,
+    cycle_from_selection: bool,
+}
+
+#[cfg(feature = "combo")]
+impl NativeComboTypeAheadQuery {
+    pub(crate) fn match_start_after(
+        &self,
+        selected: Option<usize>,
+        option_count: usize,
+    ) -> Option<usize> {
+        if self.cycle_from_selection {
+            return selected;
+        }
+        selected.filter(|index| *index < option_count).map(|index| {
+            if index == 0 {
+                option_count.saturating_sub(1)
+            } else {
+                index - 1
+            }
+        })
+    }
+}
+
+#[cfg(feature = "combo")]
+impl NativeComboTypeAheadState {
+    pub(crate) fn push_text(
+        &mut self,
+        widget: crate::WidgetId,
+        text: &str,
+        now: Instant,
+    ) -> Option<NativeComboTypeAheadQuery> {
+        let normalized = text
+            .chars()
+            .filter(|character| !character.is_control() && !character.is_whitespace())
+            .collect::<String>()
+            .to_lowercase();
+        if normalized.is_empty() {
+            return None;
+        }
+
+        let continues = self.widget == Some(widget)
+            && self.last_input.is_some_and(|last_input| {
+                now.checked_duration_since(last_input)
+                    .is_some_and(|elapsed| elapsed <= NATIVE_COMBO_TYPE_AHEAD_TIMEOUT)
+            });
+        let repeated_single_character = continues
+            && normalized.chars().count() == 1
+            && !self.query.is_empty()
+            && self
+                .query
+                .chars()
+                .all(|character| normalized.starts_with(character));
+        let cycle_from_selection = !continues || repeated_single_character;
+        if !cycle_from_selection {
+            self.query.push_str(&normalized);
+        } else {
+            self.query = normalized;
+        }
+        self.widget = Some(widget);
+        self.last_input = Some(now);
+        Some(NativeComboTypeAheadQuery {
+            text: self.query.clone(),
+            cycle_from_selection,
+        })
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.widget = None;
+        self.query.clear();
+        self.last_input = None;
+    }
+}
+
 impl NativeViewKey {
     pub const fn key_name(self) -> &'static str {
         match self {
@@ -740,6 +831,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
+    pub native_view_combo_type_ahead_match_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -829,6 +921,7 @@ impl NativeWindowSmokeRunReport {
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
+            native_view_combo_type_ahead_match_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -869,6 +962,8 @@ pub(crate) struct NativeViewInputRuntime {
     focused_widget: Option<crate::WidgetId>,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
+    #[cfg(feature = "combo")]
+    combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
     ime_preedit: Option<NativeViewImePreedit>,
@@ -913,6 +1008,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub combo_selection_changed: bool,
     #[cfg(feature = "combo")]
     pub combo_keyboard_selection_changed: bool,
+    #[cfg(feature = "combo")]
+    pub combo_type_ahead_matched: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -940,6 +1037,8 @@ impl NativeViewInputRuntime {
             focused_widget: None,
             text_edit: None,
             text_drag: None,
+            #[cfg(feature = "combo")]
+            combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
             ime_preedit: None,
@@ -964,6 +1063,24 @@ impl NativeViewInputRuntime {
 
     pub(crate) fn has_focused_text_input(&self) -> bool {
         self.focused_text_input_target().is_some()
+    }
+
+    pub(crate) fn accepts_committed_text_input(&self) -> bool {
+        if self.has_focused_text_input() {
+            return true;
+        }
+        #[cfg(feature = "combo")]
+        {
+            return self
+                .focused_widget
+                .and_then(|widget| {
+                    self.current_interaction_plan()
+                        .and_then(|plan| plan.hit_target_for_widget(widget))
+                })
+                .is_some_and(|target| target.kind == crate::ViewHitTargetKind::ComboBox);
+        }
+        #[cfg(not(feature = "combo"))]
+        false
     }
 
     pub(crate) fn set_surface(&mut self, surface: Rect, dpi: Dpi) -> NativeViewInputDispatchReport {
@@ -1012,6 +1129,8 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "combo")]
+            self.combo_type_ahead.reset();
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
@@ -1201,6 +1320,13 @@ impl NativeViewInputRuntime {
             return report;
         };
         report.handled = true;
+        #[cfg(feature = "combo")]
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::ComboBox | crate::ViewHitTargetKind::ComboBoxOption { .. }
+        ) {
+            self.combo_type_ahead.reset();
+        }
         self.focus_target(target, &mut report);
         if matches!(
             target.kind,
@@ -1281,6 +1407,8 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "combo")]
+            self.combo_type_ahead.reset();
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
@@ -1353,6 +1481,7 @@ impl NativeViewInputRuntime {
 
         #[cfg(feature = "combo")]
         if target.kind == crate::ViewHitTargetKind::ComboBox {
+            self.combo_type_ahead.reset();
             let Some((selected, option_count, expanded)) = self.widget_combo_state(widget) else {
                 return report;
             };
@@ -1480,6 +1609,14 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_text_input(&mut self, text: &str) -> NativeViewInputDispatchReport {
+        self.dispatch_text_input_at(text, std::time::Instant::now())
+    }
+
+    fn dispatch_text_input_at(
+        &mut self,
+        text: &str,
+        _now: std::time::Instant,
+    ) -> NativeViewInputDispatchReport {
         self.ime_preedit = None;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
@@ -1496,6 +1633,8 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "combo")]
+            self.combo_type_ahead.reset();
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
@@ -1503,6 +1642,30 @@ impl NativeViewInputRuntime {
             report.focused_widget = None;
             return report;
         };
+        #[cfg(feature = "combo")]
+        if target.kind == crate::ViewHitTargetKind::ComboBox {
+            let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
+                return report;
+            };
+            report.handled = true;
+            let Some((selected, option_count, expanded)) = self.widget_combo_state(widget) else {
+                self.combo_type_ahead.reset();
+                return report;
+            };
+            let start_after = query.match_start_after(selected, option_count);
+            let Some(index) = self.widget_combo_type_ahead_match(widget, &query.text, start_after)
+            else {
+                return report;
+            };
+            report.combo_type_ahead_matched = true;
+            if selected == Some(index) {
+                return report;
+            }
+            report.combo_selection_changed = true;
+            report.combo_keyboard_selection_changed = true;
+            report.combo_expanded_changed = expanded;
+            return self.dispatch_view_event(ViewEvent::ComboBoxSelected { widget, index }, report);
+        }
         if !matches!(
             target.kind,
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
@@ -1665,6 +1828,8 @@ impl NativeViewInputRuntime {
         let had_focus = self.focused_widget.take().is_some();
         self.text_edit = None;
         self.text_drag = None;
+        #[cfg(feature = "combo")]
+        self.combo_type_ahead.reset();
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
@@ -1734,6 +1899,8 @@ impl NativeViewInputRuntime {
         }
         self.ime_preedit = None;
         self.text_drag = None;
+        #[cfg(feature = "combo")]
+        self.combo_type_ahead.reset();
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
@@ -2038,6 +2205,23 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "combo")]
+    fn widget_combo_type_ahead_match(
+        &self,
+        widget: crate::WidgetId,
+        query: &str,
+        start_after: Option<usize>,
+    ) -> Option<usize> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_combo_type_ahead_match(widget, query, start_after))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_combo_type_ahead_match(widget, query, start_after))
+            })
+    }
+
     #[cfg(any(feature = "combo", feature = "date-picker"))]
     fn dismiss_popup_overlays_except(
         &mut self,
@@ -2180,6 +2364,8 @@ impl NativeViewInputRuntime {
             self.focused_widget = None;
             self.text_edit = None;
             self.text_drag = None;
+            #[cfg(feature = "combo")]
+            self.combo_type_ahead.reset();
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
@@ -2373,6 +2559,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
+    report.native_view_combo_type_ahead_match_count += input.combo_type_ahead_match_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -5225,12 +5412,22 @@ mod tests {
             Some((Some(2), 3, false))
         );
 
+        let typed = runtime.dispatch_text_input("B");
+        assert!(typed.handled);
+        assert!(typed.combo_type_ahead_matched);
+        assert!(typed.combo_selection_changed);
+        assert!(typed.combo_keyboard_selection_changed);
+        assert_eq!(
+            runtime.widget_combo_state(combo_id),
+            Some((Some(0), 3, false))
+        );
+
         runtime.dispatch_key(NativeViewKey::Space);
         let blurred = runtime.blur_focus();
         assert!(blurred.handled);
         assert_eq!(
             runtime.widget_combo_state(combo_id),
-            Some((Some(2), 3, false))
+            Some((Some(0), 3, false))
         );
         runtime.dispatch_pointer_click(Point {
             x: header.bounds.x + 12,
@@ -5241,7 +5438,50 @@ mod tests {
         assert!(closed.combo_expanded_changed);
         assert_eq!(
             runtime.widget_combo_state(combo_id),
-            Some((Some(2), 3, false))
+            Some((Some(0), 3, false))
+        );
+    }
+
+    #[cfg(feature = "combo")]
+    #[test]
+    fn native_combo_type_ahead_accumulates_resets_and_cycles() {
+        let widget = crate::WidgetId::new(90);
+        let started = Instant::now();
+        let mut state = NativeComboTypeAheadState::default();
+
+        let first = state
+            .push_text(widget, "Q", started)
+            .expect("first printable character should start a query");
+        assert_eq!(first.text, "q");
+        assert_eq!(first.match_start_after(Some(2), 3), Some(2));
+
+        let continued = state
+            .push_text(widget, "u", started + Duration::from_millis(200))
+            .expect("nearby characters should continue the query");
+        assert_eq!(continued.text, "qu");
+        assert_eq!(continued.match_start_after(Some(0), 3), Some(2));
+
+        let longer = state
+            .push_text(widget, "q", started + Duration::from_millis(400))
+            .expect("different nearby characters should remain in the query");
+        assert_eq!(longer.text, "quq");
+
+        state.reset();
+        state.push_text(widget, "q", started);
+        let repeated = state
+            .push_text(widget, "Q", started + Duration::from_millis(200))
+            .expect("repeated characters should keep a cycling query");
+        assert_eq!(repeated.text, "q");
+        assert_eq!(repeated.match_start_after(Some(0), 3), Some(0));
+
+        let restarted = state
+            .push_text(widget, "B", started + Duration::from_millis(1_500))
+            .expect("expired queries should restart");
+        assert_eq!(restarted.text, "b");
+        assert_eq!(restarted.match_start_after(Some(1), 3), Some(1));
+        assert_eq!(
+            state.push_text(widget, " \r\n", started + Duration::from_millis(1_600)),
+            None
         );
     }
 

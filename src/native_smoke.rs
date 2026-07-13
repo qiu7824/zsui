@@ -105,6 +105,7 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
+    pub native_view_combo_type_ahead_match_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -173,6 +174,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
+            native_view_combo_type_ahead_match_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -278,6 +280,12 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_combo_keyboard_selection_count
             ));
         }
+        if report.native_view_combo_type_ahead_match_count > 0 {
+            notes.push(format!(
+                "native view input smoke matched {} combo type-ahead query(s)",
+                report.native_view_combo_type_ahead_match_count
+            ));
+        }
         if report.native_view_selection_count > 0 {
             notes.push(format!(
                 "native view input smoke routed {} list selection event(s)",
@@ -365,6 +373,8 @@ impl NativeHostSmokeInteractionReport {
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
                 .native_view_combo_keyboard_selection_count,
+            native_view_combo_type_ahead_match_count: report
+                .native_view_combo_type_ahead_match_count,
             native_view_toggle_count: report.native_view_toggle_count,
             native_view_selection_count: report.native_view_selection_count,
             native_view_keyboard_selection_count: report.native_view_keyboard_selection_count,
@@ -1002,6 +1012,7 @@ mod tests {
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
+            native_view_combo_type_ahead_match_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,

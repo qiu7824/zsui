@@ -73,7 +73,14 @@ define_class!(
                 .runtime
                 .borrow_mut()
                 .dispatch_ime_preedit(&text, selection);
-            self.ivars().ime_dispatched.set(report.handled);
+            let accepts_committed_text = self
+                .ivars()
+                .runtime
+                .borrow()
+                .accepts_committed_text_input();
+            self.ivars()
+                .ime_dispatched
+                .set(report.handled || accepts_committed_text);
             self.apply_input_report(report);
         }
 
@@ -306,7 +313,13 @@ define_class!(
                 .map(|text| text.to_string())
                 .unwrap_or_default();
             let code = unmodified.chars().next().map(u32::from);
-            if !command_or_control && self.ivars().runtime.borrow().has_focused_text_input() {
+            if !command_or_control
+                && self
+                    .ivars()
+                    .runtime
+                    .borrow()
+                    .accepts_committed_text_input()
+            {
                 self.ivars().ime_dispatched.set(false);
                 let events = NSArray::from_slice(&[event]);
                 self.interpretKeyEvents(&events);

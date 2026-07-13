@@ -230,6 +230,7 @@ fn run_smoke(
             .native_view_click(Point { x: 100, y: 158 })
             .native_view_key_down(NativeViewKey::Space)
             .native_view_key_down(NativeViewKey::Down)
+            .native_view_text_input("B")
             .native_view_key_down(NativeViewKey::Space);
     }
     #[cfg(all(feature = "date-picker", feature = "label"))]

@@ -142,7 +142,7 @@ const PROGRESS_GAPS: &[&str] = &[
     "AppKit and GTK4 target screenshot smoke",
 ];
 const COMBO_GAPS: &[&str] = &[
-    "long-option scrolling and type-ahead search",
+    "long-option scrolling",
     "accessibility expanded and selection providers",
     "AppKit and GTK4 target interaction smoke",
 ];

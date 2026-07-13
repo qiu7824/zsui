@@ -365,15 +365,15 @@ fn sync_linux_gtk_ime(
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: &gtk::IMMulticontext,
 ) {
-    let (has_text_input, caret_rect, surrounding) = {
+    let (accepts_committed_text, caret_rect, surrounding) = {
         let runtime = runtime.borrow();
         (
-            runtime.has_focused_text_input(),
+            runtime.accepts_committed_text_input(),
             runtime.text_input_caret_rect(),
             runtime.focused_text_input_snapshot(),
         )
     };
-    if area.has_focus() && has_text_input {
+    if area.has_focus() && accepts_committed_text {
         if let Some(rect) = caret_rect {
             ime.set_cursor_location(&gtk::gdk::Rectangle::new(
                 rect.x,
@@ -397,8 +397,8 @@ fn reset_linux_gtk_ime_if_no_text_target(
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: &gtk::IMMulticontext,
 ) {
-    let has_text_input = runtime.borrow().has_focused_text_input();
-    if !has_text_input {
+    let accepts_committed_text = runtime.borrow().accepts_committed_text_input();
+    if !accepts_committed_text {
         ime.reset();
     }
 }

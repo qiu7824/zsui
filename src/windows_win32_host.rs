@@ -10,6 +10,8 @@ use std::{
     },
 };
 
+#[cfg(feature = "combo")]
+use crate::native::NativeComboTypeAheadState;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
 };
@@ -1778,6 +1780,8 @@ pub struct WindowsWin32ViewInputRoute {
     focused_widget: Option<crate::WidgetId>,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
+    #[cfg(feature = "combo")]
+    combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
     dpi: crate::Dpi,
@@ -1801,6 +1805,8 @@ impl WindowsWin32ViewInputRoute {
             focused_widget: None,
             text_edit: None,
             text_drag: None,
+            #[cfg(feature = "combo")]
+            combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
             dpi: crate::Dpi::standard(),
@@ -1821,6 +1827,8 @@ impl WindowsWin32ViewInputRoute {
             focused_widget: None,
             text_edit: None,
             text_drag: None,
+            #[cfg(feature = "combo")]
+            combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
             dpi: crate::Dpi::standard(),
@@ -1866,6 +1874,13 @@ impl WindowsWin32ViewInputRoute {
         };
 
         report.handled = true;
+        #[cfg(feature = "combo")]
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::ComboBox | crate::ViewHitTargetKind::ComboBoxOption { .. }
+        ) {
+            self.combo_type_ahead.reset();
+        }
         self.focus_target(target, &mut report);
         if matches!(
             target.kind,
@@ -2071,6 +2086,14 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn dispatch_text_input(&mut self, text: &str) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_text_input_at(text, std::time::Instant::now())
+    }
+
+    fn dispatch_text_input_at(
+        &mut self,
+        text: &str,
+        _now: std::time::Instant,
+    ) -> WindowsWin32ViewInputDispatchReport {
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
@@ -2087,6 +2110,43 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_text_without_target:{}", widget.0));
             return report;
         };
+        #[cfg(feature = "combo")]
+        if target.kind == crate::ViewHitTargetKind::ComboBox {
+            let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
+                return report;
+            };
+            report.handled = true;
+            let Some((selected, option_count, expanded)) = self.widget_combo_state(widget) else {
+                self.combo_type_ahead.reset();
+                return report;
+            };
+            let start_after = query.match_start_after(selected, option_count);
+            let Some(index) = self.widget_combo_type_ahead_match(widget, &query.text, start_after)
+            else {
+                report.events.push(format!(
+                    "win32_view_combo_type_ahead_no_match:{}:{}",
+                    widget.0, query.text
+                ));
+                return report;
+            };
+            report.combo_type_ahead_match_count = 1;
+            report.events.push(format!(
+                "win32_view_combo_type_ahead_match:{}:{}:{index}",
+                widget.0, query.text
+            ));
+            if selected == Some(index) {
+                return report;
+            }
+            report.combo_selection_count = 1;
+            report.combo_keyboard_selection_count = 1;
+            report.combo_expanded_change_count = usize::from(expanded);
+            report.event_count = 1;
+            self.dispatch_event(
+                crate::ViewEvent::ComboBoxSelected { widget, index },
+                &mut report,
+            );
+            return report;
+        }
         if !matches!(
             target.kind,
             crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
@@ -2276,6 +2336,18 @@ impl WindowsWin32ViewInputRoute {
             let Some((selected, option_count, expanded)) = self.widget_combo_state(widget) else {
                 return report;
             };
+            if matches!(virtual_key, ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE)
+                || matches!(
+                    virtual_key,
+                    key if key == u32::from(VK_ESCAPE)
+                        || key == u32::from(VK_UP)
+                        || key == u32::from(VK_DOWN)
+                        || key == u32::from(VK_HOME)
+                        || key == u32::from(VK_END)
+                )
+            {
+                self.combo_type_ahead.reset();
+            }
             let expanded_event = match virtual_key {
                 ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE => Some(!expanded),
                 key if key == u32::from(VK_ESCAPE) && expanded => Some(false),
@@ -2551,6 +2623,8 @@ impl WindowsWin32ViewInputRoute {
             return;
         }
         self.text_drag = None;
+        #[cfg(feature = "combo")]
+        self.combo_type_ahead.reset();
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
@@ -2582,6 +2656,8 @@ impl WindowsWin32ViewInputRoute {
         };
         self.text_edit = None;
         self.text_drag = None;
+        #[cfg(feature = "combo")]
+        self.combo_type_ahead.reset();
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
@@ -2887,6 +2963,23 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "combo")]
+    fn widget_combo_type_ahead_match(
+        &self,
+        widget: crate::WidgetId,
+        query: &str,
+        start_after: Option<usize>,
+    ) -> Option<usize> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_combo_type_ahead_match(widget, query, start_after))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_combo_type_ahead_match(widget, query, start_after))
+            })
+    }
+
     #[cfg(any(feature = "combo", feature = "date-picker"))]
     fn dismiss_popup_overlays_except(
         &mut self,
@@ -3137,6 +3230,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
+    pub combo_type_ahead_match_count: usize,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -3194,6 +3288,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
+        self.combo_type_ahead_match_count += next.combo_type_ahead_match_count;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -5702,18 +5797,30 @@ mod tests {
         assert_eq!(keyboard.combo_expanded_change_count, 1);
         assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
 
+        let typed = route.dispatch_text_input("B");
+        assert!(typed.handled);
+        assert_eq!(typed.combo_type_ahead_match_count, 1);
+        assert_eq!(typed.combo_selection_count, 1);
+        assert_eq!(typed.combo_keyboard_selection_count, 1);
+        assert_eq!(typed.ui_command_count, 1);
+        assert!(typed
+            .events
+            .iter()
+            .any(|event| event == "win32_view_combo_type_ahead_match:36:b:0"));
+        assert_eq!(route.widget_combo_state(widget), Some((Some(0), 3, false)));
+
         route.dispatch_key_down(u32::from(VK_SPACE));
         let outside = route.dispatch_pointer_down(crate::Point { x: 260, y: 200 }, false);
         assert!(outside.handled);
         assert_eq!(outside.event_count, 1);
         assert_eq!(outside.ui_command_count, 1);
         assert_eq!(outside.combo_expanded_change_count, 1);
-        assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
+        assert_eq!(route.widget_combo_state(widget), Some((Some(0), 3, false)));
 
         route.dispatch_click(crate::Point { x: 10, y: 18 });
         let blurred = route.dispatch_blur();
         assert!(blurred.handled);
-        assert_eq!(route.widget_combo_state(widget), Some((Some(2), 3, false)));
+        assert_eq!(route.widget_combo_state(widget), Some((Some(0), 3, false)));
     }
 
     #[test]

@@ -1232,6 +1232,13 @@ trait LiveViewDriver: Send {
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
+    #[cfg(feature = "combo")]
+    fn widget_combo_type_ahead_match(
+        &self,
+        widget: WidgetId,
+        query: &str,
+        start_after: Option<usize>,
+    ) -> Option<usize>;
     #[cfg(feature = "date-picker")]
     fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState>;
     #[cfg(feature = "list")]
@@ -1293,6 +1300,17 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "combo")]
     pub fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.lock().widget_combo_state(widget)
+    }
+
+    #[cfg(feature = "combo")]
+    pub(crate) fn widget_combo_type_ahead_match(
+        &self,
+        widget: WidgetId,
+        query: &str,
+        start_after: Option<usize>,
+    ) -> Option<usize> {
+        self.lock()
+            .widget_combo_type_ahead_match(widget, query, start_after)
     }
 
     #[cfg(feature = "date-picker")]
@@ -1476,6 +1494,17 @@ where
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.view.widget_combo_state(widget)
+    }
+
+    #[cfg(feature = "combo")]
+    fn widget_combo_type_ahead_match(
+        &self,
+        widget: WidgetId,
+        query: &str,
+        start_after: Option<usize>,
+    ) -> Option<usize> {
+        self.view
+            .widget_combo_type_ahead_match(widget, query, start_after)
     }
 
     #[cfg(feature = "date-picker")]
@@ -2451,6 +2480,32 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_combo_state(widget))
+    }
+
+    #[cfg(feature = "combo")]
+    pub(crate) fn widget_combo_type_ahead_match(
+        &self,
+        widget: WidgetId,
+        query: &str,
+        start_after: Option<usize>,
+    ) -> Option<usize> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::ComboBox { options, .. } = &self.kind {
+                if query.is_empty() || options.is_empty() {
+                    return None;
+                }
+                let query = query.to_lowercase();
+                let start = start_after
+                    .filter(|index| *index < options.len())
+                    .map_or(0, |index| (index + 1) % options.len());
+                return (0..options.len())
+                    .map(|offset| (start + offset) % options.len())
+                    .find(|index| options[*index].to_lowercase().starts_with(&query));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_combo_type_ahead_match(widget, query, start_after))
     }
 
     #[cfg(feature = "date-picker")]
@@ -3672,6 +3727,34 @@ mod tests {
         assert_eq!(
             view.widget_combo_state(WidgetId::new(10)),
             Some((None, 1, false))
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn combo_box_type_ahead_match_wraps_after_selection() {
+        let widget = WidgetId::new(12);
+        let view = combo_box::<_, ()>(["Quartz", "Quiet", "Balanced"], Some(2)).id(widget);
+
+        assert_eq!(
+            view.widget_combo_type_ahead_match(widget, "Q", Some(2)),
+            Some(0)
+        );
+        assert_eq!(
+            view.widget_combo_type_ahead_match(widget, "qu", Some(2)),
+            Some(0)
+        );
+        assert_eq!(
+            view.widget_combo_type_ahead_match(widget, "qui", Some(2)),
+            Some(1)
+        );
+        assert_eq!(
+            view.widget_combo_type_ahead_match(widget, "b", Some(1)),
+            Some(2)
+        );
+        assert_eq!(
+            view.widget_combo_type_ahead_match(widget, "missing", Some(2)),
+            None
         );
     }
 

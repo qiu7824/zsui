@@ -150,14 +150,17 @@ cargo run --no-default-features --features "window,label,combo,windows-win32" --
 ```
 
 It begins expanded, selects an overlay option with the pointer, reopens with
-Space, selects another option with Down, and reopens for the screenshot. The
-popup is painted after ordinary siblings and its option hit targets have
-overlay priority without becoming extra Tab stops. The interaction artifact
-records `native_view_combo_expanded_change_count`,
-`native_view_combo_selection_count`, and
-`native_view_combo_keyboard_selection_count`; all emitted `UiCommand` values
-must execute without failures or unhandled commands. AppKit and GTK4 use the
-same shared typed runtime, while their target-machine evidence remains pending.
+Space, selects another option with Down, types `B` to select `Balanced` through
+the one-second type-ahead buffer, and reopens for the screenshot. The popup is
+painted after ordinary siblings and its option hit targets have overlay
+priority without becoming extra Tab stops. The interaction artifact records
+`native_view_combo_expanded_change_count`,
+`native_view_combo_selection_count`,
+`native_view_combo_keyboard_selection_count`, and
+`native_view_combo_type_ahead_match_count`; all emitted `UiCommand` values must
+execute without failures or unhandled commands. AppKit and GTK4 feed committed
+text into the same shared typed runtime, while their target-machine evidence
+remains pending.
 
 The default `--view` and `--scroll-view` paths exercise
 `NativeWindowBuilder::ui_command_view(...)`, record

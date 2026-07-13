@@ -169,6 +169,10 @@ fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
 }
 ```
 
+组合框获得键盘焦点后可直接输入选项前缀；Win32、AppKit 和 GTK4 共用一秒的
+大小写不敏感搜索缓冲，重复输入同一字符会从当前项继续循环，并仍通过
+`on_select` 的强类型消息更新应用状态。
+
 ## 强类型状态与消息
 
 ```rust,no_run

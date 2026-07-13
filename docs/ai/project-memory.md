@@ -69,6 +69,11 @@ history remain authoritative for implementation status.
 - DatePicker resolves its today marker from the operating system's local time
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.
+- ComboBox type-ahead consumes each backend's committed text input through one
+  shared one-second, case-insensitive prefix buffer. Repeated single characters
+  cycle from the current selection, and matches route through the existing
+  typed selection message; this behavior must not invent backend-specific
+  visual metrics.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 
