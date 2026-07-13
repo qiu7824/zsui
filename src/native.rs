@@ -11,6 +11,7 @@ use crate::native_input_visuals::{
     native_text_visual_geometry, native_text_visual_target,
 };
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "date-picker",
     feature = "password-box",
     feature = "tabs",
@@ -869,6 +870,10 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_radio_selection_count: usize,
     pub native_view_radio_keyboard_selection_count: usize,
     pub native_view_radio_keyboard_focus_only_count: usize,
+    pub native_view_auto_suggest_expanded_change_count: usize,
+    pub native_view_auto_suggest_highlight_change_count: usize,
+    pub native_view_auto_suggest_submit_count: usize,
+    pub native_view_auto_suggest_clear_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -967,6 +972,10 @@ impl NativeWindowSmokeRunReport {
             native_view_radio_selection_count: 0,
             native_view_radio_keyboard_selection_count: 0,
             native_view_radio_keyboard_focus_only_count: 0,
+            native_view_auto_suggest_expanded_change_count: 0,
+            native_view_auto_suggest_highlight_change_count: 0,
+            native_view_auto_suggest_submit_count: 0,
+            native_view_auto_suggest_clear_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1023,6 +1032,7 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -1031,6 +1041,7 @@ pub(crate) struct NativeViewInputRuntime {
     ))]
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -1111,6 +1122,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub surface_changed: bool,
     pub focus_visual_changed: bool,
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -1140,6 +1152,14 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub radio_keyboard_selection_changed: bool,
     #[cfg(feature = "radio")]
     pub radio_keyboard_focus_only: bool,
+    #[cfg(feature = "auto-suggest")]
+    pub auto_suggest_expanded_changed: bool,
+    #[cfg(feature = "auto-suggest")]
+    pub auto_suggest_highlight_changed: bool,
+    #[cfg(feature = "auto-suggest")]
+    pub auto_suggest_submitted: bool,
+    #[cfg(feature = "auto-suggest")]
+    pub auto_suggest_cleared: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1191,6 +1211,7 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "slider")]
             slider_drag: None,
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1199,6 +1220,7 @@ impl NativeViewInputRuntime {
             ))]
             pointer_hover: None,
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1382,6 +1404,7 @@ impl NativeViewInputRuntime {
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -1475,6 +1498,7 @@ impl NativeViewInputRuntime {
         #[cfg(not(feature = "tooltip"))]
         let _ = now;
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -1573,6 +1597,7 @@ impl NativeViewInputRuntime {
             report.handled = true;
             report.text_drag_active = false;
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1589,6 +1614,7 @@ impl NativeViewInputRuntime {
             report.handled = true;
             report.slider_drag_active = false;
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1606,6 +1632,7 @@ impl NativeViewInputRuntime {
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -1638,6 +1665,23 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "radio")]
         if target.kind == crate::ViewHitTargetKind::RadioButton {
             report.radio_selection_changed = true;
+        }
+        #[cfg(feature = "auto-suggest")]
+        match target.kind {
+            crate::ViewHitTargetKind::AutoSuggestSuggestion { .. }
+            | crate::ViewHitTargetKind::AutoSuggestSearch => {
+                report.auto_suggest_submitted = true;
+                report.auto_suggest_expanded_changed = self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+            }
+            crate::ViewHitTargetKind::AutoSuggestClear => {
+                report.auto_suggest_cleared = true;
+                report.auto_suggest_expanded_changed = self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+            }
+            _ => {}
         }
         #[cfg(feature = "combo")]
         match target.kind {
@@ -1676,6 +1720,7 @@ impl NativeViewInputRuntime {
             ..NativeViewInputDispatchReport::default()
         };
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -1704,6 +1749,7 @@ impl NativeViewInputRuntime {
             report.redraw_plan = self.current_composed_draw_plan();
         }
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -1715,6 +1761,7 @@ impl NativeViewInputRuntime {
             report
         }
         #[cfg(not(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -1845,6 +1892,61 @@ impl NativeViewInputRuntime {
                 report.redraw_plan = self.current_composed_draw_plan();
                 self.populate_text_report(&mut report);
                 return report;
+            }
+        }
+
+        #[cfg(feature = "auto-suggest")]
+        if target.kind == crate::ViewHitTargetKind::AutoSuggestBox {
+            let Some(state) = self.widget_auto_suggest_state(widget) else {
+                return report;
+            };
+            match key {
+                NativeViewKey::Up | NativeViewKey::Down if !state.suggestion_ids.is_empty() => {
+                    let offset = if key == NativeViewKey::Up { -1 } else { 1 };
+                    let Some(suggestion) = state.next_highlight(offset) else {
+                        return report;
+                    };
+                    report.handled = true;
+                    report.auto_suggest_highlight_changed = state.highlighted != Some(suggestion);
+                    report.auto_suggest_expanded_changed = !state.expanded;
+                    if !state.expanded {
+                        report = self.dispatch_view_event(
+                            ViewEvent::AutoSuggestExpandedChanged {
+                                widget,
+                                expanded: true,
+                            },
+                            report,
+                        );
+                    }
+                    return self.dispatch_view_event(
+                        ViewEvent::AutoSuggestHighlighted { widget, suggestion },
+                        report,
+                    );
+                }
+                NativeViewKey::Enter => {
+                    report.handled = true;
+                    report.auto_suggest_submitted = true;
+                    report.auto_suggest_expanded_changed = state.expanded;
+                    return self.dispatch_view_event(
+                        ViewEvent::AutoSuggestSubmitted {
+                            widget,
+                            suggestion: state.highlighted,
+                        },
+                        report,
+                    );
+                }
+                NativeViewKey::Escape if state.expanded => {
+                    report.handled = true;
+                    report.auto_suggest_expanded_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::AutoSuggestExpandedChanged {
+                            widget,
+                            expanded: false,
+                        },
+                        report,
+                    );
+                }
+                _ => {}
             }
         }
 
@@ -2286,6 +2388,12 @@ impl NativeViewInputRuntime {
         report.text_selection_changed = edit.selection_changed;
         self.text_edit = Some(state);
         if edit.text_changed {
+            #[cfg(feature = "auto-suggest")]
+            if target.kind == crate::ViewHitTargetKind::AutoSuggestBox {
+                report.auto_suggest_expanded_changed = self
+                    .widget_auto_suggest_state(widget)
+                    .is_some_and(|state| !state.expanded);
+            }
             #[cfg(feature = "password-box")]
             if let Some(password) = &mut password {
                 *password.as_string_mut() = std::mem::take(&mut *value);
@@ -2442,6 +2550,7 @@ impl NativeViewInputRuntime {
         }
         let had_preedit = self.ime_preedit.take().is_some();
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2625,6 +2734,7 @@ impl NativeViewInputRuntime {
     fn compose_input_visuals(&self, plan: NativeDrawPlan) -> NativeDrawPlan {
         let mut plan = plan;
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2745,6 +2855,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -2958,6 +3069,29 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "auto-suggest")]
+        match target.kind {
+            crate::ViewHitTargetKind::AutoSuggestSuggestion { suggestion } => {
+                return ViewEvent::AutoSuggestSubmitted {
+                    widget: target.widget,
+                    suggestion: Some(suggestion),
+                };
+            }
+            crate::ViewHitTargetKind::AutoSuggestSearch => {
+                return ViewEvent::AutoSuggestSubmitted {
+                    widget: target.widget,
+                    suggestion: self
+                        .widget_auto_suggest_state(target.widget)
+                        .and_then(|state| state.highlighted),
+                };
+            }
+            crate::ViewHitTargetKind::AutoSuggestClear => {
+                return ViewEvent::AutoSuggestCleared {
+                    widget: target.widget,
+                };
+            }
+            _ => {}
+        }
         #[cfg(feature = "number-box")]
         match target.kind {
             crate::ViewHitTargetKind::NumberBoxDecrement => {
@@ -3217,6 +3351,21 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "auto-suggest")]
+    fn widget_auto_suggest_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsAutoSuggestState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_auto_suggest_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_auto_suggest_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -3246,7 +3395,12 @@ impl NativeViewInputRuntime {
             })
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     fn dismiss_popup_overlays_except(
         &mut self,
         except: Option<crate::WidgetId>,
@@ -3260,6 +3414,10 @@ impl NativeViewInputRuntime {
                 return false;
             }
             match target.kind {
+                #[cfg(feature = "auto-suggest")]
+                crate::ViewHitTargetKind::AutoSuggestBox => self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded),
                 #[cfg(feature = "combo")]
                 crate::ViewHitTargetKind::ComboBox => self
                     .widget_combo_state(target.widget)
@@ -3278,6 +3436,17 @@ impl NativeViewInputRuntime {
         if !should_dismiss {
             return report;
         }
+        #[cfg(feature = "auto-suggest")]
+        {
+            report.auto_suggest_expanded_changed |=
+                interaction_plan.hit_targets.iter().any(|target| {
+                    Some(target.widget) != except
+                        && target.kind == crate::ViewHitTargetKind::AutoSuggestBox
+                        && self
+                            .widget_auto_suggest_state(target.widget)
+                            .is_some_and(|state| state.expanded)
+                });
+        }
         #[cfg(feature = "combo")]
         {
             report.combo_expanded_changed |= interaction_plan.hit_targets.iter().any(|target| {
@@ -3292,7 +3461,12 @@ impl NativeViewInputRuntime {
         self.dispatch_view_event(crate::ViewEvent::DismissPopupOverlays { except }, report)
     }
 
-    #[cfg(not(any(feature = "combo", feature = "date-picker", feature = "time-picker")))]
+    #[cfg(not(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    )))]
     fn dismiss_popup_overlays_except(
         &mut self,
         _except: Option<crate::WidgetId>,
@@ -3610,6 +3784,12 @@ fn record_windows_win32_view_input_report(
     report.native_view_radio_selection_count += input.radio_selection_count;
     report.native_view_radio_keyboard_selection_count += input.radio_keyboard_selection_count;
     report.native_view_radio_keyboard_focus_only_count += input.radio_keyboard_focus_only_count;
+    report.native_view_auto_suggest_expanded_change_count +=
+        input.auto_suggest_expanded_change_count;
+    report.native_view_auto_suggest_highlight_change_count +=
+        input.auto_suggest_highlight_change_count;
+    report.native_view_auto_suggest_submit_count += input.auto_suggest_submit_count;
+    report.native_view_auto_suggest_clear_count += input.auto_suggest_clear_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -6679,6 +6859,131 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "auto-suggest")]
+    #[test]
+    fn native_view_runtime_routes_auto_suggest_text_keyboard_pointer_and_clear() {
+        #[derive(Clone)]
+        enum Msg {
+            Text(crate::ZsAutoSuggestTextChange),
+            Chosen(crate::ZsAutoSuggestionId),
+            Submitted(crate::ZsAutoSuggestSubmission),
+            Expanded(bool),
+        }
+        struct State {
+            query: String,
+            expanded: bool,
+            chosen: Option<crate::ZsAutoSuggestionId>,
+            submission: Option<crate::ZsAutoSuggestSubmission>,
+        }
+
+        let widget = crate::WidgetId::new(184);
+        let chosen = crate::ZsAutoSuggestionId::new(2);
+        let builder = native_window("Platform Auto Suggest")
+            .size(360, 240)
+            .stateful_view(
+                State {
+                    query: "B".into(),
+                    expanded: true,
+                    chosen: None,
+                    submission: None,
+                },
+                move |state| {
+                    crate::column([
+                        crate::auto_suggest_box(
+                            state.query.clone(),
+                            [
+                                crate::ZsAutoSuggestion::new(1_u64, "Alpha"),
+                                crate::ZsAutoSuggestion::new(chosen, "Beta"),
+                                crate::ZsAutoSuggestion::new(3_u64, "Bravo"),
+                            ],
+                        )
+                        .id(widget)
+                        .expanded(state.expanded)
+                        .highlighted_suggestion(state.expanded.then_some(state.chosen).flatten())
+                        .on_auto_suggest_text_change(Msg::Text)
+                        .on_suggestion_chosen(Msg::Chosen)
+                        .on_query_submit(Msg::Submitted)
+                        .on_expanded_change(Msg::Expanded),
+                        crate::spacer(),
+                    ])
+                },
+                |state, message, _cx| match message {
+                    Msg::Text(change) => {
+                        state.query = change.text;
+                        if change.reason == crate::ZsAutoSuggestTextChangeReason::UserInput {
+                            state.chosen = None;
+                        }
+                    }
+                    Msg::Chosen(chosen) => state.chosen = Some(chosen),
+                    Msg::Submitted(submission) => state.submission = Some(submission),
+                    Msg::Expanded(expanded) => state.expanded = expanded,
+                },
+            );
+        let suggestion = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    target.kind
+                        == crate::ViewHitTargetKind::AutoSuggestSuggestion { suggestion: chosen }
+                })
+            })
+            .expect("expanded auto-suggest should expose strong-id row geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pointer = runtime.dispatch_pointer_click(Point {
+            x: suggestion.bounds.x + 8,
+            y: suggestion.bounds.y + suggestion.bounds.height / 2,
+        });
+        assert!(pointer.handled);
+        assert!(pointer.auto_suggest_submitted);
+        assert!(pointer.auto_suggest_expanded_changed);
+        assert_eq!(
+            runtime.widget_auto_suggest_state(widget),
+            Some(crate::ZsAutoSuggestState {
+                query: "Beta".into(),
+                suggestion_ids: vec![1_u64.into(), chosen, 3_u64.into()],
+                highlighted: None,
+                expanded: false,
+            })
+        );
+
+        let typed = runtime.dispatch_text_input("x");
+        assert!(typed.handled);
+        assert!(typed.auto_suggest_expanded_changed);
+        assert_eq!(runtime.widget_text_value(widget).as_deref(), Some("Betax"));
+        let highlighted = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(highlighted.handled);
+        assert!(highlighted.auto_suggest_highlight_changed);
+        assert_eq!(
+            runtime
+                .widget_auto_suggest_state(widget)
+                .and_then(|state| state.highlighted),
+            Some(1_u64.into())
+        );
+        let submitted = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(submitted.handled);
+        assert!(submitted.auto_suggest_submitted);
+        assert!(runtime
+            .widget_auto_suggest_state(widget)
+            .is_some_and(|state| state.query == "Alpha" && !state.expanded));
+
+        let clear = runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets
+                    .iter()
+                    .copied()
+                    .find(|target| target.kind == crate::ViewHitTargetKind::AutoSuggestClear)
+            })
+            .expect("non-empty query should expose clear button");
+        let cleared = runtime.dispatch_pointer_click(Point {
+            x: clear.bounds.x + clear.bounds.width / 2,
+            y: clear.bounds.y + clear.bounds.height / 2,
+        });
+        assert!(cleared.auto_suggest_cleared);
+        assert_eq!(runtime.widget_text_value(widget).as_deref(), Some(""));
+    }
+
     #[cfg(feature = "combo")]
     #[test]
     fn native_view_runtime_selects_combo_overlay_and_routes_keyboard_state() {
@@ -6932,6 +7237,7 @@ mod tests {
                     crate::date_picker(*value)
                         .id(widget)
                         .height(Dp::new(32.0))
+                        .today(initial)
                         .on_date_change(Msg::Changed)
                 },
                 |value, message, _cx| match message {

@@ -244,6 +244,27 @@ behavior follows the official [WinUI progress-control guidance](https://learn.mi
 and [GTK4 `GtkSpinner`](https://docs.gtk.org/gtk4/class.Spinner.html). macOS and
 Linux target-machine animation screenshots remain required.
 
+The independently selectable AutoSuggestBox smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,auto-suggest,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-auto-suggest --auto-suggest-view
+```
+
+It begins with a visible suggestion overlay, submits the strong-ID `Beta` row
+with the pointer, commits additional text, highlights a result with Down,
+submits it with Enter, exercises the trailing clear button, then types again so
+the captured window finishes with the popup visible. The application owns every
+`ZsAutoSuggestionId`; the framework reports distinct typed text-change reasons,
+chosen IDs and query submissions. The artifact records expansion, highlight,
+submission and clear counters plus the emitted `UiCommand` IDs. Windows uses a
+WinUI-like trailing query/clear column, macOS uses leading search and trailing
+cancel geometry, and GTK uses SearchEntry-style leading search and trailing
+clear geometry. These choices follow the official [WinUI AutoSuggestBox](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/auto-suggest-box),
+[Apple search-field guidance](https://developer.apple.com/design/human-interface-guidelines/search-fields)
+and [GTK4 SearchEntry](https://docs.gtk.org/gtk4/class.SearchEntry.html)
+references. AppKit and GTK4 target-machine interaction screenshots remain
+required.
+
 The dedicated typed ComboBox smoke path is:
 
 ```powershell

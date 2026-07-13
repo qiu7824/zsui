@@ -1,6 +1,8 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use serde_json::json;
+#[cfg(feature = "auto-suggest")]
+use zsui::auto_suggest_box;
 #[cfg(feature = "button")]
 use zsui::button;
 #[cfg(all(feature = "button", feature = "label", feature = "checkbox"))]
@@ -15,6 +17,7 @@ use zsui::checkbox;
     all(feature = "radio", feature = "label"),
     all(feature = "progress", feature = "label"),
     all(feature = "progress-ring", feature = "label"),
+    all(feature = "auto-suggest", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -46,6 +49,7 @@ use zsui::toggle_button;
     all(feature = "password-box", feature = "label"),
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
+    all(feature = "auto-suggest", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -60,6 +64,7 @@ use zsui::CommandId;
     all(feature = "number-box", feature = "label"),
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
+    all(feature = "auto-suggest", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -100,6 +105,7 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
     all(feature = "password-box", feature = "label"),
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
+    all(feature = "auto-suggest", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -107,6 +113,11 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
     all(feature = "grid", feature = "button", feature = "label")
 ))]
 use zsui::{Point, UiCommand, WidgetId};
+#[cfg(all(feature = "auto-suggest", feature = "label"))]
+use zsui::{
+    ZsAutoSuggestSubmission, ZsAutoSuggestTextChange, ZsAutoSuggestTextChangeReason,
+    ZsAutoSuggestion, ZsAutoSuggestionId,
+};
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -143,6 +154,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--progress-view" || arg == "--progress"),
         args.iter()
             .any(|arg| arg == "--progress-ring-view" || arg == "--progress-ring"),
+        args.iter()
+            .any(|arg| arg == "--auto-suggest-view" || arg == "--auto-suggest"),
         args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
@@ -181,6 +194,7 @@ fn run_smoke(
     include_radio_view: bool,
     include_progress_view: bool,
     include_progress_ring_view: bool,
+    include_auto_suggest_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -232,6 +246,10 @@ fn run_smoke(
         return Err(
             "--progress-ring-view requires the progress-ring and label features".to_string(),
         );
+    }
+    #[cfg(not(all(feature = "auto-suggest", feature = "label")))]
+    if include_auto_suggest_view {
+        return Err("--auto-suggest-view requires the auto-suggest and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -381,6 +399,16 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Space)
             .native_view_scroll(Point { x: 100, y: 158 }, 48);
     }
+    #[cfg(all(feature = "auto-suggest", feature = "label"))]
+    if include_auto_suggest_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 100, y: 154 })
+            .native_view_text_input("x")
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Enter)
+            .native_view_click(Point { x: 480, y: 80 })
+            .native_view_text_input("B");
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -446,6 +474,8 @@ fn run_smoke(
         attach_progress_view(builder)
     } else if include_progress_ring_view {
         attach_progress_ring_view(builder)
+    } else if include_auto_suggest_view {
+        attach_auto_suggest_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -787,6 +817,97 @@ fn attach_progress_ring_view(builder: NativeWindowBuilder) -> NativeWindowBuilde
     )
 }
 
+#[cfg(all(feature = "auto-suggest", feature = "label"))]
+#[derive(Clone)]
+enum AutoSuggestSmokeMsg {
+    TextChanged(ZsAutoSuggestTextChange),
+    SuggestionChosen(ZsAutoSuggestionId),
+    Submitted(ZsAutoSuggestSubmission),
+    Expanded(bool),
+}
+
+#[cfg(all(feature = "auto-suggest", feature = "label"))]
+struct AutoSuggestSmokeState {
+    query: String,
+    highlighted: Option<ZsAutoSuggestionId>,
+    expanded: bool,
+}
+
+#[cfg(all(feature = "auto-suggest", feature = "label"))]
+fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        AutoSuggestSmokeState {
+            query: "B".into(),
+            highlighted: None,
+            expanded: true,
+        },
+        |state| {
+            let highlighted = state.expanded.then_some(state.highlighted).flatten();
+            column([
+                text::<AutoSuggestSmokeMsg>("ZSUI AutoSuggestBox Smoke")
+                    .height(zsui::Dp::new(28.0)),
+                auto_suggest_box(
+                    state.query.clone(),
+                    [
+                        ZsAutoSuggestion::new(1_u64, "Alpha"),
+                        ZsAutoSuggestion::new(2_u64, "Beta"),
+                        ZsAutoSuggestion::new(3_u64, "Bravo"),
+                        ZsAutoSuggestion::new(4_u64, "Build"),
+                        ZsAutoSuggestion::new(5_u64, "Bundle"),
+                        ZsAutoSuggestion::new(6_u64, "Button"),
+                        ZsAutoSuggestion::new(7_u64, "Browser"),
+                        ZsAutoSuggestion::new(8_u64, "Branch"),
+                        ZsAutoSuggestion::new(9_u64, "Baseline"),
+                        ZsAutoSuggestion::new(10_u64, "Backend"),
+                    ],
+                )
+                .id(WidgetId::new(23))
+                .placeholder("Search components")
+                .expanded(state.expanded)
+                .highlighted_suggestion(highlighted)
+                .no_results_text("No matching components")
+                .on_auto_suggest_text_change(AutoSuggestSmokeMsg::TextChanged)
+                .on_suggestion_chosen(AutoSuggestSmokeMsg::SuggestionChosen)
+                .on_query_submit(AutoSuggestSmokeMsg::Submitted)
+                .on_expanded_change(AutoSuggestSmokeMsg::Expanded),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            AutoSuggestSmokeMsg::TextChanged(change) => {
+                state.query = change.text;
+                if change.reason == ZsAutoSuggestTextChangeReason::UserInput {
+                    state.highlighted = None;
+                }
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.auto_suggest_text_changed",
+                )));
+            }
+            AutoSuggestSmokeMsg::SuggestionChosen(suggestion) => {
+                state.highlighted = Some(suggestion);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.auto_suggest_chosen",
+                )));
+            }
+            AutoSuggestSmokeMsg::Submitted(_submission) => {
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.auto_suggest_submitted",
+                )));
+            }
+            AutoSuggestSmokeMsg::Expanded(expanded) => {
+                state.expanded = expanded;
+                if !expanded {
+                    state.highlighted = None;
+                }
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.auto_suggest_expanded",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1053,6 +1174,11 @@ fn attach_date_picker_view(
 
 #[cfg(not(all(feature = "combo", feature = "label")))]
 fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "auto-suggest", feature = "label")))]
+fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

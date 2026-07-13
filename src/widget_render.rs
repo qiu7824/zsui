@@ -7,14 +7,22 @@ use serde::{Deserialize, Serialize};
     feature = "toggle-button"
 ))]
 use crate::TextRole;
+#[cfg(feature = "auto-suggest")]
+use crate::ZsAutoSuggestion;
 #[cfg(feature = "date-picker")]
 use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
 #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
 use crate::{HorizontalAlign, TextWeight};
-#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+#[cfg(any(
+    feature = "auto-suggest",
+    feature = "combo",
+    feature = "date-picker",
+    feature = "time-picker"
+))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "combo",
     feature = "date-picker",
     feature = "number-box",
@@ -26,14 +34,24 @@ use crate::{NativeDrawTextCommand, SemanticTextStyle};
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
 
-#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+#[cfg(any(
+    feature = "auto-suggest",
+    feature = "combo",
+    feature = "date-picker",
+    feature = "time-picker"
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsPopupPlacement {
     Below,
     Above,
 }
 
-#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+#[cfg(any(
+    feature = "auto-suggest",
+    feature = "combo",
+    feature = "date-picker",
+    feature = "time-picker"
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ZsPlacedPopup {
     bounds: Rect,
@@ -1060,6 +1078,416 @@ pub fn zs_tab_view_native_draw_plan(
         width: 1,
     });
     NativeDrawPlan::new(commands)
+}
+
+#[cfg(feature = "auto-suggest")]
+pub const ZS_AUTO_SUGGEST_MAX_VISIBLE_ITEMS: usize = 8;
+
+#[cfg(feature = "auto-suggest")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsAutoSuggestPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "auto-suggest")]
+impl ZsAutoSuggestPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Macos
+        } else {
+            Self::Gtk
+        }
+    }
+}
+
+#[cfg(feature = "auto-suggest")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsAutoSuggestMetrics {
+    pub control_height: Dp,
+    pub row_height: Dp,
+    pub text_padding: Dp,
+    pub icon_column_width: Dp,
+    pub icon_size: Dp,
+    pub popup_gap: Dp,
+    pub control_radius: Dp,
+    pub overlay_radius: Dp,
+    pub leading_search_icon: bool,
+}
+
+#[cfg(feature = "auto-suggest")]
+impl ZsAutoSuggestMetrics {
+    pub const fn for_platform(platform: ZsAutoSuggestPlatformStyle) -> Self {
+        match platform {
+            ZsAutoSuggestPlatformStyle::Windows => Self {
+                control_height: Dp::new(32.0),
+                row_height: Dp::new(36.0),
+                text_padding: Dp::new(12.0),
+                icon_column_width: Dp::new(32.0),
+                icon_size: Dp::new(16.0),
+                popup_gap: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                overlay_radius: Dp::new(8.0),
+                leading_search_icon: false,
+            },
+            ZsAutoSuggestPlatformStyle::Macos => Self {
+                control_height: Dp::new(28.0),
+                row_height: Dp::new(28.0),
+                text_padding: Dp::new(8.0),
+                icon_column_width: Dp::new(24.0),
+                icon_size: Dp::new(14.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(10.0),
+                leading_search_icon: true,
+            },
+            ZsAutoSuggestPlatformStyle::Gtk => Self {
+                control_height: Dp::new(34.0),
+                row_height: Dp::new(34.0),
+                text_padding: Dp::new(10.0),
+                icon_column_width: Dp::new(28.0),
+                icon_size: Dp::new(16.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(8.0),
+                overlay_radius: Dp::new(12.0),
+                leading_search_icon: true,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "auto-suggest")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsAutoSuggestRenderPlan {
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+    pub search_button: Option<Rect>,
+    pub search_icon: Option<Rect>,
+    pub clear_button: Option<Rect>,
+    pub clear_icon: Option<Rect>,
+    pub popup: Option<Rect>,
+    pub popup_placement: Option<ZsPopupPlacement>,
+    pub first_visible_suggestion: usize,
+    pub suggestion_rows: Vec<Rect>,
+    pub control_radius: i32,
+    pub overlay_radius: i32,
+    pub platform: ZsAutoSuggestPlatformStyle,
+}
+
+#[cfg(feature = "auto-suggest")]
+#[allow(clippy::too_many_arguments)]
+pub fn zs_auto_suggest_render_plan(
+    bounds: Rect,
+    row_count: usize,
+    highlighted_index: Option<usize>,
+    expanded: bool,
+    query_empty: bool,
+    query_icon: bool,
+    platform: ZsAutoSuggestPlatformStyle,
+    dpi: Dpi,
+) -> ZsAutoSuggestRenderPlan {
+    zs_auto_suggest_render_plan_impl(
+        bounds,
+        row_count,
+        highlighted_index,
+        expanded,
+        query_empty,
+        query_icon,
+        platform,
+        dpi,
+        None,
+    )
+}
+
+#[cfg(feature = "auto-suggest")]
+#[allow(clippy::too_many_arguments)]
+pub fn zs_auto_suggest_render_plan_in_viewport(
+    bounds: Rect,
+    row_count: usize,
+    highlighted_index: Option<usize>,
+    expanded: bool,
+    query_empty: bool,
+    query_icon: bool,
+    platform: ZsAutoSuggestPlatformStyle,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsAutoSuggestRenderPlan {
+    zs_auto_suggest_render_plan_impl(
+        bounds,
+        row_count,
+        highlighted_index,
+        expanded,
+        query_empty,
+        query_icon,
+        platform,
+        dpi,
+        Some(viewport),
+    )
+}
+
+#[cfg(feature = "auto-suggest")]
+#[allow(clippy::too_many_arguments)]
+fn zs_auto_suggest_render_plan_impl(
+    bounds: Rect,
+    row_count: usize,
+    highlighted_index: Option<usize>,
+    expanded: bool,
+    query_empty: bool,
+    query_icon: bool,
+    platform: ZsAutoSuggestPlatformStyle,
+    dpi: Dpi,
+    viewport: Option<Rect>,
+) -> ZsAutoSuggestRenderPlan {
+    let metrics = ZsAutoSuggestMetrics::for_platform(platform);
+    let padding = metrics.text_padding.to_px(dpi).round_i32().max(1);
+    let icon_column = metrics.icon_column_width.to_px(dpi).round_i32().max(1);
+    let icon_size = metrics
+        .icon_size
+        .to_px(dpi)
+        .round_i32()
+        .clamp(1, bounds.height.max(1));
+    let icon_rect = |x: i32| Rect {
+        x: x.saturating_add((icon_column.saturating_sub(icon_size)) / 2),
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(icon_size)) / 2),
+        width: icon_size,
+        height: icon_size,
+    };
+    let button_rect = |x: i32| Rect {
+        x,
+        y: bounds.y,
+        width: icon_column.min(bounds.width.max(1)),
+        height: bounds.height,
+    };
+    let search_visible = query_icon && (metrics.leading_search_icon || query_empty);
+    let search_button = search_visible.then(|| {
+        let x = if metrics.leading_search_icon {
+            bounds.x
+        } else {
+            bounds
+                .x
+                .saturating_add(bounds.width)
+                .saturating_sub(icon_column)
+        };
+        button_rect(x)
+    });
+    let clear_button = (!query_empty).then(|| {
+        button_rect(
+            bounds
+                .x
+                .saturating_add(bounds.width)
+                .saturating_sub(icon_column),
+        )
+    });
+    let text_left = bounds.x.saturating_add(padding).saturating_add(
+        if search_visible && metrics.leading_search_icon {
+            icon_column
+        } else {
+            0
+        },
+    );
+    let trailing_column =
+        if clear_button.is_some() || (search_visible && !metrics.leading_search_icon) {
+            icon_column
+        } else {
+            0
+        };
+    let text_right = bounds
+        .x
+        .saturating_add(bounds.width)
+        .saturating_sub(padding)
+        .saturating_sub(trailing_column);
+    let text_bounds = Rect {
+        x: text_left,
+        y: bounds.y,
+        width: text_right.saturating_sub(text_left).max(0),
+        height: bounds.height,
+    };
+    let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
+    let gap = metrics.popup_gap.to_px(dpi).round_i32().max(0);
+    let visible_rows = auto_suggest_visible_row_count(bounds, row_count, row_height, gap, viewport);
+    let maximum_first = row_count.saturating_sub(visible_rows);
+    let first_visible_suggestion = highlighted_index
+        .filter(|index| *index < row_count)
+        .map(|index| {
+            index
+                .saturating_add(1)
+                .saturating_sub(visible_rows)
+                .min(maximum_first)
+        })
+        .unwrap_or_default();
+    let placed_popup = (expanded && row_count > 0).then(|| {
+        place_popup(
+            bounds,
+            bounds.width.max(1),
+            row_height.saturating_mul(i32::try_from(visible_rows).unwrap_or(i32::MAX)),
+            gap,
+            viewport,
+        )
+    });
+    let popup = placed_popup.map(|placed| placed.bounds);
+    let suggestion_rows = popup
+        .map(|popup| {
+            (0..visible_rows)
+                .map(|index| Rect {
+                    x: popup.x,
+                    y: popup.y.saturating_add(
+                        row_height.saturating_mul(i32::try_from(index).unwrap_or(i32::MAX)),
+                    ),
+                    width: popup.width,
+                    height: row_height,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    ZsAutoSuggestRenderPlan {
+        bounds,
+        text_bounds,
+        search_button,
+        search_icon: search_button.map(|button| icon_rect(button.x)),
+        clear_button,
+        clear_icon: clear_button.map(|button| icon_rect(button.x)),
+        popup,
+        popup_placement: placed_popup.map(|placed| placed.placement),
+        first_visible_suggestion,
+        suggestion_rows,
+        control_radius: metrics.control_radius.to_px(dpi).round_i32().max(1),
+        overlay_radius: metrics.overlay_radius.to_px(dpi).round_i32().max(1),
+        platform,
+    }
+}
+
+#[cfg(feature = "auto-suggest")]
+fn auto_suggest_visible_row_count(
+    anchor: Rect,
+    row_count: usize,
+    row_height: i32,
+    gap: i32,
+    viewport: Option<Rect>,
+) -> usize {
+    let capped_count = row_count.min(ZS_AUTO_SUGGEST_MAX_VISIBLE_ITEMS);
+    let Some(viewport) = viewport.filter(|viewport| viewport.width > 0 && viewport.height > 0)
+    else {
+        return capped_count;
+    };
+    let viewport_bottom = viewport.y.saturating_add(viewport.height);
+    let below_y = anchor.y.saturating_add(anchor.height).saturating_add(gap);
+    let above_bottom = anchor.y.saturating_sub(gap);
+    let available_below = viewport_bottom.saturating_sub(below_y).max(0);
+    let available_above = above_bottom.saturating_sub(viewport.y).max(0);
+    let available_rows = available_below.max(available_above) / row_height.max(1);
+    capped_count.min(available_rows.max(1) as usize)
+}
+
+#[cfg(feature = "auto-suggest")]
+pub fn zs_auto_suggest_header_native_draw_plan(
+    plan: &ZsAutoSuggestRenderPlan,
+    query: &str,
+    placeholder: Option<&str>,
+) -> NativeDrawPlan {
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: plan.bounds,
+        fill: NativeDrawFill::Role(ColorRole::Surface),
+        stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+        radius: plan.control_radius,
+    }];
+    let mut text_style = SemanticTextStyle::body();
+    let label = if query.is_empty() {
+        text_style.color = ColorRole::SecondaryText;
+        placeholder.unwrap_or_default()
+    } else {
+        query
+    };
+    commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+        label,
+        plan.text_bounds,
+        text_style,
+    )));
+    if let Some(bounds) = plan.search_icon {
+        commands.push(NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(ZsIcon::Search, bounds, NativeIconColorMode::ThemeAware)
+                .with_color(ColorRole::SecondaryText),
+        ));
+    }
+    if let Some(bounds) = plan.clear_icon {
+        commands.push(NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(ZsIcon::Close, bounds, NativeIconColorMode::ThemeAware)
+                .with_color(ColorRole::SecondaryText),
+        ));
+    }
+    NativeDrawPlan::new(commands)
+}
+
+#[cfg(feature = "auto-suggest")]
+pub fn zs_auto_suggest_popup_native_draw_plan(
+    plan: &ZsAutoSuggestRenderPlan,
+    suggestions: &[ZsAutoSuggestion],
+    highlighted: Option<crate::ZsAutoSuggestionId>,
+    no_results_text: Option<&str>,
+    dpi: Dpi,
+) -> NativeDrawPlan {
+    let Some(popup) = plan.popup else {
+        return NativeDrawPlan::default();
+    };
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: popup,
+        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+        stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+        radius: plan.overlay_radius,
+    }];
+    let padding = ZsAutoSuggestMetrics::for_platform(plan.platform)
+        .text_padding
+        .to_px(dpi)
+        .round_i32()
+        .max(1);
+    if suggestions.is_empty() {
+        if let (Some(label), Some(row)) = (no_results_text, plan.suggestion_rows.first()) {
+            let mut style = SemanticTextStyle::body();
+            style.color = ColorRole::SecondaryText;
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                label,
+                inset_row_text(*row, padding),
+                style,
+            )));
+        }
+        return NativeDrawPlan::new(commands);
+    }
+    for (suggestion, row) in suggestions
+        .iter()
+        .skip(plan.first_visible_suggestion)
+        .zip(&plan.suggestion_rows)
+    {
+        if highlighted == Some(suggestion.id()) {
+            commands.push(NativeDrawCommand::RoundFill {
+                rect: *row,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 36,
+                },
+                radius: plan.control_radius,
+            });
+        }
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            suggestion.text(),
+            inset_row_text(*row, padding),
+            SemanticTextStyle::body(),
+        )));
+    }
+    NativeDrawPlan::new(commands)
+}
+
+#[cfg(feature = "auto-suggest")]
+fn inset_row_text(row: Rect, padding: i32) -> Rect {
+    Rect {
+        x: row.x.saturating_add(padding),
+        y: row.y,
+        width: row.width.saturating_sub(padding.saturating_mul(2)).max(0),
+        height: row.height,
+    }
 }
 
 #[cfg(feature = "combo")]
@@ -2188,7 +2616,12 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
     NativeDrawPlan::new(commands)
 }
 
-#[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+#[cfg(any(
+    feature = "auto-suggest",
+    feature = "combo",
+    feature = "date-picker",
+    feature = "time-picker"
+))]
 fn place_popup(
     anchor: Rect,
     requested_width: i32,
@@ -2542,6 +2975,122 @@ mod tests {
             ))
             .command_count(),
             1
+        );
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    #[test]
+    fn auto_suggest_preserves_platform_search_field_metrics_and_semantic_icons() {
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 300,
+            height: 32,
+        };
+        let windows = zs_auto_suggest_render_plan(
+            bounds,
+            3,
+            None,
+            true,
+            true,
+            true,
+            ZsAutoSuggestPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_auto_suggest_render_plan(
+            bounds,
+            3,
+            None,
+            false,
+            false,
+            true,
+            ZsAutoSuggestPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_auto_suggest_render_plan(
+            Rect {
+                height: 34,
+                ..bounds
+            },
+            3,
+            None,
+            false,
+            true,
+            true,
+            ZsAutoSuggestPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.control_radius, 4);
+        assert_eq!(
+            windows.search_button.expect("Windows query button").width,
+            32
+        );
+        assert_eq!(windows.search_icon.expect("Windows query icon").width, 16);
+        assert_eq!(windows.popup_placement, Some(ZsPopupPlacement::Below));
+        assert_eq!(windows.suggestion_rows.len(), 3);
+        assert_eq!(macos.search_button.expect("macOS search icon").x, 0);
+        assert_eq!(macos.clear_button.expect("macOS cancel button").x, 276);
+        assert_eq!(macos.control_radius, 6);
+        assert_eq!(gtk.control_radius, 8);
+        assert!(matches!(
+            zs_auto_suggest_header_native_draw_plan(&windows, "", Some("Search"))
+                .commands
+                .as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::Text(_),
+                NativeDrawCommand::Icon(NativeDrawIconCommand {
+                    icon: ZsIcon::Search,
+                    ..
+                })
+            ]
+        ));
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    #[test]
+    fn auto_suggest_popup_keeps_strong_id_highlight_visible_and_flips_in_viewport() {
+        let suggestions = (0..20)
+            .map(|index| ZsAutoSuggestion::new(index as u64, format!("Result {index}")))
+            .collect::<Vec<_>>();
+        let plan = zs_auto_suggest_render_plan_in_viewport(
+            Rect {
+                x: 250,
+                y: 250,
+                width: 180,
+                height: 32,
+            },
+            suggestions.len(),
+            Some(18),
+            true,
+            false,
+            true,
+            ZsAutoSuggestPlatformStyle::Windows,
+            Dpi::standard(),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 360,
+                height: 320,
+            },
+        );
+
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Above));
+        assert!(plan.first_visible_suggestion > 0);
+        assert!(18 >= plan.first_visible_suggestion);
+        assert!(18 < plan.first_visible_suggestion + plan.suggestion_rows.len());
+        assert_eq!(plan.popup.expect("popup").x, 180);
+        assert_eq!(
+            zs_auto_suggest_popup_native_draw_plan(
+                &plan,
+                &suggestions,
+                Some(18_u64.into()),
+                None,
+                Dpi::standard(),
+            )
+            .command_count(),
+            plan.suggestion_rows.len() + 2
         );
     }
 

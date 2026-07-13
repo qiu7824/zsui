@@ -17,6 +17,7 @@ use crate::native_input_visuals::{
     native_text_visual_target,
 };
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "date-picker",
     feature = "password-box",
     feature = "tabs",
@@ -1836,6 +1837,7 @@ pub struct WindowsWin32ViewInputRoute {
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -1844,6 +1846,7 @@ pub struct WindowsWin32ViewInputRoute {
     ))]
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -1883,6 +1886,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(feature = "slider")]
             slider_drag: None,
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1891,6 +1895,7 @@ impl WindowsWin32ViewInputRoute {
             ))]
             pointer_hover: None,
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1926,6 +1931,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(feature = "slider")]
             slider_drag: None,
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -1934,6 +1940,7 @@ impl WindowsWin32ViewInputRoute {
             ))]
             pointer_hover: None,
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -2030,6 +2037,7 @@ impl WindowsWin32ViewInputRoute {
         let target = self.interaction_plan.hit_target_at(point);
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2125,6 +2133,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(not(feature = "tooltip"))]
         let _ = now;
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2226,6 +2235,7 @@ impl WindowsWin32ViewInputRoute {
             report.text_drag_active = false;
             report.events.push("win32_view_text_pointer_up".to_string());
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -2248,6 +2258,7 @@ impl WindowsWin32ViewInputRoute {
                 .events
                 .push("win32_view_slider_pointer_up".to_string());
             #[cfg(any(
+                feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "password-box",
                 feature = "tabs",
@@ -2260,6 +2271,7 @@ impl WindowsWin32ViewInputRoute {
         let mut report = self.dispatch_click(point);
         report.pointer_up_count = 1;
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2292,6 +2304,7 @@ impl WindowsWin32ViewInputRoute {
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2304,6 +2317,7 @@ impl WindowsWin32ViewInputRoute {
             report
         }
         #[cfg(not(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2331,6 +2345,7 @@ impl WindowsWin32ViewInputRoute {
             self.rebuild_pending_draw_plan();
         }
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2342,6 +2357,7 @@ impl WindowsWin32ViewInputRoute {
             report
         }
         #[cfg(not(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -2503,6 +2519,13 @@ impl WindowsWin32ViewInputRoute {
             .push(format!("win32_view_text_changed:{}", widget.0));
         if edit.text_changed {
             report.event_count = 1;
+            #[cfg(feature = "auto-suggest")]
+            if target.kind == crate::ViewHitTargetKind::AutoSuggestBox {
+                report.auto_suggest_expanded_change_count = usize::from(
+                    self.widget_auto_suggest_state(widget)
+                        .is_some_and(|state| !state.expanded),
+                );
+            }
             #[cfg(feature = "password-box")]
             if let Some(password) = &mut password {
                 *password.as_string_mut() = std::mem::take(&mut *value);
@@ -2641,6 +2664,84 @@ impl WindowsWin32ViewInputRoute {
                     widget.0, state.selection.caret
                 ));
                 self.rebuild_pending_draw_plan();
+                return report;
+            }
+        }
+
+        #[cfg(feature = "auto-suggest")]
+        if target.kind == crate::ViewHitTargetKind::AutoSuggestBox {
+            let Some(state) = self.widget_auto_suggest_state(widget) else {
+                return report;
+            };
+            if (virtual_key == u32::from(VK_UP) || virtual_key == u32::from(VK_DOWN))
+                && !state.suggestion_ids.is_empty()
+            {
+                let offset = if virtual_key == u32::from(VK_UP) {
+                    -1
+                } else {
+                    1
+                };
+                let Some(suggestion) = state.next_highlight(offset) else {
+                    return report;
+                };
+                report.handled = true;
+                report.auto_suggest_highlight_change_count =
+                    usize::from(state.highlighted != Some(suggestion));
+                report.auto_suggest_expanded_change_count = usize::from(!state.expanded);
+                report.event_count = 1;
+                if !state.expanded {
+                    self.dispatch_event(
+                        crate::ViewEvent::AutoSuggestExpandedChanged {
+                            widget,
+                            expanded: true,
+                        },
+                        &mut report,
+                    );
+                    report.event_count += 1;
+                }
+                report.events.push(format!(
+                    "win32_view_auto_suggest_highlight:{}:{}",
+                    widget.0,
+                    suggestion.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::AutoSuggestHighlighted { widget, suggestion },
+                    &mut report,
+                );
+                return report;
+            }
+            if virtual_key == ZSUI_WIN32_VK_RETURN {
+                report.handled = true;
+                report.auto_suggest_submit_count = 1;
+                report.auto_suggest_expanded_change_count = usize::from(state.expanded);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_auto_suggest_keyboard_submit:{}",
+                    widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::AutoSuggestSubmitted {
+                        widget,
+                        suggestion: state.highlighted,
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+            if virtual_key == u32::from(VK_ESCAPE) && state.expanded {
+                report.handled = true;
+                report.auto_suggest_expanded_change_count = 1;
+                report.event_count = 1;
+                report
+                    .events
+                    .push(format!("win32_view_auto_suggest_escape:{}", widget.0));
+                self.dispatch_event(
+                    crate::ViewEvent::AutoSuggestExpandedChanged {
+                        widget,
+                        expanded: false,
+                    },
+                    &mut report,
+                );
                 return report;
             }
         }
@@ -3289,6 +3390,7 @@ impl WindowsWin32ViewInputRoute {
             self.password_peek = None;
         }
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -3351,6 +3453,69 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "auto-suggest")]
+        match target.kind {
+            crate::ViewHitTargetKind::AutoSuggestSuggestion { suggestion } => {
+                let expanded = self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+                report.auto_suggest_submit_count = 1;
+                report.auto_suggest_expanded_change_count = usize::from(expanded);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_auto_suggest_submit:{}:{}",
+                    target.widget.0,
+                    suggestion.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::AutoSuggestSubmitted {
+                        widget: target.widget,
+                        suggestion: Some(suggestion),
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::AutoSuggestSearch => {
+                let state = self.widget_auto_suggest_state(target.widget);
+                report.auto_suggest_submit_count = 1;
+                report.auto_suggest_expanded_change_count =
+                    usize::from(state.as_ref().is_some_and(|state| state.expanded));
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_auto_suggest_query_submit:{}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::AutoSuggestSubmitted {
+                        widget: target.widget,
+                        suggestion: state.and_then(|state| state.highlighted),
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::AutoSuggestClear => {
+                let expanded = self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded);
+                report.auto_suggest_clear_count = 1;
+                report.auto_suggest_expanded_change_count = usize::from(expanded);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_auto_suggest_cleared:{}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::AutoSuggestCleared {
+                        widget: target.widget,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
         #[cfg(feature = "number-box")]
         match target.kind {
             crate::ViewHitTargetKind::NumberBoxDecrement
@@ -3785,6 +3950,21 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "auto-suggest")]
+    fn widget_auto_suggest_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsAutoSuggestState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_auto_suggest_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_auto_suggest_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -3814,12 +3994,25 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     fn dismiss_popup_overlays_except(
         &mut self,
         except: Option<crate::WidgetId>,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "auto-suggest")]
+        let auto_suggest_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
+            Some(target.widget) != except
+                && target.kind == crate::ViewHitTargetKind::AutoSuggestBox
+                && self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded)
+        });
         #[cfg(feature = "combo")]
         let combo_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
             Some(target.widget) != except
@@ -3833,6 +4026,10 @@ impl WindowsWin32ViewInputRoute {
                 return false;
             }
             match target.kind {
+                #[cfg(feature = "auto-suggest")]
+                crate::ViewHitTargetKind::AutoSuggestBox => self
+                    .widget_auto_suggest_state(target.widget)
+                    .is_some_and(|state| state.expanded),
                 #[cfg(feature = "combo")]
                 crate::ViewHitTargetKind::ComboBox => self
                     .widget_combo_state(target.widget)
@@ -3851,6 +4048,10 @@ impl WindowsWin32ViewInputRoute {
         if !should_dismiss {
             return;
         }
+        #[cfg(feature = "auto-suggest")]
+        {
+            report.auto_suggest_expanded_change_count += usize::from(auto_suggest_was_dismissed);
+        }
         #[cfg(feature = "combo")]
         {
             report.combo_expanded_change_count += usize::from(combo_was_dismissed);
@@ -3863,7 +4064,12 @@ impl WindowsWin32ViewInputRoute {
         self.dispatch_event(crate::ViewEvent::DismissPopupOverlays { except }, report);
     }
 
-    #[cfg(not(any(feature = "combo", feature = "date-picker", feature = "time-picker")))]
+    #[cfg(not(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    )))]
     fn dismiss_popup_overlays_except(
         &mut self,
         _except: Option<crate::WidgetId>,
@@ -3956,6 +4162,7 @@ impl WindowsWin32ViewInputRoute {
             return false;
         };
         #[cfg(any(
+            feature = "auto-suggest",
             feature = "date-picker",
             feature = "password-box",
             feature = "tabs",
@@ -4043,6 +4250,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "date-picker",
         feature = "password-box",
         feature = "tabs",
@@ -4210,6 +4418,10 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub radio_selection_count: usize,
     pub radio_keyboard_selection_count: usize,
     pub radio_keyboard_focus_only_count: usize,
+    pub auto_suggest_expanded_change_count: usize,
+    pub auto_suggest_highlight_change_count: usize,
+    pub auto_suggest_submit_count: usize,
+    pub auto_suggest_clear_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -4275,6 +4487,10 @@ impl WindowsWin32ViewInputDispatchReport {
         self.radio_selection_count += next.radio_selection_count;
         self.radio_keyboard_selection_count += next.radio_keyboard_selection_count;
         self.radio_keyboard_focus_only_count += next.radio_keyboard_focus_only_count;
+        self.auto_suggest_expanded_change_count += next.auto_suggest_expanded_change_count;
+        self.auto_suggest_highlight_change_count += next.auto_suggest_highlight_change_count;
+        self.auto_suggest_submit_count += next.auto_suggest_submit_count;
+        self.auto_suggest_clear_count += next.auto_suggest_clear_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -7174,6 +7390,106 @@ mod tests {
         assert_eq!(cycled.tab_keyboard_selection_count, 1);
         assert_eq!(cycled.focused_widget, Some(advanced.0));
         assert!(route.take_pending_draw_plan().is_some());
+    }
+
+    #[test]
+    #[cfg(feature = "auto-suggest")]
+    fn window_view_input_route_closes_auto_suggest_with_pointer_and_keyboard_submission() {
+        fn text(_change: crate::ZsAutoSuggestTextChange) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.auto_suggest_text"))
+        }
+        fn chosen(_suggestion: crate::ZsAutoSuggestionId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.auto_suggest_chosen"))
+        }
+        fn submitted(_submission: crate::ZsAutoSuggestSubmission) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.auto_suggest_submitted"))
+        }
+        fn expanded(_expanded: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.auto_suggest_expanded"))
+        }
+
+        let widget = crate::WidgetId::new(136);
+        let beta = crate::ZsAutoSuggestionId::new(2);
+        let mut view = crate::column([
+            crate::auto_suggest_box(
+                "B",
+                [
+                    crate::ZsAutoSuggestion::new(1_u64, "Alpha"),
+                    crate::ZsAutoSuggestion::new(beta, "Beta"),
+                    crate::ZsAutoSuggestion::new(3_u64, "Bravo"),
+                ],
+            )
+            .id(widget)
+            .expanded(true)
+            .on_auto_suggest_text_change(text)
+            .on_suggestion_chosen(chosen)
+            .on_query_submit(submitted)
+            .on_expanded_change(expanded),
+            crate::spacer(),
+        ]);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 220,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let suggestion = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.kind == crate::ViewHitTargetKind::AutoSuggestSuggestion { suggestion: beta }
+            })
+            .expect("expanded auto-suggest should expose Beta row");
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        let pointer = route.dispatch_click(crate::Point {
+            x: suggestion.bounds.x + 8,
+            y: suggestion.bounds.y + suggestion.bounds.height / 2,
+        });
+        assert_eq!(pointer.auto_suggest_submit_count, 1);
+        assert_eq!(pointer.auto_suggest_expanded_change_count, 1);
+        assert_eq!(pointer.ui_command_count, 4);
+        assert!(route
+            .widget_auto_suggest_state(widget)
+            .is_some_and(|state| state.query == "Beta" && !state.expanded));
+
+        let typed = route.dispatch_text_input("x");
+        assert_eq!(typed.text_input_count, 1);
+        assert_eq!(typed.auto_suggest_expanded_change_count, 1);
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("Betax"));
+        let highlighted = route.dispatch_key_down(u32::from(VK_DOWN));
+        assert_eq!(highlighted.auto_suggest_highlight_change_count, 1);
+        assert_eq!(
+            route
+                .widget_auto_suggest_state(widget)
+                .and_then(|state| state.highlighted),
+            Some(1_u64.into())
+        );
+        let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(keyboard.auto_suggest_submit_count, 1);
+        assert_eq!(keyboard.auto_suggest_expanded_change_count, 1);
+        assert!(route
+            .widget_auto_suggest_state(widget)
+            .is_some_and(|state| state.query == "Alpha" && !state.expanded));
+
+        let clear = route
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::AutoSuggestClear)
+            .expect("non-empty query should expose clear button");
+        let cleared = route.dispatch_click(crate::Point {
+            x: clear.bounds.x + clear.bounds.width / 2,
+            y: clear.bounds.y + clear.bounds.height / 2,
+        });
+        assert_eq!(cleared.auto_suggest_clear_count, 1);
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some(""));
     }
 
     #[test]

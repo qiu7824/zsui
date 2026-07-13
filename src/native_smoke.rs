@@ -120,6 +120,10 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_radio_selection_count: usize,
     pub native_view_radio_keyboard_selection_count: usize,
     pub native_view_radio_keyboard_focus_only_count: usize,
+    pub native_view_auto_suggest_expanded_change_count: usize,
+    pub native_view_auto_suggest_highlight_change_count: usize,
+    pub native_view_auto_suggest_submit_count: usize,
+    pub native_view_auto_suggest_clear_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -211,6 +215,10 @@ impl NativeHostSmokeInteractionReport {
             native_view_radio_selection_count: 0,
             native_view_radio_keyboard_selection_count: 0,
             native_view_radio_keyboard_focus_only_count: 0,
+            native_view_auto_suggest_expanded_change_count: 0,
+            native_view_auto_suggest_highlight_change_count: 0,
+            native_view_auto_suggest_submit_count: 0,
+            native_view_auto_suggest_clear_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -336,6 +344,30 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} keyboard radio focus-only event(s)",
                 report.native_view_radio_keyboard_focus_only_count
+            ));
+        }
+        if report.native_view_auto_suggest_expanded_change_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} auto-suggest expansion event(s)",
+                report.native_view_auto_suggest_expanded_change_count
+            ));
+        }
+        if report.native_view_auto_suggest_highlight_change_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} auto-suggest strong-id highlight event(s)",
+                report.native_view_auto_suggest_highlight_change_count
+            ));
+        }
+        if report.native_view_auto_suggest_submit_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} auto-suggest submission event(s)",
+                report.native_view_auto_suggest_submit_count
+            ));
+        }
+        if report.native_view_auto_suggest_clear_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} auto-suggest clear event(s)",
+                report.native_view_auto_suggest_clear_count
             ));
         }
         if report.native_view_combo_expanded_change_count > 0 {
@@ -489,6 +521,12 @@ impl NativeHostSmokeInteractionReport {
                 .native_view_radio_keyboard_selection_count,
             native_view_radio_keyboard_focus_only_count: report
                 .native_view_radio_keyboard_focus_only_count,
+            native_view_auto_suggest_expanded_change_count: report
+                .native_view_auto_suggest_expanded_change_count,
+            native_view_auto_suggest_highlight_change_count: report
+                .native_view_auto_suggest_highlight_change_count,
+            native_view_auto_suggest_submit_count: report.native_view_auto_suggest_submit_count,
+            native_view_auto_suggest_clear_count: report.native_view_auto_suggest_clear_count,
             native_view_combo_expanded_change_count: report.native_view_combo_expanded_change_count,
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
@@ -1139,6 +1177,10 @@ mod tests {
             native_view_radio_selection_count: 0,
             native_view_radio_keyboard_selection_count: 1,
             native_view_radio_keyboard_focus_only_count: 1,
+            native_view_auto_suggest_expanded_change_count: 0,
+            native_view_auto_suggest_highlight_change_count: 0,
+            native_view_auto_suggest_submit_count: 0,
+            native_view_auto_suggest_clear_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,

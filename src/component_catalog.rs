@@ -142,6 +142,11 @@ const NUMBER_BOX_GAPS: &[&str] = &[
     "button hover/pressed polish, press-and-hold autorepeat, mouse-wheel stepping and macOS modifier stepping",
     "AppKit and GTK4 target interaction smoke",
 ];
+const AUTO_SUGGEST_GAPS: &[&str] = &[
+    "accessibility search-field, expanded-state and active-descendant providers",
+    "mouse-wheel paging for long suggestion lists",
+    "AppKit and GTK4 target interaction smoke",
+];
 const TOGGLE_BUTTON_GAPS: &[&str] = &[
     "optional indeterminate state and grouped selection behavior",
     "accessibility toggle-button role and checked-state provider",
@@ -417,10 +422,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "auto_suggest",
         "AutoSuggestBox",
         Input,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("auto-suggest"),
+        "src/auto_suggest.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        AUTO_SUGGEST_GAPS
     ),
     component!(
         "date_picker",
@@ -668,7 +673,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 9);
+        assert!(summary.not_started_count >= 8);
         assert!(summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));

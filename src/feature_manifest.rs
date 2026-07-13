@@ -256,6 +256,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "independently selectable determinate/indeterminate ring with platform metrics and native animation timers",
         ),
         ZsuiCargoFeature::new(
+            "auto-suggest",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "application-owned strong-id suggestions with platform search-field metrics, popup overlay and typed text, choice or submission events",
+        ),
+        ZsuiCargoFeature::new(
             "combo",
             Widget,
             false,
@@ -519,6 +527,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "radio",
                 "progress",
                 "progress-ring",
+                "auto-suggest",
                 "combo",
                 "date-picker",
                 "time-picker",
@@ -623,6 +632,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"radio"));
         assert!(all_widgets.enables.contains(&"progress"));
         assert!(all_widgets.enables.contains(&"progress-ring"));
+        assert!(all_widgets.enables.contains(&"auto-suggest"));
         assert!(all_widgets.enables.contains(&"combo"));
         assert!(all_widgets.enables.contains(&"date-picker"));
         assert!(all_widgets.enables.contains(&"time-picker"));

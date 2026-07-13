@@ -628,6 +628,20 @@ pub enum ViewNodeKind<Msg> {
     ProgressRing {
         spec: crate::ZsProgressRingSpec,
     },
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestBox {
+        query: String,
+        suggestions: Vec<crate::ZsAutoSuggestion>,
+        highlighted: Option<crate::ZsAutoSuggestionId>,
+        expanded: bool,
+        placeholder: Option<String>,
+        no_results_text: Option<String>,
+        query_icon: bool,
+        on_text_change: Option<fn(crate::ZsAutoSuggestTextChange) -> Msg>,
+        on_suggestion_chosen: Option<fn(crate::ZsAutoSuggestionId) -> Msg>,
+        on_query_submit: Option<fn(crate::ZsAutoSuggestSubmission) -> Msg>,
+        on_expanded_change: Option<fn(bool) -> Msg>,
+    },
     #[cfg(feature = "combo")]
     ComboBox {
         options: Vec<String>,
@@ -1003,9 +1017,16 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     pub fn expanded(mut self, is_expanded: bool) -> Self {
         match &mut self.kind {
+            #[cfg(feature = "auto-suggest")]
+            ViewNodeKind::AutoSuggestBox { expanded, .. } => *expanded = is_expanded,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { expanded, .. } => *expanded = is_expanded,
             #[cfg(feature = "date-picker")]
@@ -1017,17 +1038,98 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(feature = "combo")]
+    #[cfg(any(feature = "auto-suggest", feature = "combo"))]
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
-        if let ViewNodeKind::ComboBox { placeholder, .. } = &mut self.kind {
-            *placeholder = Some(text.into());
+        let text = text.into();
+        match &mut self.kind {
+            #[cfg(feature = "auto-suggest")]
+            ViewNodeKind::AutoSuggestBox { placeholder, .. } => *placeholder = Some(text),
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox { placeholder, .. } => *placeholder = Some(text),
+            _ => {}
         }
         self
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(feature = "auto-suggest")]
+    pub fn highlighted_suggestion(mut self, suggestion: Option<crate::ZsAutoSuggestionId>) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
+            suggestions,
+            highlighted,
+            ..
+        } = &mut self.kind
+        {
+            *highlighted =
+                suggestion.filter(|id| suggestions.iter().any(|candidate| candidate.id() == *id));
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn no_results_text(mut self, text: impl Into<String>) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
+            no_results_text, ..
+        } = &mut self.kind
+        {
+            *no_results_text = Some(text.into());
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn query_icon(mut self, visible: bool) -> Self {
+        if let ViewNodeKind::AutoSuggestBox { query_icon, .. } = &mut self.kind {
+            *query_icon = visible;
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_auto_suggest_text_change(
+        mut self,
+        message: fn(crate::ZsAutoSuggestTextChange) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::AutoSuggestBox { on_text_change, .. } = &mut self.kind {
+            *on_text_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_suggestion_chosen(mut self, message: fn(crate::ZsAutoSuggestionId) -> Msg) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
+            on_suggestion_chosen,
+            ..
+        } = &mut self.kind
+        {
+            *on_suggestion_chosen = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_query_submit(mut self, message: fn(crate::ZsAutoSuggestSubmission) -> Msg) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
+            on_query_submit, ..
+        } = &mut self.kind
+        {
+            *on_query_submit = Some(message);
+        }
+        self
+    }
+
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     pub fn on_expanded_change(mut self, message: fn(bool) -> Msg) -> Self {
         match &mut self.kind {
+            #[cfg(feature = "auto-suggest")]
+            ViewNodeKind::AutoSuggestBox {
+                on_expanded_change, ..
+            } => *on_expanded_change = Some(message),
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 on_expanded_change, ..
@@ -1332,6 +1434,32 @@ pub fn progress_ring<Msg>(spec: crate::ZsProgressRingSpec) -> ViewNode<Msg> {
         .height(metrics.diameter)
 }
 
+#[cfg(feature = "auto-suggest")]
+pub fn auto_suggest_box<T, Msg>(
+    query: impl Into<String>,
+    suggestions: impl IntoIterator<Item = T>,
+) -> ViewNode<Msg>
+where
+    T: Into<crate::ZsAutoSuggestion>,
+{
+    let metrics =
+        crate::ZsAutoSuggestMetrics::for_platform(crate::ZsAutoSuggestPlatformStyle::current());
+    ViewNode::new(ViewNodeKind::AutoSuggestBox {
+        query: query.into(),
+        suggestions: suggestions.into_iter().map(Into::into).collect(),
+        highlighted: None,
+        expanded: false,
+        placeholder: None,
+        no_results_text: None,
+        query_icon: true,
+        on_text_change: None,
+        on_suggestion_chosen: None,
+        on_query_submit: None,
+        on_expanded_change: None,
+    })
+    .height(metrics.control_height)
+}
+
 #[cfg(feature = "combo")]
 pub fn combo_box<T, Msg>(
     options: impl IntoIterator<Item = T>,
@@ -1542,6 +1670,25 @@ pub enum ViewEvent {
     RadioSelected {
         widget: WidgetId,
     },
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestExpandedChanged {
+        widget: WidgetId,
+        expanded: bool,
+    },
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestHighlighted {
+        widget: WidgetId,
+        suggestion: crate::ZsAutoSuggestionId,
+    },
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestCleared {
+        widget: WidgetId,
+    },
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestSubmitted {
+        widget: WidgetId,
+        suggestion: Option<crate::ZsAutoSuggestionId>,
+    },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
         widget: WidgetId,
@@ -1587,7 +1734,12 @@ pub enum ViewEvent {
         widget: WidgetId,
         tab: ZsTabId,
     },
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     DismissPopupOverlays {
         except: Option<WidgetId>,
     },
@@ -1666,6 +1818,16 @@ pub enum ViewHitTargetKind {
     NumberBoxIncrement,
     #[cfg(feature = "radio")]
     RadioButton,
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestBox,
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestSearch,
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestClear,
+    #[cfg(feature = "auto-suggest")]
+    AutoSuggestSuggestion {
+        suggestion: crate::ZsAutoSuggestionId,
+    },
     #[cfg(feature = "combo")]
     ComboBox,
     #[cfg(feature = "combo")]
@@ -1874,6 +2036,15 @@ impl ViewHitTarget {
         if matches!(self.kind, ViewHitTargetKind::ComboBoxOption { .. }) {
             return false;
         }
+        #[cfg(feature = "auto-suggest")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::AutoSuggestSearch
+                | ViewHitTargetKind::AutoSuggestClear
+                | ViewHitTargetKind::AutoSuggestSuggestion { .. }
+        ) {
+            return false;
+        }
         #[cfg(feature = "date-picker")]
         if matches!(
             self.kind,
@@ -1898,6 +2069,8 @@ impl ViewHitTargetKind {
         let accepts = accepts || self == Self::PasswordBox;
         #[cfg(feature = "number-box")]
         let accepts = accepts || self == Self::NumberBox;
+        #[cfg(feature = "auto-suggest")]
+        let accepts = accepts || self == Self::AutoSuggestBox;
         accepts
     }
 }
@@ -2014,6 +2187,8 @@ trait LiveViewDriver: Send {
     ) -> Option<WidgetId>;
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
+    #[cfg(feature = "auto-suggest")]
+    fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2089,6 +2264,11 @@ impl SharedLiveViewRuntime {
 
     pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.lock().widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState> {
+        self.lock().widget_auto_suggest_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2353,6 +2533,11 @@ where
         self.view.widget_combo_state(widget)
     }
 
+    #[cfg(feature = "auto-suggest")]
+    fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState> {
+        self.view.widget_auto_suggest_state(widget)
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_type_ahead_match(
         &self,
@@ -2474,7 +2659,12 @@ impl ViewPaintCx {
 
     fn finish_node<Msg>(&mut self, _root: &ViewNode<Msg>) {
         self.paint_depth = self.paint_depth.saturating_sub(1);
-        #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "auto-suggest",
+            feature = "combo",
+            feature = "date-picker",
+            feature = "time-picker"
+        ))]
         if self.paint_depth == 0 {
             _root.paint_overlays(self, None);
         }
@@ -2683,9 +2873,32 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             return;
         }
 
-        #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "auto-suggest",
+            feature = "combo",
+            feature = "date-picker",
+            feature = "time-picker"
+        ))]
         if let ViewEvent::DismissPopupOverlays { except } = event {
             let should_dismiss = self.id.is_some() && self.id != *except;
+            #[cfg(feature = "auto-suggest")]
+            if should_dismiss {
+                if let ViewNodeKind::AutoSuggestBox {
+                    highlighted,
+                    expanded,
+                    on_expanded_change,
+                    ..
+                } = &mut self.kind
+                {
+                    if *expanded {
+                        *highlighted = None;
+                        *expanded = false;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                }
+            }
             #[cfg(feature = "combo")]
             if should_dismiss {
                 if let ViewNodeKind::ComboBox {
@@ -2942,6 +3155,180 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *value = next_value.clone();
                     if let Some(message) = on_change {
                         cx.emit(message(next_value.clone()));
+                    }
+                }
+                #[cfg(feature = "auto-suggest")]
+                (
+                    ViewNodeKind::AutoSuggestBox {
+                        query,
+                        highlighted,
+                        expanded,
+                        on_text_change,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::AutoSuggestCleared { .. },
+                ) => {
+                    let query_changed = !query.is_empty();
+                    let was_expanded = *expanded;
+                    query.clear();
+                    *highlighted = None;
+                    *expanded = false;
+                    if query_changed {
+                        if let Some(message) = on_text_change {
+                            cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                                String::new(),
+                                crate::ZsAutoSuggestTextChangeReason::UserInput,
+                            )));
+                        }
+                    }
+                    if was_expanded {
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                }
+                #[cfg(feature = "auto-suggest")]
+                (
+                    ViewNodeKind::AutoSuggestBox {
+                        query,
+                        suggestions,
+                        highlighted,
+                        expanded,
+                        no_results_text,
+                        on_text_change,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::TextChanged {
+                        value: next_query, ..
+                    },
+                ) => {
+                    *query = next_query.clone();
+                    *highlighted = None;
+                    let next_expanded = !suggestions.is_empty() || no_results_text.is_some();
+                    let expanded_changed = *expanded != next_expanded;
+                    *expanded = next_expanded;
+                    if let Some(message) = on_text_change {
+                        cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                            next_query.clone(),
+                            crate::ZsAutoSuggestTextChangeReason::UserInput,
+                        )));
+                    }
+                    if expanded_changed {
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(next_expanded));
+                        }
+                    }
+                }
+                #[cfg(feature = "auto-suggest")]
+                (
+                    ViewNodeKind::AutoSuggestBox {
+                        highlighted,
+                        expanded,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::AutoSuggestExpandedChanged {
+                        expanded: next_expanded,
+                        ..
+                    },
+                ) => {
+                    let changed = *expanded != *next_expanded;
+                    *expanded = *next_expanded;
+                    if !*next_expanded {
+                        *highlighted = None;
+                    }
+                    if changed {
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(*next_expanded));
+                        }
+                    }
+                }
+                #[cfg(feature = "auto-suggest")]
+                (
+                    ViewNodeKind::AutoSuggestBox {
+                        query,
+                        suggestions,
+                        highlighted,
+                        on_text_change,
+                        on_suggestion_chosen,
+                        ..
+                    },
+                    ViewEvent::AutoSuggestHighlighted { suggestion, .. },
+                ) => {
+                    if let Some(candidate) = suggestions
+                        .iter()
+                        .find(|candidate| candidate.id() == *suggestion)
+                    {
+                        let changed =
+                            *highlighted != Some(*suggestion) || query != candidate.text();
+                        *highlighted = Some(*suggestion);
+                        *query = candidate.text().to_string();
+                        if changed {
+                            if let Some(message) = on_text_change {
+                                cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                                    query.clone(),
+                                    crate::ZsAutoSuggestTextChangeReason::SuggestionChosen,
+                                )));
+                            }
+                            if let Some(message) = on_suggestion_chosen {
+                                cx.emit(message(*suggestion));
+                            }
+                        }
+                    }
+                }
+                #[cfg(feature = "auto-suggest")]
+                (
+                    ViewNodeKind::AutoSuggestBox {
+                        query,
+                        suggestions,
+                        highlighted,
+                        expanded,
+                        on_text_change,
+                        on_suggestion_chosen,
+                        on_query_submit,
+                        on_expanded_change,
+                        ..
+                    },
+                    ViewEvent::AutoSuggestSubmitted { suggestion, .. },
+                ) => {
+                    let chosen = suggestion
+                        .filter(|id| suggestions.iter().any(|candidate| candidate.id() == *id));
+                    if let Some(chosen) = chosen {
+                        if let Some(candidate) = suggestions
+                            .iter()
+                            .find(|candidate| candidate.id() == chosen)
+                        {
+                            let changed = *highlighted != Some(chosen) || query != candidate.text();
+                            *highlighted = Some(chosen);
+                            *query = candidate.text().to_string();
+                            if changed {
+                                if let Some(message) = on_text_change {
+                                    cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                                        query.clone(),
+                                        crate::ZsAutoSuggestTextChangeReason::SuggestionChosen,
+                                    )));
+                                }
+                                if let Some(message) = on_suggestion_chosen {
+                                    cx.emit(message(chosen));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(message) = on_query_submit {
+                        cx.emit(message(crate::ZsAutoSuggestSubmission::new(
+                            query.clone(),
+                            chosen,
+                        )));
+                    }
+                    let was_expanded = *expanded;
+                    *expanded = false;
+                    *highlighted = None;
+                    if was_expanded {
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
                     }
                 }
                 #[cfg(feature = "password-box")]
@@ -3513,6 +3900,46 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "auto-suggest")]
+            ViewNodeKind::AutoSuggestBox {
+                query,
+                suggestions,
+                highlighted,
+                placeholder,
+                no_results_text,
+                query_icon,
+                ..
+            } => {
+                let row_count = if suggestions.is_empty() && no_results_text.is_some() {
+                    1
+                } else {
+                    suggestions.len()
+                };
+                let highlighted_index = highlighted.and_then(|highlighted| {
+                    suggestions
+                        .iter()
+                        .position(|candidate| candidate.id() == highlighted)
+                });
+                let plan = crate::zs_auto_suggest_render_plan(
+                    bounds,
+                    row_count,
+                    highlighted_index,
+                    false,
+                    query.is_empty(),
+                    *query_icon,
+                    crate::ZsAutoSuggestPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_auto_suggest_header_native_draw_plan(
+                    &plan,
+                    query,
+                    placeholder.as_deref(),
+                )
+                .commands
+                {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 options,
@@ -3679,6 +4106,11 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::NumberBoxReset { widget }) => id == *widget,
             #[cfg(feature = "radio")]
             (Some(id), ViewEvent::RadioSelected { widget }) => id == *widget,
+            #[cfg(feature = "auto-suggest")]
+            (Some(id), ViewEvent::AutoSuggestExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::AutoSuggestHighlighted { widget, .. })
+            | (Some(id), ViewEvent::AutoSuggestCleared { widget })
+            | (Some(id), ViewEvent::AutoSuggestSubmitted { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -3694,7 +4126,12 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::TabSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
-            #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+            #[cfg(any(
+                feature = "auto-suggest",
+                feature = "combo",
+                feature = "date-picker",
+                feature = "time-picker"
+            ))]
             (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
             (None, _) => false,
         }
@@ -3712,7 +4149,12 @@ impl<Msg> ViewNode<Msg> {
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
         let mut hit_targets = Vec::new();
         self.collect_hit_targets(&mut hit_targets, None);
-        #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "auto-suggest",
+            feature = "combo",
+            feature = "date-picker",
+            feature = "time-picker"
+        ))]
         self.collect_overlay_hit_targets(&mut hit_targets, None);
         #[cfg(feature = "tooltip")]
         let mut tooltip_targets = Vec::new();
@@ -3734,6 +4176,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "number-box")]
             if let ViewNodeKind::NumberBox { draft, .. } = &self.kind {
                 return Some(draft);
+            }
+            #[cfg(feature = "auto-suggest")]
+            if let ViewNodeKind::AutoSuggestBox { query, .. } = &self.kind {
+                return Some(query);
             }
         }
 
@@ -3906,6 +4352,30 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_combo_state(widget))
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::AutoSuggestBox {
+                query,
+                suggestions,
+                highlighted,
+                expanded,
+                ..
+            } = &self.kind
+            {
+                return Some(crate::ZsAutoSuggestState {
+                    query: query.clone(),
+                    suggestion_ids: suggestions.iter().map(|item| item.id()).collect(),
+                    highlighted: *highlighted,
+                    expanded: *expanded,
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_auto_suggest_state(widget))
     }
 
     #[cfg(feature = "combo")]
@@ -4267,6 +4737,62 @@ impl<Msg> ViewNode<Msg> {
             }
         }
 
+        #[cfg(feature = "auto-suggest")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::AutoSuggestBox {
+                query,
+                suggestions,
+                highlighted,
+                no_results_text,
+                query_icon,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let row_count = if suggestions.is_empty() && no_results_text.is_some() {
+                1
+            } else {
+                suggestions.len()
+            };
+            let highlighted_index = highlighted.and_then(|highlighted| {
+                suggestions
+                    .iter()
+                    .position(|candidate| candidate.id() == highlighted)
+            });
+            let plan = crate::zs_auto_suggest_render_plan(
+                bounds,
+                row_count,
+                highlighted_index,
+                false,
+                query.is_empty(),
+                *query_icon,
+                crate::ZsAutoSuggestPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            if let Some(bounds) = plan
+                .search_button
+                .and_then(|bounds| clipped_rect(bounds, clip))
+            {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::AutoSuggestSearch,
+                ));
+            }
+            if let Some(bounds) = plan
+                .clear_button
+                .and_then(|bounds| clipped_rect(bounds, clip))
+            {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::AutoSuggestClear,
+                ));
+            }
+        }
+
         #[cfg(feature = "scroll")]
         let clips_children = matches!(self.kind, ViewNodeKind::Scroll { .. });
         #[cfg(all(feature = "scroll", feature = "virtual-list"))]
@@ -4345,12 +4871,85 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     fn collect_overlay_hit_targets(
         &self,
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "auto-suggest")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::AutoSuggestBox {
+                query,
+                suggestions,
+                highlighted,
+                expanded: true,
+                no_results_text,
+                query_icon,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let row_count = if suggestions.is_empty() && no_results_text.is_some() {
+                1
+            } else {
+                suggestions.len()
+            };
+            let highlighted_index = highlighted.and_then(|highlighted| {
+                suggestions
+                    .iter()
+                    .position(|candidate| candidate.id() == highlighted)
+            });
+            let plan = viewport.map_or_else(
+                || {
+                    crate::zs_auto_suggest_render_plan(
+                        bounds,
+                        row_count,
+                        highlighted_index,
+                        true,
+                        query.is_empty(),
+                        *query_icon,
+                        crate::ZsAutoSuggestPlatformStyle::current(),
+                        self.layout_dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_auto_suggest_render_plan_in_viewport(
+                        bounds,
+                        row_count,
+                        highlighted_index,
+                        true,
+                        query.is_empty(),
+                        *query_icon,
+                        crate::ZsAutoSuggestPlatformStyle::current(),
+                        self.layout_dpi,
+                        viewport,
+                    )
+                },
+            );
+            hit_targets.extend(
+                suggestions
+                    .iter()
+                    .skip(plan.first_visible_suggestion)
+                    .zip(plan.suggestion_rows)
+                    .map(|(suggestion, bounds)| {
+                        ViewHitTarget::with_kind(
+                            widget,
+                            bounds,
+                            ViewHitTargetKind::AutoSuggestSuggestion {
+                                suggestion: suggestion.id(),
+                            },
+                        )
+                    }),
+            );
+        }
         #[cfg(feature = "combo")]
         if let (
             Some(widget),
@@ -4521,8 +5120,76 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
-    #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "time-picker"
+    ))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
+        #[cfg(feature = "auto-suggest")]
+        if let (
+            Some(bounds),
+            ViewNodeKind::AutoSuggestBox {
+                query,
+                suggestions,
+                highlighted,
+                expanded: true,
+                no_results_text,
+                query_icon,
+                ..
+            },
+        ) = (self.bounds, &self.kind)
+        {
+            let row_count = if suggestions.is_empty() && no_results_text.is_some() {
+                1
+            } else {
+                suggestions.len()
+            };
+            let highlighted_index = highlighted.and_then(|highlighted| {
+                suggestions
+                    .iter()
+                    .position(|candidate| candidate.id() == highlighted)
+            });
+            let plan = viewport.map_or_else(
+                || {
+                    crate::zs_auto_suggest_render_plan(
+                        bounds,
+                        row_count,
+                        highlighted_index,
+                        true,
+                        query.is_empty(),
+                        *query_icon,
+                        crate::ZsAutoSuggestPlatformStyle::current(),
+                        cx.dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_auto_suggest_render_plan_in_viewport(
+                        bounds,
+                        row_count,
+                        highlighted_index,
+                        true,
+                        query.is_empty(),
+                        *query_icon,
+                        crate::ZsAutoSuggestPlatformStyle::current(),
+                        cx.dpi,
+                        viewport,
+                    )
+                },
+            );
+            for command in crate::zs_auto_suggest_popup_native_draw_plan(
+                &plan,
+                suggestions,
+                *highlighted,
+                no_results_text.as_deref(),
+                cx.dpi,
+            )
+            .commands
+            {
+                cx.draw(command);
+            }
+        }
         #[cfg(feature = "combo")]
         if let (
             Some(bounds),
@@ -4684,6 +5351,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::NumberBox { .. } => ViewHitTargetKind::NumberBox,
             #[cfg(feature = "radio")]
             ViewNodeKind::RadioButton { .. } => ViewHitTargetKind::RadioButton,
+            #[cfg(feature = "auto-suggest")]
+            ViewNodeKind::AutoSuggestBox { .. } => ViewHitTargetKind::AutoSuggestBox,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
@@ -6126,7 +6795,94 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "auto-suggest")]
+    fn auto_suggest_routes_strong_id_overlay_keyboard_state_and_submission() {
+        let widget = WidgetId::new(91);
+        let chosen = crate::ZsAutoSuggestionId::new(102);
+        let mut view: ViewNode<()> = auto_suggest_box(
+            "Ch",
+            [
+                crate::ZsAutoSuggestion::new(101_u64, "Chicago"),
+                crate::ZsAutoSuggestion::new(chosen, "China"),
+                crate::ZsAutoSuggestion::new(103_u64, "Chile"),
+            ],
+        )
+        .id(widget)
+        .placeholder("Search")
+        .expanded(true)
+        .highlighted_suggestion(Some(chosen));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 20,
+                y: 20,
+                width: 280,
+                height: 32,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert!(interaction.hit_targets.iter().any(|target| {
+            target.widget == widget
+                && target.kind == ViewHitTargetKind::AutoSuggestSuggestion { suggestion: chosen }
+        }));
+        assert_eq!(
+            view.widget_auto_suggest_state(widget),
+            Some(crate::ZsAutoSuggestState {
+                query: "Ch".into(),
+                suggestion_ids: vec![101_u64.into(), chosen, 103_u64.into()],
+                highlighted: Some(chosen),
+                expanded: true,
+            })
+        );
+
+        let mut event_cx = ViewEventCx::new();
+        view.event(
+            &mut event_cx,
+            &ViewEvent::AutoSuggestSubmitted {
+                widget,
+                suggestion: Some(chosen),
+            },
+        );
+        assert_eq!(event_cx.into_messages(), Vec::<()>::new());
+        let state = view
+            .widget_auto_suggest_state(widget)
+            .expect("auto-suggest state");
+        assert_eq!(state.query, "China");
+        assert!(!state.expanded);
+        assert_eq!(state.highlighted, None);
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    #[test]
+    fn auto_suggest_user_text_and_clear_keep_explicit_popup_state() {
+        let widget = WidgetId::new(92);
+        let mut view: ViewNode<()> =
+            auto_suggest_box("", [crate::ZsAutoSuggestion::new(1_u64, "Alpha")])
+                .id(widget)
+                .no_results_text("No results");
+        let mut cx = ViewEventCx::new();
+        view.event(
+            &mut cx,
+            &ViewEvent::TextChanged {
+                widget,
+                value: "a".into(),
+            },
+        );
+        assert_eq!(view.widget_text_value(widget), Some("a"));
+        assert!(view
+            .widget_auto_suggest_state(widget)
+            .is_some_and(|state| state.expanded));
+
+        view.event(&mut cx, &ViewEvent::AutoSuggestCleared { widget });
+        assert_eq!(view.widget_text_value(widget), Some(""));
+        assert!(view
+            .widget_auto_suggest_state(widget)
+            .is_some_and(|state| !state.expanded));
+    }
+
     #[cfg(feature = "combo")]
+    #[test]
     fn combo_box_routes_overlay_selection_and_paints_above_later_siblings() {
         let combo_id = WidgetId::new(9);
         let mut view = column([

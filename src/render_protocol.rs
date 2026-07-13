@@ -572,6 +572,7 @@ mod draw_command_tests {
             vec![
                 "draw_fill_rect",
                 "draw_stroke_rect",
+                "draw_stroke_arc",
                 "draw_round_rect",
                 "draw_round_fill",
                 "draw_text",

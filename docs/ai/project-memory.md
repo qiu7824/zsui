@@ -158,6 +158,15 @@ history remain authoritative for implementation status.
   widget state. Windows follows the documented 20-DP minimum and accent ring;
   macOS/GTK select internal spinner metrics. Reduced-motion handling,
   accessibility and non-Windows target animation proof remain readiness gaps.
+- AutoSuggestBox is an independent `auto-suggest` feature over `widgets-input`;
+  it must not pull in TextBox or ComboBox. Applications own suggestion data and
+  stable `ZsAutoSuggestionId` values. The view keeps query, highlighted ID and
+  expanded state explicit and emits typed user-input, suggestion-chosen and
+  query-submitted messages. Windows uses a WinUI-like trailing query/clear
+  column, macOS follows NSSearchField leading-search/trailing-cancel geometry,
+  and GTK follows SearchEntry geometry; all remain self-drawn through the shared
+  renderer protocol. Long-list wheel paging, accessibility providers and
+  AppKit/GTK target interaction smoke remain readiness gaps.
 - Every new component remains opt-in through its own Cargo feature. Default
   features stay `window`, `button` and `label`; `all-widgets`/`full` are explicit
   profile choices and must not become implicit dependencies of component APIs.

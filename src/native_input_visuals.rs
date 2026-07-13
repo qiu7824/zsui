@@ -14,9 +14,10 @@ pub(crate) fn native_text_visual_target(
     target: ViewHitTarget,
     interaction: &ViewInteractionPlan,
 ) -> ViewHitTarget {
+    #[allow(unused_mut)]
+    let mut target = target;
     #[cfg(feature = "password-box")]
     {
-        let mut target = target;
         if target.kind == ViewHitTargetKind::PasswordBox {
             if let Some(reveal) = interaction.hit_targets.iter().find(|candidate| {
                 candidate.widget == target.widget
@@ -25,13 +26,36 @@ pub(crate) fn native_text_visual_target(
                 target.bounds.width = reveal.bounds.x.saturating_sub(target.bounds.x).max(0);
             }
         }
-        target
     }
-    #[cfg(not(feature = "password-box"))]
+    #[cfg(feature = "auto-suggest")]
     {
-        let _ = interaction;
-        target
+        if target.kind == ViewHitTargetKind::AutoSuggestBox {
+            for accessory in interaction.hit_targets.iter().filter(|candidate| {
+                candidate.widget == target.widget
+                    && matches!(
+                        candidate.kind,
+                        ViewHitTargetKind::AutoSuggestSearch | ViewHitTargetKind::AutoSuggestClear
+                    )
+            }) {
+                if accessory.bounds.x <= target.bounds.x {
+                    let offset = accessory.bounds.width.min(target.bounds.width.max(0));
+                    target.bounds.x = target.bounds.x.saturating_add(offset);
+                    target.bounds.width = target.bounds.width.saturating_sub(offset);
+                } else {
+                    let right = target.bounds.x.saturating_add(target.bounds.width);
+                    target.bounds.width = accessory
+                        .bounds
+                        .x
+                        .saturating_sub(target.bounds.x)
+                        .min(right.saturating_sub(target.bounds.x))
+                        .max(0);
+                }
+            }
+        }
     }
+    #[cfg(not(any(feature = "password-box", feature = "auto-suggest")))]
+    let _ = interaction;
+    target
 }
 
 pub(crate) fn native_text_visual_geometry(
@@ -206,6 +230,28 @@ pub(crate) fn decorate_native_focus_ring(
     dpi: Dpi,
 ) -> Option<Rect> {
     let target = interaction_plan.hit_target_for_widget(focused_widget?)?;
+    #[cfg(feature = "auto-suggest")]
+    if target.kind == ViewHitTargetKind::AutoSuggestBox
+        && crate::ZsAutoSuggestPlatformStyle::current()
+            == crate::ZsAutoSuggestPlatformStyle::Windows
+    {
+        let height = Dp::new(2.0).to_px(dpi).round_i32().max(1);
+        let indicator = Rect {
+            x: target.bounds.x,
+            y: target
+                .bounds
+                .y
+                .saturating_add(target.bounds.height)
+                .saturating_sub(height),
+            width: target.bounds.width,
+            height,
+        };
+        plan.push(NativeDrawCommand::FillRect {
+            rect: indicator,
+            fill: NativeDrawFill::Role(ColorRole::Accent),
+        });
+        return Some(indicator);
+    }
     let requested_inset = Dp::new(1.0).to_px(dpi).round_i32().max(1);
     let maximum_inset = (target.bounds.width.min(target.bounds.height).max(1) - 1) / 2;
     let inset = requested_inset.min(maximum_inset.max(0));
@@ -225,6 +271,7 @@ pub(crate) fn decorate_native_focus_ring(
 }
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "date-picker",
     feature = "password-box",
     feature = "tabs",
@@ -234,6 +281,7 @@ pub(crate) fn decorate_native_focus_ring(
 pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "date-picker",
     feature = "password-box",
     feature = "tabs",
@@ -242,6 +290,14 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 ))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
     let supported = false;
+    #[cfg(feature = "auto-suggest")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::AutoSuggestSearch
+                | ViewHitTargetKind::AutoSuggestClear
+                | ViewHitTargetKind::AutoSuggestSuggestion { .. }
+        );
     #[cfg(feature = "toggle-button")]
     let supported = supported || target.kind == ViewHitTargetKind::ToggleButton;
     #[cfg(feature = "password-box")]
@@ -267,6 +323,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
 }
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "date-picker",
     feature = "password-box",
     feature = "tabs",
@@ -505,6 +562,94 @@ mod tests {
                 stroke: NativeDrawFill::Role(ColorRole::Accent),
                 width: 2,
             }] if *rect == ring
+        ));
+    }
+
+    #[test]
+    #[cfg(all(feature = "auto-suggest", target_os = "windows"))]
+    fn windows_auto_suggest_focus_uses_winui_bottom_accent_indicator() {
+        let widget = WidgetId::new(92);
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 180,
+            height: 32,
+        };
+        let interaction_plan = ViewInteractionPlan::new([ViewHitTarget::with_kind(
+            widget,
+            bounds,
+            ViewHitTargetKind::AutoSuggestBox,
+        )]);
+        let mut plan = NativeDrawPlan::default();
+
+        let indicator =
+            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
+                .expect("focused auto-suggest should produce an indicator");
+
+        assert_eq!(
+            indicator,
+            Rect {
+                y: 50,
+                height: 2,
+                ..bounds
+            }
+        );
+        assert!(matches!(
+            plan.commands.as_slice(),
+            [NativeDrawCommand::FillRect {
+                rect,
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+            }] if *rect == indicator
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "auto-suggest")]
+    fn auto_suggest_pointer_visual_marks_the_active_suggestion_row() {
+        let widget = WidgetId::new(94);
+        let popup = Rect {
+            x: 10,
+            y: 20,
+            width: 220,
+            height: 120,
+        };
+        let row = Rect {
+            x: 14,
+            y: 56,
+            width: 212,
+            height: 36,
+        };
+        let kind = ViewHitTargetKind::AutoSuggestSuggestion {
+            suggestion: crate::ZsAutoSuggestionId::new(7),
+        };
+        let interaction_plan =
+            ViewInteractionPlan::new([ViewHitTarget::with_kind(widget, row, kind)]);
+        let mut plan = NativeDrawPlan::new([NativeDrawCommand::RoundRect {
+            rect: popup,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: 4,
+        }]);
+
+        let changed = decorate_native_pointer_visuals(
+            &mut plan,
+            &interaction_plan,
+            Some((widget, kind)),
+            None,
+            Dpi::standard(),
+        );
+
+        assert_eq!(changed, 1);
+        assert!(matches!(
+            plan.commands.get(1),
+            Some(NativeDrawCommand::RoundFill {
+                rect,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 14,
+                },
+                radius: 4,
+            }) if *rect == row
         ));
     }
 
