@@ -177,6 +177,24 @@ inputs and both pointer pairs, execute all four typed `UiCommand` values, and
 finish with no command errors. Alt+F8, caps-lock/accessibility signaling,
 locked memory and target-machine AppKit/GTK evidence remain explicit gaps.
 
+The dedicated attached ToolTip smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,button,label,tooltip,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-tooltip --tooltip-view
+```
+
+It moves focus to a normal self-drawn owner with Tab and captures the concise,
+noninteractive help overlay centered above it. A deterministic Win32 route test
+also advances the pointer-hover deadline and verifies that the tooltip is added
+to the buffered draw plan without adding a second hit target. Runtime behavior
+follows the official [Windows ToolTips](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/tooltips),
+[AppKit `NSView.toolTip`](https://developer.apple.com/documentation/appkit/nsview/tooltip)
+and [GTK `query-tooltip`](https://docs.gtk.org/gtk4/signal.Widget.query-tooltip.html)
+contracts. Win32 reads `SPI_GETMOUSEHOVERTIME` and
+`SPI_GETMESSAGEDURATION`; AppKit and GTK schedule owned one-shot callbacks.
+Top-level overflow outside the current window, accessibility relationships and
+target-machine AppKit/GTK artifacts remain explicit gaps.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

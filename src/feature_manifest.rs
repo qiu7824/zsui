@@ -184,6 +184,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "single-line secure input with redacted state, platform reveal policy and self-drawn native profiles",
         ),
         ZsuiCargoFeature::new(
+            "tooltip",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "attached noninteractive help overlay with platform metrics and native hover/focus timing",
+        ),
+        ZsuiCargoFeature::new(
             "toggle-button",
             Widget,
             false,
@@ -495,6 +503,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "paged-list",
                 "textbox",
                 "password-box",
+                "tooltip",
                 "checkbox",
                 "toggle",
                 "slider",
@@ -597,6 +606,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"grid"));
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
+        assert!(all_widgets.enables.contains(&"tooltip"));
         assert!(all_widgets.enables.contains(&"toggle-button"));
         assert!(all_widgets.enables.contains(&"toggle"));
         assert!(all_widgets.enables.contains(&"slider"));

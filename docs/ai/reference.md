@@ -13,7 +13,7 @@ overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: about 64% complete (31 first-pass runtime surfaces out of
+- Component library: about 69% complete (33 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 86% complete.
 - Feature-pruned architecture: about 55% complete.
@@ -40,8 +40,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 31 families have
-a first-pass runtime surface, 6 are contract-only and 11 are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: 33 families have
+a first-pass runtime surface, 5 are contract-only and 10 are not started. A
 composite workbench does not make its underlying missing controls complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
@@ -198,8 +198,8 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 48 WinUI-style component families: 31 have a
-first-pass runtime surface, 6 are contract-only and 11 are not started. The
+`src/component_catalog.rs` tracks 48 WinUI-style component families: 33 have a
+first-pass runtime surface, 5 are contract-only and 10 are not started. The
 optional Grid surface uses typed fixed/fractional tracks, nonzero spans,
 independent row/column gaps, explicit typed cell placement and one DPI-aware
 layout result for paint and hit testing on Win32/AppKit/GTK4. Windows has a
@@ -226,6 +226,20 @@ typed pointer/Space activation, transient hover/pressed decoration and internal
 WinUI/AppKit/GTK metric profiles. Windows has a real checked-state screenshot
 and interaction artifact; indeterminate mode, accessibility and non-Windows
 target runs remain open.
+The independent `password-box` feature keeps owned values in redacted,
+zeroizing `ZsPassword` state and uses secure draw commands that omit secrets
+from serialization. Unicode editing, masked IME reports, platform reveal
+policies and Windows press-and-hold Peek run through the shared self-drawn tree;
+Alt+F8, locked memory, complete accessibility and non-Windows target proof are
+still open.
+The independent `tooltip` feature attaches concise help text to any stable-ID
+`ViewNode` without adding another hit target or native child control. It uses
+internal WinUI/AppKit/GTK metric profiles, shared placement and clamping,
+delayed pointer hover, immediate keyboard-focus display and timed dismissal.
+Win32 reads the system mouse-hover and message-duration settings and has a real
+buffered screenshot plus deterministic hover-route coverage. Accessibility
+relationships, top-level overflow beyond the current viewport and AppKit/GTK
+target-machine evidence remain open.
 `src/document_shell.rs` is the reusable visual boundary used by the Windows
 notepad benchmark. It provides a document tab, command bar, editor frame,
 status layout, semantic draw plan and hit regions without owning product state

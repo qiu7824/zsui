@@ -660,6 +660,7 @@ impl NativeViewKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum NativeViewSmokeInput {
+    Move(Point),
     Click(Point),
     Drag { start: Point, end: Point },
     Text(String),
@@ -732,6 +733,12 @@ impl NativeWindowSmokeRunOptions {
         self.native_view_click_points.push(point);
         self.native_view_inputs
             .push(NativeViewSmokeInput::Click(point));
+        self
+    }
+
+    pub fn native_view_pointer_move(mut self, point: Point) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::Move(point));
         self
     }
 
@@ -1006,6 +1013,8 @@ pub(crate) struct NativeViewInputRuntime {
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
+    #[cfg(feature = "tooltip")]
+    tooltip: crate::tooltip::ZsTooltipRuntime,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
     #[cfg(feature = "combo")]
@@ -1171,6 +1180,8 @@ impl NativeViewInputRuntime {
             ui_command_view,
             live_view,
             focused_widget: None,
+            #[cfg(feature = "tooltip")]
+            tooltip: crate::tooltip::ZsTooltipRuntime::default(),
             text_edit: None,
             text_drag: None,
             #[cfg(feature = "combo")]
@@ -1360,6 +1371,11 @@ impl NativeViewInputRuntime {
             hit_target_count: self.hit_target_count(),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
@@ -1434,11 +1450,28 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_pointer_move(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        self.dispatch_pointer_move_at(point, std::time::Instant::now())
+    }
+
+    fn dispatch_pointer_move_at(
+        &mut self,
+        point: Point,
+        now: std::time::Instant,
+    ) -> NativeViewInputDispatchReport {
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if let Some(interaction) = self.current_interaction_plan() {
+            if self.tooltip.pointer_moved(&interaction, point, now) {
+                report.handled = true;
+                report.redraw_plan = self.current_composed_draw_plan();
+            }
+        }
+        #[cfg(not(feature = "tooltip"))]
+        let _ = now;
         #[cfg(any(
             feature = "date-picker",
             feature = "password-box",
@@ -1655,13 +1688,19 @@ impl NativeViewInputRuntime {
     pub(crate) fn dispatch_pointer_leave(&mut self) -> NativeViewInputDispatchReport {
         #[cfg(feature = "password-box")]
         let had_password_peek = self.password_peek.take().is_some();
-        let report = NativeViewInputDispatchReport {
+        #[allow(unused_mut)]
+        let mut report = NativeViewInputDispatchReport {
             #[cfg(feature = "password-box")]
             handled: had_password_peek,
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         #[cfg(any(
             feature = "date-picker",
             feature = "password-box",
@@ -1670,7 +1709,6 @@ impl NativeViewInputRuntime {
             feature = "toggle-button"
         ))]
         {
-            let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
@@ -1711,6 +1749,11 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         let Some(interaction_plan) = self.current_interaction_plan() else {
             return report;
         };
@@ -1724,6 +1767,8 @@ impl NativeViewInputRuntime {
                 report.handled = true;
                 report = self.dismiss_popup_overlays_except(Some(target.widget), report);
                 self.focus_target(target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(target.widget, &mut report);
             }
             return report;
         }
@@ -1745,6 +1790,8 @@ impl NativeViewInputRuntime {
             report.tab_keyboard_selection_changed = true;
             if let Some(target) = interaction_plan.hit_target_for_widget(crate::WidgetId(tab.0)) {
                 self.focus_target(target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(target.widget, &mut report);
             }
             return self.dispatch_view_event(
                 ViewEvent::TabSelected {
@@ -1931,6 +1978,8 @@ impl NativeViewInputRuntime {
                     return report;
                 };
                 self.focus_target(next_target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(next_target.widget, &mut report);
                 if control {
                     report.radio_keyboard_focus_only = true;
                     return report;
@@ -1974,6 +2023,8 @@ impl NativeViewInputRuntime {
                     return report;
                 };
                 self.focus_target(next_target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(next_target.widget, &mut report);
                 let Some(next_state) = self.widget_tab_header_state(next_widget) else {
                     return report;
                 };
@@ -2079,6 +2130,8 @@ impl NativeViewInputRuntime {
                 if let Some(next_target) = interaction_plan.hit_target_for_widget(next_widget) {
                     report.handled = true;
                     self.focus_target(next_target, &mut report);
+                    #[cfg(feature = "tooltip")]
+                    self.show_keyboard_tooltip(next_target.widget, &mut report);
                     return self.dispatch_view_event(
                         ViewEvent::Click {
                             widget: next_widget,
@@ -2361,6 +2414,11 @@ impl NativeViewInputRuntime {
                 ..NativeViewInputDispatchReport::default()
             },
         );
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         #[cfg(feature = "number-box")]
         if let Some(widget) = self.focused_widget.filter(|widget| {
             self.current_interaction_plan()
@@ -2406,10 +2464,16 @@ impl NativeViewInputRuntime {
         point: Point,
         delta_y: Dp,
     ) -> NativeViewInputDispatchReport {
-        let report = NativeViewInputDispatchReport {
+        #[allow(unused_mut)]
+        let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         let interaction_plan = self
             .live_view
             .as_ref()
@@ -2516,6 +2580,23 @@ impl NativeViewInputRuntime {
         report.redraw_plan = self.current_composed_draw_plan();
     }
 
+    #[cfg(feature = "tooltip")]
+    fn show_keyboard_tooltip(
+        &mut self,
+        widget: crate::WidgetId,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        let Some(interaction) = self.current_interaction_plan() else {
+            return;
+        };
+        if self
+            .tooltip
+            .focus_widget(&interaction, widget, std::time::Instant::now())
+        {
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
+    }
+
     fn focused_text_input_target(&self) -> Option<crate::ViewHitTarget> {
         let widget = self.focused_widget?;
         self.current_interaction_plan()
@@ -2569,7 +2650,55 @@ impl NativeViewInputRuntime {
         if let Some(interaction_plan) = self.current_interaction_plan() {
             decorate_native_focus_ring(&mut plan, &interaction_plan, self.focused_widget, self.dpi);
         }
+        #[cfg(feature = "tooltip")]
+        self.compose_tooltip(&mut plan);
         plan
+    }
+
+    #[cfg(feature = "tooltip")]
+    fn compose_tooltip(&self, plan: &mut NativeDrawPlan) {
+        let (Some(surface), Some(interaction)) = (self.surface, self.current_interaction_plan())
+        else {
+            return;
+        };
+        let Some(target) = self.tooltip.visible_target(&interaction) else {
+            return;
+        };
+        let render = crate::zs_tooltip_render_plan(
+            &target.spec,
+            target.bounds,
+            self.tooltip.anchor(),
+            surface,
+            crate::ZsTooltipPlatformStyle::current(),
+            self.dpi,
+        );
+        let overlay = crate::zs_tooltip_native_draw_plan(&render, &target.spec);
+        plan.commands.extend(overlay.commands);
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub(crate) fn transient_poll_interval_ms(&self) -> Option<u64> {
+        self.tooltip.poll_interval_ms(std::time::Instant::now())
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub(crate) fn refresh_transient_view(&mut self) -> NativeViewInputDispatchReport {
+        self.refresh_transient_view_at(std::time::Instant::now())
+    }
+
+    #[cfg(feature = "tooltip")]
+    fn refresh_transient_view_at(
+        &mut self,
+        now: std::time::Instant,
+    ) -> NativeViewInputDispatchReport {
+        let changed = self.tooltip.refresh(now);
+        NativeViewInputDispatchReport {
+            handled: changed,
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            redraw_plan: changed.then(|| self.current_composed_draw_plan()).flatten(),
+            ..NativeViewInputDispatchReport::default()
+        }
     }
 
     #[cfg(any(
@@ -3476,6 +3605,9 @@ fn post_windows_native_view_input(
     };
 
     match input {
+        NativeViewSmokeInput::Move(point) => unsafe {
+            PostMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*point));
+        },
         NativeViewSmokeInput::Click(point) => unsafe {
             let lparam = windows_lparam_from_point(*point);
             PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
@@ -5681,6 +5813,46 @@ mod tests {
             command,
             crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
         )));
+    }
+
+    #[cfg(all(feature = "tooltip", feature = "button"))]
+    #[test]
+    fn native_view_runtime_opens_delayed_tooltip_as_noninteractive_overlay() {
+        let widget = crate::WidgetId::new(502);
+        let builder = native_window("Tooltip runtime")
+            .size(320, 180)
+            .ui_command_view(
+                crate::button("Save")
+                    .id(widget)
+                    .tooltip_spec(crate::ZsTooltipSpec::new("Save document").open_delay_ms(100)),
+            );
+        let target = builder
+            .view_interaction_plan
+            .as_ref()
+            .and_then(|plan| plan.tooltip_for_widget(widget))
+            .expect("tooltip owner should be present in interaction metadata");
+        let point = Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        };
+        let start = std::time::Instant::now();
+        let mut runtime = builder.native_view_input_runtime();
+
+        let hover = runtime.dispatch_pointer_move_at(point, start);
+        let early = runtime.refresh_transient_view_at(start + std::time::Duration::from_millis(99));
+        let shown =
+            runtime.refresh_transient_view_at(start + std::time::Duration::from_millis(100));
+
+        assert!(!hover.handled);
+        assert!(early.redraw_plan.is_none());
+        let shown = shown
+            .redraw_plan
+            .expect("hover deadline should draw tooltip");
+        assert!(shown.commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Text(text) if text.text == "Save document"
+        )));
+        assert_eq!(runtime.hit_target_count(), 1);
     }
 
     #[cfg(all(feature = "label", feature = "button"))]

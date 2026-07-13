@@ -94,6 +94,8 @@ pub mod style;
 #[cfg(feature = "time-picker")]
 pub mod time;
 pub mod timer_protocol;
+#[cfg(feature = "tooltip")]
+pub mod tooltip;
 pub mod tray;
 pub mod ui_surface_protocol;
 pub mod view;
@@ -421,6 +423,11 @@ pub use timer_protocol::{
     main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
     SettingsTimerIds, SettingsTimerTask,
 };
+#[cfg(feature = "tooltip")]
+pub use tooltip::{
+    zs_tooltip_native_draw_plan, zs_tooltip_render_plan, ZsTooltipMetrics, ZsTooltipPlacement,
+    ZsTooltipPlatformStyle, ZsTooltipRenderPlan, ZsTooltipSpec,
+};
 pub use tray::TraySpec;
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 #[cfg(feature = "button")]
@@ -455,6 +462,8 @@ pub use view::time_picker;
 pub use view::toggle;
 #[cfg(feature = "toggle-button")]
 pub use view::toggle_button;
+#[cfg(feature = "tooltip")]
+pub use view::ViewTooltipTarget;
 #[cfg(feature = "date-picker")]
 pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]

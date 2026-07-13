@@ -16,7 +16,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
-    NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
+    NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSTimer,
 };
 
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
@@ -29,6 +29,8 @@ use crate::{
 struct ZsuiAppKitDrawViewIvars {
     plan: RefCell<NativeDrawPlan>,
     runtime: RefCell<crate::native::NativeViewInputRuntime>,
+    #[cfg(feature = "tooltip")]
+    tooltip_timer: RefCell<Option<Retained<NSTimer>>>,
     marked_text: RefCell<String>,
     marked_selection: Cell<Option<(usize, usize)>>,
     ime_dispatched: Cell<bool>,
@@ -39,6 +41,16 @@ define_class!(
     #[thread_kind = MainThreadOnly]
     #[ivars = ZsuiAppKitDrawViewIvars]
     struct ZsuiAppKitDrawView;
+
+    #[cfg(feature = "tooltip")]
+    impl ZsuiAppKitDrawView {
+        #[unsafe(method(zsuiTooltipTick:))]
+        fn zsui_tooltip_tick(&self, _timer: &NSTimer) {
+            self.ivars().tooltip_timer.borrow_mut().take();
+            let report = self.ivars().runtime.borrow_mut().refresh_transient_view();
+            self.apply_input_report(report);
+        }
+    }
 
     unsafe impl NSObjectProtocol for ZsuiAppKitDrawView {}
 
@@ -478,6 +490,28 @@ impl ZsuiAppKitDrawView {
                 context.discardMarkedText();
             }
         }
+        #[cfg(feature = "tooltip")]
+        self.schedule_tooltip_tick();
+    }
+
+    #[cfg(feature = "tooltip")]
+    fn schedule_tooltip_tick(&self) {
+        if let Some(timer) = self.ivars().tooltip_timer.borrow_mut().take() {
+            timer.invalidate();
+        }
+        let Some(delay_ms) = self.ivars().runtime.borrow().transient_poll_interval_ms() else {
+            return;
+        };
+        let timer = unsafe {
+            NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                delay_ms.max(1) as f64 / 1_000.0,
+                self,
+                objc2::sel!(zsuiTooltipTick:),
+                None,
+                false,
+            )
+        };
+        *self.ivars().tooltip_timer.borrow_mut() = Some(timer);
     }
 
     fn new(
@@ -489,6 +523,8 @@ impl ZsuiAppKitDrawView {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars {
             plan: RefCell::new(plan),
             runtime: RefCell::new(runtime),
+            #[cfg(feature = "tooltip")]
+            tooltip_timer: RefCell::new(None),
             marked_text: RefCell::new(String::new()),
             marked_selection: Cell::new(None),
             ime_dispatched: Cell::new(false),

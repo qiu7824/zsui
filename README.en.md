@@ -307,7 +307,8 @@ The intended shape is Rust-style compile-on-demand: default features stay small
 (`window`, `button`, `label`), heavy backend dependencies are optional, and
 advanced widgets are behind explicit feature gates. This is feature/crate based
 trimming, not a promise that Cargo magically removes every unused symbol inside
-an enabled crate. Controls such as `tabs` and `date-picker` can be selected
+an enabled crate. Controls such as `password-box`, `tooltip`, `tabs` and
+`date-picker` can be selected
 individually; `all-widgets` and `full` are included only when an application
 explicitly opts in. The `window` feature selects Win32, AppKit or GTK4 through
 target-specific dependencies, so the one-line window entry does not require an

@@ -55,11 +55,10 @@ must stay independent of raw platform handles and broad native dependencies.
 ## Component Coverage
 
 `zsui_component_catalog()` is the component-level source of truth. The current
-catalog covers 48 WinUI-style families: 20 have a first-pass runtime surface, 8
-have contracts only and 20 are not started. Composite shells can combine
-working primitives, but they must not be used to claim that missing Grid,
-TreeView, DataGrid, picker, progress, tooltip, flyout or WebView families are
-complete.
+catalog covers 48 WinUI-style families: 33 have a first-pass runtime surface, 5
+have contracts only and 10 are not started. Composite shells can combine
+working primitives, but they must not be used to claim that missing TreeView,
+DataGrid, picker, progress ring, flyout or WebView families are complete.
 
 `workbench` is the first reusable application-shell feature. It provides
 navigation history, a message timeline, paragraph/code/tool/notice blocks,

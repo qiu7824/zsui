@@ -46,6 +46,7 @@ virtual-list = ["list", "scroll"]
 paged-list = ["virtual-list"]
 textbox = ["widgets-input"]
 password-box = ["widgets-input", "dep:zeroize"]
+tooltip = ["widgets-base"]
 checkbox = ["widgets-input"]
 toggle = ["widgets-input"]
 slider = ["widgets-input"]
@@ -82,7 +83,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "toggle-button", "label", "grid", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
+all-widgets = ["button", "toggle-button", "label", "grid", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",

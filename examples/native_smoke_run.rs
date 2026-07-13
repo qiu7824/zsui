@@ -11,6 +11,7 @@ use zsui::checkbox;
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "password-box", feature = "label"),
+    all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "progress", feature = "label"),
     all(feature = "combo", feature = "label"),
@@ -40,6 +41,7 @@ use zsui::toggle_button;
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "password-box", feature = "label"),
+    all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
@@ -53,6 +55,7 @@ use zsui::CommandId;
     all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
+    all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -87,6 +90,7 @@ use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "password-box", feature = "label"),
+    all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
@@ -123,6 +127,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--number-box-view" || arg == "--number-box"),
         args.iter()
             .any(|arg| arg == "--password-box-view" || arg == "--password-box"),
+        args.iter()
+            .any(|arg| arg == "--tooltip-view" || arg == "--tooltip"),
         args.iter()
             .any(|arg| arg == "--radio-view" || arg == "--radio"),
         args.iter()
@@ -161,6 +167,7 @@ fn run_smoke(
     include_slider_view: bool,
     include_number_box_view: bool,
     include_password_box_view: bool,
+    include_tooltip_view: bool,
     include_radio_view: bool,
     include_progress_view: bool,
     include_combo_view: bool,
@@ -196,6 +203,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "password-box", feature = "label")))]
     if include_password_box_view {
         return Err("--password-box-view requires the password-box and label features".to_string());
+    }
+    #[cfg(not(all(feature = "tooltip", feature = "button", feature = "label")))]
+    if include_tooltip_view {
+        return Err("--tooltip-view requires the tooltip, button and label features".to_string());
     }
     #[cfg(not(all(feature = "radio", feature = "label")))]
     if include_radio_view {
@@ -331,6 +342,10 @@ fn run_smoke(
             .native_view_text_input("ZSUI")
             .native_view_click(Point { x: 480, y: 84 });
     }
+    #[cfg(all(feature = "tooltip", feature = "button", feature = "label"))]
+    if include_tooltip_view {
+        smoke_options = smoke_options.native_view_key_down(NativeViewKey::Tab);
+    }
     #[cfg(all(feature = "radio", feature = "label"))]
     if include_radio_view {
         smoke_options = smoke_options
@@ -404,6 +419,8 @@ fn run_smoke(
         attach_number_box_view(builder)
     } else if include_password_box_view {
         attach_password_box_view(builder)
+    } else if include_tooltip_view {
+        attach_tooltip_view(builder)
     } else if include_slider_view {
         attach_slider_view(builder)
     } else if include_radio_view {
@@ -442,6 +459,29 @@ fn run_smoke(
         "artifacts": write_report,
     }))
     .map_err(|err| err.to_string())
+}
+
+#[cfg(all(feature = "tooltip", feature = "button", feature = "label"))]
+fn attach_tooltip_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.ui_command_view(
+        column([
+            text::<UiCommand>("ZSUI ToolTip Smoke").height(zsui::Dp::new(28.0)),
+            button("Save document")
+                .id(WidgetId::new(77))
+                .height(zsui::Dp::new(40.0))
+                .tooltip_spec(
+                    zsui::ZsTooltipSpec::new("Save the current document").open_delay_ms(100),
+                )
+                .on_click(UiCommand::app(CommandId("zsui.native_smoke.tooltip_owner"))),
+        ])
+        .padding(zsui::Dp::new(24.0))
+        .gap(zsui::Dp::new(12.0)),
+    )
+}
+
+#[cfg(not(all(feature = "tooltip", feature = "button", feature = "label")))]
+fn attach_tooltip_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
 }
 
 #[cfg(all(feature = "grid", feature = "button", feature = "label"))]

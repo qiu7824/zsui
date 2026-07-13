@@ -32,6 +32,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
     drawing_area.set_focusable(true);
     let plan = Rc::new(RefCell::new(plan));
     let runtime = Rc::new(RefCell::new(runtime));
+    #[cfg(feature = "tooltip")]
+    let tooltip_timer = Rc::new(RefCell::new(None));
     let ime = gtk::IMMulticontext::new();
     ime.set_client_widget(Some(&drawing_area));
     ime.set_use_preedit(true);
@@ -168,6 +170,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
+        #[cfg(feature = "tooltip")]
+        let tooltip_timer = Rc::clone(&tooltip_timer);
         move |_motion, x, y| {
             let report = runtime.borrow_mut().dispatch_pointer_move(crate::Point {
                 x: gtk_coordinate(x),
@@ -183,6 +187,15 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     application.as_ref(),
                 );
             }
+            #[cfg(feature = "tooltip")]
+            schedule_linux_gtk_tooltip_tick(
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.clone(),
+                &tooltip_timer,
+            );
         }
     });
     motion.connect_leave({
@@ -191,6 +204,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
+        #[cfg(feature = "tooltip")]
+        let tooltip_timer = Rc::clone(&tooltip_timer);
         move |_motion| {
             let report = runtime.borrow_mut().dispatch_pointer_leave();
             if report.handled {
@@ -203,6 +218,15 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     application.as_ref(),
                 );
             }
+            #[cfg(feature = "tooltip")]
+            schedule_linux_gtk_tooltip_tick(
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.clone(),
+                &tooltip_timer,
+            );
         }
     });
     drawing_area.add_controller(motion);
@@ -294,6 +318,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
+        #[cfg(feature = "tooltip")]
+        let tooltip_timer = Rc::clone(&tooltip_timer);
         move |_controller, key, _keycode, modifiers| {
             let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
             let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -386,6 +412,15 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 application.as_ref(),
             );
             reset_linux_gtk_ime_if_no_text_target(&runtime, &ime);
+            #[cfg(feature = "tooltip")]
+            schedule_linux_gtk_tooltip_tick(
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.clone(),
+                &tooltip_timer,
+            );
             if handled {
                 gtk::glib::Propagation::Stop
             } else {
@@ -418,6 +453,52 @@ pub(crate) fn install_linux_gtk_draw_plan(
     });
     drawing_area.add_controller(focus);
     window.set_child(Some(&drawing_area));
+}
+
+#[cfg(feature = "tooltip")]
+fn schedule_linux_gtk_tooltip_tick(
+    area: &gtk::DrawingArea,
+    plan: &Rc<RefCell<NativeDrawPlan>>,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: &gtk::IMMulticontext,
+    application: Option<gtk::Application>,
+    timer: &Rc<RefCell<Option<gtk::glib::SourceId>>>,
+) {
+    if let Some(source) = timer.borrow_mut().take() {
+        source.remove();
+    }
+    let Some(delay_ms) = runtime.borrow().transient_poll_interval_ms() else {
+        return;
+    };
+    let area = area.clone();
+    let plan = Rc::clone(plan);
+    let runtime = Rc::clone(runtime);
+    let ime = ime.clone();
+    let timer_for_callback = Rc::clone(timer);
+    let source = gtk::glib::timeout_add_local_once(
+        std::time::Duration::from_millis(delay_ms.max(1)),
+        move || {
+            timer_for_callback.borrow_mut().take();
+            let report = runtime.borrow_mut().refresh_transient_view();
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+            schedule_linux_gtk_tooltip_tick(
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application,
+                &timer_for_callback,
+            );
+        },
+    );
+    *timer.borrow_mut() = Some(source);
 }
 
 fn apply_linux_gtk_input_report(

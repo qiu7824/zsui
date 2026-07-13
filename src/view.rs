@@ -779,6 +779,8 @@ pub struct ViewNode<Msg> {
     pub kind: ViewNodeKind<Msg>,
     pub style: ViewStyle,
     pub children: Vec<ViewNode<Msg>>,
+    #[cfg(feature = "tooltip")]
+    tooltip: Option<crate::ZsTooltipSpec>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
     #[cfg(feature = "combo")]
@@ -793,6 +795,8 @@ impl<Msg> ViewNode<Msg> {
             kind,
             style: ViewStyle::default(),
             children: Vec::new(),
+            #[cfg(feature = "tooltip")]
+            tooltip: None,
             bounds: None,
             layout_dpi: Dpi::standard(),
             #[cfg(feature = "combo")]
@@ -803,6 +807,24 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn id(mut self, id: WidgetId) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(crate::ZsTooltipSpec::new(text));
+        self
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub fn tooltip_spec(mut self, spec: impl Into<crate::ZsTooltipSpec>) -> Self {
+        self.tooltip = Some(spec.into());
+        self
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub fn without_tooltip(mut self) -> Self {
+        self.tooltip = None;
         self
     }
 
@@ -1608,6 +1630,21 @@ pub struct ViewHitTarget {
     pub kind: ViewHitTargetKind,
 }
 
+#[cfg(feature = "tooltip")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewTooltipTarget {
+    pub widget: WidgetId,
+    pub bounds: Rect,
+    pub spec: crate::ZsTooltipSpec,
+}
+
+#[cfg(feature = "tooltip")]
+impl ViewTooltipTarget {
+    pub fn contains(&self, point: Point) -> bool {
+        self.bounds.contains(point)
+    }
+}
+
 impl ViewHitTarget {
     pub const fn new(widget: WidgetId, bounds: Rect) -> Self {
         Self {
@@ -1689,12 +1726,17 @@ pub enum ViewHitTargetKind {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewInteractionPlan {
     pub hit_targets: Vec<ViewHitTarget>,
+    #[cfg(feature = "tooltip")]
+    #[serde(default)]
+    pub tooltip_targets: Vec<ViewTooltipTarget>,
 }
 
 impl ViewInteractionPlan {
     pub fn new(hit_targets: impl IntoIterator<Item = ViewHitTarget>) -> Self {
         Self {
             hit_targets: hit_targets.into_iter().collect(),
+            #[cfg(feature = "tooltip")]
+            tooltip_targets: Vec::new(),
         }
     }
 
@@ -1728,6 +1770,23 @@ impl ViewInteractionPlan {
             .iter()
             .copied()
             .find(|target| target.widget == widget)
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub fn tooltip_target_at(&self, point: Point) -> Option<ViewTooltipTarget> {
+        self.tooltip_targets
+            .iter()
+            .rev()
+            .find(|target| target.contains(point))
+            .cloned()
+    }
+
+    #[cfg(feature = "tooltip")]
+    pub fn tooltip_for_widget(&self, widget: WidgetId) -> Option<ViewTooltipTarget> {
+        self.tooltip_targets
+            .iter()
+            .find(|target| target.widget == widget)
+            .cloned()
     }
 
     pub fn target_kind_at(&self, point: Point) -> Option<ViewHitTargetKind> {
@@ -3657,7 +3716,15 @@ impl<Msg> ViewNode<Msg> {
         self.collect_hit_targets(&mut hit_targets, None);
         #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
         self.collect_overlay_hit_targets(&mut hit_targets, None);
-        ViewInteractionPlan { hit_targets }
+        #[cfg(feature = "tooltip")]
+        let mut tooltip_targets = Vec::new();
+        #[cfg(feature = "tooltip")]
+        self.collect_tooltip_targets(&mut tooltip_targets, None);
+        ViewInteractionPlan {
+            hit_targets,
+            #[cfg(feature = "tooltip")]
+            tooltip_targets,
+        }
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {
@@ -4210,6 +4277,65 @@ impl<Msg> ViewNode<Msg> {
 
         for child in &self.children {
             child.collect_hit_targets(hit_targets, child_clip);
+        }
+    }
+
+    #[cfg(feature = "tooltip")]
+    fn collect_tooltip_targets(
+        &self,
+        tooltip_targets: &mut Vec<ViewTooltipTarget>,
+        clip: Option<Rect>,
+    ) {
+        if let (Some(widget), Some(bounds), Some(spec)) = (self.id, self.bounds, &self.tooltip) {
+            if !spec.is_empty() {
+                if let Some(bounds) = clipped_rect(bounds, clip) {
+                    tooltip_targets.push(ViewTooltipTarget {
+                        widget,
+                        bounds,
+                        spec: spec.clone(),
+                    });
+                }
+            }
+        }
+
+        #[cfg(feature = "tabs")]
+        if let (Some(bounds), ViewNodeKind::Tabs { tabs, selected, .. }) = (self.bounds, &self.kind)
+        {
+            let selected_index = selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
+            let plan = crate::zs_tab_view_render_plan(
+                bounds,
+                &labels,
+                selected_index,
+                crate::ZsTabPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            if let Some(child) = selected_index.and_then(|index| self.children.get(index)) {
+                child.collect_tooltip_targets(
+                    tooltip_targets,
+                    clipped_rect(plan.content_bounds, clip),
+                );
+            }
+            return;
+        }
+
+        #[cfg(feature = "scroll")]
+        let clips_children = matches!(self.kind, ViewNodeKind::Scroll { .. });
+        #[cfg(all(feature = "scroll", feature = "virtual-list"))]
+        let clips_children =
+            clips_children || matches!(self.kind, ViewNodeKind::VirtualList { .. });
+        #[cfg(feature = "scroll")]
+        let child_clip = if clips_children {
+            self.bounds.and_then(|bounds| clipped_rect(bounds, clip))
+        } else {
+            clip
+        };
+        #[cfg(not(feature = "scroll"))]
+        let child_clip = clip;
+
+        for child in &self.children {
+            child.collect_tooltip_targets(tooltip_targets, child_clip);
         }
     }
 
@@ -5435,6 +5561,30 @@ mod tests {
             paint.plan().commands.first(),
             Some(NativeDrawCommand::FillRect { .. })
         ));
+    }
+
+    #[test]
+    #[cfg(all(feature = "tooltip", feature = "button"))]
+    fn tooltip_attachment_adds_overlay_metadata_without_an_extra_hit_target() {
+        let widget = WidgetId::new(501);
+        let mut view: ViewNode<()> = button("Save")
+            .id(widget)
+            .tooltip_spec(crate::ZsTooltipSpec::new("Save document"));
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 120,
+        };
+        view.layout(&mut ViewLayoutCx::new(surface, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+
+        assert_eq!(interaction.hit_target_count(), 1);
+        assert_eq!(interaction.tooltip_targets.len(), 1);
+        assert_eq!(interaction.tooltip_targets[0].widget, widget);
+        assert_eq!(interaction.tooltip_targets[0].spec.text, "Save document");
+        assert_eq!(interaction.tooltip_targets[0].bounds, surface);
     }
 
     #[test]

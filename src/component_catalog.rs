@@ -126,6 +126,11 @@ const VIRTUAL_LIST_GAPS: &[&str] = &[
     "non-Windows runtime smoke",
 ];
 const PLATFORM_GAPS: &[&str] = &["native platform binding", "target interaction smoke"];
+const TOOLTIP_GAPS: &[&str] = &[
+    "accessibility relationship",
+    "top-level overflow popup",
+    "macOS and Linux target interaction smoke",
+];
 const SLIDER_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target interaction smoke",
@@ -524,10 +529,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "tooltip",
         "ToolTip",
         Feedback,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("tooltip"),
+        "src/tooltip.rs + src/view.rs + src/native.rs",
+        TOOLTIP_GAPS
     ),
     component!(
         "content_dialog",

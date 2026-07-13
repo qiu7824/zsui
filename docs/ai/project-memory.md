@@ -139,6 +139,18 @@ history remain authoritative for implementation status.
   explicit clear-text boundary. OS text stacks may still make transient copies;
   locked memory, Alt+F8, full accessibility/caps-lock signaling and non-Windows
   target smoke remain readiness gaps.
+- ToolTip is an independent `tooltip` Cargo feature and is an attached modifier
+  on a stable-ID `ViewNode`, not a native child widget or a duplicate hit target.
+  It stays self-drawn and noninteractive, with internal Windows, macOS and GTK
+  metric profiles. Pointer hover opens after the host delay, keyboard focus
+  opens immediately, and leave/click/key/blur or the display timeout dismisses
+  it. Win32 reads the system hover/message timing; AppKit and GTK use owned
+  one-shot main-loop timers. Auto placement prefers centered above the pointer,
+  flips and clamps inside the current viewport. A top-level overflow popup,
+  accessibility relationship and non-Windows target proof remain readiness gaps.
+- Every new component remains opt-in through its own Cargo feature. Default
+  features stay `window`, `button` and `label`; `all-widgets`/`full` are explicit
+  profile choices and must not become implicit dependencies of component APIs.
 - ToggleButton is an independent `toggle-button` Cargo feature and reuses the
   shared explicit Boolean `Toggled` message path rather than inheriting Button
   behavior or storing state in a backend. It remains self-drawn: Windows,

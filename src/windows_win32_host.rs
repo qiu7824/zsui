@@ -114,6 +114,9 @@ use windows_sys::Win32::{
     },
 };
 
+#[cfg(feature = "tooltip")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETMESSAGEDURATION, SPI_GETMOUSEHOVERTIME};
+
 static ACTIVE_MAIN_WINDOW_COUNT: AtomicI32 = AtomicI32::new(0);
 static WINDOW_DRAW_PLANS: OnceLock<Mutex<Vec<WindowsWindowDrawPlanRecord>>> = OnceLock::new();
 static WINDOW_VIEW_INPUT_ROUTES: OnceLock<Mutex<Vec<WindowsWindowViewInputRouteRecord>>> =
@@ -128,6 +131,35 @@ static WINDOW_MENU_COMMAND_TABLES: OnceLock<Mutex<Vec<WindowsWindowMenuCommandTa
 
 const HOVER_DEFAULT: u32 = u32::MAX;
 const WM_MOUSELEAVE: u32 = 0x02A3;
+
+#[cfg(feature = "tooltip")]
+fn windows_tooltip_timing() -> crate::tooltip::ZsTooltipTiming {
+    let mut hover_ms = 500u32;
+    let mut message_seconds = 5u32;
+    unsafe {
+        let mut value = 0u32;
+        if SystemParametersInfoW(SPI_GETMOUSEHOVERTIME, 0, (&mut value as *mut u32).cast(), 0) != 0
+            && value > 0
+        {
+            hover_ms = value;
+        }
+        value = 0;
+        if SystemParametersInfoW(
+            SPI_GETMESSAGEDURATION,
+            0,
+            (&mut value as *mut u32).cast(),
+            0,
+        ) != 0
+            && value > 0
+        {
+            message_seconds = value;
+        }
+    }
+    crate::tooltip::ZsTooltipTiming {
+        open_delay: std::time::Duration::from_millis(u64::from(hover_ms)),
+        visible_duration: std::time::Duration::from_secs(u64::from(message_seconds)),
+    }
+}
 const DEFAULT_MAIN_CLASS_NAME: &str = "ZsuiMainWindow";
 const DEFAULT_QUICK_CLASS_NAME: &str = "ZsuiQuickWindow";
 const DEFAULT_TRANSIENT_CLASS_NAME: &str = "ZsuiTransientWindow";
@@ -1795,6 +1827,8 @@ pub struct WindowsWin32ViewInputRoute {
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
+    #[cfg(feature = "tooltip")]
+    tooltip: crate::tooltip::ZsTooltipRuntime,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
     #[cfg(feature = "combo")]
@@ -1840,6 +1874,8 @@ impl WindowsWin32ViewInputRoute {
             ui_command_view: Some(ui_command_view),
             live_view: None,
             focused_widget: None,
+            #[cfg(feature = "tooltip")]
+            tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
             text_edit: None,
             text_drag: None,
             #[cfg(feature = "combo")]
@@ -1881,6 +1917,8 @@ impl WindowsWin32ViewInputRoute {
             ui_command_view: None,
             live_view: Some(live_view),
             focused_widget: None,
+            #[cfg(feature = "tooltip")]
+            tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
             text_edit: None,
             text_drag: None,
             #[cfg(feature = "combo")]
@@ -1936,6 +1974,11 @@ impl WindowsWin32ViewInputRoute {
             click_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+        }
         let target = self.interaction_plan.hit_target_at(point);
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
         let Some(target) = target else {
@@ -1979,6 +2022,11 @@ impl WindowsWin32ViewInputRoute {
             pointer_down_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+        }
         let target = self.interaction_plan.hit_target_at(point);
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
         #[cfg(any(
@@ -2054,10 +2102,28 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
         point: crate::Point,
     ) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_pointer_move_at(point, std::time::Instant::now())
+    }
+
+    fn dispatch_pointer_move_at(
+        &mut self,
+        point: crate::Point,
+        now: std::time::Instant,
+    ) -> WindowsWin32ViewInputDispatchReport {
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self
+            .tooltip
+            .pointer_moved(&self.interaction_plan, point, now)
+        {
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+        }
+        #[cfg(not(feature = "tooltip"))]
+        let _ = now;
         #[cfg(any(
             feature = "date-picker",
             feature = "password-box",
@@ -2252,12 +2318,18 @@ impl WindowsWin32ViewInputRoute {
     fn dispatch_pointer_leave(&mut self) -> WindowsWin32ViewInputDispatchReport {
         #[cfg(feature = "password-box")]
         let had_password_peek = self.password_peek.take().is_some();
-        let report = WindowsWin32ViewInputDispatchReport {
+        #[allow(unused_mut)]
+        let mut report = WindowsWin32ViewInputDispatchReport {
             #[cfg(feature = "password-box")]
             handled: had_password_peek,
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+        }
         #[cfg(any(
             feature = "date-picker",
             feature = "password-box",
@@ -2266,7 +2338,6 @@ impl WindowsWin32ViewInputRoute {
             feature = "toggle-button"
         ))]
         {
-            let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
@@ -2478,6 +2549,11 @@ impl WindowsWin32ViewInputRoute {
             key_down_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+        }
         if virtual_key == ZSUI_WIN32_VK_TAB && !control {
             self.dispatch_focus_traversal(if shift { -1 } else { 1 }, &mut report);
             return report;
@@ -2507,6 +2583,8 @@ impl WindowsWin32ViewInputRoute {
                 .hit_target_for_widget(crate::WidgetId(tab.0))
             {
                 self.focus_target(target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(target.widget);
             }
             report
                 .events
@@ -2742,6 +2820,8 @@ impl WindowsWin32ViewInputRoute {
                     return report;
                 };
                 self.focus_target(next_target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(next_target.widget);
                 if control {
                     report.radio_keyboard_focus_only_count = 1;
                     report.events.push(format!(
@@ -2794,6 +2874,8 @@ impl WindowsWin32ViewInputRoute {
                     return report;
                 };
                 self.focus_target(next_target, &mut report);
+                #[cfg(feature = "tooltip")]
+                self.show_keyboard_tooltip(next_target.widget);
                 report.tab_keyboard_focus_only_count = 1;
                 report.events.push(format!(
                     "win32_view_tab_key_focus:{}:{}",
@@ -2926,6 +3008,8 @@ impl WindowsWin32ViewInputRoute {
                 if let Some(next_target) = self.interaction_plan.hit_target_for_widget(next_widget)
                 {
                     self.focus_target(next_target, &mut report);
+                    #[cfg(feature = "tooltip")]
+                    self.show_keyboard_tooltip(next_target.widget);
                     report.selection_count = 1;
                     report.keyboard_selection_count = 1;
                     report.events.push(format!(
@@ -3124,6 +3208,8 @@ impl WindowsWin32ViewInputRoute {
 
         self.dismiss_popup_overlays_except(Some(target.widget), report);
         self.focus_target(target, report);
+        #[cfg(feature = "tooltip")]
+        self.show_keyboard_tooltip(target.widget);
         report.focus_traversal_count = 1;
         report.events.push(format!(
             "win32_view_key_focus:{}:{}",
@@ -3177,12 +3263,27 @@ impl WindowsWin32ViewInputRoute {
             .push(format!("win32_view_focus:{}", target.widget.0));
     }
 
+    #[cfg(feature = "tooltip")]
+    fn show_keyboard_tooltip(&mut self, widget: crate::WidgetId) {
+        if self
+            .tooltip
+            .focus_widget(&self.interaction_plan, widget, std::time::Instant::now())
+        {
+            self.rebuild_pending_draw_plan();
+        }
+    }
+
     fn dispatch_blur(&mut self) -> WindowsWin32ViewInputDispatchReport {
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         self.dismiss_popup_overlays_except(None, &mut report);
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.dismiss() {
+            report.handled = true;
+            self.rebuild_pending_draw_plan();
+        }
         #[cfg(feature = "password-box")]
         {
             self.password_peek = None;
@@ -3888,8 +3989,30 @@ impl WindowsWin32ViewInputRoute {
             self.focused_widget,
             self.dpi,
         );
+        #[cfg(feature = "tooltip")]
+        self.compose_tooltip(&mut plan);
         self.pending_draw_plan = Some(plan);
         true
+    }
+
+    #[cfg(feature = "tooltip")]
+    fn compose_tooltip(&self, plan: &mut NativeDrawPlan) {
+        let Some(surface) = self.surface else {
+            return;
+        };
+        let Some(target) = self.tooltip.visible_target(&self.interaction_plan) else {
+            return;
+        };
+        let render = crate::zs_tooltip_render_plan(
+            &target.spec,
+            target.bounds,
+            self.tooltip.anchor(),
+            surface,
+            crate::ZsTooltipPlatformStyle::Windows,
+            self.dpi,
+        );
+        let overlay = crate::zs_tooltip_native_draw_plan(&render, &target.spec);
+        plan.commands.extend(overlay.commands);
     }
 
     #[cfg(feature = "password-box")]
@@ -3965,28 +4088,57 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn background_poll_interval_ms(&self) -> Option<u64> {
-        self.live_view
+        let live_interval = self
+            .live_view
             .as_ref()
-            .and_then(SharedLiveViewRuntime::background_poll_interval_ms)
+            .and_then(SharedLiveViewRuntime::background_poll_interval_ms);
+        #[cfg(feature = "tooltip")]
+        {
+            return live_interval
+                .into_iter()
+                .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
+                .min();
+        }
+        #[cfg(not(feature = "tooltip"))]
+        live_interval
     }
 
     fn refresh_background_view(&mut self) -> WindowsWin32ViewInputDispatchReport {
-        let Some(live_view) = &self.live_view else {
-            return WindowsWin32ViewInputDispatchReport::default();
-        };
-        let update = live_view.refresh();
-        self.interaction_plan = live_view.interaction_plan();
-        self.rebuild_pending_draw_plan();
-        WindowsWin32ViewInputDispatchReport {
+        self.refresh_background_view_at(std::time::Instant::now())
+    }
+
+    fn refresh_background_view_at(
+        &mut self,
+        now: std::time::Instant,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        #[cfg(not(feature = "tooltip"))]
+        let _ = now;
+        let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
-            background_refresh_count: 1,
-            live_view_revision: update.revision,
-            events: vec![format!(
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        let mut redraw = false;
+        if let Some(live_view) = &self.live_view {
+            let update = live_view.refresh();
+            self.interaction_plan = live_view.interaction_plan();
+            report.background_refresh_count = 1;
+            report.live_view_revision = update.revision;
+            report.events.push(format!(
                 "win32_live_view_background_refresh:{}",
                 update.revision
-            )],
-            ..WindowsWin32ViewInputDispatchReport::default()
+            ));
+            redraw = true;
         }
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.refresh(now) {
+            report.handled = true;
+            report.events.push("win32_tooltip_tick".to_string());
+            redraw = true;
+        }
+        if redraw {
+            self.rebuild_pending_draw_plan();
+        }
+        report
     }
 
     fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
@@ -6543,6 +6695,48 @@ mod tests {
         assert_eq!(aggregate.text_input_count, 2);
         assert_eq!(aggregate.ui_command_count, 1);
         clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(all(feature = "tooltip", feature = "button"))]
+    fn window_view_input_route_ticks_delayed_tooltip_into_buffered_draw_plan() {
+        let widget = crate::WidgetId::new(1009);
+        let mut view: crate::ViewNode<UiCommand> = crate::button("Save")
+            .id(widget)
+            .tooltip_spec(crate::ZsTooltipSpec::new("Save document").open_delay_ms(100));
+        let surface = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 120,
+        };
+        view.layout(&mut crate::ViewLayoutCx::new(
+            surface,
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let target = interaction
+            .tooltip_for_widget(widget)
+            .expect("tooltip target should be collected");
+        let point = crate::Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        };
+        let start = std::time::Instant::now();
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        route.dispatch_pointer_move_at(point, start);
+        let tick = route.refresh_background_view_at(start + std::time::Duration::from_millis(100));
+        let draw = route
+            .take_pending_draw_plan()
+            .expect("tooltip tick should rebuild the buffered draw plan");
+
+        assert!(tick.handled);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Text(text) if text.text == "Save document"
+        )));
+        assert_eq!(route.hit_target_count(), 1);
     }
 
     #[test]
