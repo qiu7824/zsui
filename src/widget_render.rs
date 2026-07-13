@@ -329,6 +329,10 @@ pub fn zs_progress_bar_native_draw_plan(plan: &ZsProgressBarRenderPlan) -> Nativ
 }
 
 #[cfg(feature = "combo")]
+/// Matches WinUI's default `ComboBoxPopupMaxNumberOfItems` resource.
+pub const ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS: usize = 15;
+
+#[cfg(feature = "combo")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsComboBoxRenderPlan {
     pub bounds: Rect,
@@ -336,6 +340,7 @@ pub struct ZsComboBoxRenderPlan {
     pub icon_bounds: Rect,
     pub popup: Option<Rect>,
     pub popup_placement: Option<ZsPopupPlacement>,
+    pub first_visible_option: usize,
     pub option_rows: Vec<Rect>,
     pub radius: i32,
 }
@@ -347,7 +352,7 @@ pub fn zs_combo_box_render_plan(
     expanded: bool,
     dpi: Dpi,
 ) -> ZsComboBoxRenderPlan {
-    zs_combo_box_render_plan_impl(bounds, option_count, expanded, dpi, None)
+    zs_combo_box_render_plan_impl(bounds, option_count, None, Some(0), expanded, dpi, None)
 }
 
 #[cfg(feature = "combo")]
@@ -358,13 +363,64 @@ pub fn zs_combo_box_render_plan_in_viewport(
     dpi: Dpi,
     viewport: Rect,
 ) -> ZsComboBoxRenderPlan {
-    zs_combo_box_render_plan_impl(bounds, option_count, expanded, dpi, Some(viewport))
+    zs_combo_box_render_plan_impl(
+        bounds,
+        option_count,
+        None,
+        Some(0),
+        expanded,
+        dpi,
+        Some(viewport),
+    )
+}
+
+#[cfg(feature = "combo")]
+pub fn zs_combo_box_render_plan_with_scroll(
+    bounds: Rect,
+    option_count: usize,
+    selected_index: Option<usize>,
+    first_visible_option: Option<usize>,
+    expanded: bool,
+    dpi: Dpi,
+) -> ZsComboBoxRenderPlan {
+    zs_combo_box_render_plan_impl(
+        bounds,
+        option_count,
+        selected_index,
+        first_visible_option,
+        expanded,
+        dpi,
+        None,
+    )
+}
+
+#[cfg(feature = "combo")]
+pub fn zs_combo_box_render_plan_in_viewport_with_scroll(
+    bounds: Rect,
+    option_count: usize,
+    selected_index: Option<usize>,
+    first_visible_option: Option<usize>,
+    expanded: bool,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsComboBoxRenderPlan {
+    zs_combo_box_render_plan_impl(
+        bounds,
+        option_count,
+        selected_index,
+        first_visible_option,
+        expanded,
+        dpi,
+        Some(viewport),
+    )
 }
 
 #[cfg(feature = "combo")]
 fn zs_combo_box_render_plan_impl(
     bounds: Rect,
     option_count: usize,
+    selected_index: Option<usize>,
+    first_visible_option: Option<usize>,
     expanded: bool,
     dpi: Dpi,
     viewport: Option<Rect>,
@@ -393,11 +449,28 @@ fn zs_combo_box_render_plan_impl(
     };
     let row_height = bounds.height.max(scale(32, dpi)).max(1);
     let popup_gap = scale(4, dpi);
+    let visible_option_count =
+        combo_visible_option_count(bounds, option_count, row_height, popup_gap, viewport);
+    let maximum_first_visible = option_count.saturating_sub(visible_option_count);
+    let first_visible_option = first_visible_option.map_or_else(
+        || {
+            selected_index
+                .filter(|index| *index < option_count)
+                .map(|index| {
+                    index
+                        .saturating_add(1)
+                        .saturating_sub(visible_option_count)
+                        .min(maximum_first_visible)
+                })
+                .unwrap_or_default()
+        },
+        |index| index.min(maximum_first_visible),
+    );
     let placed_popup = (expanded && option_count > 0).then(|| {
         place_popup(
             bounds,
             bounds.width.max(1),
-            row_height.saturating_mul(option_count.min(i32::MAX as usize) as i32),
+            row_height.saturating_mul(visible_option_count.min(i32::MAX as usize) as i32),
             popup_gap,
             viewport,
         )
@@ -405,7 +478,7 @@ fn zs_combo_box_render_plan_impl(
     let popup = placed_popup.map(|placed| placed.bounds);
     let option_rows = popup
         .map(|popup| {
-            (0..option_count)
+            (0..visible_option_count)
                 .map(|index| Rect {
                     x: popup.x,
                     y: popup.y.saturating_add(
@@ -423,9 +496,32 @@ fn zs_combo_box_render_plan_impl(
         icon_bounds,
         popup,
         popup_placement: placed_popup.map(|placed| placed.placement),
+        first_visible_option,
         option_rows,
         radius: scale(6, dpi),
     }
+}
+
+#[cfg(feature = "combo")]
+fn combo_visible_option_count(
+    anchor: Rect,
+    option_count: usize,
+    row_height: i32,
+    gap: i32,
+    viewport: Option<Rect>,
+) -> usize {
+    let capped_count = option_count.min(ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS);
+    let Some(viewport) = viewport.filter(|viewport| viewport.width > 0 && viewport.height > 0)
+    else {
+        return capped_count;
+    };
+    let viewport_bottom = viewport.y.saturating_add(viewport.height);
+    let below_y = anchor.y.saturating_add(anchor.height).saturating_add(gap);
+    let above_bottom = anchor.y.saturating_sub(gap);
+    let available_below = viewport_bottom.saturating_sub(below_y).max(0);
+    let available_above = above_bottom.saturating_sub(viewport.y).max(0);
+    let available_rows = available_below.max(available_above) / row_height.max(1);
+    capped_count.min(available_rows.max(1) as usize)
 }
 
 #[cfg(feature = "combo")]
@@ -479,7 +575,12 @@ pub fn zs_combo_box_popup_native_draw_plan(
         radius: plan.radius,
     }];
     let padding = scale(12, dpi);
-    for (index, (label, row)) in options.iter().zip(&plan.option_rows).enumerate() {
+    for ((index, label), row) in options
+        .iter()
+        .enumerate()
+        .skip(plan.first_visible_option)
+        .zip(&plan.option_rows)
+    {
         if selected == Some(index) {
             commands.push(NativeDrawCommand::RoundFill {
                 rect: *row,
@@ -1174,6 +1275,63 @@ mod tests {
             })
         );
         assert_eq!(plan.option_rows[2].y, 144);
+    }
+
+    #[cfg(feature = "combo")]
+    #[test]
+    fn combo_popup_caps_rows_to_winui_limit_and_keeps_selection_visible() {
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 300,
+        };
+        let plan = zs_combo_box_render_plan_in_viewport_with_scroll(
+            Rect {
+                x: 20,
+                y: 100,
+                width: 200,
+                height: 32,
+            },
+            100,
+            Some(90),
+            None,
+            true,
+            Dpi::standard(),
+            viewport,
+        );
+        let popup = plan.popup.expect("long combo should expose a popup");
+
+        assert_eq!(plan.option_rows.len(), 5);
+        assert_eq!(plan.first_visible_option, 86);
+        assert!(plan.first_visible_option <= 90);
+        assert!(90 < plan.first_visible_option + plan.option_rows.len());
+        assert!(popup.y >= viewport.y);
+        assert!(popup.y + popup.height <= viewport.y + viewport.height);
+
+        let options = (0..100)
+            .map(|index| format!("Option {index}"))
+            .collect::<Vec<_>>();
+        let draw = zs_combo_box_popup_native_draw_plan(&plan, &options, Some(90), Dpi::standard());
+        assert!(draw.commands.iter().any(
+            |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "Option 86")
+        ));
+
+        let unconstrained = zs_combo_box_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 32,
+            },
+            100,
+            true,
+            Dpi::standard(),
+        );
+        assert_eq!(
+            unconstrained.option_rows.len(),
+            ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS
+        );
     }
 
     #[cfg(feature = "date-picker")]

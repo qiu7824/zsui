@@ -832,6 +832,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
     pub native_view_combo_type_ahead_match_count: usize,
+    pub native_view_combo_scroll_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -922,6 +923,7 @@ impl NativeWindowSmokeRunReport {
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
             native_view_combo_type_ahead_match_count: 0,
+            native_view_combo_scroll_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -1010,6 +1012,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub combo_keyboard_selection_changed: bool,
     #[cfg(feature = "combo")]
     pub combo_type_ahead_matched: bool,
+    #[cfg(feature = "combo")]
+    pub combo_scrolled: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -1859,9 +1863,45 @@ impl NativeViewInputRuntime {
             .as_ref()
             .map(SharedLiveViewRuntime::interaction_plan)
             .or_else(|| self.interaction_plan.clone());
-        let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
+        let Some(interaction_plan) = interaction_plan else {
             return report;
         };
+        let Some(target) = interaction_plan.hit_target_at(point) else {
+            return report;
+        };
+
+        #[cfg(feature = "combo")]
+        if matches!(target.kind, crate::ViewHitTargetKind::ComboBoxOption { .. })
+            && delta_y.0 != 0.0
+        {
+            let Some((_, option_count, true)) = self.widget_combo_state(target.widget) else {
+                return report;
+            };
+            let Some(visible_range) = interaction_plan.combo_visible_option_range(target.widget)
+            else {
+                return report;
+            };
+            let visible_count = visible_range.len();
+            let maximum_first = option_count.saturating_sub(visible_count);
+            let next_first = if delta_y.0 > 0.0 {
+                visible_range.start.saturating_add(1).min(maximum_first)
+            } else {
+                visible_range.start.saturating_sub(1)
+            };
+            let mut report = report;
+            report.handled = true;
+            if next_first == visible_range.start {
+                return report;
+            }
+            report.combo_scrolled = true;
+            return self.dispatch_view_event(
+                ViewEvent::ComboBoxScrolled {
+                    widget: target.widget,
+                    first_visible_index: next_first,
+                },
+                report,
+            );
+        }
 
         #[cfg(feature = "scroll")]
         {
@@ -2560,6 +2600,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
     report.native_view_combo_type_ahead_match_count += input.combo_type_ahead_match_count;
+    report.native_view_combo_scroll_count += input.combo_scroll_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -5444,6 +5485,76 @@ mod tests {
 
     #[cfg(feature = "combo")]
     #[test]
+    fn native_view_runtime_routes_wheel_input_to_long_combo_popup() {
+        let combo_id = crate::WidgetId::new(92);
+        let options = (0..30)
+            .map(|index| format!("Option {index}"))
+            .collect::<Vec<_>>();
+        let builder = native_window("Scrollable Combo")
+            .size(320, 220)
+            .ui_command_view(crate::column([
+                crate::combo_box::<_, crate::UiCommand>(options, Some(0))
+                    .id(combo_id)
+                    .height(Dp::new(36.0))
+                    .expanded(true),
+                crate::spacer(),
+            ]));
+        let option = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::ComboBoxOption { index: 0 }
+                })
+            })
+            .expect("long combo should expose its first visible option");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let report = runtime.dispatch_pointer_scroll(
+            Point {
+                x: option.bounds.x + 8,
+                y: option.bounds.y + option.bounds.height / 2,
+            },
+            Dp::new(48.0),
+        );
+
+        assert!(report.handled);
+        assert!(report.combo_scrolled);
+        assert!(report.redraw_plan.is_some());
+        assert_eq!(
+            runtime
+                .current_interaction_plan()
+                .and_then(|plan| plan.combo_visible_option_range(combo_id))
+                .map(|range| range.start),
+            Some(1)
+        );
+
+        let first_scrolled_row = runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::ComboBoxOption { index: 1 }
+                })
+            })
+            .expect("scrolled combo should expose the next global option");
+        let upward = runtime.dispatch_pointer_scroll(
+            Point {
+                x: first_scrolled_row.bounds.x + 8,
+                y: first_scrolled_row.bounds.y + first_scrolled_row.bounds.height / 2,
+            },
+            Dp::new(-48.0),
+        );
+        assert!(upward.combo_scrolled);
+        assert_eq!(
+            runtime
+                .current_interaction_plan()
+                .and_then(|plan| plan.combo_visible_option_range(combo_id))
+                .map(|range| range.start),
+            Some(0)
+        );
+    }
+
+    #[cfg(feature = "combo")]
+    #[test]
     fn native_combo_type_ahead_accumulates_resets_and_cycles() {
         let widget = crate::WidgetId::new(90);
         let started = Instant::now();
@@ -5848,6 +5959,7 @@ mod tests {
         assert_eq!(report.native_view_slider_keyboard_change_count, 0);
         assert_eq!(report.native_view_slider_drag_count, 0);
         assert_eq!(report.native_view_radio_selection_count, 0);
+        assert_eq!(report.native_view_combo_scroll_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);
         assert_eq!(report.native_view_keyboard_selection_count, 0);

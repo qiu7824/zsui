@@ -74,6 +74,12 @@ history remain authoritative for implementation status.
   cycle from the current selection, and matches route through the existing
   typed selection message; this behavior must not invent backend-specific
   visual metrics.
+- Long ComboBox popups follow WinUI's 15-item default maximum, reduce the
+  visible row window further when the host viewport is smaller, and initially
+  keep the selected option visible. Pointer-wheel scrolling moves that bounded
+  internal window through typed `ComboBoxScrolled` events on Win32, AppKit and
+  GTK4 without exposing backend state or requiring the general `scroll`
+  feature.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

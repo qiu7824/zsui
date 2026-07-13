@@ -106,6 +106,7 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
     pub native_view_combo_type_ahead_match_count: usize,
+    pub native_view_combo_scroll_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -175,6 +176,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
             native_view_combo_type_ahead_match_count: 0,
+            native_view_combo_scroll_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -286,6 +288,12 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_combo_type_ahead_match_count
             ));
         }
+        if report.native_view_combo_scroll_count > 0 {
+            notes.push(format!(
+                "native view input smoke scrolled {} combo popup window(s)",
+                report.native_view_combo_scroll_count
+            ));
+        }
         if report.native_view_selection_count > 0 {
             notes.push(format!(
                 "native view input smoke routed {} list selection event(s)",
@@ -375,6 +383,7 @@ impl NativeHostSmokeInteractionReport {
                 .native_view_combo_keyboard_selection_count,
             native_view_combo_type_ahead_match_count: report
                 .native_view_combo_type_ahead_match_count,
+            native_view_combo_scroll_count: report.native_view_combo_scroll_count,
             native_view_toggle_count: report.native_view_toggle_count,
             native_view_selection_count: report.native_view_selection_count,
             native_view_keyboard_selection_count: report.native_view_keyboard_selection_count,
@@ -1013,6 +1022,7 @@ mod tests {
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
             native_view_combo_type_ahead_match_count: 0,
+            native_view_combo_scroll_count: 1,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -1066,6 +1076,7 @@ mod tests {
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
         assert!(interaction_json.contains("\"native_view_focus_visual_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_combo_scroll_count\": 1"));
         assert!(interaction_json.contains("zsui.test.save"));
         assert!(interaction_json.contains("auto_close_elapsed"));
     }

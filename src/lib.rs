@@ -449,7 +449,9 @@ pub use widget_render::ZsPopupPlacement;
 #[cfg(feature = "combo")]
 pub use widget_render::{
     zs_combo_box_header_native_draw_plan, zs_combo_box_popup_native_draw_plan,
-    zs_combo_box_render_plan, zs_combo_box_render_plan_in_viewport, ZsComboBoxRenderPlan,
+    zs_combo_box_render_plan, zs_combo_box_render_plan_in_viewport,
+    zs_combo_box_render_plan_in_viewport_with_scroll, zs_combo_box_render_plan_with_scroll,
+    ZsComboBoxRenderPlan, ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS,
 };
 #[cfg(feature = "date-picker")]
 pub use widget_render::{

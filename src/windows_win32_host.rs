@@ -2540,6 +2540,46 @@ impl WindowsWin32ViewInputRoute {
             return report;
         };
 
+        #[cfg(feature = "combo")]
+        if matches!(target.kind, crate::ViewHitTargetKind::ComboBoxOption { .. })
+            && delta_y.0 != 0.0
+        {
+            let Some((_, option_count, true)) = self.widget_combo_state(target.widget) else {
+                return report;
+            };
+            let Some(visible_range) = self
+                .interaction_plan
+                .combo_visible_option_range(target.widget)
+            else {
+                return report;
+            };
+            let visible_count = visible_range.len();
+            let maximum_first = option_count.saturating_sub(visible_count);
+            let next_first = if delta_y.0 > 0.0 {
+                visible_range.start.saturating_add(1).min(maximum_first)
+            } else {
+                visible_range.start.saturating_sub(1)
+            };
+            report.handled = true;
+            if next_first == visible_range.start {
+                return report;
+            }
+            report.combo_scroll_count = 1;
+            report.event_count = 1;
+            report.events.push(format!(
+                "win32_view_combo_scroll:{}:{next_first}",
+                target.widget.0
+            ));
+            self.dispatch_event(
+                crate::ViewEvent::ComboBoxScrolled {
+                    widget: target.widget,
+                    first_visible_index: next_first,
+                },
+                &mut report,
+            );
+            return report;
+        }
+
         #[cfg(feature = "scroll")]
         if let Some(scroll_widget) = self.widget_scroll_target(target.widget) {
             report.event_count = 1;
@@ -3231,6 +3271,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
     pub combo_type_ahead_match_count: usize,
+    pub combo_scroll_count: usize,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -3289,6 +3330,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
         self.combo_type_ahead_match_count += next.combo_type_ahead_match_count;
+        self.combo_scroll_count += next.combo_scroll_count;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -5821,6 +5863,63 @@ mod tests {
         let blurred = route.dispatch_blur();
         assert!(blurred.handled);
         assert_eq!(route.widget_combo_state(widget), Some((Some(0), 3, false)));
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn window_view_input_route_scrolls_long_combo_popup() {
+        let widget = crate::WidgetId::new(93);
+        let options = (0..30)
+            .map(|index| format!("Option {index}"))
+            .collect::<Vec<_>>();
+        let mut view = crate::column([
+            crate::combo_box::<_, UiCommand>(options, Some(0))
+                .id(widget)
+                .height(crate::Dp::new(36.0))
+                .expanded(true),
+            crate::spacer(),
+        ]);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 220,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction_plan = view.interaction_plan();
+        let option = interaction_plan
+            .hit_targets
+            .iter()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ComboBoxOption { index: 0 })
+            .copied()
+            .expect("long combo should expose a visible option");
+        let mut route = WindowsWin32ViewInputRoute::new(interaction_plan, view);
+
+        let report = route.dispatch_scroll(
+            crate::Point {
+                x: option.bounds.x + 8,
+                y: option.bounds.y + option.bounds.height / 2,
+            },
+            crate::Dp::new(48.0),
+        );
+
+        assert!(report.handled);
+        assert_eq!(report.combo_scroll_count, 1);
+        assert_eq!(report.scroll_count, 1);
+        assert_eq!(report.unhandled_scroll_count, 0);
+        assert!(report
+            .events
+            .iter()
+            .any(|event| event == "win32_view_combo_scroll:93:1"));
+        assert_eq!(
+            route
+                .interaction_plan
+                .combo_visible_option_range(widget)
+                .map(|range| range.start),
+            Some(1)
+        );
     }
 
     #[test]

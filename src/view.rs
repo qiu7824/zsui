@@ -390,6 +390,8 @@ pub struct ViewNode<Msg> {
     pub children: Vec<ViewNode<Msg>>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
+    #[cfg(feature = "combo")]
+    combo_first_visible_option: Option<usize>,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -402,6 +404,8 @@ impl<Msg> ViewNode<Msg> {
             children: Vec::new(),
             bounds: None,
             layout_dpi: Dpi::standard(),
+            #[cfg(feature = "combo")]
+            combo_first_visible_option: None,
             message: PhantomData,
         }
     }
@@ -933,6 +937,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         index: usize,
     },
+    #[cfg(feature = "combo")]
+    ComboBoxScrolled {
+        widget: WidgetId,
+        first_visible_index: usize,
+    },
     #[cfg(feature = "date-picker")]
     DatePickerExpandedChanged {
         widget: WidgetId,
@@ -1066,6 +1075,27 @@ impl ViewInteractionPlan {
 
     pub fn target_kind_at(&self, point: Point) -> Option<ViewHitTargetKind> {
         self.hit_target_at(point).map(|target| target.kind)
+    }
+
+    #[cfg(feature = "combo")]
+    pub(crate) fn combo_visible_option_range(
+        &self,
+        widget: WidgetId,
+    ) -> Option<std::ops::Range<usize>> {
+        let mut indices = self.hit_targets.iter().filter_map(|target| {
+            if target.widget != widget {
+                return None;
+            }
+            match target.kind {
+                ViewHitTargetKind::ComboBoxOption { index } => Some(index),
+                _ => None,
+            }
+        });
+        let first = indices.next()?;
+        let (minimum, maximum) = indices.fold((first, first), |(minimum, maximum), index| {
+            (minimum.min(index), maximum.max(index))
+        });
+        Some(minimum..maximum.saturating_add(1))
     }
 
     pub fn click_event_at(&self, point: Point) -> Option<ViewEvent> {
@@ -1739,6 +1769,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 {
                     if *expanded {
                         *expanded = false;
+                        self.combo_first_visible_option = None;
                         if let Some(message) = on_expanded_change {
                             cx.emit(message(false));
                         }
@@ -1826,6 +1857,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 *selected_index = Some(*index);
                 let was_expanded = *expanded;
                 *expanded = false;
+                self.combo_first_visible_option = None;
                 if let Some(message) = on_select {
                     cx.emit(message(*index));
                 }
@@ -1835,6 +1867,23 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     }
                 }
             }
+        }
+
+        #[cfg(feature = "combo")]
+        if let (
+            ViewNodeKind::ComboBox {
+                options,
+                expanded: true,
+                ..
+            },
+            ViewEvent::ComboBoxScrolled {
+                first_visible_index,
+                ..
+            },
+        ) = (&mut self.kind, event)
+        {
+            self.combo_first_visible_option =
+                Some((*first_visible_index).min(options.len().saturating_sub(1)));
         }
 
         #[cfg(feature = "date-picker")]
@@ -1969,6 +2018,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     },
                 ) => {
                     *expanded = *next_expanded;
+                    self.combo_first_visible_option = None;
                     if let Some(message) = on_expanded_change {
                         cx.emit(message(*next_expanded));
                     }
@@ -2388,7 +2438,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::RadioSelected { widget }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
-            | (Some(id), ViewEvent::ComboBoxSelected { widget, .. }) => id == *widget,
+            | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
+            | (Some(id), ViewEvent::ComboBoxScrolled { widget, .. }) => id == *widget,
             #[cfg(feature = "date-picker")]
             (Some(id), ViewEvent::DatePickerExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::DatePickerMonthChanged { widget, .. })
@@ -2675,17 +2726,29 @@ impl<Msg> ViewNode<Msg> {
             Some(bounds),
             ViewNodeKind::ComboBox {
                 options,
+                selected_index,
                 expanded: true,
                 ..
             },
         ) = (self.id, self.bounds, &self.kind)
         {
             let plan = viewport.map_or_else(
-                || crate::zs_combo_box_render_plan(bounds, options.len(), true, self.layout_dpi),
-                |viewport| {
-                    crate::zs_combo_box_render_plan_in_viewport(
+                || {
+                    crate::zs_combo_box_render_plan_with_scroll(
                         bounds,
                         options.len(),
+                        *selected_index,
+                        self.combo_first_visible_option,
+                        true,
+                        self.layout_dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_combo_box_render_plan_in_viewport_with_scroll(
+                        bounds,
+                        options.len(),
+                        *selected_index,
+                        self.combo_first_visible_option,
                         true,
                         self.layout_dpi,
                         viewport,
@@ -2700,7 +2763,9 @@ impl<Msg> ViewNode<Msg> {
                         ViewHitTarget::with_kind(
                             widget,
                             bounds,
-                            ViewHitTargetKind::ComboBoxOption { index },
+                            ViewHitTargetKind::ComboBoxOption {
+                                index: plan.first_visible_option.saturating_add(index),
+                            },
                         )
                     }),
             );
@@ -2791,11 +2856,22 @@ impl<Msg> ViewNode<Msg> {
         ) = (self.bounds, &self.kind)
         {
             let plan = viewport.map_or_else(
-                || crate::zs_combo_box_render_plan(bounds, options.len(), true, cx.dpi),
-                |viewport| {
-                    crate::zs_combo_box_render_plan_in_viewport(
+                || {
+                    crate::zs_combo_box_render_plan_with_scroll(
                         bounds,
                         options.len(),
+                        *selected_index,
+                        self.combo_first_visible_option,
+                        true,
+                        cx.dpi,
+                    )
+                },
+                |viewport| {
+                    crate::zs_combo_box_render_plan_in_viewport_with_scroll(
+                        bounds,
+                        options.len(),
+                        *selected_index,
+                        self.combo_first_visible_option,
                         true,
                         cx.dpi,
                         viewport,
@@ -3727,6 +3803,67 @@ mod tests {
         assert_eq!(
             view.widget_combo_state(WidgetId::new(10)),
             Some((None, 1, false))
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "combo")]
+    fn combo_box_scrolls_a_bounded_popup_with_global_option_indices() {
+        let combo_id = WidgetId::new(91);
+        let options = (0..30)
+            .map(|index| format!("Option {index}"))
+            .collect::<Vec<_>>();
+        let mut view = column([
+            combo_box::<_, ()>(options, Some(0))
+                .id(combo_id)
+                .height(Dp::new(36.0))
+                .expanded(true),
+            spacer(),
+        ]);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 200,
+            },
+            Dpi::standard(),
+        ));
+
+        let initial_plan = view.interaction_plan();
+        let initial_range = initial_plan
+            .combo_visible_option_range(combo_id)
+            .expect("expanded long combo should expose visible options");
+        assert_eq!(initial_range.start, 0);
+        assert!(initial_range.len() < 30);
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ComboBoxScrolled {
+                widget: combo_id,
+                first_visible_index: 1,
+            },
+        );
+        assert!(events.into_messages().is_empty());
+
+        let scrolled_plan = view.interaction_plan();
+        let scrolled_range = scrolled_plan
+            .combo_visible_option_range(combo_id)
+            .expect("scrolled combo should retain visible options");
+        assert_eq!(scrolled_range.start, 1);
+        assert_eq!(scrolled_range.len(), initial_range.len());
+        let first_row = scrolled_plan
+            .hit_targets
+            .iter()
+            .find(|target| target.kind == ViewHitTargetKind::ComboBoxOption { index: 1 })
+            .expect("first scrolled row should keep its global option index");
+        assert_eq!(
+            scrolled_plan.target_kind_at(Point {
+                x: first_row.bounds.x + 8,
+                y: first_row.bounds.y + first_row.bounds.height / 2,
+            }),
+            Some(ViewHitTargetKind::ComboBoxOption { index: 1 })
         );
     }
 

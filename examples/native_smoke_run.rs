@@ -231,7 +231,8 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Space)
             .native_view_key_down(NativeViewKey::Down)
             .native_view_text_input("B")
-            .native_view_key_down(NativeViewKey::Space);
+            .native_view_key_down(NativeViewKey::Space)
+            .native_view_scroll(Point { x: 100, y: 158 }, 48);
     }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
@@ -385,12 +386,36 @@ fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
         |state| {
             column([
                 text::<ComboSmokeMsg>("ZSUI ComboBox Smoke").height(zsui::Dp::new(28.0)),
-                combo_box(["Balanced", "Fast", "Quiet"], state.selected)
-                    .id(WidgetId::new(13))
-                    .height(zsui::Dp::new(36.0))
-                    .expanded(state.expanded)
-                    .on_select(ComboSmokeMsg::Selected)
-                    .on_expanded_change(ComboSmokeMsg::Expanded),
+                combo_box(
+                    [
+                        "Balanced",
+                        "Fast",
+                        "Quiet",
+                        "Efficient",
+                        "Compact",
+                        "Focused",
+                        "Silent",
+                        "Adaptive",
+                        "Performance",
+                        "Eco",
+                        "Standard",
+                        "Dynamic",
+                        "Gaming",
+                        "Studio",
+                        "Travel",
+                        "Presentation",
+                        "Reading",
+                        "Custom",
+                        "Legacy",
+                        "Experimental",
+                    ],
+                    state.selected,
+                )
+                .id(WidgetId::new(13))
+                .height(zsui::Dp::new(36.0))
+                .expanded(state.expanded)
+                .on_select(ComboSmokeMsg::Selected)
+                .on_expanded_change(ComboSmokeMsg::Expanded),
             ])
             .padding(zsui::Dp::new(24.0))
             .gap(zsui::Dp::new(12.0))
