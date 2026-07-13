@@ -1,0 +1,77 @@
+# ZSUI Durable Project Memory
+
+This file records durable product and engineering decisions. It is not a
+progress log. Current code, the component catalog, target artifacts and Git
+history remain authoritative for implementation status.
+
+## Product boundary
+
+- ZSUI is an independent, publishable, Rust-first native UI framework.
+- Work for this project changes only the ZSUI repository. Sibling product
+  repositories are read-only implementation references.
+- Reuse proven generic platform techniques where useful, but keep product
+  data, persistence, synchronization and business workflows outside ZSUI.
+- Public documentation describes ZSUI on its own terms and does not carry
+  source-product or migration history.
+
+## Public application experience
+
+- Preserve one shared Rust application shape across Win32, AppKit and GTK4:
+  `native_window(...).stateful_view(...).run()`.
+- Application code must not expose platform `cfg`, raw handles, Objective-C or
+  GTK objects, drawing handles, or native event loops.
+- A concise native-window entry is important, but it is only the bootstrap
+  contract. The real objective is a complete native application loop.
+- Controls and advanced capabilities should remain Cargo-feature selectable so
+  unused surfaces and heavy dependencies can be omitted.
+
+## Architecture preferences
+
+- Prefer composition, traits, typed messages, explicit state, strong IDs,
+  typed `Dp`/`Px`/`Dpi`, RAII, `Result` and safe public APIs.
+- Keep raw platform APIs and `unsafe` inside backend modules.
+- Do not introduce a control inheritance hierarchy, string event bus, global
+  mutable widget registry or an unrelated reactive runtime.
+- Demos validate framework capability; they must not define the architecture.
+
+## Native platform bar
+
+- Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
+  explicit fallback but is not evidence of AppKit or GTK4 completion.
+- Preserve the buffered, background-erase-suppressed Windows paint path.
+  Flicker is a release blocker for self-drawn Windows surfaces.
+- Treat antialiasing, DPI, IME, scrolling, margins and window services as
+  reusable framework capabilities rather than example-local fixes.
+- Never promote a platform from declarations or cross-compilation alone.
+  Completion requires target screenshots and interaction artifacts.
+
+## UI and performance direction
+
+- Built-in UI uses shared theme tokens, semantic icons and platform-native icon
+  sources. Licensed vector assets are fallbacks, not private font code points.
+- Reusable settings composition means navigation, grouped cards, setting rows,
+  explanatory text and action regions—not a product-specific settings page.
+- Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
+  GTK4 to present native platform character.
+- Large collections use virtualization, pagination, background prefetch and a
+  small bounded cache; product storage remains outside the framework.
+
+## Verification and delivery
+
+- A control counts only after layout, state, events, themed paint and tests are
+  connected. Platform completion additionally needs target evidence.
+- For each vertical slice, run focused checks, the required full gates, real
+  smoke where available, update truthful documentation, then commit and push.
+- Keep AI context economical: bootstrap from `docs/ai-agent.md`, select one
+  context pack, use `rg`, and read optional material only for a concrete gap.
+- Use the current repository and generated evidence for progress numbers; do
+  not copy stale counts or completion claims into this memory.
+
+## Acceptance applications
+
+- The notepad and calculator are acceptance applications, not product goals.
+- The final notepad comparison should evaluate application code volume, memory,
+  native visual quality and cross-platform consistency against egui and other
+  relevant stacks, including Tauri 2.
+- Demo source may be versioned; generated binaries, dependency build output and
+  measurement scratch data should not clutter the repository.
