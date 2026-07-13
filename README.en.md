@@ -128,6 +128,24 @@ fn volume_control(value: f32) -> ViewNode<Msg> {
 }
 ```
 
+RadioButton grouping stays in explicit application state rather than a global
+control registry:
+
+```rust,no_run
+use zsui::{radio_button, ViewNode};
+
+#[derive(Clone, Copy, PartialEq)]
+enum Mode { Balanced, Performance }
+
+#[derive(Clone)]
+enum ModeMsg { Choose(Mode) }
+
+fn mode_option(mode: Mode, current: Mode) -> ViewNode<ModeMsg> {
+    let label = match mode { Mode::Balanced => "Balanced", Mode::Performance => "Performance" };
+    radio_button(label, current == mode).on_choose(ModeMsg::Choose(mode))
+}
+```
+
 Attach a typed Rust view to the same native window path:
 
 ```rust,no_run
@@ -230,6 +248,7 @@ zsui = { version = "0.1", default-features = false, features = [
     "button",
     "toggle",
     "slider",
+    "radio",
     "list",
     "scroll",
     "dark-mode",

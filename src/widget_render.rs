@@ -188,6 +188,68 @@ pub fn zs_slider_native_draw_plan(plan: &ZsSliderRenderPlan) -> NativeDrawPlan {
     ])
 }
 
+#[cfg(feature = "radio")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsRadioRenderPlan {
+    pub bounds: Rect,
+    pub indicator: Rect,
+    pub selected_dot: Option<Rect>,
+    pub indicator_radius: i32,
+    pub dot_radius: i32,
+    pub selected: bool,
+}
+
+#[cfg(feature = "radio")]
+pub fn zs_radio_render_plan(bounds: Rect, selected: bool, dpi: Dpi) -> ZsRadioRenderPlan {
+    let indicator_size = scale(20, dpi).min(bounds.height.max(1)).max(1);
+    let indicator_radius = (indicator_size / 2).max(1);
+    let indicator = Rect {
+        x: bounds.x,
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(indicator_size)) / 2),
+        width: indicator_size,
+        height: indicator_size,
+    };
+    let dot_size = scale(8, dpi).min(indicator_size).max(1);
+    let dot_inset = (indicator_size.saturating_sub(dot_size)) / 2;
+    ZsRadioRenderPlan {
+        bounds,
+        indicator,
+        selected_dot: selected.then_some(Rect {
+            x: indicator.x.saturating_add(dot_inset),
+            y: indicator.y.saturating_add(dot_inset),
+            width: dot_size,
+            height: dot_size,
+        }),
+        indicator_radius,
+        dot_radius: (dot_size / 2).max(1),
+        selected,
+    }
+}
+
+#[cfg(feature = "radio")]
+pub fn zs_radio_native_draw_plan(plan: &ZsRadioRenderPlan) -> NativeDrawPlan {
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: plan.indicator,
+        fill: NativeDrawFill::Role(ColorRole::Surface),
+        stroke: Some(NativeDrawFill::Role(if plan.selected {
+            ColorRole::Accent
+        } else {
+            ColorRole::Border
+        })),
+        radius: plan.indicator_radius,
+    }];
+    if let Some(dot) = plan.selected_dot {
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: dot,
+            fill: NativeDrawFill::Role(ColorRole::Accent),
+            radius: plan.dot_radius,
+        });
+    }
+    NativeDrawPlan::new(commands)
+}
+
 fn scale(value: i32, dpi: Dpi) -> i32 {
     Dp::new(value as f32).to_px(dpi).round_i32().max(1)
 }
@@ -253,5 +315,30 @@ mod tests {
                 }
             ]
         ));
+    }
+
+    #[cfg(feature = "radio")]
+    #[test]
+    fn radio_geometry_uses_semantic_circle_and_selected_dot() {
+        let plan = zs_radio_render_plan(
+            Rect {
+                x: 4,
+                y: 8,
+                width: 180,
+                height: 32,
+            },
+            true,
+            Dpi::standard(),
+        );
+
+        assert_eq!(plan.indicator.width, 20);
+        assert_eq!(plan.indicator.height, 20);
+        assert_eq!(plan.selected_dot.expect("selected radio dot").width, 8);
+        assert_eq!(zs_radio_native_draw_plan(&plan).command_count(), 2);
+        assert_eq!(
+            zs_radio_native_draw_plan(&zs_radio_render_plan(plan.bounds, false, Dpi::standard()))
+                .command_count(),
+            1
+        );
     }
 }

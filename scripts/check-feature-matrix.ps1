@@ -24,6 +24,7 @@ $singleFeatures = @(
     "checkbox",
     "toggle",
     "slider",
+    "radio",
     "table",
     "dark-mode",
     "style",
@@ -56,7 +57,7 @@ $singleFeatures = @(
 
 $featureSets = @(
     "button,label",
-    "textbox,checkbox,toggle,slider",
+    "textbox,checkbox,toggle,slider,radio",
     "list,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",

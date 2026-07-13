@@ -131,6 +131,11 @@ const SLIDER_GAPS: &[&str] = &[
     "AppKit and GTK4 target interaction smoke",
     "touch and precision-trackpad tuning",
 ];
+const RADIO_GAPS: &[&str] = &[
+    "arrow-key group navigation",
+    "accessibility selection provider",
+    "AppKit and GTK4 target interaction smoke",
+];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
     "dark and high-contrast target smoke",
@@ -327,13 +332,13 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         PLATFORM_GAPS
     ),
     component!(
-        "radio_buttons",
-        "RadioButtons",
+        "radio_button",
+        "RadioButton",
         Input,
-        NotStarted,
-        None,
+        FirstPass,
+        Some("radio"),
         "src/view.rs",
-        NEW_COMPONENT_GAPS
+        RADIO_GAPS
     ),
     component!(
         "slider",

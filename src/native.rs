@@ -734,6 +734,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
+    pub native_view_radio_selection_count: usize,
     pub native_view_toggle_count: usize,
     pub native_view_selection_count: usize,
     pub native_view_keyboard_selection_count: usize,
@@ -819,6 +820,7 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
+            native_view_radio_selection_count: 0,
             native_view_toggle_count: 0,
             native_view_selection_count: 0,
             native_view_keyboard_selection_count: 0,
@@ -895,6 +897,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub slider_value_changed: bool,
     #[cfg(feature = "slider")]
     pub slider_drag_active: bool,
+    #[cfg(feature = "radio")]
+    pub radio_selection_changed: bool,
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
@@ -1191,6 +1195,11 @@ impl NativeViewInputRuntime {
 
         let event = self.activation_event(target);
 
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            report.radio_selection_changed = true;
+        }
+
         self.dispatch_view_event(event, report)
     }
 
@@ -1341,8 +1350,18 @@ impl NativeViewInputRuntime {
                 NativeViewKey::Space
             )
         );
+        #[cfg(feature = "radio")]
+        let activates = activates
+            || matches!(
+                (target.kind, key),
+                (crate::ViewHitTargetKind::RadioButton, NativeViewKey::Space)
+            );
         if activates {
             report.handled = true;
+            #[cfg(feature = "radio")]
+            if target.kind == crate::ViewHitTargetKind::RadioButton {
+                report.radio_selection_changed = true;
+            }
             return self.dispatch_view_event(self.activation_event(target), report);
         }
         report
@@ -1770,6 +1789,12 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            return ViewEvent::RadioSelected {
+                widget: target.widget,
+            };
+        }
         if matches!(
             target.kind,
             crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
@@ -2084,6 +2109,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_slider_value_change_count += input.slider_value_change_count;
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
     report.native_view_slider_drag_count += input.slider_drag_count;
+    report.native_view_radio_selection_count += input.radio_selection_count;
     report.native_view_toggle_count += input.toggle_count;
     report.native_view_selection_count += input.selection_count;
     report.native_view_keyboard_selection_count += input.keyboard_selection_count;
@@ -4792,6 +4818,57 @@ mod tests {
         assert_eq!(runtime.widget_slider_state(slider_id), Some((100.0, range)));
     }
 
+    #[cfg(feature = "radio")]
+    #[test]
+    fn native_view_runtime_selects_radio_from_pointer_and_keyboard() {
+        #[derive(Clone)]
+        enum Msg {
+            Choose(usize),
+        }
+
+        let first = crate::WidgetId::new(82);
+        let second = crate::WidgetId::new(83);
+        let builder = native_window("Platform Radio")
+            .size(360, 220)
+            .stateful_view(
+                0usize,
+                move |selected| {
+                    crate::column([
+                        crate::radio_button("Balanced", *selected == 0)
+                            .id(first)
+                            .height(Dp::new(36.0))
+                            .on_choose(Msg::Choose(0)),
+                        crate::radio_button("Performance", *selected == 1)
+                            .id(second)
+                            .height(Dp::new(36.0))
+                            .on_choose(Msg::Choose(1)),
+                    ])
+                },
+                |selected, message, _cx| match message {
+                    Msg::Choose(index) => *selected = index,
+                },
+            );
+        let second_bounds = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(second))
+            .expect("second radio should have pointer geometry")
+            .bounds;
+        let mut runtime = builder.native_view_input_runtime();
+
+        let selected = runtime.dispatch_pointer_click(Point {
+            x: second_bounds.x + 8,
+            y: second_bounds.y + second_bounds.height / 2,
+        });
+        let keyboard = runtime.dispatch_key(NativeViewKey::Space);
+
+        assert!(selected.handled);
+        assert!(selected.radio_selection_changed);
+        assert!(keyboard.handled);
+        assert!(keyboard.radio_selection_changed);
+        assert_eq!(runtime.widget_checked_value(first), Some(false));
+        assert_eq!(runtime.widget_checked_value(second), Some(true));
+    }
+
     #[cfg(all(feature = "label", feature = "textbox"))]
     #[test]
     fn native_view_runtime_keeps_ime_preedit_provisional_until_commit() {
@@ -5058,6 +5135,7 @@ mod tests {
         assert_eq!(report.native_view_slider_value_change_count, 0);
         assert_eq!(report.native_view_slider_keyboard_change_count, 0);
         assert_eq!(report.native_view_slider_drag_count, 0);
+        assert_eq!(report.native_view_radio_selection_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);
         assert_eq!(report.native_view_keyboard_selection_count, 0);

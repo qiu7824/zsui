@@ -11,7 +11,7 @@ milestones must not be used as overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 84% complete.
-- Component library: about 46% complete (22 first-pass runtime surfaces out of
+- Component library: about 48% complete (23 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 86% complete.
 - Feature-pruned architecture: about 51% complete.
@@ -37,8 +37,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 21 families have
-a first-pass runtime surface, 8 are contract-only and 19 are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: 23 families have
+a first-pass runtime surface, 8 are contract-only and 17 are not started. A
 composite workbench does not make its underlying missing controls complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
@@ -193,8 +193,8 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 48 WinUI-style component families: 21 have a
-first-pass runtime surface, 8 are contract-only and 19 are not started.
+`src/component_catalog.rs` tracks 48 WinUI-style component families: 23 have a
+first-pass runtime surface, 8 are contract-only and 17 are not started.
 `src/document_shell.rs` is the reusable visual boundary used by the Windows
 notepad benchmark. It provides a document tab, command bar, editor frame,
 status layout, semantic draw plan and hit regions without owning product state

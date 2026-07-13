@@ -12,7 +12,8 @@ use crate::render_protocol::TextRole;
     feature = "label",
     feature = "button",
     feature = "textbox",
-    feature = "checkbox"
+    feature = "checkbox",
+    feature = "radio"
 ))]
 use crate::render_protocol::{NativeDrawTextCommand, SemanticTextStyle};
 use crate::{
@@ -226,6 +227,12 @@ pub enum ViewNodeKind<Msg> {
         checked: bool,
         on_toggle: Option<fn(bool) -> Msg>,
     },
+    #[cfg(feature = "radio")]
+    RadioButton {
+        label: String,
+        selected: bool,
+        on_choose: Option<Msg>,
+    },
     #[cfg(feature = "slider")]
     Slider {
         value: f32,
@@ -431,6 +438,14 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    #[cfg(feature = "radio")]
+    pub fn on_choose(mut self, message: Msg) -> Self {
+        if let ViewNodeKind::RadioButton { on_choose, .. } = &mut self.kind {
+            *on_choose = Some(message);
+        }
+        self
+    }
+
     #[cfg(feature = "list")]
     pub fn selected_index(mut self, index: Option<usize>) -> Self {
         match &mut self.kind {
@@ -594,6 +609,15 @@ pub fn slider<Msg>(value: f32, range: impl Into<SliderRange>) -> ViewNode<Msg> {
     })
 }
 
+#[cfg(feature = "radio")]
+pub fn radio_button<Msg>(label: impl Into<String>, selected: bool) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::RadioButton {
+        label: label.into(),
+        selected,
+        on_choose: None,
+    })
+}
+
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Stack {
         direction: ViewStackDirection::Row,
@@ -687,6 +711,10 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: f32,
     },
+    #[cfg(feature = "radio")]
+    RadioSelected {
+        widget: WidgetId,
+    },
     #[cfg(feature = "scroll")]
     ScrollBy {
         widget: WidgetId,
@@ -733,6 +761,8 @@ pub enum ViewHitTargetKind {
     Toggle,
     #[cfg(feature = "slider")]
     Slider,
+    #[cfg(feature = "radio")]
+    RadioButton,
     #[cfg(feature = "scroll")]
     Scroll,
 }
@@ -1465,6 +1495,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(*value));
                     }
                 }
+                #[cfg(feature = "radio")]
+                (
+                    ViewNodeKind::RadioButton {
+                        selected,
+                        on_choose,
+                        ..
+                    },
+                    ViewEvent::RadioSelected { .. },
+                ) => {
+                    *selected = true;
+                    if let Some(message) = on_choose.clone() {
+                        cx.emit(message);
+                    }
+                }
                 #[cfg(feature = "scroll")]
                 (
                     ViewNodeKind::Scroll {
@@ -1650,6 +1694,35 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "radio")]
+            ViewNodeKind::RadioButton {
+                label, selected, ..
+            } => {
+                let plan = crate::zs_radio_render_plan(bounds, *selected, cx.dpi);
+                for command in crate::zs_radio_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+                let gap = Dp::new(8.0).to_px(cx.dpi).round_i32().max(0);
+                let label_x = plan
+                    .indicator
+                    .x
+                    .saturating_add(plan.indicator.width)
+                    .saturating_add(gap);
+                cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                    label,
+                    Rect {
+                        x: label_x,
+                        y: bounds.y,
+                        width: bounds
+                            .x
+                            .saturating_add(bounds.width)
+                            .saturating_sub(label_x)
+                            .max(0),
+                        height: bounds.height,
+                    },
+                    SemanticTextStyle::body(),
+                )));
+            }
             #[cfg(feature = "list")]
             ViewNodeKind::List { selected_index, .. } => {
                 if let Some(bounds) = selected_index
@@ -1756,6 +1829,8 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
             #[cfg(feature = "slider")]
             (Some(id), ViewEvent::SliderChanged { widget, .. }) => id == *widget,
+            #[cfg(feature = "radio")]
+            (Some(id), ViewEvent::RadioSelected { widget }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             (None, _) => false,
@@ -1799,6 +1874,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "toggle")]
             if let ViewNodeKind::Toggle { checked, .. } = &self.kind {
                 return Some(*checked);
+            }
+            #[cfg(feature = "radio")]
+            if let ViewNodeKind::RadioButton { selected, .. } = &self.kind {
+                return Some(*selected);
             }
         }
 
@@ -1960,6 +2039,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Toggle { .. } => ViewHitTargetKind::Toggle,
             #[cfg(feature = "slider")]
             ViewNodeKind::Slider { .. } => ViewHitTargetKind::Slider,
+            #[cfg(feature = "radio")]
+            ViewNodeKind::RadioButton { .. } => ViewHitTargetKind::RadioButton,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
@@ -2300,6 +2381,7 @@ mod tests {
         feature = "checkbox",
         feature = "toggle",
         feature = "slider",
+        feature = "radio",
         feature = "list"
     ))]
     #[derive(Debug, Clone, PartialEq)]
@@ -2312,6 +2394,8 @@ mod tests {
         DarkModeChanged(bool),
         #[cfg(feature = "slider")]
         VolumeChanged(f32),
+        #[cfg(feature = "radio")]
+        ChoiceSelected(&'static str),
         #[cfg(feature = "list")]
         RowSelected(usize),
         #[cfg(feature = "scroll")]
@@ -2626,6 +2710,40 @@ mod tests {
         let uneven = SliderRange::new(0.0, 1.0).step(0.3);
         assert_eq!(uneven.value_at_fraction(1.0), 1.0);
         assert_eq!(uneven.offset_steps(0.9, 1), 1.0);
+    }
+
+    #[test]
+    #[cfg(feature = "radio")]
+    fn radio_button_routes_typed_choice_and_paints_selected_state() {
+        let radio_id = WidgetId::new(7);
+        let mut view = radio_button("Balanced", false)
+            .id(radio_id)
+            .on_choose(Msg::ChoiceSelected("balanced"));
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 32,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::RadioSelected { widget: radio_id });
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert_eq!(view.hit_target_kind(), ViewHitTargetKind::RadioButton);
+        assert_eq!(paint.plan().command_count(), 3);
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ChoiceSelected("balanced")]
+        );
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::RadioButton { selected: true, .. }
+        ));
     }
 
     #[test]

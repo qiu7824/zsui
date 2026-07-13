@@ -7,6 +7,8 @@ use zsui::button;
 use zsui::checkbox;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
+#[cfg(feature = "radio")]
+use zsui::radio_button;
 #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
 use zsui::scroll;
 #[cfg(feature = "label")]
@@ -15,12 +17,14 @@ use zsui::text;
 use zsui::textbox;
 #[cfg(any(
     all(feature = "button", feature = "label"),
-    all(feature = "slider", feature = "label")
+    all(feature = "slider", feature = "label"),
+    all(feature = "radio", feature = "label")
 ))]
 use zsui::CommandId;
 #[cfg(any(
     all(feature = "button", feature = "label"),
-    all(feature = "slider", feature = "label")
+    all(feature = "slider", feature = "label"),
+    all(feature = "radio", feature = "label")
 ))]
 use zsui::{column, NativeViewKey, Point, UiCommand, WidgetId};
 use zsui::{
@@ -50,6 +54,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
         args.iter()
             .any(|arg| arg == "--slider-view" || arg == "--slider"),
+        args.iter()
+            .any(|arg| arg == "--radio-view" || arg == "--radio"),
     ) {
         Ok(json) => {
             println!("{json}");
@@ -70,6 +76,7 @@ fn run_smoke(
     include_typed_view: bool,
     include_scroll_view: bool,
     include_slider_view: bool,
+    include_radio_view: bool,
 ) -> Result<String, String> {
     let platform = parse_platform(platform.unwrap_or("current"))?;
     let current = native_ui_platform_for_current_target()
@@ -84,6 +91,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "slider", feature = "label")))]
     if include_slider_view {
         return Err("--slider-view requires the slider and label features".to_string());
+    }
+    #[cfg(not(all(feature = "radio", feature = "label")))]
+    if include_radio_view {
+        return Err("--radio-view requires the radio and label features".to_string());
     }
 
     let artifact_root = artifact_root.unwrap_or("target/native-host-smoke");
@@ -168,6 +179,12 @@ fn run_smoke(
             .native_view_drag(Point { x: 100, y: 84 }, Point { x: 400, y: 84 })
             .native_view_key_down(NativeViewKey::Left);
     }
+    #[cfg(all(feature = "radio", feature = "label"))]
+    if include_radio_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 100, y: 124 })
+            .native_view_key_down(NativeViewKey::Space);
+    }
 
     let builder = native_window("ZSUI Smoke").size(520, 320);
     let builder = if include_window_menu {
@@ -178,6 +195,8 @@ fn run_smoke(
     .ui_command_executor(NativeWindowRuntimeDriver::new());
     let builder = if include_slider_view {
         attach_slider_view(builder)
+    } else if include_radio_view {
+        attach_radio_view(builder)
     } else if include_scroll_view {
         attach_scroll_view(builder)
     } else if include_typed_view {
@@ -227,6 +246,47 @@ fn attach_slider_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 #[cfg(all(feature = "slider", feature = "label"))]
 fn native_smoke_slider_changed(_: f32) -> UiCommand {
     UiCommand::app(CommandId("zsui.native_smoke.slider_changed"))
+}
+
+#[cfg(all(feature = "radio", feature = "label"))]
+#[derive(Clone)]
+enum RadioSmokeMsg {
+    Choose(usize),
+}
+
+#[cfg(all(feature = "radio", feature = "label"))]
+fn attach_radio_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        0usize,
+        |selected| {
+            column([
+                text::<RadioSmokeMsg>("ZSUI RadioButton Smoke").height(zsui::Dp::new(28.0)),
+                radio_button("Balanced", *selected == 0)
+                    .id(WidgetId::new(11))
+                    .height(zsui::Dp::new(32.0))
+                    .on_choose(RadioSmokeMsg::Choose(0)),
+                radio_button("Performance", *selected == 1)
+                    .id(WidgetId::new(12))
+                    .height(zsui::Dp::new(32.0))
+                    .on_choose(RadioSmokeMsg::Choose(1)),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |selected, message, cx| match message {
+            RadioSmokeMsg::Choose(index) => {
+                *selected = index;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.radio_selected",
+                )));
+            }
+        },
+    )
+}
+
+#[cfg(not(all(feature = "radio", feature = "label")))]
+fn attach_radio_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
 }
 
 fn smoke_window_menu() -> MenuSpec {

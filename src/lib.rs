@@ -409,6 +409,8 @@ pub use view::button;
 pub use view::checkbox;
 #[cfg(feature = "list")]
 pub use view::list;
+#[cfg(feature = "radio")]
+pub use view::radio_button;
 #[cfg(feature = "scroll")]
 pub use view::scroll;
 #[cfg(feature = "label")]
@@ -430,6 +432,8 @@ pub use view::{slider, SliderRange};
 pub use view::{virtual_list, virtual_list_viewport};
 #[cfg(feature = "virtual-list")]
 pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+#[cfg(feature = "radio")]
+pub use widget_render::{zs_radio_native_draw_plan, zs_radio_render_plan, ZsRadioRenderPlan};
 #[cfg(feature = "slider")]
 pub use widget_render::{zs_slider_native_draw_plan, zs_slider_render_plan, ZsSliderRenderPlan};
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};

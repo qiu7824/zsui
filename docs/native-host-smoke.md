@@ -117,7 +117,22 @@ changes, keyboard changes and completed drags as
 and keyboard callbacks with the shared runtime, but still require target-machine
 interaction artifacts before their slider path is considered proven.
 
-That path exercises `NativeWindowBuilder::ui_command_view(...)`, records
+The dedicated typed RadioButton smoke path is:
+
+```powershell
+cargo run --no-default-features --features "window,label,radio,windows-win32" --example native_smoke_run -- windows --radio-view
+```
+
+It starts with one selected option, clicks a sibling option, rebuilds the
+stateful view so the selection remains mutually exclusive, then activates the
+focused option with Space. The artifact records both routes in
+`native_view_radio_selection_count` and requires their emitted `UiCommand`
+values to execute without failures or unhandled commands. AppKit and GTK4
+consume the same `RadioSelected` event through their native pointer and key
+callbacks; their target-machine interaction evidence remains pending.
+
+The default `--view` and `--scroll-view` paths exercise
+`NativeWindowBuilder::ui_command_view(...)`, record
 draw-plan command counts in `interaction.json`, posts `WM_LBUTTONUP`, hit-tests
 through `ViewInteractionPlan`, dispatches into `ViewEventCx<UiCommand>` and
 records the emitted command ids. When an executor is attached it also records

@@ -2295,29 +2295,35 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
-        match (target.kind, virtual_key) {
+        let activates = matches!(
+            (target.kind, virtual_key),
             (
                 crate::ViewHitTargetKind::Button | crate::ViewHitTargetKind::Unknown,
                 ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE,
-            )
-            | (
+            ) | (
                 crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle,
                 ZSUI_WIN32_VK_SPACE,
-            ) => {
-                report.keyboard_activation_count = 1;
-                report.events.push(format!(
-                    "win32_view_key_activate:{}:{virtual_key}",
-                    target.widget.0
-                ));
-                self.dispatch_activation(target, &mut report);
-            }
-            _ => {
-                report.unhandled_key_count = 1;
-                report.events.push(format!(
-                    "win32_view_key_unhandled:{}:{virtual_key}",
-                    target.widget.0
-                ));
-            }
+            )
+        );
+        #[cfg(feature = "radio")]
+        let activates = activates
+            || matches!(
+                (target.kind, virtual_key),
+                (crate::ViewHitTargetKind::RadioButton, ZSUI_WIN32_VK_SPACE)
+            );
+        if activates {
+            report.keyboard_activation_count = 1;
+            report.events.push(format!(
+                "win32_view_key_activate:{}:{virtual_key}",
+                target.widget.0
+            ));
+            self.dispatch_activation(target, &mut report);
+        } else {
+            report.unhandled_key_count = 1;
+            report.events.push(format!(
+                "win32_view_key_unhandled:{}:{virtual_key}",
+                target.widget.0
+            ));
         }
         report
     }
@@ -2493,6 +2499,21 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            report.radio_selection_count = 1;
+            report
+                .events
+                .push(format!("win32_view_radio_selected:{}", target.widget.0));
+            report.event_count = 1;
+            self.dispatch_event(
+                crate::ViewEvent::RadioSelected {
+                    widget: target.widget,
+                },
+                report,
+            );
+            return;
+        }
         let event = if matches!(
             target.kind,
             crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
@@ -2799,6 +2820,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_keyboard_change_count: usize,
     pub slider_drag_count: usize,
     pub slider_drag_active: bool,
+    pub radio_selection_count: usize,
     pub toggle_count: usize,
     pub selection_count: usize,
     pub keyboard_selection_count: usize,
@@ -2852,6 +2874,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_keyboard_change_count += next.slider_keyboard_change_count;
         self.slider_drag_count += next.slider_drag_count;
         self.slider_drag_active = next.slider_drag_active;
+        self.radio_selection_count += next.radio_selection_count;
         self.toggle_count += next.toggle_count;
         self.selection_count += next.selection_count;
         self.keyboard_selection_count += next.keyboard_selection_count;
@@ -5268,6 +5291,39 @@ mod tests {
         assert_eq!(stepped.slider_value_change_count, 1);
         assert_eq!(route.widget_slider_state(widget), Some((70.0, range)));
         assert_eq!(route.pending_ui_commands.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "radio")]
+    fn window_view_input_route_selects_radio_from_pointer_and_space() {
+        let widget = crate::WidgetId::new(35);
+        let target = crate::ViewHitTarget::with_kind(
+            widget,
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 36,
+            },
+            crate::ViewHitTargetKind::RadioButton,
+        );
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([target]),
+            crate::radio_button("Balanced", false)
+                .id(widget)
+                .on_choose(UiCommand::app(crate::CommandId(
+                    "zsui.test.win32.radio_selected",
+                ))),
+        );
+
+        let pointer = route.dispatch_click(crate::Point { x: 10, y: 18 });
+        let keyboard = route.dispatch_key_down(u32::from(VK_SPACE));
+
+        assert_eq!(pointer.radio_selection_count, 1);
+        assert_eq!(pointer.ui_command_count, 1);
+        assert_eq!(keyboard.radio_selection_count, 1);
+        assert_eq!(keyboard.keyboard_activation_count, 1);
+        assert_eq!(route.widget_checked_value(widget), Some(true));
     }
 
     #[test]
