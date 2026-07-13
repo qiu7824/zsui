@@ -10,7 +10,12 @@ use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
     native_text_visual_geometry,
 };
-#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+#[cfg(any(
+    feature = "date-picker",
+    feature = "tabs",
+    feature = "time-picker",
+    feature = "toggle-button"
+))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
@@ -1007,9 +1012,19 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
-    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "date-picker",
+        feature = "tabs",
+        feature = "time-picker",
+        feature = "toggle-button"
+    ))]
     pointer_hover: Option<NativePointerVisualKey>,
-    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "date-picker",
+        feature = "tabs",
+        feature = "time-picker",
+        feature = "toggle-button"
+    ))]
     pointer_pressed: Option<NativePointerVisualKey>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
@@ -1029,7 +1044,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
     pub surface_changed: bool,
     pub focus_visual_changed: bool,
-    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "date-picker",
+        feature = "tabs",
+        feature = "time-picker",
+        feature = "toggle-button"
+    ))]
     pub pointer_visual_changed: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
@@ -1100,9 +1120,19 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+            #[cfg(any(
+                feature = "date-picker",
+                feature = "tabs",
+                feature = "time-picker",
+                feature = "toggle-button"
+            ))]
             pointer_hover: None,
-            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+            #[cfg(any(
+                feature = "date-picker",
+                feature = "tabs",
+                feature = "time-picker",
+                feature = "toggle-button"
+            ))]
             pointer_pressed: None,
             ime_preedit: None,
             app_command_executor,
@@ -1264,7 +1294,12 @@ impl NativeViewInputRuntime {
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             target.and_then(native_pointer_visual_key),
@@ -1320,7 +1355,12 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         {
             let hovered = self
                 .current_interaction_plan()
@@ -1374,7 +1414,12 @@ impl NativeViewInputRuntime {
             self.text_drag = None;
             report.handled = true;
             report.text_drag_active = false;
-            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+            #[cfg(any(
+                feature = "date-picker",
+                feature = "tabs",
+                feature = "time-picker",
+                feature = "toggle-button"
+            ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -1384,7 +1429,12 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
             report.handled = true;
             report.slider_drag_active = false;
-            #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+            #[cfg(any(
+                feature = "date-picker",
+                feature = "tabs",
+                feature = "time-picker",
+                feature = "toggle-button"
+            ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
@@ -1395,7 +1445,12 @@ impl NativeViewInputRuntime {
         };
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
             None,
@@ -1457,7 +1512,12 @@ impl NativeViewInputRuntime {
             slider_drag_active: false,
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
         self.populate_text_report(&mut report);
         report
@@ -1469,13 +1529,23 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         {
             let mut report = report;
             self.update_pointer_visual_state(None, None, &mut report);
             report
         }
-        #[cfg(not(any(feature = "date-picker", feature = "tabs", feature = "time-picker")))]
+        #[cfg(not(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        )))]
         {
             report
         }
@@ -1894,6 +1964,12 @@ impl NativeViewInputRuntime {
                 NativeViewKey::Space
             )
         );
+        #[cfg(feature = "toggle-button")]
+        let activates = activates
+            || matches!(
+                (target.kind, key),
+                (crate::ViewHitTargetKind::ToggleButton, NativeViewKey::Space)
+            );
         #[cfg(feature = "radio")]
         let activates = activates
             || matches!(
@@ -2160,7 +2236,12 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
         }
         let had_preedit = self.ime_preedit.take().is_some();
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         self.update_pointer_visual_state(None, None, &mut report);
         report.handled |= had_focus || had_preedit;
         report.focus_visual_changed = had_focus;
@@ -2308,7 +2389,12 @@ impl NativeViewInputRuntime {
 
     fn compose_input_visuals(&self, plan: NativeDrawPlan) -> NativeDrawPlan {
         let mut plan = plan;
-        #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+        #[cfg(any(
+            feature = "date-picker",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toggle-button"
+        ))]
         if let Some(interaction_plan) = self.current_interaction_plan() {
             decorate_native_pointer_visuals(
                 &mut plan,
@@ -2331,7 +2417,12 @@ impl NativeViewInputRuntime {
         plan
     }
 
-    #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+    #[cfg(any(
+        feature = "date-picker",
+        feature = "tabs",
+        feature = "time-picker",
+        feature = "toggle-button"
+    ))]
     fn update_pointer_visual_state(
         &mut self,
         hovered: Option<NativePointerVisualKey>,
@@ -2580,10 +2671,13 @@ impl NativeViewInputRuntime {
                 tab,
             };
         }
-        if matches!(
+        let toggles = matches!(
             target.kind,
             crate::ViewHitTargetKind::Checkbox | crate::ViewHitTargetKind::Toggle
-        ) {
+        );
+        #[cfg(feature = "toggle-button")]
+        let toggles = toggles || target.kind == crate::ViewHitTargetKind::ToggleButton;
+        if toggles {
             ViewEvent::Toggled {
                 widget: target.widget,
                 checked: !self.widget_checked_value(target.widget).unwrap_or(false),
@@ -5428,6 +5522,41 @@ mod tests {
                 )
             })
         }));
+    }
+
+    #[cfg(feature = "toggle-button")]
+    #[test]
+    fn native_view_runtime_toggles_button_from_pointer_and_space() {
+        let widget = crate::WidgetId::new(74);
+        let builder = native_window("Toggle Button").size(240, 100).stateful_view(
+            false,
+            move |checked| {
+                crate::toggle_button("Pin", *checked)
+                    .id(widget)
+                    .on_toggle(|checked| checked)
+            },
+            |state, checked, _cx| *state = checked,
+        );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .expect("toggle button should have a platform hit target");
+        let point = Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        };
+        let mut runtime = builder.native_view_input_runtime();
+
+        let hovered = runtime.dispatch_pointer_move(point);
+        let pointer = runtime.dispatch_pointer_click(point);
+        let keyboard = runtime.dispatch_key(NativeViewKey::Space);
+
+        assert!(hovered.pointer_visual_changed);
+        assert_eq!(pointer.message_count, 1);
+        assert_eq!(runtime.widget_checked_value(widget), Some(false));
+        assert!(keyboard.handled);
+        assert_eq!(keyboard.message_count, 1);
+        assert!(keyboard.redraw_plan.is_some());
     }
 
     #[cfg(all(feature = "label", feature = "button"))]

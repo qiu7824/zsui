@@ -616,6 +616,12 @@ pub enum ViewNodeKind<Msg> {
         label: String,
         on_click: Option<Msg>,
     },
+    #[cfg(feature = "toggle-button")]
+    ToggleButton {
+        label: String,
+        checked: bool,
+        on_toggle: Option<fn(bool) -> Msg>,
+    },
     #[cfg(feature = "textbox")]
     Textbox {
         value: String,
@@ -903,9 +909,11 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "checkbox", feature = "toggle"))]
+    #[cfg(any(feature = "checkbox", feature = "toggle", feature = "toggle-button"))]
     pub fn on_toggle(mut self, message: fn(bool) -> Msg) -> Self {
         match &mut self.kind {
+            #[cfg(feature = "toggle-button")]
+            ViewNodeKind::ToggleButton { on_toggle, .. } => *on_toggle = Some(message),
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { on_toggle, .. } => *on_toggle = Some(message),
             #[cfg(feature = "toggle")]
@@ -1200,6 +1208,15 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Button {
         label: label.into(),
         on_click: None,
+    })
+}
+
+#[cfg(feature = "toggle-button")]
+pub fn toggle_button<Msg>(label: impl Into<String>, checked: bool) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::ToggleButton {
+        label: label.into(),
+        checked,
+        on_toggle: None,
     })
 }
 
@@ -1580,6 +1597,8 @@ impl ViewHitTarget {
 pub enum ViewHitTargetKind {
     Unknown,
     Button,
+    #[cfg(feature = "toggle-button")]
+    ToggleButton,
     Textbox,
     TextEditor,
     Checkbox,
@@ -2793,6 +2812,21 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message);
                     }
                 }
+                #[cfg(feature = "toggle-button")]
+                (
+                    ViewNodeKind::ToggleButton {
+                        checked, on_toggle, ..
+                    },
+                    ViewEvent::Toggled {
+                        checked: next_checked,
+                        ..
+                    },
+                ) => {
+                    *checked = *next_checked;
+                    if let Some(message) = on_toggle {
+                        cx.emit(message(*next_checked));
+                    }
+                }
                 #[cfg(feature = "textbox")]
                 (
                     ViewNodeKind::Textbox {
@@ -3133,6 +3167,18 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         ..SemanticTextStyle::body()
                     },
                 )));
+            }
+            #[cfg(feature = "toggle-button")]
+            ViewNodeKind::ToggleButton { label, checked, .. } => {
+                let plan = crate::zs_toggle_button_render_plan(
+                    bounds,
+                    *checked,
+                    crate::ZsToggleButtonPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_toggle_button_native_draw_plan(&plan, label).commands {
+                    cx.draw(command);
+                }
             }
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox {
@@ -3542,6 +3588,10 @@ impl<Msg> ViewNode<Msg> {
         if self.id == Some(widget) {
             #[cfg(feature = "checkbox")]
             if let ViewNodeKind::Checkbox { checked, .. } = &self.kind {
+                return Some(*checked);
+            }
+            #[cfg(feature = "toggle-button")]
+            if let ViewNodeKind::ToggleButton { checked, .. } = &self.kind {
                 return Some(*checked);
             }
             #[cfg(feature = "toggle")]
@@ -4347,6 +4397,8 @@ impl<Msg> ViewNode<Msg> {
         match &self.kind {
             #[cfg(feature = "button")]
             ViewNodeKind::Button { .. } => ViewHitTargetKind::Button,
+            #[cfg(feature = "toggle-button")]
+            ViewNodeKind::ToggleButton { .. } => ViewHitTargetKind::ToggleButton,
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox { multiline, .. } => {
                 if *multiline {
@@ -4915,6 +4967,7 @@ mod tests {
 
     #[cfg(any(
         feature = "button",
+        feature = "toggle-button",
         feature = "textbox",
         feature = "checkbox",
         feature = "toggle",
@@ -4933,7 +4986,7 @@ mod tests {
         SaveClicked,
         #[cfg(feature = "textbox")]
         NameChanged(String),
-        #[cfg(any(feature = "checkbox", feature = "toggle"))]
+        #[cfg(any(feature = "checkbox", feature = "toggle", feature = "toggle-button"))]
         DarkModeChanged(bool),
         #[cfg(feature = "slider")]
         VolumeChanged(f32),
@@ -5405,6 +5458,41 @@ mod tests {
 
         assert_eq!(view.widget_checked_value(toggle_id), Some(true));
         assert_eq!(view.hit_target_kind(), ViewHitTargetKind::Toggle);
+        assert_eq!(paint.plan().command_count(), 2);
+        assert_eq!(events.into_messages(), vec![Msg::DarkModeChanged(true)]);
+    }
+
+    #[test]
+    #[cfg(feature = "toggle-button")]
+    fn toggle_button_routes_explicit_state_and_paints_platform_profile() {
+        let toggle_id = WidgetId::new(41);
+        let mut view = toggle_button("Pin", false)
+            .id(toggle_id)
+            .on_toggle(Msg::DarkModeChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 36,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::Toggled {
+                widget: toggle_id,
+                checked: true,
+            },
+        );
+
+        assert_eq!(view.widget_checked_value(toggle_id), Some(true));
+        assert_eq!(view.hit_target_kind(), ViewHitTargetKind::ToggleButton);
+        assert_eq!(view.interaction_plan().hit_target_count(), 1);
         assert_eq!(paint.plan().command_count(), 2);
         assert_eq!(events.into_messages(), vec![Msg::DarkModeChanged(true)]);
     }

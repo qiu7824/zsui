@@ -128,6 +128,12 @@ history remain authoritative for implementation status.
   select internal metric profiles modeled on NumberBox/NSStepper/SpinButton;
   locale formatting, expression input, accessibility and non-Windows target
   proof remain explicit readiness gaps.
+- ToggleButton is an independent `toggle-button` Cargo feature and reuses the
+  shared explicit Boolean `Toggled` message path rather than inheriting Button
+  behavior or storing state in a backend. It remains self-drawn: Windows,
+  macOS and GTK select internal metric profiles, while hover/pressed state is
+  transient runtime decoration and checked state has both fill and a shape cue.
+  Indeterminate mode, accessibility and non-Windows target proof remain gaps.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
 

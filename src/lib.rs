@@ -441,6 +441,8 @@ pub use view::textbox;
 pub use view::time_picker;
 #[cfg(feature = "toggle")]
 pub use view::toggle;
+#[cfg(feature = "toggle-button")]
+pub use view::toggle_button;
 #[cfg(feature = "date-picker")]
 pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]
@@ -503,6 +505,11 @@ pub use widget_render::{
     zs_time_picker_header_native_draw_plan, zs_time_picker_popup_native_draw_plan,
     zs_time_picker_render_plan, zs_time_picker_render_plan_in_viewport, ZsTimePickerChoice,
     ZsTimePickerMetrics, ZsTimePickerPlatformStyle, ZsTimePickerRenderPlan, ZsTimePickerSegment,
+};
+#[cfg(feature = "toggle-button")]
+pub use widget_render::{
+    zs_toggle_button_native_draw_plan, zs_toggle_button_render_plan, ZsToggleButtonMetrics,
+    ZsToggleButtonPlatformStyle, ZsToggleButtonRenderPlan,
 };
 pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};

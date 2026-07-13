@@ -6,23 +6,23 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 
 ## Current Completion
 
-ZSUI is roughly 61% complete as a standalone framework product, including the
+ZSUI is roughly 62% complete as a standalone framework product, including the
 still-scaffolded mobile targets. The desktop-only v0.2 native application
 closure is roughly 73% complete. Component-level milestones must not be used as
 overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: about 62% complete (30 first-pass runtime surfaces out of
+- Component library: about 64% complete (31 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 86% complete.
-- Feature-pruned architecture: about 54% complete.
+- Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 88% complete.
 - Full desktop native host implementation: about 91% complete; product
   readiness remains lower until AppKit and GTK4 target evidence exists.
 - Android and Harmony: about 32% complete.
 - Product adapter/runtime harness: about 67% complete.
-- Native smoke verification: about 86% complete.
+- Native smoke verification: about 87% complete.
 
 The Windows implementation is further ahead than the overall
 framework: its window, draw-plan, stateful View and shell-layout foundation is
@@ -40,8 +40,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 30 families have
-a first-pass runtime surface, 6 are contract-only and 12 are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: 31 families have
+a first-pass runtime surface, 6 are contract-only and 11 are not started. A
 composite workbench does not make its underlying missing controls complete.
 
 The crate can already describe and audit windows, tray/status menus, commands,
@@ -198,8 +198,8 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 48 WinUI-style component families: 30 have a
-first-pass runtime surface, 6 are contract-only and 12 are not started. The
+`src/component_catalog.rs` tracks 48 WinUI-style component families: 31 have a
+first-pass runtime surface, 6 are contract-only and 11 are not started. The
 optional Grid surface uses typed fixed/fractional tracks, nonzero spans,
 independent row/column gaps, explicit typed cell placement and one DPI-aware
 layout result for paint and hit testing on Win32/AppKit/GTK4. Windows has a
@@ -221,6 +221,11 @@ WinUI/AppKit/GTK metric profiles, pointer steppers and keyboard stepping.
 Windows has a real edit/step/commit screenshot artifact; locale-aware number
 formatting, expressions, accessibility, autorepeat/wheel behavior and
 non-Windows target runs remain open.
+The independent `toggle-button` feature adds an explicit Boolean-state button,
+typed pointer/Space activation, transient hover/pressed decoration and internal
+WinUI/AppKit/GTK metric profiles. Windows has a real checked-state screenshot
+and interaction artifact; indeterminate mode, accessibility and non-Windows
+target runs remain open.
 `src/document_shell.rs` is the reusable visual boundary used by the Windows
 notepad benchmark. It provides a document tab, command bar, editor frame,
 status layout, semantic draw plan and hit regions without owning product state

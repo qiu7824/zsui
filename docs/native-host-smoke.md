@@ -117,6 +117,25 @@ changes, keyboard changes and completed drags as
 and keyboard callbacks with the shared runtime, but still require target-machine
 interaction artifacts before their slider path is considered proven.
 
+The dedicated ToggleButton smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,toggle-button,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-toggle-button --toggle-button-view
+```
+
+It clicks the self-drawn button, activates it with Space, then clicks again so
+the screenshot finishes in the checked state. The application owns the
+explicit Boolean state and receives the same typed callback for pointer and
+keyboard activation. The runtime also records transient hover/pressed redraws
+without introducing a backend-local control tree. The checked background and
+bottom state cue follow the official [Windows App SDK ToggleButton](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.togglebutton?view=windows-app-sdk-1.8),
+[Apple toggle-button guidance](https://developer.apple.com/design/human-interface-guidelines/toggles),
+and [GTK4 ToggleButton](https://docs.gtk.org/gtk4/class.ToggleButton.html)
+contracts. The Windows artifact must report three toggle events, one keyboard
+activation, pointer visual changes, successful `UiCommand` execution and a
+captured `window.png`. AppKit and GTK4 use the shared state/input path and
+platform metrics but still require target-machine interaction evidence.
+
 The dedicated editable NumberBox smoke path is:
 
 ```powershell

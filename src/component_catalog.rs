@@ -137,6 +137,11 @@ const NUMBER_BOX_GAPS: &[&str] = &[
     "button hover/pressed polish, press-and-hold autorepeat, mouse-wheel stepping and macOS modifier stepping",
     "AppKit and GTK4 target interaction smoke",
 ];
+const TOGGLE_BUTTON_GAPS: &[&str] = &[
+    "optional indeterminate state and grouped selection behavior",
+    "accessibility toggle-button role and checked-state provider",
+    "AppKit and GTK4 target interaction smoke",
+];
 const RADIO_GAPS: &[&str] = &[
     "accessibility selection provider",
     "AppKit and GTK4 target interaction smoke",
@@ -315,10 +320,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "toggle_button",
         "ToggleButton",
         Input,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("toggle-button"),
+        "src/view.rs + src/widget_render.rs + src/native_input_visuals.rs",
+        TOGGLE_BUTTON_GAPS
     ),
     component!(
         "checkbox",
@@ -647,10 +652,11 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 12);
+        assert!(summary.not_started_count >= 10);
         assert!(summary.missing_component_names.contains(&"tree"));
         assert!(summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));
+        assert!(!summary.missing_component_names.contains(&"toggle_button"));
     }
 
     #[test]

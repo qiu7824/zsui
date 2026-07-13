@@ -7,6 +7,7 @@ use zsui::button;
 use zsui::checkbox;
 #[cfg(any(
     all(feature = "button", feature = "label"),
+    all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
@@ -30,8 +31,11 @@ use zsui::scroll;
 use zsui::text;
 #[cfg(all(feature = "button", feature = "label", feature = "textbox"))]
 use zsui::textbox;
+#[cfg(feature = "toggle-button")]
+use zsui::toggle_button;
 #[cfg(any(
     all(feature = "button", feature = "label"),
+    all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
@@ -44,6 +48,7 @@ use zsui::textbox;
 use zsui::CommandId;
 #[cfg(any(
     all(feature = "button", feature = "label"),
+    all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
@@ -74,6 +79,7 @@ use zsui::{tab_view, ZsTabId, ZsTabItem};
 use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
 #[cfg(any(
     all(feature = "button", feature = "label"),
+    all(feature = "toggle-button", feature = "label"),
     all(feature = "slider", feature = "label"),
     all(feature = "number-box", feature = "label"),
     all(feature = "radio", feature = "label"),
@@ -101,6 +107,8 @@ fn main() -> ExitCode {
             .any(|arg| arg == "--menu" || arg == "--window-menu"),
         args.iter()
             .any(|arg| arg == "--grid-view" || arg == "--grid"),
+        args.iter()
+            .any(|arg| arg == "--toggle-button-view" || arg == "--toggle-button"),
         args.iter().any(|arg| arg == "--view"),
         args.iter()
             .any(|arg| arg == "--scroll-view" || arg == "--scroll"),
@@ -140,6 +148,7 @@ fn run_smoke(
     include_status_item: bool,
     include_window_menu: bool,
     include_grid_view: bool,
+    include_toggle_button_view: bool,
     include_typed_view: bool,
     include_scroll_view: bool,
     include_slider_view: bool,
@@ -161,6 +170,12 @@ fn run_smoke(
             platform.platform_name(),
             current.platform_name()
         ));
+    }
+    #[cfg(not(all(feature = "toggle-button", feature = "label")))]
+    if include_toggle_button_view {
+        return Err(
+            "--toggle-button-view requires the toggle-button and label features".to_string(),
+        );
     }
     #[cfg(not(all(feature = "slider", feature = "label")))]
     if include_slider_view {
@@ -274,6 +289,13 @@ fn run_smoke(
     if include_scroll_view {
         smoke_options = smoke_options.native_view_scroll(Point { x: 260, y: 220 }, 48);
     }
+    #[cfg(all(feature = "toggle-button", feature = "label"))]
+    if include_toggle_button_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 100, y: 84 })
+            .native_view_key_down(NativeViewKey::Space)
+            .native_view_click(Point { x: 100, y: 84 });
+    }
     #[cfg(all(feature = "slider", feature = "label"))]
     if include_slider_view {
         smoke_options = smoke_options
@@ -357,6 +379,8 @@ fn run_smoke(
     .ui_command_executor(NativeWindowRuntimeDriver::new());
     let builder = if include_grid_view {
         attach_grid_view(builder)
+    } else if include_toggle_button_view {
+        attach_toggle_button_view(builder)
     } else if include_number_box_view {
         attach_number_box_view(builder)
     } else if include_slider_view {
@@ -456,6 +480,48 @@ fn attach_grid_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "grid", feature = "button", feature = "label")))]
 fn attach_grid_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(all(feature = "toggle-button", feature = "label"))]
+#[derive(Clone)]
+enum ToggleButtonSmokeMsg {
+    Changed(bool),
+}
+
+#[cfg(all(feature = "toggle-button", feature = "label"))]
+fn attach_toggle_button_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        false,
+        |checked| {
+            column([
+                text::<ToggleButtonSmokeMsg>("ZSUI ToggleButton Smoke").height(zsui::Dp::new(28.0)),
+                zsui::row([
+                    toggle_button("Pin panel", *checked)
+                        .id(WidgetId::new(19))
+                        .width(zsui::Dp::new(160.0))
+                        .on_toggle(ToggleButtonSmokeMsg::Changed),
+                    zsui::spacer(),
+                ])
+                .height(zsui::Dp::new(36.0)),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+            .bg(zsui::ThemeColorToken::Surface)
+        },
+        |checked, message, cx| match message {
+            ToggleButtonSmokeMsg::Changed(next) => {
+                *checked = next;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.toggle_button_changed",
+                )));
+            }
+        },
+    )
+}
+
+#[cfg(not(all(feature = "toggle-button", feature = "label")))]
+fn attach_toggle_button_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

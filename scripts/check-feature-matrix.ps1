@@ -12,6 +12,7 @@ if ($Locked) {
 $singleFeatures = @(
     "window",
     "button",
+    "toggle-button",
     "label",
     "grid",
     "widgets-base",
@@ -64,7 +65,7 @@ $singleFeatures = @(
 
 $featureSets = @(
     "button,label,grid",
-    "textbox,checkbox,toggle,slider,number-box,radio,progress,combo,date-picker,time-picker,tabs",
+    "textbox,checkbox,toggle,toggle-button,slider,number-box,radio,progress,combo,date-picker,time-picker,tabs",
     "list,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",

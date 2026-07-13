@@ -390,8 +390,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "feature_pruned_architecture",
-            percent_complete: 51,
-            status_name: "workbench_calculator_and_feature_matrix_ci_ready",
+            percent_complete: 55,
+            status_name: "independent_widget_features_and_feature_matrix_ci_ready",
             source_path: "Cargo.toml",
             missing_before_complete: vec![
                 "move heavier widgets into separate crates",
@@ -906,9 +906,9 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 30);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 31);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 6);
-        assert_eq!(context.readiness.component_catalog.not_started_count, 12);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 11);
         let component_area = context
             .completion_areas
             .iter()

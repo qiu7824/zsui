@@ -196,12 +196,24 @@ pub(crate) fn decorate_native_focus_ring(
     Some(ring)
 }
 
-#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+#[cfg(any(
+    feature = "date-picker",
+    feature = "tabs",
+    feature = "time-picker",
+    feature = "toggle-button"
+))]
 pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
-#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+#[cfg(any(
+    feature = "date-picker",
+    feature = "tabs",
+    feature = "time-picker",
+    feature = "toggle-button"
+))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
     let supported = false;
+    #[cfg(feature = "toggle-button")]
+    let supported = supported || target.kind == ViewHitTargetKind::ToggleButton;
     #[cfg(feature = "date-picker")]
     let supported = supported
         || matches!(
@@ -222,7 +234,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     supported.then_some((target.widget, target.kind))
 }
 
-#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+#[cfg(any(
+    feature = "date-picker",
+    feature = "tabs",
+    feature = "time-picker",
+    feature = "toggle-button"
+))]
 pub(crate) fn decorate_native_pointer_visuals(
     plan: &mut NativeDrawPlan,
     interaction_plan: &ViewInteractionPlan,
@@ -246,6 +263,26 @@ pub(crate) fn decorate_native_pointer_visuals(
     else {
         return 0;
     };
+
+    #[cfg(feature = "toggle-button")]
+    if kind == ViewHitTargetKind::ToggleButton {
+        if let Some(NativeDrawCommand::RoundRect { fill, stroke, .. }) =
+            plan.commands.iter_mut().rfind(|command| {
+                matches!(command, NativeDrawCommand::RoundRect { rect, .. }
+                    if rect_contains(*rect, target.bounds))
+            })
+        {
+            let checked = *fill == NativeDrawFill::Role(ColorRole::Accent);
+            *stroke = Some(NativeDrawFill::Role(if checked {
+                ColorRole::AccentText
+            } else if is_pressed {
+                ColorRole::Accent
+            } else {
+                ColorRole::PrimaryText
+            }));
+            return 1;
+        }
+    }
 
     #[cfg(feature = "date-picker")]
     if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
@@ -436,6 +473,49 @@ mod tests {
                 stroke: NativeDrawFill::Role(ColorRole::Accent),
                 width: 2,
             }] if *rect == ring
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "toggle-button")]
+    fn toggle_button_pointer_visual_preserves_checked_accent_fill() {
+        let widget = WidgetId::new(93);
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 120,
+            height: 36,
+        };
+        let interaction_plan = ViewInteractionPlan::new([ViewHitTarget::with_kind(
+            widget,
+            bounds,
+            ViewHitTargetKind::ToggleButton,
+        )]);
+        let render = crate::zs_toggle_button_render_plan(
+            bounds,
+            true,
+            crate::ZsToggleButtonPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let mut plan = crate::zs_toggle_button_native_draw_plan(&render, "Pin");
+
+        let changed = decorate_native_pointer_visuals(
+            &mut plan,
+            &interaction_plan,
+            Some((widget, ViewHitTargetKind::ToggleButton)),
+            Some((widget, ViewHitTargetKind::ToggleButton)),
+            Dpi::standard(),
+        );
+
+        assert_eq!(changed, 1);
+        assert_eq!(plan.command_count(), 3);
+        assert!(matches!(
+            plan.commands.first(),
+            Some(NativeDrawCommand::RoundRect {
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+                stroke: Some(NativeDrawFill::Role(ColorRole::AccentText)),
+                ..
+            })
         ));
     }
 

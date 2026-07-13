@@ -1,10 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(
+    feature = "date-picker",
+    feature = "tabs",
+    feature = "time-picker",
+    feature = "toggle-button"
+))]
+use crate::TextRole;
 #[cfg(feature = "date-picker")]
 use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
 #[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
-use crate::{HorizontalAlign, TextRole, TextWeight};
+use crate::{HorizontalAlign, TextWeight};
 #[cfg(any(feature = "combo", feature = "date-picker", feature = "time-picker"))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 #[cfg(any(
@@ -12,7 +19,8 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "date-picker",
     feature = "number-box",
     feature = "tabs",
-    feature = "time-picker"
+    feature = "time-picker",
+    feature = "toggle-button"
 ))]
 use crate::{NativeDrawTextCommand, SemanticTextStyle};
 #[cfg(feature = "time-picker")]
@@ -134,6 +142,183 @@ pub fn zs_toggle_native_draw_plan(plan: &ZsToggleRenderPlan) -> NativeDrawPlan {
             radius: plan.knob_radius,
         },
     ])
+}
+
+#[cfg(feature = "toggle-button")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsToggleButtonPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "toggle-button")]
+impl ZsToggleButtonPlatformStyle {
+    pub(crate) const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "toggle-button")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsToggleButtonMetrics {
+    pub minimum_height: Dp,
+    pub radius: Dp,
+    pub horizontal_padding: Dp,
+    pub selected_indicator_width: Dp,
+    pub selected_indicator_height: Dp,
+    pub checked_content_offset_y: Dp,
+}
+
+#[cfg(feature = "toggle-button")]
+impl ZsToggleButtonMetrics {
+    pub const fn for_platform(platform: ZsToggleButtonPlatformStyle) -> Self {
+        match platform {
+            ZsToggleButtonPlatformStyle::Windows => Self {
+                minimum_height: Dp::new(32.0),
+                radius: Dp::new(4.0),
+                horizontal_padding: Dp::new(12.0),
+                selected_indicator_width: Dp::new(16.0),
+                selected_indicator_height: Dp::new(2.0),
+                checked_content_offset_y: Dp::new(0.0),
+            },
+            ZsToggleButtonPlatformStyle::Macos => Self {
+                minimum_height: Dp::new(28.0),
+                radius: Dp::new(6.0),
+                horizontal_padding: Dp::new(12.0),
+                selected_indicator_width: Dp::new(14.0),
+                selected_indicator_height: Dp::new(2.0),
+                checked_content_offset_y: Dp::new(1.0),
+            },
+            ZsToggleButtonPlatformStyle::Gtk => Self {
+                minimum_height: Dp::new(34.0),
+                radius: Dp::new(5.0),
+                horizontal_padding: Dp::new(14.0),
+                selected_indicator_width: Dp::new(18.0),
+                selected_indicator_height: Dp::new(3.0),
+                checked_content_offset_y: Dp::new(1.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "toggle-button")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsToggleButtonRenderPlan {
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+    pub selected_indicator: Rect,
+    pub radius: i32,
+    pub checked: bool,
+    pub platform: ZsToggleButtonPlatformStyle,
+}
+
+#[cfg(feature = "toggle-button")]
+pub fn zs_toggle_button_render_plan(
+    bounds: Rect,
+    checked: bool,
+    platform: ZsToggleButtonPlatformStyle,
+    dpi: Dpi,
+) -> ZsToggleButtonRenderPlan {
+    let metrics = ZsToggleButtonMetrics::for_platform(platform);
+    let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
+    let offset_y = if checked {
+        metrics
+            .checked_content_offset_y
+            .to_px(dpi)
+            .round_i32()
+            .max(0)
+    } else {
+        0
+    };
+    let indicator_width = metrics
+        .selected_indicator_width
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.width)
+        .max(1);
+    let indicator_height = metrics
+        .selected_indicator_height
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height)
+        .max(1);
+    let indicator_inset = Dp::new(3.0)
+        .to_px(dpi)
+        .round_i32()
+        .max(0)
+        .min(bounds.height.saturating_sub(indicator_height).max(0));
+    ZsToggleButtonRenderPlan {
+        bounds,
+        text_bounds: Rect {
+            x: bounds.x.saturating_add(padding),
+            y: bounds.y.saturating_add(offset_y),
+            width: bounds.width.saturating_sub(padding.saturating_mul(2)),
+            height: bounds.height.saturating_sub(offset_y),
+        },
+        selected_indicator: Rect {
+            x: bounds.x + (bounds.width - indicator_width) / 2,
+            y: bounds
+                .y
+                .saturating_add(bounds.height)
+                .saturating_sub(indicator_height)
+                .saturating_sub(indicator_inset),
+            width: indicator_width,
+            height: indicator_height,
+        },
+        radius: metrics.radius.to_px(dpi).round_i32().max(1),
+        checked,
+        platform,
+    }
+}
+
+#[cfg(feature = "toggle-button")]
+pub fn zs_toggle_button_native_draw_plan(
+    plan: &ZsToggleButtonRenderPlan,
+    label: &str,
+) -> NativeDrawPlan {
+    let mut text_style = SemanticTextStyle::body();
+    text_style.role = TextRole::Button;
+    text_style.color = if plan.checked {
+        ColorRole::AccentText
+    } else {
+        ColorRole::PrimaryText
+    };
+    let mut commands = vec![
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(if plan.checked {
+                ColorRole::Accent
+            } else {
+                ColorRole::Control
+            }),
+            stroke: Some(NativeDrawFill::Role(if plan.checked {
+                ColorRole::Accent
+            } else {
+                ColorRole::Border
+            })),
+            radius: plan.radius,
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            label,
+            plan.text_bounds,
+            text_style,
+        )),
+    ];
+    if plan.checked {
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: plan.selected_indicator,
+            fill: NativeDrawFill::Role(ColorRole::AccentText),
+            radius: (plan.selected_indicator.height / 2).max(1),
+        });
+    }
+    NativeDrawPlan::new(commands)
 }
 
 #[cfg(feature = "slider")]
@@ -2216,6 +2401,59 @@ mod tests {
         assert_eq!(off.track.height, 20);
         assert!(off.knob.x < on.knob.x);
         assert_eq!(zs_toggle_native_draw_plan(&on).command_count(), 2);
+    }
+
+    #[cfg(feature = "toggle-button")]
+    #[test]
+    fn toggle_button_render_plan_preserves_platform_metrics_and_checked_cue() {
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 144,
+            height: 36,
+        };
+        let windows = zs_toggle_button_render_plan(
+            bounds,
+            false,
+            ZsToggleButtonPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_toggle_button_render_plan(
+            bounds,
+            true,
+            ZsToggleButtonPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_toggle_button_render_plan(
+            bounds,
+            true,
+            ZsToggleButtonPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.radius, 4);
+        assert_eq!(macos.radius, 6);
+        assert_eq!(gtk.radius, 5);
+        assert_eq!(windows.text_bounds.y, bounds.y);
+        assert_eq!(macos.text_bounds.y, bounds.y + 1);
+        assert_eq!(gtk.selected_indicator.height, 3);
+        assert_eq!(
+            zs_toggle_button_native_draw_plan(&windows, "Pin").command_count(),
+            2
+        );
+        let checked = zs_toggle_button_native_draw_plan(&macos, "Pin");
+        assert_eq!(checked.command_count(), 3);
+        assert!(matches!(
+            checked.commands.as_slice(),
+            [
+                NativeDrawCommand::RoundRect {
+                    fill: NativeDrawFill::Role(ColorRole::Accent),
+                    ..
+                },
+                NativeDrawCommand::Text(_),
+                NativeDrawCommand::RoundFill { .. }
+            ]
+        ));
     }
 
     #[cfg(feature = "slider")]
