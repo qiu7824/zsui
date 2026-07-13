@@ -69,6 +69,11 @@ history remain authoritative for implementation status.
 - DatePicker resolves its today marker from the operating system's local time
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.
+- Direct RadioButton children of the same row or column form a local group
+  without a global registry. Ordinary arrow navigation follows WinUI logical
+  order, does not wrap at group boundaries, moves focus and selection together,
+  and still routes the chosen option through the application's typed message so
+  explicit state remains authoritative.
 - ComboBox type-ahead consumes each backend's committed text input through one
   shared one-second, case-insensitive prefix buffer. Repeated single characters
   cycle from the current selection, and matches route through the existing

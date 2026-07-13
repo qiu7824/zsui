@@ -222,7 +222,8 @@ fn run_smoke(
     if include_radio_view {
         smoke_options = smoke_options
             .native_view_click(Point { x: 100, y: 124 })
-            .native_view_key_down(NativeViewKey::Space);
+            .native_view_key_down(NativeViewKey::Space)
+            .native_view_key_down(NativeViewKey::Up);
     }
     #[cfg(all(feature = "combo", feature = "label"))]
     if include_combo_view {

@@ -102,6 +102,7 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
     pub native_view_radio_selection_count: usize,
+    pub native_view_radio_keyboard_selection_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -172,6 +173,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
             native_view_radio_selection_count: 0,
+            native_view_radio_keyboard_selection_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -262,6 +264,12 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} radio selection event(s)",
                 report.native_view_radio_selection_count
+            ));
+        }
+        if report.native_view_radio_keyboard_selection_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} keyboard radio selection event(s)",
+                report.native_view_radio_keyboard_selection_count
             ));
         }
         if report.native_view_combo_expanded_change_count > 0 {
@@ -377,6 +385,8 @@ impl NativeHostSmokeInteractionReport {
                 .native_view_slider_keyboard_change_count,
             native_view_slider_drag_count: report.native_view_slider_drag_count,
             native_view_radio_selection_count: report.native_view_radio_selection_count,
+            native_view_radio_keyboard_selection_count: report
+                .native_view_radio_keyboard_selection_count,
             native_view_combo_expanded_change_count: report.native_view_combo_expanded_change_count,
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
@@ -1018,6 +1028,7 @@ mod tests {
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
             native_view_radio_selection_count: 0,
+            native_view_radio_keyboard_selection_count: 1,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1076,6 +1087,7 @@ mod tests {
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
         assert!(interaction_json.contains("\"native_view_focus_visual_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_radio_keyboard_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_combo_scroll_count\": 1"));
         assert!(interaction_json.contains("zsui.test.save"));
         assert!(interaction_json.contains("auto_close_elapsed"));

@@ -2405,6 +2405,47 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            let navigation = match virtual_key {
+                key if key == u32::from(VK_UP) => Some((crate::ViewStackDirection::Column, -1)),
+                key if key == u32::from(VK_DOWN) => Some((crate::ViewStackDirection::Column, 1)),
+                key if key == u32::from(VK_LEFT) => Some((crate::ViewStackDirection::Row, -1)),
+                key if key == u32::from(VK_RIGHT) => Some((crate::ViewStackDirection::Row, 1)),
+                _ => None,
+            };
+            if let Some((navigation, offset)) = navigation {
+                let Some(next_widget) =
+                    self.widget_radio_relative_widget(widget, navigation, offset)
+                else {
+                    return report;
+                };
+                report.handled = true;
+                if next_widget == widget {
+                    return report;
+                }
+                let Some(next_target) = self.interaction_plan.hit_target_for_widget(next_widget)
+                else {
+                    return report;
+                };
+                self.focus_target(next_target, &mut report);
+                report.radio_selection_count = 1;
+                report.radio_keyboard_selection_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_radio_key_select:{}:{}",
+                    widget.0, next_widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::RadioSelected {
+                        widget: next_widget,
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
         #[cfg(feature = "date-picker")]
         if target.kind == crate::ViewHitTargetKind::DatePicker {
             let Some(state) = self.widget_date_picker_state(widget) else {
@@ -2979,6 +3020,23 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "radio")]
+    fn widget_radio_relative_widget(
+        &self,
+        widget: crate::WidgetId,
+        navigation: crate::ViewStackDirection,
+        offset: isize,
+    ) -> Option<crate::WidgetId> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_radio_relative_widget(widget, navigation, offset))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_radio_relative_widget(widget, navigation, offset))
+            })
+    }
+
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
         self.live_view
@@ -3267,6 +3325,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_drag_count: usize,
     pub slider_drag_active: bool,
     pub radio_selection_count: usize,
+    pub radio_keyboard_selection_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -3326,6 +3385,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_drag_count += next.slider_drag_count;
         self.slider_drag_active = next.slider_drag_active;
         self.radio_selection_count += next.radio_selection_count;
+        self.radio_keyboard_selection_count += next.radio_keyboard_selection_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -5752,34 +5812,55 @@ mod tests {
     #[test]
     #[cfg(feature = "radio")]
     fn window_view_input_route_selects_radio_from_pointer_and_space() {
-        let widget = crate::WidgetId::new(35);
-        let target = crate::ViewHitTarget::with_kind(
-            widget,
+        let first = crate::WidgetId::new(35);
+        let second = crate::WidgetId::new(36);
+        let selected = UiCommand::app(crate::CommandId("zsui.test.win32.radio_selected"));
+        let mut view = crate::column([
+            crate::radio_button("Balanced", true)
+                .id(first)
+                .height(crate::Dp::new(36.0))
+                .on_choose(selected.clone()),
+            crate::radio_button("Performance", false)
+                .id(second)
+                .height(crate::Dp::new(36.0))
+                .on_choose(selected),
+        ]);
+        view.layout(&mut crate::ViewLayoutCx::new(
             crate::Rect {
                 x: 0,
                 y: 0,
                 width: 200,
-                height: 36,
+                height: 72,
             },
-            crate::ViewHitTargetKind::RadioButton,
-        );
-        let mut route = WindowsWin32ViewInputRoute::new(
-            crate::ViewInteractionPlan::new([target]),
-            crate::radio_button("Balanced", false)
-                .id(widget)
-                .on_choose(UiCommand::app(crate::CommandId(
-                    "zsui.test.win32.radio_selected",
-                ))),
-        );
+            crate::Dpi::standard(),
+        ));
+        let interaction_plan = view.interaction_plan();
+        let second_bounds = interaction_plan
+            .hit_target_for_widget(second)
+            .expect("second radio should have hit geometry")
+            .bounds;
+        let mut route = WindowsWin32ViewInputRoute::new(interaction_plan, view);
 
-        let pointer = route.dispatch_click(crate::Point { x: 10, y: 18 });
+        let pointer = route.dispatch_click(crate::Point {
+            x: second_bounds.x + 10,
+            y: second_bounds.y + second_bounds.height / 2,
+        });
         let keyboard = route.dispatch_key_down(u32::from(VK_SPACE));
+        let arrow = route.dispatch_key_down(u32::from(VK_UP));
 
         assert_eq!(pointer.radio_selection_count, 1);
         assert_eq!(pointer.ui_command_count, 1);
         assert_eq!(keyboard.radio_selection_count, 1);
         assert_eq!(keyboard.keyboard_activation_count, 1);
-        assert_eq!(route.widget_checked_value(widget), Some(true));
+        assert_eq!(arrow.radio_selection_count, 1);
+        assert_eq!(arrow.radio_keyboard_selection_count, 1);
+        assert_eq!(arrow.focused_widget, Some(first.0));
+        assert!(arrow
+            .events
+            .iter()
+            .any(|event| event == "win32_view_radio_key_select:36:35"));
+        assert_eq!(route.widget_checked_value(first), Some(true));
+        assert_eq!(route.widget_checked_value(second), Some(false));
     }
 
     #[test]

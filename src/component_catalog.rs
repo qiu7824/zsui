@@ -132,7 +132,7 @@ const SLIDER_GAPS: &[&str] = &[
     "touch and precision-trackpad tuning",
 ];
 const RADIO_GAPS: &[&str] = &[
-    "arrow-key group navigation",
+    "single-tab-stop and Ctrl+arrow focus-only group navigation",
     "accessibility selection provider",
     "AppKit and GTK4 target interaction smoke",
 ];

@@ -1258,6 +1258,13 @@ trait LiveViewDriver: Send {
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
+    #[cfg(feature = "radio")]
+    fn widget_radio_relative_widget(
+        &self,
+        widget: WidgetId,
+        navigation: ViewStackDirection,
+        offset: isize,
+    ) -> Option<WidgetId>;
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
     #[cfg(feature = "combo")]
@@ -1320,6 +1327,17 @@ impl SharedLiveViewRuntime {
 
     pub fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.lock().widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "radio")]
+    pub(crate) fn widget_radio_relative_widget(
+        &self,
+        widget: WidgetId,
+        navigation: ViewStackDirection,
+        offset: isize,
+    ) -> Option<WidgetId> {
+        self.lock()
+            .widget_radio_relative_widget(widget, navigation, offset)
     }
 
     #[cfg(feature = "slider")]
@@ -1514,6 +1532,17 @@ where
 
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool> {
         self.view.widget_checked_value(widget)
+    }
+
+    #[cfg(feature = "radio")]
+    fn widget_radio_relative_widget(
+        &self,
+        widget: WidgetId,
+        navigation: ViewStackDirection,
+        offset: isize,
+    ) -> Option<WidgetId> {
+        self.view
+            .widget_radio_relative_widget(widget, navigation, offset)
     }
 
     #[cfg(feature = "slider")]
@@ -1811,6 +1840,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 *selected_index = Some(index);
                 if let Some(message) = on_select {
                     cx.emit(message(index));
+                }
+            }
+        }
+
+        #[cfg(feature = "radio")]
+        if let ViewEvent::RadioSelected { widget } = event {
+            let contains_target = self.children.iter().any(|child| {
+                child.id == Some(*widget) && matches!(&child.kind, ViewNodeKind::RadioButton { .. })
+            });
+            if contains_target && matches!(&self.kind, ViewNodeKind::Stack { .. }) {
+                for child in &mut self.children {
+                    if let ViewNodeKind::RadioButton { selected, .. } = &mut child.kind {
+                        *selected = child.id == Some(*widget);
+                    }
                 }
             }
         }
@@ -2501,6 +2544,48 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_checked_value(widget))
+    }
+
+    #[cfg(feature = "radio")]
+    pub(crate) fn widget_radio_relative_widget(
+        &self,
+        widget: WidgetId,
+        navigation: ViewStackDirection,
+        offset: isize,
+    ) -> Option<WidgetId> {
+        if let ViewNodeKind::Stack { direction } = &self.kind {
+            let navigation_supported = match direction {
+                ViewStackDirection::Column => navigation == ViewStackDirection::Column,
+                ViewStackDirection::Row => true,
+            };
+            let radio_widgets = self
+                .children
+                .iter()
+                .filter_map(|child| {
+                    matches!(&child.kind, ViewNodeKind::RadioButton { .. })
+                        .then_some(child.id)
+                        .flatten()
+                })
+                .collect::<Vec<_>>();
+            if let Some(index) = radio_widgets
+                .iter()
+                .position(|candidate| *candidate == widget)
+            {
+                if navigation_supported {
+                    let next_index = index as isize + offset;
+                    return Some(
+                        usize::try_from(next_index)
+                            .ok()
+                            .and_then(|index| radio_widgets.get(index).copied())
+                            .unwrap_or(widget),
+                    );
+                }
+                return Some(widget);
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_radio_relative_widget(widget, navigation, offset))
     }
 
     #[cfg(feature = "slider")]
@@ -3688,6 +3773,66 @@ mod tests {
             view.kind,
             ViewNodeKind::RadioButton { selected: true, .. }
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "radio")]
+    fn radio_groups_enforce_single_selection_and_non_wrapping_directional_navigation() {
+        let first = WidgetId::new(71);
+        let second = WidgetId::new(72);
+        let third = WidgetId::new(73);
+        let mut vertical = column([
+            radio_button("Balanced", true)
+                .id(first)
+                .on_choose(Msg::ChoiceSelected("balanced")),
+            radio_button("Performance", false)
+                .id(second)
+                .on_choose(Msg::ChoiceSelected("performance")),
+            radio_button("Quiet", false)
+                .id(third)
+                .on_choose(Msg::ChoiceSelected("quiet")),
+        ]);
+
+        assert_eq!(
+            vertical.widget_radio_relative_widget(first, ViewStackDirection::Column, -1),
+            Some(first)
+        );
+        assert_eq!(
+            vertical.widget_radio_relative_widget(first, ViewStackDirection::Column, 1),
+            Some(second)
+        );
+        assert_eq!(
+            vertical.widget_radio_relative_widget(first, ViewStackDirection::Row, 1),
+            Some(first)
+        );
+        assert_eq!(
+            vertical.widget_radio_relative_widget(third, ViewStackDirection::Column, 1),
+            Some(third)
+        );
+
+        let mut events = ViewEventCx::new();
+        vertical.event(&mut events, &ViewEvent::RadioSelected { widget: second });
+        assert_eq!(vertical.widget_checked_value(first), Some(false));
+        assert_eq!(vertical.widget_checked_value(second), Some(true));
+        assert_eq!(vertical.widget_checked_value(third), Some(false));
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ChoiceSelected("performance")]
+        );
+
+        let horizontal = row([
+            radio_button::<()>("One", true).id(first),
+            radio_button::<()>("Two", false).id(second),
+            radio_button::<()>("Three", false).id(third),
+        ]);
+        assert_eq!(
+            horizontal.widget_radio_relative_widget(second, ViewStackDirection::Row, -1),
+            Some(first)
+        );
+        assert_eq!(
+            horizontal.widget_radio_relative_widget(second, ViewStackDirection::Column, 1),
+            Some(third)
+        );
     }
 
     #[test]

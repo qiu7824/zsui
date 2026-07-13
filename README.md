@@ -126,7 +126,9 @@ fn volume_control(value: f32) -> ViewNode<Msg> {
 }
 ```
 
-RadioButton 不维护全局分组；应用用显式状态决定互斥关系：
+RadioButton 不维护全局注册表；同一 `row` 或 `column` 的直接子项会形成局部分组，
+框架即时保证互斥，并按 WinUI 规则提供不循环的方向键导航。应用仍用显式状态
+持久化最终选择：
 
 ```rust,no_run
 use zsui::{radio_button, ViewNode};

@@ -828,6 +828,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
     pub native_view_radio_selection_count: usize,
+    pub native_view_radio_keyboard_selection_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -919,6 +920,7 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
             native_view_radio_selection_count: 0,
+            native_view_radio_keyboard_selection_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1004,6 +1006,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub slider_drag_active: bool,
     #[cfg(feature = "radio")]
     pub radio_selection_changed: bool,
+    #[cfg(feature = "radio")]
+    pub radio_keyboard_selection_changed: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1527,6 +1531,40 @@ impl NativeViewInputRuntime {
                 report.combo_expanded_changed = expanded;
                 return self
                     .dispatch_view_event(ViewEvent::ComboBoxSelected { widget, index }, report);
+            }
+        }
+
+        #[cfg(feature = "radio")]
+        if target.kind == crate::ViewHitTargetKind::RadioButton {
+            let navigation = match key {
+                NativeViewKey::Up => Some((crate::ViewStackDirection::Column, -1)),
+                NativeViewKey::Down => Some((crate::ViewStackDirection::Column, 1)),
+                NativeViewKey::Left => Some((crate::ViewStackDirection::Row, -1)),
+                NativeViewKey::Right => Some((crate::ViewStackDirection::Row, 1)),
+                _ => None,
+            };
+            if let Some((navigation, offset)) = navigation {
+                let Some(next_widget) =
+                    self.widget_radio_relative_widget(widget, navigation, offset)
+                else {
+                    return report;
+                };
+                report.handled = true;
+                if next_widget == widget {
+                    return report;
+                }
+                let Some(next_target) = interaction_plan.hit_target_for_widget(next_widget) else {
+                    return report;
+                };
+                self.focus_target(next_target, &mut report);
+                report.radio_selection_changed = true;
+                report.radio_keyboard_selection_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::RadioSelected {
+                        widget: next_widget,
+                    },
+                    report,
+                );
             }
         }
 
@@ -2221,6 +2259,23 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "radio")]
+    fn widget_radio_relative_widget(
+        &self,
+        widget: crate::WidgetId,
+        navigation: crate::ViewStackDirection,
+        offset: isize,
+    ) -> Option<crate::WidgetId> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_radio_relative_widget(widget, navigation, offset))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_radio_relative_widget(widget, navigation, offset))
+            })
+    }
+
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
         self.live_view
@@ -2596,6 +2651,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
     report.native_view_slider_drag_count += input.slider_drag_count;
     report.native_view_radio_selection_count += input.radio_selection_count;
+    report.native_view_radio_keyboard_selection_count += input.radio_keyboard_selection_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -5352,13 +5408,24 @@ mod tests {
             y: second_bounds.y + second_bounds.height / 2,
         });
         let keyboard = runtime.dispatch_key(NativeViewKey::Space);
+        let moved = runtime.dispatch_key(NativeViewKey::Up);
+        let boundary = runtime.dispatch_key(NativeViewKey::Up);
+        let horizontal = runtime.dispatch_key(NativeViewKey::Left);
 
         assert!(selected.handled);
         assert!(selected.radio_selection_changed);
         assert!(keyboard.handled);
         assert!(keyboard.radio_selection_changed);
-        assert_eq!(runtime.widget_checked_value(first), Some(false));
-        assert_eq!(runtime.widget_checked_value(second), Some(true));
+        assert!(moved.handled);
+        assert!(moved.radio_selection_changed);
+        assert!(moved.radio_keyboard_selection_changed);
+        assert_eq!(moved.focused_widget, Some(first.0));
+        assert!(boundary.handled);
+        assert!(!boundary.radio_selection_changed);
+        assert!(horizontal.handled);
+        assert!(!horizontal.radio_selection_changed);
+        assert_eq!(runtime.widget_checked_value(first), Some(true));
+        assert_eq!(runtime.widget_checked_value(second), Some(false));
     }
 
     #[cfg(feature = "combo")]
@@ -5959,6 +6026,7 @@ mod tests {
         assert_eq!(report.native_view_slider_keyboard_change_count, 0);
         assert_eq!(report.native_view_slider_drag_count, 0);
         assert_eq!(report.native_view_radio_selection_count, 0);
+        assert_eq!(report.native_view_radio_keyboard_selection_count, 0);
         assert_eq!(report.native_view_combo_scroll_count, 0);
         assert_eq!(report.native_view_toggle_count, 0);
         assert_eq!(report.native_view_selection_count, 0);
