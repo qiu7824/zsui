@@ -15,6 +15,10 @@ use crate::native::NativeComboTypeAheadState;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
 };
+#[cfg(feature = "date-picker")]
+use crate::native_input_visuals::{
+    decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
+};
 use crate::native_text_edit::{
     delete_backward, delete_forward, insert_text, move_selection, set_pointer_selection,
     NativeTextDragState, NativeTextEditState, NativeTextMovement,
@@ -1784,6 +1788,10 @@ pub struct WindowsWin32ViewInputRoute {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
+    #[cfg(feature = "date-picker")]
+    pointer_hover: Option<NativePointerVisualKey>,
+    #[cfg(feature = "date-picker")]
+    pointer_pressed: Option<NativePointerVisualKey>,
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
@@ -1809,6 +1817,10 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "date-picker")]
+            pointer_hover: None,
+            #[cfg(feature = "date-picker")]
+            pointer_pressed: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1831,6 +1843,10 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "date-picker")]
+            pointer_hover: None,
+            #[cfg(feature = "date-picker")]
+            pointer_pressed: None,
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
@@ -1905,6 +1921,12 @@ impl WindowsWin32ViewInputRoute {
         };
         let target = self.interaction_plan.hit_target_at(point);
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
+        #[cfg(feature = "date-picker")]
+        self.update_pointer_visual_state(
+            target.and_then(native_pointer_visual_key),
+            target.and_then(native_pointer_visual_key),
+            &mut report,
+        );
         let Some(target) = target else {
             return report;
         };
@@ -1962,6 +1984,14 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "date-picker")]
+        {
+            let hovered = self
+                .interaction_plan
+                .hit_target_at(point)
+                .and_then(native_pointer_visual_key);
+            self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
+        }
         let Some(drag) = self.text_drag else {
             #[cfg(feature = "slider")]
             if let Some(widget) = self.slider_drag {
@@ -2014,6 +2044,8 @@ impl WindowsWin32ViewInputRoute {
             report.text_drag_count = usize::from(completed_selection);
             report.text_drag_active = false;
             report.events.push("win32_view_text_pointer_up".to_string());
+            #[cfg(feature = "date-picker")]
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
         #[cfg(feature = "slider")]
@@ -2028,10 +2060,20 @@ impl WindowsWin32ViewInputRoute {
             report
                 .events
                 .push("win32_view_slider_pointer_up".to_string());
+            #[cfg(feature = "date-picker")]
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
         let mut report = self.dispatch_click(point);
         report.pointer_up_count = 1;
+        #[cfg(feature = "date-picker")]
+        {
+            let hovered = self
+                .interaction_plan
+                .hit_target_at(point)
+                .and_then(native_pointer_visual_key);
+            self.update_pointer_visual_state(hovered, None, &mut report);
+        }
         report
     }
 
@@ -2039,7 +2081,7 @@ impl WindowsWin32ViewInputRoute {
         let had_drag = self.text_drag.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
-        WindowsWin32ViewInputDispatchReport {
+        let report = WindowsWin32ViewInputDispatchReport {
             handled: had_drag,
             hit_target_count: self.hit_target_count(),
             events: had_drag
@@ -2047,6 +2089,33 @@ impl WindowsWin32ViewInputRoute {
                 .into_iter()
                 .collect(),
             ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        #[cfg(feature = "date-picker")]
+        {
+            let mut report = report;
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
+            report
+        }
+        #[cfg(not(feature = "date-picker"))]
+        {
+            report
+        }
+    }
+
+    fn dispatch_pointer_leave(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let report = WindowsWin32ViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            ..WindowsWin32ViewInputDispatchReport::default()
+        };
+        #[cfg(feature = "date-picker")]
+        {
+            let mut report = report;
+            self.update_pointer_visual_state(None, None, &mut report);
+            report
+        }
+        #[cfg(not(feature = "date-picker"))]
+        {
+            report
         }
     }
 
@@ -2753,6 +2822,8 @@ impl WindowsWin32ViewInputRoute {
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         self.dismiss_popup_overlays_except(None, &mut report);
+        #[cfg(feature = "date-picker")]
+        self.update_pointer_visual_state(None, None, &mut report);
         let Some(widget) = self.focused_widget.take() else {
             return report;
         };
@@ -3240,6 +3311,14 @@ impl WindowsWin32ViewInputRoute {
         } else {
             return false;
         };
+        #[cfg(feature = "date-picker")]
+        decorate_native_pointer_visuals(
+            &mut plan,
+            &self.interaction_plan,
+            self.pointer_hover,
+            self.pointer_pressed,
+            self.dpi,
+        );
         if let (Some(target), Some(state)) = (self.focused_target(), self.text_edit) {
             if let Some(value) = self.widget_text_value(target.widget) {
                 decorate_native_text_edit_visuals(
@@ -3259,6 +3338,23 @@ impl WindowsWin32ViewInputRoute {
         );
         self.pending_draw_plan = Some(plan);
         true
+    }
+
+    #[cfg(feature = "date-picker")]
+    fn update_pointer_visual_state(
+        &mut self,
+        hovered: Option<NativePointerVisualKey>,
+        pressed: Option<NativePointerVisualKey>,
+        report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
+        if self.pointer_hover == hovered && self.pointer_pressed == pressed {
+            return;
+        }
+        self.pointer_hover = hovered;
+        self.pointer_pressed = pressed;
+        report.handled = true;
+        report.pointer_visual_change_count += 1;
+        self.rebuild_pending_draw_plan();
     }
 
     fn take_quit_requested(&mut self) -> bool {
@@ -3330,6 +3426,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub pointer_down_count: usize,
     pub pointer_move_count: usize,
     pub pointer_up_count: usize,
+    pub pointer_visual_change_count: usize,
     pub event_count: usize,
     pub message_count: usize,
     pub ui_command_count: usize,
@@ -3391,6 +3488,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.pointer_down_count += next.pointer_down_count;
         self.pointer_move_count += next.pointer_move_count;
         self.pointer_up_count += next.pointer_up_count;
+        self.pointer_visual_change_count += next.pointer_visual_change_count;
         self.event_count += next.event_count;
         self.message_count += next.message_count;
         self.ui_command_count += next.ui_command_count;
@@ -3615,7 +3713,14 @@ pub fn dispatch_windows_win32_window_view_pointer_move(
     hwnd: HWND,
     point: crate::Point,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
+    track_windows_win32_shell_pointer_leave(hwnd);
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_pointer_move(point))
+}
+
+pub fn dispatch_windows_win32_window_view_pointer_leave(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_pointer_leave())
 }
 
 pub fn dispatch_windows_win32_window_view_pointer_up(
@@ -4771,7 +4876,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_MOUSELEAVE => {
-            if dispatch_windows_win32_window_shell_pointer_leave(hwnd).is_some() {
+            let shell_handled = dispatch_windows_win32_window_shell_pointer_leave(hwnd).is_some();
+            let view_handled = dispatch_windows_win32_window_view_pointer_leave(hwnd)
+                .is_some_and(|report| report.handled);
+            if shell_handled || view_handled {
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -6119,15 +6227,27 @@ mod tests {
                 .on_expanded_change(expanded),
         );
 
-        let opened = route.dispatch_click(crate::Point { x: 20, y: 16 });
+        let header_point = crate::Point { x: 20, y: 16 };
+        let hovered = route.dispatch_pointer_move(header_point);
+        assert!(hovered.handled);
+        assert_eq!(hovered.pointer_visual_change_count, 1);
+        assert!(route.take_pending_draw_plan().is_some());
+        let pressed = route.dispatch_pointer_down(header_point, false);
+        assert_eq!(pressed.pointer_visual_change_count, 1);
+        assert!(route.take_pending_draw_plan().is_some());
+        let opened = route.dispatch_pointer_up(header_point);
         assert_eq!(opened.event_count, 1);
         assert_eq!(opened.ui_command_count, 1);
+        assert_eq!(opened.pointer_visual_change_count, 1);
         assert!(
             route
                 .widget_date_picker_state(widget)
                 .expect("date picker state")
                 .expanded
         );
+        let left = route.dispatch_pointer_leave();
+        assert!(left.handled);
+        assert_eq!(left.pointer_visual_change_count, 1);
 
         let previous_month = route.dispatch_click(crate::Point { x: 180, y: 64 });
         assert_eq!(previous_month.event_count, 1);

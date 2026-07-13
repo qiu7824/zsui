@@ -97,6 +97,7 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_pointer_down_count: usize,
     pub native_view_pointer_move_count: usize,
     pub native_view_pointer_up_count: usize,
+    pub native_view_pointer_visual_change_count: usize,
     pub native_view_text_drag_count: usize,
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
@@ -169,6 +170,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
+            native_view_pointer_visual_change_count: 0,
             native_view_text_drag_count: 0,
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
@@ -254,6 +256,12 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} keyboard focus traversal(s)",
                 report.native_view_focus_traversal_count
+            ));
+        }
+        if report.native_view_pointer_visual_change_count > 0 {
+            notes.push(format!(
+                "native view input smoke rendered {} transient pointer visual change(s)",
+                report.native_view_pointer_visual_change_count
             ));
         }
         if report.native_view_toggle_count > 0 {
@@ -387,6 +395,7 @@ impl NativeHostSmokeInteractionReport {
             native_view_pointer_down_count: report.native_view_pointer_down_count,
             native_view_pointer_move_count: report.native_view_pointer_move_count,
             native_view_pointer_up_count: report.native_view_pointer_up_count,
+            native_view_pointer_visual_change_count: report.native_view_pointer_visual_change_count,
             native_view_text_drag_count: report.native_view_text_drag_count,
             native_view_slider_value_change_count: report.native_view_slider_value_change_count,
             native_view_slider_keyboard_change_count: report
@@ -1033,6 +1042,7 @@ mod tests {
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
+            native_view_pointer_visual_change_count: 2,
             native_view_text_drag_count: 0,
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
@@ -1098,6 +1108,7 @@ mod tests {
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));
         assert!(interaction_json.contains("\"native_view_ui_command_count\": 1"));
         assert!(interaction_json.contains("\"native_view_focus_visual_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_pointer_visual_change_count\": 2"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_focus_only_count\": 1"));
         assert!(interaction_json.contains("\"native_view_combo_scroll_count\": 1"));

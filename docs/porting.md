@@ -127,6 +127,11 @@ do not apply a second backend-local popup offset.
 Route outside pointer presses, focus traversal and native window focus loss
 through `DismissPopupOverlays`; this closes owner-drawn overlays and preserves
 the same typed expanded-state messages on Win32, AppKit and GTK4.
+Route DatePicker pointer motion, press/release/cancel and surface leave through
+the shared native view runtime. Its transient visual state is keyed by typed
+`ViewHitTargetKind` values and decorates the self-drawn plan with semantic theme
+roles; backends must not replace it with platform controls or retain a second
+widget-state registry.
 The feature-gated `scroll` container offsets its child content, clips hit
 targets to the viewport and emits `PushClip`/`PopClip` draw commands; backend
 renderers should preserve that clipping boundary before adding wheel/touch

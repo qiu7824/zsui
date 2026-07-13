@@ -193,7 +193,11 @@ down/move/up drag sequence, verifies Unicode range replacement and records
 `native_view_pointer_*`, `native_view_text_drag_count` and
 `native_view_text_selection_change_count`. Shaped-glyph/grapheme/bidirectional
 hit testing, non-Windows target input evidence and resize screenshot artifacts
-remain later runtime gates.
+remain later runtime gates. The `--date-picker-view` path also posts real
+pointer down/up input through the Win32 host and records
+`native_view_pointer_visual_change_count`; a nonzero count proves that the
+semantic hover/pressed decoration reached the buffered native draw plan without
+claiming the still-pending AppKit/GTK4 target runs.
 When a smoke path supplies `NativeWindowSmokeRunOptions::native_view_scroll(...)`
 and a command-backed scroll target, Win32 also records mouse-wheel scroll
 counters and the emitted scroll `UiCommand`. The default `--view` example does

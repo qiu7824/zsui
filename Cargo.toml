@@ -20,7 +20,7 @@ winit = { version = "0.30", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", optional = true }
-objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "objc2-core-foundation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSCell", "NSColor", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "objc2-core-foundation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSCell", "NSColor", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3", optional = true }
 
 [target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]

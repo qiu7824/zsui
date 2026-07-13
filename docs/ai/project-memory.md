@@ -69,6 +69,11 @@ history remain authoritative for implementation status.
 - DatePicker resolves its today marker from the operating system's local time
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.
+- DatePicker hover and pressed visuals are transient runtime state keyed by
+  typed hit targets, not application state or backend-local widget flags.
+  Win32, AppKit and GTK4 route pointer motion, release/cancel and leave through
+  the shared semantic-token draw decoration; target proof is still required on
+  each non-Windows desktop.
 - Direct RadioButton children of the same row or column form a local group
   without a global registry. The selected option, or otherwise the first
   option, is the group's single Tab stop. Ordinary arrow navigation follows

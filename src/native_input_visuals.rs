@@ -196,6 +196,106 @@ pub(crate) fn decorate_native_focus_ring(
     Some(ring)
 }
 
+#[cfg(feature = "date-picker")]
+pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
+
+#[cfg(feature = "date-picker")]
+pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
+    matches!(
+        target.kind,
+        ViewHitTargetKind::DatePicker
+            | ViewHitTargetKind::DatePickerDay { .. }
+            | ViewHitTargetKind::DatePickerPreviousMonth
+            | ViewHitTargetKind::DatePickerNextMonth
+    )
+    .then_some((target.widget, target.kind))
+}
+
+#[cfg(feature = "date-picker")]
+pub(crate) fn decorate_native_pointer_visuals(
+    plan: &mut NativeDrawPlan,
+    interaction_plan: &ViewInteractionPlan,
+    hovered: Option<NativePointerVisualKey>,
+    pressed: Option<NativePointerVisualKey>,
+    dpi: Dpi,
+) -> usize {
+    let active = match pressed {
+        Some(pressed) if hovered == Some(pressed) => Some((pressed, true)),
+        Some(_) => None,
+        None => hovered.map(|hovered| (hovered, false)),
+    };
+    let Some(((widget, kind), is_pressed)) = active else {
+        return 0;
+    };
+    let Some(target) = interaction_plan
+        .hit_targets
+        .iter()
+        .copied()
+        .find(|target| target.widget == widget && target.kind == kind)
+    else {
+        return 0;
+    };
+
+    if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
+        if let Some(command) = plan.commands.iter_mut().find(|command| {
+            matches!(command, NativeDrawCommand::RoundRect { rect, fill: NativeDrawFill::Role(ColorRole::Accent), .. }
+                if rect_contains(target.bounds, *rect))
+        }) {
+            let NativeDrawCommand::RoundRect { stroke, .. } = command else {
+                unreachable!("matched date highlight must remain a round rectangle")
+            };
+            *stroke = Some(NativeDrawFill::Role(if is_pressed {
+                ColorRole::PrimaryText
+            } else {
+                ColorRole::AccentText
+            }));
+            return 1;
+        }
+    }
+
+    let backdrop_index = plan.commands.iter().rposition(|command| {
+        matches!(command, NativeDrawCommand::RoundRect { rect, .. }
+            if rect_contains(*rect, target.bounds))
+    });
+    let Some(backdrop_index) = backdrop_index else {
+        return 0;
+    };
+    let rect = match kind {
+        ViewHitTargetKind::DatePickerDay { .. } => {
+            let diameter = Dp::new(32.0)
+                .to_px(dpi)
+                .round_i32()
+                .min(target.bounds.width)
+                .min(target.bounds.height)
+                .max(1);
+            Rect {
+                x: target.bounds.x + (target.bounds.width - diameter) / 2,
+                y: target.bounds.y + (target.bounds.height - diameter) / 2,
+                width: diameter,
+                height: diameter,
+            }
+        }
+        _ => target.bounds,
+    };
+    let radius = if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
+        rect.width.min(rect.height) / 2
+    } else {
+        Dp::new(4.0).to_px(dpi).round_i32().max(1)
+    };
+    plan.commands.insert(
+        backdrop_index + 1,
+        NativeDrawCommand::RoundFill {
+            rect,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: if is_pressed { 28 } else { 14 },
+            },
+            radius,
+        },
+    );
+    1
+}
+
 #[derive(Debug, Clone, Copy)]
 struct NativeTextLine {
     start: usize,
@@ -312,6 +412,104 @@ mod tests {
                 stroke: NativeDrawFill::Role(ColorRole::Accent),
                 width: 2,
             }] if *rect == ring
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "date-picker")]
+    fn date_picker_pointer_visuals_stay_below_text_and_preserve_selected_fill() {
+        let widget = WidgetId::new(95);
+        let date = crate::ZsDate::new(2026, 7, 13).expect("date should be valid");
+        let popup = Rect {
+            x: 0,
+            y: 0,
+            width: 296,
+            height: 332,
+        };
+        let day = Rect {
+            x: 40,
+            y: 78,
+            width: 42,
+            height: 42,
+        };
+        let target =
+            ViewHitTarget::with_kind(widget, day, ViewHitTargetKind::DatePickerDay { date });
+        let interaction = ViewInteractionPlan::new([target]);
+        let mut rest = NativeDrawPlan::new([
+            NativeDrawCommand::RoundRect {
+                rect: popup,
+                fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                radius: 8,
+            },
+            NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+                "13",
+                day,
+                crate::SemanticTextStyle::body(),
+            )),
+        ]);
+
+        assert_eq!(
+            decorate_native_pointer_visuals(
+                &mut rest,
+                &interaction,
+                Some((widget, target.kind)),
+                None,
+                Dpi::standard(),
+            ),
+            1
+        );
+        assert!(matches!(
+            rest.commands.as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::PrimaryText,
+                        alpha: 14,
+                    },
+                    ..
+                },
+                NativeDrawCommand::Text(_),
+            ]
+        ));
+
+        let mut selected = NativeDrawPlan::new([
+            NativeDrawCommand::RoundRect {
+                rect: popup,
+                fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                radius: 8,
+            },
+            NativeDrawCommand::RoundRect {
+                rect: Rect {
+                    x: 45,
+                    y: 83,
+                    width: 32,
+                    height: 32,
+                },
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+                stroke: None,
+                radius: 16,
+            },
+        ]);
+        assert_eq!(
+            decorate_native_pointer_visuals(
+                &mut selected,
+                &interaction,
+                Some((widget, target.kind)),
+                Some((widget, target.kind)),
+                Dpi::standard(),
+            ),
+            1
+        );
+        assert!(matches!(
+            selected.commands.get(1),
+            Some(NativeDrawCommand::RoundRect {
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+                stroke: Some(NativeDrawFill::Role(ColorRole::PrimaryText)),
+                ..
+            })
         ));
     }
 

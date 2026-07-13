@@ -10,6 +10,10 @@ use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
     native_text_visual_geometry,
 };
+#[cfg(feature = "date-picker")]
+use crate::native_input_visuals::{
+    decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
+};
 use crate::native_text_edit::{
     char_to_byte_index, delete_backward, delete_forward, insert_text, move_selection,
     set_pointer_selection, NativeTextDragState, NativeTextEditState, NativeTextMovement,
@@ -823,6 +827,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_pointer_down_count: usize,
     pub native_view_pointer_move_count: usize,
     pub native_view_pointer_up_count: usize,
+    pub native_view_pointer_visual_change_count: usize,
     pub native_view_text_drag_count: usize,
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
@@ -916,6 +921,7 @@ impl NativeWindowSmokeRunReport {
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
+            native_view_pointer_visual_change_count: 0,
             native_view_text_drag_count: 0,
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
@@ -972,6 +978,10 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
+    #[cfg(feature = "date-picker")]
+    pointer_hover: Option<NativePointerVisualKey>,
+    #[cfg(feature = "date-picker")]
+    pointer_pressed: Option<NativePointerVisualKey>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
@@ -990,6 +1000,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
     pub surface_changed: bool,
     pub focus_visual_changed: bool,
+    #[cfg(feature = "date-picker")]
+    pub pointer_visual_changed: bool,
     pub hit_target_count: usize,
     pub message_count: usize,
     pub app_command_count: usize,
@@ -1053,6 +1065,10 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "date-picker")]
+            pointer_hover: None,
+            #[cfg(feature = "date-picker")]
+            pointer_pressed: None,
             ime_preedit: None,
             app_command_executor,
             ui_command_executor,
@@ -1213,6 +1229,12 @@ impl NativeViewInputRuntime {
         let interaction_plan = self.current_interaction_plan();
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
+        #[cfg(feature = "date-picker")]
+        self.update_pointer_visual_state(
+            target.and_then(native_pointer_visual_key),
+            target.and_then(native_pointer_visual_key),
+            &mut report,
+        );
         let Some(target) = target else {
             return report;
         };
@@ -1266,6 +1288,14 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "date-picker")]
+        {
+            let hovered = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_at(point))
+                .and_then(native_pointer_visual_key);
+            self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
+        }
         let Some(drag) = self.text_drag else {
             #[cfg(feature = "slider")]
             if let Some(widget) = self.slider_drag {
@@ -1312,6 +1342,8 @@ impl NativeViewInputRuntime {
             self.text_drag = None;
             report.handled = true;
             report.text_drag_active = false;
+            #[cfg(feature = "date-picker")]
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
         #[cfg(feature = "slider")]
@@ -1320,6 +1352,8 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
             report.handled = true;
             report.slider_drag_active = false;
+            #[cfg(feature = "date-picker")]
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
 
@@ -1328,7 +1362,14 @@ impl NativeViewInputRuntime {
             ..NativeViewInputDispatchReport::default()
         };
         let interaction_plan = self.current_interaction_plan();
-        let Some(target) = interaction_plan.and_then(|plan| plan.hit_target_at(point)) else {
+        let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
+        #[cfg(feature = "date-picker")]
+        self.update_pointer_visual_state(
+            target.and_then(native_pointer_visual_key),
+            None,
+            &mut report,
+        );
+        let Some(target) = target else {
             return report;
         };
         report.handled = true;
@@ -1381,8 +1422,28 @@ impl NativeViewInputRuntime {
             slider_drag_active: false,
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "date-picker")]
+        self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
         self.populate_text_report(&mut report);
         report
+    }
+
+    pub(crate) fn dispatch_pointer_leave(&mut self) -> NativeViewInputDispatchReport {
+        let report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        #[cfg(feature = "date-picker")]
+        {
+            let mut report = report;
+            self.update_pointer_visual_state(None, None, &mut report);
+            report
+        }
+        #[cfg(not(feature = "date-picker"))]
+        {
+            report
+        }
     }
 
     pub(crate) fn dispatch_key(&mut self, key: NativeViewKey) -> NativeViewInputDispatchReport {
@@ -1900,6 +1961,8 @@ impl NativeViewInputRuntime {
             self.slider_drag = None;
         }
         let had_preedit = self.ime_preedit.take().is_some();
+        #[cfg(feature = "date-picker")]
+        self.update_pointer_visual_state(None, None, &mut report);
         report.handled |= had_focus || had_preedit;
         report.focus_visual_changed = had_focus;
         report.hit_target_count = self.hit_target_count();
@@ -2041,6 +2104,16 @@ impl NativeViewInputRuntime {
 
     fn compose_input_visuals(&self, plan: NativeDrawPlan) -> NativeDrawPlan {
         let mut plan = plan;
+        #[cfg(feature = "date-picker")]
+        if let Some(interaction_plan) = self.current_interaction_plan() {
+            decorate_native_pointer_visuals(
+                &mut plan,
+                &interaction_plan,
+                self.pointer_hover,
+                self.pointer_pressed,
+                self.dpi,
+            );
+        }
         if let (Some(target), Some((value, selection))) = (
             self.focused_text_input_target(),
             self.focused_text_input_snapshot(),
@@ -2052,6 +2125,23 @@ impl NativeViewInputRuntime {
             decorate_native_focus_ring(&mut plan, &interaction_plan, self.focused_widget, self.dpi);
         }
         plan
+    }
+
+    #[cfg(feature = "date-picker")]
+    fn update_pointer_visual_state(
+        &mut self,
+        hovered: Option<NativePointerVisualKey>,
+        pressed: Option<NativePointerVisualKey>,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        if self.pointer_hover == hovered && self.pointer_pressed == pressed {
+            return;
+        }
+        self.pointer_hover = hovered;
+        self.pointer_pressed = pressed;
+        report.handled = true;
+        report.pointer_visual_changed = true;
+        report.redraw_plan = self.current_composed_draw_plan();
     }
 
     fn compose_ime_preedit(&self, mut plan: NativeDrawPlan) -> NativeDrawPlan {
@@ -2688,6 +2778,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_pointer_down_count += input.pointer_down_count;
     report.native_view_pointer_move_count += input.pointer_move_count;
     report.native_view_pointer_up_count += input.pointer_up_count;
+    report.native_view_pointer_visual_change_count += input.pointer_visual_change_count;
     report.native_view_text_drag_count += input.text_drag_count;
     report.native_view_slider_value_change_count += input.slider_value_change_count;
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
@@ -5766,10 +5857,44 @@ mod tests {
                 })
             })
             .expect("expanded date picker should expose day hit geometry");
-        let selected = runtime.dispatch_pointer_click(Point {
+        let day_point = Point {
             x: day.bounds.x + day.bounds.width / 2,
             y: day.bounds.y + day.bounds.height / 2,
-        });
+        };
+        let hovered = runtime.dispatch_pointer_move(day_point);
+        assert!(hovered.handled);
+        assert!(hovered.pointer_visual_changed);
+        assert!(hovered
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::PrimaryText,
+                        alpha: 14,
+                    },
+                    ..
+                }
+            ))));
+        let pressed = runtime.dispatch_pointer_down(day_point, false);
+        assert!(pressed.pointer_visual_changed);
+        assert!(pressed
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::PrimaryText,
+                        alpha: 28,
+                    },
+                    ..
+                }
+            ))));
+        let left = runtime.dispatch_pointer_leave();
+        assert!(left.pointer_visual_changed);
+        assert!(left.redraw_plan.is_some());
+
+        let selected = runtime.dispatch_pointer_click(day_point);
         assert!(selected.handled);
         assert_eq!(selected.message_count, 1);
         assert_eq!(

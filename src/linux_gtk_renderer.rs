@@ -122,9 +122,23 @@ pub(crate) fn install_linux_gtk_draw_plan(
         }
     });
     gesture.connect_cancel({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
         move |_gesture, _sequence| {
-            runtime.borrow_mut().cancel_pointer_drag();
+            let report = runtime.borrow_mut().cancel_pointer_drag();
+            if report.handled {
+                apply_linux_gtk_input_report(
+                    report,
+                    &area,
+                    &plan,
+                    &runtime,
+                    &ime,
+                    application.as_ref(),
+                );
+            }
         }
     });
     drawing_area.add_controller(gesture);
@@ -140,6 +154,26 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 x: gtk_coordinate(x),
                 y: gtk_coordinate(y),
             });
+            if report.handled {
+                apply_linux_gtk_input_report(
+                    report,
+                    &area,
+                    &plan,
+                    &runtime,
+                    &ime,
+                    application.as_ref(),
+                );
+            }
+        }
+    });
+    motion.connect_leave({
+        let application = window.application();
+        let area = drawing_area.clone();
+        let plan = Rc::clone(&plan);
+        let runtime = Rc::clone(&runtime);
+        let ime = ime.clone();
+        move |_motion| {
+            let report = runtime.borrow_mut().dispatch_pointer_leave();
             if report.handled {
                 apply_linux_gtk_input_report(
                     report,

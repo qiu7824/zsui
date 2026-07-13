@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
     NSColor, NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey, NSEnterCharacter,
@@ -11,7 +11,8 @@ use objc2_app_kit::{
     NSGraphicsContext, NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode,
     NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSRightArrowFunctionKey,
     NSStringDrawing, NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter,
-    NSTextAlignment, NSTextInputClient, NSUpArrowFunctionKey, NSView,
+    NSTextAlignment, NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions,
+    NSUpArrowFunctionKey, NSView,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
@@ -283,6 +284,26 @@ define_class!(
             self.apply_input_report(report);
         }
 
+        #[unsafe(method(mouseMoved:))]
+        fn mouse_moved(&self, event: &NSEvent) {
+            let location = self.convertPoint_fromView(event.locationInWindow(), None);
+            let report = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_pointer_move(crate::Point {
+                    x: appkit_coordinate(location.x),
+                    y: appkit_coordinate(location.y),
+                });
+            self.apply_input_report(report);
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _event: &NSEvent) {
+            let report = self.ivars().runtime.borrow_mut().dispatch_pointer_leave();
+            self.apply_input_report(report);
+        }
+
         #[unsafe(method(mouseUp:))]
         fn mouse_up(&self, event: &NSEvent) {
             let location = self.convertPoint_fromView(event.locationInWindow(), None);
@@ -454,6 +475,24 @@ impl ZsuiAppKitDrawView {
         });
         unsafe { msg_send![super(this), initWithFrame: frame] }
     }
+
+    fn install_pointer_tracking(&self) {
+        let options = NSTrackingAreaOptions::MouseEnteredAndExited
+            | NSTrackingAreaOptions::MouseMoved
+            | NSTrackingAreaOptions::ActiveInKeyWindow
+            | NSTrackingAreaOptions::InVisibleRect
+            | NSTrackingAreaOptions::EnabledDuringMouseDrag;
+        let tracking_area = unsafe {
+            NSTrackingArea::initWithRect_options_owner_userInfo(
+                NSTrackingArea::alloc(),
+                NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0)),
+                options,
+                Some(self),
+                None,
+            )
+        };
+        self.addTrackingArea(&tracking_area);
+    }
 }
 
 pub(crate) fn install_macos_appkit_draw_plan(
@@ -470,6 +509,8 @@ pub(crate) fn install_macos_appkit_draw_plan(
     view.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
+    view.install_pointer_tracking();
+    window.setAcceptsMouseMovedEvents(true);
     window.setContentView(Some(&view));
     view.setNeedsDisplay(true);
 }
