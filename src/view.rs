@@ -676,6 +676,12 @@ pub enum ViewNodeKind<Msg> {
         focused_control: crate::ZsToastControl,
         on_result: Option<fn(crate::ZsToastResult) -> Msg>,
     },
+    #[cfg(feature = "info-bar")]
+    InfoBar {
+        spec: crate::ZsInfoBarSpec,
+        focused_control: Option<crate::ZsInfoBarControl>,
+        on_event: Option<fn(crate::ZsInfoBarEvent) -> Msg>,
+    },
     #[cfg(feature = "combo")]
     ComboBox {
         options: Vec<String>,
@@ -1162,6 +1168,14 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_toast_result(mut self, message: fn(crate::ZsToastResult) -> Msg) -> Self {
         if let ViewNodeKind::ToastPresenter { on_result, .. } = &mut self.kind {
             *on_result = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "info-bar")]
+    pub fn on_info_bar_event(mut self, message: fn(crate::ZsInfoBarEvent) -> Msg) -> Self {
+        if let ViewNodeKind::InfoBar { on_event, .. } = &mut self.kind {
+            *on_event = Some(message);
         }
         self
     }
@@ -1804,6 +1818,23 @@ pub fn toast_presenter<Msg>(
     .child(page)
 }
 
+/// Creates a persistent inline status message that participates in page layout.
+///
+/// The application owns whether the node is present. ZSUI emits action and
+/// close intent without hiding the node behind application state.
+#[cfg(feature = "info-bar")]
+pub fn info_bar<Msg>(widget: WidgetId, spec: crate::ZsInfoBarSpec) -> ViewNode<Msg> {
+    let metrics = crate::ZsInfoBarMetrics::for_platform(crate::ZsInfoBarPlatformStyle::current());
+    let focused_control = spec.initial_control();
+    ViewNode::<Msg>::new(ViewNodeKind::InfoBar {
+        spec,
+        focused_control,
+        on_event: None,
+    })
+    .id(widget)
+    .height(metrics.minimum_height)
+}
+
 #[cfg(feature = "virtual-list")]
 pub fn virtual_list<T, Msg>(
     total_count: usize,
@@ -1966,6 +1997,16 @@ pub enum ViewEvent {
         widget: WidgetId,
         toast: crate::ZsToastId,
         response: crate::ZsToastResponse,
+    },
+    #[cfg(feature = "info-bar")]
+    InfoBarFocused {
+        widget: WidgetId,
+        control: crate::ZsInfoBarControl,
+    },
+    #[cfg(feature = "info-bar")]
+    InfoBarInvoked {
+        widget: WidgetId,
+        event: crate::ZsInfoBarEvent,
     },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
@@ -2140,6 +2181,12 @@ pub enum ViewHitTargetKind {
     ToastAction,
     #[cfg(feature = "toast")]
     ToastClose,
+    #[cfg(feature = "info-bar")]
+    InfoBar,
+    #[cfg(feature = "info-bar")]
+    InfoBarAction,
+    #[cfg(feature = "info-bar")]
+    InfoBarClose,
     #[cfg(feature = "combo")]
     ComboBox,
     #[cfg(feature = "combo")]
@@ -2364,6 +2411,13 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "info-bar")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::InfoBarAction | ViewHitTargetKind::InfoBarClose
+        ) {
+            return false;
+        }
         #[cfg(feature = "password-box")]
         if self.kind == ViewHitTargetKind::PasswordBoxReveal {
             return false;
@@ -2560,6 +2614,11 @@ trait LiveViewDriver: Send {
         &self,
         widget: WidgetId,
     ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)>;
+    #[cfg(feature = "info-bar")]
+    fn widget_info_bar_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2666,6 +2725,14 @@ impl SharedLiveViewRuntime {
         widget: WidgetId,
     ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
         self.lock().widget_toast_state(widget)
+    }
+
+    #[cfg(feature = "info-bar")]
+    pub fn widget_info_bar_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
+        self.lock().widget_info_bar_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2959,6 +3026,14 @@ where
         widget: WidgetId,
     ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
         self.view.widget_toast_state(widget)
+    }
+
+    #[cfg(feature = "info-bar")]
+    fn widget_info_bar_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
+        self.view.widget_info_bar_state(widget)
     }
 
     #[cfg(feature = "combo")]
@@ -3272,6 +3347,39 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "info-bar")]
+        if let ViewNodeKind::InfoBar {
+            spec,
+            focused_control,
+            on_event,
+        } = &mut self.kind
+        {
+            match event {
+                ViewEvent::InfoBarFocused { widget, control }
+                    if self.id == Some(*widget) && spec.has_control(*control) =>
+                {
+                    *focused_control = Some(*control);
+                }
+                ViewEvent::InfoBarInvoked { widget, event }
+                    if self.id == Some(*widget)
+                        && match event {
+                            crate::ZsInfoBarEvent::Action => {
+                                spec.has_control(crate::ZsInfoBarControl::Action)
+                            }
+                            crate::ZsInfoBarEvent::Close => {
+                                spec.has_control(crate::ZsInfoBarControl::Close)
+                            }
+                        } =>
+                {
+                    if let Some(message) = on_event {
+                        cx.emit(message(*event));
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         #[cfg(feature = "toast")]
         if matches!(self.kind, ViewNodeKind::ToastPresenter { .. }) {
             let mut handled = false;
@@ -4627,6 +4735,23 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "info-bar")]
+            ViewNodeKind::InfoBar {
+                spec,
+                focused_control,
+                ..
+            } => {
+                let plan = crate::zs_info_bar_render_plan(
+                    bounds,
+                    spec,
+                    *focused_control,
+                    crate::ZsInfoBarPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_info_bar_native_draw_plan(&plan, spec).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 options,
@@ -4816,6 +4941,9 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "toast")]
             (Some(id), ViewEvent::ToastFocused { widget, .. })
             | (Some(id), ViewEvent::ToastResponded { widget, .. }) => id == *widget,
+            #[cfg(feature = "info-bar")]
+            (Some(id), ViewEvent::InfoBarFocused { widget, .. })
+            | (Some(id), ViewEvent::InfoBarInvoked { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -5174,6 +5302,31 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_toast_state(widget))
     }
 
+    #[cfg(feature = "info-bar")]
+    pub fn widget_info_bar_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::InfoBar {
+                spec,
+                focused_control,
+                ..
+            } = &self.kind
+            {
+                return Some((
+                    crate::ZsInfoBarState {
+                        focused_control: *focused_control,
+                    },
+                    spec.clone(),
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_info_bar_state(widget))
+    }
+
     #[cfg(feature = "combo")]
     pub(crate) fn widget_combo_type_ahead_match(
         &self,
@@ -5420,6 +5573,56 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "info-bar")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::InfoBar {
+                spec,
+                focused_control,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            if focused_control.is_some() {
+                if let Some(root_bounds) = clipped_rect(bounds, clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        root_bounds,
+                        ViewHitTargetKind::InfoBar,
+                    ));
+                }
+                let plan = crate::zs_info_bar_render_plan(
+                    bounds,
+                    spec,
+                    *focused_control,
+                    crate::ZsInfoBarPlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                if let Some(action_bounds) = plan
+                    .action_bounds
+                    .and_then(|bounds| clipped_rect(bounds, clip))
+                {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        action_bounds,
+                        ViewHitTargetKind::InfoBarAction,
+                    ));
+                }
+                if let Some(close_bounds) = plan
+                    .close_bounds
+                    .and_then(|bounds| clipped_rect(bounds, clip))
+                {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        close_bounds,
+                        ViewHitTargetKind::InfoBarClose,
+                    ));
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "toast")]
         if matches!(self.kind, ViewNodeKind::ToastPresenter { .. }) {
             for child in &self.children {
@@ -6406,6 +6609,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
             #[cfg(feature = "toast")]
             ViewNodeKind::ToastPresenter { .. } => ViewHitTargetKind::Toast,
+            #[cfg(feature = "info-bar")]
+            ViewNodeKind::InfoBar { .. } => ViewHitTargetKind::InfoBar,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
@@ -6967,6 +7172,7 @@ mod tests {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "toast",
         feature = "time-picker",
         feature = "tabs",
@@ -7022,6 +7228,8 @@ mod tests {
         DialogResult(crate::ZsContentDialogResult),
         #[cfg(feature = "toast")]
         ToastResult(crate::ZsToastResult),
+        #[cfg(feature = "info-bar")]
+        InfoBarEvent(crate::ZsInfoBarEvent),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
@@ -8305,6 +8513,79 @@ mod tests {
                 .first_focus_target()
                 .map(|target| target.widget),
             Some(page)
+        );
+    }
+
+    #[cfg(feature = "info-bar")]
+    #[test]
+    fn info_bar_is_inline_and_routes_semantic_focus_and_typed_events() {
+        let widget = WidgetId::new(107);
+        let mut view = column([
+            info_bar(
+                widget,
+                crate::ZsInfoBarSpec::new("Renew to keep all functionality.")
+                    .title("Subscription expires soon")
+                    .severity(crate::ZsInfoBarSeverity::Warning)
+                    .action("Renew"),
+            )
+            .on_info_bar_event(Msg::InfoBarEvent),
+            spacer::<Msg>().height(Dp::new(40.0)),
+        ]);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 160,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.widget),
+            Some(widget)
+        );
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::InfoBarAction));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::InfoBarClose));
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Warning
+        )));
+
+        let mut focus = ViewEventCx::new();
+        view.event(
+            &mut focus,
+            &ViewEvent::InfoBarFocused {
+                widget,
+                control: crate::ZsInfoBarControl::Close,
+            },
+        );
+        assert!(focus.messages().is_empty());
+        assert_eq!(
+            view.widget_info_bar_state(widget)
+                .map(|(state, _)| state.focused_control),
+            Some(Some(crate::ZsInfoBarControl::Close))
+        );
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::InfoBarInvoked {
+                widget,
+                event: crate::ZsInfoBarEvent::Action,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::InfoBarEvent(crate::ZsInfoBarEvent::Action)]
         );
     }
 

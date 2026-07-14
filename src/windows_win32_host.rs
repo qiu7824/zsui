@@ -20,6 +20,7 @@ use crate::native_input_visuals::{
     feature = "auto-suggest",
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -1846,6 +1847,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1859,6 +1861,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1908,6 +1911,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1921,6 +1925,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1969,6 +1974,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1982,6 +1988,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2086,6 +2093,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2186,6 +2194,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2292,6 +2301,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2319,6 +2329,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2336,6 +2347,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2373,6 +2385,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2390,6 +2403,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2422,6 +2436,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2438,6 +2453,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2529,6 +2545,14 @@ impl WindowsWin32ViewInputRoute {
             report
                 .events
                 .push(format!("win32_view_toast_text_suppressed:{}", widget.0));
+            return report;
+        }
+        #[cfg(feature = "info-bar")]
+        if self.widget_info_bar_state(widget).is_some() {
+            report.handled = true;
+            report
+                .events
+                .push(format!("win32_view_info_bar_text_suppressed:{}", widget.0));
             return report;
         }
         #[cfg(feature = "combo")]
@@ -2764,6 +2788,70 @@ impl WindowsWin32ViewInputRoute {
                         &mut report,
                     );
                     return report;
+                }
+            }
+        }
+        #[cfg(feature = "info-bar")]
+        if let Some(widget) = self.focused_widget {
+            if let Some((state, spec)) = self.widget_info_bar_state(widget) {
+                if virtual_key == u32::from(VK_ESCAPE) && spec.is_closable() {
+                    report.handled = true;
+                    report.info_bar_event_count = 1;
+                    report.event_count = 1;
+                    report
+                        .events
+                        .push(format!("win32_view_info_bar_event:{}:Close", widget.0));
+                    self.dispatch_event(
+                        crate::ViewEvent::InfoBarInvoked {
+                            widget,
+                            event: crate::ZsInfoBarEvent::Close,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+                if let Some(current) = state.focused_control {
+                    let focus_offset = match virtual_key {
+                        key if key == u32::from(VK_LEFT) => Some(-1),
+                        key if key == u32::from(VK_RIGHT) => Some(1),
+                        _ => None,
+                    };
+                    if let Some(offset) = focus_offset {
+                        let next = spec.relative_control(current, offset);
+                        report.handled = true;
+                        report.info_bar_focus_change_count = usize::from(next != current);
+                        report.event_count = 1;
+                        report
+                            .events
+                            .push(format!("win32_view_info_bar_focus:{}:{next:?}", widget.0));
+                        self.dispatch_event(
+                            crate::ViewEvent::InfoBarFocused {
+                                widget,
+                                control: next,
+                            },
+                            &mut report,
+                        );
+                        return report;
+                    }
+                    if matches!(virtual_key, ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE) {
+                        let event = match current {
+                            crate::ZsInfoBarControl::Action => crate::ZsInfoBarEvent::Action,
+                            crate::ZsInfoBarControl::Close => crate::ZsInfoBarEvent::Close,
+                        };
+                        if spec.has_control(current) {
+                            report.handled = true;
+                            report.info_bar_event_count = 1;
+                            report.event_count = 1;
+                            report
+                                .events
+                                .push(format!("win32_view_info_bar_event:{}:{event:?}", widget.0));
+                            self.dispatch_event(
+                                crate::ViewEvent::InfoBarInvoked { widget, event },
+                                &mut report,
+                            );
+                            return report;
+                        }
+                    }
                 }
             }
         }
@@ -3833,6 +3921,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3970,6 +4059,43 @@ impl WindowsWin32ViewInputRoute {
                 return;
             }
             crate::ViewHitTargetKind::Toast => return,
+            _ => {}
+        }
+        #[cfg(feature = "info-bar")]
+        match target.kind {
+            crate::ViewHitTargetKind::InfoBarAction => {
+                report.info_bar_event_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_info_bar_event:{}:Action",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::InfoBarInvoked {
+                        widget: target.widget,
+                        event: crate::ZsInfoBarEvent::Action,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::InfoBarClose => {
+                report.info_bar_event_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_info_bar_event:{}:Close",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::InfoBarInvoked {
+                        widget: target.widget,
+                        event: crate::ZsInfoBarEvent::Close,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::InfoBar => return,
             _ => {}
         }
         #[cfg(feature = "tree")]
@@ -4650,6 +4776,21 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "info-bar")]
+    fn widget_info_bar_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_info_bar_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_info_bar_state(widget))
+            })
+    }
+
     #[cfg(feature = "toast")]
     fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
         let target = self
@@ -4870,6 +5011,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -4962,6 +5104,7 @@ impl WindowsWin32ViewInputRoute {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -5173,6 +5316,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub toast_focus_change_count: usize,
     pub toast_response_count: usize,
     pub toast_timeout_count: usize,
+    pub info_bar_focus_change_count: usize,
+    pub info_bar_event_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -5253,6 +5398,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.toast_focus_change_count += next.toast_focus_change_count;
         self.toast_response_count += next.toast_response_count;
         self.toast_timeout_count += next.toast_timeout_count;
+        self.info_bar_focus_change_count += next.info_bar_focus_change_count;
+        self.info_bar_event_count += next.info_bar_event_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -8561,6 +8708,69 @@ mod tests {
         assert_eq!(timeout.toast_timeout_count, 1);
         assert_eq!(timeout.ui_command_count, 1);
         assert!(timeout_route.widget_toast_state(widget).is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "info-bar")]
+    fn window_view_input_route_routes_info_bar_action_and_keyboard_close() {
+        fn invoked(event: crate::ZsInfoBarEvent) -> UiCommand {
+            UiCommand::app(crate::CommandId(match event {
+                crate::ZsInfoBarEvent::Action => "zsui.test.win32.info_bar_action",
+                crate::ZsInfoBarEvent::Close => "zsui.test.win32.info_bar_close",
+            }))
+        }
+
+        let widget = crate::WidgetId::new(150);
+        let mut view = crate::column([
+            crate::info_bar(
+                widget,
+                crate::ZsInfoBarSpec::new("Renew to keep all functionality.")
+                    .title("Subscription expires soon")
+                    .severity(crate::ZsInfoBarSeverity::Warning)
+                    .action("Renew"),
+            )
+            .on_info_bar_event(invoked),
+            crate::spacer(),
+        ]);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 240,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let action = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::InfoBarAction)
+            .expect("info-bar action");
+
+        let mut pointer_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
+        let pointer = pointer_route.dispatch_click(crate::Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert_eq!(pointer.info_bar_event_count, 1);
+        assert_eq!(pointer.ui_command_count, 1);
+
+        let mut keyboard_route = WindowsWin32ViewInputRoute::new(interaction, view);
+        let focus = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_TAB);
+        assert_eq!(focus.focused_widget, Some(widget.0));
+        let next = keyboard_route.dispatch_key_down(u32::from(VK_RIGHT));
+        assert_eq!(next.info_bar_focus_change_count, 1);
+        assert_eq!(
+            keyboard_route
+                .widget_info_bar_state(widget)
+                .map(|(state, _)| state.focused_control),
+            Some(Some(crate::ZsInfoBarControl::Close))
+        );
+        let close = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(close.info_bar_event_count, 1);
+        assert_eq!(close.ui_command_count, 1);
     }
 
     #[test]

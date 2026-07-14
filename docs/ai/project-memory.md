@@ -172,6 +172,18 @@ history remain authoritative for implementation status.
   same self-drawn renderer protocol. Accessibility live-region announcement,
   hover/focus timeout pause, queues/priority replacement and AppKit/GTK target
   interaction smoke remain readiness gaps.
+- InfoBar is an independent `info-bar` Cargo feature over `widgets-base`. It is
+  an ordinary inline status surface, never an overlay and never a timer-owned
+  notification. Applications own presence/removal through the View tree and
+  receive typed `ZsInfoBarEvent::Action` or `Close`; `ZsInfoBarSpec` keeps the
+  informational/success/warning/error severity, title, message, one optional
+  action and default-on close affordance explicit. Windows uses Fluent InfoBar
+  geometry with a severity edge, macOS uses restrained system status colors
+  without imitating modal `NSAlert`, and GTK uses AdwBanner-like compact
+  geometry. Severity must remain represented by text and semantic icon, not
+  color alone. Accessibility live-region announcement, close deferrals,
+  arbitrary View content, bidirectional layout and AppKit/GTK target smoke are
+  readiness gaps.
 - ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
   in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
   mode and semantic size explicit, while inactive rings reserve layout space and

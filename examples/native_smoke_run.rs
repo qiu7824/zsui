@@ -22,6 +22,7 @@ use zsui::checkbox;
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
+    all(feature = "info-bar", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -58,6 +59,7 @@ use zsui::toggle_button;
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
+    all(feature = "info-bar", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -77,6 +79,7 @@ use zsui::CommandId;
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
+    all(feature = "info-bar", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -117,6 +120,8 @@ use zsui::{
 use zsui::{date_picker, ZsDate, ZsuiThemeMode};
 #[cfg(all(feature = "grid", feature = "button", feature = "label"))]
 use zsui::{grid, ZsGridCell, ZsGridFraction, ZsGridSpan, ZsGridTrack};
+#[cfg(all(feature = "info-bar", feature = "label"))]
+use zsui::{info_bar, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec};
 use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
@@ -152,6 +157,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
+    all(feature = "info-bar", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -211,6 +217,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--toast-view" || arg == "--toast"),
         args.iter()
+            .any(|arg| arg == "--info-bar-view" || arg == "--info-bar"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -253,6 +261,7 @@ fn run_smoke(
     include_table_view: bool,
     include_dialog_view: bool,
     include_toast_view: bool,
+    include_info_bar_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -324,6 +333,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "toast", feature = "label")))]
     if include_toast_view {
         return Err("--toast-view requires the toast and label features".to_string());
+    }
+    #[cfg(not(all(feature = "info-bar", feature = "label")))]
+    if include_info_bar_view {
+        return Err("--info-bar-view requires the info-bar and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -519,6 +532,14 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Left)
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "info-bar", feature = "label"))]
+    if include_info_bar_view {
+        smoke_options = smoke_options
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -594,6 +615,8 @@ fn run_smoke(
         attach_content_dialog_view(builder)
     } else if include_toast_view {
         attach_toast_view(builder)
+    } else if include_info_bar_view {
+        attach_info_bar_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -1309,6 +1332,55 @@ fn attach_toast_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     )
 }
 
+#[cfg(all(feature = "info-bar", feature = "label"))]
+#[derive(Clone)]
+enum InfoBarSmokeMsg {
+    Invoked(ZsInfoBarEvent),
+}
+
+#[cfg(all(feature = "info-bar", feature = "label"))]
+struct InfoBarSmokeState {
+    last_event: Option<ZsInfoBarEvent>,
+}
+
+#[cfg(all(feature = "info-bar", feature = "label"))]
+fn attach_info_bar_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        InfoBarSmokeState { last_event: None },
+        |state| {
+            column([
+                text::<InfoBarSmokeMsg>("ZSUI InfoBar Smoke").height(zsui::Dp::new(28.0)),
+                text(format!(
+                    "Last typed event: {}",
+                    state
+                        .last_event
+                        .map(|event| format!("{event:?}"))
+                        .unwrap_or_else(|| "none".to_string())
+                ))
+                .height(zsui::Dp::new(28.0)),
+                info_bar(
+                    WidgetId::new(28),
+                    ZsInfoBarSpec::new("Renew to keep all functionality.")
+                        .title("Subscription expires soon")
+                        .severity(ZsInfoBarSeverity::Warning)
+                        .action("Renew"),
+                )
+                .on_info_bar_event(InfoBarSmokeMsg::Invoked),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            InfoBarSmokeMsg::Invoked(event) => {
+                state.last_event = Some(event);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.info_bar_invoked",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1600,6 +1672,11 @@ fn attach_content_dialog_view(builder: NativeWindowBuilder) -> NativeWindowBuild
 
 #[cfg(not(all(feature = "toast", feature = "label")))]
 fn attach_toast_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "info-bar", feature = "label")))]
+fn attach_info_bar_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

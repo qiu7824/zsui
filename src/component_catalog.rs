@@ -141,6 +141,11 @@ const TOAST_GAPS: &[&str] = &[
     "hover/focus timeout pause plus multi-toast queue and priority replacement",
     "AppKit and GTK4 target interaction smoke",
 ];
+const INFO_BAR_GAPS: &[&str] = &[
+    "accessibility live-region announcement and close deferral semantics",
+    "multiline custom View content plus bidirectional-layout validation",
+    "AppKit and GTK4 target interaction smoke",
+];
 const SLIDER_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target interaction smoke",
@@ -559,10 +564,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "info_bar",
         "InfoBar",
         Feedback,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("info-bar"),
+        "src/info_bar.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        INFO_BAR_GAPS
     ),
     component!(
         "tooltip",
@@ -702,13 +707,14 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 7);
+        assert!(summary.not_started_count >= 6);
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));
         assert!(!summary.missing_component_names.contains(&"content_dialog"));
         assert!(!summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));
         assert!(!summary.missing_component_names.contains(&"toggle_button"));
+        assert!(!summary.missing_component_names.contains(&"info_bar"));
     }
 
     #[test]

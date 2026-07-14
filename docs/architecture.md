@@ -145,6 +145,16 @@ uses the non-targeted TeachingTip placement model, macOS stays understated for
 foreground delivery, and GTK follows the AdwToast one-action/close structure.
 All three remain in the existing self-drawn tree and buffered paint path.
 
+The optional `info-bar` feature adds `info_bar(id, spec)` as an ordinary inline
+status surface rather than an overlay or native child control. The application
+owns presence/removal and receives typed action or close events. Severity,
+title, message, one optional action and the default-on close affordance remain
+explicit in `ZsInfoBarSpec`; the shared runtime owns control focus, arrow-key
+movement and Enter/Space/Escape routing. Windows uses Fluent InfoBar geometry,
+macOS uses a restrained rounded status surface rather than modal `NSAlert`
+chrome, and GTK uses AdwBanner-like compact metrics. Severity is always carried
+by both semantic icon and text, and all hosts consume the same draw plan.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

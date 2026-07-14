@@ -246,6 +246,15 @@ pub(crate) fn decorate_native_focus_ring(
     ) {
         return None;
     }
+    #[cfg(feature = "info-bar")]
+    if matches!(
+        target.kind,
+        ViewHitTargetKind::InfoBar
+            | ViewHitTargetKind::InfoBarAction
+            | ViewHitTargetKind::InfoBarClose
+    ) {
+        return None;
+    }
     #[cfg(feature = "auto-suggest")]
     if target.kind == ViewHitTargetKind::AutoSuggestBox
         && crate::ZsAutoSuggestPlatformStyle::current()
@@ -290,6 +299,7 @@ pub(crate) fn decorate_native_focus_ring(
     feature = "auto-suggest",
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -304,6 +314,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
     feature = "auto-suggest",
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -345,6 +356,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
             target.kind,
             ViewHitTargetKind::ToastAction | ViewHitTargetKind::ToastClose
         );
+    #[cfg(feature = "info-bar")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::InfoBarAction | ViewHitTargetKind::InfoBarClose
+        );
     #[cfg(feature = "password-box")]
     let supported = supported || target.kind == ViewHitTargetKind::PasswordBoxReveal;
     #[cfg(feature = "date-picker")]
@@ -371,6 +388,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     feature = "auto-suggest",
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",

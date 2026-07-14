@@ -241,6 +241,26 @@ contract without copying system notification chrome. Accessibility live-region
 semantics, hover/focus timeout pause, queues/priorities and target-machine
 AppKit/GTK interaction artifacts remain explicit gaps.
 
+The dedicated self-drawn inline InfoBar smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,info-bar,native-smoke,fluent-icons" --example native_smoke_run -- windows target/native-host-smoke-info-bar --info-bar
+```
+
+It lays out a warning InfoBar inside the normal page flow, focuses its initial
+action with Tab, moves to close and back with the arrow keys, then invokes the
+action with Enter. `window.png` must retain the inline bar, while the interaction
+report contains nonzero `native_view_info_bar_focus_count` and
+`native_view_info_bar_event_count`, one executed UI command, no command failure
+and a nonzero live-view revision. This follows the inline, non-overlapping and
+four-severity [Windows InfoBar](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar)
+contract and the compact [AdwBanner](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.Banner.html)
+shape. The macOS renderer deliberately uses a restrained inline status surface,
+not modal [NSAlert](https://developer.apple.com/documentation/appkit/nsalert)
+chrome. Accessibility live-region announcement, close deferrals, arbitrary View
+content, bidirectional layout and target-machine AppKit/GTK interaction artifacts
+remain explicit gaps.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

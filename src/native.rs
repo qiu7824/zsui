@@ -14,6 +14,7 @@ use crate::native_input_visuals::{
     feature = "auto-suggest",
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -889,6 +890,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_toast_focus_count: usize,
     pub native_view_toast_response_count: usize,
     pub native_view_toast_timeout_count: usize,
+    pub native_view_info_bar_focus_count: usize,
+    pub native_view_info_bar_event_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -1002,6 +1005,8 @@ impl NativeWindowSmokeRunReport {
             native_view_toast_focus_count: 0,
             native_view_toast_response_count: 0,
             native_view_toast_timeout_count: 0,
+            native_view_info_bar_focus_count: 0,
+            native_view_info_bar_event_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1063,6 +1068,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1076,6 +1082,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1161,6 +1168,7 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1220,6 +1228,10 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub toast_focus_changed: bool,
     #[cfg(feature = "toast")]
     pub toast_responded: bool,
+    #[cfg(feature = "info-bar")]
+    pub info_bar_focus_changed: bool,
+    #[cfg(feature = "info-bar")]
+    pub info_bar_event: Option<crate::ZsInfoBarEvent>,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1279,6 +1291,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1292,6 +1305,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1485,6 +1499,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1583,6 +1598,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1686,6 +1702,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1707,6 +1724,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "info-bar",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1729,6 +1747,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1899,6 +1918,32 @@ impl NativeViewInputRuntime {
             _ => {}
         }
 
+        #[cfg(feature = "info-bar")]
+        match target.kind {
+            crate::ViewHitTargetKind::InfoBarAction => {
+                report.info_bar_event = Some(crate::ZsInfoBarEvent::Action);
+                return self.dispatch_view_event(
+                    ViewEvent::InfoBarInvoked {
+                        widget: target.widget,
+                        event: crate::ZsInfoBarEvent::Action,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::InfoBarClose => {
+                report.info_bar_event = Some(crate::ZsInfoBarEvent::Close);
+                return self.dispatch_view_event(
+                    ViewEvent::InfoBarInvoked {
+                        widget: target.widget,
+                        event: crate::ZsInfoBarEvent::Close,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::InfoBar => return report,
+            _ => {}
+        }
+
         let event = self.activation_event(target);
 
         #[cfg(feature = "radio")]
@@ -1962,6 +2007,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1995,6 +2041,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2011,6 +2058,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2123,6 +2171,55 @@ impl NativeViewInputRuntime {
                         },
                         report,
                     );
+                }
+            }
+        }
+        #[cfg(feature = "info-bar")]
+        if let Some(widget) = self.focused_widget {
+            if let Some((state, spec)) = self.widget_info_bar_state(widget) {
+                if key == NativeViewKey::Escape && spec.is_closable() {
+                    report.handled = true;
+                    report.info_bar_event = Some(crate::ZsInfoBarEvent::Close);
+                    return self.dispatch_view_event(
+                        ViewEvent::InfoBarInvoked {
+                            widget,
+                            event: crate::ZsInfoBarEvent::Close,
+                        },
+                        report,
+                    );
+                }
+                if let Some(current) = state.focused_control {
+                    let focus_offset = match key {
+                        NativeViewKey::Left => Some(-1),
+                        NativeViewKey::Right => Some(1),
+                        _ => None,
+                    };
+                    if let Some(offset) = focus_offset {
+                        let next = spec.relative_control(current, offset);
+                        report.handled = true;
+                        report.info_bar_focus_changed = next != current;
+                        return self.dispatch_view_event(
+                            ViewEvent::InfoBarFocused {
+                                widget,
+                                control: next,
+                            },
+                            report,
+                        );
+                    }
+                    if matches!(key, NativeViewKey::Enter | NativeViewKey::Space) {
+                        let event = match current {
+                            crate::ZsInfoBarControl::Action => crate::ZsInfoBarEvent::Action,
+                            crate::ZsInfoBarControl::Close => crate::ZsInfoBarEvent::Close,
+                        };
+                        if spec.has_control(current) {
+                            report.handled = true;
+                            report.info_bar_event = Some(event);
+                            return self.dispatch_view_event(
+                                ViewEvent::InfoBarInvoked { widget, event },
+                                report,
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -2850,6 +2947,11 @@ impl NativeViewInputRuntime {
             report.handled = true;
             return report;
         }
+        #[cfg(feature = "info-bar")]
+        if self.widget_info_bar_state(widget).is_some() {
+            report.handled = true;
+            return report;
+        }
         #[cfg(feature = "combo")]
         if target.kind == crate::ViewHitTargetKind::ComboBox {
             let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
@@ -3073,6 +3175,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3261,6 +3364,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "date-picker",
             feature = "dialog",
+            feature = "info-bar",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3414,6 +3518,7 @@ impl NativeViewInputRuntime {
         feature = "auto-suggest",
         feature = "date-picker",
         feature = "dialog",
+        feature = "info-bar",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -3987,6 +4092,21 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "info-bar")]
+    fn widget_info_bar_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_info_bar_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_info_bar_state(widget))
+            })
+    }
+
     #[cfg(feature = "toast")]
     fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
         let target = self
@@ -4441,6 +4561,8 @@ fn record_windows_win32_view_input_report(
     report.native_view_toast_focus_count += input.toast_focus_change_count;
     report.native_view_toast_response_count += input.toast_response_count;
     report.native_view_toast_timeout_count += input.toast_timeout_count;
+    report.native_view_info_bar_focus_count += input.info_bar_focus_change_count;
+    report.native_view_info_bar_event_count += input.info_bar_event_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -8006,6 +8128,76 @@ mod tests {
         assert!(timeout.toast_responded);
         assert_eq!(timeout.message_count, 1);
         assert!(timeout_runtime.widget_toast_state(widget).is_none());
+    }
+
+    #[cfg(feature = "info-bar")]
+    #[test]
+    fn native_view_runtime_routes_info_bar_pointer_and_keyboard_events() {
+        #[derive(Clone)]
+        enum Msg {
+            Event(crate::ZsInfoBarEvent),
+        }
+        struct State {
+            last: Option<crate::ZsInfoBarEvent>,
+        }
+
+        let widget = crate::WidgetId::new(199);
+        let build = || {
+            native_window("Platform InfoBar")
+                .size(640, 240)
+                .stateful_view(
+                    State { last: None },
+                    move |_state| {
+                        crate::column([
+                            crate::info_bar(
+                                widget,
+                                crate::ZsInfoBarSpec::new("Renew to keep all functionality.")
+                                    .title("Subscription expires soon")
+                                    .severity(crate::ZsInfoBarSeverity::Warning)
+                                    .action("Renew"),
+                            )
+                            .on_info_bar_event(Msg::Event),
+                            crate::spacer(),
+                        ])
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Event(event) => state.last = Some(event),
+                    },
+                )
+        };
+
+        let builder = build();
+        let action = builder
+            .native_view_interaction_plan()
+            .expect("info-bar interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::InfoBarAction)
+            .expect("info-bar action target");
+        let mut pointer_runtime = builder.native_view_input_runtime();
+        let action_report = pointer_runtime.dispatch_pointer_click(Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert!(action_report.handled);
+        assert_eq!(
+            action_report.info_bar_event,
+            Some(crate::ZsInfoBarEvent::Action)
+        );
+        assert_eq!(action_report.message_count, 1);
+
+        let mut keyboard_runtime = build().native_view_input_runtime();
+        let focus = keyboard_runtime.dispatch_key(NativeViewKey::Tab);
+        assert!(focus.handled);
+        assert_eq!(focus.focused_widget, Some(widget.0));
+        let next = keyboard_runtime.dispatch_key(NativeViewKey::Right);
+        assert!(next.handled);
+        assert!(next.info_bar_focus_changed);
+        let close = keyboard_runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(close.handled);
+        assert_eq!(close.info_bar_event, Some(crate::ZsInfoBarEvent::Close));
+        assert_eq!(close.message_count, 1);
     }
 
     #[cfg(feature = "combo")]

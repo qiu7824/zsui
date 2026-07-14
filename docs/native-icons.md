@@ -53,6 +53,13 @@ Built-in controls also use semantic values. For example, ComboBox requests
 `ZsIcon::ChevronDown`, which resolves to Segoe Fluent/MDL2, `chevron.down`, or
 `pan-down-symbolic` before using the MIT SVG fallback.
 
+InfoBar uses the semantic `Info`, `Success`, `Warning` and `Error` values rather
+than embedding status glyphs in the component. They resolve to the documented
+Segoe Fluent Icons code points on Windows, `info.circle`, `checkmark.circle`,
+`exclamationmark.triangle` and `exclamationmark.circle` SF Symbols on macOS,
+the corresponding GTK `dialog-*`/`emblem-ok-symbolic` names on Linux, or four
+selected MIT Fluent System Icons SVG fallbacks.
+
 ## Runtime status
 
 - Windows: font detection and semantic glyph drawing are connected to the GDI

@@ -21,6 +21,10 @@ pub enum ZsIcon {
     Code,
     Tool,
     Check,
+    Info,
+    Success,
+    Warning,
+    Error,
     Minimize,
     Close,
     Text,
@@ -46,7 +50,7 @@ pub enum ZsIcon {
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 45] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -66,6 +70,10 @@ impl ZsIcon {
         Self::Code,
         Self::Tool,
         Self::Check,
+        Self::Info,
+        Self::Success,
+        Self::Warning,
+        Self::Error,
         Self::Minimize,
         Self::Close,
         Self::Text,
@@ -111,6 +119,10 @@ impl ZsIcon {
             Self::Code => "code",
             Self::Tool => "tool",
             Self::Check => "check",
+            Self::Info => "info",
+            Self::Success => "success",
+            Self::Warning => "warning",
+            Self::Error => "error",
             Self::Minimize => "min",
             Self::Close => "exit",
             Self::Text | Self::Phrase => "text",
@@ -155,6 +167,10 @@ impl ZsIcon {
             Self::Code => "utilities-terminal-symbolic",
             Self::Tool => "applications-engineering-symbolic",
             Self::Check => "emblem-ok-symbolic",
+            Self::Info => "dialog-information-symbolic",
+            Self::Success => "emblem-ok-symbolic",
+            Self::Warning => "dialog-warning-symbolic",
+            Self::Error => "dialog-error-symbolic",
             Self::Minimize => "window-minimize-symbolic",
             Self::Close => "window-close-symbolic",
             Self::Text | Self::Phrase => "text-x-generic-symbolic",
@@ -199,6 +215,10 @@ impl ZsIcon {
             Self::Code => "\u{E943}",
             Self::Tool => "\u{E90F}",
             Self::Check => "\u{E73E}",
+            Self::Info => "\u{E946}",
+            Self::Success => "\u{E73E}",
+            Self::Warning => "\u{E7BA}",
+            Self::Error => "\u{E783}",
             Self::Minimize => "\u{E921}",
             Self::Close => "\u{E8BB}",
             Self::Text | Self::Phrase => "\u{E8D2}",
@@ -249,6 +269,10 @@ impl ZsIcon {
             Self::Code => "code.svg",
             Self::Tool => "tool.svg",
             Self::Check => "check.svg",
+            Self::Info => "info.svg",
+            Self::Success => "success.svg",
+            Self::Warning => "warning.svg",
+            Self::Error => "error.svg",
             Self::Minimize => "minimize.svg",
             Self::Close => "close.svg",
             Self::Text => "text.svg",
@@ -308,6 +332,10 @@ impl ZsIcon {
             Self::Code => include_bytes!("../assets/fluent-system-icons/regular/code.svg"),
             Self::Tool => include_bytes!("../assets/fluent-system-icons/regular/tool.svg"),
             Self::Check => include_bytes!("../assets/fluent-system-icons/regular/check.svg"),
+            Self::Info => include_bytes!("../assets/fluent-system-icons/regular/info.svg"),
+            Self::Success => include_bytes!("../assets/fluent-system-icons/regular/success.svg"),
+            Self::Warning => include_bytes!("../assets/fluent-system-icons/regular/warning.svg"),
+            Self::Error => include_bytes!("../assets/fluent-system-icons/regular/error.svg"),
             Self::Minimize => {
                 include_bytes!("../assets/fluent-system-icons/regular/minimize.svg")
             }
@@ -366,6 +394,10 @@ impl ZsIcon {
             Self::Code => "chevron.left.forwardslash.chevron.right",
             Self::Tool => "wrench.and.screwdriver",
             Self::Check => "checkmark",
+            Self::Info => "info.circle",
+            Self::Success => "checkmark.circle",
+            Self::Warning => "exclamationmark.triangle",
+            Self::Error => "exclamationmark.circle",
             Self::Minimize => "minus",
             Self::Close => "xmark",
             Self::Text | Self::Phrase => "textformat",
@@ -423,6 +455,10 @@ impl ZsIcon {
             | Self::Code
             | Self::Tool
             | Self::Check
+            | Self::Info
+            | Self::Success
+            | Self::Warning
+            | Self::Error
             | Self::Save
             | Self::Undo
             | Self::Cut

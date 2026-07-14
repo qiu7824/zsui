@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "tabs",
     feature = "time-picker",
     feature = "toast",
@@ -19,6 +20,7 @@ use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
 #[cfg(any(
     feature = "dialog",
+    feature = "info-bar",
     feature = "date-picker",
     feature = "table",
     feature = "tabs",
@@ -30,6 +32,7 @@ use crate::{HorizontalAlign, TextWeight};
     feature = "auto-suggest",
     feature = "combo",
     feature = "date-picker",
+    feature = "info-bar",
     feature = "table",
     feature = "time-picker",
     feature = "toast",
@@ -41,6 +44,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "combo",
     feature = "date-picker",
     feature = "dialog",
+    feature = "info-bar",
     feature = "number-box",
     feature = "table",
     feature = "tabs",
@@ -52,6 +56,384 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 use crate::{NativeDrawTextCommand, SemanticTextStyle};
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
+
+#[cfg(feature = "info-bar")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsInfoBarPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "info-bar")]
+impl ZsInfoBarPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "info-bar")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsInfoBarMetrics {
+    pub minimum_height: Dp,
+    pub horizontal_padding: Dp,
+    pub vertical_padding: Dp,
+    pub content_gap: Dp,
+    pub control_gap: Dp,
+    pub control_height: Dp,
+    pub icon_size: Dp,
+    pub accent_width: Dp,
+    pub surface_radius: Dp,
+    pub control_radius: Dp,
+    pub title_line_height: Dp,
+    pub message_line_height: Dp,
+    pub average_character_width: Dp,
+}
+
+#[cfg(feature = "info-bar")]
+impl ZsInfoBarMetrics {
+    pub const fn for_platform(platform: ZsInfoBarPlatformStyle) -> Self {
+        match platform {
+            ZsInfoBarPlatformStyle::Windows => Self {
+                minimum_height: Dp::new(64.0),
+                horizontal_padding: Dp::new(16.0),
+                vertical_padding: Dp::new(10.0),
+                content_gap: Dp::new(12.0),
+                control_gap: Dp::new(8.0),
+                control_height: Dp::new(32.0),
+                icon_size: Dp::new(20.0),
+                accent_width: Dp::new(4.0),
+                surface_radius: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                title_line_height: Dp::new(20.0),
+                message_line_height: Dp::new(18.0),
+                average_character_width: Dp::new(7.2),
+            },
+            ZsInfoBarPlatformStyle::Macos => Self {
+                minimum_height: Dp::new(56.0),
+                horizontal_padding: Dp::new(14.0),
+                vertical_padding: Dp::new(8.0),
+                content_gap: Dp::new(10.0),
+                control_gap: Dp::new(6.0),
+                control_height: Dp::new(28.0),
+                icon_size: Dp::new(18.0),
+                accent_width: Dp::new(0.0),
+                surface_radius: Dp::new(8.0),
+                control_radius: Dp::new(6.0),
+                title_line_height: Dp::new(18.0),
+                message_line_height: Dp::new(16.0),
+                average_character_width: Dp::new(6.8),
+            },
+            ZsInfoBarPlatformStyle::Gtk => Self {
+                minimum_height: Dp::new(48.0),
+                horizontal_padding: Dp::new(12.0),
+                vertical_padding: Dp::new(6.0),
+                content_gap: Dp::new(10.0),
+                control_gap: Dp::new(8.0),
+                control_height: Dp::new(34.0),
+                icon_size: Dp::new(18.0),
+                accent_width: Dp::new(0.0),
+                surface_radius: Dp::new(0.0),
+                control_radius: Dp::new(17.0),
+                title_line_height: Dp::new(18.0),
+                message_line_height: Dp::new(16.0),
+                average_character_width: Dp::new(7.2),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "info-bar")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsInfoBarRenderPlan {
+    pub surface: Rect,
+    pub accent_bounds: Option<Rect>,
+    pub icon_bounds: Rect,
+    pub title_bounds: Option<Rect>,
+    pub message_bounds: Option<Rect>,
+    pub action_bounds: Option<Rect>,
+    pub close_bounds: Option<Rect>,
+    pub focused_control: Option<crate::ZsInfoBarControl>,
+    pub surface_radius: i32,
+    pub control_radius: i32,
+    pub platform: ZsInfoBarPlatformStyle,
+}
+
+#[cfg(feature = "info-bar")]
+pub fn zs_info_bar_render_plan(
+    bounds: Rect,
+    spec: &crate::ZsInfoBarSpec,
+    focused_control: Option<crate::ZsInfoBarControl>,
+    platform: ZsInfoBarPlatformStyle,
+    dpi: Dpi,
+) -> ZsInfoBarRenderPlan {
+    let metrics = ZsInfoBarMetrics::for_platform(platform);
+    let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
+    let vertical_padding = metrics.vertical_padding.to_px(dpi).round_i32().max(0);
+    let content_gap = metrics.content_gap.to_px(dpi).round_i32().max(0);
+    let control_gap = metrics.control_gap.to_px(dpi).round_i32().max(0);
+    let control_height = metrics.control_height.to_px(dpi).round_i32().max(1);
+    let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(1);
+    let accent_width = metrics.accent_width.to_px(dpi).round_i32().max(0);
+    let title_line_height = metrics.title_line_height.to_px(dpi).round_i32().max(1);
+    let message_line_height = metrics.message_line_height.to_px(dpi).round_i32().max(1);
+    let character_width = metrics
+        .average_character_width
+        .to_px(dpi)
+        .round_i32()
+        .max(1);
+    let surface = Rect {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width.max(0),
+        height: bounds.height.max(0),
+    };
+    let accent_bounds = (accent_width > 0).then_some(Rect {
+        x: surface.x,
+        y: surface.y,
+        width: accent_width.min(surface.width),
+        height: surface.height,
+    });
+    let surface_right = surface.x.saturating_add(surface.width);
+    let content_left = surface
+        .x
+        .saturating_add(horizontal_padding)
+        .saturating_add(accent_width)
+        .min(surface_right);
+    let icon_width = icon_size.min(surface_right.saturating_sub(content_left).max(0));
+    let icon_bounds = Rect {
+        x: content_left,
+        y: surface
+            .y
+            .saturating_add((surface.height.saturating_sub(icon_size)) / 2),
+        width: icon_width,
+        height: icon_size.min(surface.height),
+    };
+    let mut trailing_x = surface_right
+        .saturating_sub(horizontal_padding)
+        .max(surface.x);
+    let close_bounds = spec.is_closable().then(|| {
+        let width = control_height.min(trailing_x.saturating_sub(surface.x).max(0));
+        trailing_x = trailing_x.saturating_sub(width).max(surface.x);
+        Rect {
+            x: trailing_x,
+            y: surface
+                .y
+                .saturating_add((surface.height.saturating_sub(control_height)) / 2),
+            width,
+            height: control_height.min(surface.height),
+        }
+    });
+    if close_bounds.is_some() {
+        trailing_x = trailing_x.saturating_sub(control_gap).max(surface.x);
+    }
+    let action_bounds = spec.action_label().map(|label| {
+        let desired_width = (label.chars().count() as i32)
+            .saturating_mul(character_width)
+            .saturating_add(horizontal_padding)
+            .max(control_height);
+        let width = desired_width.min(trailing_x.saturating_sub(surface.x).max(0));
+        trailing_x = trailing_x.saturating_sub(width).max(surface.x);
+        Rect {
+            x: trailing_x,
+            y: surface
+                .y
+                .saturating_add((surface.height.saturating_sub(control_height)) / 2),
+            width,
+            height: control_height.min(surface.height),
+        }
+    });
+    if action_bounds.is_some() {
+        trailing_x = trailing_x.saturating_sub(content_gap).max(surface.x);
+    }
+    let text_left = icon_bounds
+        .x
+        .saturating_add(icon_bounds.width)
+        .saturating_add(content_gap);
+    let text_width = trailing_x.saturating_sub(text_left).max(0);
+    let has_title = spec.title_text().is_some();
+    let has_message = !spec.message().trim().is_empty();
+    let total_text_height = match (has_title, has_message) {
+        (true, true) => title_line_height.saturating_add(message_line_height),
+        (true, false) => title_line_height,
+        (false, true) => message_line_height,
+        (false, false) => 0,
+    }
+    .min(surface.height.saturating_sub(vertical_padding * 2).max(0));
+    let text_top = surface
+        .y
+        .saturating_add((surface.height.saturating_sub(total_text_height)) / 2);
+    let title_bounds = has_title.then_some(Rect {
+        x: text_left,
+        y: text_top,
+        width: text_width,
+        height: if has_message {
+            title_line_height.min(total_text_height)
+        } else {
+            total_text_height
+        },
+    });
+    let message_bounds = has_message.then_some(Rect {
+        x: text_left,
+        y: text_top.saturating_add(if has_title {
+            title_line_height.min(total_text_height)
+        } else {
+            0
+        }),
+        width: text_width,
+        height: if has_title {
+            total_text_height.saturating_sub(title_line_height.min(total_text_height))
+        } else {
+            total_text_height
+        },
+    });
+
+    ZsInfoBarRenderPlan {
+        surface,
+        accent_bounds,
+        icon_bounds,
+        title_bounds,
+        message_bounds,
+        action_bounds,
+        close_bounds,
+        focused_control: focused_control.filter(|control| spec.has_control(*control)),
+        surface_radius: metrics.surface_radius.to_px(dpi).round_i32().max(0),
+        control_radius: metrics.control_radius.to_px(dpi).round_i32().max(0),
+        platform,
+    }
+}
+
+#[cfg(feature = "info-bar")]
+pub fn zs_info_bar_native_draw_plan(
+    plan: &ZsInfoBarRenderPlan,
+    spec: &crate::ZsInfoBarSpec,
+) -> NativeDrawPlan {
+    let severity_role = match spec.info_bar_severity() {
+        crate::ZsInfoBarSeverity::Informational => ColorRole::Accent,
+        crate::ZsInfoBarSeverity::Success => ColorRole::Success,
+        crate::ZsInfoBarSeverity::Warning => ColorRole::Warning,
+        crate::ZsInfoBarSeverity::Error => ColorRole::Danger,
+    };
+    let surface_alpha = match plan.platform {
+        ZsInfoBarPlatformStyle::Windows => 24,
+        ZsInfoBarPlatformStyle::Macos => 18,
+        ZsInfoBarPlatformStyle::Gtk => 28,
+    };
+    let mut commands = vec![
+        NativeDrawCommand::RoundRect {
+            rect: plan.surface,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: severity_role,
+                alpha: surface_alpha,
+            },
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.surface_radius,
+        },
+        NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                spec.info_bar_severity().icon(),
+                plan.icon_bounds,
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(severity_role),
+        ),
+    ];
+    if let Some(accent_bounds) = plan.accent_bounds {
+        commands.push(NativeDrawCommand::FillRect {
+            rect: accent_bounds,
+            fill: NativeDrawFill::Role(severity_role),
+        });
+    }
+    if let (Some(title), Some(bounds)) = (spec.title_text(), plan.title_bounds) {
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            title,
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Body,
+                color: ColorRole::PrimaryText,
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+    }
+    if let Some(bounds) = plan.message_bounds {
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            spec.message(),
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Caption,
+                color: ColorRole::SecondaryText,
+                weight: TextWeight::Regular,
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+    }
+    if let (Some(label), Some(bounds)) = (spec.action_label(), plan.action_bounds) {
+        let focused = plan.focused_control == Some(crate::ZsInfoBarControl::Action);
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: bounds,
+            fill: if plan.platform == ZsInfoBarPlatformStyle::Windows {
+                NativeDrawFill::Role(ColorRole::Control)
+            } else {
+                NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 0,
+                }
+            },
+            stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
+            radius: plan.control_radius,
+        });
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            label,
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Button,
+                color: ColorRole::Accent,
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Center,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+    }
+    if let Some(bounds) = plan.close_bounds {
+        let focused = plan.focused_control == Some(crate::ZsInfoBarControl::Close);
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: bounds,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 0,
+            },
+            stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
+            radius: plan.control_radius,
+        });
+        let inset = (bounds.width.min(bounds.height) / 4).max(1);
+        commands.push(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+            ZsIcon::Close,
+            Rect {
+                x: bounds.x.saturating_add(inset),
+                y: bounds.y.saturating_add(inset),
+                width: bounds.width.saturating_sub(inset * 2),
+                height: bounds.height.saturating_sub(inset * 2),
+            },
+            NativeIconColorMode::ThemeAware,
+        )));
+    }
+    NativeDrawPlan::new(commands)
+}
 
 #[cfg(feature = "toast")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4327,6 +4709,98 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[cfg(feature = "info-bar")]
+    #[test]
+    fn info_bar_render_plan_preserves_inline_platform_geometry_and_semantic_icon() {
+        let spec = crate::ZsInfoBarSpec::new("Reconnect to continue working.")
+            .title("No Internet")
+            .severity(crate::ZsInfoBarSeverity::Error)
+            .action("Network Settings");
+        let bounds = Rect {
+            x: 20,
+            y: 30,
+            width: 720,
+            height: 64,
+        };
+        let windows = zs_info_bar_render_plan(
+            bounds,
+            &spec,
+            Some(crate::ZsInfoBarControl::Action),
+            ZsInfoBarPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_info_bar_render_plan(
+            bounds,
+            &spec,
+            Some(crate::ZsInfoBarControl::Close),
+            ZsInfoBarPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_info_bar_render_plan(
+            bounds,
+            &spec,
+            Some(crate::ZsInfoBarControl::Action),
+            ZsInfoBarPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.surface, bounds);
+        assert!(windows.accent_bounds.is_some());
+        assert!(macos.accent_bounds.is_none());
+        assert_eq!(gtk.surface_radius, 0);
+        assert!(windows.action_bounds.is_some());
+        assert!(windows.close_bounds.unwrap().x > windows.action_bounds.unwrap().x);
+        assert!(windows.title_bounds.is_some());
+        assert!(windows.message_bounds.is_some());
+        assert!(
+            ZsInfoBarMetrics::for_platform(ZsInfoBarPlatformStyle::Windows)
+                .minimum_height
+                .0
+                > ZsInfoBarMetrics::for_platform(ZsInfoBarPlatformStyle::Gtk)
+                    .minimum_height
+                    .0
+        );
+
+        let draw = zs_info_bar_native_draw_plan(&windows, &spec);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon)
+                if icon.icon == ZsIcon::Error && icon.color == ColorRole::Danger
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "No Internet"
+        )));
+
+        let narrow_bounds = Rect {
+            x: 12,
+            y: 8,
+            width: 24,
+            height: 32,
+        };
+        let narrow = zs_info_bar_render_plan(
+            narrow_bounds,
+            &spec,
+            None,
+            ZsInfoBarPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        for rect in [
+            Some(narrow.icon_bounds),
+            narrow.action_bounds,
+            narrow.close_bounds,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            assert!(rect.x >= narrow_bounds.x);
+            assert!(
+                rect.x.saturating_add(rect.width)
+                    <= narrow_bounds.x.saturating_add(narrow_bounds.width)
+            );
+        }
     }
 
     #[cfg(feature = "toast")]

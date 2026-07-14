@@ -38,6 +38,8 @@ pub mod host;
 pub mod host_protocol;
 pub mod hotkey;
 pub mod icon;
+#[cfg(feature = "info-bar")]
+pub mod info_bar;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
@@ -245,6 +247,10 @@ pub use host_protocol::{
 };
 pub use hotkey::HotkeySpec;
 pub use icon::ZsIcon;
+#[cfg(feature = "info-bar")]
+pub use info_bar::{
+    ZsInfoBarControl, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec, ZsInfoBarState,
+};
 pub use menu::{MenuItemSpec, MenuSpec};
 pub use mobile_host::{
     mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,
@@ -487,6 +493,8 @@ pub use view::data_grid;
 pub use view::date_picker;
 #[cfg(feature = "grid")]
 pub use view::grid;
+#[cfg(feature = "info-bar")]
+pub use view::info_bar;
 #[cfg(feature = "list")]
 pub use view::list;
 #[cfg(feature = "number-box")]
@@ -572,6 +580,11 @@ pub use widget_render::{
     zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport,
     zs_date_picker_render_plan_in_viewport_with_today, zs_date_picker_render_plan_with_today,
     ZsDatePickerDayCell, ZsDatePickerRenderPlan,
+};
+#[cfg(feature = "info-bar")]
+pub use widget_render::{
+    zs_info_bar_native_draw_plan, zs_info_bar_render_plan, ZsInfoBarMetrics,
+    ZsInfoBarPlatformStyle, ZsInfoBarRenderPlan,
 };
 #[cfg(feature = "number-box")]
 pub use widget_render::{
