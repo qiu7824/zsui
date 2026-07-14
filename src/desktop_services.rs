@@ -170,19 +170,19 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::PointerInput,
                 CapabilitySupport::supported(
-                    "pointer click, wheel and capture-backed logical text drag selection with editor-edge viewport scrolling are connected",
+                    "pointer click, wheel and capture-backed shaped text drag selection with editor-edge viewport scrolling are connected",
                 ),
             )
             .with_support(
                 DesktopCapability::TextInput,
                 CapabilitySupport::supported(
-                    "single-line and multiline Unicode text routing with WM_CHAR surrogate-pair assembly, extended-grapheme-safe caret/deletion/hit testing, logical line/page navigation, Shift range selection and replacement are connected",
+                    "single-line and multiline Unicode routing uses Uniscribe advances and bidirectional insertion geometry with extended-grapheme-safe editing, line/page navigation and range replacement",
                 ),
             )
             .with_support(
                 DesktopCapability::InputMethod,
                 CapabilitySupport::partial(
-                    "IMM32 result commit and logical-caret candidate placement are connected; shaped-glyph/bidirectional geometry and CJK target proof are pending",
+                    "IMM32 result commit and shaped-caret candidate placement are connected; visual-order bidi navigation and CJK target proof are pending",
                 ),
             )
             .with_support(
@@ -269,7 +269,7 @@ impl DesktopCapabilities {
                 DesktopCapability::PointerInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSView mouse activation, mouseDragged logical text selection with shared editor-edge viewport scrolling and scrollWheel routing are connected; richer gestures and target proof are pending",
+                        "NSView mouse activation, mouseDragged shaped text selection with shared editor-edge viewport scrolling and scrollWheel routing are connected; richer gestures and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -281,7 +281,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "focused UTF-8 input, extended-grapheme-safe caret/deletion/hit testing, Unicode line/page navigation, Shift and pointer range selection/replacement are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
+                        "focused UTF-8 input uses Core Text advances and strong/weak bidirectional insertion geometry with extended-grapheme-safe editing and range replacement; target proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -293,7 +293,7 @@ impl DesktopCapabilities {
                 DesktopCapability::InputMethod,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSTextInputClient preedit/commit, UTF-16 selected and marked ranges, replacement selection and logical-caret candidate anchoring are connected; shaped-glyph geometry and CJK target proof are pending",
+                        "NSTextInputClient preedit/commit, UTF-16 ranges, replacement and Core Text shaped-caret candidate anchoring are connected; visual-order bidi navigation and CJK target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -411,7 +411,7 @@ impl DesktopCapabilities {
                 DesktopCapability::PointerInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GTK4 GestureClick, EventControllerMotion logical text selection with shared editor-edge viewport scrolling and scroll routing are connected; richer gestures and target proof are pending",
+                        "GTK4 GestureClick, EventControllerMotion shaped text selection with shared editor-edge viewport scrolling and scroll routing are connected; richer gestures and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -423,7 +423,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "focused UTF-8 input, extended-grapheme-safe caret/deletion/hit testing, Unicode line/page navigation, Shift and pointer range selection/replacement are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
+                        "focused UTF-8 input uses Pango advances and strong/weak bidirectional insertion geometry with extended-grapheme-safe editing and range replacement; target proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -435,7 +435,7 @@ impl DesktopCapabilities {
                 DesktopCapability::InputMethod,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GtkIMMulticontext preedit/commit, focus lifecycle, surrounding UTF-8 text and logical-caret candidate anchoring are connected; shaped-glyph geometry and CJK target proof are pending",
+                        "GtkIMMulticontext preedit/commit, surrounding UTF-8 text and Pango shaped-caret candidate anchoring are connected; visual-order bidi navigation and CJK target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

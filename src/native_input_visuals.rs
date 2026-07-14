@@ -1,11 +1,310 @@
 use crate::native_text_edit::{
-    char_count, grapheme_boundaries, grapheme_count_in_range, grapheme_index_for_column,
-    snap_grapheme_index, NativeTextSelection,
+    char_count, grapheme_boundaries, snap_grapheme_index, NativeTextSelection,
 };
+#[cfg(test)]
+use crate::native_text_edit::{grapheme_count_in_range, grapheme_index_for_column};
 use crate::{
     ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Point, Rect,
     ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, WidgetId,
 };
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
+
+const NATIVE_TEXT_SHAPING_CACHE_CAPACITY: usize = 256;
+
+#[allow(dead_code)]
+#[derive(Clone, Default)]
+pub(crate) struct NativeTextShapingCache {
+    entries: Arc<Mutex<VecDeque<(String, NativeShapedTextLine)>>>,
+}
+
+#[allow(dead_code)]
+impl NativeTextShapingCache {
+    fn shape(
+        &self,
+        text: &str,
+        shape: impl FnOnce() -> Option<NativeShapedTextLine>,
+    ) -> Option<NativeShapedTextLine> {
+        if let Ok(mut entries) = self.entries.lock() {
+            if let Some(position) = entries.iter().position(|(cached, _)| cached == text) {
+                let entry = entries.remove(position)?;
+                let shaped = entry.1.clone();
+                entries.push_back(entry);
+                return Some(shaped);
+            }
+        }
+        let shaped = shape()?;
+        if let Ok(mut entries) = self.entries.lock() {
+            if entries.len() == NATIVE_TEXT_SHAPING_CACHE_CAPACITY {
+                entries.pop_front();
+            }
+            entries.push_back((text.to_string(), shaped.clone()));
+        }
+        Some(shaped)
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) enum NativeTextShapingBackend {
+    #[default]
+    LogicalCells,
+    #[cfg(all(
+        windows,
+        feature = "windows-gdi",
+        feature = "windows-win32",
+        feature = "text-input-core"
+    ))]
+    WindowsGdi(NativeTextShapingCache),
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-appkit",
+        feature = "text-input-core"
+    ))]
+    AppKit(NativeTextShapingCache),
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-gtk",
+        feature = "text-input-core"
+    ))]
+    Gtk(gtk4::pango::Context, NativeTextShapingCache),
+    #[cfg(test)]
+    Test(fn(&str, i32) -> Option<NativeShapedTextLine>),
+}
+
+impl std::fmt::Debug for NativeTextShapingBackend {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LogicalCells => formatter.write_str("LogicalCells"),
+            #[cfg(all(
+                windows,
+                feature = "windows-gdi",
+                feature = "windows-win32",
+                feature = "text-input-core"
+            ))]
+            Self::WindowsGdi(_) => formatter.write_str("WindowsGdi"),
+            #[cfg(all(
+                target_os = "macos",
+                feature = "macos-appkit",
+                feature = "text-input-core"
+            ))]
+            Self::AppKit(_) => formatter.write_str("AppKit"),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-gtk",
+                feature = "text-input-core"
+            ))]
+            Self::Gtk(_, _) => formatter.write_str("Gtk(PangoContext)"),
+            #[cfg(test)]
+            Self::Test(_) => formatter.write_str("Test"),
+        }
+    }
+}
+
+impl NativeTextShapingBackend {
+    #[cfg(all(windows, feature = "windows-gdi", feature = "windows-win32"))]
+    pub(crate) fn windows_gdi() -> Self {
+        #[cfg(feature = "text-input-core")]
+        {
+            Self::WindowsGdi(NativeTextShapingCache::default())
+        }
+        #[cfg(not(feature = "text-input-core"))]
+        {
+            Self::LogicalCells
+        }
+    }
+
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-appkit",
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn appkit() -> Self {
+        Self::AppKit(NativeTextShapingCache::default())
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-gtk",
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn gtk(context: gtk4::pango::Context) -> Self {
+        Self::Gtk(context, NativeTextShapingCache::default())
+    }
+
+    fn shape_line(&self, text: &str, fallback_width: i32) -> NativeShapedTextLine {
+        let shaped = match self {
+            Self::LogicalCells => None,
+            #[cfg(all(
+                windows,
+                feature = "windows-gdi",
+                feature = "windows-win32",
+                feature = "text-input-core"
+            ))]
+            Self::WindowsGdi(cache) => cache.shape(text, || {
+                crate::windows_gdi_renderer::shape_windows_gdi_text_line(text)
+            }),
+            #[cfg(all(
+                target_os = "macos",
+                feature = "macos-appkit",
+                feature = "text-input-core"
+            ))]
+            Self::AppKit(cache) => cache.shape(text, || {
+                crate::macos_appkit_renderer::shape_macos_appkit_text_line(text)
+            }),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-gtk",
+                feature = "text-input-core"
+            ))]
+            Self::Gtk(context, cache) => cache.shape(text, || {
+                crate::linux_gtk_renderer::shape_linux_gtk_text_line(context, text)
+            }),
+            #[cfg(test)]
+            Self::Test(shape) => shape(text, fallback_width),
+        };
+        shaped.unwrap_or_else(|| NativeShapedTextLine::logical_cells(text, fallback_width))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeShapedTextCluster {
+    pub start: usize,
+    pub end: usize,
+    pub start_x: i32,
+    pub end_x: i32,
+}
+
+impl NativeShapedTextCluster {
+    fn left(self) -> i32 {
+        self.start_x.min(self.end_x)
+    }
+
+    fn right(self) -> i32 {
+        self.start_x.max(self.end_x)
+    }
+
+    fn width(self) -> i32 {
+        self.right().saturating_sub(self.left())
+    }
+
+    fn left_index(self) -> usize {
+        if self.start_x <= self.end_x {
+            self.start
+        } else {
+            self.end
+        }
+    }
+
+    fn right_index(self) -> usize {
+        if self.start_x <= self.end_x {
+            self.end
+        } else {
+            self.start
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeShapedTextCaret {
+    pub index: usize,
+    pub primary_x: i32,
+    pub secondary_x: i32,
+}
+
+impl NativeShapedTextCaret {
+    #[cfg(any(
+        test,
+        all(
+            target_os = "macos",
+            feature = "macos-appkit",
+            feature = "text-input-core"
+        )
+    ))]
+    pub(crate) fn closest_cluster_edges(self, next: Self) -> (i32, i32) {
+        [
+            (self.primary_x, next.primary_x),
+            (self.primary_x, next.secondary_x),
+            (self.secondary_x, next.primary_x),
+            (self.secondary_x, next.secondary_x),
+        ]
+        .into_iter()
+        .min_by_key(|(start, end)| start.abs_diff(*end))
+        .unwrap_or((self.primary_x, next.primary_x))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeShapedTextLine {
+    pub width: i32,
+    pub clusters: Vec<NativeShapedTextCluster>,
+    pub carets: Vec<NativeShapedTextCaret>,
+}
+
+impl NativeShapedTextLine {
+    #[allow(dead_code)]
+    pub(crate) fn new(
+        width: i32,
+        clusters: Vec<NativeShapedTextCluster>,
+        carets: Vec<NativeShapedTextCaret>,
+    ) -> Option<Self> {
+        let scalar_len = clusters.last().map(|cluster| cluster.end).unwrap_or(0);
+        let valid_clusters = clusters.first().map(|cluster| cluster.start) == Some(0)
+            && clusters.windows(2).all(|pair| pair[0].end == pair[1].start)
+            && clusters.iter().all(|cluster| cluster.start < cluster.end);
+        let valid_carets = carets.first().map(|caret| caret.index) == Some(0)
+            && carets.last().map(|caret| caret.index) == Some(scalar_len)
+            && carets.windows(2).all(|pair| pair[0].index < pair[1].index);
+        (valid_clusters && valid_carets).then_some(Self {
+            width: width.max(0),
+            clusters,
+            carets,
+        })
+    }
+
+    fn logical_cells(text: &str, fallback_width: i32) -> Self {
+        let fallback_width = fallback_width.max(1);
+        let boundaries = grapheme_boundaries(text);
+        let clusters = boundaries
+            .windows(2)
+            .enumerate()
+            .map(|(column, pair)| NativeShapedTextCluster {
+                start: pair[0],
+                end: pair[1],
+                start_x: i32::try_from(column)
+                    .unwrap_or(i32::MAX)
+                    .saturating_mul(fallback_width),
+                end_x: i32::try_from(column.saturating_add(1))
+                    .unwrap_or(i32::MAX)
+                    .saturating_mul(fallback_width),
+            })
+            .collect::<Vec<_>>();
+        let carets = boundaries
+            .into_iter()
+            .enumerate()
+            .map(|(column, index)| {
+                let x = i32::try_from(column)
+                    .unwrap_or(i32::MAX)
+                    .saturating_mul(fallback_width);
+                NativeShapedTextCaret {
+                    index,
+                    primary_x: x,
+                    secondary_x: x,
+                }
+            })
+            .collect::<Vec<_>>();
+        Self {
+            width: clusters.last().map(|cluster| cluster.right()).unwrap_or(0),
+            clusters,
+            carets,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NativeTextVisualGeometry {
@@ -23,7 +322,7 @@ pub(crate) enum NativeTextVisualDirection {
 pub(crate) struct NativeTextDragViewport {
     pub point: Point,
     pub first_visible_row: usize,
-    pub first_visible_column: usize,
+    pub horizontal_scroll_px: usize,
     pub scrolled: bool,
 }
 
@@ -86,6 +385,7 @@ pub(crate) fn native_text_visual_geometry(
     native_text_visual_geometry_in_viewport(target, value, selection, 0, 0, wrap, dpi)
 }
 
+#[cfg(test)]
 pub(crate) fn native_text_visual_geometry_in_viewport(
     target: ViewHitTarget,
     value: &str,
@@ -95,32 +395,54 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
+    native_text_visual_geometry_in_viewport_with_backend(
+        target,
+        value,
+        selection,
+        first_visible_row,
+        first_visible_column,
+        wrap,
+        dpi,
+        &NativeTextShapingBackend::LogicalCells,
+    )
+}
+
+pub(crate) fn native_text_visual_geometry_in_viewport_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    selection: NativeTextSelection,
+    first_visible_row: usize,
+    horizontal_scroll_px: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> NativeTextVisualGeometry {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
     let metrics = native_text_visual_metrics(target, dpi);
     let text_bounds = metrics.text_bounds;
-    let character_width = metrics.character_width;
     let line_height = metrics.line_height;
-    let max_columns = text_bounds
-        .width
-        .checked_div(character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    let lines = text_lines(value, multiline, wrap, max_columns);
+    let lines = text_lines_with_backend(
+        value,
+        multiline,
+        wrap,
+        text_bounds.width,
+        metrics.character_width,
+        backend,
+    );
     let first_visible_row = first_visible_row.min(lines.len().saturating_sub(1));
-    let first_visible_column = if multiline && wrap == crate::TextWrap::NoWrap {
-        first_visible_column
+    let horizontal_scroll_px = if multiline && wrap == crate::TextWrap::NoWrap {
+        i32::try_from(horizontal_scroll_px).unwrap_or(i32::MAX)
     } else {
         0
     };
     let selection = selection.clamp(value);
-    let (caret_row, caret_column) = text_position(value, selection.caret, &lines);
-    let caret_x = visual_column_x(
+    let (caret_row, caret_line_x) = text_position_x(value, selection.caret, &lines);
+    let caret_x = text_bounds
+        .x
+        .saturating_add(caret_line_x)
+        .saturating_sub(horizontal_scroll_px);
+    let caret_x = caret_x.clamp(
         text_bounds.x,
-        caret_column,
-        first_visible_column,
-        character_width,
-    );
-    let caret_x = caret_x.min(
         text_bounds
             .x
             .saturating_add(text_bounds.width)
@@ -144,56 +466,93 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
     let (start, end) = selection.ordered();
     let mut selections = Vec::new();
     if start != end {
-        for (row, line) in lines.into_iter().enumerate().skip(first_visible_row) {
-            let overlap_start = start.max(line.start);
-            let overlap_end = end.min(line.end);
-            if overlap_start >= overlap_end
-                && !(!line.soft_wrap_after && end > line.end && start <= line.end)
-            {
-                continue;
-            }
-            let start_column =
-                grapheme_count_in_range(value, line.start, overlap_start).max(first_visible_column);
-            let end_column = grapheme_count_in_range(value, line.start, overlap_end);
-            if end_column <= first_visible_column {
-                continue;
-            }
-            let x = visual_column_x(
-                text_bounds.x,
-                start_column,
-                first_visible_column,
-                character_width,
-            );
-            let selected_columns = end_column.saturating_sub(start_column).max(1) as i32;
-            let width = selected_columns
-                .saturating_mul(character_width)
-                .min(
-                    text_bounds
-                        .x
-                        .saturating_add(text_bounds.width)
-                        .saturating_sub(x),
-                )
-                .max(1);
+        for (row, line) in lines.iter().enumerate().skip(first_visible_row) {
             let y = visual_row_y(text_bounds.y, row, first_visible_row, line_height);
             if y >= text_bounds.y.saturating_add(text_bounds.height) {
                 break;
             }
-            selections.push(Rect {
-                x,
-                y,
-                width,
-                height: line_height
-                    .min(
-                        text_bounds
-                            .y
-                            .saturating_add(text_bounds.height)
-                            .saturating_sub(y),
-                    )
-                    .max(1),
-            });
+            let mut selected_clusters = line
+                .clusters
+                .iter()
+                .copied()
+                .filter(|cluster| cluster.start < end && cluster.end > start)
+                .collect::<Vec<_>>();
+            selected_clusters.sort_by_key(|cluster| (cluster.left(), cluster.right()));
+            let height = line_height
+                .min(
+                    text_bounds
+                        .y
+                        .saturating_add(text_bounds.height)
+                        .saturating_sub(y),
+                )
+                .max(1);
+            let mut current: Option<(i32, i32)> = None;
+            for cluster in selected_clusters {
+                let left = text_bounds
+                    .x
+                    .saturating_add(cluster.left())
+                    .saturating_sub(horizontal_scroll_px);
+                let right = text_bounds
+                    .x
+                    .saturating_add(cluster.right())
+                    .saturating_sub(horizontal_scroll_px);
+                current = match current {
+                    Some((start_x, end_x)) if left <= end_x.saturating_add(1) => {
+                        Some((start_x, end_x.max(right)))
+                    }
+                    Some((start_x, end_x)) => {
+                        push_clipped_selection(
+                            &mut selections,
+                            text_bounds,
+                            start_x,
+                            end_x,
+                            y,
+                            height,
+                        );
+                        Some((left, right))
+                    }
+                    None => Some((left, right)),
+                };
+            }
+            if let Some((start_x, end_x)) = current {
+                push_clipped_selection(&mut selections, text_bounds, start_x, end_x, y, height);
+            } else if !line.soft_wrap_after && end > line.end && start <= line.end {
+                let x = text_bounds
+                    .x
+                    .saturating_add(line.caret_x(line.end))
+                    .saturating_sub(horizontal_scroll_px);
+                push_clipped_selection(
+                    &mut selections,
+                    text_bounds,
+                    x,
+                    x.saturating_add(1),
+                    y,
+                    height,
+                );
+            }
         }
     }
     NativeTextVisualGeometry { caret, selections }
+}
+
+fn push_clipped_selection(
+    selections: &mut Vec<Rect>,
+    bounds: Rect,
+    left: i32,
+    right: i32,
+    y: i32,
+    height: i32,
+) {
+    let left = left.max(bounds.x);
+    let right = right.min(bounds.x.saturating_add(bounds.width));
+    if right > left {
+        selections.push(Rect {
+            x: left,
+            y,
+            width: right.saturating_sub(left).max(1),
+            height,
+        });
+    }
 }
 
 #[cfg(test)]
@@ -207,6 +566,7 @@ pub(crate) fn native_text_index_for_point(
     native_text_index_for_point_in_viewport(target, value, point, 0, 0, wrap, dpi)
 }
 
+#[cfg(test)]
 pub(crate) fn native_text_index_for_point_in_viewport(
     target: ViewHitTarget,
     value: &str,
@@ -216,15 +576,38 @@ pub(crate) fn native_text_index_for_point_in_viewport(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> usize {
+    native_text_index_for_point_in_viewport_with_backend(
+        target,
+        value,
+        point,
+        first_visible_row,
+        first_visible_column,
+        wrap,
+        dpi,
+        &NativeTextShapingBackend::LogicalCells,
+    )
+}
+
+pub(crate) fn native_text_index_for_point_in_viewport_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    point: Point,
+    first_visible_row: usize,
+    horizontal_scroll_px: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> usize {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
     let metrics = native_text_visual_metrics(target, dpi);
-    let max_columns = metrics
-        .text_bounds
-        .width
-        .checked_div(metrics.character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    let lines = text_lines(value, multiline, wrap, max_columns);
+    let lines = text_lines_with_backend(
+        value,
+        multiline,
+        wrap,
+        metrics.text_bounds.width,
+        metrics.character_width,
+        backend,
+    );
     let row = first_visible_row
         .saturating_add(if multiline {
             point
@@ -237,25 +620,19 @@ pub(crate) fn native_text_index_for_point_in_viewport(
             0
         })
         .min(lines.len().saturating_sub(1));
-    let line = lines[row];
-    let relative_x = point.x.saturating_sub(metrics.text_bounds.x);
-    let column = if relative_x <= 0 {
-        0
-    } else {
-        relative_x
-            .saturating_add(metrics.character_width / 2)
-            .checked_div(metrics.character_width)
-            .unwrap_or(0) as usize
-    }
-    .saturating_add(if multiline && wrap == crate::TextWrap::NoWrap {
-        first_visible_column
-    } else {
-        0
-    })
-    .min(line.columns);
-    grapheme_index_for_column(value, line.start, line.end, column)
+    let line = &lines[row];
+    let relative_x = point
+        .x
+        .saturating_sub(metrics.text_bounds.x)
+        .saturating_add(if multiline && wrap == crate::TextWrap::NoWrap {
+            i32::try_from(horizontal_scroll_px).unwrap_or(i32::MAX)
+        } else {
+            0
+        });
+    line.index_for_x(relative_x)
 }
 
+#[cfg(test)]
 pub(crate) fn native_text_index_for_vertical_move(
     target: ViewHitTarget,
     value: &str,
@@ -277,6 +654,7 @@ pub(crate) fn native_text_index_for_vertical_move(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn native_text_index_for_vertical_page_move(
     target: ViewHitTarget,
     value: &str,
@@ -316,6 +694,7 @@ pub(crate) fn native_text_index_for_vertical_page_move(
     (target_index, preferred_column, first_visible_row)
 }
 
+#[cfg(test)]
 fn native_text_index_for_vertical_row_delta(
     target: ViewHitTarget,
     value: &str,
@@ -346,7 +725,7 @@ fn native_text_index_for_vertical_row_delta(
         NativeTextVisualDirection::Up => row.saturating_sub(row_delta),
         NativeTextVisualDirection::Down => row.saturating_add(row_delta).min(lines.len() - 1),
     };
-    let line = lines[target_row];
+    let line = &lines[target_row];
     let line_columns = line.columns;
     let column = if line.soft_wrap_after {
         preferred_column.min(line_columns.saturating_sub(1))
@@ -359,6 +738,110 @@ fn native_text_index_for_vertical_row_delta(
     )
 }
 
+pub(crate) fn native_text_index_for_vertical_move_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualDirection,
+    preferred_x: Option<i32>,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> (usize, i32) {
+    native_text_index_for_vertical_row_delta_with_backend(
+        target,
+        value,
+        caret,
+        direction,
+        preferred_x,
+        1,
+        wrap,
+        dpi,
+        backend,
+    )
+}
+
+pub(crate) fn native_text_index_for_vertical_page_move_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualDirection,
+    preferred_x: Option<i32>,
+    first_visible_row: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> (usize, i32, usize) {
+    let (_, visible_rows) =
+        native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
+    let (target_index, preferred_x) = native_text_index_for_vertical_row_delta_with_backend(
+        target,
+        value,
+        caret,
+        direction,
+        preferred_x,
+        visible_rows,
+        wrap,
+        dpi,
+        backend,
+    );
+    let row_delta = isize::try_from(visible_rows).unwrap_or(isize::MAX);
+    let row_delta = match direction {
+        NativeTextVisualDirection::Up => row_delta.saturating_neg(),
+        NativeTextVisualDirection::Down => row_delta,
+    };
+    let first_visible_row = native_text_scroll_visual_rows_with_backend(
+        target,
+        value,
+        first_visible_row,
+        row_delta,
+        wrap,
+        dpi,
+        backend,
+    );
+    let first_visible_row = native_text_first_visible_row_for_caret_with_backend(
+        target,
+        value,
+        target_index,
+        first_visible_row,
+        wrap,
+        dpi,
+        backend,
+    );
+    (target_index, preferred_x, first_visible_row)
+}
+
+fn native_text_index_for_vertical_row_delta_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualDirection,
+    preferred_x: Option<i32>,
+    row_delta: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> (usize, i32) {
+    let metrics = native_text_visual_metrics(target, dpi);
+    let lines = text_lines_with_backend(
+        value,
+        target.kind == ViewHitTargetKind::TextEditor,
+        wrap,
+        metrics.text_bounds.width,
+        metrics.character_width,
+        backend,
+    );
+    let caret = snap_grapheme_index(value, caret);
+    let (row, current_x) = text_position_x(value, caret, &lines);
+    let preferred_x = preferred_x.unwrap_or(current_x);
+    let target_row = match direction {
+        NativeTextVisualDirection::Up => row.saturating_sub(row_delta),
+        NativeTextVisualDirection::Down => row.saturating_add(row_delta).min(lines.len() - 1),
+    };
+    (lines[target_row].index_for_x(preferred_x), preferred_x)
+}
+
+#[cfg(test)]
 pub(crate) fn native_text_first_visible_row_for_caret(
     target: ViewHitTarget,
     value: &str,
@@ -386,44 +869,81 @@ pub(crate) fn native_text_first_visible_row_for_caret(
     }
 }
 
-pub(crate) fn native_text_first_visible_column_for_caret(
+pub(crate) fn native_text_first_visible_row_for_caret_with_backend(
     target: ViewHitTarget,
     value: &str,
     caret: usize,
-    first_visible_column: usize,
+    first_visible_row: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> usize {
+    if target.kind != ViewHitTargetKind::TextEditor {
+        return 0;
+    }
+    let (lines, visible_rows) =
+        native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
+    let maximum_first = lines.len().saturating_sub(visible_rows);
+    let first_visible_row = first_visible_row.min(maximum_first);
+    let (caret_row, _) = text_position_x(value, snap_grapheme_index(value, caret), &lines);
+    if caret_row < first_visible_row {
+        caret_row
+    } else if caret_row >= first_visible_row.saturating_add(visible_rows) {
+        caret_row
+            .saturating_add(1)
+            .saturating_sub(visible_rows)
+            .min(maximum_first)
+    } else {
+        first_visible_row
+    }
+}
+
+pub(crate) fn native_text_horizontal_scroll_for_caret_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    horizontal_scroll_px: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
 ) -> usize {
     if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
         return 0;
     }
     let metrics = native_text_visual_metrics(target, dpi);
-    let max_columns = metrics
-        .text_bounds
-        .width
-        .checked_div(metrics.character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    let lines = text_lines(value, true, wrap, max_columns);
-    let (_, caret_column) = text_position(value, snap_grapheme_index(value, caret), &lines);
-    let visible_columns = metrics
-        .text_bounds
-        .width
-        .saturating_add(metrics.character_width.saturating_sub(1))
-        .checked_div(metrics.character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    if caret_column < first_visible_column {
-        caret_column
-    } else if caret_column >= first_visible_column.saturating_add(visible_columns) {
-        caret_column
+    let lines = text_lines_with_backend(
+        value,
+        true,
+        wrap,
+        metrics.text_bounds.width,
+        metrics.character_width,
+        backend,
+    );
+    let (_, caret_x) = text_position_x(value, snap_grapheme_index(value, caret), &lines);
+    let maximum_scroll = lines
+        .iter()
+        .map(|line| line.width)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1)
+        .saturating_sub(metrics.text_bounds.width)
+        .max(0);
+    let mut scroll = i32::try_from(horizontal_scroll_px)
+        .unwrap_or(i32::MAX)
+        .min(maximum_scroll);
+    if caret_x < scroll {
+        scroll = caret_x.max(0);
+    } else if caret_x >= scroll.saturating_add(metrics.text_bounds.width) {
+        scroll = caret_x
             .saturating_add(1)
-            .saturating_sub(visible_columns)
-    } else {
-        first_visible_column
+            .saturating_sub(metrics.text_bounds.width)
+            .min(maximum_scroll)
+            .max(0);
     }
+    usize::try_from(scroll).unwrap_or(usize::MAX)
 }
 
+#[cfg(test)]
 pub(crate) fn native_text_scroll_visual_rows(
     target: ViewHitTarget,
     value: &str,
@@ -448,28 +968,55 @@ pub(crate) fn native_text_scroll_visual_rows(
     }
 }
 
-pub(crate) fn native_text_drag_viewport_for_point(
+pub(crate) fn native_text_scroll_visual_rows_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    first_visible_row: usize,
+    row_delta: isize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> usize {
+    if target.kind != ViewHitTargetKind::TextEditor {
+        return 0;
+    }
+    let (lines, visible_rows) =
+        native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
+    let maximum_first = lines.len().saturating_sub(visible_rows);
+    if row_delta > 0 {
+        first_visible_row
+            .saturating_add(row_delta as usize)
+            .min(maximum_first)
+    } else if row_delta < 0 {
+        first_visible_row.saturating_sub(row_delta.unsigned_abs())
+    } else {
+        first_visible_row.min(maximum_first)
+    }
+}
+
+pub(crate) fn native_text_drag_viewport_for_point_with_backend(
     target: ViewHitTarget,
     value: &str,
     point: Point,
     first_visible_row: usize,
-    first_visible_column: usize,
+    horizontal_scroll_px: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
+    backend: &NativeTextShapingBackend,
 ) -> NativeTextDragViewport {
     if target.kind != ViewHitTargetKind::TextEditor {
         return NativeTextDragViewport {
             point,
             first_visible_row: 0,
-            first_visible_column: 0,
+            horizontal_scroll_px: 0,
             scrolled: false,
         };
     }
     let metrics = native_text_visual_metrics(target, dpi);
     let mut adjusted = point;
     let mut row = first_visible_row;
-    let mut column = if wrap == crate::TextWrap::NoWrap {
-        first_visible_column
+    let mut scroll = if wrap == crate::TextWrap::NoWrap {
+        horizontal_scroll_px
     } else {
         0
     };
@@ -478,10 +1025,12 @@ pub(crate) fn native_text_drag_viewport_for_point(
         .y
         .saturating_add(metrics.text_bounds.height);
     if point.y < metrics.text_bounds.y {
-        row = native_text_scroll_visual_rows(target, value, row, -1, wrap, dpi);
+        row =
+            native_text_scroll_visual_rows_with_backend(target, value, row, -1, wrap, dpi, backend);
         adjusted.y = metrics.text_bounds.y;
     } else if point.y >= bottom {
-        row = native_text_scroll_visual_rows(target, value, row, 1, wrap, dpi);
+        row =
+            native_text_scroll_visual_rows_with_backend(target, value, row, 1, wrap, dpi, backend);
         let visible_rows = metrics
             .text_bounds
             .height
@@ -502,75 +1051,70 @@ pub(crate) fn native_text_drag_viewport_for_point(
             .x
             .saturating_add(metrics.text_bounds.width);
         if point.x < metrics.text_bounds.x {
-            column = native_text_scroll_visual_columns(target, value, column, -1, wrap, dpi);
+            scroll = native_text_scroll_horizontal_pixels(
+                target,
+                value,
+                scroll,
+                -metrics.character_width,
+                wrap,
+                dpi,
+                backend,
+            );
             adjusted.x = metrics.text_bounds.x;
         } else if point.x >= right {
-            column = native_text_scroll_visual_columns(target, value, column, 1, wrap, dpi);
-            let visible_columns = metrics
-                .text_bounds
-                .width
-                .saturating_add(metrics.character_width.saturating_sub(1))
-                .checked_div(metrics.character_width)
-                .unwrap_or(1)
-                .max(1);
-            adjusted.x = metrics.text_bounds.x.saturating_add(
-                visible_columns
-                    .saturating_sub(1)
-                    .saturating_mul(metrics.character_width),
+            scroll = native_text_scroll_horizontal_pixels(
+                target,
+                value,
+                scroll,
+                metrics.character_width,
+                wrap,
+                dpi,
+                backend,
             );
+            adjusted.x = right.saturating_sub(1);
         }
     }
 
     NativeTextDragViewport {
         point: adjusted,
         first_visible_row: row,
-        first_visible_column: column,
-        scrolled: row != first_visible_row || column != first_visible_column,
+        horizontal_scroll_px: scroll,
+        scrolled: row != first_visible_row || scroll != horizontal_scroll_px,
     }
 }
 
-fn native_text_scroll_visual_columns(
+fn native_text_scroll_horizontal_pixels(
     target: ViewHitTarget,
     value: &str,
-    first_visible_column: usize,
-    column_delta: isize,
+    horizontal_scroll_px: usize,
+    delta_px: i32,
     wrap: crate::TextWrap,
     dpi: Dpi,
+    backend: &NativeTextShapingBackend,
 ) -> usize {
     if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
         return 0;
     }
     let metrics = native_text_visual_metrics(target, dpi);
-    let max_columns = metrics
-        .text_bounds
-        .width
-        .checked_div(metrics.character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    let longest_line = text_lines(value, true, wrap, max_columns)
-        .into_iter()
-        .map(|line| line.columns)
+    let lines = text_lines_with_backend(
+        value,
+        true,
+        wrap,
+        metrics.text_bounds.width,
+        metrics.character_width,
+        backend,
+    );
+    let maximum = lines
+        .iter()
+        .map(|line| line.width)
         .max()
-        .unwrap_or(0);
-    let visible_columns = metrics
-        .text_bounds
-        .width
-        .saturating_add(metrics.character_width.saturating_sub(1))
-        .checked_div(metrics.character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    let maximum_first = longest_line
-        .saturating_add(1)
-        .saturating_sub(visible_columns);
-    if column_delta > 0 {
-        first_visible_column
-            .saturating_add(column_delta as usize)
-            .min(maximum_first)
-    } else if column_delta < 0 {
-        first_visible_column.saturating_sub(column_delta.unsigned_abs())
-    } else {
-        first_visible_column.min(maximum_first)
-    }
+        .unwrap_or(0)
+        .saturating_sub(metrics.text_bounds.width)
+        .max(0);
+    let current = i32::try_from(horizontal_scroll_px)
+        .unwrap_or(i32::MAX)
+        .min(maximum);
+    usize::try_from(current.saturating_add(delta_px).clamp(0, maximum)).unwrap_or(usize::MAX)
 }
 
 pub(crate) fn native_text_wheel_row_delta(delta_y: Dp) -> isize {
@@ -597,6 +1141,7 @@ pub(crate) fn decorate_native_text_edit_visuals(
     decorate_native_text_edit_visuals_in_viewport(plan, target, value, selection, 0, 0, wrap, dpi)
 }
 
+#[cfg(test)]
 pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
     plan: &mut NativeDrawPlan,
     target: ViewHitTarget,
@@ -607,7 +1152,8 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
-    let geometry = native_text_visual_geometry_in_viewport(
+    decorate_native_text_edit_visuals_in_viewport_with_backend(
+        plan,
         target,
         value,
         selection,
@@ -615,17 +1161,42 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
         first_visible_column,
         wrap,
         dpi,
+        &NativeTextShapingBackend::LogicalCells,
+    )
+}
+
+pub(crate) fn decorate_native_text_edit_visuals_in_viewport_with_backend(
+    plan: &mut NativeDrawPlan,
+    target: ViewHitTarget,
+    value: &str,
+    selection: NativeTextSelection,
+    first_visible_row: usize,
+    horizontal_scroll_px: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> NativeTextVisualGeometry {
+    let geometry = native_text_visual_geometry_in_viewport_with_backend(
+        target,
+        value,
+        selection,
+        first_visible_row,
+        horizontal_scroll_px,
+        wrap,
+        dpi,
+        backend,
     );
     if target.kind == ViewHitTargetKind::TextEditor {
-        decorate_native_text_editor_viewport(
+        decorate_native_text_editor_viewport_with_backend(
             plan,
             target,
             value,
             first_visible_row,
-            first_visible_column,
+            horizontal_scroll_px,
             wrap,
             dpi,
             &geometry,
+            backend,
         );
         return geometry;
     }
@@ -660,15 +1231,16 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
     geometry
 }
 
-fn decorate_native_text_editor_viewport(
+fn decorate_native_text_editor_viewport_with_backend(
     plan: &mut NativeDrawPlan,
     target: ViewHitTarget,
     value: &str,
     first_visible_row: usize,
-    first_visible_column: usize,
+    horizontal_scroll_px: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
     geometry: &NativeTextVisualGeometry,
+    backend: &NativeTextShapingBackend,
 ) {
     let text_index = plan.commands.iter().position(|command| {
         matches!(command, NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds))
@@ -689,11 +1261,12 @@ fn decorate_native_text_editor_viewport(
     });
 
     let metrics = native_text_visual_metrics(target, dpi);
-    let (lines, visible_rows) = native_text_viewport_lines(target, value, wrap, dpi);
+    let (lines, visible_rows) =
+        native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
     let maximum_first = lines.len().saturating_sub(visible_rows);
     let first_visible_row = first_visible_row.min(maximum_first);
-    let first_visible_column = if wrap == crate::TextWrap::NoWrap {
-        first_visible_column
+    let horizontal_scroll_px = if wrap == crate::TextWrap::NoWrap {
+        i32::try_from(horizontal_scroll_px).unwrap_or(i32::MAX)
     } else {
         0
     };
@@ -720,24 +1293,21 @@ fn decorate_native_text_editor_viewport(
     );
     for (row, line) in lines
         .iter()
-        .copied()
         .enumerate()
         .skip(first_visible_row)
         .take(visible_rows)
     {
-        let visible_start =
-            grapheme_index_for_column(value, line.start, line.end, first_visible_column);
         commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
-            char_slice(value, visible_start, line.end),
+            char_slice(value, line.start, line.end),
             Rect {
-                x: metrics.text_bounds.x,
+                x: metrics.text_bounds.x.saturating_sub(horizontal_scroll_px),
                 y: visual_row_y(
                     metrics.text_bounds.y,
                     row,
                     first_visible_row,
                     metrics.line_height,
                 ),
-                width: metrics.text_bounds.width,
+                width: line.width.max(metrics.text_bounds.width),
                 height: metrics.line_height,
             },
             style,
@@ -1111,12 +1681,60 @@ pub(crate) fn decorate_native_pointer_visuals(
     1
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct NativeTextLine {
     start: usize,
     end: usize,
+    #[cfg(test)]
     columns: usize,
+    width: i32,
+    clusters: Vec<NativeShapedTextCluster>,
+    carets: Vec<NativeShapedTextCaret>,
     soft_wrap_after: bool,
+}
+
+impl NativeTextLine {
+    fn caret_x(&self, index: usize) -> i32 {
+        self.carets
+            .binary_search_by_key(&index, |caret| caret.index)
+            .ok()
+            .and_then(|position| self.carets.get(position))
+            .map(|caret| caret.primary_x)
+            .unwrap_or_else(|| {
+                self.carets
+                    .iter()
+                    .min_by_key(|caret| caret.index.abs_diff(index))
+                    .map(|caret| caret.primary_x)
+                    .unwrap_or(0)
+            })
+    }
+
+    fn index_for_x(&self, x: i32) -> usize {
+        let mut clusters = self.clusters.iter().copied().collect::<Vec<_>>();
+        clusters.sort_by_key(|cluster| (cluster.left(), cluster.right()));
+        let Some(first) = clusters.first().copied() else {
+            return self.start;
+        };
+        if x <= first.left() {
+            return first.left_index();
+        }
+        for cluster in clusters.iter().copied() {
+            let midpoint = cluster
+                .left()
+                .saturating_add(cluster.width().saturating_add(1) / 2);
+            if x < midpoint {
+                return cluster.left_index();
+            }
+            if x <= cluster.right() {
+                return cluster.right_index();
+            }
+        }
+        clusters
+            .last()
+            .copied()
+            .map(NativeShapedTextCluster::right_index)
+            .unwrap_or(self.end)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1152,24 +1770,37 @@ fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisu
     }
 }
 
+#[cfg(test)]
 fn native_text_viewport_lines(
     target: ViewHitTarget,
     value: &str,
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> (Vec<NativeTextLine>, usize) {
+    native_text_viewport_lines_with_backend(
+        target,
+        value,
+        wrap,
+        dpi,
+        &NativeTextShapingBackend::LogicalCells,
+    )
+}
+
+fn native_text_viewport_lines_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> (Vec<NativeTextLine>, usize) {
     let metrics = native_text_visual_metrics(target, dpi);
-    let max_columns = metrics
-        .text_bounds
-        .width
-        .checked_div(metrics.character_width)
-        .unwrap_or(1)
-        .max(1) as usize;
-    let lines = text_lines(
+    let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
         wrap,
-        max_columns,
+        metrics.text_bounds.width,
+        metrics.character_width,
+        backend,
     );
     let visible_rows = metrics
         .text_bounds
@@ -1197,27 +1828,6 @@ fn visual_row_y(origin: i32, row: usize, first_visible_row: usize, line_height: 
     }
 }
 
-fn visual_column_x(
-    origin: i32,
-    column: usize,
-    first_visible_column: usize,
-    character_width: i32,
-) -> i32 {
-    if column >= first_visible_column {
-        origin.saturating_add(
-            i32::try_from(column.saturating_sub(first_visible_column))
-                .unwrap_or(i32::MAX)
-                .saturating_mul(character_width),
-        )
-    } else {
-        origin.saturating_sub(
-            i32::try_from(first_visible_column.saturating_sub(column))
-                .unwrap_or(i32::MAX)
-                .saturating_mul(character_width),
-        )
-    }
-}
-
 fn char_slice(value: &str, start: usize, end: usize) -> String {
     value
         .chars()
@@ -1226,134 +1836,176 @@ fn char_slice(value: &str, start: usize, end: usize) -> String {
         .collect()
 }
 
+#[cfg(test)]
 fn text_lines(
     value: &str,
     multiline: bool,
     wrap: crate::TextWrap,
     max_columns: usize,
 ) -> Vec<NativeTextLine> {
+    text_lines_with_backend(
+        value,
+        multiline,
+        wrap,
+        i32::try_from(max_columns.max(1)).unwrap_or(i32::MAX),
+        1,
+        &NativeTextShapingBackend::LogicalCells,
+    )
+}
+
+fn text_lines_with_backend(
+    value: &str,
+    multiline: bool,
+    wrap: crate::TextWrap,
+    max_width: i32,
+    fallback_width: i32,
+    backend: &NativeTextShapingBackend,
+) -> Vec<NativeTextLine> {
+    let end = char_count(value);
     if !multiline {
-        let end = char_count(value);
-        return vec![NativeTextLine {
-            start: 0,
+        return vec![shape_text_line(
+            value,
+            0,
             end,
-            columns: grapheme_boundaries(value).len().saturating_sub(1),
-            soft_wrap_after: false,
-        }];
+            fallback_width,
+            backend,
+            false,
+        )];
     }
     let characters = value.chars().collect::<Vec<_>>();
-    let grapheme_boundaries = grapheme_boundaries(value);
     let mut lines = Vec::new();
     let mut start = 0;
     for (index, character) in characters.iter().copied().enumerate() {
         if character == '\n' {
-            push_text_lines(
+            push_shaped_text_lines(
                 &mut lines,
                 value,
-                &grapheme_boundaries,
                 start,
                 index,
                 wrap,
-                max_columns,
+                max_width,
+                fallback_width,
+                backend,
             );
             start = index + 1;
         }
     }
-    push_text_lines(
+    push_shaped_text_lines(
         &mut lines,
         value,
-        &grapheme_boundaries,
         start,
         characters.len(),
         wrap,
-        max_columns,
+        max_width,
+        fallback_width,
+        backend,
     );
     lines
 }
 
-fn push_text_lines(
+fn push_shaped_text_lines(
     lines: &mut Vec<NativeTextLine>,
     value: &str,
-    grapheme_boundaries: &[usize],
     start: usize,
     end: usize,
     wrap: crate::TextWrap,
-    max_columns: usize,
+    max_width: i32,
+    fallback_width: i32,
+    backend: &NativeTextShapingBackend,
 ) {
-    let max_columns = max_columns.max(1);
-    let columns = grapheme_count_between(grapheme_boundaries, start, end);
-    if wrap == crate::TextWrap::NoWrap || columns <= max_columns {
-        lines.push(NativeTextLine {
-            start,
-            end,
-            columns,
-            soft_wrap_after: false,
-        });
+    let max_width = max_width.max(1);
+    let whole = shape_text_line(value, start, end, fallback_width, backend, false);
+    if wrap == crate::TextWrap::NoWrap || whole.width <= max_width || whole.clusters.is_empty() {
+        lines.push(whole);
         return;
     }
 
-    let mut cursor = start;
-    while grapheme_count_between(grapheme_boundaries, cursor, end) > max_columns {
-        let limit =
-            grapheme_index_for_column_between(grapheme_boundaries, cursor, end, max_columns);
-        let mut cluster_start = cursor;
+    let mut logical_clusters = whole.clusters;
+    logical_clusters.sort_by_key(|cluster| cluster.start);
+    let mut first = 0_usize;
+    while first < logical_clusters.len() {
+        let mut after_last = first;
+        let mut width = 0_i32;
         let mut whitespace_break = None;
-        for cluster_end in grapheme_boundaries
-            .iter()
-            .copied()
-            .filter(|boundary| *boundary > cursor && *boundary <= limit)
-        {
-            if char_slice(value, cluster_start, cluster_end)
+        while after_last < logical_clusters.len() {
+            let cluster = logical_clusters[after_last];
+            let next_width = width.saturating_add(cluster.width().max(1));
+            if after_last > first && next_width > max_width {
+                break;
+            }
+            width = next_width;
+            after_last += 1;
+            if char_slice(value, cluster.start, cluster.end)
                 .chars()
                 .all(char::is_whitespace)
             {
-                whitespace_break = Some(cluster_end);
+                whitespace_break = Some(after_last);
             }
-            cluster_start = cluster_end;
         }
-        let break_at = whitespace_break.unwrap_or(limit);
-        lines.push(NativeTextLine {
-            start: cursor,
-            end: break_at,
-            columns: grapheme_count_between(grapheme_boundaries, cursor, break_at),
-            soft_wrap_after: true,
-        });
-        cursor = break_at;
+        let break_after = if after_last == logical_clusters.len() {
+            after_last
+        } else {
+            whitespace_break
+                .filter(|position| *position > first)
+                .unwrap_or(after_last)
+        };
+        let line_start = logical_clusters[first].start;
+        let line_end = logical_clusters[break_after.saturating_sub(1)].end;
+        let soft_wrap_after = break_after < logical_clusters.len();
+        lines.push(shape_text_line(
+            value,
+            line_start,
+            line_end,
+            fallback_width,
+            backend,
+            soft_wrap_after,
+        ));
+        first = break_after;
     }
-    lines.push(NativeTextLine {
-        start: cursor,
-        end,
-        columns: grapheme_count_between(grapheme_boundaries, cursor, end),
-        soft_wrap_after: false,
-    });
 }
 
-fn grapheme_count_between(boundaries: &[usize], start: usize, end: usize) -> usize {
-    let first = boundaries.partition_point(|boundary| *boundary <= start);
-    let after_last = boundaries.partition_point(|boundary| *boundary <= end);
-    after_last.saturating_sub(first)
-}
-
-fn grapheme_index_for_column_between(
-    boundaries: &[usize],
+fn shape_text_line(
+    value: &str,
     start: usize,
     end: usize,
-    column: usize,
-) -> usize {
-    if column == 0 {
-        return start;
+    fallback_width: i32,
+    backend: &NativeTextShapingBackend,
+    soft_wrap_after: bool,
+) -> NativeTextLine {
+    let shaped = backend.shape_line(&char_slice(value, start, end), fallback_width);
+    NativeTextLine {
+        start,
+        end,
+        #[cfg(test)]
+        columns: shaped.clusters.len(),
+        width: shaped.width,
+        clusters: shaped
+            .clusters
+            .into_iter()
+            .map(|cluster| NativeShapedTextCluster {
+                start: start.saturating_add(cluster.start),
+                end: start.saturating_add(cluster.end),
+                start_x: cluster.start_x,
+                end_x: cluster.end_x,
+            })
+            .collect(),
+        carets: shaped
+            .carets
+            .into_iter()
+            .map(|caret| NativeShapedTextCaret {
+                index: start.saturating_add(caret.index),
+                primary_x: caret.primary_x,
+                secondary_x: caret.secondary_x,
+            })
+            .collect(),
+        soft_wrap_after,
     }
-    let first = boundaries.partition_point(|boundary| *boundary <= start);
-    boundaries
-        .get(first.saturating_add(column.saturating_sub(1)))
-        .copied()
-        .filter(|boundary| *boundary <= end)
-        .unwrap_or(end)
 }
 
+#[cfg(test)]
 fn text_position(value: &str, index: usize, lines: &[NativeTextLine]) -> (usize, usize) {
     let index = snap_grapheme_index(value, index);
-    for (row, line) in lines.iter().copied().enumerate() {
+    for (row, line) in lines.iter().enumerate() {
         if index < line.end || (index == line.end && !line.soft_wrap_after) {
             let column = if index == line.end {
                 line.columns
@@ -1378,6 +2030,24 @@ fn text_position(value: &str, index: usize, lines: &[NativeTextLine]) -> (usize,
         .unwrap_or((0, 0))
 }
 
+fn text_position_x(value: &str, index: usize, lines: &[NativeTextLine]) -> (usize, i32) {
+    let index = snap_grapheme_index(value, index);
+    for (row, line) in lines.iter().enumerate() {
+        if index < line.end || (index == line.end && !line.soft_wrap_after) {
+            return (row, line.caret_x(index));
+        }
+    }
+    lines
+        .last()
+        .map(|line| {
+            (
+                lines.len().saturating_sub(1),
+                line.caret_x(index.min(line.end)),
+            )
+        })
+        .unwrap_or((0, 0))
+}
+
 pub(crate) fn rect_contains(outer: Rect, inner: Rect) -> bool {
     inner.x >= outer.x
         && inner.y >= outer.y
@@ -1389,6 +2059,106 @@ pub(crate) fn rect_contains(outer: Rect, inner: Rect) -> bool {
 mod tests {
     use super::*;
     use crate::{ViewHitTarget, ViewHitTargetKind};
+
+    fn proportional_test_shape(text: &str, _fallback_width: i32) -> Option<NativeShapedTextLine> {
+        if text.is_empty() {
+            return None;
+        }
+        let boundaries = grapheme_boundaries(text);
+        let mut x = 0_i32;
+        let mut clusters = Vec::new();
+        let mut carets = vec![NativeShapedTextCaret {
+            index: 0,
+            primary_x: 0,
+            secondary_x: 0,
+        }];
+        for pair in boundaries.windows(2) {
+            let width = if char_slice(text, pair[0], pair[1]) == "W" {
+                16
+            } else {
+                4
+            };
+            let next_x = x.saturating_add(width);
+            clusters.push(NativeShapedTextCluster {
+                start: pair[0],
+                end: pair[1],
+                start_x: x,
+                end_x: next_x,
+            });
+            carets.push(NativeShapedTextCaret {
+                index: pair[1],
+                primary_x: next_x,
+                secondary_x: next_x,
+            });
+            x = next_x;
+        }
+        NativeShapedTextLine::new(x, clusters, carets)
+    }
+
+    fn mixed_direction_test_shape(
+        text: &str,
+        _fallback_width: i32,
+    ) -> Option<NativeShapedTextLine> {
+        if text != "abאב" {
+            return None;
+        }
+        NativeShapedTextLine::new(
+            40,
+            vec![
+                NativeShapedTextCluster {
+                    start: 0,
+                    end: 1,
+                    start_x: 0,
+                    end_x: 10,
+                },
+                NativeShapedTextCluster {
+                    start: 1,
+                    end: 2,
+                    start_x: 10,
+                    end_x: 20,
+                },
+                NativeShapedTextCluster {
+                    start: 2,
+                    end: 3,
+                    start_x: 40,
+                    end_x: 30,
+                },
+                NativeShapedTextCluster {
+                    start: 3,
+                    end: 4,
+                    start_x: 30,
+                    end_x: 20,
+                },
+            ],
+            vec![
+                NativeShapedTextCaret {
+                    index: 0,
+                    primary_x: 0,
+                    secondary_x: 0,
+                },
+                NativeShapedTextCaret {
+                    index: 1,
+                    primary_x: 10,
+                    secondary_x: 10,
+                },
+                NativeShapedTextCaret {
+                    index: 2,
+                    primary_x: 40,
+                    secondary_x: 20,
+                },
+                NativeShapedTextCaret {
+                    index: 3,
+                    primary_x: 30,
+                    secondary_x: 30,
+                },
+                NativeShapedTextCaret {
+                    index: 4,
+                    primary_x: 20,
+                    secondary_x: 20,
+                },
+            ],
+        )
+    }
 
     #[test]
     fn focus_ring_uses_semantic_accent_and_insets_target_bounds() {
@@ -1991,6 +2761,166 @@ mod tests {
     }
 
     #[test]
+    fn shaped_mixed_direction_geometry_uses_visual_clusters_and_dual_carets() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(921),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 40,
+            },
+            ViewHitTargetKind::Textbox,
+        );
+        let backend = NativeTextShapingBackend::Test(mixed_direction_test_shape);
+        let geometry = native_text_visual_geometry_in_viewport_with_backend(
+            target,
+            "abאב",
+            NativeTextSelection {
+                anchor: 1,
+                caret: 3,
+            },
+            0,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+
+        assert_eq!(geometry.caret.x, 38);
+        assert_eq!(
+            geometry.selections,
+            vec![
+                Rect {
+                    x: 18,
+                    y: 8,
+                    width: 10,
+                    height: 18,
+                },
+                Rect {
+                    x: 38,
+                    y: 8,
+                    width: 10,
+                    height: 18,
+                },
+            ]
+        );
+        assert_eq!(
+            native_text_index_for_point_in_viewport_with_backend(
+                target,
+                "abאב",
+                Point { x: 30, y: 10 },
+                0,
+                0,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            4
+        );
+        assert_eq!(
+            native_text_index_for_point_in_viewport_with_backend(
+                target,
+                "abאב",
+                Point { x: 45, y: 10 },
+                0,
+                0,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            2
+        );
+
+        let shaped = mixed_direction_test_shape("abאב", 8).expect("test line should shape");
+        assert_eq!(shaped.carets[2].primary_x, 40);
+        assert_eq!(shaped.carets[2].secondary_x, 20);
+        assert_eq!(
+            NativeShapedTextCaret {
+                index: 6,
+                primary_x: 50,
+                secondary_x: 50,
+            }
+            .closest_cluster_edges(NativeShapedTextCaret {
+                index: 7,
+                primary_x: 70,
+                secondary_x: 40,
+            }),
+            (50, 40)
+        );
+    }
+
+    #[test]
+    fn shaped_line_cache_reuses_unchanged_visual_rows() {
+        let cache = NativeTextShapingCache::default();
+        let calls = std::cell::Cell::new(0_usize);
+        let first = cache
+            .shape("Wi", || {
+                calls.set(calls.get() + 1);
+                Some(NativeShapedTextLine::logical_cells("Wi", 8))
+            })
+            .expect("the first line should shape");
+        let second = cache
+            .shape("Wi", || {
+                calls.set(calls.get() + 1);
+                Some(NativeShapedTextLine::logical_cells("Wi", 8))
+            })
+            .expect("the cached line should remain available");
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn shaped_proportional_advances_drive_wrap_scroll_and_vertical_navigation() {
+        let backend = NativeTextShapingBackend::Test(proportional_test_shape);
+        let lines = text_lines_with_backend("WWii", true, crate::TextWrap::Word, 20, 8, &backend);
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| (line.start, line.end, line.width))
+                .collect::<Vec<_>>(),
+            vec![(0, 1, 16), (1, 3, 20), (3, 4, 4)]
+        );
+
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(922),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 70,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        assert_eq!(
+            native_text_horizontal_scroll_for_caret_with_backend(
+                target,
+                "WWii",
+                4,
+                0,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            17
+        );
+        assert_eq!(
+            native_text_index_for_vertical_move_with_backend(
+                target,
+                "Wi\nWW",
+                1,
+                NativeTextVisualDirection::Down,
+                None,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            (4, 16)
+        );
+    }
+
+    #[test]
     #[cfg(feature = "password-box")]
     fn password_text_geometry_reserves_space_only_when_reveal_target_exists() {
         let widget = WidgetId::new(920);
@@ -2273,36 +3203,40 @@ mod tests {
             ViewHitTargetKind::TextEditor,
         );
         let value = "0123456789\nabc";
-        let first_column = native_text_first_visible_column_for_caret(
+        let backend = NativeTextShapingBackend::LogicalCells;
+        let horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             target,
             value,
             10,
             0,
             crate::TextWrap::NoWrap,
             Dpi::standard(),
+            &backend,
         );
 
-        assert_eq!(first_column, 7);
+        assert_eq!(horizontal_scroll_px, 49);
         assert_eq!(
-            native_text_index_for_point_in_viewport(
+            native_text_index_for_point_in_viewport_with_backend(
                 target,
                 value,
                 Point { x: 8, y: 10 },
                 0,
-                first_column,
+                horizontal_scroll_px,
                 crate::TextWrap::NoWrap,
                 Dpi::standard(),
+                &backend,
             ),
-            7
+            6
         );
         assert_eq!(
-            native_text_first_visible_column_for_caret(
+            native_text_horizontal_scroll_for_caret_with_backend(
                 target,
                 value,
                 10,
-                first_column,
+                horizontal_scroll_px,
                 crate::TextWrap::Word,
                 Dpi::standard(),
+                &backend,
             ),
             0
         );
@@ -2318,15 +3252,16 @@ mod tests {
                 },
                 crate::SemanticTextStyle::body(),
             ))]);
-        let geometry = decorate_native_text_edit_visuals_in_viewport(
+        let geometry = decorate_native_text_edit_visuals_in_viewport_with_backend(
             &mut plan,
             target,
             value,
             NativeTextSelection::collapsed(10),
             0,
-            first_column,
+            horizontal_scroll_px,
             crate::TextWrap::NoWrap,
             Dpi::standard(),
+            &backend,
         );
         let visible_text = plan
             .commands
@@ -2337,8 +3272,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(visible_text.first().copied(), Some("789"));
-        assert_eq!(geometry.caret.x, 32);
+        assert_eq!(visible_text.first().copied(), Some("0123456789"));
+        assert_eq!(geometry.caret.x, 39);
     }
 
     #[test]
@@ -2354,7 +3289,8 @@ mod tests {
             ViewHitTargetKind::TextEditor,
         );
         let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
-        let dragged = native_text_drag_viewport_for_point(
+        let backend = NativeTextShapingBackend::LogicalCells;
+        let dragged = native_text_drag_viewport_for_point_with_backend(
             target,
             value,
             Point { x: 16, y: 500 },
@@ -2362,24 +3298,26 @@ mod tests {
             0,
             crate::TextWrap::NoWrap,
             Dpi::standard(),
+            &backend,
         );
 
         assert!(dragged.scrolled);
         assert_eq!((dragged.first_visible_row, dragged.point.y), (1, 44));
         assert_eq!(
-            native_text_index_for_point_in_viewport(
+            native_text_index_for_point_in_viewport_with_backend(
                 target,
                 value,
                 dragged.point,
                 dragged.first_visible_row,
-                dragged.first_visible_column,
+                dragged.horizontal_scroll_px,
                 crate::TextWrap::NoWrap,
                 Dpi::standard(),
+                &backend,
             ),
             10
         );
 
-        let long_line = native_text_drag_viewport_for_point(
+        let long_line = native_text_drag_viewport_for_point_with_backend(
             ViewHitTarget::with_kind(
                 WidgetId::new(101),
                 Rect {
@@ -2396,14 +3334,15 @@ mod tests {
             0,
             crate::TextWrap::NoWrap,
             Dpi::standard(),
+            &backend,
         );
         assert_eq!(
             (
-                long_line.first_visible_column,
+                long_line.horizontal_scroll_px,
                 long_line.point.x,
                 long_line.scrolled
             ),
-            (1, 32, true)
+            (8, 39, true)
         );
     }
 

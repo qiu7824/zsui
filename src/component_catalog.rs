@@ -121,7 +121,7 @@ pub fn zsui_component_catalog_summary() -> ZsuiComponentCatalogSummary {
 
 const BASIC_CONTROL_GAPS: &[&str] = &["accessibility", "non-Windows target interaction proof"];
 const TEXT_INPUT_GAPS: &[&str] = &[
-    "shaped-glyph advances and bidirectional caret geometry",
+    "visual-order bidirectional Left/Right caret navigation",
     "accessibility text provider",
     "macOS and Linux CJK target interaction proof",
 ];

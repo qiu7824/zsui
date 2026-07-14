@@ -500,7 +500,8 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo
 原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，并把三平台标题栏关闭
 统一路由到强类型未保存确认。长文档视觉行/页导航、滚轮、边缘拖拽滚动、裁剪视口及
 关闭软换行后的横向插入点自动显现由编辑器内部共享视口模型处理，不要求应用维护滚
-动状态；组合附加符和连接 emoji 按完整字素移动、删除和命中，也不使用 WebView。
+动状态；Uniscribe、Core Text 和 Pango 的原生成形宽度统一驱动比例字体、双向文本
+插入点、选择、换行和命中，组合附加符与连接 emoji 仍按完整字素处理，也不使用 WebView。
 [验收与测量说明](docs/notepad-demo.md)记录了能力边界、代码量和验证方法。
 
 ### 现代计算器
@@ -585,7 +586,7 @@ Linux/macOS 桌面目标。
 ## 当前边界
 
 - Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器仍需继续收口；软换行绘制/命中/选择与保持目标列的上下视觉行导航已统一，`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期，`NativeFileDialogService` 已用同一套安全 `PathBuf` API 分派到 Win32/AppKit/GTK4，父窗口模态绑定和目标机证据仍待完成
+- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，视觉顺序的双向 Left/Right、无障碍文本提供者和 AppKit/GTK4 目标机证据仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
 - DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
 - 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块

@@ -12,6 +12,8 @@ Current diagnostic artifacts:
 - `startup.png`: real Win32 launch capture from the shared showcase.
 - `dark-theme.png`: shared theme tokens repainted through the buffered renderer.
 - `text-input.png`: owner-drawn text input, focus traversal, toggle and scroll smoke capture.
+- `shaped-text.png`: self-drawn notepad smoke with proportional Latin, Hebrew
+  bidirectional text and CJK on the real Win32 buffered renderer.
 - `showcase-smoke-report.json`: machine-readable smoke counters for that interaction run.
 
 The report confirms one attached native menu with five commands and exercises

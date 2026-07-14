@@ -77,9 +77,15 @@ history remain authoritative for implementation status.
   path on Win32, AppKit and GTK4; backends do not own application cursor state.
   Scalar indices remain the public interchange format, but the shared input
   runtime normalizes endpoints to Unicode extended-grapheme boundaries. Left/
-  Right, Backspace/Delete, pointer hits, wrapping, visual columns and IME marked
-  selections must not split combining sequences or joined emoji. Full shaped-
-  glyph advances and bidirectional caret geometry remain separate backend work.
+  Right, Backspace/Delete, pointer hits, wrapping and IME marked selections
+  must not split combining sequences or joined emoji. Text geometry is shaped
+  by Uniscribe on Win32, Core Text on AppKit and Pango on GTK4; caret, selection,
+  pointer hit testing, wrapping and IME candidate anchoring consume the same
+  per-grapheme advances and strong/weak bidirectional insertion positions.
+  Visual-order Left/Right traversal and target CJK/bidirectional interaction
+  evidence remain separate work.
+  Shaped rows use a bounded 256-entry cache owned by the per-window shaping
+  backend; do not replace it with a global font/layout registry.
   Win32 assembles `WM_CHAR` UTF-16 surrogate pairs in per-window transient
   input state before dispatching one scalar to this shared model.
 - Shared edit actions use `ZsTextEditCommand` queued through `AppCx` for the
@@ -95,7 +101,7 @@ history remain authoritative for implementation status.
   testing must consume the same wrap state on Win32, AppKit and GTK4. Up/Down
   navigation follows these visual rows, while PageUp/PageDown moves by the
   current visible-row count and scrolls the transient viewport by the same page.
-  Both preserve the desired visual column across shorter hard or soft lines;
+  Both preserve the desired shaped x position across shorter hard or soft lines;
   Shift extends the application-owned selection. Horizontal input, edits and
   pointer selection reset that transient column. This is shared self-drawn
   behavior and must not introduce a native child editor or a WebView.
@@ -103,11 +109,11 @@ history remain authoritative for implementation status.
   not application document state. The same visual-row model must drive clipped
   text paint, selection/caret geometry, pointer hit testing, wheel scrolling and
   caret reveal after edits or keyboard movement. `TextWrap::NoWrap` also keeps a
-  transient first visible visual column shared by paint, selection/caret and
+  transient horizontal pixel offset shared by paint, selection/caret and
   pointer hit testing; caret movement reveals it horizontally, while wrapped
-  modes reset the column offset. During captured selection drags, each pointer
-  update beyond a text edge advances that transient row or column viewport by
-  one visual step and hit-tests the newly visible edge instead of jumping to the
+  modes reset the offset. During captured selection drags, each pointer update
+  beyond a text edge advances that transient row or horizontal viewport by one
+  visual step and hit-tests the newly visible edge instead of jumping to the
   document boundary. Editor viewport scrolling stays available with the
   `textbox` slice and must not pull in the general `scroll` container feature,
   a platform child editor or a WebView.

@@ -388,7 +388,7 @@ fn native_ui_capability_readiness(
             Renderer | TextLayout => (
                 Ready,
                 "src/windows_gdi_renderer.rs",
-                "Win32 draw commands, text layout and user-selected high-contrast system colors are connected to the buffered GDI renderer",
+                "buffered GDI drawing, Uniscribe proportional/bidirectional text geometry and user-selected high-contrast colors are connected",
             ),
             MainWindow | TransientWindow => (
                 FirstPass,
@@ -413,7 +413,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/windows_win32_host.rs",
-                "IMM32 result commit, WM_CHAR surrogate-pair assembly, extended-grapheme-safe keyboard/pointer selection replacement and logical-caret candidate placement are connected; shaped-glyph geometry and CJK target proof are pending",
+                "IMM32 commit, WM_CHAR surrogate assembly and extended-grapheme-safe editing consume Uniscribe advances, bidi insertion geometry and shaped-caret candidate placement; visual-order bidi navigation and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
@@ -430,7 +430,7 @@ fn native_ui_capability_readiness(
             Renderer | TextLayout => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NativeDrawPlan commands, clipping, SF Symbols, semantic NSString text and effective high-contrast NSColor resolution are connected to an AppKit NSView; target visual proof remains pending",
+                "NativeDrawPlan clipping, SF Symbols, Core Text proportional/bidirectional geometry, NSString drawing and high-contrast NSColor resolution are connected; target visual proof remains pending",
             ),
             MainWindow => (
                 FirstPass,
@@ -455,7 +455,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSTextInputClient routes selected/marked UTF-16 ranges, replacement preedit, UTF-8 commit and extended-grapheme-safe logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
+                "NSTextInputClient routes UTF-16 ranges, replacement and UTF-8 commit through shared state using Core Text advances, bidi insertion geometry and shaped-caret anchoring; visual-order bidi navigation and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
@@ -472,7 +472,7 @@ fn native_ui_capability_readiness(
             Renderer | TextLayout => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "NativeDrawPlan commands, clipping, themed icons, Pango text and high-contrast theme colors are connected to a GTK4 DrawingArea/Cairo surface; Wayland/X11 visual proof remains pending",
+                "NativeDrawPlan clipping, themed icons, Pango proportional/bidirectional geometry and high-contrast colors are connected to GTK4 DrawingArea/Cairo; Wayland/X11 visual proof remains pending",
             ),
             MainWindow => (
                 FirstPass,
@@ -497,7 +497,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GtkIMMulticontext routes preedit, UTF-8 commit, surrounding text, focus lifecycle and extended-grapheme-safe logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
+                "GtkIMMulticontext routes preedit, UTF-8 commit and surrounding text through shared state using Pango advances, bidi insertion geometry and shaped-caret anchoring; visual-order bidi navigation and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,

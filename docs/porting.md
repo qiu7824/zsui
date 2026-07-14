@@ -106,13 +106,16 @@ runtime, render it without mutating application state, commit UTF-8 through
 the normal typed `TextChanged` path and anchor the native candidate window to
 the focused editor. Selection replacement is shared across direct input and IME;
 AppKit reports UTF-16 selected/marked ranges and GTK4 supplies surrounding UTF-8
-text. Logical pointer hit testing uses shared DPI-scaled visual-cell metrics and
-clamps captured drags outside the editor to the first/last insertion point.
-Those cells, caret movement, deletion, wrapping and IME marked selections use
-Unicode extended-grapheme boundaries, so combining sequences and joined emoji
-are never split even though public selection indices remain scalar based.
-Shaped-glyph advances, bidirectional hit testing, target CJK interaction
-artifacts and accessibility remain separate gates. During native resize,
+text. Pointer hit testing, caret/selection geometry, wrapping, horizontal reveal
+and candidate anchoring consume target-native shaped text: Win32 uses Uniscribe,
+AppKit uses Core Text and GTK4 uses Pango. The shared layer retains logical
+Unicode-scalar indices while visual clusters preserve proportional advances,
+RTL direction and strong/weak insertion positions. Extended-grapheme boundaries
+keep combining sequences and joined emoji indivisible. Visual-order Left/Right
+traversal, target CJK/bidirectional interaction artifacts and accessibility
+remain separate gates. Each window owns a bounded 256-row shaping cache so
+unchanged document lines do not re-enter platform layout on every keystroke;
+this cache is explicit backend state, not a global registry. During native resize,
 actual `NSView` bounds and GTK4 `DrawingArea` allocations flow back through
 `NativeViewInputRuntime::set_surface(...)`, rebuilding the shared layout, draw
 plan, hit targets and candidate-window geometry before the current frame is
@@ -132,9 +135,10 @@ These services do not complete either native host. The unified
 `GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
 fallback transport. Shared View rendering, click/scroll, keyboard focus,
 activation, Unicode keyboard/pointer range editing and first-pass IME composition now reach all
-three native window surfaces, but target screenshot capture, CJK interaction
-evidence and shaped-glyph/bidirectional hit testing remain required; entering or
-painting a native event loop alone is not system-complete evidence.
+three native window surfaces, including shaped proportional/bidirectional text
+geometry. Target screenshots, CJK interaction evidence and visual-order bidi
+navigation remain required; entering or painting a native event loop alone is
+not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error
@@ -225,21 +229,21 @@ targets. Textbox/TextEditor targets also route Left/Right/Home/End, Shift range
 selection, capture-backed pointer drags, Unicode replacement, Backspace and
 forward Delete through the shared character-indexed editor state. Multiline
 TextEditor Up/Down uses the same hard/soft visual rows as paint, caret,
-selection and pointer hit testing, preserving a preferred visual column across
+selection and pointer hit testing, preserving a preferred shaped x position across
 shorter rows. PageUp/PageDown moves the caret and viewport by the current
 visible-row count while preserving that column and Shift selection anchor.
 Win32 routes `VK_UP`/`VK_DOWN`/`VK_PRIOR`/`VK_NEXT` into those helpers; AppKit
 and GTK4 lower their arrow and page function keys to the same `NativeViewKey`
 path.
-The editor also keeps transient first visible visual row and column offsets
+The editor also keeps a transient first visible visual row and horizontal pixel offset
 inside each native window route. Win32 `WM_MOUSEWHEEL`, AppKit `scrollWheel:`
 and GTK4 controller scroll input move the shared vertical viewport; paint is
 bracketed by balanced clip commands, pointer hit testing includes both offsets,
-and subsequent text or keyboard edits reveal the caret. The column offset is
+and subsequent text or keyboard edits reveal the caret. The horizontal offset is
 active only for `TextWrap::NoWrap` and resets in wrapped modes. This path
 belongs to `textbox` and does not enable the general `scroll` feature.
 During a capture-backed selection drag, pointer updates beyond a text edge move
-the matching row or no-wrap column offset by one visual step, clamp hit testing
+the matching row or no-wrap horizontal offset by one visual step, clamp hit testing
 to the newly visible edge and emit the normal typed selection message. AppKit
 `mouseDragged:`, GTK4 motion and Win32 capture all consume this shared geometry;
 backends do not own a separate drag-scroll state.

@@ -572,11 +572,11 @@ fn main() -> ZsuiResult<()> {
             .collect::<Vec<_>>()
             .join("\n");
         let horizontal_smoke_text = format!(
-            "horizontal-start-{}-HORIZONTAL-END",
+            "WiWi-עברית-中文-horizontal-start-{}-HORIZONTAL-END",
             "viewport-fill-".repeat(8)
         );
         let grapheme_smoke_text = "G-\u{65}\u{301}👩🏽‍💻";
-        let mut options = NativeWindowSmokeRunOptions::new(1_600)
+        let mut options = NativeWindowSmokeRunOptions::new(2_000)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_text_input(smoke_text)
             .native_view_drag(Point { x: 360, y: 220 }, Point { x: 360, y: 100 })

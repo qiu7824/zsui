@@ -16,12 +16,15 @@ use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
 use crate::native_input_visuals::{
-    decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
-    native_text_drag_viewport_for_point, native_text_first_visible_column_for_caret,
-    native_text_first_visible_row_for_caret, native_text_index_for_point_in_viewport,
-    native_text_index_for_vertical_move, native_text_index_for_vertical_page_move,
-    native_text_scroll_visual_rows, native_text_visual_target, native_text_wheel_row_delta,
-    NativeTextVisualDirection,
+    decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
+    native_text_drag_viewport_for_point_with_backend,
+    native_text_first_visible_row_for_caret_with_backend,
+    native_text_horizontal_scroll_for_caret_with_backend,
+    native_text_index_for_point_in_viewport_with_backend,
+    native_text_index_for_vertical_move_with_backend,
+    native_text_index_for_vertical_page_move_with_backend,
+    native_text_scroll_visual_rows_with_backend, native_text_visual_target,
+    native_text_wheel_row_delta, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -1868,6 +1871,7 @@ fn window_draw_plan(hwnd: HWND) -> Option<NativeDrawPlan> {
 #[derive(Debug, Clone)]
 pub struct WindowsWin32ViewInputRoute {
     interaction_plan: ViewInteractionPlan,
+    text_shaping: crate::native_input_visuals::NativeTextShapingBackend,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
     focused_widget: Option<crate::WidgetId>,
@@ -1949,6 +1953,7 @@ impl WindowsWin32ViewInputRoute {
         #[allow(unused_mut)]
         let mut route = Self {
             interaction_plan,
+            text_shaping: crate::native_input_visuals::NativeTextShapingBackend::windows_gdi(),
             ui_command_view: Some(ui_command_view),
             live_view: None,
             focused_widget: None,
@@ -2029,6 +2034,7 @@ impl WindowsWin32ViewInputRoute {
         #[allow(unused_mut)]
         let mut route = Self {
             interaction_plan: live_view.interaction_plan(),
+            text_shaping: crate::native_input_visuals::NativeTextShapingBackend::windows_gdi(),
             ui_command_view: None,
             live_view: Some(live_view),
             focused_widget: None,
@@ -2259,33 +2265,36 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let index = native_text_index_for_point_in_viewport(
+        let index = native_text_index_for_point_in_viewport_with_backend(
             visual_target,
             &value,
             point,
             state.first_visible_visual_row,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
-        state.preferred_visual_column = None;
-        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+        state.preferred_visual_x = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
-        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         self.text_edit = Some(state);
         self.text_drag = Some(NativeTextDragState {
@@ -2424,43 +2433,47 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == drag.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let drag_viewport = native_text_drag_viewport_for_point(
+        let drag_viewport = native_text_drag_viewport_for_point_with_backend(
             visual_target,
             &value,
             point,
             state.first_visible_visual_row,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         state.first_visible_visual_row = drag_viewport.first_visible_row;
-        state.first_visible_visual_column = drag_viewport.first_visible_column;
-        let index = native_text_index_for_point_in_viewport(
+        state.horizontal_scroll_px = drag_viewport.horizontal_scroll_px;
+        let index = native_text_index_for_point_in_viewport_with_backend(
             visual_target,
             &value,
             drag_viewport.point,
             state.first_visible_visual_row,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
-        state.preferred_visual_column = None;
-        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+        state.preferred_visual_x = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
-        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         self.text_edit = Some(state);
         report.handled = true;
@@ -2479,7 +2492,7 @@ impl WindowsWin32ViewInputRoute {
         if drag_viewport.scrolled {
             report.events.push(format!(
                 "win32_view_text_drag_scroll:{}:{}:{}",
-                drag.widget.0, state.first_visible_visual_row, state.first_visible_visual_column
+                drag.widget.0, state.first_visible_visual_row, state.horizontal_scroll_px
             ));
         }
         #[cfg(feature = "textbox")]
@@ -3057,22 +3070,24 @@ impl WindowsWin32ViewInputRoute {
             return report;
         }
 
-        state.preferred_visual_column = None;
-        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+        state.preferred_visual_x = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
             target,
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
             self.widget_text_wrap(widget),
             self.dpi,
+            &self.text_shaping,
         );
-        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             target,
             &value,
             state.selection.caret,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(widget),
             self.dpi,
+            &self.text_shaping,
         );
         self.text_edit = Some(state);
         #[cfg(feature = "textbox")]
@@ -3824,35 +3839,37 @@ impl WindowsWin32ViewInputRoute {
                     .filter(|state| state.widget == widget)
                     .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
                 let edit = if let Some((direction, page)) = visual_navigation {
-                    let (target_index, preferred_column) = if page {
-                        let (target_index, preferred_column, first_visible_row) =
-                            native_text_index_for_vertical_page_move(
+                    let (target_index, preferred_x) = if page {
+                        let (target_index, preferred_x, first_visible_row) =
+                            native_text_index_for_vertical_page_move_with_backend(
                                 target,
                                 &value,
                                 state.selection.caret,
                                 direction,
-                                state.preferred_visual_column,
+                                state.preferred_visual_x,
                                 state.first_visible_visual_row,
                                 self.widget_text_wrap(widget),
                                 self.dpi,
+                                &self.text_shaping,
                             );
                         state.first_visible_visual_row = first_visible_row;
-                        (target_index, preferred_column)
+                        (target_index, preferred_x)
                     } else {
-                        native_text_index_for_vertical_move(
+                        native_text_index_for_vertical_move_with_backend(
                             target,
                             &value,
                             state.selection.caret,
                             direction,
-                            state.preferred_visual_column,
+                            state.preferred_visual_x,
                             self.widget_text_wrap(widget),
                             self.dpi,
+                            &self.text_shaping,
                         )
                     };
-                    state.preferred_visual_column = Some(preferred_column);
+                    state.preferred_visual_x = Some(preferred_x);
                     move_selection_to(&value, &mut state.selection, target_index, shift)
                 } else {
-                    state.preferred_visual_column = None;
+                    state.preferred_visual_x = None;
                     move_selection(
                         &value,
                         &mut state.selection,
@@ -3862,22 +3879,25 @@ impl WindowsWin32ViewInputRoute {
                     )
                 };
                 if !visual_navigation.is_some_and(|(_, page)| page) {
-                    state.first_visible_visual_row = native_text_first_visible_row_for_caret(
-                        target,
-                        &value,
-                        state.selection.caret,
-                        state.first_visible_visual_row,
-                        self.widget_text_wrap(widget),
-                        self.dpi,
-                    );
+                    state.first_visible_visual_row =
+                        native_text_first_visible_row_for_caret_with_backend(
+                            target,
+                            &value,
+                            state.selection.caret,
+                            state.first_visible_visual_row,
+                            self.widget_text_wrap(widget),
+                            self.dpi,
+                            &self.text_shaping,
+                        );
                 }
-                state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+                state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
                     target,
                     &value,
                     state.selection.caret,
-                    state.first_visible_visual_column,
+                    state.horizontal_scroll_px,
                     self.widget_text_wrap(widget),
                     self.dpi,
+                    &self.text_shaping,
                 );
                 self.text_edit = Some(state);
                 report.handled = edit.handled;
@@ -4787,13 +4807,14 @@ impl WindowsWin32ViewInputRoute {
                 .filter(|state| state.widget == target.widget)
                 .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
             let previous = state.first_visible_visual_row;
-            state.first_visible_visual_row = native_text_scroll_visual_rows(
+            state.first_visible_visual_row = native_text_scroll_visual_rows_with_backend(
                 target,
                 &value,
                 previous,
                 native_text_wheel_row_delta(delta_y),
                 self.widget_text_wrap(target.widget),
                 self.dpi,
+                &self.text_shaping,
             );
             self.text_edit = Some(state);
             report.handled = true;
@@ -5136,7 +5157,7 @@ impl WindowsWin32ViewInputRoute {
         if target.kind != crate::ViewHitTargetKind::TextEditor
             || self.widget_text_wrap(target.widget) != crate::TextWrap::NoWrap
         {
-            state.first_visible_visual_column = 0;
+            state.horizontal_scroll_px = 0;
         }
         self.text_edit = Some(state);
     }
@@ -6010,22 +6031,24 @@ impl WindowsWin32ViewInputRoute {
         };
 
         if result.selection_changed || result.text_changed {
-            state.preferred_visual_column = None;
-            state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+            state.preferred_visual_x = None;
+            state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
                 target,
                 &value,
                 state.selection.caret,
                 state.first_visible_visual_row,
                 self.widget_text_wrap(widget),
                 self.dpi,
+                &self.text_shaping,
             );
-            state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+            state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
                 target,
                 &value,
                 state.selection.caret,
-                state.first_visible_visual_column,
+                state.horizontal_scroll_px,
                 self.widget_text_wrap(widget),
                 self.dpi,
+                &self.text_shaping,
             );
         }
         self.text_edit = Some(state);
@@ -6623,15 +6646,16 @@ impl WindowsWin32ViewInputRoute {
         if let (Some(target), Some(state)) = (self.focused_target(), self.text_edit) {
             if let Some(value) = self.widget_display_text_value(target.widget) {
                 let target = native_text_visual_target(target, &self.interaction_plan);
-                decorate_native_text_edit_visuals_in_viewport(
+                decorate_native_text_edit_visuals_in_viewport_with_backend(
                     &mut plan,
                     target,
                     &value,
                     state.selection.clamp(&value),
                     state.first_visible_visual_row,
-                    state.first_visible_visual_column,
+                    state.horizontal_scroll_px,
                     self.widget_text_wrap(target.widget),
                     self.dpi,
+                    &self.text_shaping,
                 );
             }
         }
@@ -10016,10 +10040,11 @@ mod tests {
         let clicked = route.dispatch_pointer_down(left, false);
 
         assert_eq!(revealed.text_caret, Some(10));
-        assert!(revealed_plan.commands.iter().any(
-            |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "789"),
-        ));
-        assert_eq!(clicked.text_caret, Some(7));
+        assert!(revealed_plan.commands.iter().any(|command| {
+            matches!(command, crate::NativeDrawCommand::Text(text)
+                if text.text == "0123456789" && text.bounds.x < target.bounds.x + 8)
+        }));
+        assert_eq!(clicked.text_caret, Some(6));
     }
 
     #[test]
@@ -10174,8 +10199,20 @@ mod tests {
         );
 
         let pressed = route.dispatch_pointer_down(crate::Point { x: 16, y: 12 }, false);
-        let dragged = route.dispatch_pointer_move(crate::Point { x: 32, y: 12 });
-        let released = route.dispatch_pointer_up(crate::Point { x: 32, y: 12 });
+        let shaped = crate::windows_gdi_renderer::shape_windows_gdi_text_line("A中文Z")
+            .expect("Windows text geometry should use the same shaped line as drawing");
+        let after_chinese = shaped
+            .carets
+            .iter()
+            .find(|caret| caret.index == 3)
+            .expect("the shaped line should expose the grapheme boundary after 中文")
+            .primary_x;
+        let drag_point = crate::Point {
+            x: 8 + after_chinese,
+            y: 12,
+        };
+        let dragged = route.dispatch_pointer_move(drag_point);
+        let released = route.dispatch_pointer_up(drag_point);
 
         assert!(pressed.handled);
         assert_eq!(pressed.pointer_down_count, 1);

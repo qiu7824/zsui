@@ -6,19 +6,19 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 
 ## Current Completion
 
-ZSUI is roughly 62% complete as a standalone framework product, including the
+ZSUI is roughly 63% complete as a standalone framework product, including the
 still-scaffolded mobile targets. The desktop-only v0.2 native application
-closure is roughly 73% complete. Component-level milestones must not be used as
+closure is roughly 74% complete. Component-level milestones must not be used as
 overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
 - Component library: about 93% complete (45 first-pass runtime surfaces out of
   48 catalogued component families).
-- Minimal native window runtime: about 86% complete.
+- Minimal native window runtime: about 88% complete.
 - Feature-pruned architecture: about 55% complete.
-- Rust-first API model: about 88% complete.
-- Full desktop native host implementation: about 91% complete; product
+- Rust-first API model: about 89% complete.
+- Full desktop native host implementation: about 93% complete; product
   readiness remains lower until AppKit and GTK4 target evidence exists.
 - Android and Harmony: about 32% complete.
 - Product adapter/runtime harness: about 67% complete.
@@ -298,10 +298,13 @@ can dispatch those selection messages into reusable command IDs. Win32 Up/Down
 key routing can move selection between list rows and records keyboard list
 selection in native smoke. Win32 `WM_MOUSEWHEEL` can route into typed
 `ScrollBy` events for `scroll` containers and reusable command IDs. Broader
-touch/inertial pointer routing, shaped-glyph/bidirectional caret geometry and
-macOS/Linux target input evidence are still pending. Shared text-capable
-controls already keep navigation, deletion, pointer hits, visual wrapping and
-IME marked selections on Unicode extended-grapheme boundaries.
+touch/inertial pointer routing, visual-order bidirectional Left/Right navigation
+and macOS/Linux target input evidence are still pending. Shared text-capable
+controls keep navigation, deletion, pointer hits, visual wrapping and IME marked
+selections on Unicode extended-grapheme boundaries; Uniscribe, Core Text and
+Pango provide the proportional advances, visual cluster boxes and strong/weak
+caret offsets consumed by paint, selection, hit testing, wrap, horizontal reveal
+and candidate-window anchoring.
 The feature-gated `combo_box(...)` owns explicit selected and expanded state,
 emits typed selection/expansion messages, and paints its popup in a final
 overlay pass so later layout siblings cannot cover it. Overlay option hit

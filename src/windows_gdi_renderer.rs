@@ -19,6 +19,14 @@ use windows_sys::Win32::{
         PS_SOLID, SRCCOPY,
     },
 };
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+use windows_sys::Win32::{
+    Globalization::{
+        ScriptStringAnalyse, ScriptStringCPtoX, ScriptStringFree, ScriptString_pSize, SSA_BREAK,
+        SSA_FALLBACK, SSA_GLYPHS, SSA_LINK,
+    },
+    Graphics::Gdi::{CreateCompatibleDC, DeleteDC},
+};
 
 #[allow(non_camel_case_types)]
 type HPAINTBUFFER = *mut c_void;
@@ -624,6 +632,166 @@ impl TextLayout for WindowsGdiTextLayout {
                 text: text.to_string(),
                 bounds,
             }]
+        }
+    }
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+pub(crate) fn shape_windows_gdi_text_line(
+    text: &str,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    use crate::native_input_visuals::{
+        NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
+    };
+
+    if text.is_empty() {
+        return None;
+    }
+    let dc = WindowsGdiOwnedMemoryDc::new()?;
+    let style = WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle::body());
+    with_font(dc.0, &style, |font_dc| {
+        let wide = text.encode_utf16().collect::<Vec<_>>();
+        let character_count = i32::try_from(wide.len()).ok()?;
+        let glyph_capacity = character_count
+            .saturating_add(character_count / 2)
+            .saturating_add(16);
+        let mut analysis = std::ptr::null_mut();
+        let result = unsafe {
+            ScriptStringAnalyse(
+                font_dc,
+                wide.as_ptr().cast(),
+                character_count,
+                glyph_capacity,
+                -1,
+                SSA_GLYPHS | SSA_FALLBACK | SSA_LINK | SSA_BREAK,
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                &mut analysis,
+            )
+        };
+        if result < 0 || analysis.is_null() {
+            return None;
+        }
+        let analysis = WindowsUniscribeAnalysis(analysis);
+        let size = unsafe { ScriptString_pSize(analysis.0) };
+        if size.is_null() {
+            return None;
+        }
+        let boundaries = crate::native_text_edit::grapheme_boundaries(text);
+        let utf16_offsets = boundaries
+            .iter()
+            .map(|index| {
+                i32::try_from(
+                    text.chars()
+                        .take(*index)
+                        .map(char::len_utf16)
+                        .sum::<usize>(),
+                )
+                .ok()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let mut clusters = Vec::with_capacity(boundaries.len().saturating_sub(1));
+        for (scalar, utf16) in boundaries.windows(2).zip(utf16_offsets.windows(2)) {
+            let mut start_x = 0;
+            let mut end_x = 0;
+            let start_result = unsafe { ScriptStringCPtoX(analysis.0, utf16[0], 0, &mut start_x) };
+            let end_result =
+                unsafe { ScriptStringCPtoX(analysis.0, utf16[1].saturating_sub(1), 1, &mut end_x) };
+            if start_result < 0 || end_result < 0 {
+                return None;
+            }
+            clusters.push(NativeShapedTextCluster {
+                start: scalar[0],
+                end: scalar[1],
+                start_x,
+                end_x,
+            });
+        }
+        let mut carets = Vec::with_capacity(boundaries.len());
+        for (position, (index, utf16)) in boundaries
+            .iter()
+            .copied()
+            .zip(utf16_offsets.iter().copied())
+            .enumerate()
+        {
+            let mut leading = 0;
+            let leading_result = if utf16 < character_count {
+                unsafe { ScriptStringCPtoX(analysis.0, utf16, 0, &mut leading) }
+            } else {
+                unsafe {
+                    ScriptStringCPtoX(
+                        analysis.0,
+                        character_count.saturating_sub(1),
+                        1,
+                        &mut leading,
+                    )
+                }
+            };
+            if leading_result < 0 {
+                return None;
+            }
+            let mut trailing = leading;
+            if position > 0 {
+                let previous_utf16 = utf16_offsets[position - 1];
+                let trailing_result = unsafe {
+                    ScriptStringCPtoX(
+                        analysis.0,
+                        utf16.saturating_sub(1).max(previous_utf16),
+                        1,
+                        &mut trailing,
+                    )
+                };
+                if trailing_result < 0 {
+                    return None;
+                }
+            }
+            carets.push(NativeShapedTextCaret {
+                index,
+                primary_x: if position == 0 { leading } else { trailing },
+                secondary_x: leading,
+            });
+        }
+        let width = unsafe { (*size).cx };
+        NativeShapedTextLine::new(width, clusters, carets)
+    })
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+struct WindowsGdiOwnedMemoryDc(HDC);
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+impl WindowsGdiOwnedMemoryDc {
+    fn new() -> Option<Self> {
+        let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+        (!dc.is_null()).then_some(Self(dc))
+    }
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+impl Drop for WindowsGdiOwnedMemoryDc {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                DeleteDC(self.0);
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+struct WindowsUniscribeAnalysis(*mut c_void);
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+impl Drop for WindowsUniscribeAnalysis {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                ScriptStringFree(&mut self.0);
+            }
         }
     }
 }
@@ -1299,6 +1467,35 @@ mod tests {
         assert_eq!(
             text_flags(&value, true),
             DT_NOPREFIX | DT_CENTER | DT_WORDBREAK | DT_CALCRECT
+        );
+    }
+
+    #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+    #[test]
+    fn uniscribe_shaping_reports_proportional_and_bidirectional_geometry() {
+        let proportional = shape_windows_gdi_text_line("iiiiWW")
+            .expect("Uniscribe should shape Segoe UI text on Windows");
+        assert_eq!(proportional.clusters.len(), 6);
+        assert!(
+            proportional.clusters[0].end_x - proportional.clusters[0].start_x
+                < proportional.clusters[4].end_x - proportional.clusters[4].start_x
+        );
+
+        let mixed = shape_windows_gdi_text_line("abc אבג 123")
+            .expect("Uniscribe should shape mixed-direction text");
+        assert!(
+            mixed
+                .clusters
+                .iter()
+                .any(|cluster| cluster.start_x > cluster.end_x),
+            "RTL clusters should retain their visual direction"
+        );
+        assert!(
+            mixed
+                .carets
+                .iter()
+                .any(|caret| caret.primary_x != caret.secondary_x),
+            "a bidi boundary should expose strong and weak caret positions"
         );
     }
 

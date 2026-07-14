@@ -31,6 +31,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
     drawing_area.set_vexpand(true);
     drawing_area.set_focusable(true);
     let plan = Rc::new(RefCell::new(plan));
+    #[cfg(feature = "text-input-core")]
+    runtime.use_gtk_text_shaping(drawing_area.pango_context());
     runtime.defer_app_command_execution();
     let runtime = Rc::new(RefCell::new(runtime));
     let runtime_timer = Rc::new(RefCell::new(None));
@@ -787,6 +789,66 @@ impl TextLayout for LinuxGtkTextLayout {
                 bounds,
             }]
         }
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+pub(crate) fn shape_linux_gtk_text_line(
+    context: &gtk::pango::Context,
+    text: &str,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    use crate::native_input_visuals::{
+        NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
+    };
+
+    if text.is_empty() {
+        return None;
+    }
+    let style = TextStyle::line("Cantarell", 14.0, Color::rgb(0, 0, 0));
+    let layout = gtk::pango::Layout::new(context);
+    configure_pango_layout(&layout, text, &style, None);
+    let boundaries = crate::native_text_edit::grapheme_boundaries(text);
+    let byte_offsets = boundaries
+        .iter()
+        .map(|index| i32::try_from(crate::native_text_edit::char_to_byte_index(text, *index)).ok())
+        .collect::<Option<Vec<_>>>()?;
+    let carets = boundaries
+        .iter()
+        .copied()
+        .zip(byte_offsets.iter().copied())
+        .map(|(index, byte)| {
+            let (strong, weak) = layout.cursor_pos(byte);
+            NativeShapedTextCaret {
+                index,
+                primary_x: pango_coordinate(strong.x()),
+                secondary_x: pango_coordinate(weak.x()),
+            }
+        })
+        .collect::<Vec<_>>();
+    let clusters = boundaries
+        .windows(2)
+        .zip(byte_offsets.iter().copied())
+        .map(|(scalar, byte)| {
+            let position = layout.index_to_pos(byte);
+            NativeShapedTextCluster {
+                start: scalar[0],
+                end: scalar[1],
+                start_x: pango_coordinate(position.x()),
+                end_x: pango_coordinate(position.x().saturating_add(position.width())),
+            }
+        })
+        .collect::<Vec<_>>();
+    let (width, _) = layout.pixel_size();
+    NativeShapedTextLine::new(width, clusters, carets)
+}
+
+#[cfg(feature = "text-input-core")]
+fn pango_coordinate(value: i32) -> i32 {
+    let scale = gtk::pango::SCALE.max(1);
+    if value >= 0 {
+        value.saturating_add(scale / 2) / scale
+    } else {
+        value.saturating_sub(scale / 2) / scale
     }
 }
 

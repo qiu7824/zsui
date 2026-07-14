@@ -58,9 +58,9 @@ impl From<NativeTextSelection> for crate::ZsTextSelection {
 pub(crate) struct NativeTextEditState {
     pub widget: WidgetId,
     pub selection: NativeTextSelection,
-    pub preferred_visual_column: Option<usize>,
+    pub preferred_visual_x: Option<i32>,
     pub first_visible_visual_row: usize,
-    pub first_visible_visual_column: usize,
+    pub horizontal_scroll_px: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,18 +74,18 @@ impl NativeTextEditState {
         Self {
             widget,
             selection: NativeTextSelection::collapsed(char_count(value)),
-            preferred_visual_column: None,
+            preferred_visual_x: None,
             first_visible_visual_row: 0,
-            first_visible_visual_column: 0,
+            horizontal_scroll_px: 0,
         }
     }
 
     pub(crate) fn clamp(&mut self, value: &str) {
         let clamped = self.selection.clamp(value);
         if clamped != self.selection {
-            self.preferred_visual_column = None;
+            self.preferred_visual_x = None;
             self.first_visible_visual_row = 0;
-            self.first_visible_visual_column = 0;
+            self.horizontal_scroll_px = 0;
         }
         self.selection = clamped;
     }
@@ -453,6 +453,7 @@ pub(crate) fn next_grapheme_boundary(value: &str, index: usize) -> usize {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn grapheme_count_in_range(value: &str, start: usize, end: usize) -> usize {
     let start = start.min(char_count(value));
     let end = end.min(char_count(value)).max(start);
@@ -462,6 +463,7 @@ pub(crate) fn grapheme_count_in_range(value: &str, start: usize, end: usize) -> 
         .count()
 }
 
+#[cfg(test)]
 pub(crate) fn grapheme_index_for_column(
     value: &str,
     start: usize,

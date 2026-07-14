@@ -373,8 +373,8 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "minimal_native_window_runtime",
-            percent_complete: 86,
-            status_name: "win32_stateful_view_toggle_dual_command_and_live_shell_ready",
+            percent_complete: 88,
+            status_name: "win32_stateful_view_shaped_text_dual_command_and_live_shell_ready",
             source_path: "src/native.rs",
             missing_before_complete: vec![
                 "real native menus",
@@ -382,7 +382,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "clipboard",
                 "broader pointer dispatch into ViewEventCx",
                 "touch and inertial scroll dispatch",
-                "shaped-glyph advances and bidirectional caret hit testing",
+                "visual-order bidirectional Left/Right caret navigation",
                 "generic calculator runtime route",
                 "macOS/Linux target input and IME interaction proof",
                 "macOS/Linux target smoke artifacts",
@@ -401,7 +401,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "rust_first_api_model",
-            percent_complete: 88,
+            percent_complete: 89,
             status_name: "typed_state_semantic_icons_composite_shells_and_content_typestate_ready",
             source_path: "src/workbench.rs",
             missing_before_complete: vec![
@@ -410,19 +410,19 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "keep platform API bindings behind concrete backend needs",
                 "keep the public facade small while splitting heavier crates/modules",
                 "full typed message coverage across menus and advanced text/list input",
-                "connect touch/inertial pointer input and shaped bidirectional text geometry to ViewEventCx",
+                "connect touch/inertial pointer input and visual-order bidirectional caret navigation to ViewEventCx",
                 "complete Px/Dp/Dpi coverage",
                 "typestate AppBuilder lifecycle constraints only where they prevent real invalid states",
             ],
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 91,
-            status_name: "three_native_event_loops_renderers_unicode_text_selection_focus_visuals_and_resize",
+            percent_complete: 93,
+            status_name: "three_native_event_loops_renderers_shaped_text_selection_focus_visuals_and_resize",
             source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
-                "AppKit shaped-glyph and bidirectional caret hit testing plus richer pointer dispatch",
-                "GTK4 shaped-glyph and bidirectional caret hit testing plus richer pointer dispatch",
+                "AppKit proportional and bidirectional text target interaction proof plus richer pointer dispatch",
+                "GTK4 proportional and bidirectional text target interaction proof plus richer pointer dispatch",
                 "macOS target screenshot and interaction artifacts",
                 "Linux Wayland/X11 screenshot and interaction artifacts",
                 "richer Win32 pointer/IME events",

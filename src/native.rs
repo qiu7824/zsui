@@ -7,12 +7,16 @@ use std::time::{Duration, Instant};
 use crate::workbench::ZsWorkbenchSpec;
 
 use crate::native_input_visuals::{
-    decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
-    native_text_drag_viewport_for_point, native_text_first_visible_column_for_caret,
-    native_text_first_visible_row_for_caret, native_text_index_for_point_in_viewport,
-    native_text_index_for_vertical_move, native_text_index_for_vertical_page_move,
-    native_text_scroll_visual_rows, native_text_visual_geometry_in_viewport,
-    native_text_visual_target, native_text_wheel_row_delta, NativeTextVisualDirection,
+    decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
+    native_text_drag_viewport_for_point_with_backend,
+    native_text_first_visible_row_for_caret_with_backend,
+    native_text_horizontal_scroll_for_caret_with_backend,
+    native_text_index_for_point_in_viewport_with_backend,
+    native_text_index_for_vertical_move_with_backend,
+    native_text_index_for_vertical_page_move_with_backend,
+    native_text_scroll_visual_rows_with_backend,
+    native_text_visual_geometry_in_viewport_with_backend, native_text_visual_target,
+    native_text_wheel_row_delta, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -1116,6 +1120,7 @@ impl NativeWindowSmokeRunReport {
 pub(crate) struct NativeViewInputRuntime {
     surface: Option<Rect>,
     dpi: Dpi,
+    text_shaping: crate::native_input_visuals::NativeTextShapingBackend,
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
@@ -1409,6 +1414,7 @@ impl NativeViewInputRuntime {
         let mut runtime = Self {
             surface: Some(surface),
             dpi: Dpi::standard(),
+            text_shaping: crate::native_input_visuals::NativeTextShapingBackend::default(),
             interaction_plan,
             ui_command_view,
             live_view,
@@ -1480,6 +1486,25 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "toast")]
         runtime.sync_toast_runtime(now);
         runtime
+    }
+
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-appkit",
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn use_appkit_text_shaping(&mut self) {
+        self.text_shaping = crate::native_input_visuals::NativeTextShapingBackend::appkit();
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-gtk",
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn use_gtk_text_shaping(&mut self, context: gtk4::pango::Context) {
+        self.text_shaping = crate::native_input_visuals::NativeTextShapingBackend::gtk(context);
     }
 
     fn hit_target_count(&self) -> usize {
@@ -1628,20 +1653,21 @@ impl NativeViewInputRuntime {
             .filter(|state| state.widget == target.widget)
             .map(|state| state.first_visible_visual_row)
             .unwrap_or(0);
-        let first_visible_column = self
+        let horizontal_scroll_px = self
             .text_edit
             .filter(|state| state.widget == target.widget)
-            .map(|state| state.first_visible_visual_column)
+            .map(|state| state.horizontal_scroll_px)
             .unwrap_or(0);
         Some(
-            native_text_visual_geometry_in_viewport(
+            native_text_visual_geometry_in_viewport_with_backend(
                 target,
                 &value,
                 selection,
                 first_visible_row,
-                first_visible_column,
+                horizontal_scroll_px,
                 self.widget_text_wrap(target.widget),
                 self.dpi,
+                &self.text_shaping,
             )
             .caret,
         )
@@ -1758,33 +1784,36 @@ impl NativeViewInputRuntime {
             .current_interaction_plan()
             .map(|interaction| native_text_visual_target(target, &interaction))
             .unwrap_or(target);
-        let index = native_text_index_for_point_in_viewport(
+        let index = native_text_index_for_point_in_viewport_with_backend(
             visual_target,
             &value,
             point,
             state.first_visible_visual_row,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
-        state.preferred_visual_column = None;
-        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+        state.preferred_visual_x = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
-        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         self.text_edit = Some(state);
         self.text_drag = Some(NativeTextDragState {
@@ -1922,43 +1951,47 @@ impl NativeViewInputRuntime {
             .current_interaction_plan()
             .map(|interaction| native_text_visual_target(target, &interaction))
             .unwrap_or(target);
-        let drag_viewport = native_text_drag_viewport_for_point(
+        let drag_viewport = native_text_drag_viewport_for_point_with_backend(
             visual_target,
             &value,
             point,
             state.first_visible_visual_row,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         state.first_visible_visual_row = drag_viewport.first_visible_row;
-        state.first_visible_visual_column = drag_viewport.first_visible_column;
-        let index = native_text_index_for_point_in_viewport(
+        state.horizontal_scroll_px = drag_viewport.horizontal_scroll_px;
+        let index = native_text_index_for_point_in_viewport_with_backend(
             visual_target,
             &value,
             drag_viewport.point,
             state.first_visible_visual_row,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
-        state.preferred_visual_column = None;
-        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+        state.preferred_visual_x = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
-        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             visual_target,
             &value,
             state.selection.caret,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(target.widget),
             self.dpi,
+            &self.text_shaping,
         );
         self.text_edit = Some(state);
         report.handled = true;
@@ -3130,35 +3163,37 @@ impl NativeViewInputRuntime {
                     .filter(|state| state.widget == widget)
                     .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
                 let edit = if let Some((direction, page)) = visual_navigation {
-                    let (target_index, preferred_column) = if page {
-                        let (target_index, preferred_column, first_visible_row) =
-                            native_text_index_for_vertical_page_move(
+                    let (target_index, preferred_x) = if page {
+                        let (target_index, preferred_x, first_visible_row) =
+                            native_text_index_for_vertical_page_move_with_backend(
                                 target,
                                 &value,
                                 state.selection.caret,
                                 direction,
-                                state.preferred_visual_column,
+                                state.preferred_visual_x,
                                 state.first_visible_visual_row,
                                 self.widget_text_wrap(widget),
                                 self.dpi,
+                                &self.text_shaping,
                             );
                         state.first_visible_visual_row = first_visible_row;
-                        (target_index, preferred_column)
+                        (target_index, preferred_x)
                     } else {
-                        native_text_index_for_vertical_move(
+                        native_text_index_for_vertical_move_with_backend(
                             target,
                             &value,
                             state.selection.caret,
                             direction,
-                            state.preferred_visual_column,
+                            state.preferred_visual_x,
                             self.widget_text_wrap(widget),
                             self.dpi,
+                            &self.text_shaping,
                         )
                     };
-                    state.preferred_visual_column = Some(preferred_column);
+                    state.preferred_visual_x = Some(preferred_x);
                     move_selection_to(&value, &mut state.selection, target_index, shift)
                 } else {
-                    state.preferred_visual_column = None;
+                    state.preferred_visual_x = None;
                     move_selection(
                         &value,
                         &mut state.selection,
@@ -3168,22 +3203,25 @@ impl NativeViewInputRuntime {
                     )
                 };
                 if !visual_navigation.is_some_and(|(_, page)| page) {
-                    state.first_visible_visual_row = native_text_first_visible_row_for_caret(
-                        target,
-                        &value,
-                        state.selection.caret,
-                        state.first_visible_visual_row,
-                        self.widget_text_wrap(widget),
-                        self.dpi,
-                    );
+                    state.first_visible_visual_row =
+                        native_text_first_visible_row_for_caret_with_backend(
+                            target,
+                            &value,
+                            state.selection.caret,
+                            state.first_visible_visual_row,
+                            self.widget_text_wrap(widget),
+                            self.dpi,
+                            &self.text_shaping,
+                        );
                 }
-                state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+                state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
                     target,
                     &value,
                     state.selection.caret,
-                    state.first_visible_visual_column,
+                    state.horizontal_scroll_px,
                     self.widget_text_wrap(widget),
                     self.dpi,
+                    &self.text_shaping,
                 );
                 self.text_edit = Some(state);
                 report.handled = edit.handled;
@@ -3966,22 +4004,24 @@ impl NativeViewInputRuntime {
         if !edit.handled {
             return report;
         }
-        state.preferred_visual_column = None;
-        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+        state.preferred_visual_x = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
             target,
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
             self.widget_text_wrap(widget),
             self.dpi,
+            &self.text_shaping,
         );
-        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
             target,
             &value,
             state.selection.caret,
-            state.first_visible_visual_column,
+            state.horizontal_scroll_px,
             self.widget_text_wrap(widget),
             self.dpi,
+            &self.text_shaping,
         );
         report.handled = true;
         report.text_selection_changed = edit.selection_changed;
@@ -4133,17 +4173,17 @@ impl NativeViewInputRuntime {
                 .filter(|state| state.widget == preedit.widget)
                 .map(|state| state.first_visible_visual_row)
                 .unwrap_or(0);
-            let first_visible_visual_column = self
+            let horizontal_scroll_px = self
                 .text_edit
                 .filter(|state| state.widget == preedit.widget)
-                .map(|state| state.first_visible_visual_column)
+                .map(|state| state.horizontal_scroll_px)
                 .unwrap_or(0);
             self.text_edit = Some(NativeTextEditState {
                 widget: preedit.widget,
                 selection: preedit.replacement,
-                preferred_visual_column: None,
+                preferred_visual_x: None,
                 first_visible_visual_row,
-                first_visible_visual_column,
+                horizontal_scroll_px,
             });
         }
         let mut report = self.dispatch_text_input(text);
@@ -4278,13 +4318,14 @@ impl NativeViewInputRuntime {
                 .filter(|state| state.widget == target.widget)
                 .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
             let previous = state.first_visible_visual_row;
-            state.first_visible_visual_row = native_text_scroll_visual_rows(
+            state.first_visible_visual_row = native_text_scroll_visual_rows_with_backend(
                 target,
                 &value,
                 previous,
                 native_text_wheel_row_delta(delta_y),
                 self.widget_text_wrap(target.widget),
                 self.dpi,
+                &self.text_shaping,
             );
             self.text_edit = Some(state);
             report.handled = true;
@@ -4476,20 +4517,21 @@ impl NativeViewInputRuntime {
                 .filter(|state| state.widget == target.widget)
                 .map(|state| state.first_visible_visual_row)
                 .unwrap_or(0);
-            let first_visible_column = self
+            let horizontal_scroll_px = self
                 .text_edit
                 .filter(|state| state.widget == target.widget)
-                .map(|state| state.first_visible_visual_column)
+                .map(|state| state.horizontal_scroll_px)
                 .unwrap_or(0);
-            decorate_native_text_edit_visuals_in_viewport(
+            decorate_native_text_edit_visuals_in_viewport_with_backend(
                 &mut plan,
                 target,
                 &value,
                 selection,
                 first_visible_row,
-                first_visible_column,
+                horizontal_scroll_px,
                 self.widget_text_wrap(target.widget),
                 self.dpi,
+                &self.text_shaping,
             );
         }
         let mut plan = self.compose_ime_preedit(plan);
@@ -4770,7 +4812,7 @@ impl NativeViewInputRuntime {
         if target.kind != crate::ViewHitTargetKind::TextEditor
             || self.widget_text_wrap(target.widget) != crate::TextWrap::NoWrap
         {
-            state.first_visible_visual_column = 0;
+            state.horizontal_scroll_px = 0;
         }
         self.text_edit = Some(state);
     }
@@ -5766,22 +5808,24 @@ impl NativeViewInputRuntime {
         };
 
         if result.selection_changed || result.text_changed {
-            state.preferred_visual_column = None;
-            state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+            state.preferred_visual_x = None;
+            state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
                 target,
                 &value,
                 state.selection.caret,
                 state.first_visible_visual_row,
                 self.widget_text_wrap(widget),
                 self.dpi,
+                &self.text_shaping,
             );
-            state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+            state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
                 target,
                 &value,
                 state.selection.caret,
-                state.first_visible_visual_column,
+                state.horizontal_scroll_px,
                 self.widget_text_wrap(widget),
                 self.dpi,
+                &self.text_shaping,
             );
         }
         self.text_edit = Some(state);
@@ -9344,11 +9388,12 @@ mod tests {
 
         assert_eq!(revealed.text_caret, Some(10));
         assert!(revealed.redraw_plan.as_ref().is_some_and(|plan| {
-            plan.commands.iter().any(
-                |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "789"),
-            )
+            plan.commands.iter().any(|command| {
+                matches!(command, NativeDrawCommand::Text(text)
+                    if text.text == "0123456789" && text.bounds.x < target.bounds.x + 8)
+            })
         }));
-        assert_eq!(clicked.text_caret, Some(7));
+        assert_eq!(clicked.text_caret, Some(6));
     }
 
     #[cfg(feature = "textbox")]

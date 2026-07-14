@@ -1,4 +1,7 @@
-use std::cell::{Cell, RefCell};
+use std::{
+    cell::{Cell, RefCell},
+    ffi::c_void,
+};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
@@ -610,8 +613,10 @@ impl MacosAppKitDrawViewHost {
 pub(crate) fn install_macos_appkit_draw_plan(
     window: &objc2_app_kit::NSWindow,
     plan: NativeDrawPlan,
-    runtime: crate::native::NativeViewInputRuntime,
+    mut runtime: crate::native::NativeViewInputRuntime,
 ) -> MacosAppKitDrawViewHost {
+    #[cfg(feature = "text-input-core")]
+    runtime.use_appkit_text_shaping();
     let mtm = window.mtm();
     let frame = window
         .contentView()
@@ -678,6 +683,129 @@ impl TextLayout for MacosAppKitTextLayout {
             }]
         }
     }
+}
+
+#[cfg(feature = "text-input-core")]
+pub(crate) fn shape_macos_appkit_text_line(
+    text: &str,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    use crate::native_input_visuals::{
+        NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
+    };
+
+    if text.is_empty() {
+        return None;
+    }
+    let style = TextStyle::line(".AppleSystemUIFont", 14.0, Color::rgb(0, 0, 0));
+    let attributes = appkit_text_attributes(&style);
+    let dictionary: &NSDictionary<NSAttributedStringKey, AnyObject> = &attributes;
+    let string = NSString::from_str(text);
+    let attributed = unsafe {
+        NSAttributedString::initWithString_attributes(
+            NSAttributedString::alloc(),
+            &string,
+            Some(dictionary),
+        )
+    };
+    let line = unsafe {
+        CoreTextLine::from_create(CTLineCreateWithAttributedString(
+            Retained::as_ptr(&attributed).cast(),
+        ))?
+    };
+    let boundaries = crate::native_text_edit::grapheme_boundaries(text);
+    let utf16_offsets = boundaries
+        .iter()
+        .map(|index| {
+            isize::try_from(
+                text.chars()
+                    .take(*index)
+                    .map(char::len_utf16)
+                    .sum::<usize>(),
+            )
+            .ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let carets = boundaries
+        .iter()
+        .copied()
+        .zip(utf16_offsets.iter().copied())
+        .map(|(index, utf16)| {
+            let mut secondary = 0.0;
+            let primary = unsafe { CTLineGetOffsetForStringIndex(line.0, utf16, &mut secondary) };
+            NativeShapedTextCaret {
+                index,
+                primary_x: appkit_coordinate(primary),
+                secondary_x: appkit_coordinate(secondary),
+            }
+        })
+        .collect::<Vec<_>>();
+    let clusters = boundaries
+        .windows(2)
+        .zip(carets.windows(2))
+        .map(|(scalar, caret)| {
+            let (start_x, end_x) = caret[0].closest_cluster_edges(caret[1]);
+            NativeShapedTextCluster {
+                start: scalar[0],
+                end: scalar[1],
+                start_x,
+                end_x,
+            }
+        })
+        .collect::<Vec<_>>();
+    let width = unsafe {
+        CTLineGetTypographicBounds(
+            line.0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    }
+    .ceil();
+    NativeShapedTextLine::new(appkit_coordinate(width), clusters, carets)
+}
+
+#[cfg(feature = "text-input-core")]
+struct CoreTextLine(*const c_void);
+
+#[cfg(feature = "text-input-core")]
+impl CoreTextLine {
+    unsafe fn from_create(line: *const c_void) -> Option<Self> {
+        (!line.is_null()).then_some(Self(line))
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+impl Drop for CoreTextLine {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                CFRelease(self.0);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+#[link(name = "CoreText", kind = "framework")]
+unsafe extern "C" {
+    fn CTLineCreateWithAttributedString(attributed_string: *const c_void) -> *const c_void;
+    fn CTLineGetOffsetForStringIndex(
+        line: *const c_void,
+        char_index: isize,
+        secondary_offset: *mut f64,
+    ) -> f64;
+    fn CTLineGetTypographicBounds(
+        line: *const c_void,
+        ascent: *mut f64,
+        descent: *mut f64,
+        leading: *mut f64,
+    ) -> f64;
+}
+
+#[cfg(feature = "text-input-core")]
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFRelease(value: *const c_void);
 }
 
 struct MacosAppKitDrawSink {

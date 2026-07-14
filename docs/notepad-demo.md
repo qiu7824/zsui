@@ -21,16 +21,16 @@ framework architecture.
   hit geometry consume the same typed setting on all three hosts.
 - Multiline Up/Down navigation consumes those same visual hard/soft rows.
   PageUp/PageDown moves by the current visible-row count and scrolls the editor
-  viewport by the same page. Both retain the desired column when an intermediate
+  viewport by the same page. Both retain the desired shaped x position when an intermediate
   row is shorter; Shift keeps the application-owned anchor while extending the
   caret on all three hosts.
 - Long documents use an editor-owned visual-row viewport. Text paint is clipped
   to that viewport, pointer hit testing includes its first visible row, wheel
   input moves it, and edits or keyboard movement reveal the active caret again.
-  With `TextWrap::NoWrap`, the same transient viewport also tracks its first
-  visible column, so horizontal caret movement, paint, selection and pointer
-  hits stay aligned. Wrapped modes reset that column offset. A captured drag
-  beyond an editor edge advances the corresponding visual row or column by one
+  With `TextWrap::NoWrap`, the same transient viewport also tracks a horizontal
+  pixel offset, so caret movement, paint, selection and pointer hits stay aligned
+  for proportional and bidirectional text. Wrapped modes reset that offset. A captured drag
+  beyond an editor edge advances the corresponding visual row or horizontal offset by one
   step per pointer update and extends the same typed selection at the newly
   visible edge. This behavior does not enter application document state or
   require the general `scroll` feature.
@@ -39,6 +39,10 @@ framework architecture.
   keyboard navigation and pointer drag selection. The shared runtime keeps
   those scalar indices on Unicode extended-grapheme boundaries, so combining
   sequences and joined emoji move, delete, wrap and hit-test as one unit.
+- Win32 Uniscribe, AppKit Core Text and GTK4 Pango shape each visual line. Their
+  proportional advances, RTL cluster boxes and strong/weak caret positions feed
+  the shared selection, hit, wrap, vertical navigation and viewport geometry;
+  application code remains platform-neutral.
 - `AppCx::text_edit_command(...)` and `text_edit_command_for(...)` queue
   strongly typed `ZsTextEditCommand` requests for the focused or explicitly
   identified editor. The host owns a bounded undo history and returns edits
@@ -86,7 +90,8 @@ selection drag beyond the editor edge and verifies two incremental viewport
 steps, routes a native Up key through the shared visual-row navigation, scrolls
 the editor one visual page with PageDown and with a real wheel message, toggles
 word wrap off, enters a marked long line and routes End to prove horizontal
-caret reveal. It also commits a combining sequence plus joined emoji and uses
+caret reveal while painting a mixed Latin/Hebrew/CJK proportional line. It also
+commits a combining sequence plus joined emoji and uses
 Left/Backspace to prove that one complete grapheme is removed, then sends a real
 title-bar close request while the document is dirty, verifies that the request
 is vetoed and captures the shared unsaved-confirmation surface. On
@@ -108,11 +113,17 @@ cross-compilation.
 | Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | implemented |
 | Wrapped visual-row Up/Down, PageUp/PageDown and Shift selection | implemented |
-| Long-document vertical viewport and no-wrap horizontal caret reveal | implemented |
+| Long-document vertical viewport and shaped no-wrap horizontal caret reveal | implemented |
 | Captured selection drag with row/column edge scrolling | implemented |
 | Extended-grapheme-safe caret, deletion, wrapping and pointer hit testing | implemented |
+| Proportional advances and bidirectional caret/selection/hit geometry | implemented; AppKit/GTK4 target proof pending |
 | Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
+
+The current Win32 shaped-text smoke capture is stored at
+[`platform-proof/windows/shaped-text.png`](platform-proof/windows/shaped-text.png).
+It is diagnostic Windows evidence and does not substitute for the pending
+AppKit/GTK4 target runs.
 
 Commands still outside the shared editor contract are not placed in the menu.
 This avoids claiming behavior that exists only in one platform service.
