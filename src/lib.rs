@@ -568,6 +568,8 @@ pub use view::tree_view;
 pub use view::ViewTooltipTarget;
 #[cfg(feature = "date-picker")]
 pub use view::ZsDatePickerState;
+#[cfg(feature = "textbox")]
+pub use view::ZsTextSelection;
 #[cfg(feature = "time-picker")]
 pub use view::ZsTimePickerState;
 pub use view::{

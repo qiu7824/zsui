@@ -2243,6 +2243,21 @@ impl WindowsWin32ViewInputRoute {
             "win32_view_text_pointer_down:{}:{}",
             target.widget.0, index
         ));
+        #[cfg(feature = "textbox")]
+        if edit.selection_changed
+            && matches!(
+                target.kind,
+                crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+            )
+        {
+            self.dispatch_event(
+                crate::ViewEvent::TextSelectionChanged {
+                    widget: target.widget,
+                    selection: state.selection.into(),
+                },
+                &mut report,
+            );
+        }
         self.rebuild_pending_draw_plan();
         report
     }
@@ -2367,6 +2382,21 @@ impl WindowsWin32ViewInputRoute {
             "win32_view_text_pointer_move:{}:{}",
             drag.widget.0, index
         ));
+        #[cfg(feature = "textbox")]
+        if edit.selection_changed
+            && matches!(
+                target.kind,
+                crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+            )
+        {
+            self.dispatch_event(
+                crate::ViewEvent::TextSelectionChanged {
+                    widget: drag.widget,
+                    selection: state.selection.into(),
+                },
+                &mut report,
+            );
+        }
         report
     }
 
@@ -2925,8 +2955,38 @@ impl WindowsWin32ViewInputRoute {
             }
             #[cfg(feature = "password-box")]
             let value = std::mem::take(&mut *value);
+            #[cfg(feature = "textbox")]
+            if edit.selection_changed
+                && matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+                )
+            {
+                self.dispatch_event(
+                    crate::ViewEvent::TextEdited {
+                        widget,
+                        value,
+                        selection: state.selection.into(),
+                    },
+                    &mut report,
+                );
+                return report;
+            }
             self.dispatch_event(crate::ViewEvent::TextChanged { widget, value }, &mut report);
         } else if edit.selection_changed {
+            #[cfg(feature = "textbox")]
+            if matches!(
+                target.kind,
+                crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+            ) {
+                self.dispatch_event(
+                    crate::ViewEvent::TextSelectionChanged {
+                        widget,
+                        selection: state.selection.into(),
+                    },
+                    &mut report,
+                );
+            }
             self.rebuild_pending_draw_plan();
         }
         report
@@ -3599,6 +3659,21 @@ impl WindowsWin32ViewInputRoute {
                     "win32_view_text_navigate:{}:{virtual_key}:{}",
                     widget.0, state.selection.caret
                 ));
+                #[cfg(feature = "textbox")]
+                if edit.selection_changed
+                    && matches!(
+                        target.kind,
+                        crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+                    )
+                {
+                    self.dispatch_event(
+                        crate::ViewEvent::TextSelectionChanged {
+                            widget,
+                            selection: state.selection.into(),
+                        },
+                        &mut report,
+                    );
+                }
                 self.rebuild_pending_draw_plan();
                 return report;
             }
@@ -9162,6 +9237,10 @@ mod tests {
     #[test]
     #[cfg(feature = "textbox")]
     fn window_view_input_route_replaces_unicode_keyboard_selection() {
+        fn selection_changed(_: crate::ZsTextSelection) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.text_selection"))
+        }
+
         let widget = crate::WidgetId::new(32);
         let mut route = WindowsWin32ViewInputRoute::new(
             crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
@@ -9174,7 +9253,9 @@ mod tests {
                 },
                 crate::ViewHitTargetKind::Textbox,
             )]),
-            crate::textbox("A中文Z").id(widget),
+            crate::textbox("A中文Z")
+                .id(widget)
+                .on_text_selection_change(selection_changed),
         );
         route.dispatch_click(crate::Point { x: 20, y: 20 });
         route.dispatch_key_down(u32::from(VK_HOME));
@@ -9190,6 +9271,10 @@ mod tests {
         assert_eq!(selected.text_navigation_count, 1);
         assert_eq!(selected.text_selection_change_count, 1);
         assert_eq!(selected.text_caret, Some(3));
+        assert_eq!(
+            selected.ui_command_ids,
+            vec!["zsui.test.win32.text_selection"]
+        );
         assert!(selection_plan.commands.iter().any(|command| {
             matches!(
                 command,
@@ -9203,6 +9288,10 @@ mod tests {
             )
         }));
         assert_eq!(replaced.text_caret, Some(2));
+        assert_eq!(
+            replaced.ui_command_ids,
+            vec!["zsui.test.win32.text_selection"]
+        );
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
     }
 

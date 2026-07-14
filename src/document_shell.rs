@@ -58,6 +58,26 @@ impl Default for ZsTextCursorStatus {
 }
 
 impl ZsTextCursorStatus {
+    pub fn from_character_caret(text: &str, caret: usize) -> Self {
+        let mut line = 1;
+        let mut column = 1;
+
+        for character in text.chars().take(caret) {
+            if character == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+
+        Self {
+            line,
+            column,
+            character_count: text.chars().count(),
+        }
+    }
+
     pub fn from_utf16_caret(text: &str, caret_utf16: usize) -> Self {
         let mut line = 1;
         let mut column = 1;
@@ -1074,6 +1094,14 @@ mod tests {
             ZsTextCursorStatus {
                 line: 2,
                 column: 2,
+                character_count: 4,
+            }
+        );
+        assert_eq!(
+            ZsTextCursorStatus::from_character_caret(text, 3),
+            ZsTextCursorStatus {
+                line: 2,
+                column: 1,
                 character_count: 4,
             }
         );

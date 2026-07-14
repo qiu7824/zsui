@@ -1698,6 +1698,21 @@ impl NativeViewInputRuntime {
         report.redraw_plan = self.current_composed_draw_plan();
         report.ime_caret_rect = self.text_input_caret_rect();
         self.populate_text_report(&mut report);
+        #[cfg(feature = "textbox")]
+        if edit.selection_changed
+            && matches!(
+                target.kind,
+                crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+            )
+        {
+            return self.dispatch_view_event(
+                ViewEvent::TextSelectionChanged {
+                    widget: target.widget,
+                    selection: state.selection.into(),
+                },
+                report,
+            );
+        }
         report
     }
 
@@ -1820,6 +1835,21 @@ impl NativeViewInputRuntime {
         }
         report.ime_caret_rect = self.text_input_caret_rect();
         self.populate_text_report(&mut report);
+        #[cfg(feature = "textbox")]
+        if edit.selection_changed
+            && matches!(
+                target.kind,
+                crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+            )
+        {
+            return self.dispatch_view_event(
+                ViewEvent::TextSelectionChanged {
+                    widget: drag.widget,
+                    selection: state.selection.into(),
+                },
+                report,
+            );
+        }
         report
     }
 
@@ -2967,6 +2997,21 @@ impl NativeViewInputRuntime {
                 report.text_selection_changed = edit.selection_changed;
                 report.redraw_plan = self.current_composed_draw_plan();
                 self.populate_text_report(&mut report);
+                #[cfg(feature = "textbox")]
+                if edit.selection_changed
+                    && matches!(
+                        target.kind,
+                        crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+                    )
+                {
+                    return self.dispatch_view_event(
+                        ViewEvent::TextSelectionChanged {
+                            widget,
+                            selection: state.selection.into(),
+                        },
+                        report,
+                    );
+                }
                 return report;
             }
         }
@@ -3749,8 +3794,39 @@ impl NativeViewInputRuntime {
             }
             #[cfg(feature = "password-box")]
             let value = std::mem::take(&mut *value);
+            #[cfg(feature = "textbox")]
+            if edit.selection_changed
+                && matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+                )
+            {
+                return self.dispatch_view_event(
+                    ViewEvent::TextEdited {
+                        widget,
+                        value,
+                        selection: state.selection.into(),
+                    },
+                    report,
+                );
+            }
             self.dispatch_view_event(ViewEvent::TextChanged { widget, value }, report)
         } else {
+            #[cfg(feature = "textbox")]
+            if edit.selection_changed
+                && matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+                )
+            {
+                return self.dispatch_view_event(
+                    ViewEvent::TextSelectionChanged {
+                        widget,
+                        selection: state.selection.into(),
+                    },
+                    report,
+                );
+            }
             report.redraw_plan = edit
                 .selection_changed
                 .then(|| self.current_composed_draw_plan())
@@ -8484,23 +8560,31 @@ mod tests {
         #[derive(Clone)]
         enum Msg {
             Changed(String),
+            SelectionChanged(crate::ZsTextSelection),
         }
         struct State {
             value: String,
+            selection: crate::ZsTextSelection,
         }
 
         let textbox_id = crate::WidgetId::new(76);
         let builder = native_window("Platform Text").size(360, 220).stateful_view(
             State {
                 value: String::new(),
+                selection: crate::ZsTextSelection::default(),
             },
             move |state| {
-                crate::textbox(&state.value)
-                    .id(textbox_id)
-                    .on_change(Msg::Changed)
+                crate::column([
+                    crate::textbox(&state.value)
+                        .id(textbox_id)
+                        .on_change(Msg::Changed)
+                        .on_text_selection_change(Msg::SelectionChanged),
+                    crate::text(format!("Caret: {}", state.selection.caret)),
+                ])
             },
             |state, message, _cx| match message {
                 Msg::Changed(value) => state.value = value,
+                Msg::SelectionChanged(selection) => state.selection = selection,
             },
         );
         let target = builder
@@ -8525,6 +8609,7 @@ mod tests {
         assert_eq!(selected.text_selection, Some((1, 3)));
         assert_eq!(selected.text_caret, Some(3));
         assert!(selected.text_selection_changed);
+        assert_eq!(selected.message_count, 1);
         assert!(selected.redraw_plan.as_ref().is_some_and(|plan| {
             plan.commands.iter().any(|command| {
                 matches!(
@@ -8541,10 +8626,15 @@ mod tests {
         }));
         assert!(replaced.handled);
         assert_eq!(replaced.text_selection, Some((2, 2)));
+        assert_eq!(replaced.message_count, 2);
         assert!(replaced.redraw_plan.as_ref().is_some_and(|plan| {
             plan.commands.iter().any(|command| {
                 matches!(
                     command, crate::NativeDrawCommand::Text(text) if text.text == "A🙂Z"
+                )
+            }) && plan.commands.iter().any(|command| {
+                matches!(
+                    command, crate::NativeDrawCommand::Text(text) if text.text == "Caret: 2"
                 )
             })
         }));

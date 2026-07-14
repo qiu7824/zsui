@@ -37,6 +37,16 @@ impl NativeTextSelection {
     }
 }
 
+#[cfg(feature = "textbox")]
+impl From<NativeTextSelection> for crate::ZsTextSelection {
+    fn from(selection: NativeTextSelection) -> Self {
+        Self {
+            anchor: selection.anchor,
+            caret: selection.caret,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NativeTextEditState {
     pub widget: WidgetId,

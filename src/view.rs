@@ -592,6 +592,7 @@ pub enum ViewNodeKind<Msg> {
         value: String,
         multiline: bool,
         on_change: Option<fn(String) -> Msg>,
+        on_selection_change: Option<fn(ZsTextSelection) -> Msg>,
     },
     #[cfg(feature = "password-box")]
     PasswordBox {
@@ -1004,6 +1005,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_change(mut self, message: fn(String) -> Msg) -> Self {
         if let ViewNodeKind::Textbox { on_change, .. } = &mut self.kind {
             *on_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn on_text_selection_change(mut self, message: fn(ZsTextSelection) -> Msg) -> Self {
+        if let ViewNodeKind::Textbox {
+            on_selection_change,
+            ..
+        } = &mut self.kind
+        {
+            *on_selection_change = Some(message);
         }
         self
     }
@@ -1736,6 +1749,7 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         value: value.into(),
         multiline: false,
         on_change: None,
+        on_selection_change: None,
     })
 }
 
@@ -1745,6 +1759,7 @@ pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         value: value.into(),
         multiline: true,
         on_change: None,
+        on_selection_change: None,
     })
 }
 
@@ -2202,6 +2217,35 @@ pub fn spacer<Msg>() -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Spacer)
 }
 
+#[cfg(feature = "textbox")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsTextSelection {
+    pub anchor: usize,
+    pub caret: usize,
+}
+
+#[cfg(feature = "textbox")]
+impl ZsTextSelection {
+    pub const fn collapsed(caret: usize) -> Self {
+        Self {
+            anchor: caret,
+            caret,
+        }
+    }
+
+    pub const fn ordered(self) -> (usize, usize) {
+        if self.anchor <= self.caret {
+            (self.anchor, self.caret)
+        } else {
+            (self.caret, self.anchor)
+        }
+    }
+
+    pub const fn is_collapsed(self) -> bool {
+        self.anchor == self.caret
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ViewEvent {
     Click {
@@ -2210,6 +2254,17 @@ pub enum ViewEvent {
     TextChanged {
         widget: WidgetId,
         value: String,
+    },
+    #[cfg(feature = "textbox")]
+    TextEdited {
+        widget: WidgetId,
+        value: String,
+        selection: ZsTextSelection,
+    },
+    #[cfg(feature = "textbox")]
+    TextSelectionChanged {
+        widget: WidgetId,
+        selection: ZsTextSelection,
     },
     #[cfg(feature = "password-box")]
     PasswordChanged {
@@ -4692,6 +4747,40 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(next_value.clone()));
                     }
                 }
+                #[cfg(feature = "textbox")]
+                (
+                    ViewNodeKind::Textbox {
+                        value,
+                        on_change,
+                        on_selection_change,
+                        ..
+                    },
+                    ViewEvent::TextEdited {
+                        value: next_value,
+                        selection,
+                        ..
+                    },
+                ) => {
+                    *value = next_value.clone();
+                    if let Some(message) = on_change {
+                        cx.emit(message(next_value.clone()));
+                    }
+                    if let Some(message) = on_selection_change {
+                        cx.emit(message(*selection));
+                    }
+                }
+                #[cfg(feature = "textbox")]
+                (
+                    ViewNodeKind::Textbox {
+                        on_selection_change,
+                        ..
+                    },
+                    ViewEvent::TextSelectionChanged { selection, .. },
+                ) => {
+                    if let Some(message) = on_selection_change {
+                        cx.emit(message(*selection));
+                    }
+                }
                 #[cfg(feature = "auto-suggest")]
                 (
                     ViewNodeKind::AutoSuggestBox {
@@ -5907,6 +5996,9 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::Click { widget })
             | (Some(id), ViewEvent::TextChanged { widget, .. })
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
+            #[cfg(feature = "textbox")]
+            (Some(id), ViewEvent::TextEdited { widget, .. })
+            | (Some(id), ViewEvent::TextSelectionChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "password-box")]
             (Some(id), ViewEvent::PasswordChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "slider")]
@@ -8787,6 +8879,8 @@ mod tests {
         SaveClicked,
         #[cfg(feature = "textbox")]
         NameChanged(String),
+        #[cfg(feature = "textbox")]
+        TextSelectionChanged(ZsTextSelection),
         #[cfg(feature = "password-box")]
         PasswordChanged(crate::ZsPassword),
         #[cfg(any(feature = "checkbox", feature = "toggle", feature = "toggle-button"))]
@@ -9331,7 +9425,10 @@ mod tests {
     #[cfg(feature = "textbox")]
     fn text_editor_is_a_multiline_focus_target_with_wrapped_text() {
         let editor_id = WidgetId::new(5);
-        let mut view = text_editor::<Msg>("first\nsecond").id(editor_id);
+        let mut view = text_editor::<Msg>("first\nsecond")
+            .id(editor_id)
+            .on_change(Msg::NameChanged)
+            .on_text_selection_change(Msg::TextSelectionChanged);
         let mut layout = ViewLayoutCx::new(
             Rect {
                 x: 0,
@@ -9353,6 +9450,29 @@ mod tests {
                     && text.style.vertical_align == crate::VerticalAlign::Start
                     && !text.style.ellipsis
         )));
+
+        let selection = ZsTextSelection {
+            anchor: 2,
+            caret: 7,
+        };
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::TextEdited {
+                widget: editor_id,
+                value: "first\nchanged".to_string(),
+                selection,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::NameChanged("first\nchanged".to_string()),
+                Msg::TextSelectionChanged(selection),
+            ]
+        );
+        assert_eq!(selection.ordered(), (2, 7));
+        assert!(!selection.is_collapsed());
     }
 
     #[test]

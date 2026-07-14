@@ -8,7 +8,8 @@ use zsui::{
     button, column, native_window, row, spacer, text, text_editor, AppCx, Command, Dp,
     FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
     NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, ThemeColorToken, ViewNode, WidgetId,
-    ZsAccelerator, ZsDocumentShellCommand, ZsTextDocument, ZsuiError, ZsuiResult,
+    ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument, ZsTextSelection,
+    ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
@@ -39,6 +40,7 @@ impl PendingAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NotepadState {
     document: ZsTextDocument,
+    selection: ZsTextSelection,
     show_status: bool,
     pending: Option<PendingAction>,
     notice: String,
@@ -50,6 +52,7 @@ impl Default for NotepadState {
             document: ZsTextDocument::untitled(
                 "ZSUI Notepad\n\nThis editor, its layout and its state/update loop are shared by Win32, AppKit and GTK4.\n",
             ),
+            selection: ZsTextSelection::default(),
             show_status: true,
             pending: None,
             notice: "Ready".to_string(),
@@ -60,6 +63,7 @@ impl Default for NotepadState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Msg {
     DocumentChanged(String),
+    SelectionChanged(ZsTextSelection),
     Command(ZsDocumentShellCommand),
     SavePending,
     DiscardPending,
@@ -128,17 +132,20 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
         text_editor(state.document.text())
             .id(DOCUMENT_EDITOR)
             .flex(1.0)
-            .on_change(Msg::DocumentChanged),
+            .on_change(Msg::DocumentChanged)
+            .on_text_selection_change(Msg::SelectionChanged),
     );
 
     if state.show_status {
         let line_count = state.document.text().lines().count().max(1);
-        let character_count = state.document.text().chars().count();
+        let cursor =
+            ZsTextCursorStatus::from_character_caret(state.document.text(), state.selection.caret);
         content.push(
             row(vec![
                 text(state.notice).flex(1.0),
+                text(format!("Ln {}, Col {}", cursor.line, cursor.column)),
                 text(format!("Lines {line_count}")),
-                text(format!("Characters {character_count}")),
+                text(format!("Characters {}", cursor.character_count)),
                 text(state.document.encoding().label()),
                 text("Wrap on"),
             ])
@@ -168,6 +175,7 @@ fn update(shared: &mut SharedState, message: Msg, cx: &mut AppCx) {
             state.document.replace_text(value);
             state.notice = "Modified".to_string();
         }
+        Msg::SelectionChanged(selection) => state.selection = selection,
         Msg::Command(command) => dispatch_document_command(&mut state, command, cx),
         Msg::SavePending => cx.command(Command::custom(EFFECT_SAVE_PENDING)),
         Msg::DiscardPending => {
@@ -228,6 +236,7 @@ fn continue_pending_action(state: &mut NotepadState, action: PendingAction, cx: 
     match action {
         PendingAction::New => {
             state.document = ZsTextDocument::default();
+            state.selection = ZsTextSelection::default();
             state.notice = "New document".to_string();
         }
         PendingAction::Open => cx.command(Command::custom(EFFECT_OPEN)),
@@ -360,6 +369,7 @@ fn open_document(shared: &SharedState, dialogs: &mut impl FileDialogService) -> 
     let name = document.display_name();
     let mut state = lock_state(shared)?;
     state.document = document;
+    state.selection = ZsTextSelection::default();
     state.pending = None;
     state.notice = format!("Opened {name}");
     Ok(true)
@@ -423,6 +433,7 @@ fn save_pending_document(
         Some(PendingAction::New) => {
             let mut state = lock_state(shared)?;
             state.document = ZsTextDocument::default();
+            state.selection = ZsTextSelection::default();
             state.notice = "Saved; new document created".to_string();
         }
         Some(PendingAction::Open) => {

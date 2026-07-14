@@ -16,6 +16,9 @@ framework architecture.
 - `text_editor` owns the shared multiline editing surface, focus, selection,
   keyboard input and IME integration. Target renderers adapt its metrics and
   visuals to the platform theme.
+- `ZsTextSelection` reports application-independent Unicode-scalar anchor and
+  caret positions through `on_text_selection_change`, including edits,
+  keyboard navigation and pointer drag selection.
 - `ZsTextDocument` owns UTF-8/UTF-16 decoding, path and encoding metadata,
   explicit dirty state and transactional UTF-8 save/save-as.
 - `ZsDocumentShellCommand` converts to and from the public `Command` type, so
@@ -60,8 +63,7 @@ tracked separately and is not inferred from cross-compilation.
 | Target-native menu and primary-key accelerators | implemented |
 | Target-native open/save panel facade | implemented |
 | UTF-8 save and UTF-8/UTF-16 input decode | implemented |
-| Line count, character count and encoding status | implemented |
-| Caret-aware line/column status | pending shared selection callback |
+| Caret-aware line/column, line count, character count and encoding status | implemented |
 | Undo/cut/copy/paste command API | pending shared editor command surface |
 | Runtime word-wrap toggle | pending shared editor configuration |
 | Intercepting the operating-system window-close button | pending shared close-request message |
@@ -79,10 +81,11 @@ framework service, but the acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 547 nonblank lines,
+The shared acceptance application is one source file with 558 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 185
-lines (25.3%) smaller while adding one cross-platform source path.
+files with 732 nonblank lines, so the checked-in application surface is 174
+lines (23.8%) smaller while adding one cross-platform source path and typed
+caret status.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

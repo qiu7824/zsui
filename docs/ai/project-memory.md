@@ -64,6 +64,10 @@ history remain authoritative for implementation status.
   and target-dispatched file dialogs. `WindowsWin32OwnedTextEditor` remains an
   optional Windows service for native EDIT integration; it is not the demo
   architecture and is not evidence for AppKit or GTK editor completion.
+- Shared TextBox/TextEditor selection uses `ZsTextSelection` with Unicode-scalar
+  anchor/caret indices and `on_text_selection_change(...)`. Edits, keyboard
+  movement and pointer drag selection route through the same typed View update
+  path on Win32, AppKit and GTK4; backends do not own application cursor state.
 
 ## Native platform bar
 
