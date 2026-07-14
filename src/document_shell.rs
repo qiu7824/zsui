@@ -6,9 +6,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ColorRole, Dp, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
-    NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, Point, Rect, SemanticTextStyle,
-    TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon, ZsuiError, ZsuiResult,
+    ColorRole, Command, Dp, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill,
+    NativeDrawIconCommand, NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, Point, Rect,
+    SemanticTextStyle, TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon, ZsuiError,
+    ZsuiResult,
 };
 
 const TAB_STRIP_HEIGHT_DP: f32 = 48.0;
@@ -298,6 +299,31 @@ impl ZsDocumentShellCommand {
             Self::ToggleStatus => ZsIcon::Inspector,
             Self::About => ZsIcon::More,
         }
+    }
+
+    pub fn to_command(self) -> Command {
+        Command::custom(self.command_id())
+    }
+
+    pub fn from_command(command: &Command) -> Option<Self> {
+        let Command::Custom { id, payload: None } = command else {
+            return None;
+        };
+        Some(match id.as_str() {
+            "document.new" => Self::New,
+            "document.close" => Self::Close,
+            "document.open" => Self::Open,
+            "document.save" => Self::Save,
+            "document.save-as" => Self::SaveAs,
+            "document.undo" => Self::Undo,
+            "document.cut" => Self::Cut,
+            "document.copy" => Self::Copy,
+            "document.paste" => Self::Paste,
+            "document.toggle-wrap" => Self::ToggleWrap,
+            "document.toggle-status" => Self::ToggleStatus,
+            "document.about" => Self::About,
+            _ => return None,
+        })
     }
 }
 
@@ -936,6 +962,42 @@ mod tests {
         assert_eq!(
             big_endian.encoding(),
             ZsTextDocumentEncoding::Utf16BigEndian
+        );
+    }
+
+    #[test]
+    fn document_commands_round_trip_through_the_shared_command_type() {
+        let commands = [
+            ZsDocumentShellCommand::New,
+            ZsDocumentShellCommand::Close,
+            ZsDocumentShellCommand::Open,
+            ZsDocumentShellCommand::Save,
+            ZsDocumentShellCommand::SaveAs,
+            ZsDocumentShellCommand::Undo,
+            ZsDocumentShellCommand::Cut,
+            ZsDocumentShellCommand::Copy,
+            ZsDocumentShellCommand::Paste,
+            ZsDocumentShellCommand::ToggleWrap,
+            ZsDocumentShellCommand::ToggleStatus,
+            ZsDocumentShellCommand::About,
+        ];
+
+        for command in commands {
+            assert_eq!(
+                ZsDocumentShellCommand::from_command(&command.to_command()),
+                Some(command)
+            );
+        }
+        assert_eq!(
+            ZsDocumentShellCommand::from_command(&Command::custom("application.unrelated")),
+            None
+        );
+        assert_eq!(
+            ZsDocumentShellCommand::from_command(&Command::custom_with_payload(
+                ZsDocumentShellCommand::Open.command_id(),
+                "unexpected"
+            )),
+            None
         );
     }
 

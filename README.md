@@ -493,11 +493,12 @@ cargo run --example workbench_shell --features full
 ### 现代记事本
 
 ```powershell
-cargo run --example zsui_notepad --features notepad-demo
+cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
-它组合自绘文档外壳和 Windows 原生多行文本服务，保留 IME 与原生编辑行为。
-[测量说明](docs/notepad-demo.md)记录了代码量、包体和运行内存。
+它用同一份 Rust `State / Msg / view / update` 代码运行在 Win32、AppKit 和 GTK4
+原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，不使用 WebView。
+[验收与测量说明](docs/notepad-demo.md)记录了能力边界、代码量和验证方法。
 
 ### 现代计算器
 

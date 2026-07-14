@@ -70,9 +70,10 @@ platform host into a copy of a product application.
    `ZsIcon` catalog. Do not add private PUA glyph strings, local palettes or
    duplicate control metrics to component modules.
    Reuse `ZsDocumentShellSpec` for text-oriented application chrome. Treat
-   `examples/zsui_notepad/windows.rs` as benchmark application plumbing, not as
-   proof that reusable native editor, file-dialog, accelerator or
-   document-lifecycle services exist in the framework.
+   `examples/zsui_notepad.rs` as a shared self-drawn acceptance application,
+   not as the source of reusable editor, file-dialog, accelerator or
+   document-lifecycle architecture. The Windows native editor service remains
+   optional and must not replace the shared application path.
    Reuse `ZsCalculatorEngine` and `ZsCalculatorShellSpec` for standard decimal
    calculator behavior and presentation. Keep scientific/conversion modes and
    product-specific commands outside that shell until their contracts exist.

@@ -124,15 +124,14 @@
     },
     {
       "id": "document-shell",
-      "purpose": "Document chrome, native editor inset and notepad benchmark",
+      "purpose": "Shared document lifecycle, self-drawn editor acceptance and notepad measurement",
       "required": [
         "src/document_shell.rs",
-        "src/windows_win32_text_editor.rs",
         "examples/zsui_notepad.rs",
-        "examples/zsui_notepad/windows.rs",
         "docs/notepad-demo.md"
       ],
       "optional": [
+        "src/windows_win32_text_editor.rs",
         "src/windows_gdi_renderer.rs",
         "src/icon.rs",
         "scripts/measure-notepad-comparison.ps1",

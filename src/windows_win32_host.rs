@@ -6131,6 +6131,14 @@ impl WindowsWin32ViewInputRoute {
         true
     }
 
+    fn refresh_live_view_after_app_effect(&mut self) -> Option<u64> {
+        let live_view = self.live_view.as_ref()?;
+        let update = live_view.refresh();
+        self.interaction_plan = live_view.interaction_plan();
+        self.rebuild_pending_draw_plan();
+        Some(update.revision)
+    }
+
     #[cfg(feature = "tooltip")]
     fn compose_tooltip(&self, plan: &mut NativeDrawPlan) {
         let Some(surface) = self.surface else {
@@ -6806,13 +6814,13 @@ fn dispatch_windows_win32_window_view_input(
     let hwnd_value = hwnd as isize;
     let (
         mut report,
-        draw_plan,
+        mut draw_plan,
         quit_requested,
         app_executor,
         app_commands,
         ui_executor,
         ui_commands,
-        poll_interval_ms,
+        mut poll_interval_ms,
     ) = {
         let mut routes = window_view_input_routes()
             .lock()
@@ -6836,7 +6844,8 @@ fn dispatch_windows_win32_window_view_input(
         )
     };
 
-    dispatch_windows_win32_app_commands(&mut report, app_executor, app_commands);
+    let app_effect_executed =
+        dispatch_windows_win32_app_commands(&mut report, app_executor, app_commands);
     dispatch_windows_win32_ui_commands(&mut report, ui_executor, ui_commands);
     if let Some(record) = window_view_input_routes()
         .lock()
@@ -6844,6 +6853,19 @@ fn dispatch_windows_win32_window_view_input(
         .iter_mut()
         .find(|record| record.hwnd == hwnd_value)
     {
+        if app_effect_executed {
+            if let Some(revision) = record.route.refresh_live_view_after_app_effect() {
+                report.live_view_revision = revision;
+                report.hit_target_count = record.route.hit_target_count();
+                report
+                    .events
+                    .push(format!("win32_live_view_app_effect_refresh:{revision}"));
+                if let Some(refreshed_plan) = record.route.take_pending_draw_plan() {
+                    draw_plan = Some(refreshed_plan);
+                }
+                poll_interval_ms = record.route.background_poll_interval_ms();
+            }
+        }
         record.report.merge(report.clone());
     }
 
@@ -6884,14 +6906,16 @@ fn dispatch_windows_win32_app_commands(
     report: &mut WindowsWin32ViewInputDispatchReport,
     executor: Option<SharedAppCommandExecutor>,
     commands: Vec<Command>,
-) {
+) -> bool {
     let Some(executor) = executor else {
         report.app_command_unhandled_count += commands.len();
-        return;
+        return false;
     };
+    let mut executed = false;
     for command in commands {
         match executor.dispatch(command) {
             Ok(events) => {
+                executed = true;
                 report.app_command_executed_count += 1;
                 report.app_command_event_count += events.len();
             }
@@ -6901,6 +6925,7 @@ fn dispatch_windows_win32_app_commands(
             }
         }
     }
+    executed
 }
 
 fn dispatch_windows_win32_ui_commands(
@@ -8633,11 +8658,15 @@ mod tests {
         assert_eq!(report.ui_command_executed_count, 1);
         assert_eq!(report.ui_command_event_count, 1);
         assert_eq!(ui_executor.report().executed_count, 1);
-        assert_eq!(report.live_view_revision, 1);
+        assert_eq!(report.live_view_revision, 2);
         assert!(report
             .events
             .iter()
             .any(|event| event == "win32_live_view_repaint:1"));
+        assert!(report
+            .events
+            .iter()
+            .any(|event| event == "win32_live_view_app_effect_refresh:2"));
         assert!(window_draw_plan(hwnd)
             .unwrap()
             .commands

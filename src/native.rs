@@ -1145,6 +1145,8 @@ pub(crate) struct NativeViewInputRuntime {
     password_peek: Option<crate::WidgetId>,
     ime_preedit: Option<NativeViewImePreedit>,
     app_command_executor: Option<SharedAppCommandExecutor>,
+    defer_app_command_execution: bool,
+    pending_app_commands: Vec<Command>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
 }
 
@@ -1419,6 +1421,8 @@ impl NativeViewInputRuntime {
             password_peek: None,
             ime_preedit: None,
             app_command_executor,
+            defer_app_command_execution: false,
+            pending_app_commands: Vec::new(),
             ui_command_executor,
         };
         #[cfg(feature = "toast")]
@@ -5237,11 +5241,17 @@ impl NativeViewInputRuntime {
         report.app_command_count = commands.len();
         report.ui_command_count = ui_commands.len();
         report.quit_requested = quit_requested || commands.contains(&Command::Quit);
-        let app_executor = self.app_command_executor.clone();
-        for command in commands {
-            if let Some(executor) = &app_executor {
-                if let Err(error) = executor.dispatch(command) {
-                    report.errors.push(error.to_string());
+        let mut app_effect_executed = false;
+        if self.defer_app_command_execution {
+            self.pending_app_commands.extend(commands);
+        } else {
+            let app_executor = self.app_command_executor.clone();
+            for command in commands {
+                if let Some(executor) = &app_executor {
+                    match executor.dispatch(command) {
+                        Ok(_) => app_effect_executed = true,
+                        Err(error) => report.errors.push(error.to_string()),
+                    }
                 }
             }
         }
@@ -5253,6 +5263,9 @@ impl NativeViewInputRuntime {
                     report.errors.push(error.to_string());
                 }
             }
+        }
+        if app_effect_executed {
+            self.refresh_live_view_after_app_effect(&mut report);
         }
         if self.focused_widget.is_some_and(|widget| {
             self.current_interaction_plan()
@@ -5303,6 +5316,7 @@ impl NativeViewInputRuntime {
             .live_view
             .as_ref()
             .map(|runtime| runtime.dispatch_app_command(&command));
+        let mut app_effect_executed = false;
         if let Some(update) = update.filter(|update| update.message_count > 0) {
             report.handled = true;
             report.message_count = update.message_count;
@@ -5311,11 +5325,16 @@ impl NativeViewInputRuntime {
             report.quit_requested =
                 update.quit_requested || update.commands.contains(&Command::Quit);
 
-            let app_executor = self.app_command_executor.clone();
-            for effect in update.commands {
-                if let Some(executor) = &app_executor {
-                    if let Err(error) = executor.dispatch(effect) {
-                        report.errors.push(error.to_string());
+            if self.defer_app_command_execution {
+                self.pending_app_commands.extend(update.commands);
+            } else {
+                let app_executor = self.app_command_executor.clone();
+                for effect in update.commands {
+                    if let Some(executor) = &app_executor {
+                        match executor.dispatch(effect) {
+                            Ok(_) => app_effect_executed = true,
+                            Err(error) => report.errors.push(error.to_string()),
+                        }
                     }
                 }
             }
@@ -5337,12 +5356,22 @@ impl NativeViewInputRuntime {
         } else if command == Command::Quit {
             report.handled = true;
             report.quit_requested = true;
+        } else if self.defer_app_command_execution {
+            report.app_command_count = 1;
+            self.pending_app_commands.push(command);
         } else if let Some(executor) = self.app_command_executor.clone() {
             report.app_command_count = 1;
             match executor.dispatch(command) {
-                Ok(_) => report.handled = true,
+                Ok(_) => {
+                    report.handled = true;
+                    app_effect_executed = true;
+                }
                 Err(error) => report.errors.push(error.to_string()),
             }
+        }
+
+        if app_effect_executed {
+            self.refresh_live_view_after_app_effect(&mut report);
         }
 
         if self.focused_widget.is_some_and(|widget| {
@@ -5370,6 +5399,32 @@ impl NativeViewInputRuntime {
         report
     }
 
+    pub(crate) fn defer_app_command_execution(&mut self) {
+        self.defer_app_command_execution = true;
+    }
+
+    pub(crate) fn take_pending_app_command_dispatch(
+        &mut self,
+    ) -> (Option<SharedAppCommandExecutor>, Vec<Command>) {
+        (
+            self.app_command_executor.clone(),
+            std::mem::take(&mut self.pending_app_commands),
+        )
+    }
+
+    pub(crate) fn refresh_live_view_after_app_effect(
+        &mut self,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        let Some(runtime) = &self.live_view else {
+            return;
+        };
+        runtime.refresh();
+        self.interaction_plan = Some(runtime.interaction_plan());
+        report.hit_target_count = self.hit_target_count();
+        report.redraw_plan = Some(runtime.draw_plan());
+    }
+
     #[cfg(all(windows, feature = "windows-win32"))]
     fn windows_win32_route(&self) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
         let route = if let Some(runtime) = &self.live_view {
@@ -5389,6 +5444,33 @@ impl NativeViewInputRuntime {
             None => route,
         })
     }
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+#[allow(dead_code)]
+pub(crate) fn dispatch_deferred_native_view_app_commands(
+    report: &mut NativeViewInputDispatchReport,
+    executor: Option<SharedAppCommandExecutor>,
+    commands: Vec<Command>,
+) -> bool {
+    let Some(executor) = executor else {
+        return false;
+    };
+    let mut executed = false;
+    for command in commands {
+        match executor.dispatch(command) {
+            Ok(_) => {
+                report.handled = true;
+                executed = true;
+            }
+            Err(error) => report.errors.push(error.to_string()),
+        }
+    }
+    executed
 }
 
 fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
@@ -7934,6 +8016,136 @@ mod tests {
             command,
             crate::NativeDrawCommand::Text(text) if text.text == "Opened from menu"
         )));
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn app_command_effect_refreshes_shared_state_after_executor_returns() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        enum Msg {
+            Save,
+        }
+
+        let state = Arc::new(Mutex::new("Ready".to_string()));
+        let executor_state = state.clone();
+        let builder = native_window("External Effect")
+            .size(360, 220)
+            .stateful_view_with_app_commands(
+                state,
+                |state| {
+                    crate::text::<Msg>(
+                        state
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .clone(),
+                    )
+                },
+                |_state, message, cx| match message {
+                    Msg::Save => cx.command(Command::custom("effect.save")),
+                },
+                |command| match command {
+                    Command::Custom { id, .. } if id == "document.save" => Some(Msg::Save),
+                    _ => None,
+                },
+            )
+            .app_command_executor(move |command| {
+                assert_eq!(command, Command::custom("effect.save"));
+                *executor_state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    "Saved externally".to_string();
+                Ok(Vec::new())
+            });
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("stateful view should keep a live runtime")
+            .clone();
+        let mut input = builder.native_view_input_runtime();
+
+        let report = input.dispatch_app_command(Command::custom("document.save"));
+
+        assert!(report.handled);
+        assert_eq!(report.message_count, 1);
+        assert_eq!(runtime.revision(), 2);
+        assert!(report
+            .redraw_plan
+            .expect("external effect should request a refreshed draw plan")
+            .commands
+            .iter()
+            .any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::Text(text) if text.text == "Saved externally"
+            )));
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_hosts_can_defer_modal_app_effects_until_runtime_borrow_is_released() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        enum Msg {
+            Open,
+        }
+
+        let state = Arc::new(Mutex::new("Ready".to_string()));
+        let executor_state = state.clone();
+        let executor = SharedAppCommandExecutor::new(move |command| {
+            assert_eq!(command, Command::custom("effect.open"));
+            *executor_state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = "Opened externally".to_string();
+            Ok(Vec::new())
+        });
+        let builder = native_window("Deferred Effect")
+            .size(360, 220)
+            .stateful_view_with_app_commands(
+                state.clone(),
+                |state| {
+                    crate::text::<Msg>(
+                        state
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .clone(),
+                    )
+                },
+                |_state, message, cx| match message {
+                    Msg::Open => cx.command(Command::custom("effect.open")),
+                },
+                |command| match command {
+                    Command::Custom { id, .. } if id == "document.open" => Some(Msg::Open),
+                    _ => None,
+                },
+            )
+            .shared_app_command_executor(executor.clone());
+        let mut input = builder.native_view_input_runtime();
+        input.defer_app_command_execution();
+
+        let mut report = input.dispatch_app_command(Command::custom("document.open"));
+
+        assert_eq!(*state.lock().unwrap(), "Ready");
+        assert_eq!(executor.report().executed_count, 0);
+        let (pending_executor, commands) = input.take_pending_app_command_dispatch();
+        assert_eq!(commands, vec![Command::custom("effect.open")]);
+        assert!(dispatch_deferred_native_view_app_commands(
+            &mut report,
+            pending_executor,
+            commands,
+        ));
+        input.refresh_live_view_after_app_effect(&mut report);
+
+        assert_eq!(executor.report().executed_count, 1);
+        assert!(report
+            .redraw_plan
+            .expect("deferred effect should refresh after executor returns")
+            .commands
+            .iter()
+            .any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::Text(text) if text.text == "Opened externally"
+            )));
     }
 
     #[cfg(all(feature = "tooltip", feature = "button"))]

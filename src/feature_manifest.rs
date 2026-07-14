@@ -476,8 +476,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Tooling,
             false,
             Vec::new(),
-            vec!["windows-win32", "document-shell"],
-            "Windows native text-service benchmark and notepad application example",
+            vec!["window", "button", "label", "textbox", "document-shell"],
+            "shared self-drawn notepad acceptance example on target-native Win32, AppKit and GTK4 hosts",
         ),
         ZsuiCargoFeature::new(
             "calculator-demo",

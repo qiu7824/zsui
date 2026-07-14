@@ -55,12 +55,15 @@ history remain authoritative for implementation status.
   mapping stays platform-neutral; Win32, AppKit and GTK4 dispatch through the
   owned live-view host, rebuild the shared draw plan and request native repaint
   without exposing a raw menu id, handle or event loop.
-- The optional Windows document acceptance path uses
-  `WindowsWin32OwnedTextEditor` (only with `document-shell` + `windows-win32`)
-  for owned multiline EDIT creation, DPI-scaled font lifetime, bounds, text,
-  selection, word-wrap and edit commands. Shared line/column reporting uses
-  `ZsTextCursorStatus` with native UTF-16 caret offsets. This Windows service is
-  not evidence of a completed AppKit or GTK document-editor host.
+- Application command executors run outside live-view locks. After a successful
+  external effect, every desktop host refreshes the shared view, interaction
+  plan and draw plan before repaint so modal dialogs and file I/O cannot leave
+  stale application state on screen.
+- The notepad acceptance application uses one platform-neutral source file,
+  the shared self-drawn `text_editor`, typed document commands, native menus
+  and target-dispatched file dialogs. `WindowsWin32OwnedTextEditor` remains an
+  optional Windows service for native EDIT integration; it is not the demo
+  architecture and is not evidence for AppKit or GTK editor completion.
 
 ## Native platform bar
 

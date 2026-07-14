@@ -471,7 +471,23 @@ define_class!(
 );
 
 impl ZsuiAppKitDrawView {
-    fn apply_input_report(&self, report: crate::native::NativeViewInputDispatchReport) {
+    fn apply_input_report(&self, mut report: crate::native::NativeViewInputDispatchReport) {
+        let (executor, commands) = self
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .take_pending_app_command_dispatch();
+        let effect_executed = crate::native::dispatch_deferred_native_view_app_commands(
+            &mut report,
+            executor,
+            commands,
+        );
+        if effect_executed {
+            self.ivars()
+                .runtime
+                .borrow_mut()
+                .refresh_live_view_after_app_effect(&mut report);
+        }
         if let Some(plan) = report.redraw_plan {
             *self.ivars().plan.borrow_mut() = plan;
             self.setNeedsDisplay(true);
@@ -514,8 +530,9 @@ impl ZsuiAppKitDrawView {
         mtm: MainThreadMarker,
         frame: NSRect,
         plan: NativeDrawPlan,
-        runtime: crate::native::NativeViewInputRuntime,
+        mut runtime: crate::native::NativeViewInputRuntime,
     ) -> Retained<Self> {
+        runtime.defer_app_command_execution();
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars {
             plan: RefCell::new(plan),
             runtime: RefCell::new(runtime),

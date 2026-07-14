@@ -24,13 +24,14 @@ unsafe extern "C" {
 pub(crate) fn install_linux_gtk_draw_plan(
     window: &gtk::ApplicationWindow,
     plan: NativeDrawPlan,
-    runtime: crate::native::NativeViewInputRuntime,
+    mut runtime: crate::native::NativeViewInputRuntime,
 ) -> LinuxGtkDrawViewHost {
     let drawing_area = gtk::DrawingArea::new();
     drawing_area.set_hexpand(true);
     drawing_area.set_vexpand(true);
     drawing_area.set_focusable(true);
     let plan = Rc::new(RefCell::new(plan));
+    runtime.defer_app_command_execution();
     let runtime = Rc::new(RefCell::new(runtime));
     let runtime_timer = Rc::new(RefCell::new(None));
     let ime = gtk::IMMulticontext::new();
@@ -551,13 +552,21 @@ fn schedule_linux_gtk_runtime_tick(
 }
 
 fn apply_linux_gtk_input_report(
-    report: crate::native::NativeViewInputDispatchReport,
+    mut report: crate::native::NativeViewInputDispatchReport,
     area: &gtk::DrawingArea,
     plan: &Rc<RefCell<NativeDrawPlan>>,
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: &gtk::IMMulticontext,
     application: Option<&gtk::Application>,
 ) {
+    let (executor, commands) = runtime.borrow_mut().take_pending_app_command_dispatch();
+    let effect_executed =
+        crate::native::dispatch_deferred_native_view_app_commands(&mut report, executor, commands);
+    if effect_executed {
+        runtime
+            .borrow_mut()
+            .refresh_live_view_after_app_effect(&mut report);
+    }
     if let Some(updated) = report.redraw_plan {
         *plan.borrow_mut() = updated;
         area.queue_draw();
