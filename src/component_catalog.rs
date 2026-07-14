@@ -146,6 +146,12 @@ const INFO_BAR_GAPS: &[&str] = &[
     "multiline custom View content plus bidirectional-layout validation",
     "AppKit and GTK4 target interaction smoke",
 ];
+const TEACHING_TIP_GAPS: &[&str] = &[
+    "accessibility announcement, semantic popover relationships and focus handoff/restoration",
+    "light-dismiss, close cancellation/deferrals and scrolling-target behavior",
+    "hero media, semantic icon, arbitrary View content, RTL and the full WinUI placement set",
+    "AppKit and GTK4 target interaction smoke",
+];
 const SLIDER_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target interaction smoke",
@@ -609,10 +615,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "teaching_tip",
         "TeachingTip",
         Overlay,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("teaching-tip"),
+        "src/teaching_tip.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        TEACHING_TIP_GAPS
     ),
     component!(
         "command_palette",
@@ -707,7 +713,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 6);
+        assert!(summary.not_started_count >= 5);
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));
         assert!(!summary.missing_component_names.contains(&"content_dialog"));
@@ -715,6 +721,7 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"toggle"));
         assert!(!summary.missing_component_names.contains(&"toggle_button"));
         assert!(!summary.missing_component_names.contains(&"info_bar"));
+        assert!(!summary.missing_component_names.contains(&"teaching_tip"));
     }
 
     #[test]

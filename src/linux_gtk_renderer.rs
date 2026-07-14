@@ -926,6 +926,16 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 );
                 let _ = self.context.stroke();
             }
+            NativeDrawCommand::FillTriangle { points, fill } => {
+                self.set_source(self.palette.resolve_fill(*fill));
+                self.context
+                    .move_to(f64::from(points[0].x), f64::from(points[0].y));
+                for point in &points[1..] {
+                    self.context.line_to(f64::from(point.x), f64::from(point.y));
+                }
+                self.context.close_path();
+                let _ = self.context.fill();
+            }
             NativeDrawCommand::RoundRect {
                 rect,
                 fill,

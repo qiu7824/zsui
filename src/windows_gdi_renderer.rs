@@ -12,7 +12,7 @@ use windows_sys::Win32::{
     Foundation::{POINT, RECT},
     Graphics::Gdi::{
         CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, FillRect, FrameRect,
-        GetStockObject, GetTextFaceW, IntersectClipRect, RestoreDC, RoundRect, SaveDC,
+        GetStockObject, GetTextFaceW, IntersectClipRect, Polygon, RestoreDC, RoundRect, SaveDC,
         SelectObject, SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor, StretchDIBits,
         BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
         DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HDC, HGDIOBJ, NULL_PEN, OUT_DEFAULT_PRECIS,
@@ -1030,6 +1030,29 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
                 *start_degrees,
                 *sweep_degrees,
             ),
+            NativeDrawCommand::FillTriangle { points, fill } => {
+                if self.renderer.hdc().is_null() {
+                    return;
+                }
+                let Some(brush) = WindowsGdiOwnedObject::solid_brush(
+                    self.palette
+                        .resolve_fill_with_contrast(*fill, self.high_contrast),
+                ) else {
+                    return;
+                };
+                let _selected_brush =
+                    WindowsGdiSelectedObject::select(self.renderer.hdc(), brush.object());
+                let _selected_pen = WindowsGdiSelectedObject::select(self.renderer.hdc(), unsafe {
+                    GetStockObject(NULL_PEN)
+                });
+                let points = points.map(|point| POINT {
+                    x: point.x,
+                    y: point.y,
+                });
+                unsafe {
+                    Polygon(self.renderer.hdc(), points.as_ptr(), points.len() as i32);
+                }
+            }
             NativeDrawCommand::RoundRect {
                 rect,
                 fill,

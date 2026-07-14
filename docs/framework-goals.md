@@ -55,8 +55,8 @@ must stay independent of raw platform handles and broad native dependencies.
 ## Component Coverage
 
 `zsui_component_catalog()` is the component-level source of truth. The current
-catalog covers 49 desktop component families: 40 have a first-pass runtime
-surface, 3 have contracts only and 6 are not started. Composite shells can
+catalog covers 49 desktop component families: 41 have a first-pass runtime
+surface, 3 have contracts only and 5 are not started. Composite shells can
 combine working primitives, but they must not be used to claim that missing
 ColorPicker, flyout or WebView families are complete.
 

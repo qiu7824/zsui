@@ -354,6 +354,10 @@ pub enum NativeDrawCommand {
         start_degrees: i16,
         sweep_degrees: i16,
     },
+    FillTriangle {
+        points: [crate::Point; 3],
+        fill: NativeDrawFill,
+    },
     RoundRect {
         rect: Rect,
         fill: NativeDrawFill,
@@ -381,6 +385,7 @@ impl NativeDrawCommand {
             Self::FillRect { .. } => NativeDrawCommandOperation::FillRect,
             Self::StrokeRect { .. } => NativeDrawCommandOperation::StrokeRect,
             Self::StrokeArc { .. } => NativeDrawCommandOperation::StrokeArc,
+            Self::FillTriangle { .. } => NativeDrawCommandOperation::FillTriangle,
             Self::RoundRect { .. } => NativeDrawCommandOperation::RoundRect,
             Self::RoundFill { .. } => NativeDrawCommandOperation::RoundFill,
             Self::Text(_) => NativeDrawCommandOperation::DrawText,
@@ -398,6 +403,7 @@ pub enum NativeDrawCommandOperation {
     FillRect,
     StrokeRect,
     StrokeArc,
+    FillTriangle,
     RoundRect,
     RoundFill,
     DrawText,
@@ -412,6 +418,7 @@ impl NativeDrawCommandOperation {
             Self::FillRect => "draw_fill_rect",
             Self::StrokeRect => "draw_stroke_rect",
             Self::StrokeArc => "draw_stroke_arc",
+            Self::FillTriangle => "draw_fill_triangle",
             Self::RoundRect => "draw_round_rect",
             Self::RoundFill => "draw_round_fill",
             Self::DrawText => "draw_text",
@@ -422,10 +429,11 @@ impl NativeDrawCommandOperation {
     }
 }
 
-pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 9] = [
+pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 10] = [
     NativeDrawCommandOperation::FillRect,
     NativeDrawCommandOperation::StrokeRect,
     NativeDrawCommandOperation::StrokeArc,
+    NativeDrawCommandOperation::FillTriangle,
     NativeDrawCommandOperation::RoundRect,
     NativeDrawCommandOperation::RoundFill,
     NativeDrawCommandOperation::DrawText,
@@ -573,6 +581,7 @@ mod draw_command_tests {
                 "draw_fill_rect",
                 "draw_stroke_rect",
                 "draw_stroke_arc",
+                "draw_fill_triangle",
                 "draw_round_rect",
                 "draw_round_fill",
                 "draw_text",

@@ -747,6 +747,16 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                 path.setLineWidth(f64::from((*width).max(1)));
                 path.stroke();
             }
+            NativeDrawCommand::FillTriangle { points, fill } => {
+                let path = NSBezierPath::bezierPath();
+                path.moveToPoint(NSPoint::new(f64::from(points[0].x), f64::from(points[0].y)));
+                for point in &points[1..] {
+                    path.lineToPoint(NSPoint::new(f64::from(point.x), f64::from(point.y)));
+                }
+                path.closePath();
+                appkit_color(self.palette.resolve_fill(*fill)).setFill();
+                path.fill();
+            }
             NativeDrawCommand::RoundRect {
                 rect,
                 fill,

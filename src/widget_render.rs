@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "tabs",
     feature = "time-picker",
     feature = "toast",
@@ -21,6 +22,7 @@ use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, Native
 #[cfg(any(
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "date-picker",
     feature = "table",
     feature = "tabs",
@@ -33,6 +35,7 @@ use crate::{HorizontalAlign, TextWeight};
     feature = "combo",
     feature = "date-picker",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "table",
     feature = "time-picker",
     feature = "toast",
@@ -45,6 +48,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "number-box",
     feature = "table",
     feature = "tabs",
@@ -432,6 +436,617 @@ pub fn zs_info_bar_native_draw_plan(
             NativeIconColorMode::ThemeAware,
         )));
     }
+    NativeDrawPlan::new(commands)
+}
+
+#[cfg(feature = "teaching-tip")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsTeachingTipPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "teaching-tip")]
+impl ZsTeachingTipPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "teaching-tip")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsTeachingTipMetrics {
+    pub minimum_width: Dp,
+    pub maximum_width: Dp,
+    pub viewport_margin: Dp,
+    pub horizontal_padding: Dp,
+    pub vertical_padding: Dp,
+    pub content_gap: Dp,
+    pub control_gap: Dp,
+    pub control_height: Dp,
+    pub title_line_height: Dp,
+    pub subtitle_height: Dp,
+    pub average_character_width: Dp,
+    pub surface_radius: Dp,
+    pub control_radius: Dp,
+    pub tail_size: Dp,
+    pub target_gap: Dp,
+}
+
+#[cfg(feature = "teaching-tip")]
+impl ZsTeachingTipMetrics {
+    pub const fn for_platform(platform: ZsTeachingTipPlatformStyle) -> Self {
+        match platform {
+            ZsTeachingTipPlatformStyle::Windows => Self {
+                minimum_width: Dp::new(240.0),
+                maximum_width: Dp::new(320.0),
+                viewport_margin: Dp::new(12.0),
+                horizontal_padding: Dp::new(16.0),
+                vertical_padding: Dp::new(14.0),
+                content_gap: Dp::new(8.0),
+                control_gap: Dp::new(12.0),
+                control_height: Dp::new(32.0),
+                title_line_height: Dp::new(22.0),
+                subtitle_height: Dp::new(40.0),
+                average_character_width: Dp::new(7.2),
+                surface_radius: Dp::new(8.0),
+                control_radius: Dp::new(4.0),
+                tail_size: Dp::new(12.0),
+                target_gap: Dp::new(4.0),
+            },
+            ZsTeachingTipPlatformStyle::Macos => Self {
+                minimum_width: Dp::new(220.0),
+                maximum_width: Dp::new(300.0),
+                viewport_margin: Dp::new(12.0),
+                horizontal_padding: Dp::new(16.0),
+                vertical_padding: Dp::new(12.0),
+                content_gap: Dp::new(6.0),
+                control_gap: Dp::new(10.0),
+                control_height: Dp::new(28.0),
+                title_line_height: Dp::new(20.0),
+                subtitle_height: Dp::new(36.0),
+                average_character_width: Dp::new(6.8),
+                surface_radius: Dp::new(10.0),
+                control_radius: Dp::new(6.0),
+                tail_size: Dp::new(10.0),
+                target_gap: Dp::new(4.0),
+            },
+            ZsTeachingTipPlatformStyle::Gtk => Self {
+                minimum_width: Dp::new(240.0),
+                maximum_width: Dp::new(320.0),
+                viewport_margin: Dp::new(12.0),
+                horizontal_padding: Dp::new(16.0),
+                vertical_padding: Dp::new(12.0),
+                content_gap: Dp::new(6.0),
+                control_gap: Dp::new(10.0),
+                control_height: Dp::new(34.0),
+                title_line_height: Dp::new(20.0),
+                subtitle_height: Dp::new(38.0),
+                average_character_width: Dp::new(7.2),
+                surface_radius: Dp::new(12.0),
+                control_radius: Dp::new(8.0),
+                tail_size: Dp::new(10.0),
+                target_gap: Dp::new(4.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "teaching-tip")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTeachingTipRenderPlan {
+    pub viewport: Rect,
+    pub target: Rect,
+    pub surface: Rect,
+    pub tail: [crate::Point; 3],
+    pub title_bounds: Rect,
+    pub subtitle_bounds: Option<Rect>,
+    pub action_bounds: Option<Rect>,
+    pub close_bounds: Rect,
+    pub focused_control: crate::ZsTeachingTipControl,
+    pub placement: crate::ZsTeachingTipPlacement,
+    pub surface_radius: i32,
+    pub control_radius: i32,
+    pub platform: ZsTeachingTipPlatformStyle,
+}
+
+#[cfg(feature = "teaching-tip")]
+pub fn zs_teaching_tip_render_plan(
+    viewport: Rect,
+    target: Rect,
+    spec: &crate::ZsTeachingTipSpec,
+    focused_control: crate::ZsTeachingTipControl,
+    platform: ZsTeachingTipPlatformStyle,
+    dpi: Dpi,
+) -> ZsTeachingTipRenderPlan {
+    let metrics = ZsTeachingTipMetrics::for_platform(platform);
+    let margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
+    let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
+    let vertical_padding = metrics.vertical_padding.to_px(dpi).round_i32().max(0);
+    let content_gap = metrics.content_gap.to_px(dpi).round_i32().max(0);
+    let control_gap = metrics.control_gap.to_px(dpi).round_i32().max(0);
+    let control_height = metrics.control_height.to_px(dpi).round_i32().max(1);
+    let title_height = metrics.title_line_height.to_px(dpi).round_i32().max(1);
+    let subtitle_height = metrics.subtitle_height.to_px(dpi).round_i32().max(1);
+    let character_width = metrics
+        .average_character_width
+        .to_px(dpi)
+        .round_i32()
+        .max(1);
+    let tail_size = metrics.tail_size.to_px(dpi).round_i32().max(1);
+    let target_gap = metrics.target_gap.to_px(dpi).round_i32().max(0);
+    let minimum_width = metrics.minimum_width.to_px(dpi).round_i32().max(1);
+    let maximum_width = metrics
+        .maximum_width
+        .to_px(dpi)
+        .round_i32()
+        .max(minimum_width);
+    let viewport_inner_width = viewport
+        .width
+        .saturating_sub(margin.saturating_mul(2))
+        .max(1);
+    let longest_text = spec
+        .title()
+        .chars()
+        .count()
+        .max(spec.subtitle().chars().count()) as i32;
+    let desired_width = longest_text
+        .saturating_mul(character_width)
+        .saturating_add(horizontal_padding.saturating_mul(2))
+        .saturating_add(control_height);
+    let surface_width = desired_width
+        .max(minimum_width)
+        .min(maximum_width)
+        .min(viewport_inner_width)
+        .max(1);
+    let has_subtitle = !spec.subtitle().trim().is_empty();
+    let has_action = spec.action_label().is_some();
+    let surface_height = vertical_padding
+        .saturating_mul(2)
+        .saturating_add(title_height)
+        .saturating_add(if has_subtitle {
+            content_gap.saturating_add(subtitle_height)
+        } else {
+            0
+        })
+        .saturating_add(if has_action {
+            control_gap.saturating_add(control_height)
+        } else {
+            0
+        })
+        .max(control_height.saturating_add(vertical_padding.saturating_mul(2)));
+    let placement = teaching_tip_resolve_placement(
+        viewport,
+        target,
+        surface_width,
+        surface_height,
+        tail_size,
+        target_gap,
+        spec.placement(),
+    );
+    let viewport_right = viewport.x.saturating_add(viewport.width);
+    let viewport_bottom = viewport.y.saturating_add(viewport.height);
+    let minimum_x = viewport.x.saturating_add(margin);
+    let maximum_x = viewport_right
+        .saturating_sub(margin)
+        .saturating_sub(surface_width)
+        .max(minimum_x);
+    let minimum_y = viewport.y.saturating_add(margin);
+    let maximum_y = viewport_bottom
+        .saturating_sub(margin)
+        .saturating_sub(surface_height)
+        .max(minimum_y);
+    let target_center_x = target.x.saturating_add(target.width / 2);
+    let target_center_y = target.y.saturating_add(target.height / 2);
+    let (desired_x, desired_y) = match placement {
+        crate::ZsTeachingTipPlacement::Top => (
+            target_center_x.saturating_sub(surface_width / 2),
+            target
+                .y
+                .saturating_sub(target_gap)
+                .saturating_sub(tail_size)
+                .saturating_sub(surface_height),
+        ),
+        crate::ZsTeachingTipPlacement::Bottom => (
+            target_center_x.saturating_sub(surface_width / 2),
+            target
+                .y
+                .saturating_add(target.height)
+                .saturating_add(target_gap)
+                .saturating_add(tail_size),
+        ),
+        crate::ZsTeachingTipPlacement::Left => (
+            target
+                .x
+                .saturating_sub(target_gap)
+                .saturating_sub(tail_size)
+                .saturating_sub(surface_width),
+            target_center_y.saturating_sub(surface_height / 2),
+        ),
+        crate::ZsTeachingTipPlacement::Right => (
+            target
+                .x
+                .saturating_add(target.width)
+                .saturating_add(target_gap)
+                .saturating_add(tail_size),
+            target_center_y.saturating_sub(surface_height / 2),
+        ),
+        crate::ZsTeachingTipPlacement::Auto => unreachable!("placement is resolved"),
+    };
+    let surface = Rect {
+        x: desired_x.clamp(minimum_x, maximum_x),
+        y: desired_y.clamp(minimum_y, maximum_y),
+        width: surface_width,
+        height: surface_height,
+    };
+    let tail = teaching_tip_tail(surface, target, placement, tail_size, target_gap);
+    let close_bounds = Rect {
+        x: surface
+            .x
+            .saturating_add(surface.width)
+            .saturating_sub(horizontal_padding)
+            .saturating_sub(control_height),
+        y: surface.y.saturating_add(vertical_padding),
+        width: control_height,
+        height: control_height,
+    };
+    let title_bounds = Rect {
+        x: surface.x.saturating_add(horizontal_padding),
+        y: surface.y.saturating_add(vertical_padding),
+        width: close_bounds
+            .x
+            .saturating_sub(content_gap)
+            .saturating_sub(surface.x.saturating_add(horizontal_padding))
+            .max(1),
+        height: title_height,
+    };
+    let subtitle_bounds = has_subtitle.then_some(Rect {
+        x: surface.x.saturating_add(horizontal_padding),
+        y: title_bounds
+            .y
+            .saturating_add(title_bounds.height)
+            .saturating_add(content_gap),
+        width: surface
+            .width
+            .saturating_sub(horizontal_padding.saturating_mul(2))
+            .max(1),
+        height: subtitle_height,
+    });
+    let action_bounds = spec.action_label().map(|label| {
+        let desired = (label.chars().count() as i32)
+            .saturating_mul(character_width)
+            .saturating_add(horizontal_padding)
+            .max(control_height);
+        let width = desired.min(
+            surface
+                .width
+                .saturating_sub(horizontal_padding.saturating_mul(2))
+                .max(1),
+        );
+        Rect {
+            x: surface
+                .x
+                .saturating_add(surface.width)
+                .saturating_sub(horizontal_padding)
+                .saturating_sub(width),
+            y: surface
+                .y
+                .saturating_add(surface.height)
+                .saturating_sub(vertical_padding)
+                .saturating_sub(control_height),
+            width,
+            height: control_height,
+        }
+    });
+
+    ZsTeachingTipRenderPlan {
+        viewport,
+        target,
+        surface,
+        tail,
+        title_bounds,
+        subtitle_bounds,
+        action_bounds,
+        close_bounds,
+        focused_control: if spec.has_control(focused_control) {
+            focused_control
+        } else {
+            spec.initial_control()
+        },
+        placement,
+        surface_radius: metrics.surface_radius.to_px(dpi).round_i32().max(0),
+        control_radius: metrics.control_radius.to_px(dpi).round_i32().max(0),
+        platform,
+    }
+}
+
+#[cfg(feature = "teaching-tip")]
+fn teaching_tip_resolve_placement(
+    viewport: Rect,
+    target: Rect,
+    surface_width: i32,
+    surface_height: i32,
+    tail_size: i32,
+    target_gap: i32,
+    preferred: crate::ZsTeachingTipPlacement,
+) -> crate::ZsTeachingTipPlacement {
+    use crate::ZsTeachingTipPlacement::{Auto, Bottom, Left, Right, Top};
+    let required_vertical = surface_height
+        .saturating_add(tail_size)
+        .saturating_add(target_gap);
+    let required_horizontal = surface_width
+        .saturating_add(tail_size)
+        .saturating_add(target_gap);
+    let viewport_right = viewport.x.saturating_add(viewport.width);
+    let viewport_bottom = viewport.y.saturating_add(viewport.height);
+    let available = |placement| match placement {
+        Top => target.y.saturating_sub(viewport.y),
+        Bottom => viewport_bottom.saturating_sub(target.y.saturating_add(target.height)),
+        Left => target.x.saturating_sub(viewport.x),
+        Right => viewport_right.saturating_sub(target.x.saturating_add(target.width)),
+        Auto => 0,
+    };
+    let fits = |placement| match placement {
+        Top | Bottom => available(placement) >= required_vertical,
+        Left | Right => available(placement) >= required_horizontal,
+        Auto => false,
+    };
+    let order = match preferred {
+        Auto => [Top, Bottom, Right, Left],
+        Top => [Top, Bottom, Right, Left],
+        Bottom => [Bottom, Top, Right, Left],
+        Left => [Left, Right, Top, Bottom],
+        Right => [Right, Left, Top, Bottom],
+    };
+    order
+        .into_iter()
+        .find(|placement| fits(*placement))
+        .unwrap_or_else(|| {
+            order
+                .into_iter()
+                .max_by_key(|placement| available(*placement))
+                .unwrap_or(Top)
+        })
+}
+
+#[cfg(feature = "teaching-tip")]
+fn teaching_tip_tail(
+    surface: Rect,
+    target: Rect,
+    placement: crate::ZsTeachingTipPlacement,
+    size: i32,
+    gap: i32,
+) -> [crate::Point; 3] {
+    let half = (size / 2).max(1);
+    let surface_right = surface.x.saturating_add(surface.width);
+    let surface_bottom = surface.y.saturating_add(surface.height);
+    let target_center_x = target.x.saturating_add(target.width / 2);
+    let target_center_y = target.y.saturating_add(target.height / 2);
+    match placement {
+        crate::ZsTeachingTipPlacement::Top => {
+            let center = target_center_x.clamp(
+                surface.x.saturating_add(size),
+                surface_right.saturating_sub(size),
+            );
+            [
+                crate::Point {
+                    x: center.saturating_sub(half),
+                    y: surface_bottom,
+                },
+                crate::Point {
+                    x: center.saturating_add(half),
+                    y: surface_bottom,
+                },
+                crate::Point {
+                    x: target_center_x,
+                    y: target.y.saturating_sub(gap),
+                },
+            ]
+        }
+        crate::ZsTeachingTipPlacement::Bottom => {
+            let center = target_center_x.clamp(
+                surface.x.saturating_add(size),
+                surface_right.saturating_sub(size),
+            );
+            [
+                crate::Point {
+                    x: center.saturating_sub(half),
+                    y: surface.y,
+                },
+                crate::Point {
+                    x: center.saturating_add(half),
+                    y: surface.y,
+                },
+                crate::Point {
+                    x: target_center_x,
+                    y: target.y.saturating_add(target.height).saturating_add(gap),
+                },
+            ]
+        }
+        crate::ZsTeachingTipPlacement::Left => {
+            let center = target_center_y.clamp(
+                surface.y.saturating_add(size),
+                surface_bottom.saturating_sub(size),
+            );
+            [
+                crate::Point {
+                    x: surface_right,
+                    y: center.saturating_sub(half),
+                },
+                crate::Point {
+                    x: surface_right,
+                    y: center.saturating_add(half),
+                },
+                crate::Point {
+                    x: target.x.saturating_sub(gap),
+                    y: target_center_y,
+                },
+            ]
+        }
+        crate::ZsTeachingTipPlacement::Right => {
+            let center = target_center_y.clamp(
+                surface.y.saturating_add(size),
+                surface_bottom.saturating_sub(size),
+            );
+            [
+                crate::Point {
+                    x: surface.x,
+                    y: center.saturating_sub(half),
+                },
+                crate::Point {
+                    x: surface.x,
+                    y: center.saturating_add(half),
+                },
+                crate::Point {
+                    x: target.x.saturating_add(target.width).saturating_add(gap),
+                    y: target_center_y,
+                },
+            ]
+        }
+        crate::ZsTeachingTipPlacement::Auto => unreachable!("placement is resolved"),
+    }
+}
+
+#[cfg(feature = "teaching-tip")]
+pub fn zs_teaching_tip_native_draw_plan(
+    plan: &ZsTeachingTipRenderPlan,
+    spec: &crate::ZsTeachingTipSpec,
+) -> NativeDrawPlan {
+    let shadow_alpha = match plan.platform {
+        ZsTeachingTipPlatformStyle::Windows => 32,
+        ZsTeachingTipPlatformStyle::Macos => 26,
+        ZsTeachingTipPlatformStyle::Gtk => 34,
+    };
+    let shadow_surface = Rect {
+        x: plan.surface.x.saturating_sub(4),
+        y: plan.surface.y.saturating_add(3),
+        width: plan.surface.width.saturating_add(8),
+        height: plan.surface.height.saturating_add(5),
+    };
+    let shadow_tail = plan.tail.map(|point| crate::Point {
+        x: point.x,
+        y: point.y.saturating_add(3),
+    });
+    let mut commands = vec![
+        NativeDrawCommand::RoundFill {
+            rect: shadow_surface,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: shadow_alpha,
+            },
+            radius: plan.surface_radius.saturating_add(4),
+        },
+        NativeDrawCommand::FillTriangle {
+            points: shadow_tail,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: shadow_alpha,
+            },
+        },
+        NativeDrawCommand::FillTriangle {
+            points: plan.tail,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.surface,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.surface_radius,
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            spec.title(),
+            plan.title_bounds,
+            SemanticTextStyle {
+                role: TextRole::Subtitle,
+                color: ColorRole::PrimaryText,
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )),
+    ];
+    if let Some(bounds) = plan.subtitle_bounds {
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            spec.subtitle(),
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Body,
+                color: ColorRole::SecondaryText,
+                weight: TextWeight::Regular,
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Start,
+                wrap: crate::TextWrap::Word,
+                ellipsis: true,
+            },
+        )));
+    }
+    if let (Some(label), Some(bounds)) = (spec.action_label(), plan.action_bounds) {
+        let focused = plan.focused_control == crate::ZsTeachingTipControl::Action;
+        let native_filled = plan.platform != ZsTeachingTipPlatformStyle::Windows;
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: bounds,
+            fill: if native_filled {
+                NativeDrawFill::Role(ColorRole::Accent)
+            } else {
+                NativeDrawFill::Role(ColorRole::Control)
+            },
+            stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
+            radius: plan.control_radius,
+        });
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            label,
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Button,
+                color: if native_filled {
+                    ColorRole::AccentText
+                } else {
+                    ColorRole::Accent
+                },
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Center,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+    }
+    commands.push(NativeDrawCommand::RoundRect {
+        rect: plan.close_bounds,
+        fill: NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::PrimaryText,
+            alpha: 0,
+        },
+        stroke: (plan.focused_control == crate::ZsTeachingTipControl::Close)
+            .then_some(NativeDrawFill::Role(ColorRole::Accent)),
+        radius: plan.control_radius,
+    });
+    let inset = (plan.close_bounds.width.min(plan.close_bounds.height) / 4).max(1);
+    commands.push(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+        ZsIcon::Close,
+        Rect {
+            x: plan.close_bounds.x.saturating_add(inset),
+            y: plan.close_bounds.y.saturating_add(inset),
+            width: plan
+                .close_bounds
+                .width
+                .saturating_sub(inset.saturating_mul(2)),
+            height: plan
+                .close_bounds
+                .height
+                .saturating_sub(inset.saturating_mul(2)),
+        },
+        NativeIconColorMode::ThemeAware,
+    )));
     NativeDrawPlan::new(commands)
 }
 
@@ -4800,6 +5415,71 @@ mod tests {
                 rect.x.saturating_add(rect.width)
                     <= narrow_bounds.x.saturating_add(narrow_bounds.width)
             );
+        }
+    }
+
+    #[cfg(feature = "teaching-tip")]
+    #[test]
+    fn teaching_tip_plan_points_to_target_and_flips_inside_viewport() {
+        let spec = crate::ZsTeachingTipSpec::new(
+            "Save automatically",
+            "Your changes are saved as you work.",
+        )
+        .action("Review settings")
+        .preferred_placement(crate::ZsTeachingTipPlacement::Bottom);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 420,
+        };
+        let target = Rect {
+            x: 280,
+            y: 368,
+            width: 80,
+            height: 32,
+        };
+        let windows = zs_teaching_tip_render_plan(
+            viewport,
+            target,
+            &spec,
+            crate::ZsTeachingTipControl::Action,
+            ZsTeachingTipPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_teaching_tip_render_plan(
+            viewport,
+            target,
+            &spec,
+            crate::ZsTeachingTipControl::Close,
+            ZsTeachingTipPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_teaching_tip_render_plan(
+            viewport,
+            target,
+            &spec,
+            crate::ZsTeachingTipControl::Action,
+            ZsTeachingTipPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.placement, crate::ZsTeachingTipPlacement::Top);
+        assert!(windows.surface.y + windows.surface.height < target.y);
+        assert!(windows.action_bounds.is_some());
+        assert!(windows.tail.iter().any(|point| point.y > windows.surface.y));
+        assert!(macos.surface_radius > windows.surface_radius);
+        assert!(gtk.control_radius > windows.control_radius);
+        for plan in [windows, macos, gtk] {
+            assert!(plan.surface.x >= viewport.x);
+            assert!(plan.surface.y >= viewport.y);
+            assert!(plan.surface.x + plan.surface.width <= viewport.x + viewport.width);
+            assert!(plan.surface.y + plan.surface.height <= viewport.y + viewport.height);
+            let draw = zs_teaching_tip_native_draw_plan(&plan, &spec);
+            assert!(draw
+                .commands
+                .iter()
+                .any(|command| matches!(command, NativeDrawCommand::FillTriangle { .. })));
         }
     }
 

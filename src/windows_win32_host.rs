@@ -21,6 +21,7 @@ use crate::native_input_visuals::{
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -1848,6 +1849,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1862,6 +1864,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1912,6 +1915,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1926,6 +1930,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1975,6 +1980,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1989,6 +1995,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2094,6 +2101,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2195,6 +2203,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2302,6 +2311,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2330,6 +2340,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2348,6 +2359,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2386,6 +2398,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2404,6 +2417,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2437,6 +2451,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2454,6 +2469,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2553,6 +2569,15 @@ impl WindowsWin32ViewInputRoute {
             report
                 .events
                 .push(format!("win32_view_info_bar_text_suppressed:{}", widget.0));
+            return report;
+        }
+        #[cfg(feature = "teaching-tip")]
+        if self.widget_teaching_tip_state(widget).is_some() {
+            report.handled = true;
+            report.events.push(format!(
+                "win32_view_teaching_tip_text_suppressed:{}",
+                widget.0
+            ));
             return report;
         }
         #[cfg(feature = "combo")]
@@ -2783,6 +2808,90 @@ impl WindowsWin32ViewInputRoute {
                         crate::ViewEvent::ToastResponded {
                             widget: toast_target.widget,
                             toast,
+                            response,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+            }
+        }
+        #[cfg(feature = "teaching-tip")]
+        if let Some(tip_target) = self
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TeachingTip)
+        {
+            let Some((state, spec)) = self.widget_teaching_tip_state(tip_target.widget) else {
+                return report;
+            };
+            if virtual_key == u32::from(VK_ESCAPE) {
+                let response = crate::ZsTeachingTipResponse::Dismissed(
+                    crate::ZsTeachingTipDismissReason::EscapeKey,
+                );
+                report.handled = true;
+                report.teaching_tip_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_teaching_tip_response:{}:{response:?}",
+                    tip_target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TeachingTipResponded {
+                        widget: tip_target.widget,
+                        response,
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+            if self.focused_widget == Some(tip_target.widget) {
+                let focus_offset = match virtual_key {
+                    key if key == u32::from(VK_LEFT) => Some(-1),
+                    key if key == u32::from(VK_RIGHT) => Some(1),
+                    _ => None,
+                };
+                if let Some(offset) = focus_offset {
+                    let next = spec.relative_control(state.focused_control, offset);
+                    report.handled = true;
+                    report.teaching_tip_focus_change_count =
+                        usize::from(next != state.focused_control);
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_teaching_tip_focus:{}:{next:?}",
+                        tip_target.widget.0
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TeachingTipFocused {
+                            widget: tip_target.widget,
+                            control: next,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+                if matches!(virtual_key, ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE) {
+                    let response = match state.focused_control {
+                        crate::ZsTeachingTipControl::Action if spec.action_label().is_some() => {
+                            crate::ZsTeachingTipResponse::Action
+                        }
+                        _ => crate::ZsTeachingTipResponse::Dismissed(
+                            crate::ZsTeachingTipDismissReason::CloseButton,
+                        ),
+                    };
+                    report.handled = true;
+                    report.teaching_tip_response_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_teaching_tip_response:{}:{response:?}",
+                        tip_target.widget.0
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TeachingTipResponded {
+                            widget: tip_target.widget,
                             response,
                         },
                         &mut report,
@@ -3922,6 +4031,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -4096,6 +4206,46 @@ impl WindowsWin32ViewInputRoute {
                 return;
             }
             crate::ViewHitTargetKind::InfoBar => return,
+            _ => {}
+        }
+        #[cfg(feature = "teaching-tip")]
+        match target.kind {
+            crate::ViewHitTargetKind::TeachingTipAction => {
+                report.teaching_tip_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_teaching_tip_response:{}:Action",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TeachingTipResponded {
+                        widget: target.widget,
+                        response: crate::ZsTeachingTipResponse::Action,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::TeachingTipClose => {
+                let response = crate::ZsTeachingTipResponse::Dismissed(
+                    crate::ZsTeachingTipDismissReason::CloseButton,
+                );
+                report.teaching_tip_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_teaching_tip_response:{}:{response:?}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TeachingTipResponded {
+                        widget: target.widget,
+                        response,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::TeachingTip => return,
             _ => {}
         }
         #[cfg(feature = "tree")]
@@ -4791,6 +4941,21 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "teaching-tip")]
+    fn widget_teaching_tip_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_teaching_tip_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_teaching_tip_state(widget))
+            })
+    }
+
     #[cfg(feature = "toast")]
     fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
         let target = self
@@ -5012,6 +5177,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -5105,6 +5271,7 @@ impl WindowsWin32ViewInputRoute {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -5318,6 +5485,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub toast_timeout_count: usize,
     pub info_bar_focus_change_count: usize,
     pub info_bar_event_count: usize,
+    pub teaching_tip_focus_change_count: usize,
+    pub teaching_tip_response_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -5400,6 +5569,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.toast_timeout_count += next.toast_timeout_count;
         self.info_bar_focus_change_count += next.info_bar_focus_change_count;
         self.info_bar_event_count += next.info_bar_event_count;
+        self.teaching_tip_focus_change_count += next.teaching_tip_focus_change_count;
+        self.teaching_tip_response_count += next.teaching_tip_response_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -8770,6 +8941,70 @@ mod tests {
         );
         let close = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
         assert_eq!(close.info_bar_event_count, 1);
+        assert_eq!(close.ui_command_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "teaching-tip")]
+    fn window_view_input_route_routes_teaching_tip_action_and_keyboard_close() {
+        fn responded(_result: crate::ZsTeachingTipResult) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.teaching_tip_responded"))
+        }
+
+        let widget = crate::WidgetId::new(151);
+        let target = crate::WidgetId::new(152);
+        let mut view = crate::teaching_tip(
+            widget,
+            true,
+            target,
+            crate::ZsTeachingTipSpec::new(
+                "Save automatically",
+                "Your changes are saved as you work.",
+            )
+            .action("Review settings"),
+            crate::spacer().id(target),
+        )
+        .on_teaching_tip_result(responded);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 420,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let action = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TeachingTipAction)
+            .expect("teaching-tip action");
+
+        let mut pointer_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
+        let pointer = pointer_route.dispatch_click(crate::Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert_eq!(pointer.teaching_tip_response_count, 1);
+        assert_eq!(pointer.ui_command_count, 1);
+
+        let mut keyboard_route = WindowsWin32ViewInputRoute::new(interaction, view);
+        let focus = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_TAB);
+        assert_eq!(focus.focused_widget, Some(target.0));
+        let focus = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_TAB);
+        assert_eq!(focus.focused_widget, Some(widget.0));
+        let next = keyboard_route.dispatch_key_down(u32::from(VK_RIGHT));
+        assert_eq!(next.teaching_tip_focus_change_count, 1);
+        assert_eq!(
+            keyboard_route
+                .widget_teaching_tip_state(widget)
+                .map(|(state, _)| state.focused_control),
+            Some(crate::ZsTeachingTipControl::Close)
+        );
+        let close = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(close.teaching_tip_response_count, 1);
         assert_eq!(close.ui_command_count, 1);
     }
 

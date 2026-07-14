@@ -255,6 +255,15 @@ pub(crate) fn decorate_native_focus_ring(
     ) {
         return None;
     }
+    #[cfg(feature = "teaching-tip")]
+    if matches!(
+        target.kind,
+        ViewHitTargetKind::TeachingTip
+            | ViewHitTargetKind::TeachingTipAction
+            | ViewHitTargetKind::TeachingTipClose
+    ) {
+        return None;
+    }
     #[cfg(feature = "auto-suggest")]
     if target.kind == ViewHitTargetKind::AutoSuggestBox
         && crate::ZsAutoSuggestPlatformStyle::current()
@@ -300,6 +309,7 @@ pub(crate) fn decorate_native_focus_ring(
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -315,6 +325,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -362,6 +373,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
             target.kind,
             ViewHitTargetKind::InfoBarAction | ViewHitTargetKind::InfoBarClose
         );
+    #[cfg(feature = "teaching-tip")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::TeachingTipAction | ViewHitTargetKind::TeachingTipClose
+        );
     #[cfg(feature = "password-box")]
     let supported = supported || target.kind == ViewHitTargetKind::PasswordBoxReveal;
     #[cfg(feature = "date-picker")]
@@ -389,6 +406,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",

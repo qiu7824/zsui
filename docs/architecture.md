@@ -155,6 +155,16 @@ macOS uses a restrained rounded status surface rather than modal `NSAlert`
 chrome, and GTK uses AdwBanner-like compact metrics. Severity is always carried
 by both semantic icon and text, and all hosts consume the same draw plan.
 
+The optional `teaching-tip` feature adds
+`teaching_tip(id, open, target_id, spec, page)` as a targeted, nonmodal overlay.
+The application owns visibility and stable presenter/target IDs; the shared
+layout resolves the target's final bounds, flips and clamps the bubble within
+the current viewport, and keeps action/close results typed. The page remains in
+ordinary layout and interactive. Windows, macOS and GTK select TeachingTip,
+NSPopover-like and GtkPopover-like metric profiles while consuming the same
+self-drawn surface and `FillTriangle` tail command; no child native widget or
+global target registry is introduced.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation
@@ -219,6 +229,8 @@ status-menu command dispatch and bound settings-item updates so native backends
 have a concrete operation surface instead of only a stored startup snapshot.
 The reusable self-draw command shape is represented in
 `src/render_protocol.rs` as `NativeDrawPlan` and `NativeDrawCommandSink`. The
+protocol includes a filled triangle primitive for targeted overlay tails;
+Win32 GDI, AppKit `NSBezierPath` and GTK Cairo translate it locally. The
 Windows GDI implementation lives in `src/windows_gdi_renderer.rs`; future platform renderers should
 translate the same commands to Direct2D, AppKit, GTK snapshot APIs, Android
 Canvas or Harmony Canvas only when that backend needs it, without leaking

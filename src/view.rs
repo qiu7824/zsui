@@ -676,6 +676,14 @@ pub enum ViewNodeKind<Msg> {
         focused_control: crate::ZsToastControl,
         on_result: Option<fn(crate::ZsToastResult) -> Msg>,
     },
+    #[cfg(feature = "teaching-tip")]
+    TeachingTip {
+        spec: crate::ZsTeachingTipSpec,
+        open: bool,
+        target: WidgetId,
+        focused_control: crate::ZsTeachingTipControl,
+        on_result: Option<fn(crate::ZsTeachingTipResult) -> Msg>,
+    },
     #[cfg(feature = "info-bar")]
     InfoBar {
         spec: crate::ZsInfoBarSpec,
@@ -1167,6 +1175,17 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "toast")]
     pub fn on_toast_result(mut self, message: fn(crate::ZsToastResult) -> Msg) -> Self {
         if let ViewNodeKind::ToastPresenter { on_result, .. } = &mut self.kind {
+            *on_result = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "teaching-tip")]
+    pub fn on_teaching_tip_result(
+        mut self,
+        message: fn(crate::ZsTeachingTipResult) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::TeachingTip { on_result, .. } = &mut self.kind {
             *on_result = Some(message);
         }
         self
@@ -1818,6 +1837,31 @@ pub fn toast_presenter<Msg>(
     .child(page)
 }
 
+/// Wraps one page in a targeted, self-drawn teaching-tip layer.
+///
+/// The application owns `open` and identifies the target with a stable
+/// [`WidgetId`]. ZSUI owns viewport-aware tail placement and typed responses.
+#[cfg(feature = "teaching-tip")]
+pub fn teaching_tip<Msg>(
+    widget: WidgetId,
+    open: bool,
+    target: WidgetId,
+    spec: crate::ZsTeachingTipSpec,
+    page: ViewNode<Msg>,
+) -> ViewNode<Msg> {
+    let open = open && !spec.is_empty();
+    let focused_control = spec.initial_control();
+    ViewNode::<Msg>::new(ViewNodeKind::TeachingTip {
+        spec,
+        open,
+        target,
+        focused_control,
+        on_result: None,
+    })
+    .id(widget)
+    .child(page)
+}
+
 /// Creates a persistent inline status message that participates in page layout.
 ///
 /// The application owns whether the node is present. ZSUI emits action and
@@ -1997,6 +2041,16 @@ pub enum ViewEvent {
         widget: WidgetId,
         toast: crate::ZsToastId,
         response: crate::ZsToastResponse,
+    },
+    #[cfg(feature = "teaching-tip")]
+    TeachingTipFocused {
+        widget: WidgetId,
+        control: crate::ZsTeachingTipControl,
+    },
+    #[cfg(feature = "teaching-tip")]
+    TeachingTipResponded {
+        widget: WidgetId,
+        response: crate::ZsTeachingTipResponse,
     },
     #[cfg(feature = "info-bar")]
     InfoBarFocused {
@@ -2181,6 +2235,12 @@ pub enum ViewHitTargetKind {
     ToastAction,
     #[cfg(feature = "toast")]
     ToastClose,
+    #[cfg(feature = "teaching-tip")]
+    TeachingTip,
+    #[cfg(feature = "teaching-tip")]
+    TeachingTipAction,
+    #[cfg(feature = "teaching-tip")]
+    TeachingTipClose,
     #[cfg(feature = "info-bar")]
     InfoBar,
     #[cfg(feature = "info-bar")]
@@ -2411,6 +2471,13 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "teaching-tip")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::TeachingTipAction | ViewHitTargetKind::TeachingTipClose
+        ) {
+            return false;
+        }
         #[cfg(feature = "info-bar")]
         if matches!(
             self.kind,
@@ -2614,6 +2681,11 @@ trait LiveViewDriver: Send {
         &self,
         widget: WidgetId,
     ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)>;
+    #[cfg(feature = "teaching-tip")]
+    fn widget_teaching_tip_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)>;
     #[cfg(feature = "info-bar")]
     fn widget_info_bar_state(
         &self,
@@ -2725,6 +2797,14 @@ impl SharedLiveViewRuntime {
         widget: WidgetId,
     ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
         self.lock().widget_toast_state(widget)
+    }
+
+    #[cfg(feature = "teaching-tip")]
+    pub fn widget_teaching_tip_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
+        self.lock().widget_teaching_tip_state(widget)
     }
 
     #[cfg(feature = "info-bar")]
@@ -3028,6 +3108,14 @@ where
         self.view.widget_toast_state(widget)
     }
 
+    #[cfg(feature = "teaching-tip")]
+    fn widget_teaching_tip_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
+        self.view.widget_teaching_tip_state(widget)
+    }
+
     #[cfg(feature = "info-bar")]
     fn widget_info_bar_state(
         &self,
@@ -3162,6 +3250,7 @@ impl ViewPaintCx {
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
+            feature = "teaching-tip",
             feature = "time-picker",
             feature = "toast"
         ))]
@@ -3347,6 +3436,49 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "teaching-tip")]
+        if matches!(self.kind, ViewNodeKind::TeachingTip { .. }) {
+            let mut handled = false;
+            if let ViewNodeKind::TeachingTip {
+                spec,
+                open,
+                focused_control,
+                on_result,
+                ..
+            } = &mut self.kind
+            {
+                if *open {
+                    match event {
+                        ViewEvent::TeachingTipFocused { widget, control }
+                            if self.id == Some(*widget) && spec.has_control(*control) =>
+                        {
+                            *focused_control = *control;
+                            handled = true;
+                        }
+                        ViewEvent::TeachingTipResponded { widget, response }
+                            if self.id == Some(*widget) =>
+                        {
+                            *open = false;
+                            if let Some(message) = on_result {
+                                cx.emit(message(crate::ZsTeachingTipResult {
+                                    response: *response,
+                                }));
+                            }
+                            handled = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if handled {
+                return;
+            }
+            for child in &mut self.children {
+                child.event(cx, event);
+            }
+            return;
+        }
+
         #[cfg(feature = "info-bar")]
         if let ViewNodeKind::InfoBar {
             spec,
@@ -4896,6 +5028,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::ContentDialog { .. } => {}
             #[cfg(feature = "toast")]
             ViewNodeKind::ToastPresenter { .. } => {}
+            #[cfg(feature = "teaching-tip")]
+            ViewNodeKind::TeachingTip { .. } => {}
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
@@ -4941,6 +5075,9 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "toast")]
             (Some(id), ViewEvent::ToastFocused { widget, .. })
             | (Some(id), ViewEvent::ToastResponded { widget, .. }) => id == *widget,
+            #[cfg(feature = "teaching-tip")]
+            (Some(id), ViewEvent::TeachingTipFocused { widget, .. })
+            | (Some(id), ViewEvent::TeachingTipResponded { widget, .. }) => id == *widget,
             #[cfg(feature = "info-bar")]
             (Some(id), ViewEvent::InfoBarFocused { widget, .. })
             | (Some(id), ViewEvent::InfoBarInvoked { widget, .. }) => id == *widget,
@@ -4979,6 +5116,16 @@ impl<Msg> ViewNode<Msg> {
                 .any(|child| child.contains_widget(widget))
     }
 
+    #[cfg(feature = "teaching-tip")]
+    fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
+        if self.id == Some(widget) {
+            return self.bounds;
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_layout_bounds(widget))
+    }
+
     pub fn interaction_plan(&self) -> ViewInteractionPlan {
         let mut hit_targets = Vec::new();
         self.collect_hit_targets(&mut hit_targets, None);
@@ -4987,6 +5134,7 @@ impl<Msg> ViewNode<Msg> {
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
+            feature = "teaching-tip",
             feature = "time-picker",
             feature = "toast"
         ))]
@@ -5300,6 +5448,35 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_toast_state(widget))
+    }
+
+    #[cfg(feature = "teaching-tip")]
+    pub fn widget_teaching_tip_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::TeachingTip {
+                spec,
+                open,
+                target,
+                focused_control,
+                ..
+            } = &self.kind
+            {
+                return Some((
+                    crate::ZsTeachingTipState {
+                        open: *open,
+                        target: *target,
+                        focused_control: *focused_control,
+                    },
+                    spec.clone(),
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_teaching_tip_state(widget))
     }
 
     #[cfg(feature = "info-bar")]
@@ -5619,6 +5796,14 @@ impl<Msg> ViewNode<Msg> {
                         ViewHitTargetKind::InfoBarClose,
                     ));
                 }
+            }
+            return;
+        }
+
+        #[cfg(feature = "teaching-tip")]
+        if matches!(self.kind, ViewNodeKind::TeachingTip { .. }) {
+            for child in &self.children {
+                child.collect_hit_targets(hit_targets, clip);
             }
             return;
         }
@@ -5980,7 +6165,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
-        feature = "toast",
+        feature = "teaching-tip",
         feature = "time-picker",
         feature = "toast"
     ))]
@@ -5989,6 +6174,55 @@ impl<Msg> ViewNode<Msg> {
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "teaching-tip")]
+        if let ViewNodeKind::TeachingTip {
+            spec,
+            open,
+            target,
+            focused_control,
+            ..
+        } = &self.kind
+        {
+            let tip_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.collect_overlay_hit_targets(hit_targets, tip_viewport);
+            }
+            let target_bounds = self
+                .children
+                .iter()
+                .find_map(|child| child.widget_layout_bounds(*target));
+            if let (true, Some(widget), Some(viewport), Some(target_bounds)) =
+                (*open, self.id, tip_viewport, target_bounds)
+            {
+                let plan = crate::zs_teaching_tip_render_plan(
+                    viewport,
+                    target_bounds,
+                    spec,
+                    *focused_control,
+                    crate::ZsTeachingTipPlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.surface,
+                    ViewHitTargetKind::TeachingTip,
+                ));
+                if let Some(bounds) = plan.action_bounds {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        ViewHitTargetKind::TeachingTipAction,
+                    ));
+                }
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.close_bounds,
+                    ViewHitTargetKind::TeachingTipClose,
+                ));
+            }
+            return;
+        }
+
         #[cfg(feature = "toast")]
         if let ViewNodeKind::ToastPresenter {
             toast,
@@ -6317,11 +6551,46 @@ impl<Msg> ViewNode<Msg> {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
-        feature = "toast",
+        feature = "teaching-tip",
         feature = "time-picker",
         feature = "toast"
     ))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
+        #[cfg(feature = "teaching-tip")]
+        if let ViewNodeKind::TeachingTip {
+            spec,
+            open,
+            target,
+            focused_control,
+            ..
+        } = &self.kind
+        {
+            let tip_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.paint_overlays(cx, tip_viewport);
+            }
+            let target_bounds = self
+                .children
+                .iter()
+                .find_map(|child| child.widget_layout_bounds(*target));
+            if let (true, Some(viewport), Some(target_bounds)) =
+                (*open, tip_viewport, target_bounds)
+            {
+                let plan = crate::zs_teaching_tip_render_plan(
+                    viewport,
+                    target_bounds,
+                    spec,
+                    *focused_control,
+                    crate::ZsTeachingTipPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_teaching_tip_native_draw_plan(&plan, spec).commands {
+                    cx.draw(command);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "toast")]
         if let ViewNodeKind::ToastPresenter {
             toast,
@@ -6609,6 +6878,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
             #[cfg(feature = "toast")]
             ViewNodeKind::ToastPresenter { .. } => ViewHitTargetKind::Toast,
+            #[cfg(feature = "teaching-tip")]
+            ViewNodeKind::TeachingTip { .. } => ViewHitTargetKind::TeachingTip,
             #[cfg(feature = "info-bar")]
             ViewNodeKind::InfoBar { .. } => ViewHitTargetKind::InfoBar,
             #[cfg(feature = "combo")]
@@ -7173,6 +7444,7 @@ mod tests {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "toast",
         feature = "time-picker",
         feature = "tabs",
@@ -7228,6 +7500,8 @@ mod tests {
         DialogResult(crate::ZsContentDialogResult),
         #[cfg(feature = "toast")]
         ToastResult(crate::ZsToastResult),
+        #[cfg(feature = "teaching-tip")]
+        TeachingTipResult(crate::ZsTeachingTipResult),
         #[cfg(feature = "info-bar")]
         InfoBarEvent(crate::ZsInfoBarEvent),
         #[cfg(feature = "scroll")]
@@ -8514,6 +8788,79 @@ mod tests {
                 .map(|target| target.widget),
             Some(page)
         );
+    }
+
+    #[cfg(feature = "teaching-tip")]
+    #[test]
+    fn teaching_tip_targets_stable_widget_and_routes_typed_action() {
+        let presenter = WidgetId::new(115);
+        let target = WidgetId::new(116);
+        let mut view = teaching_tip(
+            presenter,
+            true,
+            target,
+            crate::ZsTeachingTipSpec::new(
+                "Save automatically",
+                "Your changes are saved as you work.",
+            )
+            .action("Review settings"),
+            spacer::<Msg>().id(target),
+        )
+        .on_teaching_tip_result(Msg::TeachingTipResult);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 420,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|candidate| candidate.kind == ViewHitTargetKind::TeachingTipAction));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|candidate| candidate.kind == ViewHitTargetKind::TeachingTipClose));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint
+            .plan()
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::FillTriangle { .. })));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::TeachingTipFocused {
+                widget: presenter,
+                control: crate::ZsTeachingTipControl::Close,
+            },
+        );
+        assert_eq!(
+            view.widget_teaching_tip_state(presenter)
+                .map(|(state, _)| state.focused_control),
+            Some(crate::ZsTeachingTipControl::Close)
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::TeachingTipResponded {
+                widget: presenter,
+                response: crate::ZsTeachingTipResponse::Action,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::TeachingTipResult(crate::ZsTeachingTipResult {
+                response: crate::ZsTeachingTipResponse::Action,
+            })]
+        );
+        assert!(view
+            .widget_teaching_tip_state(presenter)
+            .is_some_and(|(state, _)| !state.open));
     }
 
     #[cfg(feature = "info-bar")]

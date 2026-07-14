@@ -241,6 +241,27 @@ contract without copying system notification chrome. Accessibility live-region
 semantics, hover/focus timeout pause, queues/priorities and target-machine
 AppKit/GTK interaction artifacts remain explicit gaps.
 
+The dedicated self-drawn targeted TeachingTip smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,button,label,teaching-tip,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-teaching-tip --teaching-tip
+```
+
+It resolves a stable Save-button `WidgetId`, draws a viewport-constrained bubble
+with a triangle tail pointing at the button, focuses the page target and then
+the tip with Tab, cycles close/action with the arrow keys, and invokes the action
+with Enter. The application records the typed result and rebuilds the tip open
+so `window.png` retains both target and surface. The interaction report must
+contain two focus traversals, nonzero `native_view_teaching_tip_focus_count` and
+`native_view_teaching_tip_response_count`, one executed UI command, no command
+failure and a nonzero live-view revision. Windows follows
+[TeachingTip](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/teaching-tip),
+macOS uses [Popover](https://developer.apple.com/design/human-interface-guidelines/popovers/)
+metrics, and GTK uses [GtkPopover](https://docs.gtk.org/gtk4/class.Popover.html)
+metrics through the same self-drawn protocol. Light-dismiss, close deferrals,
+arbitrary View/hero/icon content, complete accessibility/RTL placement behavior
+and target-machine AppKit/GTK interaction artifacts remain explicit gaps.
+
 The dedicated self-drawn inline InfoBar smoke path is:
 
 ```powershell

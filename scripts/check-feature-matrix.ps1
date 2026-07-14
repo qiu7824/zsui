@@ -28,6 +28,7 @@ $singleFeatures = @(
     "dialog",
     "toast",
     "info-bar",
+    "teaching-tip",
     "checkbox",
     "toggle",
     "slider",
@@ -73,7 +74,7 @@ $singleFeatures = @(
 
 $featureSets = @(
     "button,label,grid",
-    "textbox,password-box,tooltip,dialog,toast,info-bar,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,tabs",
+    "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,tabs",
     "list,tree,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",

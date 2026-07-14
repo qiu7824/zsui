@@ -101,6 +101,8 @@ pub mod shell_layout;
 pub mod style;
 #[cfg(feature = "table")]
 pub mod table;
+#[cfg(feature = "teaching-tip")]
+pub mod teaching_tip;
 #[cfg(feature = "time-picker")]
 pub mod time;
 pub mod timer_protocol;
@@ -457,6 +459,11 @@ pub use table::{
     ZsTableColumn, ZsTableColumnId, ZsTableColumnWidth, ZsTableRow, ZsTableRowId, ZsTableSort,
     ZsTableSortDirection, ZsTableViewState,
 };
+#[cfg(feature = "teaching-tip")]
+pub use teaching_tip::{
+    ZsTeachingTipControl, ZsTeachingTipDismissReason, ZsTeachingTipPlacement,
+    ZsTeachingTipResponse, ZsTeachingTipResult, ZsTeachingTipSpec, ZsTeachingTipState,
+};
 #[cfg(feature = "time-picker")]
 pub use time::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
 pub use timer_protocol::{
@@ -509,6 +516,8 @@ pub use view::progress_ring;
 pub use view::radio_button;
 #[cfg(feature = "scroll")]
 pub use view::scroll;
+#[cfg(feature = "teaching-tip")]
+pub use view::teaching_tip;
 #[cfg(feature = "label")]
 pub use view::text;
 #[cfg(feature = "textbox")]
@@ -609,6 +618,11 @@ pub use widget_render::{
     zs_table_native_draw_plan, zs_table_render_plan, ZsTableCellRenderPlan,
     ZsTableColumnRenderPlan, ZsTableMetrics, ZsTablePlatformStyle, ZsTableRenderPlan,
     ZsTableRowRenderPlan,
+};
+#[cfg(feature = "teaching-tip")]
+pub use widget_render::{
+    zs_teaching_tip_native_draw_plan, zs_teaching_tip_render_plan, ZsTeachingTipMetrics,
+    ZsTeachingTipPlatformStyle, ZsTeachingTipRenderPlan,
 };
 #[cfg(feature = "time-picker")]
 pub use widget_render::{

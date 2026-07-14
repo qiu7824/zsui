@@ -132,6 +132,11 @@ the shared native view runtime. Its transient visual state is keyed by typed
 `ViewHitTargetKind` values and decorates the self-drawn plan with semantic theme
 roles; backends must not replace it with platform controls or retain a second
 widget-state registry.
+Treat `teaching_tip(...)` as a shared targeted overlay. Resolve the stable
+target `WidgetId` from the final shared layout, pass that rectangle and the
+current viewport to the shared placement planner, and route its semantic root,
+action and close hit targets through the existing native input runtime. Do not
+replace it with a platform popover object or add a backend target registry.
 Treat `tab_view(...)` as one shared self-drawn tab list and page host, not as a
 request to create native child controls. Preserve `ZsTabId` identity and lay
 out, paint, hit-test and dispatch only the selected page. On Windows,
@@ -210,7 +215,9 @@ the target drawing API through `NativeDrawCommandSink`. Windows has the
 `WindowsGdiRenderer`, `WindowsGdiTextLayout` and
 `WindowsGdiDrawSink`; AppKit and GTK4 now keep the same command contract in
 `macos_appkit_renderer.rs` and `linux_gtk_renderer.rs` while swapping only the
-native drawing and text-layout implementation.
+native drawing and text-layout implementation. `FillTriangle` is required for
+targeted overlay tails: use GDI `Polygon`, a closed `NSBezierPath`, or a closed
+Cairo path and preserve the shared point order and semantic fill color.
 
 For direct desktop window hosts, keep the product-neutral shape from
 `WindowsWin32MainWindowHost`: map `NativeMainWindowRequest` and

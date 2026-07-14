@@ -184,6 +184,18 @@ history remain authoritative for implementation status.
   color alone. Accessibility live-region announcement, close deferrals,
   arbitrary View content, bidirectional layout and AppKit/GTK target smoke are
   readiness gaps.
+- TeachingTip is an independent `teaching-tip` Cargo feature over
+  `widgets-base`. It is a targeted, nonmodal in-window overlay: applications
+  own `open`, a stable presenter ID and a stable target `WidgetId`, while the
+  framework owns viewport-aware auto placement, tail geometry, one optional
+  action, the mandatory close affordance and typed action/dismiss results. The
+  target remains in ordinary layout and the page remains interactive. Windows
+  uses Fluent TeachingTip metrics, macOS uses restrained NSPopover-like metrics
+  and GTK uses GtkPopover-like metrics through one self-drawn protocol; the
+  triangle tail is a shared draw command consumed by all three renderers.
+  Light-dismiss, close cancellation/deferrals, arbitrary View/hero/icon
+  content, complete RTL/placement coverage, accessibility focus handoff and
+  AppKit/GTK target interaction smoke remain readiness gaps.
 - ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
   in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
   mode and semantic size explicit, while inactive rings reserve layout space and

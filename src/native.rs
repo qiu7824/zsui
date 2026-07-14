@@ -15,6 +15,7 @@ use crate::native_input_visuals::{
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -892,6 +893,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_toast_timeout_count: usize,
     pub native_view_info_bar_focus_count: usize,
     pub native_view_info_bar_event_count: usize,
+    pub native_view_teaching_tip_focus_count: usize,
+    pub native_view_teaching_tip_response_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -1007,6 +1010,8 @@ impl NativeWindowSmokeRunReport {
             native_view_toast_timeout_count: 0,
             native_view_info_bar_focus_count: 0,
             native_view_info_bar_event_count: 0,
+            native_view_teaching_tip_focus_count: 0,
+            native_view_teaching_tip_response_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1069,6 +1074,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1083,6 +1089,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1169,6 +1176,7 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1232,6 +1240,10 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub info_bar_focus_changed: bool,
     #[cfg(feature = "info-bar")]
     pub info_bar_event: Option<crate::ZsInfoBarEvent>,
+    #[cfg(feature = "teaching-tip")]
+    pub teaching_tip_focus_changed: bool,
+    #[cfg(feature = "teaching-tip")]
+    pub teaching_tip_response: Option<crate::ZsTeachingTipResponse>,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1292,6 +1304,7 @@ impl NativeViewInputRuntime {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1306,6 +1319,7 @@ impl NativeViewInputRuntime {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1500,6 +1514,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1599,6 +1614,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1703,6 +1719,7 @@ impl NativeViewInputRuntime {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1725,6 +1742,7 @@ impl NativeViewInputRuntime {
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
+                feature = "teaching-tip",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1748,6 +1766,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1944,6 +1963,35 @@ impl NativeViewInputRuntime {
             _ => {}
         }
 
+        #[cfg(feature = "teaching-tip")]
+        match target.kind {
+            crate::ViewHitTargetKind::TeachingTipAction => {
+                report.teaching_tip_response = Some(crate::ZsTeachingTipResponse::Action);
+                return self.dispatch_view_event(
+                    ViewEvent::TeachingTipResponded {
+                        widget: target.widget,
+                        response: crate::ZsTeachingTipResponse::Action,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::TeachingTipClose => {
+                let response = crate::ZsTeachingTipResponse::Dismissed(
+                    crate::ZsTeachingTipDismissReason::CloseButton,
+                );
+                report.teaching_tip_response = Some(response);
+                return self.dispatch_view_event(
+                    ViewEvent::TeachingTipResponded {
+                        widget: target.widget,
+                        response,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::TeachingTip => return report,
+            _ => {}
+        }
+
         let event = self.activation_event(target);
 
         #[cfg(feature = "radio")]
@@ -2008,6 +2056,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2042,6 +2091,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2059,6 +2109,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2167,6 +2218,70 @@ impl NativeViewInputRuntime {
                         ViewEvent::ToastResponded {
                             widget: toast_target.widget,
                             toast,
+                            response,
+                        },
+                        report,
+                    );
+                }
+            }
+        }
+        #[cfg(feature = "teaching-tip")]
+        if let Some(tip_target) = interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TeachingTip)
+        {
+            let Some((state, spec)) = self.widget_teaching_tip_state(tip_target.widget) else {
+                return report;
+            };
+            if key == NativeViewKey::Escape {
+                let response = crate::ZsTeachingTipResponse::Dismissed(
+                    crate::ZsTeachingTipDismissReason::EscapeKey,
+                );
+                report.handled = true;
+                report.teaching_tip_response = Some(response);
+                return self.dispatch_view_event(
+                    ViewEvent::TeachingTipResponded {
+                        widget: tip_target.widget,
+                        response,
+                    },
+                    report,
+                );
+            }
+            if self.focused_widget == Some(tip_target.widget) {
+                let focus_offset = match key {
+                    NativeViewKey::Left => Some(-1),
+                    NativeViewKey::Right => Some(1),
+                    _ => None,
+                };
+                if let Some(offset) = focus_offset {
+                    let next = spec.relative_control(state.focused_control, offset);
+                    report.handled = true;
+                    report.teaching_tip_focus_changed = next != state.focused_control;
+                    return self.dispatch_view_event(
+                        ViewEvent::TeachingTipFocused {
+                            widget: tip_target.widget,
+                            control: next,
+                        },
+                        report,
+                    );
+                }
+                if matches!(key, NativeViewKey::Enter | NativeViewKey::Space) {
+                    let response = match state.focused_control {
+                        crate::ZsTeachingTipControl::Action if spec.action_label().is_some() => {
+                            crate::ZsTeachingTipResponse::Action
+                        }
+                        _ => crate::ZsTeachingTipResponse::Dismissed(
+                            crate::ZsTeachingTipDismissReason::CloseButton,
+                        ),
+                    };
+                    report.handled = true;
+                    report.teaching_tip_response = Some(response);
+                    return self.dispatch_view_event(
+                        ViewEvent::TeachingTipResponded {
+                            widget: tip_target.widget,
                             response,
                         },
                         report,
@@ -2952,6 +3067,11 @@ impl NativeViewInputRuntime {
             report.handled = true;
             return report;
         }
+        #[cfg(feature = "teaching-tip")]
+        if self.widget_teaching_tip_state(widget).is_some() {
+            report.handled = true;
+            return report;
+        }
         #[cfg(feature = "combo")]
         if target.kind == crate::ViewHitTargetKind::ComboBox {
             let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
@@ -3176,6 +3296,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3365,6 +3486,7 @@ impl NativeViewInputRuntime {
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3519,6 +3641,7 @@ impl NativeViewInputRuntime {
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -4107,6 +4230,21 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "teaching-tip")]
+    fn widget_teaching_tip_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_teaching_tip_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_teaching_tip_state(widget))
+            })
+    }
+
     #[cfg(feature = "toast")]
     fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
         let target = self
@@ -4563,6 +4701,8 @@ fn record_windows_win32_view_input_report(
     report.native_view_toast_timeout_count += input.toast_timeout_count;
     report.native_view_info_bar_focus_count += input.info_bar_focus_change_count;
     report.native_view_info_bar_event_count += input.info_bar_event_count;
+    report.native_view_teaching_tip_focus_count += input.teaching_tip_focus_change_count;
+    report.native_view_teaching_tip_response_count += input.teaching_tip_response_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -8197,6 +8337,93 @@ mod tests {
         let close = keyboard_runtime.dispatch_key(NativeViewKey::Enter);
         assert!(close.handled);
         assert_eq!(close.info_bar_event, Some(crate::ZsInfoBarEvent::Close));
+        assert_eq!(close.message_count, 1);
+    }
+
+    #[cfg(feature = "teaching-tip")]
+    #[test]
+    fn native_view_runtime_routes_teaching_tip_pointer_and_keyboard_responses() {
+        #[derive(Clone)]
+        enum Msg {
+            Result(crate::ZsTeachingTipResult),
+        }
+        struct State {
+            open: bool,
+            last: Option<crate::ZsTeachingTipResult>,
+        }
+
+        let tip = crate::WidgetId::new(201);
+        let target = crate::WidgetId::new(202);
+        let build = || {
+            native_window("Platform TeachingTip")
+                .size(640, 420)
+                .stateful_view(
+                    State {
+                        open: true,
+                        last: None,
+                    },
+                    move |state| {
+                        crate::teaching_tip(
+                            tip,
+                            state.open,
+                            target,
+                            crate::ZsTeachingTipSpec::new(
+                                "Save automatically",
+                                "Your changes are saved as you work.",
+                            )
+                            .action("Review settings"),
+                            crate::spacer().id(target),
+                        )
+                        .on_teaching_tip_result(Msg::Result)
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Result(result) => {
+                            state.open = false;
+                            state.last = Some(result);
+                        }
+                    },
+                )
+        };
+
+        let builder = build();
+        let action = builder
+            .native_view_interaction_plan()
+            .expect("teaching-tip interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TeachingTipAction)
+            .expect("teaching-tip action target");
+        let mut pointer_runtime = builder.native_view_input_runtime();
+        let action_report = pointer_runtime.dispatch_pointer_click(Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert!(action_report.handled);
+        assert_eq!(
+            action_report.teaching_tip_response,
+            Some(crate::ZsTeachingTipResponse::Action)
+        );
+        assert_eq!(action_report.message_count, 1);
+
+        let mut keyboard_runtime = build().native_view_input_runtime();
+        let focus = keyboard_runtime.dispatch_key(NativeViewKey::Tab);
+        assert!(focus.handled);
+        assert_eq!(focus.focused_widget, Some(target.0));
+        let focus = keyboard_runtime.dispatch_key(NativeViewKey::Tab);
+        assert!(focus.handled);
+        assert_eq!(focus.focused_widget, Some(tip.0));
+        let next = keyboard_runtime.dispatch_key(NativeViewKey::Right);
+        assert!(next.handled);
+        assert!(next.teaching_tip_focus_changed);
+        let close = keyboard_runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(close.handled);
+        assert_eq!(
+            close.teaching_tip_response,
+            Some(crate::ZsTeachingTipResponse::Dismissed(
+                crate::ZsTeachingTipDismissReason::CloseButton,
+            ))
+        );
         assert_eq!(close.message_count, 1);
     }
 

@@ -23,6 +23,7 @@ use zsui::checkbox;
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
+    all(feature = "teaching-tip", feature = "button", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -60,6 +61,7 @@ use zsui::toggle_button;
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
+    all(feature = "teaching-tip", feature = "button", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -80,6 +82,7 @@ use zsui::CommandId;
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
+    all(feature = "teaching-tip", feature = "button", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -138,6 +141,8 @@ use zsui::{progress_ring, ZsProgressRingSpec};
 use zsui::{slider, SliderRange};
 #[cfg(feature = "tabs")]
 use zsui::{tab_view, ZsTabId, ZsTabItem};
+#[cfg(all(feature = "teaching-tip", feature = "button", feature = "label"))]
+use zsui::{teaching_tip, ZsTeachingTipResult, ZsTeachingTipSpec};
 #[cfg(feature = "time-picker")]
 use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
 #[cfg(all(feature = "toast", feature = "label"))]
@@ -158,6 +163,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "dialog", feature = "label"),
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
+    all(feature = "teaching-tip", feature = "button", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -219,6 +225,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--info-bar-view" || arg == "--info-bar"),
         args.iter()
+            .any(|arg| arg == "--teaching-tip-view" || arg == "--teaching-tip"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -262,6 +270,7 @@ fn run_smoke(
     include_dialog_view: bool,
     include_toast_view: bool,
     include_info_bar_view: bool,
+    include_teaching_tip_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -337,6 +346,12 @@ fn run_smoke(
     #[cfg(not(all(feature = "info-bar", feature = "label")))]
     if include_info_bar_view {
         return Err("--info-bar-view requires the info-bar and label features".to_string());
+    }
+    #[cfg(not(all(feature = "teaching-tip", feature = "button", feature = "label")))]
+    if include_teaching_tip_view {
+        return Err(
+            "--teaching-tip-view requires the teaching-tip, button and label features".to_string(),
+        );
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -540,6 +555,15 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Left)
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "teaching-tip", feature = "button", feature = "label"))]
+    if include_teaching_tip_view {
+        smoke_options = smoke_options
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -617,6 +641,8 @@ fn run_smoke(
         attach_toast_view(builder)
     } else if include_info_bar_view {
         attach_info_bar_view(builder)
+    } else if include_teaching_tip_view {
+        attach_teaching_tip_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -1381,6 +1407,71 @@ fn attach_info_bar_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     )
 }
 
+#[cfg(all(feature = "teaching-tip", feature = "button", feature = "label"))]
+#[derive(Clone)]
+enum TeachingTipSmokeMsg {
+    TargetClicked,
+    Responded(ZsTeachingTipResult),
+}
+
+#[cfg(all(feature = "teaching-tip", feature = "button", feature = "label"))]
+struct TeachingTipSmokeState {
+    open: bool,
+    last_result: Option<ZsTeachingTipResult>,
+}
+
+#[cfg(all(feature = "teaching-tip", feature = "button", feature = "label"))]
+fn attach_teaching_tip_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    let target = WidgetId::new(29);
+    builder.stateful_view(
+        TeachingTipSmokeState {
+            open: true,
+            last_result: None,
+        },
+        move |state| {
+            let page = column([
+                text::<TeachingTipSmokeMsg>("ZSUI TeachingTip Smoke").height(zsui::Dp::new(28.0)),
+                text(format!(
+                    "Last typed response: {}",
+                    state
+                        .last_result
+                        .map(|result| format!("{:?}", result.response))
+                        .unwrap_or_else(|| "none".to_string())
+                ))
+                .height(zsui::Dp::new(28.0)),
+                button("Save")
+                    .id(target)
+                    .height(zsui::Dp::new(36.0))
+                    .on_click(TeachingTipSmokeMsg::TargetClicked),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0));
+            teaching_tip(
+                WidgetId::new(30),
+                state.open,
+                target,
+                ZsTeachingTipSpec::new("Save automatically", "Your changes are saved as you work.")
+                    .action("Review settings"),
+                page,
+            )
+            .on_teaching_tip_result(TeachingTipSmokeMsg::Responded)
+        },
+        |state, message, cx| match message {
+            TeachingTipSmokeMsg::TargetClicked => {
+                state.open = true;
+            }
+            TeachingTipSmokeMsg::Responded(result) => {
+                state.last_result = Some(result);
+                // Reopen so window.png retains the targeted surface after the synthetic action.
+                state.open = true;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.teaching_tip_responded",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1677,6 +1768,11 @@ fn attach_toast_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "info-bar", feature = "label")))]
 fn attach_info_bar_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "teaching-tip", feature = "button", feature = "label")))]
+fn attach_teaching_tip_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 
