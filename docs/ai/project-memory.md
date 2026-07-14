@@ -68,6 +68,13 @@ history remain authoritative for implementation status.
   anchor/caret indices and `on_text_selection_change(...)`. Edits, keyboard
   movement and pointer drag selection route through the same typed View update
   path on Win32, AppKit and GTK4; backends do not own application cursor state.
+- Shared edit actions use `ZsTextEditCommand` queued through `AppCx` for the
+  focused editor or an explicit strong `WidgetId`. The per-window input runtime
+  may retain bounded undo snapshots as transient interaction state, but every
+  resulting value and selection returns through typed View messages so the
+  application remains authoritative. Cut/copy/paste require the optional
+  `clipboard` feature and use target-native clipboard services; examples do not
+  call platform clipboard APIs directly.
 
 ## Native platform bar
 

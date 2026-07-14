@@ -2246,6 +2246,40 @@ impl ZsTextSelection {
     }
 }
 
+#[cfg(feature = "textbox")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZsTextEditCommand {
+    Undo,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
+#[cfg(feature = "textbox")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsTextEditCommandRequest {
+    pub widget: Option<WidgetId>,
+    pub command: ZsTextEditCommand,
+}
+
+#[cfg(feature = "textbox")]
+impl ZsTextEditCommandRequest {
+    pub const fn focused(command: ZsTextEditCommand) -> Self {
+        Self {
+            widget: None,
+            command,
+        }
+    }
+
+    pub const fn for_widget(widget: WidgetId, command: ZsTextEditCommand) -> Self {
+        Self {
+            widget: Some(widget),
+            command,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ViewEvent {
     Click {
@@ -3076,6 +3110,8 @@ impl<Msg> Default for ViewEventCx<Msg> {
 pub struct AppCx {
     commands: Vec<Command>,
     ui_commands: Vec<UiCommand>,
+    #[cfg(feature = "textbox")]
+    text_edit_commands: Vec<ZsTextEditCommandRequest>,
     quit_requested: bool,
 }
 
@@ -3092,6 +3128,18 @@ impl AppCx {
         self.ui_commands.push(command);
     }
 
+    #[cfg(feature = "textbox")]
+    pub fn text_edit_command(&mut self, command: ZsTextEditCommand) {
+        self.text_edit_commands
+            .push(ZsTextEditCommandRequest::focused(command));
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn text_edit_command_for(&mut self, widget: WidgetId, command: ZsTextEditCommand) {
+        self.text_edit_commands
+            .push(ZsTextEditCommandRequest::for_widget(widget, command));
+    }
+
     pub fn quit(&mut self) {
         self.quit_requested = true;
     }
@@ -3102,6 +3150,11 @@ impl AppCx {
 
     pub fn ui_commands(&self) -> &[UiCommand] {
         &self.ui_commands
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn text_edit_commands(&self) -> &[ZsTextEditCommandRequest] {
+        &self.text_edit_commands
     }
 
     pub const fn quit_requested(&self) -> bool {
@@ -3115,6 +3168,8 @@ pub struct LiveViewUpdate {
     pub message_count: usize,
     pub commands: Vec<Command>,
     pub ui_commands: Vec<UiCommand>,
+    #[cfg(feature = "textbox")]
+    pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
     pub revision: u64,
 }
@@ -3501,6 +3556,8 @@ where
             message_count,
             commands: app_cx.commands().to_vec(),
             ui_commands: app_cx.ui_commands().to_vec(),
+            #[cfg(feature = "textbox")]
+            text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
             revision: self.revision,
         }
@@ -9473,6 +9530,24 @@ mod tests {
         );
         assert_eq!(selection.ordered(), (2, 7));
         assert!(!selection.is_collapsed());
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn app_context_queues_focused_and_strongly_targeted_text_edit_commands() {
+        let widget = WidgetId::new(6);
+        let mut cx = AppCx::new();
+
+        cx.text_edit_command(ZsTextEditCommand::Copy);
+        cx.text_edit_command_for(widget, ZsTextEditCommand::Undo);
+
+        assert_eq!(
+            cx.text_edit_commands(),
+            [
+                ZsTextEditCommandRequest::focused(ZsTextEditCommand::Copy),
+                ZsTextEditCommandRequest::for_widget(widget, ZsTextEditCommand::Undo),
+            ]
+        );
     }
 
     #[test]

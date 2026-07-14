@@ -476,7 +476,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Tooling,
             false,
             Vec::new(),
-            vec!["window", "button", "label", "textbox", "document-shell"],
+            vec![
+                "window",
+                "button",
+                "label",
+                "textbox",
+                "clipboard",
+                "document-shell",
+            ],
             "shared self-drawn notepad acceptance example on target-native Win32, AppKit and GTK4 hosts",
         ),
         ZsuiCargoFeature::new(

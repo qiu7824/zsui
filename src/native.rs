@@ -31,6 +31,8 @@ use crate::native_input_visuals::{
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
+#[cfg(feature = "textbox")]
+use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
 use crate::native_text_edit::{
     apply_text_input, char_to_byte_index, move_selection, set_pointer_selection,
     NativeTextDragState, NativeTextEditState, NativeTextMovement, NativeTextSelection,
@@ -869,6 +871,11 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_text_navigation_count: usize,
     pub native_view_text_selection_change_count: usize,
     pub native_view_text_caret: Option<usize>,
+    pub native_view_text_edit_command_count: usize,
+    pub native_view_text_clipboard_read_count: usize,
+    pub native_view_text_clipboard_write_count: usize,
+    pub native_view_text_undo_count: usize,
+    pub native_view_text_edit_command_errors: Vec<String>,
     pub native_view_pointer_down_count: usize,
     pub native_view_pointer_move_count: usize,
     pub native_view_pointer_up_count: usize,
@@ -1000,6 +1007,11 @@ impl NativeWindowSmokeRunReport {
             native_view_text_navigation_count: 0,
             native_view_text_selection_change_count: 0,
             native_view_text_caret: None,
+            native_view_text_edit_command_count: 0,
+            native_view_text_clipboard_read_count: 0,
+            native_view_text_clipboard_write_count: 0,
+            native_view_text_undo_count: 0,
+            native_view_text_edit_command_errors: Vec::new(),
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
@@ -1096,6 +1108,10 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(feature = "toast")]
     toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
+    #[cfg(feature = "textbox")]
+    text_history: NativeTextHistory,
+    #[cfg(feature = "textbox")]
+    processing_text_edit_commands: bool,
     text_drag: Option<NativeTextDragState>,
     #[cfg(feature = "combo")]
     combo_type_ahead: NativeComboTypeAheadState,
@@ -1243,6 +1259,14 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub text_selection: Option<(usize, usize)>,
     pub text_caret: Option<usize>,
     pub text_selection_changed: bool,
+    #[cfg(feature = "textbox")]
+    pub text_edit_command_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_clipboard_read_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_clipboard_write_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_undo_count: usize,
     pub text_drag_active: bool,
     #[cfg(feature = "slider")]
     pub slider_value: Option<f32>,
@@ -1372,6 +1396,10 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            #[cfg(feature = "textbox")]
+            text_history: NativeTextHistory::default(),
+            #[cfg(feature = "textbox")]
+            processing_text_edit_commands: false,
             text_drag: None,
             #[cfg(feature = "combo")]
             combo_type_ahead: NativeComboTypeAheadState::default(),
@@ -3758,6 +3786,12 @@ impl NativeViewInputRuntime {
             .filter(|state| state.widget == widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
         state.clamp(&value);
+        #[cfg(feature = "textbox")]
+        let history_before = matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        )
+        .then(|| (value.as_str().to_owned(), state.selection));
         let edit = apply_text_input(
             &mut value,
             &mut state.selection,
@@ -3770,6 +3804,17 @@ impl NativeViewInputRuntime {
         report.handled = true;
         report.text_selection_changed = edit.selection_changed;
         self.text_edit = Some(state);
+        #[cfg(feature = "textbox")]
+        if edit.text_changed {
+            if let Some((before_value, before_selection)) = history_before {
+                self.text_history.record_text_change(
+                    widget,
+                    &before_value,
+                    before_selection,
+                    value.as_str(),
+                );
+            }
+        }
         if edit.text_changed {
             #[cfg(feature = "command-palette")]
             if target.kind == crate::ViewHitTargetKind::CommandPalette {
@@ -4470,7 +4515,6 @@ impl NativeViewInputRuntime {
 
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
         if !target.kind.accepts_text_input() {
-            self.text_edit = None;
             self.text_drag = None;
             return;
         }
@@ -5286,9 +5330,13 @@ impl NativeViewInputRuntime {
         event: ViewEvent,
         mut report: NativeViewInputDispatchReport,
     ) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "textbox")]
+        let mut text_edit_commands = Vec::new();
         let (commands, ui_commands, quit_requested) = if let Some(live_view) = &self.live_view {
             let update = live_view.dispatch_event(&event);
-            report.message_count = update.message_count;
+            report.message_count += update.message_count;
+            #[cfg(feature = "textbox")]
+            text_edit_commands.extend(update.text_edit_commands.iter().copied());
             if update.redraw {
                 report.redraw_plan = Some(live_view.draw_plan());
                 report.hit_target_count = live_view.interaction_plan().hit_target_count();
@@ -5310,13 +5358,13 @@ impl NativeViewInputRuntime {
                 report.redraw_plan = Some(paint_cx.into_plan());
             }
             let messages = event_cx.into_messages();
-            report.message_count = messages.len();
+            report.message_count += messages.len();
             (Vec::new(), messages, false)
         };
 
-        report.app_command_count = commands.len();
-        report.ui_command_count = ui_commands.len();
-        report.quit_requested = quit_requested || commands.contains(&Command::Quit);
+        report.app_command_count += commands.len();
+        report.ui_command_count += ui_commands.len();
+        report.quit_requested |= quit_requested || commands.contains(&Command::Quit);
         let mut app_effect_executed = false;
         if self.defer_app_command_execution {
             self.pending_app_commands.extend(commands);
@@ -5364,6 +5412,8 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        #[cfg(feature = "textbox")]
+        self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
@@ -5378,6 +5428,103 @@ impl NativeViewInputRuntime {
         report
     }
 
+    #[cfg(feature = "textbox")]
+    fn dispatch_text_edit_commands(
+        &mut self,
+        commands: Vec<crate::ZsTextEditCommandRequest>,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        if commands.is_empty() {
+            return;
+        }
+        if self.processing_text_edit_commands {
+            report
+                .errors
+                .push("nested text edit commands are not supported".to_string());
+            return;
+        }
+
+        self.processing_text_edit_commands = true;
+        for request in commands {
+            report.text_edit_command_count += 1;
+            self.dispatch_text_edit_command(request, report);
+        }
+        self.processing_text_edit_commands = false;
+    }
+
+    #[cfg(feature = "textbox")]
+    fn dispatch_text_edit_command(
+        &mut self,
+        request: crate::ZsTextEditCommandRequest,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        let target = match request.widget {
+            Some(widget) => self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(widget)),
+            None => self.focused_text_input_target(),
+        };
+        let Some(target) = target else {
+            return;
+        };
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            return;
+        }
+
+        let widget = target.widget;
+        let mut value = self.widget_text_value(widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        state.clamp(&value);
+        let mut clipboard = crate::NativeClipboardService::new();
+        let result = apply_text_edit_command(
+            request.command,
+            widget,
+            &mut value,
+            &mut state.selection,
+            &mut self.text_history,
+            &mut clipboard,
+        );
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                report.handled = true;
+                report.errors.push(error.to_string());
+                return;
+            }
+        };
+
+        self.text_edit = Some(state);
+        report.handled |= result.handled;
+        report.text_selection_changed |= result.selection_changed;
+        report.text_clipboard_read_count += usize::from(result.clipboard_read);
+        report.text_clipboard_write_count += usize::from(result.clipboard_write);
+        report.text_undo_count += usize::from(result.undo_applied);
+
+        let event = if result.text_changed {
+            Some(ViewEvent::TextEdited {
+                widget,
+                value,
+                selection: state.selection.into(),
+            })
+        } else if result.selection_changed {
+            Some(ViewEvent::TextSelectionChanged {
+                widget,
+                selection: state.selection.into(),
+            })
+        } else {
+            None
+        };
+        if let Some(event) = event {
+            *report = self.dispatch_view_event(event, std::mem::take(report));
+        }
+    }
+
     pub(crate) fn dispatch_app_command(
         &mut self,
         command: Command,
@@ -5387,6 +5534,8 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "textbox")]
+        let mut text_edit_commands = Vec::new();
 
         let update = self
             .live_view
@@ -5394,6 +5543,8 @@ impl NativeViewInputRuntime {
             .map(|runtime| runtime.dispatch_app_command(&command));
         let mut app_effect_executed = false;
         if let Some(update) = update.filter(|update| update.message_count > 0) {
+            #[cfg(feature = "textbox")]
+            text_edit_commands.extend(update.text_edit_commands.iter().copied());
             report.handled = true;
             report.message_count = update.message_count;
             report.app_command_count = update.commands.len();
@@ -5461,6 +5612,8 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        #[cfg(feature = "textbox")]
+        self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
@@ -5696,6 +5849,16 @@ fn record_windows_win32_view_input_report(
     report.native_view_text_navigation_count += input.text_navigation_count;
     report.native_view_text_selection_change_count += input.text_selection_change_count;
     report.native_view_text_caret = input.text_caret.or(report.native_view_text_caret);
+    #[cfg(feature = "textbox")]
+    {
+        report.native_view_text_edit_command_count += input.text_edit_command_count;
+        report.native_view_text_clipboard_read_count += input.text_clipboard_read_count;
+        report.native_view_text_clipboard_write_count += input.text_clipboard_write_count;
+        report.native_view_text_undo_count += input.text_undo_count;
+        report
+            .native_view_text_edit_command_errors
+            .extend(input.text_edit_command_errors.iter().cloned());
+    }
     report.native_view_pointer_down_count += input.pointer_down_count;
     report.native_view_pointer_move_count += input.pointer_move_count;
     report.native_view_pointer_up_count += input.pointer_up_count;
@@ -8561,6 +8724,7 @@ mod tests {
         enum Msg {
             Changed(String),
             SelectionChanged(crate::ZsTextSelection),
+            Undo,
         }
         struct State {
             value: String,
@@ -8568,25 +8732,29 @@ mod tests {
         }
 
         let textbox_id = crate::WidgetId::new(76);
-        let builder = native_window("Platform Text").size(360, 220).stateful_view(
-            State {
-                value: String::new(),
-                selection: crate::ZsTextSelection::default(),
-            },
-            move |state| {
-                crate::column([
-                    crate::textbox(&state.value)
-                        .id(textbox_id)
-                        .on_change(Msg::Changed)
-                        .on_text_selection_change(Msg::SelectionChanged),
-                    crate::text(format!("Caret: {}", state.selection.caret)),
-                ])
-            },
-            |state, message, _cx| match message {
-                Msg::Changed(value) => state.value = value,
-                Msg::SelectionChanged(selection) => state.selection = selection,
-            },
-        );
+        let builder = native_window("Platform Text")
+            .size(360, 220)
+            .stateful_view_with_app_commands(
+                State {
+                    value: String::new(),
+                    selection: crate::ZsTextSelection::default(),
+                },
+                move |state| {
+                    crate::column([
+                        crate::textbox(&state.value)
+                            .id(textbox_id)
+                            .on_change(Msg::Changed)
+                            .on_text_selection_change(Msg::SelectionChanged),
+                        crate::text(format!("Caret: {}", state.selection.caret)),
+                    ])
+                },
+                |state, message, cx| match message {
+                    Msg::Changed(value) => state.value = value,
+                    Msg::SelectionChanged(selection) => state.selection = selection,
+                    Msg::Undo => cx.text_edit_command(crate::ZsTextEditCommand::Undo),
+                },
+                |command| (command == &Command::custom("edit.undo")).then_some(Msg::Undo),
+            );
         let target = builder
             .native_view_interaction_plan()
             .and_then(|plan| plan.hit_target_for_widget(textbox_id))
@@ -8603,6 +8771,7 @@ mod tests {
         runtime.dispatch_key_with_shift(NativeViewKey::Right, true);
         let selected = runtime.dispatch_key_with_shift(NativeViewKey::Right, true);
         let replaced = runtime.dispatch_text_input("🙂");
+        let undone = runtime.dispatch_app_command(Command::custom("edit.undo"));
 
         assert_eq!(focus.focused_widget, Some(textbox_id.0));
         assert!(typed.handled);
@@ -8636,6 +8805,14 @@ mod tests {
                 matches!(
                     command, crate::NativeDrawCommand::Text(text) if text.text == "Caret: 2"
                 )
+            })
+        }));
+        assert_eq!(undone.text_edit_command_count, 1);
+        assert_eq!(undone.text_undo_count, 1);
+        assert_eq!(undone.text_selection, Some((1, 3)));
+        assert!(undone.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "A中文Z")
             })
         }));
     }

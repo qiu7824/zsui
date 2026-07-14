@@ -664,6 +664,120 @@ pub trait ClipboardService {
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()>;
 }
 
+/// Target-dispatched system text clipboard used by shared desktop controls.
+/// The optional `clipboard` feature must be enabled explicitly.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NativeClipboardService;
+
+impl NativeClipboardService {
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl ClipboardService for NativeClipboardService {
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
+        #[cfg(all(feature = "clipboard", windows, feature = "windows-win32"))]
+        {
+            let mut clipboard = arboard::Clipboard::new()
+                .map_err(|error| ZsuiError::host("windows_read_clipboard", error.to_string()))?;
+            return match clipboard.get_text() {
+                Ok(text) => Ok(Some(ClipboardData::Text(text))),
+                Err(arboard::Error::ContentNotAvailable) => Ok(None),
+                Err(error) => Err(ZsuiError::host("windows_read_clipboard", error.to_string())),
+            };
+        }
+        #[cfg(all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"))]
+        {
+            let mut clipboard = crate::macos_appkit_services::MacosAppKitClipboardService;
+            return clipboard.read_clipboard();
+        }
+        #[cfg(all(
+            feature = "clipboard",
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk"
+        ))]
+        {
+            let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
+            return clipboard.read_clipboard();
+        }
+        #[cfg(not(any(
+            all(feature = "clipboard", windows, feature = "windows-win32"),
+            all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"),
+            all(
+                feature = "clipboard",
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-gtk"
+            )
+        )))]
+        Err(ZsuiError::unsupported(
+            "read_clipboard",
+            "enable the clipboard feature and target-native desktop backend",
+        ))
+    }
+
+    fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
+        #[cfg(all(feature = "clipboard", windows, feature = "windows-win32"))]
+        {
+            let text = match data {
+                ClipboardData::Empty => String::new(),
+                ClipboardData::Text(text) => text.clone(),
+                ClipboardData::ImageRgba { .. } => {
+                    return Err(ZsuiError::unsupported(
+                        "clipboard_image",
+                        "the native image clipboard service is not connected",
+                    ));
+                }
+                ClipboardData::Files(_) => {
+                    return Err(ZsuiError::unsupported(
+                        "clipboard_files",
+                        "the native file clipboard service is not connected",
+                    ));
+                }
+            };
+            let mut clipboard = arboard::Clipboard::new()
+                .map_err(|error| ZsuiError::host("windows_write_clipboard", error.to_string()))?;
+            return clipboard
+                .set_text(text)
+                .map_err(|error| ZsuiError::host("windows_write_clipboard", error.to_string()));
+        }
+        #[cfg(all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"))]
+        {
+            let mut clipboard = crate::macos_appkit_services::MacosAppKitClipboardService;
+            return clipboard.write_clipboard(data);
+        }
+        #[cfg(all(
+            feature = "clipboard",
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk"
+        ))]
+        {
+            let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
+            return clipboard.write_clipboard(data);
+        }
+        #[cfg(not(any(
+            all(feature = "clipboard", windows, feature = "windows-win32"),
+            all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"),
+            all(
+                feature = "clipboard",
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-gtk"
+            )
+        )))]
+        {
+            let _ = data;
+            Err(ZsuiError::unsupported(
+                "write_clipboard",
+                "enable the clipboard feature and target-native desktop backend",
+            ))
+        }
+    }
+}
+
 pub trait FileDialogService {
     fn open_file_dialog(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>>;
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>>;

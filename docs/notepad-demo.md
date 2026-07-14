@@ -19,6 +19,13 @@ framework architecture.
 - `ZsTextSelection` reports application-independent Unicode-scalar anchor and
   caret positions through `on_text_selection_change`, including edits,
   keyboard navigation and pointer drag selection.
+- `AppCx::text_edit_command(...)` and `text_edit_command_for(...)` queue
+  strongly typed `ZsTextEditCommand` requests for the focused or explicitly
+  identified editor. The host owns a bounded undo history and returns edits
+  through the existing `TextEdited`/selection message path.
+- Cut, copy and paste use the optional target-dispatched system clipboard:
+  Win32 through the Windows clipboard provider, AppKit through `NSPasteboard`
+  and GTK4 through `gdk::Clipboard`. Application code sees no platform object.
 - `ZsTextDocument` owns UTF-8/UTF-16 decoding, path and encoding metadata,
   explicit dirty state and transactional UTF-8 save/save-as.
 - `ZsDocumentShellCommand` converts to and from the public `Command` type, so
@@ -48,8 +55,9 @@ Run the auto-closing native smoke path:
 cargo run --example zsui_notepad --no-default-features --features notepad-demo -- --smoke
 ```
 
-The smoke requires a visible native window, a routed native menu command and
-real text input through the self-drawn editor. On non-Windows targets the same
+The smoke requires a visible native window, a routed native menu command, real
+text input through the self-drawn editor and a typed Undo routed from the
+self-drawn command bar back to that editor. On non-Windows targets the same
 source is compiled against the AppKit or GTK4 host; target runtime evidence is
 tracked separately and is not inferred from cross-compilation.
 
@@ -64,7 +72,7 @@ tracked separately and is not inferred from cross-compilation.
 | Target-native open/save panel facade | implemented |
 | UTF-8 save and UTF-8/UTF-16 input decode | implemented |
 | Caret-aware line/column, line count, character count and encoding status | implemented |
-| Undo/cut/copy/paste command API | pending shared editor command surface |
+| Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | pending shared editor configuration |
 | Intercepting the operating-system window-close button | pending shared close-request message |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
@@ -74,18 +82,19 @@ behavior that exists only in one platform service.
 
 ## Optional feature boundary
 
-`notepad-demo` enables only `window`, `button`, `label`, `textbox` and
-`document-shell`. Cargo then selects the dependency for the current desktop
-target. The Windows-only `WindowsWin32OwnedTextEditor` remains an optional
-framework service, but the acceptance application does not depend on it.
+`notepad-demo` enables only `window`, `button`, `label`, `textbox`, `clipboard`
+and `document-shell`. Cargo then selects the dependency for the current desktop
+target. Clipboard support is therefore omitted when applications do not select
+it. The Windows-only `WindowsWin32OwnedTextEditor` remains an optional framework
+service, but the acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 558 nonblank lines,
+The shared acceptance application is one source file with 620 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 174
-lines (23.8%) smaller while adding one cross-platform source path and typed
-caret status.
+files with 732 nonblank lines, so the checked-in application surface is 112
+lines (15.3%) smaller while adding one cross-platform source path, typed caret
+status, native menus and the shared editing-command acceptance coverage.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

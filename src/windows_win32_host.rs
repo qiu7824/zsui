@@ -39,6 +39,8 @@ use crate::native_input_visuals::{
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
+#[cfg(feature = "textbox")]
+use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
 use crate::native_text_edit::{
     apply_text_input, move_selection, set_pointer_selection, NativeTextDragState,
     NativeTextEditState, NativeTextMovement,
@@ -1870,6 +1872,10 @@ pub struct WindowsWin32ViewInputRoute {
     #[cfg(feature = "toast")]
     toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
+    #[cfg(feature = "textbox")]
+    text_history: NativeTextHistory,
+    #[cfg(feature = "textbox")]
+    processing_text_edit_commands: bool,
     text_drag: Option<NativeTextDragState>,
     #[cfg(feature = "combo")]
     combo_type_ahead: NativeComboTypeAheadState,
@@ -1944,6 +1950,10 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            #[cfg(feature = "textbox")]
+            text_history: NativeTextHistory::default(),
+            #[cfg(feature = "textbox")]
+            processing_text_edit_commands: false,
             text_drag: None,
             #[cfg(feature = "combo")]
             combo_type_ahead: NativeComboTypeAheadState::default(),
@@ -2017,6 +2027,10 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            #[cfg(feature = "textbox")]
+            text_history: NativeTextHistory::default(),
+            #[cfg(feature = "textbox")]
+            processing_text_edit_commands: false,
             text_drag: None,
             #[cfg(feature = "combo")]
             combo_type_ahead: NativeComboTypeAheadState::default(),
@@ -2902,6 +2916,12 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
         state.clamp(&value);
+        #[cfg(feature = "textbox")]
+        let history_before = matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        )
+        .then(|| (value.as_str().to_owned(), state.selection));
         let multiline = target.kind == crate::ViewHitTargetKind::TextEditor;
         let mut previous_was_carriage_return = false;
         let accepted = text
@@ -2922,6 +2942,17 @@ impl WindowsWin32ViewInputRoute {
         }
 
         self.text_edit = Some(state);
+        #[cfg(feature = "textbox")]
+        if edit.text_changed {
+            if let Some((before_value, before_selection)) = history_before {
+                self.text_history.record_text_change(
+                    widget,
+                    &before_value,
+                    before_selection,
+                    value.as_str(),
+                );
+            }
+        }
         report.text_input_count = accepted;
         report.text_selection_change_count = usize::from(edit.selection_changed);
         report.text_caret = Some(state.selection.caret);
@@ -4627,6 +4658,8 @@ impl WindowsWin32ViewInputRoute {
         if let Some(live_view) = &self.live_view {
             let update = live_view.dispatch_app_command(&command);
             if update.message_count > 0 {
+                #[cfg(feature = "textbox")]
+                let text_edit_commands = update.text_edit_commands.clone();
                 report.handled = true;
                 report.event_count = 1;
                 report.message_count = update.message_count;
@@ -4657,6 +4690,8 @@ impl WindowsWin32ViewInputRoute {
                         .push(format!("win32_live_view_menu_repaint:{}", update.revision));
                 }
                 self.quit_requested |= update.quit_requested;
+                #[cfg(feature = "textbox")]
+                self.dispatch_text_edit_commands(text_edit_commands, &mut report);
                 return report;
             }
         }
@@ -4832,7 +4867,6 @@ impl WindowsWin32ViewInputRoute {
 
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
         if !target.kind.accepts_text_input() {
-            self.text_edit = None;
             self.text_drag = None;
             return;
         }
@@ -5575,6 +5609,8 @@ impl WindowsWin32ViewInputRoute {
     ) {
         if let Some(live_view) = &self.live_view {
             let update = live_view.dispatch_event(&event);
+            #[cfg(feature = "textbox")]
+            let text_edit_commands = update.text_edit_commands.clone();
             report.message_count += update.message_count;
             report.ui_command_count += update.ui_commands.len();
             report.app_command_count += update.commands.len();
@@ -5611,6 +5647,8 @@ impl WindowsWin32ViewInputRoute {
             self.quit_requested |= update.quit_requested;
             #[cfg(feature = "toast")]
             self.sync_toast_runtime(std::time::Instant::now());
+            #[cfg(feature = "textbox")]
+            self.dispatch_text_edit_commands(text_edit_commands, report);
             return;
         }
 
@@ -5640,6 +5678,107 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(std::time::Instant::now());
         self.rebuild_pending_draw_plan();
+    }
+
+    #[cfg(feature = "textbox")]
+    fn dispatch_text_edit_commands(
+        &mut self,
+        commands: Vec<crate::ZsTextEditCommandRequest>,
+        report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
+        if commands.is_empty() {
+            return;
+        }
+        if self.processing_text_edit_commands {
+            report
+                .text_edit_command_errors
+                .push("nested text edit commands are not supported".to_string());
+            return;
+        }
+
+        self.processing_text_edit_commands = true;
+        for request in commands {
+            report.text_edit_command_count += 1;
+            self.dispatch_text_edit_command(request, report);
+        }
+        self.processing_text_edit_commands = false;
+    }
+
+    #[cfg(feature = "textbox")]
+    fn dispatch_text_edit_command(
+        &mut self,
+        request: crate::ZsTextEditCommandRequest,
+        report: &mut WindowsWin32ViewInputDispatchReport,
+    ) {
+        let target = match request.widget {
+            Some(widget) => self.interaction_plan.hit_target_for_widget(widget),
+            None => self.focused_target(),
+        };
+        let Some(target) = target else {
+            return;
+        };
+        if !matches!(
+            target.kind,
+            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+        ) {
+            return;
+        }
+
+        let widget = target.widget;
+        let mut value = self.widget_text_value(widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        state.clamp(&value);
+        let mut clipboard = crate::NativeClipboardService::new();
+        let result = apply_text_edit_command(
+            request.command,
+            widget,
+            &mut value,
+            &mut state.selection,
+            &mut self.text_history,
+            &mut clipboard,
+        );
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                report.handled = true;
+                report.text_edit_command_errors.push(error.to_string());
+                return;
+            }
+        };
+
+        self.text_edit = Some(state);
+        report.handled |= result.handled;
+        report.text_selection_change_count += usize::from(result.selection_changed);
+        report.text_caret = Some(state.selection.caret);
+        report.text_clipboard_read_count += usize::from(result.clipboard_read);
+        report.text_clipboard_write_count += usize::from(result.clipboard_write);
+        report.text_undo_count += usize::from(result.undo_applied);
+        report.events.push(format!(
+            "win32_view_text_edit_command:{}:{:?}",
+            widget.0, request.command
+        ));
+
+        let event = if result.text_changed {
+            Some(crate::ViewEvent::TextEdited {
+                widget,
+                value,
+                selection: state.selection.into(),
+            })
+        } else if result.selection_changed {
+            Some(crate::ViewEvent::TextSelectionChanged {
+                widget,
+                selection: state.selection.into(),
+            })
+        } else {
+            None
+        };
+        if let Some(event) = event {
+            report.event_count += 1;
+            self.dispatch_event(event, report);
+        }
     }
 
     fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
@@ -6457,6 +6596,16 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub text_navigation_count: usize,
     pub text_selection_change_count: usize,
     pub text_caret: Option<usize>,
+    #[cfg(feature = "textbox")]
+    pub text_edit_command_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_clipboard_read_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_clipboard_write_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_undo_count: usize,
+    #[cfg(feature = "textbox")]
+    pub text_edit_command_errors: Vec<String>,
     pub text_drag_count: usize,
     pub text_drag_active: bool,
     pub slider_value_change_count: usize,
@@ -6556,6 +6705,15 @@ impl WindowsWin32ViewInputDispatchReport {
         self.text_navigation_count += next.text_navigation_count;
         self.text_selection_change_count += next.text_selection_change_count;
         self.text_caret = next.text_caret.or(self.text_caret);
+        #[cfg(feature = "textbox")]
+        {
+            self.text_edit_command_count += next.text_edit_command_count;
+            self.text_clipboard_read_count += next.text_clipboard_read_count;
+            self.text_clipboard_write_count += next.text_clipboard_write_count;
+            self.text_undo_count += next.text_undo_count;
+            self.text_edit_command_errors
+                .extend(next.text_edit_command_errors);
+        }
         self.text_drag_count += next.text_drag_count;
         self.text_drag_active = next.text_drag_active;
         self.slider_value_change_count += next.slider_value_change_count;
@@ -9293,6 +9451,51 @@ mod tests {
             vec!["zsui.test.win32.text_selection"]
         );
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_live_view_routes_typed_undo_command_to_focused_editor() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(String),
+            Undo,
+        }
+
+        let widget = crate::WidgetId::new(34);
+        let builder = crate::native_window("Win32 typed editor command")
+            .size(320, 160)
+            .stateful_view_with_app_commands(
+                String::new(),
+                move |value| crate::text_editor(value).id(widget).on_change(Msg::Changed),
+                |value, message, cx| match message {
+                    Msg::Changed(next) => *value = next,
+                    Msg::Undo => cx.text_edit_command(crate::ZsTextEditCommand::Undo),
+                },
+                |command| (command == &Command::custom("edit.undo")).then_some(Msg::Undo),
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("stateful editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("editor should expose Win32 focus geometry");
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        route.dispatch_click(crate::Point {
+            x: target.bounds.x + 8,
+            y: target.bounds.y + 8,
+        });
+        route.dispatch_text_input("A");
+        route.dispatch_text_input("中");
+
+        let undone = route.dispatch_app_command(Command::custom("edit.undo"));
+
+        assert_eq!(undone.text_edit_command_count, 1);
+        assert_eq!(undone.text_undo_count, 1);
+        assert!(undone.text_edit_command_errors.is_empty());
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("A"));
     }
 
     #[test]

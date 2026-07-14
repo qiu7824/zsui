@@ -1,6 +1,11 @@
 use std::ops::Range;
 
 use crate::WidgetId;
+#[cfg(feature = "textbox")]
+use crate::{ClipboardData, ClipboardService, ZsTextEditCommand, ZsuiResult};
+
+#[cfg(feature = "textbox")]
+const NATIVE_TEXT_UNDO_LIMIT: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NativeTextSelection {
@@ -87,6 +92,132 @@ pub(crate) struct NativeTextEditResult {
     pub selection_changed: bool,
 }
 
+#[cfg(feature = "textbox")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeTextSnapshot {
+    value: String,
+    selection: NativeTextSelection,
+}
+
+#[cfg(feature = "textbox")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct NativeTextHistory {
+    widget: Option<WidgetId>,
+    tracked_value: Option<String>,
+    undo: Vec<NativeTextSnapshot>,
+}
+
+#[cfg(feature = "textbox")]
+impl NativeTextHistory {
+    pub(crate) fn record_text_change(
+        &mut self,
+        widget: WidgetId,
+        before_value: &str,
+        before_selection: NativeTextSelection,
+        after_value: &str,
+    ) {
+        self.synchronize(widget, before_value);
+        if before_value == after_value {
+            return;
+        }
+        if self.undo.len() == NATIVE_TEXT_UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+        self.undo.push(NativeTextSnapshot {
+            value: before_value.to_string(),
+            selection: before_selection.clamp(before_value),
+        });
+        self.tracked_value = Some(after_value.to_string());
+    }
+
+    fn synchronize(&mut self, widget: WidgetId, value: &str) {
+        if self.widget != Some(widget) || self.tracked_value.as_deref() != Some(value) {
+            self.widget = Some(widget);
+            self.tracked_value = Some(value.to_string());
+            self.undo.clear();
+        }
+    }
+
+    fn undo(&mut self, widget: WidgetId, value: &str) -> Option<(String, NativeTextSelection)> {
+        self.synchronize(widget, value);
+        let snapshot = self.undo.pop()?;
+        self.tracked_value = Some(snapshot.value.clone());
+        Some((snapshot.value, snapshot.selection))
+    }
+}
+
+#[cfg(feature = "textbox")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NativeTextCommandResult {
+    pub handled: bool,
+    pub text_changed: bool,
+    pub selection_changed: bool,
+    pub clipboard_read: bool,
+    pub clipboard_write: bool,
+    pub undo_applied: bool,
+}
+
+#[cfg(feature = "textbox")]
+pub(crate) fn apply_text_edit_command(
+    command: ZsTextEditCommand,
+    widget: WidgetId,
+    value: &mut String,
+    selection: &mut NativeTextSelection,
+    history: &mut NativeTextHistory,
+    clipboard: &mut impl ClipboardService,
+) -> ZsuiResult<NativeTextCommandResult> {
+    *selection = selection.clamp(value);
+    let before_value = value.clone();
+    let before_selection = *selection;
+    let mut result = NativeTextCommandResult {
+        handled: true,
+        ..NativeTextCommandResult::default()
+    };
+
+    match command {
+        ZsTextEditCommand::Undo => {
+            if let Some((next_value, next_selection)) = history.undo(widget, value) {
+                *value = next_value;
+                *selection = next_selection.clamp(value);
+                result.undo_applied = true;
+            }
+        }
+        ZsTextEditCommand::Cut => {
+            if let Some(selected) = selected_text(value, *selection) {
+                clipboard.write_clipboard(&ClipboardData::text(selected))?;
+                result.clipboard_write = true;
+                delete_selection(value, selection);
+                history.record_text_change(widget, &before_value, before_selection, value);
+            }
+        }
+        ZsTextEditCommand::Copy => {
+            if let Some(selected) = selected_text(value, *selection) {
+                clipboard.write_clipboard(&ClipboardData::text(selected))?;
+                result.clipboard_write = true;
+            }
+        }
+        ZsTextEditCommand::Paste => {
+            result.clipboard_read = true;
+            if let Some(ClipboardData::Text(text)) = clipboard.read_clipboard()? {
+                if !text.is_empty() {
+                    insert_text(value, selection, &text);
+                    history.record_text_change(widget, &before_value, before_selection, value);
+                }
+            }
+        }
+        ZsTextEditCommand::SelectAll => {
+            *selection = NativeTextSelection {
+                anchor: 0,
+                caret: char_count(value),
+            };
+        }
+    }
+
+    result.text_changed = *value != before_value;
+    result.selection_changed = *selection != before_selection;
+    Ok(result)
+}
+
 pub(crate) fn apply_text_input(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -131,6 +262,14 @@ pub(crate) fn insert_text(
         return NativeTextEditResult::default();
     }
     replace_selection(value, selection, text)
+}
+
+#[cfg(feature = "textbox")]
+pub(crate) fn delete_selection(
+    value: &mut String,
+    selection: &mut NativeTextSelection,
+) -> NativeTextEditResult {
+    replace_selection(value, selection, "")
 }
 
 pub(crate) fn delete_backward(
@@ -230,6 +369,15 @@ pub(crate) fn char_to_byte_index(value: &str, char_index: usize) -> usize {
         .unwrap_or(value.len())
 }
 
+#[cfg(feature = "textbox")]
+fn selected_text(value: &str, selection: NativeTextSelection) -> Option<&str> {
+    let (start, end) = selection.clamp(value).ordered();
+    if start == end {
+        return None;
+    }
+    value.get(char_to_byte_index(value, start)..char_to_byte_index(value, end))
+}
+
 fn replace_selection(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -284,6 +432,24 @@ fn line_end(value: &str, caret: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "textbox")]
+    #[derive(Default)]
+    struct TestClipboard {
+        value: Option<ClipboardData>,
+    }
+
+    #[cfg(feature = "textbox")]
+    impl ClipboardService for TestClipboard {
+        fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
+            Ok(self.value.clone())
+        }
+
+        fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
+            self.value = Some(data.clone());
+            Ok(())
+        }
+    }
 
     #[test]
     fn unicode_insert_replaces_selection_and_keeps_character_indices() {
@@ -356,5 +522,82 @@ mod tests {
                 caret: 3
             }
         );
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn typed_edit_commands_share_unicode_selection_clipboard_and_undo_history() {
+        let widget = WidgetId::new(9);
+        let mut value = "A中文Z".to_string();
+        let mut selection = NativeTextSelection {
+            anchor: 1,
+            caret: 3,
+        };
+        let mut history = NativeTextHistory::default();
+        let mut clipboard = TestClipboard::default();
+
+        let copied = apply_text_edit_command(
+            ZsTextEditCommand::Copy,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(copied.clipboard_write);
+        assert_eq!(clipboard.value, Some(ClipboardData::text("中文")));
+
+        let cut = apply_text_edit_command(
+            ZsTextEditCommand::Cut,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(cut.text_changed);
+        assert_eq!(value, "AZ");
+        assert_eq!(selection, NativeTextSelection::collapsed(1));
+
+        let undone = apply_text_edit_command(
+            ZsTextEditCommand::Undo,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(undone.undo_applied);
+        assert_eq!(value, "A中文Z");
+        assert_eq!(selection.anchor, 1);
+        assert_eq!(selection.caret, 3);
+
+        clipboard.value = Some(ClipboardData::text("🙂"));
+        let pasted = apply_text_edit_command(
+            ZsTextEditCommand::Paste,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(pasted.clipboard_read);
+        assert_eq!(value, "A🙂Z");
+
+        let selected = apply_text_edit_command(
+            ZsTextEditCommand::SelectAll,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(selected.selection_changed);
+        assert_eq!(selection.ordered(), (0, 3));
     }
 }

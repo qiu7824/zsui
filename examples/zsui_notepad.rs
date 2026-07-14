@@ -8,11 +8,12 @@ use zsui::{
     button, column, native_window, row, spacer, text, text_editor, AppCx, Command, Dp,
     FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
     NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, ThemeColorToken, ViewNode, WidgetId,
-    ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument, ZsTextSelection,
-    ZsuiError, ZsuiResult,
+    ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand,
+    ZsTextSelection, ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
+const UNDO_BUTTON: WidgetId = WidgetId::new(2);
 const EFFECT_OPEN: &str = "notepad.effect.open";
 const EFFECT_SAVE: &str = "notepad.effect.save";
 const EFFECT_SAVE_AS: &str = "notepad.effect.save-as";
@@ -100,12 +101,14 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
         command_button("Open", ZsDocumentShellCommand::Open),
         command_button("Save", ZsDocumentShellCommand::Save),
         command_button("Save as", ZsDocumentShellCommand::SaveAs),
+        command_button("Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
         spacer(),
         command_button("Status", ZsDocumentShellCommand::ToggleStatus),
         command_button("About", ZsDocumentShellCommand::About),
     ])
     .height(Dp::new(40.0))
-    .gap(Dp::new(8.0));
+    .gap(Dp::new(8.0))
+    .bg(ThemeColorToken::Surface);
 
     let mut content = vec![document_header, command_bar];
     if let Some(pending) = state.pending {
@@ -150,7 +153,8 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
                 text("Wrap on"),
             ])
             .height(Dp::new(30.0))
-            .gap(Dp::new(16.0)),
+            .gap(Dp::new(16.0))
+            .bg(ThemeColorToken::Surface),
         );
     }
 
@@ -212,11 +216,22 @@ fn dispatch_document_command(
             state.notice =
                 "ZSUI Notepad uses one Rust view/update path and no WebView.".to_string();
         }
-        ZsDocumentShellCommand::Undo
-        | ZsDocumentShellCommand::Cut
-        | ZsDocumentShellCommand::Copy
-        | ZsDocumentShellCommand::Paste
-        | ZsDocumentShellCommand::ToggleWrap => {
+        ZsDocumentShellCommand::Undo => {
+            cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::Undo)
+        }
+        ZsDocumentShellCommand::Cut => {
+            cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::Cut)
+        }
+        ZsDocumentShellCommand::Copy => {
+            cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::Copy)
+        }
+        ZsDocumentShellCommand::Paste => {
+            cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::Paste)
+        }
+        ZsDocumentShellCommand::SelectAll => {
+            cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::SelectAll)
+        }
+        ZsDocumentShellCommand::ToggleWrap => {
             state.notice =
                 "This editor command is not exposed by the shared text API yet.".to_string();
         }
@@ -289,6 +304,35 @@ fn notepad_menu() -> MenuSpec {
         Some(ZsAccelerator::primary_character('W')),
     ));
 
+    let mut edit = MenuSpec::new();
+    edit.items.push(menu_item(
+        "Undo",
+        ZsDocumentShellCommand::Undo,
+        Some(ZsAccelerator::primary_character('Z')),
+    ));
+    edit.items.push(MenuItemSpec::Separator);
+    edit.items.push(menu_item(
+        "Cut",
+        ZsDocumentShellCommand::Cut,
+        Some(ZsAccelerator::primary_character('X')),
+    ));
+    edit.items.push(menu_item(
+        "Copy",
+        ZsDocumentShellCommand::Copy,
+        Some(ZsAccelerator::primary_character('C')),
+    ));
+    edit.items.push(menu_item(
+        "Paste",
+        ZsDocumentShellCommand::Paste,
+        Some(ZsAccelerator::primary_character('V')),
+    ));
+    edit.items.push(MenuItemSpec::Separator);
+    edit.items.push(menu_item(
+        "Select all",
+        ZsDocumentShellCommand::SelectAll,
+        Some(ZsAccelerator::primary_character('A')),
+    ));
+
     let mut view_menu = MenuSpec::new();
     view_menu.items.push(menu_item(
         "Status bar",
@@ -306,6 +350,7 @@ fn notepad_menu() -> MenuSpec {
     MenuSpec::new()
         .title("ZSUI Notepad")
         .submenu("File", file)
+        .submenu("Edit", edit)
         .submenu("View", view_menu)
         .submenu("Help", help)
 }
@@ -468,6 +513,17 @@ fn main() -> ZsuiResult<()> {
 
     let args = std::env::args().collect::<Vec<_>>();
     if args.iter().any(|argument| argument == "--smoke") {
+        let undo_bounds = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(UNDO_BUTTON))
+            .map(|target| target.bounds)
+            .ok_or_else(|| {
+                ZsuiError::host("notepad_smoke", "Undo button has no interaction bounds")
+            })?;
+        let undo_point = Point {
+            x: undo_bounds.x + undo_bounds.width / 2,
+            y: undo_bounds.y + undo_bounds.height / 2,
+        };
         let screenshot = args
             .windows(2)
             .find(|pair| pair[0] == "--screenshot")
@@ -478,7 +534,9 @@ fn main() -> ZsuiResult<()> {
             .map(|pair| pair[1].clone());
         let mut options = NativeWindowSmokeRunOptions::new(1_200)
             .native_view_click(Point { x: 360, y: 220 })
-            .native_view_text_input("三平台自绘文本输入");
+            .native_view_text_input("三平台自绘文本输入")
+            .native_view_click(undo_point)
+            .native_view_click(Point { x: 360, y: 220 });
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
         }
@@ -491,11 +549,12 @@ fn main() -> ZsuiResult<()> {
         }
         if !report.visible_window_was_created()
             || report.native_view_text_input_count == 0
+            || report.native_view_text_undo_count == 0
             || !report.window_menu_command_routed
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing or self-drawn text input was not verified",
+                "native window, menu routing, self-drawn text input or typed undo was not verified",
             ));
         }
     } else {
@@ -583,7 +642,7 @@ mod tests {
     }
 
     #[test]
-    fn native_menu_only_exposes_supported_shared_editor_commands() {
+    fn native_menu_exposes_supported_shared_editor_commands() {
         let menu = notepad_menu();
         let commands = menu
             .items
@@ -602,7 +661,11 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(commands.contains(&ZsDocumentShellCommand::Open));
-        assert!(!commands.contains(&ZsDocumentShellCommand::Undo));
+        assert!(commands.contains(&ZsDocumentShellCommand::Undo));
+        assert!(commands.contains(&ZsDocumentShellCommand::Cut));
+        assert!(commands.contains(&ZsDocumentShellCommand::Copy));
+        assert!(commands.contains(&ZsDocumentShellCommand::Paste));
+        assert!(commands.contains(&ZsDocumentShellCommand::SelectAll));
         assert!(!commands.contains(&ZsDocumentShellCommand::ToggleWrap));
     }
 }

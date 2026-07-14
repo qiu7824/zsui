@@ -211,8 +211,9 @@ pub use date::{days_in_month, is_leap_year, ZsDate};
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
     DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
-    MenuService, NativeFileDialogService, SaveFileDialogSpec, TextInputRequest, TextInputService,
-    ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
+    MenuService, NativeClipboardService, NativeFileDialogService, SaveFileDialogSpec,
+    TextInputRequest, TextInputService, ThemePreference, ThemeService, WindowService,
+    REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 pub use document_shell::{
@@ -568,8 +569,6 @@ pub use view::tree_view;
 pub use view::ViewTooltipTarget;
 #[cfg(feature = "date-picker")]
 pub use view::ZsDatePickerState;
-#[cfg(feature = "textbox")]
-pub use view::ZsTextSelection;
 #[cfg(feature = "time-picker")]
 pub use view::ZsTimePickerState;
 pub use view::{
@@ -590,6 +589,8 @@ pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport
 pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTrack};
 #[cfg(feature = "number-box")]
 pub use view::{ZsNumberBoxState, ZsNumberFormat, ZsNumberRange};
+#[cfg(feature = "textbox")]
+pub use view::{ZsTextEditCommand, ZsTextEditCommandRequest, ZsTextSelection};
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
