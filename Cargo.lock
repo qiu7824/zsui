@@ -2972,6 +2972,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "unicode-segmentation",
  "windows-sys 0.59.0",
  "winit",
  "zeroize",

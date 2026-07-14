@@ -1,4 +1,7 @@
-use crate::native_text_edit::{char_count, NativeTextSelection};
+use crate::native_text_edit::{
+    char_count, grapheme_boundaries, grapheme_count_in_range, grapheme_index_for_column,
+    snap_grapheme_index, NativeTextSelection,
+};
 use crate::{
     ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Point, Rect,
     ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, WidgetId,
@@ -110,7 +113,7 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
         0
     };
     let selection = selection.clamp(value);
-    let (caret_row, caret_column) = text_position(selection.caret, &lines);
+    let (caret_row, caret_column) = text_position(value, selection.caret, &lines);
     let caret_x = visual_column_x(
         text_bounds.x,
         caret_column,
@@ -149,10 +152,9 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
             {
                 continue;
             }
-            let start_column = overlap_start
-                .saturating_sub(line.start)
-                .max(first_visible_column);
-            let end_column = overlap_end.saturating_sub(line.start);
+            let start_column =
+                grapheme_count_in_range(value, line.start, overlap_start).max(first_visible_column);
+            let end_column = grapheme_count_in_range(value, line.start, overlap_end);
             if end_column <= first_visible_column {
                 continue;
             }
@@ -250,8 +252,8 @@ pub(crate) fn native_text_index_for_point_in_viewport(
     } else {
         0
     })
-    .min(line.end.saturating_sub(line.start));
-    line.start.saturating_add(column)
+    .min(line.columns);
+    grapheme_index_for_column(value, line.start, line.end, column)
 }
 
 pub(crate) fn native_text_index_for_vertical_move(
@@ -337,20 +339,24 @@ fn native_text_index_for_vertical_row_delta(
         wrap,
         max_columns,
     );
-    let (row, current_column) = text_position(caret.min(char_count(value)), &lines);
+    let caret = snap_grapheme_index(value, caret);
+    let (row, current_column) = text_position(value, caret, &lines);
     let preferred_column = preferred_column.unwrap_or(current_column);
     let target_row = match direction {
         NativeTextVisualDirection::Up => row.saturating_sub(row_delta),
         NativeTextVisualDirection::Down => row.saturating_add(row_delta).min(lines.len() - 1),
     };
     let line = lines[target_row];
-    let line_columns = line.end.saturating_sub(line.start);
+    let line_columns = line.columns;
     let column = if line.soft_wrap_after {
         preferred_column.min(line_columns.saturating_sub(1))
     } else {
         preferred_column.min(line_columns)
     };
-    (line.start.saturating_add(column), preferred_column)
+    (
+        grapheme_index_for_column(value, line.start, line.end, column),
+        preferred_column,
+    )
 }
 
 pub(crate) fn native_text_first_visible_row_for_caret(
@@ -367,7 +373,7 @@ pub(crate) fn native_text_first_visible_row_for_caret(
     let (lines, visible_rows) = native_text_viewport_lines(target, value, wrap, dpi);
     let maximum_first = lines.len().saturating_sub(visible_rows);
     let first_visible_row = first_visible_row.min(maximum_first);
-    let (caret_row, _) = text_position(caret.min(char_count(value)), &lines);
+    let (caret_row, _) = text_position(value, snap_grapheme_index(value, caret), &lines);
     if caret_row < first_visible_row {
         caret_row
     } else if caret_row >= first_visible_row.saturating_add(visible_rows) {
@@ -399,7 +405,7 @@ pub(crate) fn native_text_first_visible_column_for_caret(
         .unwrap_or(1)
         .max(1) as usize;
     let lines = text_lines(value, true, wrap, max_columns);
-    let (_, caret_column) = text_position(caret.min(char_count(value)), &lines);
+    let (_, caret_column) = text_position(value, snap_grapheme_index(value, caret), &lines);
     let visible_columns = metrics
         .text_bounds
         .width
@@ -543,7 +549,7 @@ fn native_text_scroll_visual_columns(
         .max(1) as usize;
     let longest_line = text_lines(value, true, wrap, max_columns)
         .into_iter()
-        .map(|line| line.end.saturating_sub(line.start))
+        .map(|line| line.columns)
         .max()
         .unwrap_or(0);
     let visible_columns = metrics
@@ -719,10 +725,8 @@ fn decorate_native_text_editor_viewport(
         .skip(first_visible_row)
         .take(visible_rows)
     {
-        let visible_start = line
-            .start
-            .saturating_add(first_visible_column)
-            .min(line.end);
+        let visible_start =
+            grapheme_index_for_column(value, line.start, line.end, first_visible_column);
         commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
             char_slice(value, visible_start, line.end),
             Rect {
@@ -1111,6 +1115,7 @@ pub(crate) fn decorate_native_pointer_visuals(
 struct NativeTextLine {
     start: usize,
     end: usize,
+    columns: usize,
     soft_wrap_after: bool,
 }
 
@@ -1228,24 +1233,36 @@ fn text_lines(
     max_columns: usize,
 ) -> Vec<NativeTextLine> {
     if !multiline {
+        let end = char_count(value);
         return vec![NativeTextLine {
             start: 0,
-            end: char_count(value),
+            end,
+            columns: grapheme_boundaries(value).len().saturating_sub(1),
             soft_wrap_after: false,
         }];
     }
     let characters = value.chars().collect::<Vec<_>>();
+    let grapheme_boundaries = grapheme_boundaries(value);
     let mut lines = Vec::new();
     let mut start = 0;
     for (index, character) in characters.iter().copied().enumerate() {
         if character == '\n' {
-            push_text_lines(&mut lines, &characters, start, index, wrap, max_columns);
+            push_text_lines(
+                &mut lines,
+                value,
+                &grapheme_boundaries,
+                start,
+                index,
+                wrap,
+                max_columns,
+            );
             start = index + 1;
         }
     }
     push_text_lines(
         &mut lines,
-        &characters,
+        value,
+        &grapheme_boundaries,
         start,
         characters.len(),
         wrap,
@@ -1256,34 +1273,49 @@ fn text_lines(
 
 fn push_text_lines(
     lines: &mut Vec<NativeTextLine>,
-    characters: &[char],
+    value: &str,
+    grapheme_boundaries: &[usize],
     start: usize,
     end: usize,
     wrap: crate::TextWrap,
     max_columns: usize,
 ) {
     let max_columns = max_columns.max(1);
-    if wrap == crate::TextWrap::NoWrap || end.saturating_sub(start) <= max_columns {
+    let columns = grapheme_count_between(grapheme_boundaries, start, end);
+    if wrap == crate::TextWrap::NoWrap || columns <= max_columns {
         lines.push(NativeTextLine {
             start,
             end,
+            columns,
             soft_wrap_after: false,
         });
         return;
     }
 
     let mut cursor = start;
-    while end.saturating_sub(cursor) > max_columns {
-        let limit = cursor.saturating_add(max_columns).min(end);
-        let break_at = characters[cursor..limit]
+    while grapheme_count_between(grapheme_boundaries, cursor, end) > max_columns {
+        let limit =
+            grapheme_index_for_column_between(grapheme_boundaries, cursor, end, max_columns);
+        let mut cluster_start = cursor;
+        let mut whitespace_break = None;
+        for cluster_end in grapheme_boundaries
             .iter()
-            .rposition(|character| character.is_whitespace())
-            .map(|offset| cursor.saturating_add(offset).saturating_add(1))
-            .filter(|candidate| *candidate > cursor)
-            .unwrap_or(limit);
+            .copied()
+            .filter(|boundary| *boundary > cursor && *boundary <= limit)
+        {
+            if char_slice(value, cluster_start, cluster_end)
+                .chars()
+                .all(char::is_whitespace)
+            {
+                whitespace_break = Some(cluster_end);
+            }
+            cluster_start = cluster_end;
+        }
+        let break_at = whitespace_break.unwrap_or(limit);
         lines.push(NativeTextLine {
             start: cursor,
             end: break_at,
+            columns: grapheme_count_between(grapheme_boundaries, cursor, break_at),
             soft_wrap_after: true,
         });
         cursor = break_at;
@@ -1291,14 +1323,44 @@ fn push_text_lines(
     lines.push(NativeTextLine {
         start: cursor,
         end,
+        columns: grapheme_count_between(grapheme_boundaries, cursor, end),
         soft_wrap_after: false,
     });
 }
 
-fn text_position(index: usize, lines: &[NativeTextLine]) -> (usize, usize) {
+fn grapheme_count_between(boundaries: &[usize], start: usize, end: usize) -> usize {
+    let first = boundaries.partition_point(|boundary| *boundary <= start);
+    let after_last = boundaries.partition_point(|boundary| *boundary <= end);
+    after_last.saturating_sub(first)
+}
+
+fn grapheme_index_for_column_between(
+    boundaries: &[usize],
+    start: usize,
+    end: usize,
+    column: usize,
+) -> usize {
+    if column == 0 {
+        return start;
+    }
+    let first = boundaries.partition_point(|boundary| *boundary <= start);
+    boundaries
+        .get(first.saturating_add(column.saturating_sub(1)))
+        .copied()
+        .filter(|boundary| *boundary <= end)
+        .unwrap_or(end)
+}
+
+fn text_position(value: &str, index: usize, lines: &[NativeTextLine]) -> (usize, usize) {
+    let index = snap_grapheme_index(value, index);
     for (row, line) in lines.iter().copied().enumerate() {
         if index < line.end || (index == line.end && !line.soft_wrap_after) {
-            return (row, index.saturating_sub(line.start));
+            let column = if index == line.end {
+                line.columns
+            } else {
+                grapheme_count_in_range(value, line.start, index)
+            };
+            return (row, column);
         }
     }
     lines
@@ -1306,7 +1368,11 @@ fn text_position(index: usize, lines: &[NativeTextLine]) -> (usize, usize) {
         .map(|line| {
             (
                 lines.len().saturating_sub(1),
-                index.min(line.end).saturating_sub(line.start),
+                if index >= line.end {
+                    line.columns
+                } else {
+                    grapheme_count_in_range(value, line.start, index)
+                },
             )
         })
         .unwrap_or((0, 0))
@@ -2339,6 +2405,66 @@ mod tests {
             ),
             (1, 32, true)
         );
+    }
+
+    #[cfg(feature = "text-input-core")]
+    #[test]
+    fn text_geometry_hit_testing_and_wrap_use_extended_grapheme_columns() {
+        let textbox = ViewHitTarget::with_kind(
+            WidgetId::new(102),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 160,
+                height: 44,
+            },
+            ViewHitTargetKind::Textbox,
+        );
+        let value = "A\u{65}\u{301}👩🏽‍💻Z";
+        let geometry = native_text_visual_geometry(
+            textbox,
+            value,
+            NativeTextSelection::collapsed(3),
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+        assert_eq!(geometry.caret.x, 24);
+        assert_eq!(
+            native_text_index_for_point(
+                textbox,
+                value,
+                Point { x: 24, y: 10 },
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+            ),
+            3
+        );
+        assert_eq!(
+            native_text_index_for_point(
+                textbox,
+                value,
+                Point { x: 32, y: 10 },
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+            ),
+            7
+        );
+        let selected = native_text_visual_geometry(
+            textbox,
+            value,
+            NativeTextSelection {
+                anchor: 1,
+                caret: 7,
+            },
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+        assert_eq!(selected.selections[0].width, 16);
+
+        let wrapped = text_lines("abc👩🏽‍💻d", true, crate::TextWrap::Word, 4);
+        assert_eq!((wrapped[0].start, wrapped[0].end), (0, 7));
+        assert!(wrapped[0].soft_wrap_after);
+        assert_eq!((wrapped[1].start, wrapped[1].end), (7, 8));
     }
 
     #[test]

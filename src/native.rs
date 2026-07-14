@@ -39,7 +39,8 @@ use crate::native_input_visuals::{
 use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
 use crate::native_text_edit::{
     apply_text_input, char_to_byte_index, move_selection, move_selection_to, set_pointer_selection,
-    NativeTextDragState, NativeTextEditState, NativeTextMovement, NativeTextSelection,
+    snap_grapheme_index, NativeTextDragState, NativeTextEditState, NativeTextMovement,
+    NativeTextSelection,
 };
 use crate::{
     app::{app, ZsuiApp, ZsuiAppRuntime},
@@ -4081,10 +4082,9 @@ impl NativeViewInputRuntime {
             return self.cancel_ime_preedit();
         }
 
-        let char_count = text.chars().count();
         let selection = selection.map(|(start, end)| {
-            let start = start.min(char_count);
-            let end = end.min(char_count);
+            let start = snap_grapheme_index(text, start);
+            let end = snap_grapheme_index(text, end);
             (start.min(end), start.max(end))
         });
         let value = self
@@ -6265,9 +6265,9 @@ fn post_windows_native_view_input(
             PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*end));
         },
         NativeViewSmokeInput::Text(text) => {
-            for ch in text.chars() {
+            for unit in text.encode_utf16() {
                 unsafe {
-                    PostMessageW(hwnd, WM_CHAR, ch as usize, 0);
+                    PostMessageW(hwnd, WM_CHAR, unit as usize, 0);
                 }
             }
         }
@@ -7707,7 +7707,17 @@ fn run_native_window_smoke_event_loop(
     let screenshot_handle = handles[0].main() as isize;
     let capture_delay = screenshot_file
         .as_ref()
-        .map(|_| Duration::from_millis(options.auto_close_after_ms.clamp(1, 250)))
+        .map(|_| {
+            Duration::from_millis(
+                options
+                    .auto_close_after_ms
+                    .max(1)
+                    .saturating_mul(3)
+                    .checked_div(4)
+                    .unwrap_or(1)
+                    .max(1),
+            )
+        })
         .unwrap_or_default();
     let worker = thread::spawn(move || {
         if !capture_delay.is_zero() {
@@ -11319,6 +11329,44 @@ mod tests {
                 matches!(command, NativeDrawCommand::StrokeRect { rect, width: 2, .. } if *rect == target.bounds)
             })
         }));
+    }
+
+    #[cfg(all(feature = "textbox", feature = "text-input-core"))]
+    #[test]
+    fn native_view_runtime_keeps_committed_and_preedit_selection_on_grapheme_boundaries() {
+        let widget = crate::WidgetId::new(769);
+        let builder = native_window("Platform grapheme input")
+            .size(360, 220)
+            .ui_command_view(crate::textbox::<UiCommand>("").id(widget));
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .expect("textbox should expose grapheme input geometry");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + 12,
+            y: target.bounds.y + 12,
+        });
+
+        let typed = runtime.dispatch_text_input("A\u{65}\u{301}👩🏽‍💻Z");
+        assert!(typed.handled);
+        assert_eq!(typed.text_selection, Some((8, 8)));
+        let left = runtime.dispatch_key(NativeViewKey::Left);
+        assert_eq!(left.text_selection, Some((7, 7)));
+        let left = runtime.dispatch_key(NativeViewKey::Left);
+        assert_eq!(left.text_selection, Some((3, 3)));
+        let deleted = runtime.dispatch_text_input("\u{8}");
+        assert_eq!(deleted.text_selection, Some((1, 1)));
+        assert_eq!(runtime.focused_text_input_value().as_deref(), Some("A👩🏽‍💻Z"));
+
+        let preedit = runtime.dispatch_ime_preedit("\u{65}\u{301}", Some((1, 1)));
+        assert_eq!(preedit.ime_selection, Some((0, 0)));
+        let committed = runtime.dispatch_ime_commit("\u{65}\u{301}");
+        assert_eq!(committed.text_selection, Some((3, 3)));
+        assert_eq!(
+            runtime.focused_text_input_value().as_deref(),
+            Some("Ae\u{301}👩🏽‍💻Z")
+        );
     }
 
     #[cfg(feature = "password-box")]

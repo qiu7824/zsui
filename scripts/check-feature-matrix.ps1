@@ -19,6 +19,7 @@ $singleFeatures = @(
     "grid-view",
     "widgets-base",
     "widgets-input",
+    "text-input-core",
     "widgets-list",
     "scroll",
     "list",

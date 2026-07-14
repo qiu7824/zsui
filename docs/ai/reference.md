@@ -147,9 +147,11 @@ machine-readable shape to write. These are still contracts and verifiers, not
 native FFI implementations or device proof.
 The Cargo feature boundary is now explicit in `Cargo.toml` and
 `src/feature_manifest.rs`: defaults are `window`, `button` and `label`;
-`clipboard`, `image`, `desktop-winit`, `windows-gdi`, `macos-appkit` and
-`linux-gtk` are optional dependency
-features; advanced widgets remain opt-in. This is feature/crate based
+`clipboard`, `image`, `desktop-winit`, `windows-gdi`, `macos-appkit`,
+`linux-gtk` and the internal `text-input-core` are optional-dependency
+features. Unicode segmentation is enabled only by text-capable controls, while
+non-text `widgets-input` slices remain pruned; advanced widgets stay opt-in.
+This is feature/crate based
 trimming, not automatic unused-widget pruning inside an enabled crate. Cargo
 features are unified across the dependency graph, so the long-range shape is a
 small facade plus feature-gated crates/modules such as `zsui-core`,
@@ -296,8 +298,10 @@ can dispatch those selection messages into reusable command IDs. Win32 Up/Down
 key routing can move selection between list rows and records keyboard list
 selection in native smoke. Win32 `WM_MOUSEWHEEL` can route into typed
 `ScrollBy` events for `scroll` containers and reusable command IDs. Broader
-pointer routing, touch/inertial scroll, IME/composition input and macOS/Linux
-input dispatch are still pending.
+touch/inertial pointer routing, shaped-glyph/bidirectional caret geometry and
+macOS/Linux target input evidence are still pending. Shared text-capable
+controls already keep navigation, deletion, pointer hits, visual wrapping and
+IME marked selections on Unicode extended-grapheme boundaries.
 The feature-gated `combo_box(...)` owns explicit selected and expanded state,
 emits typed selection/expansion messages, and paints its popup in a final
 overlay pass so later layout siblings cannot cover it. Overlay option hit

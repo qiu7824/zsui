@@ -573,9 +573,10 @@ fn main() -> ZsuiResult<()> {
             .join("\n");
         let horizontal_smoke_text = format!(
             "horizontal-start-{}-HORIZONTAL-END",
-            "viewport-fill-".repeat(16)
+            "viewport-fill-".repeat(8)
         );
-        let mut options = NativeWindowSmokeRunOptions::new(1_200)
+        let grapheme_smoke_text = "G-\u{65}\u{301}👩🏽‍💻";
+        let mut options = NativeWindowSmokeRunOptions::new(1_600)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_text_input(smoke_text)
             .native_view_drag(Point { x: 360, y: 220 }, Point { x: 360, y: 100 })
@@ -586,6 +587,10 @@ fn main() -> ZsuiResult<()> {
             .native_view_scroll(Point { x: 360, y: 220 }, -48)
             .native_view_click(wrap_point)
             .native_view_click(Point { x: 360, y: 220 })
+            .native_view_text_input(grapheme_smoke_text)
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_text_input("\u{8}")
+            .native_view_key_down(NativeViewKey::End)
             .native_view_text_input(horizontal_smoke_text)
             .native_view_key_down(NativeViewKey::End)
             .native_window_close_request();
@@ -622,6 +627,14 @@ fn main() -> ZsuiResult<()> {
             return Err(ZsuiError::host(
                 "notepad_smoke",
                 "runtime word-wrap toggle was not applied to shared state",
+            ));
+        }
+        let grapheme_probe = lock_state(&shared)?.document.text().to_string();
+        if !grapheme_probe.contains("G-👩🏽‍💻") || grapheme_probe.contains("\u{65}\u{301}")
+        {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                "extended grapheme navigation or deletion split a committed text cluster",
             ));
         }
         if lock_state(&shared)?.pending != Some(PendingAction::Close) {

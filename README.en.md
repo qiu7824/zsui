@@ -400,14 +400,15 @@ real Win32 screenshot or `--manifest` for its structural report. Use
 `zsui_component_catalog_summary()` to inspect the current WinUI-style component
 coverage without treating declaration-only components as implemented.
 
-The Windows notepad demo combines the reusable `document-shell` feature with a
-native multiline text service. Its self-drawn document tab, command bar,
-rounded editor frame and status surface reuse Fluent tokens, semantic icons and
-the buffered no-flicker Windows renderer; file dialogs, keyboard accelerators,
-document lifecycle and the application icon remain real native integrations:
+The shared notepad acceptance app combines `document-shell` with the self-drawn
+multiline editor on target-native Win32, AppKit, and GTK4 hosts. One Rust
+State/Msg/view/update path owns document state while each backend supplies native
+menus, accelerators, dialogs, rendering, and input. Unicode combining sequences
+and joined emoji use shared extended-grapheme-safe navigation, deletion,
+wrapping, and hit testing; no WebView is involved:
 
 ```text
-cargo run --example zsui_notepad --features notepad-demo
+cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
 `docs/notepad-demo.md` records the reproducible ZSUI, egui, Iced, Slint,

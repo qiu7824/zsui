@@ -106,10 +106,13 @@ runtime, render it without mutating application state, commit UTF-8 through
 the normal typed `TextChanged` path and anchor the native candidate window to
 the focused editor. Selection replacement is shared across direct input and IME;
 AppKit reports UTF-16 selected/marked ranges and GTK4 supplies surrounding UTF-8
-text. Logical pointer hit testing uses shared DPI-scaled character metrics and
+text. Logical pointer hit testing uses shared DPI-scaled visual-cell metrics and
 clamps captured drags outside the editor to the first/last insertion point.
-Shaped-glyph, grapheme-cluster and bidirectional hit testing, target CJK
-interaction artifacts and accessibility remain separate gates. During native resize,
+Those cells, caret movement, deletion, wrapping and IME marked selections use
+Unicode extended-grapheme boundaries, so combining sequences and joined emoji
+are never split even though public selection indices remain scalar based.
+Shaped-glyph advances, bidirectional hit testing, target CJK interaction
+artifacts and accessibility remain separate gates. During native resize,
 actual `NSView` bounds and GTK4 `DrawingArea` allocations flow back through
 `NativeViewInputRuntime::set_surface(...)`, rebuilding the shared layout, draw
 plan, hit targets and candidate-window geometry before the current frame is
@@ -130,7 +133,7 @@ These services do not complete either native host. The unified
 fallback transport. Shared View rendering, click/scroll, keyboard focus,
 activation, Unicode keyboard/pointer range editing and first-pass IME composition now reach all
 three native window surfaces, but target screenshot capture, CJK interaction
-evidence and shaped-glyph/grapheme/bidirectional hit testing remain required; entering or
+evidence and shaped-glyph/bidirectional hit testing remain required; entering or
 painting a native event loop alone is not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
@@ -211,8 +214,10 @@ native input. The Win32 host already maps `WM_LBUTTONUP` through
 command ids during native smoke. Backends must hand those commands to
 `SharedUiCommandExecutor` after releasing internal route locks; use
 `ProductAdapterUiCommandExecutor` for the standard product boundary. It also
-routes focused `WM_CHAR` input into
-textbox `TextChanged` events when the textbox feature is enabled and checkbox
+routes focused `WM_CHAR` UTF-16 units into textbox `TextChanged` events when
+the textbox feature is enabled. Supplementary-plane characters are assembled
+from surrogate pairs inside the per-window route before shared dispatch; a
+high surrogate never becomes a partial application edit. Checkbox
 clicks into typed `Toggled` events when the checkbox feature is enabled.
 `WM_KEYDOWN` Enter/Space activation is also routed for focused button and
 checkbox/toggle targets, and Tab traverses the ordered `ViewInteractionPlan` focus
@@ -238,6 +243,11 @@ the matching row or no-wrap column offset by one visual step, clamp hit testing
 to the newly visible edge and emit the normal typed selection message. AppKit
 `mouseDragged:`, GTK4 motion and Win32 capture all consume this shared geometry;
 backends do not own a separate drag-scroll state.
+Text-capable controls share an internal `text-input-core` Cargo slice for
+Unicode extended-grapheme segmentation. Enabling a non-text input control does
+not pull that optional dependency into the build. Platform callbacks continue
+to exchange scalar indices with the shared runtime; only validated grapheme
+boundaries become live caret or selection endpoints.
 Feature-gated list row selection uses
 child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection

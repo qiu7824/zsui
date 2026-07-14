@@ -579,7 +579,9 @@ counted independently from logical focus changes. The textbox smoke also posts a
 down/move/up drag sequence, verifies Unicode range replacement and records
 `native_view_pointer_*`, `native_view_text_drag_count`,
 `native_view_text_drag_scroll_count` and
-`native_view_text_selection_change_count`. Shaped-glyph/grapheme/bidirectional
+`native_view_text_selection_change_count`. The notepad acceptance smoke also
+commits a combining sequence plus joined emoji, then proves Left/Backspace
+remove one extended grapheme without splitting it. Shaped-glyph/bidirectional
 hit testing, non-Windows target input evidence and resize screenshot artifacts
 remain later runtime gates. The `--date-picker-view` path also posts real
 pointer down/up input through the Win32 host and records

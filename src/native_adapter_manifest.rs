@@ -413,7 +413,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/windows_win32_host.rs",
-                "IMM32 result commit, Unicode keyboard/pointer selection replacement and logical-caret candidate placement are connected; shaped-glyph geometry and CJK target proof are pending",
+                "IMM32 result commit, WM_CHAR surrogate-pair assembly, extended-grapheme-safe keyboard/pointer selection replacement and logical-caret candidate placement are connected; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
@@ -455,7 +455,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/macos_appkit_renderer.rs",
-                "NSTextInputClient routes selected/marked UTF-16 ranges, replacement preedit, UTF-8 commit and logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
+                "NSTextInputClient routes selected/marked UTF-16 ranges, replacement preedit, UTF-8 commit and extended-grapheme-safe logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
@@ -497,7 +497,7 @@ fn native_ui_capability_readiness(
             Ime => (
                 FirstPass,
                 "src/linux_gtk_renderer.rs",
-                "GtkIMMulticontext routes preedit, UTF-8 commit, surrounding text, focus lifecycle and logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
+                "GtkIMMulticontext routes preedit, UTF-8 commit, surrounding text, focus lifecycle and extended-grapheme-safe logical-caret anchoring through shared input state; shaped-glyph geometry and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,

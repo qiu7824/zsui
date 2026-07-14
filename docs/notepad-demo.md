@@ -36,7 +36,9 @@ framework architecture.
   require the general `scroll` feature.
 - `ZsTextSelection` reports application-independent Unicode-scalar anchor and
   caret positions through `on_text_selection_change`, including edits,
-  keyboard navigation and pointer drag selection.
+  keyboard navigation and pointer drag selection. The shared runtime keeps
+  those scalar indices on Unicode extended-grapheme boundaries, so combining
+  sequences and joined emoji move, delete, wrap and hit-test as one unit.
 - `AppCx::text_edit_command(...)` and `text_edit_command_for(...)` queue
   strongly typed `ZsTextEditCommand` requests for the focused or explicitly
   identified editor. The host owns a bounded undo history and returns edits
@@ -84,7 +86,8 @@ selection drag beyond the editor edge and verifies two incremental viewport
 steps, routes a native Up key through the shared visual-row navigation, scrolls
 the editor one visual page with PageDown and with a real wheel message, toggles
 word wrap off, enters a marked long line and routes End to prove horizontal
-caret reveal, then sends a real
+caret reveal. It also commits a combining sequence plus joined emoji and uses
+Left/Backspace to prove that one complete grapheme is removed, then sends a real
 title-bar close request while the document is dirty, verifies that the request
 is vetoed and captures the shared unsaved-confirmation surface. On
 non-Windows targets the same source is compiled against the AppKit or GTK4
@@ -107,6 +110,7 @@ cross-compilation.
 | Wrapped visual-row Up/Down, PageUp/PageDown and Shift selection | implemented |
 | Long-document vertical viewport and no-wrap horizontal caret reveal | implemented |
 | Captured selection drag with row/column edge scrolling | implemented |
+| Extended-grapheme-safe caret, deletion, wrapping and pointer hit testing | implemented |
 | Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
 
@@ -119,19 +123,22 @@ This avoids claiming behavior that exists only in one platform service.
 and `document-shell`. Cargo then selects the dependency for the current desktop
 target. Editor vertical and no-wrap horizontal viewport state belongs to
 `textbox` and does not enable the general `scroll` container. Clipboard support
-is therefore omitted when applications do not select it. The Windows-only
+is therefore omitted when applications do not select it. `textbox` enables the
+small internal `text-input-core` slice and its Unicode segmentation dependency;
+non-text input controls do not. The Windows-only
 `WindowsWin32OwnedTextEditor` remains an optional framework service, but the
 acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 730 nonblank lines,
+The shared acceptance application is one source file with 743 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 2
-lines (0.3%) smaller while adding one cross-platform source path, typed caret
+files with 732 nonblank lines, so the checked-in application surface is 11
+lines (1.5%) larger while replacing two platform-coupled files with one shared
+cross-platform path and adding typed caret
 status, native menus, shared editing commands, runtime word-wrap coverage and
-visual-row/page navigation, two-axis editor caret reveal and edge-drag scrolling,
-plus native close-request interception.
+visual-row/page navigation, two-axis editor caret reveal, edge-drag scrolling,
+extended-grapheme acceptance and native close-request interception.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

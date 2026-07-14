@@ -176,7 +176,7 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::TextInput,
                 CapabilitySupport::supported(
-                    "single-line and multiline Unicode text routing, logical line/page caret navigation, Shift range selection and replacement are connected",
+                    "single-line and multiline Unicode text routing with WM_CHAR surrogate-pair assembly, extended-grapheme-safe caret/deletion/hit testing, logical line/page navigation, Shift range selection and replacement are connected",
                 ),
             )
             .with_support(
@@ -281,7 +281,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "focused UTF-8 input, Unicode line/page caret navigation, Shift and pointer range selection/replacement and multiline deletion are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
+                        "focused UTF-8 input, extended-grapheme-safe caret/deletion/hit testing, Unicode line/page navigation, Shift and pointer range selection/replacement are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -423,7 +423,7 @@ impl DesktopCapabilities {
                 DesktopCapability::TextInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "focused UTF-8 input, Unicode line/page caret navigation, Shift and pointer range selection/replacement and multiline deletion are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
+                        "focused UTF-8 input, extended-grapheme-safe caret/deletion/hit testing, Unicode line/page navigation, Shift and pointer range selection/replacement are connected; shaped-glyph/bidirectional hit testing and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

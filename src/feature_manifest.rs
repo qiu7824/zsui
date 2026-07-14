@@ -125,7 +125,15 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             Vec::new(),
-            "input widget declarations such as text boxes and checkboxes",
+            "input widget declarations such as checkboxes and toggles",
+        ),
+        ZsuiCargoFeature::new(
+            "text-input-core",
+            Widget,
+            false,
+            vec!["unicode-segmentation"],
+            vec!["widgets-input"],
+            "shared Unicode grapheme-boundary editing for text-capable controls",
         ),
         ZsuiCargoFeature::new(
             "widgets-list",
@@ -180,7 +188,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["widgets-input"],
+            vec!["text-input-core"],
             "text input component declarations",
         ),
         ZsuiCargoFeature::new(
@@ -188,7 +196,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             vec!["zeroize"],
-            vec!["widgets-input"],
+            vec!["text-input-core"],
             "single-line secure input with redacted state, platform reveal policy and self-drawn native profiles",
         ),
         ZsuiCargoFeature::new(
@@ -244,7 +252,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["widgets-input"],
+            vec!["text-input-core"],
             "editable finite number input with validated range, platform-style steppers and typed commit events",
         ),
         ZsuiCargoFeature::new(
@@ -276,7 +284,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["widgets-input"],
+            vec!["text-input-core"],
             "application-owned strong-id suggestions with platform search-field metrics, popup overlay and typed text, choice or submission events",
         ),
         ZsuiCargoFeature::new(
@@ -284,7 +292,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["widgets-input"],
+            vec!["text-input-core"],
             "application-owned strong-id commands with self-drawn platform search/list overlays and typed query, highlight, invoke or dismiss events",
         ),
         ZsuiCargoFeature::new(
@@ -646,8 +654,35 @@ mod tests {
         assert!(names.contains(&"macos-appkit"));
         assert!(names.contains(&"linux-gtk"));
         assert!(names.contains(&"password-box"));
+        assert!(names.contains(&"text-input-core"));
         assert!(!names.contains(&"button"));
         assert!(!names.contains(&"label"));
+    }
+
+    #[test]
+    fn unicode_segmentation_stays_inside_text_capable_input_slices() {
+        let manifest = zsui_feature_manifest();
+        let text_core = manifest
+            .iter()
+            .find(|feature| feature.name == "text-input-core")
+            .expect("text input core should be listed");
+        let textbox = manifest
+            .iter()
+            .find(|feature| feature.name == "textbox")
+            .expect("textbox should be listed");
+        let checkbox = manifest
+            .iter()
+            .find(|feature| feature.name == "checkbox")
+            .expect("checkbox should be listed");
+
+        assert_eq!(
+            text_core.optional_dependency_names,
+            vec!["unicode-segmentation"]
+        );
+        assert_eq!(text_core.enables, vec!["widgets-input"]);
+        assert_eq!(textbox.enables, vec!["text-input-core"]);
+        assert_eq!(checkbox.enables, vec!["widgets-input"]);
+        assert!(!checkbox.enables.contains(&"text-input-core"));
     }
 
     #[test]

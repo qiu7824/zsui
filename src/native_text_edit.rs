@@ -3,6 +3,8 @@ use std::ops::Range;
 use crate::WidgetId;
 #[cfg(feature = "textbox")]
 use crate::{ClipboardData, ClipboardService, ZsTextEditCommand, ZsuiResult};
+#[cfg(feature = "text-input-core")]
+use unicode_segmentation::UnicodeSegmentation;
 
 #[cfg(feature = "textbox")]
 const NATIVE_TEXT_UNDO_LIMIT: usize = 100;
@@ -36,8 +38,8 @@ impl NativeTextSelection {
     pub(crate) fn clamp(self, value: &str) -> Self {
         let len = char_count(value);
         Self {
-            anchor: self.anchor.min(len),
-            caret: self.caret.min(len),
+            anchor: snap_grapheme_index_with_len(value, self.anchor, len),
+            caret: snap_grapheme_index_with_len(value, self.caret, len),
         }
     }
 }
@@ -299,7 +301,8 @@ pub(crate) fn delete_backward(
             ..NativeTextEditResult::default()
         };
     }
-    replace_char_range(value, selection, start - 1..start, "")
+    let previous = previous_grapheme_boundary(value, start);
+    replace_char_range(value, selection, previous..start, "")
 }
 
 pub(crate) fn delete_forward(
@@ -318,7 +321,8 @@ pub(crate) fn delete_forward(
             ..NativeTextEditResult::default()
         };
     }
-    replace_char_range(value, selection, end..end + 1, "")
+    let next = next_grapheme_boundary(value, end);
+    replace_char_range(value, selection, end..next, "")
 }
 
 pub(crate) fn move_selection(
@@ -335,8 +339,8 @@ pub(crate) fn move_selection(
     let target = match movement {
         NativeTextMovement::Left if !extend && !before.is_collapsed() => start,
         NativeTextMovement::Right if !extend && !before.is_collapsed() => end,
-        NativeTextMovement::Left => before.caret.saturating_sub(1),
-        NativeTextMovement::Right => before.caret.saturating_add(1).min(len),
+        NativeTextMovement::Left => previous_grapheme_boundary(value, before.caret),
+        NativeTextMovement::Right => next_grapheme_boundary(value, before.caret).min(len),
         NativeTextMovement::Home if multiline => line_start(value, before.caret),
         NativeTextMovement::End if multiline => line_end(value, before.caret),
         NativeTextMovement::Home => 0,
@@ -353,7 +357,7 @@ pub(crate) fn move_selection_to(
 ) -> NativeTextEditResult {
     let before = selection.clamp(value);
     *selection = before;
-    let target = target.min(char_count(value));
+    let target = snap_grapheme_index(value, target);
     if extend {
         selection.caret = target;
     } else {
@@ -383,6 +387,97 @@ pub(crate) fn set_pointer_selection(
 
 pub(crate) fn char_count(value: &str) -> usize {
     value.chars().count()
+}
+
+pub(crate) fn grapheme_boundaries(value: &str) -> Vec<usize> {
+    #[cfg(feature = "text-input-core")]
+    {
+        let mut boundaries = Vec::with_capacity(value.len().saturating_add(1));
+        let mut scalar_index = 0_usize;
+        boundaries.push(0);
+        for grapheme in UnicodeSegmentation::graphemes(value, true) {
+            scalar_index = scalar_index.saturating_add(grapheme.chars().count());
+            boundaries.push(scalar_index);
+        }
+        boundaries
+    }
+    #[cfg(not(feature = "text-input-core"))]
+    {
+        (0..=char_count(value)).collect()
+    }
+}
+
+pub(crate) fn snap_grapheme_index(value: &str, index: usize) -> usize {
+    let len = char_count(value);
+    snap_grapheme_index_with_len(value, index, len)
+}
+
+fn snap_grapheme_index_with_len(value: &str, index: usize, len: usize) -> usize {
+    let index = index.min(len);
+    if index == 0 || index == len {
+        return index;
+    }
+    let boundaries = grapheme_boundaries(value);
+    match boundaries.binary_search(&index) {
+        Ok(position) => boundaries[position],
+        Err(position) => {
+            let previous = boundaries[position.saturating_sub(1)];
+            let next = boundaries.get(position).copied().unwrap_or(previous);
+            if index.saturating_sub(previous) <= next.saturating_sub(index) {
+                previous
+            } else {
+                next
+            }
+        }
+    }
+}
+
+pub(crate) fn previous_grapheme_boundary(value: &str, index: usize) -> usize {
+    let index = index.min(char_count(value));
+    let boundaries = grapheme_boundaries(value);
+    match boundaries.binary_search(&index) {
+        Ok(position) => boundaries[position.saturating_sub(1)],
+        Err(position) => boundaries[position.saturating_sub(1)],
+    }
+}
+
+pub(crate) fn next_grapheme_boundary(value: &str, index: usize) -> usize {
+    let index = index.min(char_count(value));
+    let boundaries = grapheme_boundaries(value);
+    match boundaries.binary_search(&index) {
+        Ok(position) => boundaries
+            .get(position.saturating_add(1))
+            .copied()
+            .unwrap_or(index),
+        Err(position) => boundaries.get(position).copied().unwrap_or(index),
+    }
+}
+
+pub(crate) fn grapheme_count_in_range(value: &str, start: usize, end: usize) -> usize {
+    let start = start.min(char_count(value));
+    let end = end.min(char_count(value)).max(start);
+    grapheme_boundaries(value)
+        .into_iter()
+        .filter(|boundary| *boundary > start && *boundary <= end)
+        .count()
+}
+
+pub(crate) fn grapheme_index_for_column(
+    value: &str,
+    start: usize,
+    end: usize,
+    column: usize,
+) -> usize {
+    let start = start.min(char_count(value));
+    let end = end.min(char_count(value)).max(start);
+    if column == 0 {
+        return start;
+    }
+    grapheme_boundaries(value)
+        .into_iter()
+        .filter(|boundary| *boundary > start && *boundary <= end)
+        .nth(column.saturating_sub(1))
+        .unwrap_or(end)
 }
 
 pub(crate) fn char_to_byte_index(value: &str, char_index: usize) -> usize {
@@ -502,6 +597,61 @@ mod tests {
         assert!(forward.text_changed);
         assert_eq!(value, "AZ");
         assert_eq!(selection, NativeTextSelection::collapsed(1));
+    }
+
+    #[cfg(feature = "text-input-core")]
+    #[test]
+    fn navigation_and_deletion_never_split_extended_grapheme_clusters() {
+        let value = "A\u{65}\u{301}👨‍👩‍👧‍👦Z";
+        let combining_end = 3;
+        let family_end = 10;
+        assert_eq!(
+            grapheme_boundaries(value),
+            vec![0, 1, combining_end, family_end, 11]
+        );
+        assert_eq!(snap_grapheme_index(value, 2), 1);
+        assert_eq!(snap_grapheme_index(value, 7), family_end);
+
+        let mut selection = NativeTextSelection::collapsed(family_end);
+        move_selection(
+            value,
+            &mut selection,
+            NativeTextMovement::Left,
+            false,
+            false,
+        );
+        assert_eq!(selection, NativeTextSelection::collapsed(combining_end));
+        move_selection(
+            value,
+            &mut selection,
+            NativeTextMovement::Left,
+            false,
+            false,
+        );
+        assert_eq!(selection, NativeTextSelection::collapsed(1));
+
+        let mut edited = value.to_string();
+        let mut selection = NativeTextSelection::collapsed(family_end);
+        let backward = delete_backward(&mut edited, &mut selection);
+        assert!(backward.text_changed);
+        assert_eq!(edited, "A\u{65}\u{301}Z");
+        assert_eq!(selection, NativeTextSelection::collapsed(combining_end));
+        let forward = delete_forward(&mut edited, &mut selection);
+        assert!(forward.text_changed);
+        assert_eq!(edited, "A\u{65}\u{301}");
+    }
+
+    #[cfg(feature = "text-input-core")]
+    #[test]
+    fn grapheme_columns_map_back_to_unicode_scalar_indices() {
+        let value = "x\u{65}\u{301}👩🏽‍💻z";
+
+        assert_eq!(grapheme_count_in_range(value, 0, char_count(value)), 4);
+        assert_eq!(grapheme_index_for_column(value, 0, char_count(value), 0), 0);
+        assert_eq!(grapheme_index_for_column(value, 0, char_count(value), 1), 1);
+        assert_eq!(grapheme_index_for_column(value, 0, char_count(value), 2), 3);
+        assert_eq!(grapheme_index_for_column(value, 0, char_count(value), 3), 7);
+        assert_eq!(grapheme_index_for_column(value, 0, char_count(value), 4), 8);
     }
 
     #[test]

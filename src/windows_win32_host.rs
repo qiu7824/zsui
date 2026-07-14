@@ -1876,6 +1876,7 @@ pub struct WindowsWin32ViewInputRoute {
     #[cfg(feature = "toast")]
     toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
+    pending_utf16_high_surrogate: Option<u16>,
     #[cfg(feature = "textbox")]
     text_history: NativeTextHistory,
     #[cfg(feature = "textbox")]
@@ -1956,6 +1957,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            pending_utf16_high_surrogate: None,
             #[cfg(feature = "textbox")]
             text_history: NativeTextHistory::default(),
             #[cfg(feature = "textbox")]
@@ -2035,6 +2037,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            pending_utf16_high_surrogate: None,
             #[cfg(feature = "textbox")]
             text_history: NativeTextHistory::default(),
             #[cfg(feature = "textbox")]
@@ -2877,6 +2880,36 @@ impl WindowsWin32ViewInputRoute {
 
     fn dispatch_text_input(&mut self, text: &str) -> WindowsWin32ViewInputDispatchReport {
         self.dispatch_text_input_at(text, std::time::Instant::now())
+    }
+
+    fn dispatch_utf16_input_unit(&mut self, unit: u16) -> WindowsWin32ViewInputDispatchReport {
+        if (0xd800..=0xdbff).contains(&unit) {
+            self.pending_utf16_high_surrogate = Some(unit);
+            return WindowsWin32ViewInputDispatchReport {
+                handled: true,
+                hit_target_count: self.hit_target_count(),
+                events: vec!["win32_view_text_utf16_high_surrogate".to_string()],
+                ..WindowsWin32ViewInputDispatchReport::default()
+            };
+        }
+        let text = if (0xdc00..=0xdfff).contains(&unit) {
+            self.pending_utf16_high_surrogate
+                .take()
+                .and_then(|high| char::decode_utf16([high, unit]).next())
+                .and_then(Result::ok)
+                .map(|character| character.to_string())
+        } else {
+            self.pending_utf16_high_surrogate = None;
+            text_from_char_wparam(unit as usize)
+        };
+        match text {
+            Some(text) => self.dispatch_text_input(&text),
+            None => WindowsWin32ViewInputDispatchReport {
+                hit_target_count: self.hit_target_count(),
+                events: vec!["win32_view_text_invalid_utf16_unit".to_string()],
+                ..WindowsWin32ViewInputDispatchReport::default()
+            },
+        }
     }
 
     fn dispatch_text_input_at(
@@ -5017,6 +5050,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn dispatch_blur(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        self.pending_utf16_high_surrogate = None;
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..WindowsWin32ViewInputDispatchReport::default()
@@ -7251,6 +7285,13 @@ pub fn dispatch_windows_win32_window_view_text_input(
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_text_input(text))
 }
 
+fn dispatch_windows_win32_window_view_utf16_input_unit(
+    hwnd: HWND,
+    unit: u16,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_utf16_input_unit(unit))
+}
+
 pub fn dispatch_windows_win32_window_view_key_down(
     hwnd: HWND,
     virtual_key: u32,
@@ -8548,17 +8589,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             Some(report) if !report.events.is_empty() => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         },
-        WM_CHAR => {
-            if let Some(text) = text_from_char_wparam(wparam) {
-                if dispatch_windows_win32_window_view_text_input(hwnd, &text).is_some() {
-                    0
-                } else {
-                    DefWindowProcW(hwnd, msg, wparam, lparam)
-                }
-            } else {
-                DefWindowProcW(hwnd, msg, wparam, lparam)
-            }
-        }
+        WM_CHAR => match dispatch_windows_win32_window_view_utf16_input_unit(hwnd, wparam as u16) {
+            Some(report) if report.handled => 0,
+            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        },
         WM_COMMAND => {
             let native_id = (wparam & 0xffff) as u32;
             if dispatch_windows_win32_window_menu_command(hwnd, native_id).is_some() {
@@ -9804,6 +9838,36 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "textbox", feature = "text-input-core"))]
+    fn window_view_input_route_navigates_and_deletes_extended_graphemes() {
+        let widget = crate::WidgetId::new(319);
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 220,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox::<UiCommand>("A\u{65}\u{301}👩🏽‍💻Z").id(widget),
+        );
+        route.dispatch_click(crate::Point { x: 10, y: 20 });
+        route.dispatch_key_down(u32::from(VK_END));
+
+        let before_z = route.dispatch_key_down(u32::from(VK_LEFT));
+        let before_emoji = route.dispatch_key_down(u32::from(VK_LEFT));
+        let deleted = route.dispatch_text_input("\u{8}");
+
+        assert_eq!(before_z.text_caret, Some(7));
+        assert_eq!(before_emoji.text_caret, Some(3));
+        assert_eq!(deleted.text_caret, Some(1));
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("A👩🏽‍💻Z"));
+    }
+
+    #[test]
     #[cfg(feature = "textbox")]
     fn window_view_input_route_moves_wrapped_editor_caret_by_visual_row() {
         #[derive(Clone)]
@@ -10014,6 +10078,36 @@ mod tests {
             route.text_edit.map(|state| state.selection),
             Some(crate::native_text_edit::NativeTextSelection::collapsed(10))
         );
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_assembles_utf16_surrogate_pairs_before_dispatch() {
+        let widget = crate::WidgetId::new(318);
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox::<UiCommand>("").id(widget),
+        );
+        route.dispatch_click(crate::Point { x: 10, y: 20 });
+        let units = "👩".encode_utf16().collect::<Vec<_>>();
+
+        let high = route.dispatch_utf16_input_unit(units[0]);
+        let low = route.dispatch_utf16_input_unit(units[1]);
+
+        assert!(high.handled);
+        assert_eq!(high.text_input_count, 0);
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("👩"));
+        assert_eq!(low.text_input_count, 1);
+        assert_eq!(low.text_caret, Some(1));
     }
 
     #[test]

@@ -75,6 +75,13 @@ history remain authoritative for implementation status.
   anchor/caret indices and `on_text_selection_change(...)`. Edits, keyboard
   movement and pointer drag selection route through the same typed View update
   path on Win32, AppKit and GTK4; backends do not own application cursor state.
+  Scalar indices remain the public interchange format, but the shared input
+  runtime normalizes endpoints to Unicode extended-grapheme boundaries. Left/
+  Right, Backspace/Delete, pointer hits, wrapping, visual columns and IME marked
+  selections must not split combining sequences or joined emoji. Full shaped-
+  glyph advances and bidirectional caret geometry remain separate backend work.
+  Win32 assembles `WM_CHAR` UTF-16 surrogate pairs in per-window transient
+  input state before dispatching one scalar to this shared model.
 - Shared edit actions use `ZsTextEditCommand` queued through `AppCx` for the
   focused editor or an explicit strong `WidgetId`. The per-window input runtime
   may retain bounded undo snapshots as transient interaction state, but every
@@ -373,6 +380,9 @@ history remain authoritative for implementation status.
 - Every new component remains opt-in through its own Cargo feature. Default
   features stay `window`, `button` and `label`; `all-widgets`/`full` are explicit
   profile choices and must not become implicit dependencies of component APIs.
+  The internal `text-input-core` feature owns Unicode segmentation for text-
+  capable controls. Non-text `widgets-input` slices such as CheckBox must not
+  pull that dependency into their build.
 - ToggleButton is an independent `toggle-button` Cargo feature and reuses the
   shared explicit Boolean `Toggled` message path rather than inheriting Button
   behavior or storing state in a backend. It remains self-drawn: Windows,

@@ -119,7 +119,12 @@ pub fn zsui_component_catalog_summary() -> ZsuiComponentCatalogSummary {
     }
 }
 
-const INPUT_GAPS: &[&str] = &["complete IME", "accessibility", "non-Windows native input"];
+const BASIC_CONTROL_GAPS: &[&str] = &["accessibility", "non-Windows target interaction proof"];
+const TEXT_INPUT_GAPS: &[&str] = &[
+    "shaped-glyph advances and bidirectional caret geometry",
+    "accessibility text provider",
+    "macOS and Linux CJK target interaction proof",
+];
 const VIRTUAL_LIST_GAPS: &[&str] = &[
     "variable-height row metrics",
     "scrollbar thumb dragging",
@@ -288,7 +293,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         None,
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "grid",
@@ -306,7 +311,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         None,
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "scroll",
@@ -315,7 +320,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("scroll"),
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "split_view",
@@ -378,7 +383,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("label"),
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "button",
@@ -387,7 +392,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("button"),
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "toggle_button",
@@ -405,7 +410,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("checkbox"),
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "toggle",
@@ -414,7 +419,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("toggle"),
         "src/widget_render.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "textbox",
@@ -423,7 +428,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("textbox"),
         "src/view.rs",
-        INPUT_GAPS
+        TEXT_INPUT_GAPS
     ),
     component!(
         "password_box",
@@ -513,7 +518,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("list"),
         "src/view.rs",
-        INPUT_GAPS
+        BASIC_CONTROL_GAPS
     ),
     component!(
         "grid_view",
