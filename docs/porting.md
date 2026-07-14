@@ -59,6 +59,12 @@ disabled, checked and accelerator state and return typed `Command` values as
 images and files remain explicitly unsupported until their native formats are
 implemented and tested.
 
+Application code can use `NativeFileDialogService` with the same
+`FileDialogSpec`/`SaveFileDialogSpec` and owned `PathBuf` values on all three
+desktop targets. The facade selects Win32, AppKit or GTK4 internally and
+returns `ZsuiError::Unsupported` when the corresponding backend feature is not
+enabled; applications do not import a native panel type or platform `cfg`.
+
 The unified native-window path also attaches backend-neutral `NativeDrawPlan`
 content to both platforms. AppKit uses a flipped custom `NSView`,
 `NSBezierPath`, semantic `NSString` attributes and SF Symbols. GTK4 uses a

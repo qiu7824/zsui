@@ -78,6 +78,7 @@ mod native_clipboard;
 mod native_draw_support;
 #[cfg(any(
     test,
+    all(windows, feature = "windows-win32"),
     all(target_os = "macos", feature = "macos-appkit"),
     all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
 ))]
@@ -208,8 +209,8 @@ pub use date::{days_in_month, is_leap_year, ZsDate};
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
     DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
-    MenuService, SaveFileDialogSpec, TextInputRequest, TextInputService, ThemePreference,
-    ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
+    MenuService, NativeFileDialogService, SaveFileDialogSpec, TextInputRequest, TextInputService,
+    ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 pub use document_shell::{

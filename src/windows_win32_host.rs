@@ -12,6 +12,9 @@ use std::{
 
 #[cfg(feature = "combo")]
 use crate::native::NativeComboTypeAheadState;
+use crate::native_file_dialog::{
+    native_file_dialog_initial_directory, native_save_dialog_suggested_name,
+};
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
     native_text_visual_target,
@@ -87,10 +90,10 @@ use windows_sys::Win32::{
                 CANDIDATEFORM, CFS_EXCLUDE, GCS_RESULTSTR,
             },
             KeyboardAndMouse::{
-                GetKeyState, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_HOVER,
-                TME_LEAVE, TRACKMOUSEEVENT, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
-                VK_ESCAPE, VK_F1, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT,
-                VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
+                GetActiveWindow, GetKeyState, ReleaseCapture, SetCapture, SetFocus,
+                TrackMouseEvent, TME_HOVER, TME_LEAVE, TRACKMOUSEEVENT, VK_BACK, VK_CONTROL,
+                VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR,
+                VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
             },
         },
         Shell::{
@@ -1098,10 +1101,16 @@ pub fn windows_win32_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Optio
     let mut file_buffer = vec![0u16; FILE_BUFFER_LEN];
     let title = wide_null(&spec.title);
     let filter = windows_file_dialog_filter(&spec.filters);
-    let initial_dir = spec.current_path.as_deref().map(wide_null);
+    let initial_dir =
+        native_file_dialog_initial_directory(spec.current_path.as_deref()).map(|path| {
+            path.as_os_str()
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<_>>()
+        });
     let mut dialog: OPENFILENAMEW = unsafe { zeroed() };
     dialog.lStructSize = size_of::<OPENFILENAMEW>() as u32;
-    dialog.hwndOwner = null_mut();
+    dialog.hwndOwner = unsafe { GetActiveWindow() };
     dialog.lpstrFilter = filter.as_ptr();
     dialog.lpstrFile = file_buffer.as_mut_ptr();
     dialog.nMaxFile = file_buffer.len() as u32;
@@ -1124,7 +1133,11 @@ pub fn windows_win32_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Optio
 pub fn windows_win32_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
     const FILE_BUFFER_LEN: usize = 32_768;
     let mut file_buffer = vec![0u16; FILE_BUFFER_LEN];
-    if let Some(name) = spec.suggested_name.as_deref() {
+    let suggested_name = native_save_dialog_suggested_name(
+        spec.suggested_name.as_deref(),
+        spec.current_path.as_deref(),
+    );
+    if let Some(name) = suggested_name.as_deref() {
         let encoded = name.encode_utf16().collect::<Vec<_>>();
         if encoded.len() + 1 > file_buffer.len() {
             return Err(ZsuiError::invalid_spec(
@@ -1136,16 +1149,17 @@ pub fn windows_win32_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<O
     }
     let title = wide_null(&spec.title);
     let filter = windows_file_dialog_filter(&spec.filters);
-    let initial_dir = spec.current_path.as_ref().map(|path| {
-        path.as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect::<Vec<_>>()
-    });
+    let initial_dir =
+        native_file_dialog_initial_directory(spec.current_path.as_deref()).map(|path| {
+            path.as_os_str()
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<_>>()
+        });
     let default_extension = windows_file_dialog_default_extension(&spec.filters);
     let mut dialog: OPENFILENAMEW = unsafe { zeroed() };
     dialog.lStructSize = size_of::<OPENFILENAMEW>() as u32;
-    dialog.hwndOwner = null_mut();
+    dialog.hwndOwner = unsafe { GetActiveWindow() };
     dialog.lpstrFilter = filter.as_ptr();
     dialog.lpstrFile = file_buffer.as_mut_ptr();
     dialog.nMaxFile = file_buffer.len() as u32;

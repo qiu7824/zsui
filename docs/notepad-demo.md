@@ -12,6 +12,8 @@ feature parity with Windows Notepad.
   editor frame and status surface.
 - Reusable `ZsTextDocument` loading, encoding metadata, dirty state and
   transactional UTF-8 save/save-as.
+- Target-dispatched `NativeFileDialogService` open/save panels with owned path
+  and filter specs instead of example-local common-dialog FFI.
 - Buffered parent painting, Fluent semantic icons and shared design tokens.
 - New, open, save, save as and dirty-document confirmation.
 - Undo, cut, copy, paste and select all.
@@ -81,7 +83,7 @@ nonblank-line counts are recomputed from the current checked-in applications:
 
 | Implementation | Processes | App files | Nonblank app lines | Resolved packages | Binary | Task Manager memory | Working set | Private bytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ZSUI Notepad | 1 | 2 | 856 | 31 | 0.27 MiB | 1.84 MiB | 15.80 MiB | 2.50 MiB |
+| ZSUI Notepad | 1 | 2 | 836 | 31 | 0.27 MiB | 1.84 MiB | 15.80 MiB | 2.50 MiB |
 | eframe/egui baseline | 1 | 2 | 344 | 295 | 5.67 MiB | 43.47 MiB | 73.03 MiB | 66.85 MiB |
 | Iced baseline | 1 | 2 | 259 | 347 | 4.07 MiB | 5.50 MiB | 19.44 MiB | 7.17 MiB |
 | Slint baseline | 1 | 2 | 328 | 579 | 9.66 MiB | 5.04 MiB | 22.43 MiB | 5.90 MiB |
@@ -123,8 +125,9 @@ feature parity:
 ZSUI has the smallest executable and lowest measured idle memory in this
 native-service sample, but currently needs the most application code. Text-file
 decoding, dirty state and transactional save now live in reusable
-`ZsTextDocument`; native editor integration, file dialogs, accelerators and
-dirty-close policy still live in the example.
+`ZsTextDocument`, while open/save selection uses the shared
+`NativeFileDialogService`; native editor integration, accelerators,
+parent-window modality and dirty-close policy still live in the example.
 
 Iced is the shortest baseline and remains close to native-process memory. Slint
 also has low measured memory, with the largest binary and resolved dependency
@@ -138,7 +141,8 @@ restore, search and replace, print, spell checking, richer encoding choices and
 system integration. ZSUI's useful current advantage is a small Rust-controlled
 native stack, not feature superiority over the Windows product.
 
-The next code-reduction target is to move native text-editor hosting, file
-dialog composition and accelerator binding into reusable ZSUI services. That
+The next code-reduction target is to move native text-editor hosting,
+parent-window dialog binding and accelerator binding into reusable ZSUI
+services. That
 should further reduce application and AI-generated code without giving up the
 measured native-host characteristics.

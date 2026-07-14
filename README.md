@@ -581,7 +581,7 @@ Linux/macOS 桌面目标。
 ## 当前边界
 
 - Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器和文件对话框仍需继续收口；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
+- 通用文本编辑器仍需继续收口；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期，`NativeFileDialogService` 已用同一套安全 `PathBuf` API 分派到 Win32/AppKit/GTK4，父窗口模态绑定和目标机证据仍待完成
 - DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
 - 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块

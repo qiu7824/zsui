@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{fmt, path::PathBuf};
 
 pub type ZsuiResult<T> = Result<T, ZsuiError>;
 
@@ -129,7 +129,7 @@ impl FileDialogFilter {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileDialogSpec {
     pub title: String,
-    pub current_path: Option<String>,
+    pub current_path: Option<PathBuf>,
     pub filters: Vec<FileDialogFilter>,
     pub allow_multiple: bool,
 }
@@ -144,7 +144,7 @@ impl FileDialogSpec {
         }
     }
 
-    pub fn current_path(mut self, path: impl Into<String>) -> Self {
+    pub fn current_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.current_path = Some(path.into());
         self
     }

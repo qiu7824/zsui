@@ -39,6 +39,9 @@ history remain authoritative for implementation status.
 - The optional document-shell boundary owns reusable `ZsTextDocument` file
   decoding, explicit dirty state and transactional UTF-8 save/save-as. Native
   file pickers and close-confirmation policy remain host/application concerns.
+- Applications request native open/save panels through the safe
+  `NativeFileDialogService` facade and owned `PathBuf` specs. Target selection
+  stays inside ZSUI; missing backend features return `ZsuiError::Unsupported`.
 
 ## Native platform bar
 

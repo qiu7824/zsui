@@ -15,13 +15,7 @@ use windows_sys::Win32::{
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::{
-        Controls::{
-            Dialogs::{
-                GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-                OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
-            },
-            EM_GETSEL, EM_SETLIMITTEXT, EM_SETMARGINS, EM_SETSEL,
-        },
+        Controls::{EM_GETSEL, EM_SETLIMITTEXT, EM_SETMARGINS, EM_SETSEL},
         HiDpi::{
             GetDpiForWindow, SetProcessDpiAwarenessContext,
             DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -52,7 +46,8 @@ use windows_sys::Win32::{
 };
 
 use zsui::{
-    Color, Dpi, Point, Rect, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
+    Color, Dpi, FileDialogService, FileDialogSpec, NativeFileDialogService, Point, Rect,
+    SaveFileDialogSpec, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
     ZsDocumentShellCommand, ZsDocumentShellInteraction, ZsDocumentShellLayout, ZsDocumentShellSpec,
     ZsTextDocument, ZsuiTheme,
 };
@@ -799,46 +794,34 @@ const fn accelerator(flags: u8, key: u8, command: u16) -> ACCEL {
     }
 }
 
-fn choose_file(hwnd: HWND, save: bool, current: Option<&Path>) -> Option<PathBuf> {
-    let mut path_buffer = [0u16; 32768];
-    if let Some(path) = current {
-        let value = wide(&path.to_string_lossy());
-        let count = value.len().saturating_sub(1).min(path_buffer.len() - 1);
-        path_buffer[..count].copy_from_slice(&value[..count]);
-    }
-    let filter = wide_with_embedded_nuls("Text files\0*.txt;*.md;*.log\0All files\0*.*\0\0");
-    let extension = wide("txt");
-    let mut dialog: OPENFILENAMEW = unsafe { mem::zeroed() };
-    dialog.lStructSize = mem::size_of::<OPENFILENAMEW>() as u32;
-    dialog.hwndOwner = hwnd;
-    dialog.lpstrFilter = filter.as_ptr();
-    dialog.lpstrFile = path_buffer.as_mut_ptr();
-    dialog.nMaxFile = path_buffer.len() as u32;
-    dialog.lpstrDefExt = extension.as_ptr();
-    dialog.Flags = OFN_EXPLORER
-        | OFN_PATHMUSTEXIST
-        | if save {
-            OFN_OVERWRITEPROMPT
-        } else {
-            OFN_FILEMUSTEXIST
-        };
-    let accepted = unsafe {
-        if save {
-            GetSaveFileNameW(&mut dialog)
-        } else {
-            GetOpenFileNameW(&mut dialog)
+unsafe fn choose_file(hwnd: HWND, save: bool, current: Option<&Path>) -> Option<PathBuf> {
+    let mut dialogs = NativeFileDialogService::new();
+    let result = if save {
+        let mut spec = SaveFileDialogSpec::new("Save text document")
+            .filter("Text files", ["*.txt", "*.md", "*.log"])
+            .filter("All files", ["*.*"]);
+        if let Some(current) = current {
+            spec = spec.current_path(current);
         }
+        dialogs.save_file_dialog(&spec)
+    } else {
+        let mut spec = FileDialogSpec::new("Open text document")
+            .filter("Text files", ["*.txt", "*.md", "*.log"])
+            .filter("All files", ["*.*"]);
+        if let Some(current) = current {
+            spec = spec.current_path(current);
+        }
+        dialogs
+            .open_file_dialog(&spec)
+            .map(|paths| paths.and_then(|paths| paths.into_iter().next()))
     };
-    if accepted == 0 {
-        return None;
+    match result {
+        Ok(path) => path,
+        Err(error) => {
+            show_error(hwnd, &error.to_string());
+            None
+        }
     }
-    let length = path_buffer
-        .iter()
-        .position(|unit| *unit == 0)
-        .unwrap_or(path_buffer.len());
-    Some(PathBuf::from(String::from_utf16_lossy(
-        &path_buffer[..length],
-    )))
 }
 
 fn initial_document(arguments: &[String]) -> Result<ZsTextDocument, String> {
@@ -888,8 +871,4 @@ const fn colorref(color: Color) -> u32 {
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain([0]).collect()
-}
-
-fn wide_with_embedded_nuls(value: &str) -> Vec<u16> {
-    value.chars().map(|character| character as u16).collect()
 }

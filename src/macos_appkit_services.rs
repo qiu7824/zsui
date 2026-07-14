@@ -351,7 +351,7 @@ pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option
         #[allow(deprecated)]
         panel.setAllowedFileTypes(Some(&allowed));
     }
-    appkit_set_initial_directory(&panel, spec.current_path.as_deref().map(Path::new));
+    appkit_set_initial_directory(&panel, spec.current_path.as_deref());
 
     if panel.runModal() != NSModalResponseOK {
         return Ok(None);

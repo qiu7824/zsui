@@ -669,6 +669,71 @@ pub trait FileDialogService {
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>>;
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NativeFileDialogService;
+
+impl NativeFileDialogService {
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl FileDialogService for NativeFileDialogService {
+    fn open_file_dialog(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
+        #[cfg(all(windows, feature = "windows-win32"))]
+        {
+            return crate::windows_win32_host::windows_win32_open_file_dialog(spec);
+        }
+        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+        {
+            return crate::macos_appkit_services::macos_appkit_open_file_dialog(spec);
+        }
+        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        {
+            return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec);
+        }
+        #[cfg(not(any(
+            all(windows, feature = "windows-win32"),
+            all(target_os = "macos", feature = "macos-appkit"),
+            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+        )))]
+        {
+            let _ = spec;
+            Err(ZsuiError::unsupported(
+                "open_file_dialog",
+                "enable the target-native desktop backend feature",
+            ))
+        }
+    }
+
+    fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+        #[cfg(all(windows, feature = "windows-win32"))]
+        {
+            return crate::windows_win32_host::windows_win32_save_file_dialog(spec);
+        }
+        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+        {
+            return crate::macos_appkit_services::macos_appkit_save_file_dialog(spec);
+        }
+        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        {
+            return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
+        }
+        #[cfg(not(any(
+            all(windows, feature = "windows-win32"),
+            all(target_os = "macos", feature = "macos-appkit"),
+            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+        )))]
+        {
+            let _ = spec;
+            Err(ZsuiError::unsupported(
+                "save_file_dialog",
+                "enable the target-native desktop backend feature",
+            ))
+        }
+    }
+}
+
 pub trait MenuService {
     fn set_window_menu(&mut self, window: WindowId, menu: Option<&MenuSpec>) -> ZsuiResult<()>;
 }
@@ -897,6 +962,9 @@ mod tests {
 
     #[test]
     fn save_dialog_and_text_input_requests_use_owned_safe_types() {
+        let open = FileDialogSpec::new("Open")
+            .current_path("documents/notes.txt")
+            .filter("Text", ["*.txt"]);
         let save = SaveFileDialogSpec::new("Save")
             .current_path("documents")
             .suggested_name("notes.txt")
@@ -913,9 +981,32 @@ mod tests {
             multiline: true,
         };
 
+        assert_eq!(
+            open.current_path,
+            Some(PathBuf::from("documents/notes.txt"))
+        );
         assert_eq!(save.suggested_name.as_deref(), Some("notes.txt"));
         assert!(input.multiline);
         assert_eq!(input.widget, WidgetId::new(9));
+    }
+
+    #[cfg(not(any(
+        all(windows, feature = "windows-win32"),
+        all(target_os = "macos", feature = "macos-appkit"),
+        all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    )))]
+    #[test]
+    fn native_file_dialog_facade_reports_a_missing_backend() {
+        let mut dialogs = NativeFileDialogService::new();
+
+        assert!(matches!(
+            dialogs.open_file_dialog(&FileDialogSpec::new("Open")),
+            Err(ZsuiError::Unsupported { capability, .. }) if capability == "open_file_dialog"
+        ));
+        assert!(matches!(
+            dialogs.save_file_dialog(&SaveFileDialogSpec::new("Save")),
+            Err(ZsuiError::Unsupported { capability, .. }) if capability == "save_file_dialog"
+        ));
     }
 
     #[test]

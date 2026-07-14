@@ -253,14 +253,16 @@ remain open.
 benchmark. It provides a document tab, command bar, editor frame, status
 layout, semantic draw plan and hit regions plus `ZsTextDocument` UTF-8/UTF-16
 loading, explicit dirty state and transactional UTF-8 save/save-as without raw
-platform handles. The native editor, file dialog, accelerator and dirty-close
-policy still live in the example's platform module. Use
+platform handles. Its file selection now uses the shared
+`NativeFileDialogService`, whose owned specs dispatch to Win32, AppKit or GTK4
+without application `cfg`. The native editor, accelerator, parent-window
+modality and dirty-close policy still live in the example's platform module. Use
 `docs/notepad-demo.md` and `scripts/measure-notepad-comparison.ps1` to compare
 ZSUI with the isolated egui, Iced, Slint and Tauri 2 baselines. The script
 measures complete process trees, including Tauri's WebView2 descendants. Read
 an individual `comparisons/*_notepad` directory only when that baseline is
 needed; it is optional AI context, not bootstrap context. Do not interpret the
-comparison as completing ZSUI's native text-editor or file-dialog services.
+comparison as completing ZSUI's native text-editor or file-dialog target proof.
 The optional `calculator` feature in `src/calculator.rs` is a second runnable
 application slice. `ZsCalculatorEngine` provides decimal arithmetic, typed
 actions, memory and history; `ZsCalculatorShellSpec` provides DPI-aware Fluent

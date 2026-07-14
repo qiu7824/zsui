@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -345,9 +345,7 @@ pub fn linux_gtk_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Ve
         .select_multiple(spec.allow_multiple)
         .build();
     add_gtk_file_filters(&dialog, &spec.filters);
-    if let Some(directory) =
-        native_file_dialog_initial_directory(spec.current_path.as_deref().map(Path::new))
-    {
+    if let Some(directory) = native_file_dialog_initial_directory(spec.current_path.as_deref()) {
         let _ = dialog.set_current_folder(Some(&gio::File::for_path(directory)));
     }
 
