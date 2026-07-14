@@ -9,36 +9,30 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::{
-        BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, EndPaint, InvalidateRect,
-        SetBkColor, SetTextColor, UpdateWindow, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
-        DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HBRUSH, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
+        BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, InvalidateRect, SetBkColor,
+        SetTextColor, UpdateWindow, HBRUSH, PAINTSTRUCT,
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::{
-        Controls::{EM_GETSEL, EM_SETLIMITTEXT, EM_SETMARGINS, EM_SETSEL},
         HiDpi::{
             GetDpiForWindow, SetProcessDpiAwarenessContext,
             DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
         },
         Input::KeyboardAndMouse::{
-            ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+            ReleaseCapture, SetCapture, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
         },
         WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, DispatchMessageW,
-            GetClientRect, GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
-            LoadCursorW, LoadImageW, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage,
-            RegisterClassExW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos,
-            SetWindowTextW, ShowWindow, TranslateMessage, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
-            CW_USEDEFAULT, EN_CHANGE, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_LEFT, ES_MULTILINE,
-            ES_NOHIDESEL, ES_WANTRETURN, GWLP_USERDATA, GWL_STYLE, HICON, IDCANCEL, IDC_ARROW,
-            IDNO, IDYES, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE, MB_ICONERROR,
-            MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNOCANCEL, MSG, SWP_FRAMECHANGED,
-            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, WM_CAPTURECHANGED,
-            WM_CLOSE, WM_COMMAND, WM_COPY, WM_CREATE, WM_CTLCOLOREDIT, WM_CUT, WM_DESTROY,
-            WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE,
-            WM_NCDESTROY, WM_PAINT, WM_PASTE, WM_SETFOCUS, WM_SETFONT, WM_SETICON, WM_SIZE,
-            WM_TIMER, WM_UNDO, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_HSCROLL,
-            WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+            GetClientRect, GetMessageW, GetWindowLongPtrW, LoadCursorW, LoadImageW, MessageBoxW,
+            PostMessageW, PostQuitMessage, RegisterClassExW, SendMessageW, SetTimer,
+            SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage,
+            CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, HICON, IDCANCEL,
+            IDC_ARROW, IDNO, IDYES, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE, MB_ICONERROR,
+            MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNOCANCEL, MSG, SWP_NOACTIVATE,
+            SWP_NOZORDER, SW_SHOW, WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CREATE,
+            WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
+            WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS,
+            WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW,
         },
     },
 };
@@ -46,9 +40,9 @@ use windows_sys::Win32::{
 use zsui::{
     Color, Dpi, FileDialogService, FileDialogSpec, NativeFileDialogService, Point, Rect,
     SaveFileDialogSpec, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
-    WindowsWin32OwnedAcceleratorTable, ZsAccelerator, ZsAcceleratorKey, ZsDocumentShellCommand,
-    ZsDocumentShellInteraction, ZsDocumentShellLayout, ZsDocumentShellSpec, ZsTextDocument,
-    ZsuiTheme,
+    WindowsWin32OwnedAcceleratorTable, WindowsWin32OwnedTextEditor, ZsAccelerator,
+    ZsAcceleratorKey, ZsDocumentShellCommand, ZsDocumentShellInteraction, ZsDocumentShellLayout,
+    ZsDocumentShellSpec, ZsTextCursorStatus, ZsTextDocument, ZsuiTheme,
 };
 
 const APP_NAME: &str = "ZSUI Notepad";
@@ -74,8 +68,7 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 
 struct EditorState {
     hwnd: HWND,
-    edit: HWND,
-    font: HFONT,
+    editor: Option<WindowsWin32OwnedTextEditor>,
     editor_brush: HBRUSH,
     icon: HICON,
     document: ZsTextDocument,
@@ -95,8 +88,7 @@ impl EditorState {
         let theme = ZsuiTheme::light();
         Self {
             hwnd: null_mut(),
-            edit: null_mut(),
-            font: null_mut(),
+            editor: None,
             editor_brush: unsafe { CreateSolidBrush(colorref(theme.colors.surface_raised)) },
             icon: null_mut(),
             document,
@@ -115,10 +107,8 @@ impl EditorState {
 
 impl Drop for EditorState {
     fn drop(&mut self) {
+        drop(self.editor.take());
         unsafe {
-            if !self.font.is_null() {
-                DeleteObject(self.font as _);
-            }
             if !self.editor_brush.is_null() {
                 DeleteObject(self.editor_brush as _);
             }
@@ -231,13 +221,17 @@ unsafe extern "system" fn window_proc(
                 SWP_NOACTIVATE | SWP_NOZORDER,
             );
             let dpi = ((wparam >> 16) as u32).max(96);
-            apply_editor_font(state, dpi);
+            if let Some(editor) = state.editor.as_mut() {
+                if let Err(error) = editor.apply_dpi(Dpi::new(dpi as f32)) {
+                    show_error(hwnd, &error.to_string());
+                }
+            }
             layout_children(state);
             invalidate_shell(hwnd);
             0
         }
         WM_SETFOCUS => {
-            SetFocus(state.edit);
+            editor(state).focus();
             0
         }
         WM_COMMAND => {
@@ -355,36 +349,15 @@ fn register_window_class(instance: HINSTANCE) -> Result<(), String> {
 }
 
 unsafe fn create_children(state: &mut EditorState) -> Result<(), String> {
-    let edit_class = wide("EDIT");
-    let initial = wide(state.document.text());
-    state.edit = CreateWindowExW(
-        0,
-        edit_class.as_ptr(),
-        initial.as_ptr(),
-        WS_CHILD
-            | WS_VISIBLE
-            | WS_TABSTOP
-            | WS_VSCROLL
-            | ES_LEFT as u32
-            | ES_MULTILINE as u32
-            | ES_AUTOVSCROLL as u32
-            | ES_WANTRETURN as u32
-            | ES_NOHIDESEL as u32,
-        0,
-        0,
-        0,
-        0,
-        state.hwnd,
-        null_mut(),
-        GetModuleHandleW(null()),
-        null_mut(),
+    state.editor = Some(
+        WindowsWin32OwnedTextEditor::create(
+            state.hwnd,
+            state.document.text(),
+            state.word_wrap,
+            Dpi::new(GetDpiForWindow(state.hwnd).max(96) as f32),
+        )
+        .map_err(|error| error.to_string())?,
     );
-    if state.edit.is_null() {
-        return Err("failed to create the multiline editor".to_string());
-    }
-
-    apply_editor_font(state, GetDpiForWindow(state.hwnd).max(96));
-    SendMessageW(state.edit, EM_SETLIMITTEXT, 0x7fff_ffff, 0);
 
     let icon_path = wide(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -415,23 +388,15 @@ unsafe fn create_children(state: &mut EditorState) -> Result<(), String> {
 }
 
 unsafe fn layout_children(state: &EditorState) {
-    let editor = shell_layout(state).editor_content;
-    MoveWindow(
-        state.edit,
-        editor.x,
-        editor.y,
-        editor.width,
-        editor.height,
-        1,
-    );
+    let bounds = shell_layout(state).editor_content;
+    let _ = editor(state).set_bounds(bounds);
 }
 
 unsafe fn handle_command(state: &mut EditorState, wparam: WPARAM, lparam: LPARAM) {
     let id = (wparam & 0xffff) as u16;
-    let notification = ((wparam >> 16) & 0xffff) as u16;
-    if lparam as HWND == state.edit && notification as u32 == EN_CHANGE {
+    if editor(state).is_change_notification(wparam, lparam) {
         if !state.suppress_change {
-            state.document.replace_text(editor_text(state.edit));
+            state.document.replace_text(editor(state).text());
             update_title(state);
             update_status(state);
         }
@@ -451,19 +416,19 @@ unsafe fn handle_command(state: &mut EditorState, wparam: WPARAM, lparam: LPARAM
             PostMessageW(state.hwnd, WM_CLOSE, 0, 0);
         }
         ID_EDIT_UNDO => {
-            SendMessageW(state.edit, WM_UNDO, 0, 0);
+            editor(state).undo();
         }
         ID_EDIT_CUT => {
-            SendMessageW(state.edit, WM_CUT, 0, 0);
+            editor(state).cut();
         }
         ID_EDIT_COPY => {
-            SendMessageW(state.edit, WM_COPY, 0, 0);
+            editor(state).copy();
         }
         ID_EDIT_PASTE => {
-            SendMessageW(state.edit, WM_PASTE, 0, 0);
+            editor(state).paste();
         }
         ID_EDIT_SELECT_ALL => {
-            SendMessageW(state.edit, EM_SETSEL, 0, -1);
+            editor(state).select_all();
         }
         ID_FORMAT_WORD_WRAP => toggle_word_wrap(state),
         ID_VIEW_STATUS_BAR => toggle_status_bar(state),
@@ -493,20 +458,20 @@ unsafe fn handle_shell_command(state: &mut EditorState, command: ZsDocumentShell
             save_document(state, true);
         }
         ZsDocumentShellCommand::Undo => {
-            SetFocus(state.edit);
-            SendMessageW(state.edit, WM_UNDO, 0, 0);
+            editor(state).focus();
+            editor(state).undo();
         }
         ZsDocumentShellCommand::Cut => {
-            SetFocus(state.edit);
-            SendMessageW(state.edit, WM_CUT, 0, 0);
+            editor(state).focus();
+            editor(state).cut();
         }
         ZsDocumentShellCommand::Copy => {
-            SetFocus(state.edit);
-            SendMessageW(state.edit, WM_COPY, 0, 0);
+            editor(state).focus();
+            editor(state).copy();
         }
         ZsDocumentShellCommand::Paste => {
-            SetFocus(state.edit);
-            SendMessageW(state.edit, WM_PASTE, 0, 0);
+            editor(state).focus();
+            editor(state).paste();
         }
         ZsDocumentShellCommand::ToggleWrap => toggle_word_wrap(state),
         ZsDocumentShellCommand::ToggleStatus => toggle_status_bar(state),
@@ -547,7 +512,7 @@ unsafe fn open_document(state: &mut EditorState) {
 }
 
 unsafe fn save_document(state: &mut EditorState, force_picker: bool) -> bool {
-    state.document.replace_text(editor_text(state.edit));
+    state.document.replace_text(editor(state).text());
     let result = if force_picker || state.document.path().is_none() {
         let Some(path) = choose_file(state.hwnd, true, state.document.path()) else {
             return false;
@@ -589,33 +554,21 @@ unsafe fn confirm_discard_or_save(state: &mut EditorState) -> bool {
 
 unsafe fn replace_editor_text(state: &mut EditorState) {
     state.suppress_change = true;
-    SetWindowTextW(state.edit, wide(state.document.text()).as_ptr());
-    SendMessageW(state.edit, EM_SETSEL, 0, 0);
+    if let Err(error) = editor(state).replace_text(state.document.text()) {
+        show_error(state.hwnd, &error.to_string());
+    }
     state.suppress_change = false;
     update_title(state);
     update_status(state);
 }
 
 unsafe fn toggle_word_wrap(state: &mut EditorState) {
-    state.word_wrap = !state.word_wrap;
-    let mut style = GetWindowLongPtrW(state.edit, GWL_STYLE) as u32;
-    if state.word_wrap {
-        style &= !(ES_AUTOHSCROLL as u32);
-        style &= !WS_HSCROLL;
-    } else {
-        style |= ES_AUTOHSCROLL as u32;
-        style |= WS_HSCROLL;
+    let word_wrap = !state.word_wrap;
+    if let Err(error) = editor(state).set_word_wrap(word_wrap) {
+        show_error(state.hwnd, &error.to_string());
+        return;
     }
-    SetWindowLongPtrW(state.edit, GWL_STYLE, style as isize);
-    SetWindowPos(
-        state.edit,
-        null_mut(),
-        0,
-        0,
-        0,
-        0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
-    );
+    state.word_wrap = word_wrap;
     update_status(state);
     invalidate_shell(state.hwnd);
 }
@@ -632,37 +585,17 @@ unsafe fn update_title(state: &EditorState) {
 }
 
 unsafe fn update_status(state: &mut EditorState) {
-    let text = editor_text(state.edit);
-    let mut selection_start = 0u32;
-    let mut selection_end = 0u32;
-    SendMessageW(
-        state.edit,
-        EM_GETSEL,
-        (&mut selection_start as *mut u32) as usize,
-        (&mut selection_end as *mut u32) as isize,
-    );
-    let wide_text = text.encode_utf16().collect::<Vec<_>>();
-    let caret = (selection_start as usize).min(wide_text.len());
-    let prefix = String::from_utf16_lossy(&wide_text[..caret]);
-    let line = prefix.chars().filter(|ch| *ch == '\n').count() + 1;
-    let column = prefix
-        .rsplit_once('\n')
-        .map(|(_, tail)| tail.chars().count() + 1)
-        .unwrap_or_else(|| prefix.chars().count() + 1);
-    let character_count = text.chars().count();
-    if (state.line, state.column, state.character_count) != (line, column, character_count) {
-        state.line = line;
-        state.column = column;
-        state.character_count = character_count;
+    let editor = editor(state);
+    let text = editor.text();
+    let status = ZsTextCursorStatus::from_utf16_caret(&text, editor.selection_utf16().0);
+    if (state.line, state.column, state.character_count)
+        != (status.line, status.column, status.character_count)
+    {
+        state.line = status.line;
+        state.column = status.column;
+        state.character_count = status.character_count;
         invalidate_shell(state.hwnd);
     }
-}
-
-unsafe fn editor_text(edit: HWND) -> String {
-    let length = GetWindowTextLengthW(edit).max(0) as usize;
-    let mut buffer = vec![0u16; length + 1];
-    let copied = GetWindowTextW(edit, buffer.as_mut_ptr(), buffer.len() as i32).max(0) as usize;
-    String::from_utf16_lossy(&buffer[..copied])
 }
 
 fn shell_spec(state: &EditorState) -> ZsDocumentShellSpec {
@@ -717,43 +650,15 @@ unsafe fn paint_shell(state: &EditorState) {
     EndPaint(state.hwnd, &paint);
 }
 
-unsafe fn apply_editor_font(state: &mut EditorState, dpi: u32) {
-    let font_name = wide("Segoe UI Variable Text");
-    let height = -((((17 * dpi.max(96)) + 48) / 96) as i32);
-    let font = CreateFontW(
-        height,
-        0,
-        0,
-        0,
-        FW_NORMAL as i32,
-        0,
-        0,
-        0,
-        DEFAULT_CHARSET.into(),
-        OUT_DEFAULT_PRECIS.into(),
-        CLIP_DEFAULT_PRECIS.into(),
-        5,
-        (DEFAULT_PITCH | FF_DONTCARE).into(),
-        font_name.as_ptr(),
-    );
-    if !font.is_null() {
-        SendMessageW(state.edit, WM_SETFONT, font as usize, 1);
-        let previous = mem::replace(&mut state.font, font);
-        if !previous.is_null() {
-            DeleteObject(previous as _);
-        }
-    }
-    let margin = (((10 * dpi.max(96)) + 48) / 96).min(u16::MAX as u32);
-    SendMessageW(
-        state.edit,
-        EM_SETMARGINS,
-        3,
-        (margin | (margin << 16)) as LPARAM,
-    );
-}
-
 unsafe fn invalidate_shell(hwnd: HWND) {
     InvalidateRect(hwnd, null(), 0);
+}
+
+fn editor(state: &EditorState) -> &WindowsWin32OwnedTextEditor {
+    state
+        .editor
+        .as_ref()
+        .expect("native text editor is created during WM_CREATE")
 }
 
 fn point_from_lparam(lparam: LPARAM) -> Point {

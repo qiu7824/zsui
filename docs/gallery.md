@@ -103,7 +103,7 @@ self-drawn keypad.
 
 | Implementation | Processes | App files | Nonblank app lines | Binary | Task Manager memory |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| ZSUI Notepad | 1 | 2 | 825 | 0.27 MiB | 1.84 MiB |
+| ZSUI Notepad | 1 | 2 | 732 | 0.27 MiB | 1.84 MiB |
 | eframe/egui baseline | 1 | 2 | 344 | 5.67 MiB | 43.47 MiB |
 | Iced baseline | 1 | 2 | 259 | 4.07 MiB | 5.50 MiB |
 | Slint baseline | 1 | 2 | 328 | 9.66 MiB | 5.04 MiB |

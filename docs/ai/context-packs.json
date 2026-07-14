@@ -127,6 +127,7 @@
       "purpose": "Document chrome, native editor inset and notepad benchmark",
       "required": [
         "src/document_shell.rs",
+        "src/windows_win32_text_editor.rs",
         "examples/zsui_notepad.rs",
         "examples/zsui_notepad/windows.rs",
         "docs/notepad-demo.md"

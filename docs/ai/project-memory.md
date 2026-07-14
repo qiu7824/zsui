@@ -46,6 +46,12 @@ history remain authoritative for implementation status.
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent
   and GTK action-accelerator details stay inside their native adapters.
+- The optional Windows document acceptance path uses
+  `WindowsWin32OwnedTextEditor` (only with `document-shell` + `windows-win32`)
+  for owned multiline EDIT creation, DPI-scaled font lifetime, bounds, text,
+  selection, word-wrap and edit commands. Shared line/column reporting uses
+  `ZsTextCursorStatus` with native UTF-16 caret offsets. This Windows service is
+  not evidence of a completed AppKit or GTK document-editor host.
 
 ## Native platform bar
 

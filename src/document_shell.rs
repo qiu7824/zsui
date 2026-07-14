@@ -39,6 +39,51 @@ impl ZsTextDocumentEncoding {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTextCursorStatus {
+    pub line: usize,
+    pub column: usize,
+    pub character_count: usize,
+}
+
+impl Default for ZsTextCursorStatus {
+    fn default() -> Self {
+        Self {
+            line: 1,
+            column: 1,
+            character_count: 0,
+        }
+    }
+}
+
+impl ZsTextCursorStatus {
+    pub fn from_utf16_caret(text: &str, caret_utf16: usize) -> Self {
+        let mut line = 1;
+        let mut column = 1;
+        let mut consumed_utf16 = 0;
+
+        for character in text.chars() {
+            let character_utf16 = character.len_utf16();
+            if consumed_utf16 + character_utf16 > caret_utf16 {
+                break;
+            }
+            consumed_utf16 += character_utf16;
+            if character == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+
+        Self {
+            line,
+            column,
+            character_count: text.chars().count(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsTextDocument {
     path: Option<PathBuf>,
@@ -940,6 +985,36 @@ mod tests {
         assert!(layout.status_bar.is_some());
         assert!(layout.editor_frame.y > layout.command_bar.y);
         assert!(layout.command_regions.len() >= 10);
+    }
+
+    #[test]
+    fn cursor_status_uses_utf16_offsets_without_splitting_unicode_scalars() {
+        let text = "a😀\n中";
+
+        assert_eq!(
+            ZsTextCursorStatus::from_utf16_caret(text, 3),
+            ZsTextCursorStatus {
+                line: 1,
+                column: 3,
+                character_count: 4,
+            }
+        );
+        assert_eq!(
+            ZsTextCursorStatus::from_utf16_caret(text, 4),
+            ZsTextCursorStatus {
+                line: 2,
+                column: 1,
+                character_count: 4,
+            }
+        );
+        assert_eq!(
+            ZsTextCursorStatus::from_utf16_caret(text, usize::MAX),
+            ZsTextCursorStatus {
+                line: 2,
+                column: 2,
+                character_count: 4,
+            }
+        );
     }
 
     #[test]

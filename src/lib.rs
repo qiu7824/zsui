@@ -130,6 +130,8 @@ pub mod window;
 pub mod windows_gdi_renderer;
 #[cfg(all(windows, feature = "windows-win32"))]
 pub mod windows_win32_host;
+#[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]
+pub mod windows_win32_text_editor;
 #[cfg(feature = "workbench")]
 pub mod workbench;
 
@@ -215,7 +217,8 @@ pub use desktop_services::{
 #[cfg(feature = "document-shell")]
 pub use document_shell::{
     ZsDocumentShellCommand, ZsDocumentShellCommandRegion, ZsDocumentShellInteraction,
-    ZsDocumentShellLayout, ZsDocumentShellSpec, ZsTextDocument, ZsTextDocumentEncoding,
+    ZsDocumentShellLayout, ZsDocumentShellSpec, ZsTextCursorStatus, ZsTextDocument,
+    ZsTextDocumentEncoding,
 };
 pub use event_protocol::{
     ComponentPhase, KeyState, LifecycleEvent, LifecycleState, MouseButton, UiEvent,
@@ -736,6 +739,8 @@ pub use windows_win32_host::{
     WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,
     ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS, ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
 };
+#[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]
+pub use windows_win32_text_editor::WindowsWin32OwnedTextEditor;
 #[cfg(feature = "workbench")]
 pub use workbench::{
     zs_workbench_event_for_region, zs_workbench_layout, zs_workbench_native_draw_plan,
