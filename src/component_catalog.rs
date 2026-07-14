@@ -178,6 +178,12 @@ const TREE_GAPS: &[&str] = &[
     "multi-selection, drag-and-drop and large-tree virtualization",
     "AppKit and GTK4 target interaction smoke",
 ];
+const GRID_VIEW_GAPS: &[&str] = &[
+    "accessibility grid, row, item and selection providers",
+    "multi-selection, rubber-band selection, drag-and-drop, sections and custom item templates",
+    "owned scrolling and large-collection virtualization",
+    "AppKit and GTK4 target interaction smoke",
+];
 const TABLE_GAPS: &[&str] = &[
     "accessibility tree-grid, row, column-header and grid-cell providers",
     "cell focus/editing, validation, multi-selection and interactive column resize/reorder",
@@ -503,10 +509,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "grid_view",
         "GridView",
         Collection,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("grid-view"),
+        "src/grid_view.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        GRID_VIEW_GAPS
     ),
     component!(
         "tree",
@@ -718,7 +724,8 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 4);
+        assert!(summary.not_started_count >= 3);
+        assert!(!summary.missing_component_names.contains(&"grid_view"));
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));
         assert!(!summary.missing_component_names.contains(&"content_dialog"));

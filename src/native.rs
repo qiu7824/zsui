@@ -15,6 +15,7 @@ use crate::native_input_visuals::{
     feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "password-box",
@@ -884,6 +885,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_tree_expansion_change_count: usize,
     pub native_view_tree_selection_count: usize,
     pub native_view_tree_invoke_count: usize,
+    pub native_view_grid_view_selection_count: usize,
+    pub native_view_grid_view_invoke_count: usize,
     pub native_view_table_sort_count: usize,
     pub native_view_table_selection_count: usize,
     pub native_view_table_invoke_count: usize,
@@ -1004,6 +1007,8 @@ impl NativeWindowSmokeRunReport {
             native_view_tree_expansion_change_count: 0,
             native_view_tree_selection_count: 0,
             native_view_tree_invoke_count: 0,
+            native_view_grid_view_selection_count: 0,
+            native_view_grid_view_invoke_count: 0,
             native_view_table_sort_count: 0,
             native_view_table_selection_count: 0,
             native_view_table_invoke_count: 0,
@@ -1081,6 +1086,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -1097,6 +1103,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -1185,6 +1192,7 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -1232,6 +1240,10 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub tree_selection_changed: bool,
     #[cfg(feature = "tree")]
     pub tree_invoked: bool,
+    #[cfg(feature = "grid-view")]
+    pub grid_view_selection_changed: bool,
+    #[cfg(feature = "grid-view")]
+    pub grid_view_invoked: bool,
     #[cfg(feature = "table")]
     pub table_sort_changed: bool,
     #[cfg(feature = "table")]
@@ -1320,6 +1332,7 @@ impl NativeViewInputRuntime {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -1336,6 +1349,7 @@ impl NativeViewInputRuntime {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -1532,6 +1546,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -1633,6 +1648,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -1739,6 +1755,7 @@ impl NativeViewInputRuntime {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -1763,6 +1780,7 @@ impl NativeViewInputRuntime {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -1788,6 +1806,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -1862,6 +1881,33 @@ impl NativeViewInputRuntime {
                     report,
                 );
             }
+            _ => {}
+        }
+
+        #[cfg(feature = "grid-view")]
+        match target.kind {
+            crate::ViewHitTargetKind::GridViewItem { item } => {
+                let selected = self
+                    .widget_grid_view_state(target.widget)
+                    .and_then(|state| state.selected);
+                report.grid_view_selection_changed = selected != Some(item);
+                report.grid_view_invoked = true;
+                let report = self.dispatch_view_event(
+                    ViewEvent::GridViewItemSelected {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+                return self.dispatch_view_event(
+                    ViewEvent::GridViewItemInvoked {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::GridView => return report,
             _ => {}
         }
 
@@ -2112,6 +2158,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2148,6 +2195,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2167,6 +2215,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2819,6 +2868,47 @@ impl NativeViewInputRuntime {
                 report.tree_invoked = true;
                 return self
                     .dispatch_view_event(ViewEvent::TreeNodeInvoked { widget, node }, report);
+            }
+        }
+
+        #[cfg(feature = "grid-view")]
+        if target.kind == crate::ViewHitTargetKind::GridView {
+            let Some(state) = self.widget_grid_view_state(widget) else {
+                return report;
+            };
+            let select = match key {
+                NativeViewKey::Left => state.relative_horizontal(-1),
+                NativeViewKey::Right => state.relative_horizontal(1),
+                NativeViewKey::Up => state.relative_vertical(-1),
+                NativeViewKey::Down => state.relative_vertical(1),
+                NativeViewKey::Home => state.first(),
+                NativeViewKey::End => state.last(),
+                NativeViewKey::Space => state.selected.or_else(|| state.first()),
+                _ => None,
+            };
+            if let Some(item) = select {
+                report.handled = true;
+                report.grid_view_selection_changed = state.selected != Some(item);
+                if report.grid_view_selection_changed {
+                    return self.dispatch_view_event(
+                        ViewEvent::GridViewItemSelected { widget, item },
+                        report,
+                    );
+                }
+                return report;
+            }
+            if key == NativeViewKey::Enter {
+                let Some(item) = state
+                    .selected
+                    .filter(|selected| state.contains(*selected))
+                    .or_else(|| state.first())
+                else {
+                    return report;
+                };
+                report.handled = true;
+                report.grid_view_invoked = true;
+                return self
+                    .dispatch_view_event(ViewEvent::GridViewItemInvoked { widget, item }, report);
             }
         }
 
@@ -3482,6 +3572,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -3673,6 +3764,7 @@ impl NativeViewInputRuntime {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -3829,6 +3921,7 @@ impl NativeViewInputRuntime {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -4362,6 +4455,18 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "grid-view")]
+    fn widget_grid_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsGridViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_grid_view_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_grid_view_state(widget))
+            })
+    }
+
     #[cfg(feature = "table")]
     fn widget_table_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTableViewState> {
         self.live_view
@@ -4892,6 +4997,8 @@ fn record_windows_win32_view_input_report(
     report.native_view_tree_expansion_change_count += input.tree_expansion_change_count;
     report.native_view_tree_selection_count += input.tree_selection_count;
     report.native_view_tree_invoke_count += input.tree_invoke_count;
+    report.native_view_grid_view_selection_count += input.grid_view_selection_count;
+    report.native_view_grid_view_invoke_count += input.grid_view_invoke_count;
     report.native_view_table_sort_count += input.table_sort_count;
     report.native_view_table_selection_count += input.table_selection_count;
     report.native_view_table_invoke_count += input.table_invoke_count;
@@ -8207,6 +8314,95 @@ mod tests {
         assert!(collapsed.tree_expansion_changed);
         let keyboard = runtime.dispatch_key(NativeViewKey::Enter);
         assert!(keyboard.tree_invoked);
+    }
+
+    #[cfg(feature = "grid-view")]
+    #[test]
+    fn native_view_runtime_routes_grid_view_pointer_and_two_axis_keyboard_navigation() {
+        #[derive(Clone)]
+        enum Msg {
+            Selected(crate::ZsGridViewItemId),
+            Invoked(crate::ZsGridViewItemId),
+        }
+        struct State {
+            selected: Option<crate::ZsGridViewItemId>,
+            invoked: Option<crate::ZsGridViewItemId>,
+        }
+
+        let widget = crate::WidgetId::new(198);
+        let first = crate::ZsGridViewItemId::new(1);
+        let fifth = crate::ZsGridViewItemId::new(5);
+        let builder = native_window("Platform GridView")
+            .size(420, 300)
+            .stateful_view(
+                State {
+                    selected: Some(first),
+                    invoked: None,
+                },
+                move |state| {
+                    crate::grid_view([
+                        crate::ZsGridViewItem::new(1, "One"),
+                        crate::ZsGridViewItem::new(2, "Two"),
+                        crate::ZsGridViewItem::new(3, "Three"),
+                        crate::ZsGridViewItem::new(4, "Four"),
+                        crate::ZsGridViewItem::new(5, "Five"),
+                        crate::ZsGridViewItem::new(6, "Six"),
+                    ])
+                    .id(widget)
+                    .selected_grid_view_item(state.selected)
+                    .on_grid_view_select(Msg::Selected)
+                    .on_grid_view_invoke(Msg::Invoked)
+                },
+                |state, message, _cx| match message {
+                    Msg::Selected(item) => state.selected = Some(item),
+                    Msg::Invoked(item) => state.invoked = Some(item),
+                },
+            );
+        let fifth_tile = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    target.kind == crate::ViewHitTargetKind::GridViewItem { item: fifth }
+                })
+            })
+            .expect("grid view should expose item hit geometry");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pointer = runtime.dispatch_pointer_click(Point {
+            x: fifth_tile.bounds.x + fifth_tile.bounds.width / 2,
+            y: fifth_tile.bounds.y + fifth_tile.bounds.height / 2,
+        });
+        assert!(pointer.grid_view_selection_changed);
+        assert!(pointer.grid_view_invoked);
+        assert_eq!(
+            runtime
+                .widget_grid_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(fifth)
+        );
+
+        assert!(
+            runtime
+                .dispatch_key(NativeViewKey::Home)
+                .grid_view_selection_changed
+        );
+        assert!(
+            runtime
+                .dispatch_key(NativeViewKey::Right)
+                .grid_view_selection_changed
+        );
+        assert!(
+            runtime
+                .dispatch_key(NativeViewKey::Down)
+                .grid_view_selection_changed
+        );
+        assert_eq!(
+            runtime
+                .widget_grid_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(fifth)
+        );
+        assert!(runtime.dispatch_key(NativeViewKey::Enter).grid_view_invoked);
     }
 
     #[cfg(feature = "table")]

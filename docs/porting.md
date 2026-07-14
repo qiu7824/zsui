@@ -144,6 +144,14 @@ through the existing input runtime. Preserve one Tab stop plus semantic
 Left/Right/Home/End and popup Up/Down navigation. Select Windows, macOS or GTK
 metric profiles internally; do not create a child BreadcrumbBar, NSPathControl
 or an invented GTK widget, and do not keep a backend path model.
+Treat `grid_view(...)` as one shared self-drawn collection. Preserve
+application-owned `ZsGridViewItemId` identities and explicit selected state,
+derive responsive equal-width columns only from the final shared layout bounds,
+and use the same tile rectangles for paint and hit testing. Keep one root Tab
+stop and route Left/Right/Up/Down, Home/End, Space and Enter through the shared
+typed input runtime. Backends select Windows, macOS or GTK metric profiles but
+must not create a child GridView, NSCollectionView or GtkGridView, store an item
+model, or silently add scrolling/virtualization that changes application state.
 Treat `tab_view(...)` as one shared self-drawn tab list and page host, not as a
 request to create native child controls. Preserve `ZsTabId` identity and lay
 out, paint, hit-test and dispatch only the selected page. On Windows,

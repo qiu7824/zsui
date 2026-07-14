@@ -21,6 +21,7 @@ use crate::native_input_visuals::{
     feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "password-box",
@@ -1850,6 +1851,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -1866,6 +1868,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -1918,6 +1921,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -1934,6 +1938,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -1985,6 +1990,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -2001,6 +2007,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -2108,6 +2115,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2211,6 +2219,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2320,6 +2329,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -2350,6 +2360,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
+                feature = "grid-view",
                 feature = "info-bar",
                 feature = "teaching-tip",
                 feature = "password-box",
@@ -2370,6 +2381,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2410,6 +2422,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2430,6 +2443,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2465,6 +2479,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -2484,6 +2499,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -3501,6 +3517,63 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "grid-view")]
+        if target.kind == crate::ViewHitTargetKind::GridView {
+            let Some(state) = self.widget_grid_view_state(widget) else {
+                return report;
+            };
+            let select = match virtual_key {
+                key if key == u32::from(VK_LEFT) => state.relative_horizontal(-1),
+                key if key == u32::from(VK_RIGHT) => state.relative_horizontal(1),
+                key if key == u32::from(VK_UP) => state.relative_vertical(-1),
+                key if key == u32::from(VK_DOWN) => state.relative_vertical(1),
+                key if key == u32::from(VK_HOME) => state.first(),
+                key if key == u32::from(VK_END) => state.last(),
+                ZSUI_WIN32_VK_SPACE => state.selected.or_else(|| state.first()),
+                _ => None,
+            };
+            if let Some(item) = select {
+                report.handled = true;
+                if state.selected != Some(item) {
+                    report.grid_view_selection_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_grid_view_key_select:{}:{}",
+                        widget.0,
+                        item.get()
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::GridViewItemSelected { widget, item },
+                        &mut report,
+                    );
+                }
+                return report;
+            }
+            if virtual_key == ZSUI_WIN32_VK_RETURN {
+                let Some(item) = state
+                    .selected
+                    .filter(|selected| state.contains(*selected))
+                    .or_else(|| state.first())
+                else {
+                    return report;
+                };
+                report.handled = true;
+                report.keyboard_activation_count = 1;
+                report.grid_view_invoke_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_grid_view_key_invoke:{}:{}",
+                    widget.0,
+                    item.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::GridViewItemInvoked { widget, item },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
         #[cfg(feature = "table")]
         if target.kind == crate::ViewHitTargetKind::DataGrid {
             let Some(state) = self.widget_table_state(widget) else {
@@ -4200,6 +4273,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -4521,6 +4595,39 @@ impl WindowsWin32ViewInputRoute {
                 );
                 return;
             }
+            _ => {}
+        }
+        #[cfg(feature = "grid-view")]
+        match target.kind {
+            crate::ViewHitTargetKind::GridViewItem { item } => {
+                let selected = self
+                    .widget_grid_view_state(target.widget)
+                    .and_then(|state| state.selected);
+                report.grid_view_selection_count = usize::from(selected != Some(item));
+                report.grid_view_invoke_count = 1;
+                report.event_count = 2;
+                report.events.push(format!(
+                    "win32_view_grid_view_invoke:{}:{}",
+                    target.widget.0,
+                    item.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::GridViewItemSelected {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+                self.dispatch_event(
+                    crate::ViewEvent::GridViewItemInvoked {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::GridView => return,
             _ => {}
         }
         #[cfg(feature = "table")]
@@ -5100,6 +5207,18 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "grid-view")]
+    fn widget_grid_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsGridViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_grid_view_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_grid_view_state(widget))
+            })
+    }
+
     #[cfg(feature = "table")]
     fn widget_table_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTableViewState> {
         self.live_view
@@ -5405,6 +5524,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
+            feature = "grid-view",
             feature = "info-bar",
             feature = "teaching-tip",
             feature = "password-box",
@@ -5500,6 +5620,7 @@ impl WindowsWin32ViewInputRoute {
         feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
+        feature = "grid-view",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "password-box",
@@ -5705,6 +5826,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub tree_expansion_change_count: usize,
     pub tree_selection_count: usize,
     pub tree_invoke_count: usize,
+    pub grid_view_selection_count: usize,
+    pub grid_view_invoke_count: usize,
     pub table_sort_count: usize,
     pub table_selection_count: usize,
     pub table_invoke_count: usize,
@@ -5792,6 +5915,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.tree_expansion_change_count += next.tree_expansion_change_count;
         self.tree_selection_count += next.tree_selection_count;
         self.tree_invoke_count += next.tree_invoke_count;
+        self.grid_view_selection_count += next.grid_view_selection_count;
+        self.grid_view_invoke_count += next.grid_view_invoke_count;
         self.table_sort_count += next.table_sort_count;
         self.table_selection_count += next.table_selection_count;
         self.table_invoke_count += next.table_invoke_count;
@@ -8892,6 +9017,86 @@ mod tests {
         assert_eq!(collapsed.tree_expansion_change_count, 1);
         let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
         assert_eq!(keyboard.tree_invoke_count, 1);
+        assert_eq!(keyboard.keyboard_activation_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "grid-view")]
+    fn window_view_input_route_handles_grid_view_tiles_and_two_axis_keyboard_navigation() {
+        fn selected(_item: crate::ZsGridViewItemId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.grid_view_selected"))
+        }
+        fn invoked(_item: crate::ZsGridViewItemId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.grid_view_invoked"))
+        }
+
+        let widget = crate::WidgetId::new(151);
+        let first = crate::ZsGridViewItemId::new(1);
+        let fifth = crate::ZsGridViewItemId::new(5);
+        let mut view = crate::grid_view([
+            crate::ZsGridViewItem::new(1, "One"),
+            crate::ZsGridViewItem::new(2, "Two"),
+            crate::ZsGridViewItem::new(3, "Three"),
+            crate::ZsGridViewItem::new(4, "Four"),
+            crate::ZsGridViewItem::new(5, "Five"),
+            crate::ZsGridViewItem::new(6, "Six"),
+        ])
+        .id(widget)
+        .selected_grid_view_item(Some(first))
+        .on_grid_view_select(selected)
+        .on_grid_view_invoke(invoked);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 420,
+                height: 260,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let fifth_tile = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::GridViewItem { item: fifth })
+            .expect("fifth grid-view tile");
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        let pointer = route.dispatch_click(crate::Point {
+            x: fifth_tile.bounds.x + fifth_tile.bounds.width / 2,
+            y: fifth_tile.bounds.y + fifth_tile.bounds.height / 2,
+        });
+        assert_eq!(pointer.grid_view_selection_count, 1);
+        assert_eq!(pointer.grid_view_invoke_count, 1);
+        assert_eq!(pointer.ui_command_count, 2);
+
+        assert_eq!(
+            route
+                .dispatch_key_down(u32::from(VK_HOME))
+                .grid_view_selection_count,
+            1
+        );
+        assert_eq!(
+            route
+                .dispatch_key_down(u32::from(VK_RIGHT))
+                .grid_view_selection_count,
+            1
+        );
+        assert_eq!(
+            route
+                .dispatch_key_down(u32::from(VK_DOWN))
+                .grid_view_selection_count,
+            1
+        );
+        assert_eq!(
+            route
+                .widget_grid_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(fifth)
+        );
+        let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(keyboard.grid_view_invoke_count, 1);
         assert_eq!(keyboard.keyboard_activation_count, 1);
     }
 

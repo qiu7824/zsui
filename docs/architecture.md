@@ -177,6 +177,17 @@ same self-drawn View, hit plan and popup overlay. GTK has no public breadcrumb
 widget to wrap, so its metrics are a ZSUI profile informed by GNOME navigation
 and Adwaita conventions rather than a false native-control claim.
 
+The optional `grid-view` feature adds `grid_view(items)` as a responsive,
+single-select gallery control. Applications own immutable item data, stable
+`ZsGridViewItemId` identities and selected state; the framework derives
+equal-width columns from the final bounds and emits separate typed selection
+and invocation events. One shared plan owns tile paint and hit geometry, while
+one root Tab stop routes two-axis arrows, Home/End, Space and Enter. Windows,
+macOS and GTK select Fluent GridView-, NSCollectionView- and GtkGridView-like
+metric profiles internally, but no backend creates a child collection widget
+or stores an application collection model. Scrolling and virtualization remain
+outside this bounded first pass and are explicit readiness work.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

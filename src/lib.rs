@@ -35,6 +35,8 @@ pub mod event_protocol;
 pub mod feature_manifest;
 pub mod framework_goals;
 pub mod geometry;
+#[cfg(feature = "grid-view")]
+pub mod grid_view;
 pub mod harmony_ability_host;
 pub mod host;
 pub mod host_protocol;
@@ -219,6 +221,8 @@ pub use geometry::{
     DpiCompensationState, LayoutInput, LayoutNode, LayoutOutput, LayoutProtocol, Point, Px, Rect,
     SharedUiProtocol, Size, UiLength, UiRect, SHARED_NON_HOST_UI_PROTOCOLS,
 };
+#[cfg(feature = "grid-view")]
+pub use grid_view::{ZsGridViewItem, ZsGridViewItemId, ZsGridViewState};
 pub use harmony_ability_host::{
     harmony_ability_bridge_callbacks, harmony_ability_bridge_contract,
     harmony_ability_bridge_entry_points, harmony_ability_capability_bindings,
@@ -508,6 +512,8 @@ pub use view::data_grid;
 pub use view::date_picker;
 #[cfg(feature = "grid")]
 pub use view::grid;
+#[cfg(feature = "grid-view")]
+pub use view::grid_view;
 #[cfg(feature = "info-bar")]
 pub use view::info_bar;
 #[cfg(feature = "list")]
@@ -604,6 +610,11 @@ pub use widget_render::{
     zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport,
     zs_date_picker_render_plan_in_viewport_with_today, zs_date_picker_render_plan_with_today,
     ZsDatePickerDayCell, ZsDatePickerRenderPlan,
+};
+#[cfg(feature = "grid-view")]
+pub use widget_render::{
+    zs_grid_view_native_draw_plan, zs_grid_view_render_plan, ZsGridViewItemRenderPlan,
+    ZsGridViewMetrics, ZsGridViewPlatformStyle, ZsGridViewRenderPlan,
 };
 #[cfg(feature = "info-bar")]
 pub use widget_render::{

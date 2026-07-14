@@ -229,7 +229,20 @@ pub(crate) fn decorate_native_focus_ring(
     focused_widget: Option<WidgetId>,
     dpi: Dpi,
 ) -> Option<Rect> {
-    let target = interaction_plan.hit_target_for_widget(focused_widget?)?;
+    #[allow(unused_mut)]
+    let mut target = interaction_plan.hit_target_for_widget(focused_widget?)?;
+    #[cfg(feature = "grid-view")]
+    if target.kind == ViewHitTargetKind::GridView {
+        target = interaction_plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|candidate| {
+                candidate.widget == target.widget
+                    && matches!(candidate.kind, ViewHitTargetKind::GridViewItem { .. })
+            })
+            .unwrap_or(target);
+    }
     #[cfg(feature = "dialog")]
     if matches!(
         target.kind,
@@ -318,6 +331,7 @@ pub(crate) fn decorate_native_focus_ring(
     feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "password-box",
@@ -335,6 +349,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
     feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "password-box",
@@ -363,6 +378,8 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
                 | ViewHitTargetKind::BreadcrumbItem { .. }
                 | ViewHitTargetKind::BreadcrumbOverflowItem { .. }
         );
+    #[cfg(feature = "grid-view")]
+    let supported = supported || matches!(target.kind, ViewHitTargetKind::GridViewItem { .. });
     #[cfg(feature = "toggle-button")]
     let supported = supported || target.kind == ViewHitTargetKind::ToggleButton;
     #[cfg(feature = "tree")]
@@ -425,6 +442,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "password-box",
@@ -668,6 +686,49 @@ mod tests {
                 width: 2,
             }] if *rect == ring
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "grid-view")]
+    fn grid_view_focus_ring_follows_the_selected_item_target_after_the_root() {
+        let widget = WidgetId::new(912);
+        let root = Rect {
+            x: 10,
+            y: 20,
+            width: 420,
+            height: 240,
+        };
+        let selected = Rect {
+            x: 154,
+            y: 20,
+            width: 132,
+            height: 112,
+        };
+        let interaction_plan = ViewInteractionPlan::new([
+            ViewHitTarget::with_kind(widget, root, ViewHitTargetKind::GridView),
+            ViewHitTarget::with_kind(
+                widget,
+                selected,
+                ViewHitTargetKind::GridViewItem {
+                    item: crate::ZsGridViewItemId::new(2),
+                },
+            ),
+        ]);
+        let mut plan = NativeDrawPlan::default();
+
+        let ring =
+            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
+                .expect("focused grid view should outline its selected tile");
+
+        assert_eq!(
+            ring,
+            Rect {
+                x: 155,
+                y: 21,
+                width: 130,
+                height: 110,
+            }
+        );
     }
 
     #[test]

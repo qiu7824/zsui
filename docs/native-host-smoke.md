@@ -399,6 +399,29 @@ guidance. The Windows smoke must report no failed or unhandled input and must
 capture the selected hierarchy; AppKit and GTK4 target-machine interaction
 screenshots remain required.
 
+The independently selectable GridView smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,grid-view,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-grid-view --gallery-view
+```
+
+It renders seven application-owned tiles with globally unique
+`ZsGridViewItemId` values. At the smoke width the shared render plan derives
+three equal-width columns. Tab focuses the single collection root, Right moves
+from item 1 to item 2, Down moves to item 5 and Enter invokes it. Selection and
+invocation are separate typed messages; only invocation emits the example UI
+command. The interaction artifact must record nonzero
+`native_view_grid_view_selection_count` and
+`native_view_grid_view_invoke_count`, one executed UI command, no command
+failure and a nonzero live-view revision. Tile drawing, icons, text and hit
+geometry stay in one clipped self-drawn plan without child collection widgets.
+Windows follows [Fluent ListView/GridView](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/listview-and-gridview),
+macOS metrics follow [NSCollectionView](https://developer.apple.com/documentation/appkit/nscollectionview),
+and GTK metrics follow [GtkGridView](https://docs.gtk.org/gtk4/class.GridView.html).
+Owned scrolling/virtualization, multi-selection, rubber-band selection, custom
+item templates, accessibility providers and AppKit/GTK target-machine evidence
+remain required.
+
 The independently selectable DataGrid smoke path is:
 
 ```powershell

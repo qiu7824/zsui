@@ -241,6 +241,20 @@ history remain authoritative for implementation status.
   is preserved when its row is collapsed. Accessibility tree metadata,
   multi-selection/drag-and-drop, large-tree virtualization and AppKit/GTK target
   interaction smoke remain readiness gaps.
+- GridView is an independent `grid-view` feature over `widgets-list`; it must
+  not pull in ListView, ScrollView, TreeView or a platform child control.
+  Applications own immutable `ZsGridViewItem` values, globally unique
+  `ZsGridViewItemId` values and explicit single-selection state. Selection and
+  invocation are separate typed messages. The framework derives responsive
+  equal-width columns from the final bounds, keeps item paint and hit geometry
+  in one plan, and exposes one Tab stop with Left/Right/Up/Down, Home/End,
+  Space and Enter routing. Windows follows Fluent GridView left-to-right row
+  filling, macOS uses compact NSCollectionView-like metrics, and GTK uses
+  GtkGridView-like metrics through the same self-drawn protocol; backends must
+  not keep a collection model. The first pass is a bounded gallery surface.
+  Owned scrolling/virtualization, multi-selection, rubber-band selection,
+  drag-and-drop, sections, arbitrary item templates, accessibility grid
+  providers and AppKit/GTK target smoke remain readiness gaps.
 - DataGrid is an independent `table` feature over `widgets-list`; it must not
   pull in ListView, ScrollView or a platform child control. Applications own
   immutable `ZsTableColumn` and

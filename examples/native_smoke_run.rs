@@ -18,6 +18,7 @@ use zsui::checkbox;
     all(feature = "progress", feature = "label"),
     all(feature = "progress-ring", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
@@ -57,6 +58,7 @@ use zsui::toggle_button;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
@@ -79,6 +81,7 @@ use zsui::CommandId;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
@@ -128,6 +131,8 @@ use zsui::{
 use zsui::{date_picker, ZsDate, ZsuiThemeMode};
 #[cfg(all(feature = "grid", feature = "button", feature = "label"))]
 use zsui::{grid, ZsGridCell, ZsGridFraction, ZsGridSpan, ZsGridTrack};
+#[cfg(all(feature = "grid-view", feature = "label"))]
+use zsui::{grid_view, ZsGridViewItem, ZsGridViewItemId};
 #[cfg(all(feature = "info-bar", feature = "label"))]
 use zsui::{info_bar, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec};
 use zsui::{
@@ -163,6 +168,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
@@ -223,6 +229,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--tree-view" || arg == "--tree"),
         args.iter()
+            .any(|arg| arg == "--gallery-view" || arg == "--gallery"),
+        args.iter()
             .any(|arg| arg == "--table-view" || arg == "--table" || arg == "--data-grid"),
         args.iter()
             .any(|arg| arg == "--content-dialog" || arg == "--dialog"),
@@ -274,6 +282,7 @@ fn run_smoke(
     include_progress_ring_view: bool,
     include_auto_suggest_view: bool,
     include_tree_view: bool,
+    include_gallery_view: bool,
     include_table_view: bool,
     include_dialog_view: bool,
     include_toast_view: bool,
@@ -339,6 +348,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "tree", feature = "label")))]
     if include_tree_view {
         return Err("--tree-view requires the tree and label features".to_string());
+    }
+    #[cfg(not(all(feature = "grid-view", feature = "label")))]
+    if include_gallery_view {
+        return Err("--gallery-view requires the grid-view and label features".to_string());
     }
     #[cfg(not(all(feature = "table", feature = "label")))]
     if include_table_view {
@@ -535,6 +548,14 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Right)
             .native_view_click(Point { x: 180, y: 144 });
     }
+    #[cfg(all(feature = "grid-view", feature = "label"))]
+    if include_gallery_view {
+        smoke_options = smoke_options
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "table", feature = "label"))]
     if include_table_view {
         smoke_options = smoke_options
@@ -619,6 +640,8 @@ fn run_smoke(
         520,
         if include_date_picker_view {
             480
+        } else if include_gallery_view {
+            464
         } else if include_time_picker_view {
             360
         } else if include_grid_view {
@@ -655,6 +678,8 @@ fn run_smoke(
         attach_auto_suggest_view(builder)
     } else if include_tree_view {
         attach_tree_view(builder)
+    } else if include_gallery_view {
+        attach_gallery_view(builder)
     } else if include_table_view {
         attach_table_view(builder)
     } else if include_dialog_view {
@@ -1164,6 +1189,77 @@ fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
             }
             TreeSmokeMsg::Invoked(_node) => {
                 cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.tree_invoked")));
+            }
+        },
+    )
+}
+
+#[cfg(all(feature = "grid-view", feature = "label"))]
+#[derive(Clone)]
+enum GallerySmokeMsg {
+    Selected(ZsGridViewItemId),
+    Invoked(ZsGridViewItemId),
+}
+
+#[cfg(all(feature = "grid-view", feature = "label"))]
+struct GallerySmokeState {
+    selected: Option<ZsGridViewItemId>,
+    invoked: Option<ZsGridViewItemId>,
+}
+
+#[cfg(all(feature = "grid-view", feature = "label"))]
+fn attach_gallery_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        GallerySmokeState {
+            selected: Some(ZsGridViewItemId::new(1)),
+            invoked: None,
+        },
+        |state| {
+            column([
+                text::<GallerySmokeMsg>(match state.invoked {
+                    Some(item) => format!("ZSUI GridView Smoke · opened {}", item.get()),
+                    None => "ZSUI GridView Smoke".to_string(),
+                })
+                .height(zsui::Dp::new(28.0)),
+                grid_view([
+                    ZsGridViewItem::new(1, "Desktop")
+                        .subtitle("Folder")
+                        .icon(zsui::ZsIcon::Folder),
+                    ZsGridViewItem::new(2, "Documents")
+                        .subtitle("Folder")
+                        .icon(zsui::ZsIcon::Folder),
+                    ZsGridViewItem::new(3, "Photos")
+                        .subtitle("Collection")
+                        .icon(zsui::ZsIcon::Image),
+                    ZsGridViewItem::new(4, "README")
+                        .subtitle("Markdown")
+                        .icon(zsui::ZsIcon::Text),
+                    ZsGridViewItem::new(5, "src")
+                        .subtitle("Folder")
+                        .icon(zsui::ZsIcon::Folder),
+                    ZsGridViewItem::new(6, "Cargo.toml")
+                        .subtitle("Manifest")
+                        .icon(zsui::ZsIcon::File),
+                    ZsGridViewItem::new(7, "Assets")
+                        .subtitle("Resources")
+                        .icon(zsui::ZsIcon::Image),
+                ])
+                .id(WidgetId::new(38))
+                .height(zsui::Dp::new(352.0))
+                .selected_grid_view_item(state.selected)
+                .on_grid_view_select(GallerySmokeMsg::Selected)
+                .on_grid_view_invoke(GallerySmokeMsg::Invoked),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            GallerySmokeMsg::Selected(item) => state.selected = Some(item),
+            GallerySmokeMsg::Invoked(item) => {
+                state.invoked = Some(item);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.grid_view_invoked",
+                )));
             }
         },
     )
@@ -1837,6 +1933,11 @@ fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder
 
 #[cfg(not(all(feature = "tree", feature = "label")))]
 fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "grid-view", feature = "label")))]
+fn attach_gallery_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

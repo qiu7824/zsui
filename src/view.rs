@@ -661,6 +661,13 @@ pub enum ViewNodeKind<Msg> {
         on_expansion_change: Option<fn(crate::ZsTreeExpansionChange) -> Msg>,
         on_invoke: Option<fn(crate::ZsTreeNodeId) -> Msg>,
     },
+    #[cfg(feature = "grid-view")]
+    GridView {
+        items: Vec<crate::ZsGridViewItem>,
+        selected: Option<crate::ZsGridViewItemId>,
+        on_select: Option<fn(crate::ZsGridViewItemId) -> Msg>,
+        on_invoke: Option<fn(crate::ZsGridViewItemId) -> Msg>,
+    },
     #[cfg(feature = "table")]
     DataGrid {
         columns: Vec<crate::ZsTableColumn>,
@@ -1132,6 +1139,33 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "tree")]
     pub fn on_tree_invoke(mut self, message: fn(crate::ZsTreeNodeId) -> Msg) -> Self {
         if let ViewNodeKind::TreeView { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn selected_grid_view_item(mut self, selected: Option<crate::ZsGridViewItemId>) -> Self {
+        if let ViewNodeKind::GridView {
+            selected: current, ..
+        } = &mut self.kind
+        {
+            *current = selected;
+        }
+        self
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn on_grid_view_select(mut self, message: fn(crate::ZsGridViewItemId) -> Msg) -> Self {
+        if let ViewNodeKind::GridView { on_select, .. } = &mut self.kind {
+            *on_select = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn on_grid_view_invoke(mut self, message: fn(crate::ZsGridViewItemId) -> Msg) -> Self {
+        if let ViewNodeKind::GridView { on_invoke, .. } = &mut self.kind {
             *on_invoke = Some(message);
         }
         self
@@ -1806,6 +1840,17 @@ pub fn list<T, Msg>(
     .children(items.into_iter().map(render))
 }
 
+/// Creates a responsive self-drawn collection of selectable gallery tiles.
+#[cfg(feature = "grid-view")]
+pub fn grid_view<Msg>(items: impl IntoIterator<Item = crate::ZsGridViewItem>) -> ViewNode<Msg> {
+    ViewNode::<Msg>::new(ViewNodeKind::GridView {
+        items: items.into_iter().collect(),
+        selected: None,
+        on_select: None,
+        on_invoke: None,
+    })
+}
+
 #[cfg(feature = "tree")]
 pub fn tree_view<Msg>(roots: impl IntoIterator<Item = crate::ZsTreeNode>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::TreeView {
@@ -2050,6 +2095,16 @@ pub enum ViewEvent {
         widget: WidgetId,
         node: crate::ZsTreeNodeId,
     },
+    #[cfg(feature = "grid-view")]
+    GridViewItemSelected {
+        widget: WidgetId,
+        item: crate::ZsGridViewItemId,
+    },
+    #[cfg(feature = "grid-view")]
+    GridViewItemInvoked {
+        widget: WidgetId,
+        item: crate::ZsGridViewItemId,
+    },
     #[cfg(feature = "table")]
     TableRowSelected {
         widget: WidgetId,
@@ -2271,6 +2326,12 @@ pub enum ViewHitTargetKind {
     #[cfg(feature = "tree")]
     TreeNodeExpander {
         node: crate::ZsTreeNodeId,
+    },
+    #[cfg(feature = "grid-view")]
+    GridView,
+    #[cfg(feature = "grid-view")]
+    GridViewItem {
+        item: crate::ZsGridViewItemId,
     },
     #[cfg(feature = "table")]
     DataGrid,
@@ -2567,6 +2628,10 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "grid-view")]
+        if matches!(self.kind, ViewHitTargetKind::GridViewItem { .. }) {
+            return false;
+        }
         #[cfg(feature = "password-box")]
         if self.kind == ViewHitTargetKind::PasswordBoxReveal {
             return false;
@@ -2751,6 +2816,8 @@ trait LiveViewDriver: Send {
     fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState>;
     #[cfg(feature = "tree")]
     fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState>;
+    #[cfg(feature = "grid-view")]
+    fn widget_grid_view_state(&self, widget: WidgetId) -> Option<crate::ZsGridViewState>;
     #[cfg(feature = "table")]
     fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState>;
     #[cfg(feature = "dialog")]
@@ -2860,6 +2927,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "tree")]
     pub fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
         self.lock().widget_tree_view_state(widget)
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn widget_grid_view_state(&self, widget: WidgetId) -> Option<crate::ZsGridViewState> {
+        self.lock().widget_grid_view_state(widget)
     }
 
     #[cfg(feature = "table")]
@@ -3174,6 +3246,11 @@ where
     #[cfg(feature = "tree")]
     fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
         self.view.widget_tree_view_state(widget)
+    }
+
+    #[cfg(feature = "grid-view")]
+    fn widget_grid_view_state(&self, widget: WidgetId) -> Option<crate::ZsGridViewState> {
+        self.view.widget_grid_view_state(widget)
     }
 
     #[cfg(feature = "table")]
@@ -4315,6 +4392,42 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         }
                     }
                 }
+                #[cfg(feature = "grid-view")]
+                (
+                    ViewNodeKind::GridView {
+                        items,
+                        selected,
+                        on_select,
+                        ..
+                    },
+                    ViewEvent::GridViewItemSelected { item, .. },
+                ) => {
+                    let contains = crate::grid_view::unique_grid_view_items(items)
+                        .iter()
+                        .any(|candidate| candidate.id() == *item);
+                    if contains && *selected != Some(*item) {
+                        *selected = Some(*item);
+                        if let Some(message) = on_select {
+                            cx.emit(message(*item));
+                        }
+                    }
+                }
+                #[cfg(feature = "grid-view")]
+                (
+                    ViewNodeKind::GridView {
+                        items, on_invoke, ..
+                    },
+                    ViewEvent::GridViewItemInvoked { item, .. },
+                ) => {
+                    let contains = crate::grid_view::unique_grid_view_items(items)
+                        .iter()
+                        .any(|candidate| candidate.id() == *item);
+                    if contains {
+                        if let Some(message) = on_invoke {
+                            cx.emit(message(*item));
+                        }
+                    }
+                }
                 #[cfg(feature = "table")]
                 (
                     ViewNodeKind::DataGrid {
@@ -5014,6 +5127,21 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "grid-view")]
+            ViewNodeKind::GridView {
+                items, selected, ..
+            } => {
+                let plan = crate::zs_grid_view_render_plan(
+                    bounds,
+                    items,
+                    *selected,
+                    crate::ZsGridViewPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_grid_view_native_draw_plan(&plan, items).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "table")]
             ViewNodeKind::DataGrid {
                 columns,
@@ -5233,6 +5361,9 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::TreeNodeExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::TreeNodeSelected { widget, .. })
             | (Some(id), ViewEvent::TreeNodeInvoked { widget, .. }) => id == *widget,
+            #[cfg(feature = "grid-view")]
+            (Some(id), ViewEvent::GridViewItemSelected { widget, .. })
+            | (Some(id), ViewEvent::GridViewItemInvoked { widget, .. }) => id == *widget,
             #[cfg(feature = "table")]
             (Some(id), ViewEvent::TableRowSelected { widget, .. })
             | (Some(id), ViewEvent::TableSorted { widget, .. })
@@ -5551,6 +5682,38 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_tree_view_state(widget))
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn widget_grid_view_state(&self, widget: WidgetId) -> Option<crate::ZsGridViewState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::GridView {
+                items, selected, ..
+            } = &self.kind
+            {
+                let column_count = self
+                    .bounds
+                    .map(|bounds| {
+                        crate::zs_grid_view_render_plan(
+                            bounds,
+                            items,
+                            *selected,
+                            crate::ZsGridViewPlatformStyle::current(),
+                            self.layout_dpi,
+                        )
+                        .column_count
+                    })
+                    .unwrap_or(1);
+                return Some(crate::grid_view::grid_view_state(
+                    items,
+                    *selected,
+                    column_count,
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_grid_view_state(widget))
     }
 
     #[cfg(feature = "table")]
@@ -5988,6 +6151,53 @@ impl<Msg> ViewNode<Msg> {
                     bounds,
                     ViewHitTargetKind::BreadcrumbOverflow,
                 ));
+            }
+            return;
+        }
+
+        #[cfg(feature = "grid-view")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::GridView {
+                items, selected, ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            if items.is_empty() {
+                return;
+            }
+            let grid_clip = clipped_rect(bounds, clip);
+            if let Some(root_bounds) = grid_clip {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    root_bounds,
+                    ViewHitTargetKind::GridView,
+                ));
+            }
+            let plan = crate::zs_grid_view_render_plan(
+                bounds,
+                items,
+                *selected,
+                crate::ZsGridViewPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            for item in plan
+                .items
+                .iter()
+                .filter(|item| item.selected)
+                .chain(plan.items.iter().filter(|item| !item.selected))
+            {
+                if let (Some(spec), Some(item_bounds)) = (
+                    items.get(item.item_index),
+                    clipped_rect(item.bounds, grid_clip),
+                ) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        item_bounds,
+                        ViewHitTargetKind::GridViewItem { item: spec.id() },
+                    ));
+                }
             }
             return;
         }
@@ -7173,6 +7383,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::AutoSuggestBox { .. } => ViewHitTargetKind::AutoSuggestBox,
             #[cfg(feature = "tree")]
             ViewNodeKind::TreeView { .. } => ViewHitTargetKind::TreeView,
+            #[cfg(feature = "grid-view")]
+            ViewNodeKind::GridView { .. } => ViewHitTargetKind::GridView,
             #[cfg(feature = "table")]
             ViewNodeKind::DataGrid { .. } => ViewHitTargetKind::DataGrid,
             #[cfg(feature = "dialog")]
@@ -7751,6 +7963,7 @@ mod tests {
         feature = "time-picker",
         feature = "tabs",
         feature = "list",
+        feature = "grid-view",
         feature = "table",
         feature = "tree"
     ))]
@@ -7792,6 +8005,10 @@ mod tests {
         TreeExpanded(crate::ZsTreeExpansionChange),
         #[cfg(feature = "tree")]
         TreeInvoked(crate::ZsTreeNodeId),
+        #[cfg(feature = "grid-view")]
+        GridViewSelected(crate::ZsGridViewItemId),
+        #[cfg(feature = "grid-view")]
+        GridViewInvoked(crate::ZsGridViewItemId),
         #[cfg(feature = "table")]
         TableSelected(crate::ZsTableRowId),
         #[cfg(feature = "table")]
@@ -8814,6 +9031,85 @@ mod tests {
         assert_eq!(
             state.rows.iter().map(|row| row.node).collect::<Vec<_>>(),
             vec![root, folder, leaf, 4_u64.into()]
+        );
+    }
+
+    #[cfg(feature = "grid-view")]
+    #[test]
+    fn grid_view_has_one_tab_stop_and_routes_typed_item_events() {
+        let widget = WidgetId::new(109);
+        let first = crate::ZsGridViewItemId::new(1);
+        let selected = crate::ZsGridViewItemId::new(2);
+        let invoked = crate::ZsGridViewItemId::new(5);
+        let mut view = grid_view([
+            crate::ZsGridViewItem::new(first, "Desktop"),
+            crate::ZsGridViewItem::new(selected, "Documents"),
+            crate::ZsGridViewItem::new(3, "Photos"),
+            crate::ZsGridViewItem::new(invoked, "src"),
+            crate::ZsGridViewItem::new(selected, "Duplicate"),
+        ])
+        .id(widget)
+        .selected_grid_view_item(Some(selected))
+        .on_grid_view_select(Msg::GridViewSelected)
+        .on_grid_view_invoke(Msg::GridViewInvoked);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 420,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| target.accepts_focus())
+                .count(),
+            1
+        );
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| matches!(target.kind, ViewHitTargetKind::GridViewItem { .. }))
+                .count(),
+            4
+        );
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::GridViewItemSelected {
+                widget,
+                item: invoked,
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::GridViewItemInvoked {
+                widget,
+                item: invoked,
+            },
+        );
+
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::GridViewSelected(invoked),
+                Msg::GridViewInvoked(invoked)
+            ]
+        );
+        assert_eq!(
+            view.widget_grid_view_state(widget),
+            Some(crate::ZsGridViewState {
+                selected: Some(invoked),
+                items: vec![first, selected, 3_u64.into(), invoked],
+                column_count: 3,
+            })
         );
     }
 

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
     feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "tabs",
@@ -23,6 +24,7 @@ use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, Native
 #[cfg(any(
     feature = "breadcrumb",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "date-picker",
@@ -32,6 +34,22 @@ use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, Native
     feature = "toast"
 ))]
 use crate::{HorizontalAlign, TextWeight};
+#[cfg(all(
+    feature = "grid-view",
+    not(any(
+        feature = "auto-suggest",
+        feature = "breadcrumb",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "info-bar",
+        feature = "teaching-tip",
+        feature = "table",
+        feature = "time-picker",
+        feature = "toast",
+        feature = "tree"
+    ))
+))]
+use crate::{NativeDrawIconCommand, NativeIconColorMode};
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
@@ -51,6 +69,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "combo",
     feature = "date-picker",
     feature = "dialog",
+    feature = "grid-view",
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "number-box",
@@ -3291,6 +3310,365 @@ fn inset_row_text(row: Rect, padding: i32) -> Rect {
     }
 }
 
+#[cfg(feature = "grid-view")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsGridViewPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "grid-view")]
+impl ZsGridViewPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "grid-view")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsGridViewMetrics {
+    pub minimum_item_width: Dp,
+    pub item_height: Dp,
+    pub item_gap: Dp,
+    pub item_padding: Dp,
+    pub media_height: Dp,
+    pub icon_size: Dp,
+    pub item_radius: Dp,
+    pub media_radius: Dp,
+    pub text_gap: Dp,
+}
+
+#[cfg(feature = "grid-view")]
+impl ZsGridViewMetrics {
+    pub const fn for_platform(platform: ZsGridViewPlatformStyle) -> Self {
+        match platform {
+            ZsGridViewPlatformStyle::Windows => Self {
+                minimum_item_width: Dp::new(132.0),
+                item_height: Dp::new(112.0),
+                item_gap: Dp::new(8.0),
+                item_padding: Dp::new(10.0),
+                media_height: Dp::new(58.0),
+                icon_size: Dp::new(32.0),
+                item_radius: Dp::new(4.0),
+                media_radius: Dp::new(3.0),
+                text_gap: Dp::new(2.0),
+            },
+            ZsGridViewPlatformStyle::Macos => Self {
+                minimum_item_width: Dp::new(124.0),
+                item_height: Dp::new(104.0),
+                item_gap: Dp::new(10.0),
+                item_padding: Dp::new(9.0),
+                media_height: Dp::new(54.0),
+                icon_size: Dp::new(28.0),
+                item_radius: Dp::new(8.0),
+                media_radius: Dp::new(6.0),
+                text_gap: Dp::new(1.0),
+            },
+            ZsGridViewPlatformStyle::Gtk => Self {
+                minimum_item_width: Dp::new(136.0),
+                item_height: Dp::new(116.0),
+                item_gap: Dp::new(8.0),
+                item_padding: Dp::new(10.0),
+                media_height: Dp::new(60.0),
+                icon_size: Dp::new(32.0),
+                item_radius: Dp::new(6.0),
+                media_radius: Dp::new(5.0),
+                text_gap: Dp::new(2.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "grid-view")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsGridViewItemRenderPlan {
+    pub item_index: usize,
+    pub bounds: Rect,
+    pub media_bounds: Rect,
+    pub icon_bounds: Option<Rect>,
+    pub title_bounds: Rect,
+    pub subtitle_bounds: Option<Rect>,
+    pub selected: bool,
+}
+
+#[cfg(feature = "grid-view")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsGridViewRenderPlan {
+    pub bounds: Rect,
+    pub items: Vec<ZsGridViewItemRenderPlan>,
+    pub column_count: usize,
+    pub row_count: usize,
+    pub content_height: i32,
+    pub item_radius: i32,
+    pub media_radius: i32,
+    pub platform: ZsGridViewPlatformStyle,
+}
+
+#[cfg(feature = "grid-view")]
+pub fn zs_grid_view_render_plan(
+    bounds: Rect,
+    items: &[crate::ZsGridViewItem],
+    selected: Option<crate::ZsGridViewItemId>,
+    platform: ZsGridViewPlatformStyle,
+    dpi: Dpi,
+) -> ZsGridViewRenderPlan {
+    let metrics = ZsGridViewMetrics::for_platform(platform);
+    let minimum_item_width = metrics.minimum_item_width.to_px(dpi).round_i32().max(1);
+    let item_height = metrics.item_height.to_px(dpi).round_i32().max(1);
+    let gap = metrics.item_gap.to_px(dpi).round_i32().max(0);
+    let padding = metrics.item_padding.to_px(dpi).round_i32().max(0);
+    let media_height = metrics
+        .media_height
+        .to_px(dpi)
+        .round_i32()
+        .min(item_height)
+        .max(1);
+    let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(1);
+    let text_gap = metrics.text_gap.to_px(dpi).round_i32().max(0);
+    let unique = crate::grid_view::unique_grid_view_items(items);
+    let available_width = bounds.width.max(1);
+    let calculated_columns = available_width
+        .saturating_add(gap)
+        .checked_div(minimum_item_width.saturating_add(gap).max(1))
+        .unwrap_or(1)
+        .max(1) as usize;
+    let column_count = calculated_columns.min(unique.len().max(1));
+    let gaps_width = gap.saturating_mul(column_count.saturating_sub(1) as i32);
+    let item_width = available_width
+        .saturating_sub(gaps_width)
+        .checked_div(column_count as i32)
+        .unwrap_or(available_width)
+        .max(1);
+    let row_count = unique.len().div_ceil(column_count);
+    let content_height = item_height
+        .saturating_mul(row_count as i32)
+        .saturating_add(gap.saturating_mul(row_count.saturating_sub(1) as i32));
+    let item_plans = unique
+        .iter()
+        .enumerate()
+        .map(|(unique_index, item)| {
+            let source_index = items
+                .iter()
+                .position(|candidate| candidate.id() == item.id())
+                .unwrap_or(unique_index);
+            let row = unique_index / column_count;
+            let column = unique_index % column_count;
+            let x = bounds
+                .x
+                .saturating_add((item_width.saturating_add(gap)).saturating_mul(column as i32));
+            let width = if column + 1 == column_count {
+                bounds
+                    .x
+                    .saturating_add(available_width)
+                    .saturating_sub(x)
+                    .max(1)
+            } else {
+                item_width
+            };
+            let y = bounds
+                .y
+                .saturating_add((item_height.saturating_add(gap)).saturating_mul(row as i32));
+            let tile = Rect {
+                x,
+                y,
+                width,
+                height: item_height,
+            };
+            let inner_x = tile.x.saturating_add(padding.min(tile.width / 2));
+            let inner_width = tile.width.saturating_sub(padding.saturating_mul(2)).max(1);
+            let media = Rect {
+                x: inner_x,
+                y: tile.y.saturating_add(padding),
+                width: inner_width,
+                height: media_height.saturating_sub(padding).max(1),
+            };
+            let centered_icon = item.item_icon().map(|_| {
+                let size = icon_size.min(media.width).min(media.height).max(1);
+                Rect {
+                    x: media
+                        .x
+                        .saturating_add((media.width.saturating_sub(size)) / 2),
+                    y: media
+                        .y
+                        .saturating_add((media.height.saturating_sub(size)) / 2),
+                    width: size,
+                    height: size,
+                }
+            });
+            let title_y = media
+                .y
+                .saturating_add(media.height)
+                .saturating_add(text_gap);
+            let text_bottom = tile.y.saturating_add(tile.height).saturating_sub(padding);
+            let has_subtitle = item.item_subtitle().is_some();
+            let text_height = text_bottom.saturating_sub(title_y).max(1);
+            let title_height = if has_subtitle {
+                text_height
+                    .saturating_sub(text_gap)
+                    .checked_div(2)
+                    .unwrap_or(1)
+            } else {
+                text_height
+            }
+            .max(1);
+            let title = Rect {
+                x: inner_x,
+                y: title_y,
+                width: inner_width,
+                height: title_height,
+            };
+            ZsGridViewItemRenderPlan {
+                item_index: source_index,
+                bounds: tile,
+                media_bounds: media,
+                icon_bounds: centered_icon,
+                title_bounds: title,
+                subtitle_bounds: has_subtitle.then_some(Rect {
+                    x: inner_x,
+                    y: title
+                        .y
+                        .saturating_add(title.height)
+                        .saturating_add(text_gap),
+                    width: inner_width,
+                    height: text_bottom
+                        .saturating_sub(title.y.saturating_add(title.height))
+                        .saturating_sub(text_gap)
+                        .max(1),
+                }),
+                selected: selected == Some(item.id()),
+            }
+        })
+        .collect();
+    ZsGridViewRenderPlan {
+        bounds,
+        items: item_plans,
+        column_count,
+        row_count,
+        content_height,
+        item_radius: metrics.item_radius.to_px(dpi).round_i32().max(1),
+        media_radius: metrics.media_radius.to_px(dpi).round_i32().max(1),
+        platform,
+    }
+}
+
+#[cfg(feature = "grid-view")]
+pub fn zs_grid_view_native_draw_plan(
+    plan: &ZsGridViewRenderPlan,
+    items: &[crate::ZsGridViewItem],
+) -> NativeDrawPlan {
+    let mut commands = vec![
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: None,
+            radius: plan.item_radius,
+        },
+        NativeDrawCommand::PushClip { rect: plan.bounds },
+    ];
+    for tile in &plan.items {
+        let Some(item) = items.get(tile.item_index) else {
+            continue;
+        };
+        let (fill, stroke) = if tile.selected {
+            match plan.platform {
+                ZsGridViewPlatformStyle::Windows => (
+                    NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::Accent,
+                        alpha: 28,
+                    },
+                    Some(NativeDrawFill::Role(ColorRole::Accent)),
+                ),
+                ZsGridViewPlatformStyle::Macos => (
+                    NativeDrawFill::Role(ColorRole::Accent),
+                    Some(NativeDrawFill::Role(ColorRole::Accent)),
+                ),
+                ZsGridViewPlatformStyle::Gtk => (
+                    NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::Accent,
+                        alpha: 44,
+                    },
+                    Some(NativeDrawFill::Role(ColorRole::Accent)),
+                ),
+            }
+        } else {
+            (
+                NativeDrawFill::Role(ColorRole::Control),
+                Some(NativeDrawFill::Role(ColorRole::Border)),
+            )
+        };
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: tile.bounds,
+            fill,
+            stroke,
+            radius: plan.item_radius,
+        });
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: tile.media_bounds,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: if tile.selected && plan.platform == ZsGridViewPlatformStyle::Macos {
+                    ColorRole::AccentText
+                } else {
+                    ColorRole::PrimaryText
+                },
+                alpha: if tile.selected { 22 } else { 10 },
+            },
+            radius: plan.media_radius,
+        });
+        let foreground = if tile.selected && plan.platform == ZsGridViewPlatformStyle::Macos {
+            ColorRole::AccentText
+        } else {
+            ColorRole::PrimaryText
+        };
+        if let (Some(icon), Some(bounds)) = (item.item_icon(), tile.icon_bounds) {
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(icon, bounds, NativeIconColorMode::ThemeAware)
+                    .with_color(foreground),
+            ));
+        }
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            item.title(),
+            tile.title_bounds,
+            SemanticTextStyle {
+                role: TextRole::Body,
+                color: foreground,
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+        if let (Some(subtitle), Some(bounds)) = (item.item_subtitle(), tile.subtitle_bounds) {
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                subtitle,
+                bounds,
+                SemanticTextStyle {
+                    role: TextRole::Caption,
+                    color: if foreground == ColorRole::AccentText {
+                        foreground
+                    } else {
+                        ColorRole::SecondaryText
+                    },
+                    weight: TextWeight::Regular,
+                    horizontal_align: HorizontalAlign::Start,
+                    vertical_align: crate::VerticalAlign::Center,
+                    wrap: crate::TextWrap::NoWrap,
+                    ellipsis: true,
+                },
+            )));
+        }
+    }
+    commands.push(NativeDrawCommand::PopClip);
+    NativeDrawPlan::new(commands)
+}
+
 #[cfg(feature = "tree")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsTreePlatformStyle {
@@ -5643,6 +6021,77 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[cfg(feature = "grid-view")]
+    #[test]
+    fn grid_view_render_plan_is_responsive_clipped_and_platform_specific() {
+        let items = [
+            crate::ZsGridViewItem::new(1, "Desktop")
+                .subtitle("Folder")
+                .icon(crate::ZsIcon::Folder),
+            crate::ZsGridViewItem::new(2, "Photos")
+                .subtitle("Collection")
+                .icon(crate::ZsIcon::Image),
+            crate::ZsGridViewItem::new(3, "README").icon(crate::ZsIcon::Text),
+            crate::ZsGridViewItem::new(4, "Cargo.toml").icon(crate::ZsIcon::File),
+            crate::ZsGridViewItem::new(2, "Duplicate strong ID"),
+        ];
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 420,
+            height: 220,
+        };
+        let windows = zs_grid_view_render_plan(
+            bounds,
+            &items,
+            Some(crate::ZsGridViewItemId::new(2)),
+            ZsGridViewPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_grid_view_render_plan(
+            bounds,
+            &items,
+            Some(crate::ZsGridViewItemId::new(2)),
+            ZsGridViewPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_grid_view_render_plan(
+            bounds,
+            &items,
+            Some(crate::ZsGridViewItemId::new(2)),
+            ZsGridViewPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.items.len(), 4);
+        assert_eq!(windows.column_count, 3);
+        assert_eq!(windows.row_count, 2);
+        assert_eq!(macos.column_count, 3);
+        assert_eq!(gtk.column_count, 2);
+        assert!(windows.items[1].selected);
+        assert_eq!(windows.items[3].bounds.y, windows.items[0].bounds.y + 120);
+        assert!(windows.items[0].icon_bounds.is_some());
+        assert!(windows.items[0].subtitle_bounds.is_some());
+        assert!(macos.item_radius > windows.item_radius);
+
+        let draw = zs_grid_view_native_draw_plan(&windows, &items);
+        assert!(matches!(
+            draw.commands.first(),
+            Some(NativeDrawCommand::RoundRect { .. })
+        ));
+        assert!(draw.commands.iter().any(
+            |command| matches!(command, NativeDrawCommand::PushClip { rect } if *rect == bounds)
+        ));
+        assert!(draw
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Image)));
+        assert!(matches!(
+            draw.commands.last(),
+            Some(NativeDrawCommand::PopClip)
+        ));
     }
 
     #[cfg(feature = "table")]

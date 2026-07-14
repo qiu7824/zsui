@@ -16,6 +16,7 @@ $singleFeatures = @(
     "toggle-button",
     "label",
     "grid",
+    "grid-view",
     "widgets-base",
     "widgets-input",
     "widgets-list",
@@ -76,7 +77,7 @@ $singleFeatures = @(
 $featureSets = @(
     "button,breadcrumb,label,grid",
     "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,tabs",
-    "list,tree,table",
+    "list,grid-view,tree,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",
     "window,product-adapter,button,label",

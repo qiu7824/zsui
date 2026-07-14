@@ -38,6 +38,7 @@ breadcrumb = ["widgets-base"]
 toggle-button = ["widgets-input"]
 label = ["widgets-base"]
 grid = ["widgets-base"]
+grid-view = ["widgets-list"]
 widgets-base = []
 widgets-input = []
 widgets-list = []
@@ -91,7 +92,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "tree", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
+all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "tree", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",
