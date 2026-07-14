@@ -93,7 +93,7 @@ fn sample_workbench() -> ZsWorkbenchSpec {
         .footer_action(ZsWorkbenchActionSpec::new(
             "settings",
             "Settings",
-            ZsWorkbenchIcon::More,
+            ZsWorkbenchIcon::Settings,
         ));
 
     let composer = ZsWorkbenchComposerSpec::new("Describe a task or ask a question")

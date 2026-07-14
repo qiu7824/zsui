@@ -4,16 +4,17 @@ use crate::{
     ColorRole, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
     NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, Point, Rect, SemanticTextStyle,
     TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon, ZSUI_FLUENT_CARD_RADIUS,
-    ZSUI_FLUENT_CONTROL_RADIUS, ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT,
-    ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, ZSUI_FLUENT_STANDARD_ICON_SIZE,
+    ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT,
+    ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
 };
 
-pub const ZS_WORKBENCH_BASE_SIDEBAR_WIDTH: i32 = 280;
-pub const ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH: i32 = 48;
-pub const ZS_WORKBENCH_TOP_BAR_HEIGHT: i32 = 48;
-pub const ZS_WORKBENCH_COMPOSER_HEIGHT: i32 = 120;
-pub const ZS_WORKBENCH_INSPECTOR_WIDTH: i32 = 344;
-pub const ZS_WORKBENCH_CONTENT_MAX_WIDTH: i32 = 800;
+pub const ZS_WORKBENCH_BASE_SIDEBAR_WIDTH: i32 = 272;
+pub const ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH: i32 = 56;
+pub const ZS_WORKBENCH_TOP_BAR_HEIGHT: i32 = 64;
+pub const ZS_WORKBENCH_COMPOSER_HEIGHT: i32 = 136;
+pub const ZS_WORKBENCH_INSPECTOR_WIDTH: i32 = 336;
+pub const ZS_WORKBENCH_CONTENT_MAX_WIDTH: i32 = 760;
+pub const ZS_WORKBENCH_FLOATING_RADIUS: i32 = 12;
 
 fn scale(value: i32, dpi: Dpi) -> i32 {
     ((value as f32) * dpi.scale_factor()).round() as i32
@@ -645,11 +646,12 @@ pub fn zs_workbench_layout(
         width: content_width,
         height: timeline.height,
     };
+    let composer_inset = scale(12, dpi);
     let composer = Rect {
         x: content.x,
-        y: composer_band.y + scale(10, dpi),
+        y: composer_band.y + composer_inset,
         width: content.width,
-        height: (composer_band.height - scale(20, dpi)).max(0),
+        height: (composer_band.height - composer_inset * 2).max(0),
     };
     let metrics = ZsWorkbenchLayoutMetrics {
         surface,
@@ -679,8 +681,8 @@ pub fn zs_workbench_layout(
         enabled: true,
     });
 
-    let gap = scale(18, dpi);
-    let top_padding = scale(22, dpi);
+    let gap = scale(22, dpi);
+    let top_padding = scale(24, dpi);
     let message_heights: Vec<_> = spec
         .messages
         .iter()
@@ -786,20 +788,20 @@ fn layout_sidebar_regions(
     dpi: Dpi,
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
-    let pad = scale(10, dpi);
+    let pad = scale(12, dpi);
     let row_height = scale(ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, dpi);
     regions.push(ZsWorkbenchLayoutRegion {
         kind: ZsWorkbenchRegionKind::SidebarToggle,
         id: "sidebar.toggle".to_string(),
         bounds: Rect {
             x: metrics.sidebar.x + pad,
-            y: metrics.sidebar.y + scale(8, dpi),
-            width: scale(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, dpi),
-            height: scale(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, dpi),
+            y: metrics.sidebar.y + scale(12, dpi),
+            width: scale(ZSUI_FLUENT_TOUCH_TARGET, dpi),
+            height: scale(ZSUI_FLUENT_TOUCH_TARGET, dpi),
         },
         enabled: true,
     });
-    let mut y = metrics.sidebar.y + scale(58, dpi);
+    let mut y = metrics.sidebar.y + scale(68, dpi);
     for action in &spec.sidebar.primary_actions {
         regions.push(ZsWorkbenchLayoutRegion {
             kind: ZsWorkbenchRegionKind::SidebarAction,
@@ -815,7 +817,7 @@ fn layout_sidebar_regions(
         y += row_height + scale(4, dpi);
     }
     if !spec.sidebar.collapsed {
-        y += scale(12, dpi);
+        y += scale(14, dpi);
         for group in &spec.sidebar.groups {
             y += scale(26, dpi);
             for conversation in &group.conversations {
@@ -826,11 +828,11 @@ fn layout_sidebar_regions(
                         x: metrics.sidebar.x + pad,
                         y,
                         width: (metrics.sidebar.width - pad * 2).max(0),
-                        height: scale(46, dpi),
+                        height: scale(48, dpi),
                     },
                     enabled: true,
                 });
-                y += scale(48, dpi);
+                y += scale(52, dpi);
             }
             y += scale(10, dpi);
         }
@@ -861,14 +863,14 @@ fn layout_toolbar_regions(
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
     let button = scale(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, dpi);
-    let mut x = metrics.top_bar.x + metrics.top_bar.width - scale(10, dpi) - button;
+    let mut x = metrics.top_bar.x + metrics.top_bar.width - scale(16, dpi) - button;
     for action in spec.toolbar_actions.iter().rev() {
         regions.push(ZsWorkbenchLayoutRegion {
             kind: ZsWorkbenchRegionKind::ToolbarAction,
             id: action.id.clone(),
             bounds: Rect {
                 x,
-                y: metrics.top_bar.y + scale(9, dpi),
+                y: metrics.top_bar.y + scale(16, dpi),
                 width: button,
                 height: button,
             },
@@ -884,19 +886,19 @@ fn layout_composer_regions(
     dpi: Dpi,
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
-    let bottom_y = metrics.composer.y + metrics.composer.height - scale(40, dpi);
+    let bottom_y = metrics.composer.y + metrics.composer.height - scale(44, dpi);
     regions.push(ZsWorkbenchLayoutRegion {
         kind: ZsWorkbenchRegionKind::ComposerInput,
         id: "composer.input".to_string(),
         bounds: Rect {
-            x: metrics.composer.x + scale(12, dpi),
-            y: metrics.composer.y + scale(8, dpi),
-            width: (metrics.composer.width - scale(24, dpi)).max(0),
-            height: (metrics.composer.height - scale(52, dpi)).max(0),
+            x: metrics.composer.x + scale(16, dpi),
+            y: metrics.composer.y + scale(12, dpi),
+            width: (metrics.composer.width - scale(32, dpi)).max(0),
+            height: (metrics.composer.height - scale(62, dpi)).max(0),
         },
         enabled: true,
     });
-    let mut action_x = metrics.composer.x + scale(10, dpi);
+    let mut action_x = metrics.composer.x + scale(12, dpi);
     for action in &spec.composer.actions {
         let width = scale(34 + action.label.chars().count() as i32 * 7, dpi)
             .clamp(scale(34, dpi), scale(140, dpi));
@@ -913,7 +915,7 @@ fn layout_composer_regions(
         });
         action_x += width + scale(4, dpi);
     }
-    let submit_size = scale(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, dpi);
+    let submit_size = scale(36, dpi);
     regions.push(ZsWorkbenchLayoutRegion {
         kind: if spec.composer.busy {
             ZsWorkbenchRegionKind::Stop
@@ -927,8 +929,8 @@ fn layout_composer_regions(
         }
         .to_string(),
         bounds: Rect {
-            x: metrics.composer.x + metrics.composer.width - scale(10, dpi) - submit_size,
-            y: bottom_y - scale(1, dpi),
+            x: metrics.composer.x + metrics.composer.width - scale(12, dpi) - submit_size,
+            y: bottom_y - scale(2, dpi),
             width: submit_size,
             height: submit_size,
         },
@@ -945,7 +947,7 @@ fn layout_inspector_regions(
     let (Some(inspector), Some(bounds)) = (&spec.inspector, metrics.inspector) else {
         return;
     };
-    let mut x = bounds.x + scale(12, dpi);
+    let mut x = bounds.x + scale(20, dpi);
     for tab in &inspector.tabs {
         let width = scale(24 + tab.label.chars().count() as i32 * 7, dpi)
             .clamp(scale(48, dpi), scale(128, dpi));
@@ -954,7 +956,7 @@ fn layout_inspector_regions(
             id: tab.id.clone(),
             bounds: Rect {
                 x,
-                y: bounds.y + scale(48, dpi),
+                y: bounds.y + scale(58, dpi),
                 width,
                 height: scale(32, dpi),
             },
@@ -1019,7 +1021,7 @@ pub fn zs_workbench_native_draw_plan(
     ));
     commands.push(fill(
         metrics.sidebar,
-        NativeDrawFill::role(ColorRole::SurfaceRaised),
+        NativeDrawFill::role(ColorRole::Surface),
     ));
     commands.push(stroke(
         Rect {
@@ -1028,7 +1030,10 @@ pub fn zs_workbench_native_draw_plan(
             width: 1,
             height: metrics.sidebar.height,
         },
-        NativeDrawFill::role(ColorRole::Border),
+        NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Border,
+            alpha: 42,
+        },
     ));
     paint_sidebar(spec, layout, &mut commands);
     paint_top_bar(spec, layout, &mut commands);
@@ -1050,8 +1055,8 @@ fn paint_sidebar(
             &spec.sidebar.title,
             Rect {
                 x: bounds.x + scale(56, dpi),
-                y: bounds.y + scale(8, dpi),
-                width: (bounds.width - scale(66, dpi)).max(0),
+                y: bounds.y + scale(14, dpi),
+                width: (bounds.width - scale(72, dpi)).max(0),
                 height: scale(36, dpi),
             },
             TextRole::Button,
@@ -1084,14 +1089,25 @@ fn paint_sidebar(
                 region.bounds,
                 NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::Accent,
-                    alpha: 34,
+                    alpha: 22,
                 },
-                scale(ZSUI_FLUENT_CONTROL_RADIUS, dpi),
+                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
             ));
         }
+        let icon_bounds =
+            if spec.sidebar.collapsed || region.kind == ZsWorkbenchRegionKind::SidebarToggle {
+                icon_bounds(region.bounds, dpi)
+            } else {
+                Rect {
+                    x: region.bounds.x + scale(10, dpi),
+                    y: region.bounds.y + (region.bounds.height - scale(20, dpi)) / 2,
+                    width: scale(20, dpi),
+                    height: scale(20, dpi),
+                }
+            };
         commands.push(icon_command(
             icon,
-            icon_bounds(region.bounds, dpi),
+            icon_bounds,
             if region.enabled {
                 ColorRole::PrimaryText
             } else {
@@ -1102,7 +1118,7 @@ fn paint_sidebar(
             commands.push(text_command(
                 label,
                 Rect {
-                    x: region.bounds.x + scale(38, dpi),
+                    x: region.bounds.x + scale(40, dpi),
                     y: region.bounds.y,
                     width: (region.bounds.width - scale(46, dpi)).max(0),
                     height: region.bounds.height,
@@ -1119,9 +1135,10 @@ fn paint_sidebar(
         return;
     }
     let mut group_label_y = bounds.y
-        + scale(58, dpi)
-        + spec.sidebar.primary_actions.len() as i32 * scale(42, dpi)
-        + scale(12, dpi);
+        + scale(68, dpi)
+        + spec.sidebar.primary_actions.len() as i32
+            * (scale(ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, dpi) + scale(4, dpi))
+        + scale(14, dpi);
     for group in &spec.sidebar.groups {
         commands.push(text_command(
             &group.label,
@@ -1143,19 +1160,30 @@ fn paint_sidebar(
                 region.kind == ZsWorkbenchRegionKind::Conversation && region.id == conversation.id
             }) {
                 if conversation.selected {
-                    commands.push(round_fill(
+                    commands.push(round_rect(
                         region.bounds,
-                        NativeDrawFill::RoleWithAlpha {
-                            role: ColorRole::Accent,
-                            alpha: 28,
+                        NativeDrawFill::role(ColorRole::SurfaceRaised),
+                        Some(NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::Border,
+                            alpha: 30,
+                        }),
+                        scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                    ));
+                    commands.push(round_fill(
+                        Rect {
+                            x: region.bounds.x + scale(3, dpi),
+                            y: region.bounds.y + scale(13, dpi),
+                            width: scale(3, dpi),
+                            height: scale(22, dpi),
                         },
-                        scale(ZSUI_FLUENT_CONTROL_RADIUS, dpi),
+                        NativeDrawFill::role(ColorRole::Accent),
+                        scale(2, dpi),
                     ));
                 }
                 commands.push(text_command(
                     &conversation.title,
                     Rect {
-                        x: region.bounds.x + scale(10, dpi),
+                        x: region.bounds.x + scale(14, dpi),
                         y: region.bounds.y + scale(2, dpi),
                         width: (region.bounds.width - scale(26, dpi)).max(0),
                         height: if conversation.subtitle.is_some() {
@@ -1178,7 +1206,7 @@ fn paint_sidebar(
                     commands.push(text_command(
                         subtitle,
                         Rect {
-                            x: region.bounds.x + scale(10, dpi),
+                            x: region.bounds.x + scale(14, dpi),
                             y: region.bounds.y + scale(22, dpi),
                             width: (region.bounds.width - scale(26, dpi)).max(0),
                             height: scale(20, dpi),
@@ -1195,7 +1223,7 @@ fn paint_sidebar(
                         ZsIcon::Pin,
                         Rect {
                             x: region.bounds.x + region.bounds.width - scale(20, dpi),
-                            y: region.bounds.y + scale(12, dpi),
+                            y: region.bounds.y + scale(14, dpi),
                             width: scale(14, dpi),
                             height: scale(18, dpi),
                         },
@@ -1203,7 +1231,7 @@ fn paint_sidebar(
                     ));
                 }
             }
-            group_label_y += scale(48, dpi);
+            group_label_y += scale(52, dpi);
         }
         group_label_y += scale(10, dpi);
     }
@@ -1216,17 +1244,17 @@ fn paint_top_bar(
 ) {
     let dpi = layout.dpi;
     let bounds = layout.metrics.top_bar;
-    commands.push(fill(bounds, NativeDrawFill::role(ColorRole::SurfaceRaised)));
+    commands.push(fill(bounds, NativeDrawFill::role(ColorRole::Surface)));
     commands.push(text_command(
         &spec.title,
         Rect {
-            x: bounds.x + scale(18, dpi),
-            y: bounds.y + scale(5, dpi),
+            x: bounds.x + scale(24, dpi),
+            y: bounds.y + scale(10, dpi),
             width: (bounds.width - scale(180, dpi)).max(0),
             height: if spec.subtitle.is_some() {
-                scale(24, dpi)
+                scale(26, dpi)
             } else {
-                scale(42, dpi)
+                scale(44, dpi)
             },
         },
         TextRole::Button,
@@ -1239,8 +1267,8 @@ fn paint_top_bar(
         commands.push(text_command(
             subtitle,
             Rect {
-                x: bounds.x + scale(18, dpi),
-                y: bounds.y + scale(25, dpi),
+                x: bounds.x + scale(24, dpi),
+                y: bounds.y + scale(32, dpi),
                 width: (bounds.width - scale(180, dpi)).max(0),
                 height: scale(20, dpi),
             },
@@ -1261,16 +1289,22 @@ fn paint_top_bar(
             .iter()
             .find(|action| action.id == region.id)
         {
-            if action.selected {
-                commands.push(round_fill(
-                    region.bounds,
+            commands.push(round_rect(
+                region.bounds,
+                if action.selected {
                     NativeDrawFill::RoleWithAlpha {
                         role: ColorRole::Accent,
-                        alpha: 28,
-                    },
-                    scale(ZSUI_FLUENT_CONTROL_RADIUS, dpi),
-                ));
-            }
+                        alpha: 24,
+                    }
+                } else {
+                    NativeDrawFill::role(ColorRole::Control)
+                },
+                Some(NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Border,
+                    alpha: 28,
+                }),
+                scale(6, dpi),
+            ));
             commands.push(icon_command(
                 action.icon,
                 icon_bounds(region.bounds, dpi),
@@ -1301,8 +1335,11 @@ fn paint_messages(
         match message.role {
             ZsWorkbenchMessageRole::User => commands.push(round_fill(
                 message_layout.bounds,
-                NativeDrawFill::role(ColorRole::Control),
-                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 18,
+                },
+                scale(ZS_WORKBENCH_FLOATING_RADIUS, dpi),
             )),
             ZsWorkbenchMessageRole::System => commands.push(round_fill(
                 message_layout.bounds,
@@ -1333,6 +1370,15 @@ fn paint_messages(
         }) {
             let action_id = region.id.split_once(':').map(|(_, id)| id).unwrap_or("");
             if let Some(action) = message.actions.iter().find(|action| action.id == action_id) {
+                commands.push(round_rect(
+                    region.bounds,
+                    NativeDrawFill::role(ColorRole::SurfaceRaised),
+                    Some(NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::Border,
+                        alpha: 24,
+                    }),
+                    scale(6, dpi),
+                ));
                 commands.push(icon_command(
                     action.icon,
                     Rect {
@@ -1400,10 +1446,13 @@ fn paint_message_block(
         ZsWorkbenchContentBlock::Code { language, code } => {
             commands.push(round_rect(
                 bounds,
-                NativeDrawFill::role(ColorRole::Control),
-                Some(NativeDrawFill::RoleWithAlpha {
+                NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::SecondaryText,
-                    alpha: 28,
+                    alpha: 12,
+                },
+                Some(NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Border,
+                    alpha: 26,
                 }),
                 scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
             ));
@@ -1441,15 +1490,13 @@ fn paint_message_block(
             summary,
             status,
         } => {
-            commands.push(round_rect(
+            paint_elevated_surface(
+                commands,
                 bounds,
+                dpi,
+                ZSUI_FLUENT_CARD_RADIUS,
                 NativeDrawFill::role(ColorRole::SurfaceRaised),
-                Some(NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::SecondaryText,
-                    alpha: 34,
-                }),
-                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
-            ));
+            );
             commands.push(icon_command(
                 if *status == ZsWorkbenchToolStatus::Succeeded {
                     ZsWorkbenchIcon::Check
@@ -1523,8 +1570,18 @@ fn paint_message_block(
             commands.push(round_rect(
                 bounds,
                 NativeDrawFill::RoleWithAlpha { role, alpha: 20 },
-                Some(NativeDrawFill::RoleWithAlpha { role, alpha: 56 }),
+                Some(NativeDrawFill::RoleWithAlpha { role, alpha: 42 }),
                 scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+            ));
+            commands.push(round_fill(
+                Rect {
+                    x: bounds.x + scale(3, dpi),
+                    y: bounds.y + scale(8, dpi),
+                    width: scale(3, dpi),
+                    height: (bounds.height - scale(16, dpi)).max(0),
+                },
+                NativeDrawFill::role(role),
+                scale(2, dpi),
             ));
             commands.push(text_command(
                 text,
@@ -1551,12 +1608,13 @@ fn paint_composer(
 ) {
     let dpi = layout.dpi;
     let bounds = layout.metrics.composer;
-    commands.push(round_rect(
+    paint_elevated_surface(
+        commands,
         bounds,
+        dpi,
+        ZS_WORKBENCH_FLOATING_RADIUS,
         NativeDrawFill::role(ColorRole::SurfaceRaised),
-        Some(NativeDrawFill::role(ColorRole::Border)),
-        scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
-    ));
+    );
     let input = layout
         .regions
         .iter()
@@ -1591,16 +1649,25 @@ fn paint_composer(
             .iter()
             .find(|action| action.id == region.id)
         {
-            if action.selected {
-                commands.push(round_fill(
-                    region.bounds,
+            commands.push(round_rect(
+                region.bounds,
+                if action.selected {
                     NativeDrawFill::RoleWithAlpha {
                         role: ColorRole::Accent,
-                        alpha: 26,
-                    },
-                    scale(ZSUI_FLUENT_CONTROL_RADIUS, dpi),
-                ));
-            }
+                        alpha: 22,
+                    }
+                } else {
+                    NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::SecondaryText,
+                        alpha: 8,
+                    }
+                },
+                action.selected.then_some(NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 38,
+                }),
+                scale(7, dpi),
+            ));
             commands.push(icon_command(
                 action.icon,
                 Rect {
@@ -1657,6 +1724,18 @@ fn paint_composer(
     });
     if let Some(region) = submit {
         commands.push(round_fill(
+            Rect {
+                x: region.bounds.x,
+                y: region.bounds.y + scale(2, dpi),
+                ..region.bounds
+            },
+            NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::SecondaryText,
+                alpha: 24,
+            },
+            scale(10, dpi),
+        ));
+        commands.push(round_fill(
             region.bounds,
             if region.enabled {
                 NativeDrawFill::role(ColorRole::Accent)
@@ -1666,15 +1745,20 @@ fn paint_composer(
                     alpha: 28,
                 }
             },
-            region.bounds.width / 2,
+            scale(10, dpi),
         ));
         commands.push(icon_command(
             if region.kind == ZsWorkbenchRegionKind::Stop {
                 ZsWorkbenchIcon::Stop
             } else {
-                ZsWorkbenchIcon::Send
+                ZsWorkbenchIcon::Enter
             },
-            region.bounds,
+            Rect {
+                x: region.bounds.x + scale(4, dpi),
+                y: region.bounds.y + scale(4, dpi),
+                width: (region.bounds.width - scale(8, dpi)).max(0),
+                height: (region.bounds.height - scale(8, dpi)).max(0),
+            },
             if region.enabled {
                 ColorRole::AccentText
             } else {
@@ -1693,7 +1777,19 @@ fn paint_inspector(
     let (Some(inspector), Some(bounds)) = (&spec.inspector, layout.metrics.inspector) else {
         return;
     };
-    commands.push(fill(bounds, NativeDrawFill::role(ColorRole::SurfaceRaised)));
+    let panel = Rect {
+        x: bounds.x + scale(10, dpi),
+        y: bounds.y + scale(10, dpi),
+        width: (bounds.width - scale(20, dpi)).max(0),
+        height: (bounds.height - scale(20, dpi)).max(0),
+    };
+    paint_elevated_surface(
+        commands,
+        panel,
+        dpi,
+        ZS_WORKBENCH_FLOATING_RADIUS,
+        NativeDrawFill::role(ColorRole::SurfaceRaised),
+    );
     commands.push(stroke(
         Rect {
             x: bounds.x,
@@ -1701,15 +1797,18 @@ fn paint_inspector(
             width: 1,
             height: bounds.height,
         },
-        NativeDrawFill::role(ColorRole::Border),
+        NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Border,
+            alpha: 34,
+        },
     ));
     commands.push(text_command(
         &inspector.title,
         Rect {
-            x: bounds.x + scale(14, dpi),
-            y: bounds.y + scale(8, dpi),
-            width: (bounds.width - scale(28, dpi)).max(0),
-            height: scale(34, dpi),
+            x: panel.x + scale(12, dpi),
+            y: panel.y + scale(6, dpi),
+            width: (panel.width - scale(24, dpi)).max(0),
+            height: scale(36, dpi),
         },
         TextRole::Button,
         ColorRole::PrimaryText,
@@ -1727,10 +1826,20 @@ fn paint_inspector(
             commands.push(round_fill(
                 region.bounds,
                 NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 28,
+                    role: ColorRole::SecondaryText,
+                    alpha: 10,
                 },
-                scale(ZSUI_FLUENT_CONTROL_RADIUS, dpi),
+                scale(6, dpi),
+            ));
+            commands.push(round_fill(
+                Rect {
+                    x: region.bounds.x + scale(12, dpi),
+                    y: region.bounds.y + region.bounds.height - scale(3, dpi),
+                    width: (region.bounds.width - scale(24, dpi)).max(0),
+                    height: scale(3, dpi),
+                },
+                NativeDrawFill::role(ColorRole::Accent),
+                scale(2, dpi),
             ));
         }
         if let Some(tab) = inspector.tabs.iter().find(|tab| tab.id == region.id) {
@@ -1753,13 +1862,31 @@ fn paint_inspector(
             ));
         }
     }
+    let body_card = Rect {
+        x: panel.x + scale(10, dpi),
+        y: panel.y + scale(86, dpi),
+        width: (panel.width - scale(20, dpi)).max(0),
+        height: (panel.height - scale(98, dpi)).max(0),
+    };
+    commands.push(round_rect(
+        body_card,
+        NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::SecondaryText,
+            alpha: 7,
+        },
+        Some(NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Border,
+            alpha: 22,
+        }),
+        scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+    ));
     commands.push(text_command(
         &inspector.body,
         Rect {
-            x: bounds.x + scale(14, dpi),
-            y: bounds.y + scale(90, dpi),
-            width: (bounds.width - scale(28, dpi)).max(0),
-            height: (bounds.height - scale(104, dpi)).max(0),
+            x: body_card.x + scale(12, dpi),
+            y: body_card.y + scale(8, dpi),
+            width: (body_card.width - scale(24, dpi)).max(0),
+            height: (body_card.height - scale(16, dpi)).max(0),
         },
         TextRole::Body,
         ColorRole::PrimaryText,
@@ -1797,6 +1924,36 @@ fn round_rect(
         stroke,
         radius,
     }
+}
+
+fn paint_elevated_surface(
+    commands: &mut Vec<NativeDrawCommand>,
+    rect: Rect,
+    dpi: Dpi,
+    radius: i32,
+    fill: NativeDrawFill,
+) {
+    commands.push(round_fill(
+        Rect {
+            x: rect.x,
+            y: rect.y + scale(2, dpi),
+            ..rect
+        },
+        NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::SecondaryText,
+            alpha: 15,
+        },
+        scale(radius, dpi),
+    ));
+    commands.push(round_rect(
+        rect,
+        fill,
+        Some(NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Border,
+            alpha: 28,
+        }),
+        scale(radius, dpi),
+    ));
 }
 
 fn icon_command(icon: ZsWorkbenchIcon, bounds: Rect, color: ColorRole) -> NativeDrawCommand {
@@ -2110,9 +2267,9 @@ mod tests {
         );
 
         assert_eq!(plan.dpi, Dpi::new(144.0));
-        assert_eq!(plan.metrics.sidebar.width, 420);
-        assert_eq!(plan.metrics.top_bar.height, 72);
-        assert_eq!(plan.metrics.composer_band.height, 180);
+        assert_eq!(plan.metrics.sidebar.width, 408);
+        assert_eq!(plan.metrics.top_bar.height, 96);
+        assert_eq!(plan.metrics.composer_band.height, 204);
         assert!(spec
             .native_draw_plan(plan.metrics.surface, plan.dpi)
             .commands
@@ -2143,6 +2300,10 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::Icon(_))));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(command) if command.icon == ZsWorkbenchIcon::Enter
+        )));
         assert!(!draw.commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::Text(command) if command.style.role == TextRole::Icon

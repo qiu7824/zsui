@@ -13,6 +13,7 @@ pub enum ZsIcon {
     Inspector,
     More,
     Attach,
+    Enter,
     Send,
     Stop,
     Refresh,
@@ -45,7 +46,7 @@ pub enum ZsIcon {
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -57,6 +58,7 @@ impl ZsIcon {
         Self::Inspector,
         Self::More,
         Self::Attach,
+        Self::Enter,
         Self::Send,
         Self::Stop,
         Self::Refresh,
@@ -101,6 +103,7 @@ impl ZsIcon {
             Self::Inspector => "inspector",
             Self::More => "more",
             Self::Attach => "attach",
+            Self::Enter => "enter",
             Self::Send => "send",
             Self::Stop => "stop",
             Self::Refresh => "refresh",
@@ -144,6 +147,7 @@ impl ZsIcon {
             Self::Inspector => "document-properties-symbolic",
             Self::More => "view-more-symbolic",
             Self::Attach => "mail-attachment-symbolic",
+            Self::Enter => "go-jump-symbolic",
             Self::Send => "mail-send-symbolic",
             Self::Stop => "media-playback-stop-symbolic",
             Self::Refresh => "view-refresh-symbolic",
@@ -184,9 +188,10 @@ impl ZsIcon {
             Self::Search => "\u{E721}",
             Self::Settings => "\u{E713}",
             Self::Sidebar => "\u{E700}",
-            Self::Inspector => "\u{E8A0}",
+            Self::Inspector => "\u{E90D}",
             Self::More => "\u{E712}",
             Self::Attach => "\u{E723}",
+            Self::Enter => "\u{E751}",
             Self::Send => "\u{E724}",
             Self::Stop => "\u{E71A}",
             Self::Refresh => "\u{E72C}",
@@ -236,6 +241,7 @@ impl ZsIcon {
             Self::Inspector => "inspector.svg",
             Self::More => "more.svg",
             Self::Attach => "attach.svg",
+            Self::Enter => "enter.svg",
             Self::Send => "send.svg",
             Self::Stop => "stop.svg",
             Self::Refresh => "refresh.svg",
@@ -294,6 +300,7 @@ impl ZsIcon {
             }
             Self::More => include_bytes!("../assets/fluent-system-icons/regular/more.svg"),
             Self::Attach => include_bytes!("../assets/fluent-system-icons/regular/attach.svg"),
+            Self::Enter => include_bytes!("../assets/fluent-system-icons/regular/enter.svg"),
             Self::Send => include_bytes!("../assets/fluent-system-icons/regular/send.svg"),
             Self::Stop => include_bytes!("../assets/fluent-system-icons/regular/stop.svg"),
             Self::Refresh => include_bytes!("../assets/fluent-system-icons/regular/refresh.svg"),
@@ -351,6 +358,7 @@ impl ZsIcon {
             Self::Inspector => "sidebar.right",
             Self::More => "ellipsis",
             Self::Attach => "paperclip",
+            Self::Enter => "return",
             Self::Send => "paperplane",
             Self::Stop => "stop.fill",
             Self::Refresh => "arrow.clockwise",
@@ -407,6 +415,7 @@ impl ZsIcon {
             | Self::Inspector
             | Self::More
             | Self::Attach
+            | Self::Enter
             | Self::Send
             | Self::Stop
             | Self::Refresh
@@ -471,6 +480,18 @@ mod tests {
             assert!(icon.gtk_symbolic_name().ends_with("-symbolic"));
             assert!(!icon.sf_symbol_name().is_empty());
         }
+    }
+
+    #[test]
+    fn inspector_uses_the_dock_right_glyph_on_windows() {
+        assert_eq!(ZsIcon::Inspector.windows_fluent_glyph(), "\u{E90D}");
+        assert_eq!(ZsIcon::Inspector.windows_mdl2_glyph(), "\u{E90D}");
+    }
+
+    #[test]
+    fn enter_uses_the_return_key_glyph_on_windows() {
+        assert_eq!(ZsIcon::Enter.windows_fluent_glyph(), "\u{E751}");
+        assert_eq!(ZsIcon::Enter.windows_mdl2_glyph(), "\u{E751}");
     }
 
     #[test]
