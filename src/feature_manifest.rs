@@ -200,6 +200,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "attached noninteractive help overlay with platform metrics and native hover/focus timing",
         ),
         ZsuiCargoFeature::new(
+            "dialog",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "modal self-drawn content dialog with semantic responses and platform-specific action layout",
+        ),
+        ZsuiCargoFeature::new(
             "toggle-button",
             Widget,
             false,
@@ -528,6 +536,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "textbox",
                 "password-box",
                 "tooltip",
+                "dialog",
                 "checkbox",
                 "toggle",
                 "slider",
@@ -627,6 +636,10 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "table")
             .expect("table feature should be listed");
+        let dialog = manifest
+            .iter()
+            .find(|feature| feature.name == "dialog")
+            .expect("dialog feature should be listed");
         let all_widgets = manifest
             .iter()
             .find(|feature| feature.name == "all-widgets")
@@ -634,6 +647,8 @@ mod tests {
 
         assert!(!grid.default_enabled);
         assert!(!table.default_enabled);
+        assert!(!dialog.default_enabled);
+        assert_eq!(dialog.enables, vec!["widgets-base"]);
         assert_eq!(table.enables, vec!["widgets-list"]);
         assert!(!table.enables.contains(&"list"));
         assert!(!table.enables.contains(&"scroll"));
@@ -642,6 +657,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
         assert!(all_widgets.enables.contains(&"tooltip"));
+        assert!(all_widgets.enables.contains(&"dialog"));
         assert!(all_widgets.enables.contains(&"toggle-button"));
         assert!(all_widgets.enables.contains(&"toggle"));
         assert!(all_widgets.enables.contains(&"slider"));

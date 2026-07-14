@@ -130,6 +130,8 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_table_sort_count: usize,
     pub native_view_table_selection_count: usize,
     pub native_view_table_invoke_count: usize,
+    pub native_view_content_dialog_focus_count: usize,
+    pub native_view_content_dialog_response_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -231,6 +233,8 @@ impl NativeHostSmokeInteractionReport {
             native_view_table_sort_count: 0,
             native_view_table_selection_count: 0,
             native_view_table_invoke_count: 0,
+            native_view_content_dialog_focus_count: 0,
+            native_view_content_dialog_response_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -418,6 +422,18 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_table_invoke_count
             ));
         }
+        if report.native_view_content_dialog_focus_count > 0 {
+            notes.push(format!(
+                "native content-dialog semantic focus changes: {}",
+                report.native_view_content_dialog_focus_count
+            ));
+        }
+        if report.native_view_content_dialog_response_count > 0 {
+            notes.push(format!(
+                "native content-dialog typed responses: {}",
+                report.native_view_content_dialog_response_count
+            ));
+        }
         if report.native_view_combo_expanded_change_count > 0 {
             notes.push(format!(
                 "native view input smoke routed {} combo expansion event(s)",
@@ -581,6 +597,9 @@ impl NativeHostSmokeInteractionReport {
             native_view_table_sort_count: report.native_view_table_sort_count,
             native_view_table_selection_count: report.native_view_table_selection_count,
             native_view_table_invoke_count: report.native_view_table_invoke_count,
+            native_view_content_dialog_focus_count: report.native_view_content_dialog_focus_count,
+            native_view_content_dialog_response_count: report
+                .native_view_content_dialog_response_count,
             native_view_combo_expanded_change_count: report.native_view_combo_expanded_change_count,
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
@@ -1241,6 +1260,8 @@ mod tests {
             native_view_table_sort_count: 0,
             native_view_table_selection_count: 0,
             native_view_table_invoke_count: 0,
+            native_view_content_dialog_focus_count: 1,
+            native_view_content_dialog_response_count: 1,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1310,6 +1331,8 @@ mod tests {
         assert!(interaction_json.contains("\"native_view_pointer_visual_change_count\": 2"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_radio_keyboard_focus_only_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_content_dialog_focus_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_content_dialog_response_count\": 1"));
         assert!(interaction_json.contains("\"native_view_combo_scroll_count\": 1"));
         assert!(interaction_json.contains("\"native_view_tab_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_tab_keyboard_selection_count\": 1"));

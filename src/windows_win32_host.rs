@@ -19,6 +19,7 @@ use crate::native_input_visuals::{
 #[cfg(any(
     feature = "auto-suggest",
     feature = "date-picker",
+    feature = "dialog",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -1841,6 +1842,7 @@ pub struct WindowsWin32ViewInputRoute {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1852,6 +1854,7 @@ pub struct WindowsWin32ViewInputRoute {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1894,6 +1897,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1905,6 +1909,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1943,6 +1948,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1954,6 +1960,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2053,6 +2060,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2151,6 +2159,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2255,6 +2264,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2280,6 +2290,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -2295,6 +2306,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2330,6 +2342,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2345,6 +2358,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(not(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2375,6 +2389,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2389,6 +2404,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(not(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -2461,6 +2477,18 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_text_without_target:{}", widget.0));
             return report;
         };
+        #[cfg(feature = "dialog")]
+        if self
+            .widget_content_dialog_state(widget)
+            .is_some_and(|(state, _)| state.open)
+        {
+            report.handled = true;
+            report.events.push(format!(
+                "win32_view_content_dialog_text_suppressed:{}",
+                widget.0
+            ));
+            return report;
+        }
         #[cfg(feature = "combo")]
         if target.kind == crate::ViewHitTargetKind::ComboBox {
             let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
@@ -2608,6 +2636,74 @@ impl WindowsWin32ViewInputRoute {
         if self.tooltip.dismiss() {
             report.handled = true;
             self.rebuild_pending_draw_plan();
+        }
+        #[cfg(feature = "dialog")]
+        if let Some(dialog_target) = self
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ContentDialog)
+        {
+            if self.focused_widget != Some(dialog_target.widget) {
+                self.focus_target(dialog_target, &mut report);
+            }
+            report.focused_widget = Some(dialog_target.widget.0);
+            let Some((state, spec)) = self.widget_content_dialog_state(dialog_target.widget) else {
+                return report;
+            };
+            if !state.open {
+                return report;
+            }
+            let focus_offset = match virtual_key {
+                ZSUI_WIN32_VK_TAB => Some(if shift { -1 } else { 1 }),
+                key if key == u32::from(VK_LEFT) => Some(-1),
+                key if key == u32::from(VK_RIGHT) => Some(1),
+                _ => None,
+            };
+            if let Some(offset) = focus_offset {
+                let button = spec.relative_button(state.focused_button, offset);
+                report.handled = true;
+                report.content_dialog_focus_change_count =
+                    usize::from(button != state.focused_button);
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_content_dialog_focus:{}:{button:?}",
+                    dialog_target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ContentDialogFocused {
+                        widget: dialog_target.widget,
+                        button,
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+            let response = match virtual_key {
+                key if key == u32::from(VK_ESCAPE) => Some(crate::ZsContentDialogButton::Close),
+                ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE => Some(state.focused_button),
+                _ => None,
+            };
+            if let Some(button) = response.filter(|button| spec.has_button(*button)) {
+                report.handled = true;
+                report.content_dialog_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_content_dialog_response:{}:{button:?}",
+                    dialog_target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ContentDialogResponded {
+                        widget: dialog_target.widget,
+                        button,
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+            return report;
         }
         if virtual_key == ZSUI_WIN32_VK_TAB && !control {
             self.dispatch_focus_traversal(if shift { -1 } else { 1 }, &mut report);
@@ -3606,6 +3702,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3669,6 +3766,28 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "dialog")]
+        match target.kind {
+            crate::ViewHitTargetKind::ContentDialogButton { button } => {
+                report.content_dialog_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_content_dialog_response:{}:{button:?}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ContentDialogResponded {
+                        widget: target.widget,
+                        button,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::ContentDialog
+            | crate::ViewHitTargetKind::ContentDialogScrim => return,
+            _ => {}
+        }
         #[cfg(feature = "tree")]
         match target.kind {
             crate::ViewHitTargetKind::TreeNodeExpander { node } => {
@@ -4313,6 +4432,21 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "dialog")]
+    fn widget_content_dialog_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_content_dialog_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_content_dialog_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -4512,6 +4646,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -4602,6 +4737,7 @@ impl WindowsWin32ViewInputRoute {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -4780,6 +4916,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub table_sort_count: usize,
     pub table_selection_count: usize,
     pub table_invoke_count: usize,
+    pub content_dialog_focus_change_count: usize,
+    pub content_dialog_response_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -4855,6 +4993,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.table_sort_count += next.table_sort_count;
         self.table_selection_count += next.table_selection_count;
         self.table_invoke_count += next.table_invoke_count;
+        self.content_dialog_focus_change_count += next.content_dialog_focus_change_count;
+        self.content_dialog_response_count += next.content_dialog_response_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -8034,6 +8174,84 @@ mod tests {
         let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
         assert_eq!(keyboard.table_invoke_count, 1);
         assert_eq!(keyboard.keyboard_activation_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "dialog")]
+    fn window_view_input_route_traps_modal_focus_and_routes_dialog_buttons() {
+        fn responded(_result: crate::ZsContentDialogResult) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.dialog_responded"))
+        }
+
+        let widget = crate::WidgetId::new(139);
+        let spec = crate::ZsContentDialogSpec::new("Choose a response.", "Cancel")
+            .title("Continue?")
+            .primary_button("Continue")
+            .secondary_button("Review")
+            .default_button(crate::ZsContentDialogButton::Primary);
+        let mut view =
+            crate::content_dialog(widget, true, spec, crate::spacer()).on_dialog_result(responded);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 400,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let primary = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.kind
+                    == crate::ViewHitTargetKind::ContentDialogButton {
+                        button: crate::ZsContentDialogButton::Primary,
+                    }
+            })
+            .expect("primary dialog button");
+        let scrim = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ContentDialogScrim)
+            .expect("dialog scrim");
+
+        let mut keyboard_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
+        let caught = keyboard_route.dispatch_click(crate::Point {
+            x: scrim.bounds.x + 2,
+            y: scrim.bounds.y + 2,
+        });
+        assert!(caught.handled);
+        assert_eq!(caught.content_dialog_response_count, 0);
+        let suppressed = keyboard_route.dispatch_text_input("x");
+        assert!(suppressed.handled);
+        assert_eq!(suppressed.ui_command_count, 0);
+        let focused = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_TAB);
+        assert_eq!(focused.content_dialog_focus_change_count, 1);
+        assert_eq!(focused.focused_widget, Some(widget.0));
+        assert_eq!(
+            keyboard_route
+                .widget_content_dialog_state(widget)
+                .map(|(state, _)| state.focused_button),
+            Some(crate::ZsContentDialogButton::Secondary)
+        );
+        let keyboard = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(keyboard.content_dialog_response_count, 1);
+        assert_eq!(keyboard.ui_command_count, 1);
+        assert!(keyboard_route
+            .widget_content_dialog_state(widget)
+            .is_some_and(|(state, _)| !state.open));
+
+        let mut pointer_route = WindowsWin32ViewInputRoute::new(interaction, view);
+        let pointer = pointer_route.dispatch_click(crate::Point {
+            x: primary.bounds.x + primary.bounds.width / 2,
+            y: primary.bounds.y + primary.bounds.height / 2,
+        });
+        assert_eq!(pointer.content_dialog_response_count, 1);
+        assert_eq!(pointer.ui_command_count, 1);
     }
 
     #[test]

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(any(
     feature = "date-picker",
+    feature = "dialog",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button"
@@ -16,6 +17,7 @@ use crate::ZsAutoSuggestion;
 use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
 #[cfg(any(
+    feature = "dialog",
     feature = "date-picker",
     feature = "table",
     feature = "tabs",
@@ -35,6 +37,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "auto-suggest",
     feature = "combo",
     feature = "date-picker",
+    feature = "dialog",
     feature = "number-box",
     feature = "table",
     feature = "tabs",
@@ -3303,6 +3306,426 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(feature = "dialog")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsContentDialogPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "dialog")]
+impl ZsContentDialogPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "dialog")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsContentDialogMetrics {
+    pub minimum_width: Dp,
+    pub maximum_width: Dp,
+    pub viewport_margin: Dp,
+    pub content_padding: Dp,
+    pub title_gap: Dp,
+    pub action_gap: Dp,
+    pub button_gap: Dp,
+    pub button_height: Dp,
+    pub minimum_button_width: Dp,
+    pub surface_radius: Dp,
+    pub button_radius: Dp,
+}
+
+#[cfg(feature = "dialog")]
+impl ZsContentDialogMetrics {
+    pub const fn for_platform(platform: ZsContentDialogPlatformStyle) -> Self {
+        match platform {
+            ZsContentDialogPlatformStyle::Windows => Self {
+                minimum_width: Dp::new(320.0),
+                maximum_width: Dp::new(548.0),
+                viewport_margin: Dp::new(24.0),
+                content_padding: Dp::new(24.0),
+                title_gap: Dp::new(12.0),
+                action_gap: Dp::new(24.0),
+                button_gap: Dp::new(8.0),
+                button_height: Dp::new(40.0),
+                minimum_button_width: Dp::new(88.0),
+                surface_radius: Dp::new(8.0),
+                button_radius: Dp::new(4.0),
+            },
+            ZsContentDialogPlatformStyle::Macos => Self {
+                minimum_width: Dp::new(360.0),
+                maximum_width: Dp::new(480.0),
+                viewport_margin: Dp::new(28.0),
+                content_padding: Dp::new(20.0),
+                title_gap: Dp::new(8.0),
+                action_gap: Dp::new(20.0),
+                button_gap: Dp::new(8.0),
+                button_height: Dp::new(28.0),
+                minimum_button_width: Dp::new(82.0),
+                surface_radius: Dp::new(12.0),
+                button_radius: Dp::new(6.0),
+            },
+            ZsContentDialogPlatformStyle::Gtk => Self {
+                minimum_width: Dp::new(340.0),
+                maximum_width: Dp::new(480.0),
+                viewport_margin: Dp::new(24.0),
+                content_padding: Dp::new(24.0),
+                title_gap: Dp::new(8.0),
+                action_gap: Dp::new(24.0),
+                button_gap: Dp::new(8.0),
+                button_height: Dp::new(34.0),
+                minimum_button_width: Dp::new(86.0),
+                surface_radius: Dp::new(12.0),
+                button_radius: Dp::new(6.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "dialog")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsContentDialogButtonRenderPlan {
+    pub button: crate::ZsContentDialogButton,
+    pub label: String,
+    pub bounds: Rect,
+    pub focused: bool,
+    pub default: bool,
+    pub destructive: bool,
+}
+
+#[cfg(feature = "dialog")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsContentDialogRenderPlan {
+    pub viewport: Rect,
+    pub surface: Rect,
+    pub title_bounds: Option<Rect>,
+    pub content_bounds: Rect,
+    pub buttons: Vec<ZsContentDialogButtonRenderPlan>,
+    pub surface_radius: i32,
+    pub button_radius: i32,
+    pub platform: ZsContentDialogPlatformStyle,
+}
+
+#[cfg(feature = "dialog")]
+fn content_dialog_visual_buttons(
+    spec: &crate::ZsContentDialogSpec,
+    platform: ZsContentDialogPlatformStyle,
+) -> Vec<crate::ZsContentDialogButton> {
+    use crate::ZsContentDialogButton::{Close, Primary, Secondary};
+    let order = match platform {
+        ZsContentDialogPlatformStyle::Windows => [Primary, Secondary, Close],
+        ZsContentDialogPlatformStyle::Macos | ZsContentDialogPlatformStyle::Gtk => {
+            [Close, Secondary, Primary]
+        }
+    };
+    let mut buttons = order
+        .into_iter()
+        .filter(|button| spec.has_button(*button))
+        .collect::<Vec<_>>();
+    if platform == ZsContentDialogPlatformStyle::Macos {
+        if let Some(default) = spec.default_response() {
+            if let Some(index) = buttons.iter().position(|button| *button == default) {
+                buttons.remove(index);
+                buttons.push(default);
+            }
+        }
+    }
+    buttons
+}
+
+#[cfg(feature = "dialog")]
+pub fn zs_content_dialog_render_plan(
+    viewport: Rect,
+    spec: &crate::ZsContentDialogSpec,
+    focused_button: crate::ZsContentDialogButton,
+    platform: ZsContentDialogPlatformStyle,
+    dpi: Dpi,
+) -> ZsContentDialogRenderPlan {
+    let metrics = ZsContentDialogMetrics::for_platform(platform);
+    let margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
+    let available_width = viewport
+        .width
+        .saturating_sub(margin.saturating_mul(2))
+        .max(1);
+    let minimum_width = metrics.minimum_width.to_px(dpi).round_i32().max(1);
+    let maximum_width = metrics.maximum_width.to_px(dpi).round_i32().max(1);
+    let surface_width = maximum_width
+        .min(available_width)
+        .max(minimum_width.min(available_width));
+    let padding = metrics.content_padding.to_px(dpi).round_i32().max(0);
+    let title_gap = metrics.title_gap.to_px(dpi).round_i32().max(0);
+    let action_gap = metrics.action_gap.to_px(dpi).round_i32().max(0);
+    let button_gap = metrics.button_gap.to_px(dpi).round_i32().max(0);
+    let button_height = metrics.button_height.to_px(dpi).round_i32().max(1);
+    let inner_width = surface_width
+        .saturating_sub(padding.saturating_mul(2))
+        .max(1);
+    let title_height = spec
+        .dialog_title()
+        .map(|title| {
+            let lines = ((title.chars().count() + 39) / 40).clamp(1, 2) as i32;
+            lines.saturating_mul(scale(24, dpi))
+        })
+        .unwrap_or(0);
+    let content_lines = ((spec.content().chars().count() + 55) / 56).clamp(1, 5) as i32;
+    let content_height = content_lines.saturating_mul(scale(20, dpi));
+    let desired_height = padding
+        .saturating_mul(2)
+        .saturating_add(title_height)
+        .saturating_add((title_height > 0).then_some(title_gap).unwrap_or(0))
+        .saturating_add(content_height)
+        .saturating_add(action_gap)
+        .saturating_add(button_height);
+    let available_height = viewport
+        .height
+        .saturating_sub(margin.saturating_mul(2))
+        .max(1);
+    let surface_height = desired_height.min(available_height);
+    let surface = Rect {
+        x: viewport.x + (viewport.width - surface_width) / 2,
+        y: viewport.y + (viewport.height - surface_height) / 2,
+        width: surface_width,
+        height: surface_height,
+    };
+    let content_left = surface.x.saturating_add(padding);
+    let title_bounds = (title_height > 0).then_some(Rect {
+        x: content_left,
+        y: surface.y.saturating_add(padding),
+        width: inner_width,
+        height: title_height,
+    });
+    let content_y = title_bounds
+        .map(|bounds| {
+            bounds
+                .y
+                .saturating_add(bounds.height)
+                .saturating_add(title_gap)
+        })
+        .unwrap_or_else(|| surface.y.saturating_add(padding));
+    let buttons_y = surface
+        .y
+        .saturating_add(surface.height)
+        .saturating_sub(padding)
+        .saturating_sub(button_height);
+    let content_bounds = Rect {
+        x: content_left,
+        y: content_y,
+        width: inner_width,
+        height: buttons_y
+            .saturating_sub(action_gap)
+            .saturating_sub(content_y)
+            .max(0),
+    };
+
+    let visual_buttons = content_dialog_visual_buttons(spec, platform);
+    let total_gap = button_gap.saturating_mul(visual_buttons.len().saturating_sub(1) as i32);
+    let minimum_button_width = metrics.minimum_button_width.to_px(dpi).round_i32().max(1);
+    let available_button_width = inner_width.saturating_sub(total_gap).max(1);
+    let equal_width = available_button_width
+        .checked_div(visual_buttons.len().max(1) as i32)
+        .unwrap_or(available_button_width)
+        .max(1);
+    let mut button_layout = visual_buttons
+        .into_iter()
+        .filter_map(|button| {
+            let label = spec.button_label(button)?.to_owned();
+            let width = match platform {
+                ZsContentDialogPlatformStyle::Windows => equal_width,
+                ZsContentDialogPlatformStyle::Macos | ZsContentDialogPlatformStyle::Gtk => {
+                    let glyph_width = if platform == ZsContentDialogPlatformStyle::Macos {
+                        scale(7, dpi)
+                    } else {
+                        scale(8, dpi)
+                    };
+                    let label_width = (label.chars().count() as i32)
+                        .saturating_mul(glyph_width)
+                        .saturating_add(scale(28, dpi));
+                    label_width.max(minimum_button_width)
+                }
+            };
+            Some((button, label, width))
+        })
+        .collect::<Vec<_>>();
+    let natural_width = button_layout
+        .iter()
+        .fold(0i32, |total, (_, _, width)| total.saturating_add(*width));
+    if natural_width > available_button_width {
+        for (_, _, width) in &mut button_layout {
+            *width = equal_width;
+        }
+    }
+    let buttons_width = button_layout
+        .iter()
+        .fold(total_gap, |total, (_, _, width)| {
+            total.saturating_add(*width)
+        });
+    let mut button_x = match platform {
+        ZsContentDialogPlatformStyle::Windows => content_left,
+        ZsContentDialogPlatformStyle::Macos | ZsContentDialogPlatformStyle::Gtk => surface
+            .x
+            .saturating_add(surface.width)
+            .saturating_sub(padding)
+            .saturating_sub(buttons_width),
+    };
+    let buttons = button_layout
+        .into_iter()
+        .map(|(button, label, button_width)| {
+            let bounds = Rect {
+                x: button_x,
+                y: buttons_y,
+                width: button_width,
+                height: button_height,
+            };
+            button_x = button_x
+                .saturating_add(button_width)
+                .saturating_add(button_gap);
+            ZsContentDialogButtonRenderPlan {
+                button,
+                label,
+                bounds,
+                focused: focused_button == button,
+                default: spec.default_response() == Some(button),
+                destructive: spec.destructive_response() == Some(button),
+            }
+        })
+        .collect();
+
+    ZsContentDialogRenderPlan {
+        viewport,
+        surface,
+        title_bounds,
+        content_bounds,
+        buttons,
+        surface_radius: metrics.surface_radius.to_px(dpi).round_i32().max(0),
+        button_radius: metrics.button_radius.to_px(dpi).round_i32().max(0),
+        platform,
+    }
+}
+
+#[cfg(feature = "dialog")]
+pub fn zs_content_dialog_native_draw_plan(
+    plan: &ZsContentDialogRenderPlan,
+    spec: &crate::ZsContentDialogSpec,
+) -> NativeDrawPlan {
+    let scrim_alpha = match plan.platform {
+        ZsContentDialogPlatformStyle::Windows => 88,
+        ZsContentDialogPlatformStyle::Macos => 56,
+        ZsContentDialogPlatformStyle::Gtk => 104,
+    };
+    let shadow = Rect {
+        x: plan.surface.x.saturating_sub(4),
+        y: plan.surface.y.saturating_add(2),
+        width: plan.surface.width.saturating_add(8),
+        height: plan.surface.height.saturating_add(6),
+    };
+    let mut commands = vec![
+        NativeDrawCommand::FillRect {
+            rect: plan.viewport,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: scrim_alpha,
+            },
+        },
+        NativeDrawCommand::RoundFill {
+            rect: shadow,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 28,
+            },
+            radius: plan.surface_radius.saturating_add(4),
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.surface,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.surface_radius,
+        },
+    ];
+    if let (Some(title), Some(bounds)) = (spec.dialog_title(), plan.title_bounds) {
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            title,
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Subtitle,
+                color: ColorRole::PrimaryText,
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Start,
+                wrap: crate::TextWrap::Word,
+                ellipsis: true,
+            },
+        )));
+    }
+    commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+        spec.content(),
+        plan.content_bounds,
+        SemanticTextStyle {
+            color: ColorRole::PrimaryText,
+            vertical_align: crate::VerticalAlign::Start,
+            wrap: crate::TextWrap::Word,
+            ellipsis: true,
+            ..SemanticTextStyle::body()
+        },
+    )));
+    for button in &plan.buttons {
+        let (fill, stroke, text_color) = if button.destructive {
+            (
+                NativeDrawFill::Role(ColorRole::Control),
+                NativeDrawFill::Role(ColorRole::Danger),
+                ColorRole::Danger,
+            )
+        } else if button.default {
+            (
+                NativeDrawFill::Role(ColorRole::Accent),
+                NativeDrawFill::Role(ColorRole::Accent),
+                ColorRole::AccentText,
+            )
+        } else {
+            (
+                NativeDrawFill::Role(ColorRole::Control),
+                NativeDrawFill::Role(if button.focused {
+                    ColorRole::Accent
+                } else {
+                    ColorRole::Border
+                }),
+                ColorRole::PrimaryText,
+            )
+        };
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: button.bounds,
+            fill,
+            stroke: Some(stroke),
+            radius: plan.button_radius,
+        });
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            &button.label,
+            button.bounds,
+            SemanticTextStyle {
+                role: TextRole::Button,
+                color: text_color,
+                weight: if button.default {
+                    TextWeight::Semibold
+                } else {
+                    TextWeight::Regular
+                },
+                horizontal_align: HorizontalAlign::Center,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+    }
+    NativeDrawPlan::new(commands)
+}
+
 #[cfg(any(
     feature = "auto-suggest",
     feature = "combo",
@@ -3497,6 +3920,104 @@ mod tests {
                     role: ColorRole::Accent,
                     alpha: 36,
                 },
+                ..
+            }
+        )));
+    }
+
+    #[cfg(feature = "dialog")]
+    #[test]
+    fn content_dialog_render_plan_uses_platform_order_metrics_and_semantic_actions() {
+        use crate::ZsContentDialogButton::{Close, Primary, Secondary};
+
+        let spec = crate::ZsContentDialogSpec::new(
+            "This file already exists. Choose how ZSUI should continue.",
+            "Cancel",
+        )
+        .title("Replace existing file?")
+        .primary_button("Replace")
+        .secondary_button("Keep Both")
+        .default_button(Primary)
+        .destructive_button(Secondary);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let windows = zs_content_dialog_render_plan(
+            viewport,
+            &spec,
+            Primary,
+            ZsContentDialogPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_content_dialog_render_plan(
+            viewport,
+            &spec,
+            Secondary,
+            ZsContentDialogPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_content_dialog_render_plan(
+            viewport,
+            &spec,
+            Close,
+            ZsContentDialogPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(
+            windows
+                .buttons
+                .iter()
+                .map(|button| button.button)
+                .collect::<Vec<_>>(),
+            vec![Primary, Secondary, Close]
+        );
+        assert_eq!(
+            macos
+                .buttons
+                .iter()
+                .map(|button| button.button)
+                .collect::<Vec<_>>(),
+            vec![Close, Secondary, Primary]
+        );
+        assert_eq!(
+            gtk.buttons
+                .iter()
+                .map(|button| button.button)
+                .collect::<Vec<_>>(),
+            vec![Close, Secondary, Primary]
+        );
+        assert!(windows.buttons[0].default);
+        assert!(windows.buttons[1].destructive);
+        assert!(windows.buttons[0].focused);
+        assert!(macos.buttons[0].bounds.x > macos.surface.x);
+        assert!(
+            ZsContentDialogMetrics::for_platform(ZsContentDialogPlatformStyle::Windows)
+                .button_height
+                .0
+                > ZsContentDialogMetrics::for_platform(ZsContentDialogPlatformStyle::Macos)
+                    .button_height
+                    .0
+        );
+
+        let draw = zs_content_dialog_native_draw_plan(&windows, &spec);
+        assert!(matches!(
+            draw.commands.first(),
+            Some(NativeDrawCommand::FillRect {
+                rect,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 88,
+                },
+            }) if *rect == viewport
+        ));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                stroke: Some(NativeDrawFill::Role(ColorRole::Danger)),
                 ..
             }
         )));

@@ -126,6 +126,14 @@ contract. Product-owned `UiCommand` values use the parallel
 `SharedUiCommandExecutor`; `ProductAdapterUiCommandExecutor` delegates directly
 to `ProductAdapterHost` rather than hiding product behavior inside View state.
 
+The optional `dialog` feature adds `content_dialog(id, open, spec, page)` as a
+compositional modal layer, not a native child-control driver. Applications own
+the open flag and receive a typed `ZsContentDialogResult`; the framework owns
+the scrim, platform-specific action order and metrics, one trapped focus scope,
+pointer feedback, Escape/Tab/arrow/Enter/Space routing and overlay paint order.
+The same draw and interaction plans feed buffered Win32, AppKit and GTK4 hosts,
+so no HWND, Objective-C object or GtkWidget enters the public view API.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

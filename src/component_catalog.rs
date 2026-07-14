@@ -131,6 +131,11 @@ const TOOLTIP_GAPS: &[&str] = &[
     "top-level overflow popup",
     "macOS and Linux target interaction smoke",
 ];
+const CONTENT_DIALOG_GAPS: &[&str] = &[
+    "accessibility dialog role, labelled-by relationships and previous-focus restoration",
+    "custom ViewNode body plus validation and asynchronous response deferrals",
+    "AppKit and GTK4 target interaction smoke",
+];
 const SLIDER_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target interaction smoke",
@@ -558,10 +563,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "content_dialog",
         "ContentDialog",
         Overlay,
-        ContractOnly,
-        None,
-        "src/host_protocol.rs",
-        PLATFORM_GAPS
+        FirstPass,
+        Some("dialog"),
+        "src/content_dialog.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        CONTENT_DIALOG_GAPS
     ),
     component!(
         "flyout",
@@ -686,6 +691,7 @@ mod tests {
         assert!(summary.not_started_count >= 7);
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));
+        assert!(!summary.missing_component_names.contains(&"content_dialog"));
         assert!(!summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));
         assert!(!summary.missing_component_names.contains(&"toggle_button"));

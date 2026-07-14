@@ -230,6 +230,15 @@ pub(crate) fn decorate_native_focus_ring(
     dpi: Dpi,
 ) -> Option<Rect> {
     let target = interaction_plan.hit_target_for_widget(focused_widget?)?;
+    #[cfg(feature = "dialog")]
+    if matches!(
+        target.kind,
+        ViewHitTargetKind::ContentDialog
+            | ViewHitTargetKind::ContentDialogScrim
+            | ViewHitTargetKind::ContentDialogButton { .. }
+    ) {
+        return None;
+    }
     #[cfg(feature = "auto-suggest")]
     if target.kind == ViewHitTargetKind::AutoSuggestBox
         && crate::ZsAutoSuggestPlatformStyle::current()
@@ -273,6 +282,7 @@ pub(crate) fn decorate_native_focus_ring(
 #[cfg(any(
     feature = "auto-suggest",
     feature = "date-picker",
+    feature = "dialog",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -285,6 +295,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 #[cfg(any(
     feature = "auto-suggest",
     feature = "date-picker",
+    feature = "dialog",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -316,6 +327,9 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
             target.kind,
             ViewHitTargetKind::TableHeader { .. } | ViewHitTargetKind::TableRow { .. }
         );
+    #[cfg(feature = "dialog")]
+    let supported =
+        supported || matches!(target.kind, ViewHitTargetKind::ContentDialogButton { .. });
     #[cfg(feature = "password-box")]
     let supported = supported || target.kind == ViewHitTargetKind::PasswordBoxReveal;
     #[cfg(feature = "date-picker")]
@@ -341,6 +355,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
 #[cfg(any(
     feature = "auto-suggest",
     feature = "date-picker",
+    feature = "dialog",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -580,6 +595,81 @@ mod tests {
                 stroke: NativeDrawFill::Role(ColorRole::Accent),
                 width: 2,
             }] if *rect == ring
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "dialog")]
+    fn content_dialog_keeps_internal_focus_and_button_pointer_visuals_in_overlay() {
+        let widget = WidgetId::new(911);
+        let surface = Rect {
+            x: 80,
+            y: 60,
+            width: 320,
+            height: 180,
+        };
+        let button = Rect {
+            x: 280,
+            y: 190,
+            width: 96,
+            height: 36,
+        };
+        let button_kind = ViewHitTargetKind::ContentDialogButton {
+            button: crate::ZsContentDialogButton::Primary,
+        };
+        let interaction_plan = ViewInteractionPlan::new([
+            ViewHitTarget::with_kind(widget, surface, ViewHitTargetKind::ContentDialog),
+            ViewHitTarget::with_kind(widget, button, button_kind),
+        ]);
+        let mut focus_plan = NativeDrawPlan::default();
+        assert_eq!(
+            decorate_native_focus_ring(
+                &mut focus_plan,
+                &interaction_plan,
+                Some(widget),
+                Dpi::standard(),
+            ),
+            None
+        );
+        assert!(focus_plan.commands.is_empty());
+
+        let mut pointer_plan = NativeDrawPlan::new([
+            NativeDrawCommand::RoundRect {
+                rect: button,
+                fill: NativeDrawFill::Role(ColorRole::Control),
+                stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                radius: 4,
+            },
+            NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+                "Continue",
+                button,
+                crate::SemanticTextStyle::body(),
+            )),
+        ]);
+        let key = (widget, button_kind);
+        assert_eq!(
+            decorate_native_pointer_visuals(
+                &mut pointer_plan,
+                &interaction_plan,
+                Some(key),
+                Some(key),
+                Dpi::standard(),
+            ),
+            1
+        );
+        assert!(matches!(
+            pointer_plan.commands.as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::PrimaryText,
+                        alpha: 28,
+                    },
+                    ..
+                },
+                NativeDrawCommand::Text(_),
+            ]
         ));
     }
 

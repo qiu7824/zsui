@@ -148,6 +148,19 @@ history remain authoritative for implementation status.
   one-shot main-loop timers. Auto placement prefers centered above the pointer,
   flips and clamps inside the current viewport. A top-level overflow popup,
   accessibility relationship and non-Windows target proof remain readiness gaps.
+- ContentDialog is an independent `dialog` Cargo feature over `widgets-base`.
+  It composes around one application page, keeps `open` in application state and
+  emits `ZsContentDialogResult` from semantic Primary, Secondary or mandatory
+  Close slots; application code never chooses platform button order or imports
+  a native dialog object. The modal surface, scrim, focus scope, hit testing and
+  hover/pressed feedback stay on the shared self-drawn tree, preserving the
+  buffered Win32 path and avoiding child HWND/NSView/GtkWidget registries.
+  Windows uses WinUI-like equal action widths, macOS puts intrinsic actions at
+  the trailing edge with the default last, and GTK uses trailing AlertDialog-like
+  actions. Escape activates Close; Tab and arrows cycle semantic actions; Enter
+  and Space activate the focused action. Accessibility dialog semantics, prior
+  focus restoration, arbitrary ViewNode content, validation/deferrals and
+  AppKit/GTK target interaction smoke remain readiness gaps.
 - ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
   in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
   mode and semantic size explicit, while inactive rings reserve layout space and

@@ -20,6 +20,7 @@ use zsui::checkbox;
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
+    all(feature = "dialog", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -54,6 +55,7 @@ use zsui::toggle_button;
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
+    all(feature = "dialog", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -71,6 +73,7 @@ use zsui::CommandId;
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
+    all(feature = "dialog", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -81,6 +84,8 @@ use zsui::NativeViewKey;
     all(feature = "progress-ring", feature = "label")
 ))]
 use zsui::ProgressRange;
+#[cfg(all(feature = "dialog", feature = "label"))]
+use zsui::{content_dialog, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec};
 #[cfg(all(feature = "table", feature = "label"))]
 use zsui::{
     data_grid, HorizontalAlign, ZsTableColumn, ZsTableColumnId, ZsTableRow, ZsTableRowId,
@@ -121,6 +126,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
+    all(feature = "dialog", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -176,6 +182,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--table-view" || arg == "--table" || arg == "--data-grid"),
         args.iter()
+            .any(|arg| arg == "--content-dialog" || arg == "--dialog"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -216,6 +224,7 @@ fn run_smoke(
     include_auto_suggest_view: bool,
     include_tree_view: bool,
     include_table_view: bool,
+    include_dialog_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -279,6 +288,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "table", feature = "label")))]
     if include_table_view {
         return Err("--table-view requires the table and label features".to_string());
+    }
+    #[cfg(not(all(feature = "dialog", feature = "label")))]
+    if include_dialog_view {
+        return Err("--content-dialog requires the dialog and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -459,6 +472,13 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Enter)
             .native_view_key_down(NativeViewKey::Home);
     }
+    #[cfg(all(feature = "dialog", feature = "label"))]
+    if include_dialog_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 4, y: 4 })
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -530,6 +550,8 @@ fn run_smoke(
         attach_tree_view(builder)
     } else if include_table_view {
         attach_table_view(builder)
+    } else if include_dialog_view {
+        attach_content_dialog_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -1125,6 +1147,68 @@ fn attach_table_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     )
 }
 
+#[cfg(all(feature = "dialog", feature = "label"))]
+#[derive(Clone)]
+enum ContentDialogSmokeMsg {
+    Responded(ZsContentDialogResult),
+}
+
+#[cfg(all(feature = "dialog", feature = "label"))]
+struct ContentDialogSmokeState {
+    open: bool,
+    last_result: Option<ZsContentDialogResult>,
+}
+
+#[cfg(all(feature = "dialog", feature = "label"))]
+fn attach_content_dialog_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        ContentDialogSmokeState {
+            open: true,
+            last_result: None,
+        },
+        |state| {
+            let page = column([
+                text::<ContentDialogSmokeMsg>("ZSUI ContentDialog Smoke")
+                    .height(zsui::Dp::new(28.0)),
+                text(format!(
+                    "Last typed response: {}",
+                    state
+                        .last_result
+                        .map(|result| format!("{result:?}"))
+                        .unwrap_or_else(|| "none".to_string())
+                )),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0));
+            content_dialog(
+                WidgetId::new(26),
+                state.open,
+                ZsContentDialogSpec::new(
+                    "The framework owns the modal focus scope while the application owns whether the dialog is open.",
+                    "Cancel",
+                )
+                .title("Save changes?")
+                .primary_button("Save")
+                .secondary_button("Discard")
+                .default_button(ZsContentDialogButton::Primary)
+                .destructive_button(ZsContentDialogButton::Secondary),
+                page,
+            )
+            .on_dialog_result(ContentDialogSmokeMsg::Responded)
+        },
+        |state, message, cx| match message {
+            ContentDialogSmokeMsg::Responded(result) => {
+                state.last_result = Some(result);
+                // Reopen after the synthetic response so window.png still proves the modal layer.
+                state.open = true;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.content_dialog_responded",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1406,6 +1490,11 @@ fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "table", feature = "label")))]
 fn attach_table_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "dialog", feature = "label")))]
+fn attach_content_dialog_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

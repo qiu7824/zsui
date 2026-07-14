@@ -195,6 +195,28 @@ contracts. Win32 reads `SPI_GETMOUSEHOVERTIME` and
 Top-level overflow outside the current window, accessibility relationships and
 target-machine AppKit/GTK artifacts remain explicit gaps.
 
+The dedicated self-drawn ContentDialog smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,dialog,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-dialog --content-dialog
+```
+
+It opens a modal dialog over an ordinary page, clicks the scrim to prove that
+background input is blocked without dismissing the dialog, uses Tab to move the
+semantic action focus, and activates the focused response with Enter. The smoke
+application deliberately rebuilds the dialog as open after recording the typed
+result so `window.png` still proves the modal surface. The interaction report
+must contain nonzero `native_view_content_dialog_focus_count` and
+`native_view_content_dialog_response_count`, one executed UI command, no command
+failure, and a nonzero live-view revision. The implementation follows the
+current [Windows dialog guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs),
+[Apple alert guidance](https://developer.apple.com/design/human-interface-guidelines/alerts),
+and [GTK AlertDialog contract](https://docs.gtk.org/gtk4/class.AlertDialog.html)
+for modal blocking, safe cancellation, default action and platform action order,
+while keeping all three styles in the shared draw tree. Accessibility semantics,
+custom ViewNode dialog content, response deferrals, prior-focus restoration and
+target-machine AppKit/GTK interaction artifacts remain explicit gaps.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

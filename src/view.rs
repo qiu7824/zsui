@@ -663,6 +663,13 @@ pub enum ViewNodeKind<Msg> {
         on_sort: Option<fn(crate::ZsTableSort) -> Msg>,
         on_invoke: Option<fn(crate::ZsTableRowId) -> Msg>,
     },
+    #[cfg(feature = "dialog")]
+    ContentDialog {
+        spec: crate::ZsContentDialogSpec,
+        open: bool,
+        focused_button: crate::ZsContentDialogButton,
+        on_result: Option<fn(crate::ZsContentDialogResult) -> Msg>,
+    },
     #[cfg(feature = "combo")]
     ComboBox {
         options: Vec<String>,
@@ -1133,6 +1140,14 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_table_invoke(mut self, message: fn(crate::ZsTableRowId) -> Msg) -> Self {
         if let ViewNodeKind::DataGrid { on_invoke, .. } = &mut self.kind {
             *on_invoke = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "dialog")]
+    pub fn on_dialog_result(mut self, message: fn(crate::ZsContentDialogResult) -> Msg) -> Self {
+        if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
+            *on_result = Some(message);
         }
         self
     }
@@ -1727,6 +1742,29 @@ pub fn data_grid<Msg>(
     })
 }
 
+/// Wraps one page in a modal, self-drawn content-dialog layer.
+///
+/// The application owns `open` and rebuilds the same node from its state. The
+/// framework temporarily closes the live node after a response and emits one
+/// typed result through [`ViewNode::on_dialog_result`].
+#[cfg(feature = "dialog")]
+pub fn content_dialog<Msg>(
+    widget: WidgetId,
+    open: bool,
+    spec: crate::ZsContentDialogSpec,
+    page: ViewNode<Msg>,
+) -> ViewNode<Msg> {
+    let focused_button = spec.initial_focus();
+    ViewNode::<Msg>::new(ViewNodeKind::ContentDialog {
+        spec,
+        open,
+        focused_button,
+        on_result: None,
+    })
+    .id(widget)
+    .child(page)
+}
+
 #[cfg(feature = "virtual-list")]
 pub fn virtual_list<T, Msg>(
     total_count: usize,
@@ -1867,6 +1905,16 @@ pub enum ViewEvent {
     TableRowInvoked {
         widget: WidgetId,
         row: crate::ZsTableRowId,
+    },
+    #[cfg(feature = "dialog")]
+    ContentDialogFocused {
+        widget: WidgetId,
+        button: crate::ZsContentDialogButton,
+    },
+    #[cfg(feature = "dialog")]
+    ContentDialogResponded {
+        widget: WidgetId,
+        button: crate::ZsContentDialogButton,
     },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
@@ -2027,6 +2075,14 @@ pub enum ViewHitTargetKind {
     TableRow {
         row: crate::ZsTableRowId,
     },
+    #[cfg(feature = "dialog")]
+    ContentDialog,
+    #[cfg(feature = "dialog")]
+    ContentDialogScrim,
+    #[cfg(feature = "dialog")]
+    ContentDialogButton {
+        button: crate::ZsContentDialogButton,
+    },
     #[cfg(feature = "combo")]
     ComboBox,
     #[cfg(feature = "combo")]
@@ -2159,7 +2215,7 @@ impl ViewInteractionPlan {
         self.hit_targets
             .iter()
             .copied()
-            .find(|target| target.accepts_focus())
+            .find(|target| target.accepts_focus() && self.accepts_focus_scope(*target))
     }
 
     pub fn next_focus_target(
@@ -2171,7 +2227,7 @@ impl ViewInteractionPlan {
             .hit_targets
             .iter()
             .copied()
-            .filter(ViewHitTarget::accepts_focus)
+            .filter(|target| target.accepts_focus() && self.accepts_focus_scope(*target))
             .collect::<Vec<_>>();
         let len = focus_targets.len();
         if len == 0 {
@@ -2213,13 +2269,37 @@ impl ViewInteractionPlan {
         (1..=len).find_map(|distance| {
             let index = (start + step * distance as isize).rem_euclid(len as isize) as usize;
             let target = self.hit_targets[index];
-            (target.accepts_focus() && accepts_tab_focus(target)).then_some(target)
+            (target.accepts_focus()
+                && self.accepts_focus_scope(target)
+                && accepts_tab_focus(target))
+            .then_some(target)
         })
+    }
+
+    fn accepts_focus_scope(&self, _target: ViewHitTarget) -> bool {
+        #[cfg(feature = "dialog")]
+        if let Some(dialog) = self
+            .hit_targets
+            .iter()
+            .rev()
+            .find(|candidate| candidate.kind == ViewHitTargetKind::ContentDialog)
+        {
+            return _target.widget == dialog.widget
+                && _target.kind == ViewHitTargetKind::ContentDialog;
+        }
+        true
     }
 }
 
 impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
+        #[cfg(feature = "dialog")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::ContentDialogScrim | ViewHitTargetKind::ContentDialogButton { .. }
+        ) {
+            return false;
+        }
         #[cfg(feature = "password-box")]
         if self.kind == ViewHitTargetKind::PasswordBoxReveal {
             return false;
@@ -2406,6 +2486,11 @@ trait LiveViewDriver: Send {
     fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState>;
     #[cfg(feature = "table")]
     fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState>;
+    #[cfg(feature = "dialog")]
+    fn widget_content_dialog_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2496,6 +2581,14 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "table")]
     pub fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState> {
         self.lock().widget_table_state(widget)
+    }
+
+    #[cfg(feature = "dialog")]
+    pub fn widget_content_dialog_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
+        self.lock().widget_content_dialog_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2775,6 +2868,14 @@ where
         self.view.widget_table_state(widget)
     }
 
+    #[cfg(feature = "dialog")]
+    fn widget_content_dialog_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
+        self.view.widget_content_dialog_state(widget)
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_type_ahead_match(
         &self,
@@ -2900,6 +3001,7 @@ impl ViewPaintCx {
             feature = "auto-suggest",
             feature = "combo",
             feature = "date-picker",
+            feature = "dialog",
             feature = "time-picker"
         ))]
         if self.paint_depth == 0 {
@@ -3084,6 +3186,48 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "dialog")]
+        if matches!(self.kind, ViewNodeKind::ContentDialog { .. }) {
+            let mut handled = false;
+            let mut modal_open = false;
+            if let ViewNodeKind::ContentDialog {
+                spec,
+                open,
+                focused_button,
+                on_result,
+            } = &mut self.kind
+            {
+                modal_open = *open;
+                if *open {
+                    match event {
+                        ViewEvent::ContentDialogFocused { widget, button }
+                            if self.id == Some(*widget) && spec.has_button(*button) =>
+                        {
+                            *focused_button = *button;
+                            handled = true;
+                        }
+                        ViewEvent::ContentDialogResponded { widget, button }
+                            if self.id == Some(*widget) && spec.has_button(*button) =>
+                        {
+                            *open = false;
+                            if let Some(message) = on_result {
+                                cx.emit(message((*button).into()));
+                            }
+                            handled = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if handled || modal_open {
+                return;
+            }
+            for child in &mut self.children {
+                child.event(cx, event);
+            }
+            return;
+        }
+
         #[cfg(feature = "tabs")]
         if let ViewNodeKind::Tabs {
             tabs,
@@ -4487,6 +4631,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "grid")]
             ViewNodeKind::Grid { .. } => {}
+            #[cfg(feature = "dialog")]
+            ViewNodeKind::ContentDialog { .. } => {}
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
@@ -4526,6 +4672,9 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::TableRowSelected { widget, .. })
             | (Some(id), ViewEvent::TableSorted { widget, .. })
             | (Some(id), ViewEvent::TableRowInvoked { widget, .. }) => id == *widget,
+            #[cfg(feature = "dialog")]
+            (Some(id), ViewEvent::ContentDialogFocused { widget, .. })
+            | (Some(id), ViewEvent::ContentDialogResponded { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -4568,6 +4717,7 @@ impl<Msg> ViewNode<Msg> {
             feature = "auto-suggest",
             feature = "combo",
             feature = "date-picker",
+            feature = "dialog",
             feature = "time-picker"
         ))]
         self.collect_overlay_hit_targets(&mut hit_targets, None);
@@ -4829,6 +4979,33 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_table_state(widget))
     }
 
+    #[cfg(feature = "dialog")]
+    pub fn widget_content_dialog_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::ContentDialog {
+                spec,
+                open,
+                focused_button,
+                ..
+            } = &self.kind
+            {
+                return Some((
+                    crate::ZsContentDialogState {
+                        open: *open,
+                        focused_button: *focused_button,
+                    },
+                    spec.clone(),
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_content_dialog_state(widget))
+    }
+
     #[cfg(feature = "combo")]
     pub(crate) fn widget_combo_type_ahead_match(
         &self,
@@ -5075,6 +5252,14 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "dialog")]
+        if matches!(self.kind, ViewNodeKind::ContentDialog { .. }) {
+            for child in &self.children {
+                child.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
         #[cfg(feature = "tabs")]
         if let (Some(tab_view), Some(bounds), ViewNodeKind::Tabs { tabs, selected, .. }) =
             (self.id, self.bounds, &self.kind)
@@ -5415,6 +5600,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "auto-suggest",
         feature = "combo",
         feature = "date-picker",
+        feature = "dialog",
         feature = "time-picker"
     ))]
     fn collect_overlay_hit_targets(
@@ -5422,6 +5608,49 @@ impl<Msg> ViewNode<Msg> {
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "dialog")]
+        if let ViewNodeKind::ContentDialog {
+            spec,
+            open,
+            focused_button,
+            ..
+        } = &self.kind
+        {
+            let dialog_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.collect_overlay_hit_targets(hit_targets, dialog_viewport);
+            }
+            if let (true, Some(widget), Some(viewport)) = (*open, self.id, dialog_viewport) {
+                let plan = crate::zs_content_dialog_render_plan(
+                    viewport,
+                    spec,
+                    *focused_button,
+                    crate::ZsContentDialogPlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    viewport,
+                    ViewHitTargetKind::ContentDialogScrim,
+                ));
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.surface,
+                    ViewHitTargetKind::ContentDialog,
+                ));
+                hit_targets.extend(plan.buttons.into_iter().map(|button| {
+                    ViewHitTarget::with_kind(
+                        widget,
+                        button.bounds,
+                        ViewHitTargetKind::ContentDialogButton {
+                            button: button.button,
+                        },
+                    )
+                }));
+            }
+            return;
+        }
+
         #[cfg(feature = "auto-suggest")]
         if let (
             Some(widget),
@@ -5664,9 +5893,37 @@ impl<Msg> ViewNode<Msg> {
         feature = "auto-suggest",
         feature = "combo",
         feature = "date-picker",
+        feature = "dialog",
         feature = "time-picker"
     ))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
+        #[cfg(feature = "dialog")]
+        if let ViewNodeKind::ContentDialog {
+            spec,
+            open,
+            focused_button,
+            ..
+        } = &self.kind
+        {
+            let dialog_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.paint_overlays(cx, dialog_viewport);
+            }
+            if let (true, Some(viewport)) = (*open, dialog_viewport) {
+                let plan = crate::zs_content_dialog_render_plan(
+                    viewport,
+                    spec,
+                    *focused_button,
+                    crate::ZsContentDialogPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_content_dialog_native_draw_plan(&plan, spec).commands {
+                    cx.draw(command);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "auto-suggest")]
         if let (
             Some(bounds),
@@ -5897,6 +6154,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::TreeView { .. } => ViewHitTargetKind::TreeView,
             #[cfg(feature = "table")]
             ViewNodeKind::DataGrid { .. } => ViewHitTargetKind::DataGrid,
+            #[cfg(feature = "dialog")]
+            ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
@@ -6457,6 +6716,7 @@ mod tests {
         feature = "radio",
         feature = "combo",
         feature = "date-picker",
+        feature = "dialog",
         feature = "time-picker",
         feature = "tabs",
         feature = "list",
@@ -6507,6 +6767,8 @@ mod tests {
         TableSorted(crate::ZsTableSort),
         #[cfg(feature = "table")]
         TableInvoked(crate::ZsTableRowId),
+        #[cfg(feature = "dialog")]
+        DialogResult(crate::ZsContentDialogResult),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
@@ -7597,6 +7859,124 @@ mod tests {
                 sort: Some(ascending),
                 rows: vec![first, second],
             })
+        );
+    }
+
+    #[cfg(feature = "dialog")]
+    #[test]
+    fn content_dialog_is_modal_self_drawn_and_routes_one_typed_result() {
+        let dialog = WidgetId::new(95);
+        let background = WidgetId::new(96);
+        let spec =
+            crate::ZsContentDialogSpec::new("The unsaved changes will be discarded.", "Cancel")
+                .title("Discard changes?")
+                .primary_button("Discard")
+                .secondary_button("Save")
+                .default_button(crate::ZsContentDialogButton::Secondary)
+                .destructive_button(crate::ZsContentDialogButton::Primary);
+        let mut view = content_dialog(
+            dialog,
+            true,
+            spec,
+            spacer::<Msg>().id(background).bg(ThemeColorToken::Surface),
+        )
+        .on_dialog_result(Msg::DialogResult);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 400,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::ContentDialog)
+        );
+        assert_eq!(
+            interaction.target_kind_at(Point { x: 4, y: 4 }),
+            Some(ViewHitTargetKind::ContentDialogScrim)
+        );
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| matches!(
+                    target.kind,
+                    ViewHitTargetKind::ContentDialogButton { .. }
+                ))
+                .count(),
+            3
+        );
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let scrim = paint
+            .plan()
+            .commands
+            .iter()
+            .position(|command| {
+                matches!(
+                    command,
+                    NativeDrawCommand::FillRect {
+                        rect,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::PrimaryText,
+                            ..
+                        },
+                    } if *rect == viewport
+                )
+            })
+            .expect("dialog scrim should be drawn");
+        let page = paint
+            .plan()
+            .commands
+            .iter()
+            .position(|command| {
+                matches!(
+                    command,
+                    NativeDrawCommand::FillRect {
+                        rect,
+                        fill: NativeDrawFill::Role(ColorRole::Surface),
+                    } if *rect == viewport
+                )
+            })
+            .expect("page should be drawn beneath the dialog");
+        assert!(scrim > page);
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ContentDialogFocused {
+                widget: dialog,
+                button: crate::ZsContentDialogButton::Primary,
+            },
+        );
+        assert_eq!(
+            view.widget_content_dialog_state(dialog)
+                .map(|(state, _)| state.focused_button),
+            Some(crate::ZsContentDialogButton::Primary)
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::ContentDialogResponded {
+                widget: dialog,
+                button: crate::ZsContentDialogButton::Primary,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::DialogResult(crate::ZsContentDialogResult::Primary)]
+        );
+        assert!(view
+            .widget_content_dialog_state(dialog)
+            .is_some_and(|(state, _)| !state.open));
+        assert_eq!(
+            view.interaction_plan()
+                .first_focus_target()
+                .map(|target| target.widget),
+            Some(background)
         );
     }
 

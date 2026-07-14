@@ -13,6 +13,7 @@ use crate::native_input_visuals::{
 #[cfg(any(
     feature = "auto-suggest",
     feature = "date-picker",
+    feature = "dialog",
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
@@ -882,6 +883,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_table_sort_count: usize,
     pub native_view_table_selection_count: usize,
     pub native_view_table_invoke_count: usize,
+    pub native_view_content_dialog_focus_count: usize,
+    pub native_view_content_dialog_response_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -990,6 +993,8 @@ impl NativeWindowSmokeRunReport {
             native_view_table_sort_count: 0,
             native_view_table_selection_count: 0,
             native_view_table_invoke_count: 0,
+            native_view_content_dialog_focus_count: 0,
+            native_view_content_dialog_response_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1048,6 +1053,7 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1059,6 +1065,7 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1142,6 +1149,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -1192,6 +1200,10 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub table_selection_changed: bool,
     #[cfg(feature = "table")]
     pub table_invoked: bool,
+    #[cfg(feature = "dialog")]
+    pub content_dialog_focus_changed: bool,
+    #[cfg(feature = "dialog")]
+    pub content_dialog_responded: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1245,6 +1257,7 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1256,6 +1269,7 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1442,6 +1456,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1538,6 +1553,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1639,6 +1655,7 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1658,6 +1675,7 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "date-picker",
+                feature = "dialog",
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
@@ -1678,6 +1696,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1788,6 +1807,23 @@ impl NativeViewInputRuntime {
             _ => {}
         }
 
+        #[cfg(feature = "dialog")]
+        match target.kind {
+            crate::ViewHitTargetKind::ContentDialogButton { button } => {
+                report.content_dialog_responded = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ContentDialogResponded {
+                        widget: target.widget,
+                        button,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::ContentDialog
+            | crate::ViewHitTargetKind::ContentDialogScrim => return report,
+            _ => {}
+        }
+
         let event = self.activation_event(target);
 
         #[cfg(feature = "radio")]
@@ -1850,6 +1886,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1881,6 +1918,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1895,6 +1933,7 @@ impl NativeViewInputRuntime {
         #[cfg(not(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -1940,6 +1979,59 @@ impl NativeViewInputRuntime {
         let Some(interaction_plan) = self.current_interaction_plan() else {
             return report;
         };
+        #[cfg(feature = "dialog")]
+        if let Some(dialog_target) = interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ContentDialog)
+        {
+            if self.focused_widget != Some(dialog_target.widget) {
+                self.focus_target(dialog_target, &mut report);
+            }
+            let Some((state, spec)) = self.widget_content_dialog_state(dialog_target.widget) else {
+                return report;
+            };
+            if !state.open {
+                return report;
+            }
+            let focus_offset = match key {
+                NativeViewKey::Tab => Some(if shift { -1 } else { 1 }),
+                NativeViewKey::Left => Some(-1),
+                NativeViewKey::Right => Some(1),
+                _ => None,
+            };
+            if let Some(offset) = focus_offset {
+                let button = spec.relative_button(state.focused_button, offset);
+                report.handled = true;
+                report.content_dialog_focus_changed = button != state.focused_button;
+                return self.dispatch_view_event(
+                    ViewEvent::ContentDialogFocused {
+                        widget: dialog_target.widget,
+                        button,
+                    },
+                    report,
+                );
+            }
+            let response = match key {
+                NativeViewKey::Escape => Some(crate::ZsContentDialogButton::Close),
+                NativeViewKey::Enter | NativeViewKey::Space => Some(state.focused_button),
+                _ => None,
+            };
+            if let Some(button) = response.filter(|button| spec.has_button(*button)) {
+                report.handled = true;
+                report.content_dialog_responded = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ContentDialogResponded {
+                        widget: dialog_target.widget,
+                        button,
+                    },
+                    report,
+                );
+            }
+            return report;
+        }
         if key == NativeViewKey::Tab && !control {
             let offset = if shift { -1 } else { 1 };
             if let Some(target) =
@@ -2598,6 +2690,14 @@ impl NativeViewInputRuntime {
             report.focused_widget = None;
             return report;
         };
+        #[cfg(feature = "dialog")]
+        if self
+            .widget_content_dialog_state(widget)
+            .is_some_and(|(state, _)| state.open)
+        {
+            report.handled = true;
+            return report;
+        }
         #[cfg(feature = "combo")]
         if target.kind == crate::ViewHitTargetKind::ComboBox {
             let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
@@ -2820,6 +2920,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3006,6 +3107,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "date-picker",
+            feature = "dialog",
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
@@ -3129,6 +3231,7 @@ impl NativeViewInputRuntime {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "date-picker",
+        feature = "dialog",
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
@@ -3343,6 +3446,13 @@ impl NativeViewInputRuntime {
     }
 
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "dialog")]
+        if let crate::ViewHitTargetKind::ContentDialogButton { button } = target.kind {
+            return ViewEvent::ContentDialogResponded {
+                widget: target.widget,
+                button,
+            };
+        }
         #[cfg(feature = "auto-suggest")]
         match target.kind {
             crate::ViewHitTargetKind::AutoSuggestSuggestion { suggestion } => {
@@ -3661,6 +3771,21 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_table_state(widget))
+            })
+    }
+
+    #[cfg(feature = "dialog")]
+    fn widget_content_dialog_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_content_dialog_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_content_dialog_state(widget))
             })
     }
 
@@ -4094,6 +4219,8 @@ fn record_windows_win32_view_input_report(
     report.native_view_table_sort_count += input.table_sort_count;
     report.native_view_table_selection_count += input.table_selection_count;
     report.native_view_table_invoke_count += input.table_invoke_count;
+    report.native_view_content_dialog_focus_count += input.content_dialog_focus_change_count;
+    report.native_view_content_dialog_response_count += input.content_dialog_response_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -7496,6 +7623,101 @@ mod tests {
         assert!(moved.table_selection_changed);
         let keyboard = runtime.dispatch_key(NativeViewKey::Enter);
         assert!(keyboard.table_invoked);
+    }
+
+    #[cfg(feature = "dialog")]
+    #[test]
+    fn native_view_runtime_traps_modal_focus_and_routes_typed_dialog_response() {
+        #[derive(Clone)]
+        enum Msg {
+            Responded(crate::ZsContentDialogResult),
+        }
+        struct State {
+            open: bool,
+            result: Option<crate::ZsContentDialogResult>,
+        }
+
+        let widget = crate::WidgetId::new(187);
+        let background = crate::WidgetId::new(188);
+        let builder = native_window("Platform Dialog")
+            .size(640, 400)
+            .stateful_view(
+                State {
+                    open: true,
+                    result: None,
+                },
+                move |state| {
+                    crate::content_dialog(
+                        widget,
+                        state.open,
+                        crate::ZsContentDialogSpec::new(
+                            "Choose whether to continue or cancel.",
+                            "Cancel",
+                        )
+                        .title("Continue operation?")
+                        .primary_button("Continue")
+                        .secondary_button("Review")
+                        .default_button(crate::ZsContentDialogButton::Primary),
+                        crate::spacer().id(background),
+                    )
+                    .on_dialog_result(Msg::Responded)
+                },
+                |state, message, _cx| match message {
+                    Msg::Responded(result) => {
+                        state.open = false;
+                        state.result = Some(result);
+                    }
+                },
+            );
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("open dialog interaction plan");
+        let scrim = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ContentDialogScrim)
+            .expect("modal scrim");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let caught = runtime.dispatch_pointer_click(Point {
+            x: scrim.bounds.x + 2,
+            y: scrim.bounds.y + 2,
+        });
+        assert!(caught.handled);
+        assert!(!caught.content_dialog_responded);
+        assert!(runtime
+            .widget_content_dialog_state(widget)
+            .is_some_and(|(state, _)| state.open));
+        let suppressed = runtime.dispatch_text_input("x");
+        assert!(suppressed.handled);
+        assert_eq!(suppressed.message_count, 0);
+
+        let focused = runtime.dispatch_key(NativeViewKey::Tab);
+        assert!(focused.handled);
+        assert!(focused.content_dialog_focus_changed);
+        assert_eq!(focused.focused_widget, Some(widget.0));
+        assert_eq!(
+            runtime
+                .widget_content_dialog_state(widget)
+                .map(|(state, _)| state.focused_button),
+            Some(crate::ZsContentDialogButton::Secondary)
+        );
+
+        let responded = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(responded.handled);
+        assert!(responded.content_dialog_responded);
+        assert_eq!(responded.message_count, 1);
+        assert!(runtime
+            .widget_content_dialog_state(widget)
+            .is_some_and(|(state, _)| !state.open));
+        assert_eq!(
+            runtime
+                .current_interaction_plan()
+                .and_then(|plan| plan.first_focus_target())
+                .map(|target| target.widget),
+            Some(background)
+        );
     }
 
     #[cfg(feature = "combo")]

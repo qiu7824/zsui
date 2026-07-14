@@ -20,6 +20,8 @@ pub mod command_protocol;
 pub mod component_catalog;
 pub mod component_protocol;
 pub mod components;
+#[cfg(feature = "dialog")]
+pub mod content_dialog;
 pub mod control_protocol;
 pub mod core;
 #[cfg(feature = "date-picker")]
@@ -165,6 +167,10 @@ pub use components::Label;
 pub use components::{UiNode, UiNodeKind, UiStackDirection};
 #[cfg(feature = "tabs")]
 pub use components::{ZsTabId, ZsTabSpec};
+#[cfg(feature = "dialog")]
+pub use content_dialog::{
+    ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec, ZsContentDialogState,
+};
 pub use control_protocol::{
     NativeControlFamily, NativeControlMapper, NativeControlMapperOperation,
     NativeSettingsControlHost, SettingsComponentKind, SettingsControlHostOperation,
@@ -466,6 +472,8 @@ pub use view::button;
 pub use view::checkbox;
 #[cfg(feature = "combo")]
 pub use view::combo_box;
+#[cfg(feature = "dialog")]
+pub use view::content_dialog;
 #[cfg(feature = "table")]
 pub use view::data_grid;
 #[cfg(feature = "date-picker")]
@@ -542,6 +550,12 @@ pub use widget_render::{
     zs_combo_box_render_plan, zs_combo_box_render_plan_in_viewport,
     zs_combo_box_render_plan_in_viewport_with_scroll, zs_combo_box_render_plan_with_scroll,
     ZsComboBoxRenderPlan, ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS,
+};
+#[cfg(feature = "dialog")]
+pub use widget_render::{
+    zs_content_dialog_native_draw_plan, zs_content_dialog_render_plan,
+    ZsContentDialogButtonRenderPlan, ZsContentDialogMetrics, ZsContentDialogPlatformStyle,
+    ZsContentDialogRenderPlan,
 };
 #[cfg(feature = "date-picker")]
 pub use widget_render::{
