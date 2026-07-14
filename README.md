@@ -331,7 +331,10 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
 删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
 `password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
-开启；`all-widgets` 和 `full` 只在应用显式选择时才会打包全部能力。
+开启；原生文本无障碍桥接也只在显式开启 `accessibility` 时进入编译，Win32 使用
+UI Automation，macOS 使用 AppKit Accessibility，Linux 使用 GTK4 Accessibility，
+均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择时才会
+打包全部能力。
 
 ## 已有应用外壳
 
@@ -588,7 +591,7 @@ Linux/macOS 桌面目标。
 ## 当前边界
 
 - Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；无障碍文本提供者和 AppKit/GTK4 目标机证据仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
+- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；可选 `accessibility` 已接入 Win32 UIA Edit/Value、AppKit 文本范围选择器和 GTK4 文本框语义，Windows 已有真实 HWND/UI Automation CI 探针，但完整文本范围接口与 AppKit/GTK4 辅助技术目标机证据仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
 - DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
 - 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块

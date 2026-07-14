@@ -121,7 +121,7 @@ pub fn zsui_component_catalog_summary() -> ZsuiComponentCatalogSummary {
 
 const BASIC_CONTROL_GAPS: &[&str] = &["accessibility", "non-Windows target interaction proof"];
 const TEXT_INPUT_GAPS: &[&str] = &[
-    "accessibility text provider",
+    "full text-range accessibility provider and AppKit/GTK target assistive-technology proof",
     "macOS and Linux CJK target interaction proof",
 ];
 const VIRTUAL_LIST_GAPS: &[&str] = &[
@@ -204,7 +204,7 @@ const TOGGLE_BUTTON_GAPS: &[&str] = &[
     "AppKit and GTK4 target interaction smoke",
 ];
 const PASSWORD_BOX_GAPS: &[&str] = &[
-    "Caps Lock warning and accessibility secure-text role/provider",
+    "Caps Lock warning, GTK secure-text role and target assistive-technology proof",
     "Windows Alt+F8 press-and-hold reveal shortcut",
     "platform memory-lock integration beyond owned-value zeroization",
     "AppKit and GTK4 target interaction smoke",

@@ -63,6 +63,8 @@ pub mod macos_appkit_services;
 pub mod menu;
 pub mod mobile_host;
 pub mod native;
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+mod native_accessibility;
 pub mod native_adapter_manifest;
 #[cfg(any(
     test,
@@ -128,6 +130,13 @@ pub mod widget_render;
 pub mod window;
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub mod windows_gdi_renderer;
+#[cfg(all(
+    windows,
+    feature = "accessibility",
+    feature = "text-input-core",
+    feature = "windows-win32"
+))]
+mod windows_uia;
 #[cfg(all(windows, feature = "windows-win32"))]
 pub mod windows_win32_host;
 #[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]

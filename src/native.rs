@@ -1640,6 +1640,18 @@ impl NativeViewInputRuntime {
         Some((value, selection))
     }
 
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    pub(crate) fn focused_text_accessibility_snapshot(
+        &self,
+    ) -> Option<crate::native_accessibility::NativeTextAccessibilitySnapshot> {
+        let target = self.focused_text_input_target()?;
+        let (value, selection) = self.focused_text_input_snapshot()?;
+        let caret = self.text_input_caret_rect()?;
+        crate::native_accessibility::NativeTextAccessibilitySnapshot::new(
+            target, value, selection, caret,
+        )
+    }
+
     pub(crate) fn ime_replacement_selection(&self) -> Option<NativeTextSelection> {
         self.ime_preedit.as_ref().map(|preedit| preedit.replacement)
     }

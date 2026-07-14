@@ -10,6 +10,7 @@ if ($Locked) {
 }
 
 $singleFeatures = @(
+    "accessibility",
     "window",
     "button",
     "breadcrumb",

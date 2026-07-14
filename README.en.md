@@ -321,7 +321,10 @@ trimming, not a promise that Cargo magically removes every unused symbol inside
 an enabled crate. Controls such as `password-box`, `tooltip`, `progress-ring`, `tabs` and
 `date-picker` can be selected
 individually; `all-widgets` and `full` are included only when an application
-explicitly opts in. The `window` feature selects Win32, AppKit or GTK4 through
+explicitly opts in. Native focused-text accessibility is also opt-in through
+`accessibility`: it uses UI Automation on Win32, AppKit Accessibility on macOS,
+and GTK4 Accessibility on Linux without embedding a platform editor or WebView.
+The `window` feature selects Win32, AppKit or GTK4 through
 target-specific dependencies, so the one-line window entry does not require an
 extra backend feature on supported desktop targets. Cargo features are additive
 across the dependency graph, so
@@ -543,6 +546,11 @@ assert!(report.is_valid());
   relevant widget features are enabled, Tab can traverse native focus targets,
   list row selection can dispatch through the same command-backed view tree,
   and `WM_MOUSEWHEEL` can route into typed scroll events for scroll containers
+- optional native focused-text accessibility behind `accessibility`: Win32 UI
+  Automation Edit/Value, AppKit text value/selection/range selectors and GTK4
+  TextBox/value semantics; protected text remains masked, while complete
+  text-range providers and AppKit/GTK target assistive-technology proof remain
+  pending; Windows has a real hidden-HWND/UI Automation CI probe
 - reusable `ZsToggleRenderPlan` geometry for the owner-drawn settings toggle;
   the same plan drives Shell accessories and the
   standalone feature-gated `toggle(...)` View widget

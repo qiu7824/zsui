@@ -392,6 +392,16 @@ history remain authoritative for implementation status.
   The internal `text-input-core` feature owns Unicode segmentation for text-
   capable controls. Non-text `widgets-input` slices such as CheckBox must not
   pull that dependency into their build.
+- Native text accessibility is an independent `accessibility` feature. It may
+  activate only target-specific native bindings: Win32 UI Automation exposes a
+  focused Edit/Value provider through `WM_GETOBJECT`, AppKit exposes focused
+  text-field/text-area selectors on the custom `NSView`, and GTK4 exposes a
+  hidden-until-focused TextBox/value semantic surface. Password snapshots stay
+  masked; Win32 does not advertise or accept ValuePattern for protected text,
+  and AppKit marks protected content with the secure-text subrole. This feature
+  must not introduce a native child editor, WebView or global widget registry.
+  Full UIA/GTK text-range providers and real assistive-technology target proof
+  remain readiness work.
 - ToggleButton is an independent `toggle-button` Cargo feature and reuses the
   shared explicit Boolean `Toggled` message path rather than inheriting Button
   behavior or storing state in a backend. It remains self-drawn: Windows,

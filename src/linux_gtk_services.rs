@@ -7,6 +7,7 @@ use std::time::Duration;
 use gtk::gio;
 use gtk::glib::MainContext;
 use gtk::prelude::*;
+#[allow(deprecated)]
 use gtk::{gdk, FileChooserAction, FileChooserNative, FileFilter, ResponseType};
 use gtk4 as gtk;
 
@@ -369,6 +370,7 @@ impl FileDialogService for LinuxGtkFileDialogService {
     }
 }
 
+#[allow(deprecated)]
 pub fn linux_gtk_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
     ensure_gtk_main_thread("gtk_open_file_dialog")?;
     let dialog = FileChooserNative::builder()
@@ -395,6 +397,7 @@ pub fn linux_gtk_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Ve
     result
 }
 
+#[allow(deprecated)]
 pub fn linux_gtk_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
     ensure_gtk_main_thread("gtk_save_file_dialog")?;
     let dialog = FileChooserNative::builder()
@@ -454,6 +457,7 @@ pub(crate) fn ensure_gtk_main_thread(operation: &'static str) -> ZsuiResult<()> 
     Ok(())
 }
 
+#[allow(deprecated)]
 fn add_gtk_file_filters(dialog: &FileChooserNative, filters: &[crate::FileDialogFilter]) {
     for filter_spec in filters {
         if filter_spec.patterns.is_empty() {
@@ -468,6 +472,7 @@ fn add_gtk_file_filters(dialog: &FileChooserNative, filters: &[crate::FileDialog
     }
 }
 
+#[allow(deprecated)]
 fn gtk_bind_file_dialog_to_active_window(dialog: &FileChooserNative) {
     let owner = gio::Application::default()
         .and_then(|application| application.downcast::<gtk::Application>().ok())
@@ -475,6 +480,7 @@ fn gtk_bind_file_dialog_to_active_window(dialog: &FileChooserNative) {
     dialog.set_transient_for(owner.as_ref());
 }
 
+#[allow(deprecated)]
 fn gtk_selected_local_paths(dialog: &FileChooserNative) -> ZsuiResult<Vec<PathBuf>> {
     let files = dialog.files();
     let mut paths = Vec::with_capacity(files.n_items() as usize);

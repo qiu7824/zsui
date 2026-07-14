@@ -15,6 +15,8 @@ use crate::native::NativeComboTypeAheadState;
 use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+use crate::native_input_visuals::native_text_visual_geometry_in_viewport_with_backend;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
     move_native_text_selection_horizontally_with_backend,
@@ -137,6 +139,9 @@ use windows_sys::Win32::{
         },
     },
 };
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+use windows_sys::Win32::UI::WindowsAndMessaging::WM_GETOBJECT;
 
 #[cfg(feature = "tooltip")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETMESSAGEDURATION, SPI_GETMOUSEHOVERTIME};
@@ -2896,6 +2901,34 @@ impl WindowsWin32ViewInputRoute {
         self.dispatch_text_input_at(text, std::time::Instant::now())
     }
 
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn dispatch_accessibility_set_text_value(
+        &mut self,
+        text: &str,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let Some(target) = self.focused_target() else {
+            return WindowsWin32ViewInputDispatchReport::default();
+        };
+        if !target.kind.accepts_text_input() {
+            return WindowsWin32ViewInputDispatchReport::default();
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return WindowsWin32ViewInputDispatchReport::default();
+        }
+        let current = self.widget_text_value(target.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &current));
+        state.selection = crate::native_text_edit::NativeTextSelection {
+            anchor: 0,
+            caret: current.chars().count(),
+        };
+        self.text_edit = Some(state);
+        self.dispatch_text_input(text)
+    }
+
     fn dispatch_utf16_input_unit(&mut self, unit: u16) -> WindowsWin32ViewInputDispatchReport {
         if (0xd800..=0xdbff).contains(&unit) {
             self.pending_utf16_high_surrogate = Some(unit);
@@ -5160,6 +5193,39 @@ impl WindowsWin32ViewInputRoute {
             .and_then(|widget| self.interaction_plan.hit_target_for_widget(widget))
     }
 
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn focused_text_accessibility_snapshot(
+        &self,
+    ) -> Option<crate::native_accessibility::NativeTextAccessibilitySnapshot> {
+        let target = self.focused_target()?;
+        if !target.kind.accepts_text_input() {
+            return None;
+        }
+        let value = self.widget_display_text_value(target.widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        let caret = native_text_visual_geometry_in_viewport_with_backend(
+            visual_target,
+            &value,
+            state.selection,
+            state.first_visible_visual_row,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+            &self.text_shaping,
+        )
+        .caret;
+        crate::native_accessibility::NativeTextAccessibilitySnapshot::new(
+            target,
+            value,
+            state.selection,
+            caret,
+        )
+    }
+
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
         if !target.kind.accepts_text_input() {
             self.text_drag = None;
@@ -7251,6 +7317,22 @@ pub fn windows_win32_window_view_input_report(
         .map(|record| record.report.clone())
 }
 
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn windows_win32_window_text_accessibility_snapshot(
+    hwnd: HWND,
+) -> Option<crate::native_accessibility::NativeTextAccessibilitySnapshot> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd)
+        .and_then(|record| record.route.focused_text_accessibility_snapshot())
+}
+
 pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
     let Some((bounds, dpi)) = windows_win32_shell_surface(hwnd) else {
         return false;
@@ -7326,6 +7408,19 @@ pub fn dispatch_windows_win32_window_view_text_input(
     text: &str,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_text_input(text))
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn set_windows_win32_window_accessible_text_value(hwnd: HWND, value: &str) -> bool {
+    if windows_win32_window_text_accessibility_snapshot(hwnd)
+        .is_none_or(|snapshot| snapshot.kind().is_protected())
+    {
+        return false;
+    }
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_set_text_value(value)
+    })
+    .is_some()
 }
 
 fn dispatch_windows_win32_window_view_utf16_input_unit(
@@ -7609,6 +7704,15 @@ fn dispatch_windows_win32_ui_commands(
 
 fn window_view_input_routes() -> &'static Mutex<Vec<WindowsWindowViewInputRouteRecord>> {
     WINDOW_VIEW_INPUT_ROUTES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+#[cfg(test)]
+pub(crate) fn windows_win32_view_input_route_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static VIEW_INPUT_ROUTE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    VIEW_INPUT_ROUTE_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("view input route test lock should not be poisoned")
 }
 
 fn completed_window_view_input_reports(
@@ -8490,6 +8594,8 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         }
         WM_NCDESTROY => {
             let role = WindowsWindowRole::from_create_param(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+            crate::windows_uia::disconnect(hwnd);
             clear_windows_win32_window_draw_plan(hwnd);
             archive_windows_win32_window_view_input_report(hwnd);
             clear_windows_win32_window_shell_input_route(hwnd);
@@ -8502,6 +8608,9 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => 1,
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        WM_GETOBJECT => crate::windows_uia::handle_get_object(hwnd, wparam, lparam)
+            .unwrap_or_else(|| DefWindowProcW(hwnd, msg, wparam, lparam)),
         WM_DPICHANGED => {
             let suggested = lparam as *const RECT;
             if !suggested.is_null() {
@@ -9049,11 +9158,7 @@ mod tests {
     }
 
     fn view_input_route_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static VIEW_INPUT_ROUTE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        VIEW_INPUT_ROUTE_TEST_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("view input route test lock should not be poisoned")
+        windows_win32_view_input_route_test_lock()
     }
 
     #[test]

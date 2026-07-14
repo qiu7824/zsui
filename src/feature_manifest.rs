@@ -456,6 +456,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "system text clipboard bridge; disabled builds use MemoryHost storage",
         ),
         ZsuiCargoFeature::new(
+            "accessibility",
+            Service,
+            false,
+            vec!["windows", "windows-core"],
+            Vec::new(),
+            "optional native text accessibility adapters: Win32 UI Automation Edit/Value, AppKit text selectors and GTK4 textbox/value semantics",
+        ),
+        ZsuiCargoFeature::new(
             "image",
             Service,
             false,
@@ -594,6 +602,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec![
+                "accessibility",
                 "all-widgets",
                 "clipboard",
                 "calculator",
@@ -647,6 +656,7 @@ mod tests {
         let names = zsui_optional_dependency_feature_names();
 
         assert!(names.contains(&"clipboard"));
+        assert!(names.contains(&"accessibility"));
         assert!(names.contains(&"calculator"));
         assert!(names.contains(&"image"));
         assert!(names.contains(&"desktop-winit"));
@@ -683,6 +693,31 @@ mod tests {
         assert_eq!(textbox.enables, vec!["text-input-core"]);
         assert_eq!(checkbox.enables, vec!["widgets-input"]);
         assert!(!checkbox.enables.contains(&"text-input-core"));
+    }
+
+    #[test]
+    fn native_accessibility_stays_out_of_defaults_and_widget_profiles() {
+        let manifest = zsui_feature_manifest();
+        let accessibility = manifest
+            .iter()
+            .find(|feature| feature.name == "accessibility")
+            .expect("accessibility feature should be listed");
+        let all_widgets = manifest
+            .iter()
+            .find(|feature| feature.name == "all-widgets")
+            .expect("all-widgets feature should be listed");
+        let full = manifest
+            .iter()
+            .find(|feature| feature.name == "full")
+            .expect("full feature should be listed");
+
+        assert!(!accessibility.default_enabled);
+        assert_eq!(
+            accessibility.optional_dependency_names,
+            vec!["windows", "windows-core"]
+        );
+        assert!(!all_widgets.enables.contains(&"accessibility"));
+        assert!(full.enables.contains(&"accessibility"));
     }
 
     #[test]

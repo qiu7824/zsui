@@ -5,7 +5,14 @@ use std::{
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+use objc2::Message;
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+use objc2_app_kit::{
+    NSAccessibilitySecureTextFieldSubrole, NSAccessibilityTextAreaRole,
+    NSAccessibilityTextFieldRole,
+};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
     NSColor, NSColorSpace, NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey,
@@ -210,6 +217,169 @@ define_class!(
     }
 
     impl ZsuiAppKitDrawView {
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(isAccessibilityElement))]
+        fn is_accessibility_element(&self) -> bool {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .is_some()
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method_id(accessibilityRole))]
+        fn accessibility_role(&self) -> Option<Retained<NSString>> {
+            self
+                .ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| {
+                    let role = if snapshot.kind().is_multiline() {
+                        unsafe { NSAccessibilityTextAreaRole }
+                    } else {
+                        unsafe { NSAccessibilityTextFieldRole }
+                    };
+                    role.retain()
+                })
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method_id(accessibilitySubrole))]
+        fn accessibility_subrole(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .filter(|snapshot| snapshot.kind().is_protected())
+                .map(|_| unsafe { NSAccessibilitySecureTextFieldSubrole }.retain())
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method_id(accessibilityIdentifier))]
+        fn accessibility_identifier(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| NSString::from_str(&format!("zsui-widget-{}", snapshot.widget().0)))
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method_id(accessibilityValue))]
+        fn accessibility_value(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| NSString::from_str(snapshot.exposed_text()))
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(isAccessibilityProtectedContent))]
+        fn is_accessibility_protected_content(&self) -> bool {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .is_some_and(|snapshot| snapshot.kind().is_protected())
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(isAccessibilityFocused))]
+        fn is_accessibility_focused(&self) -> bool {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .is_some()
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(accessibilityNumberOfCharacters))]
+        fn accessibility_number_of_characters(&self) -> isize {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| snapshot.utf16_offset(snapshot.character_count()).unwrap_or(0))
+                .unwrap_or(0)
+                .min(isize::MAX as usize) as isize
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method_id(accessibilitySelectedText))]
+        fn accessibility_selected_text(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| NSString::from_str(&snapshot.selected_text()))
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(accessibilitySelectedTextRange))]
+        fn accessibility_selected_text_range(&self) -> NSRange {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| {
+                    let range = snapshot.utf16_selection();
+                    NSRange::new(range.start, range.end.saturating_sub(range.start))
+                })
+                .unwrap_or_else(|| NSRange::new(NSNotFound as usize, 0))
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(accessibilityVisibleCharacterRange))]
+        fn accessibility_visible_character_range(&self) -> NSRange {
+            self.ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| {
+                    NSRange::new(
+                        0,
+                        snapshot.utf16_offset(snapshot.character_count()).unwrap_or(0),
+                    )
+                })
+                .unwrap_or_else(|| NSRange::new(NSNotFound as usize, 0))
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method_id(accessibilityStringForRange:))]
+        fn accessibility_string_for_range(&self, range: NSRange) -> Option<Retained<NSString>> {
+            self
+                .ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .and_then(|snapshot| {
+                    let scalar_range = utf16_range_to_char_range(snapshot.exposed_text(), range)?;
+                    snapshot.text_in_range(scalar_range.0..scalar_range.1)
+                })
+                .map(|text| NSString::from_str(&text))
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[unsafe(method(accessibilityFrame))]
+        fn accessibility_frame(&self) -> NSRect {
+            let local = self
+                .ivars()
+                .runtime
+                .borrow()
+                .focused_text_accessibility_snapshot()
+                .map(|snapshot| appkit_rect(snapshot.bounds()))
+                .unwrap_or_else(|| {
+                    NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0))
+                });
+            self.window()
+                .map(|window| window.convertRectToScreen(self.convertRect_toView(local, None)))
+                .unwrap_or(local)
+        }
+
         #[unsafe(method(isFlipped))]
         fn is_flipped(&self) -> bool {
             true

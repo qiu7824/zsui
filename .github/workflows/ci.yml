@@ -42,6 +42,8 @@ jobs:
       - run: cargo test --locked --examples --features full
       - run: cargo check --locked --no-default-features --features windows-win32
       - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style
+      - shell: pwsh
+        run: ./scripts/check-windows-text-accessibility.ps1 -Locked
 
   desktop-target-checks:
     strategy:

@@ -26,6 +26,11 @@ pub(crate) fn install_linux_gtk_draw_plan(
     plan: NativeDrawPlan,
     mut runtime: crate::native::NativeViewInputRuntime,
 ) -> LinuxGtkDrawViewHost {
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    let drawing_area = gtk::DrawingArea::builder()
+        .accessible_role(gtk::AccessibleRole::TextBox)
+        .build();
+    #[cfg(not(all(feature = "accessibility", feature = "text-input-core")))]
     let drawing_area = gtk::DrawingArea::new();
     drawing_area.set_hexpand(true);
     drawing_area.set_vexpand(true);
@@ -35,6 +40,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
     runtime.use_gtk_text_shaping(drawing_area.pango_context());
     runtime.defer_app_command_execution();
     let runtime = Rc::new(RefCell::new(runtime));
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    sync_linux_gtk_text_accessibility(&drawing_area, &runtime);
     let runtime_timer = Rc::new(RefCell::new(None));
     let ime = gtk::IMMulticontext::new();
     ime.set_client_widget(Some(&drawing_area));
@@ -443,6 +450,8 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 *plan.borrow_mut() = updated;
                 area.queue_draw();
             }
+            #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+            sync_linux_gtk_text_accessibility(&area, &runtime);
             ime.reset();
             ime.focus_out();
         }
@@ -600,7 +609,30 @@ fn apply_linux_gtk_input_report(
             application.quit();
         }
     }
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    sync_linux_gtk_text_accessibility(area, runtime);
     sync_linux_gtk_ime(area, runtime, ime);
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+fn sync_linux_gtk_text_accessibility(
+    area: &gtk::DrawingArea,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+) {
+    let snapshot = runtime.borrow().focused_text_accessibility_snapshot();
+    if let Some(snapshot) = snapshot {
+        area.update_property(&[
+            gtk::accessible::Property::ValueText(snapshot.exposed_text()),
+            gtk::accessible::Property::MultiLine(snapshot.kind().is_multiline()),
+            gtk::accessible::Property::ReadOnly(false),
+        ]);
+        area.update_state(&[gtk::accessible::State::Hidden(false)]);
+    } else {
+        area.reset_property(gtk::AccessibleProperty::ValueText);
+        area.reset_property(gtk::AccessibleProperty::MultiLine);
+        area.reset_property(gtk::AccessibleProperty::ReadOnly);
+        area.update_state(&[gtk::accessible::State::Hidden(true)]);
+    }
 }
 
 fn sync_linux_gtk_ime(
@@ -628,6 +660,13 @@ fn sync_linux_gtk_ime(
         if let Some((value, selection)) = surrounding {
             let cursor = crate::native_text_edit::char_to_byte_index(&value, selection.caret)
                 .min(i32::MAX as usize) as i32;
+            #[cfg(feature = "accessibility")]
+            {
+                let anchor = crate::native_text_edit::char_to_byte_index(&value, selection.anchor)
+                    .min(i32::MAX as usize) as i32;
+                ime.set_surrounding_with_selection(&value, cursor, anchor);
+            }
+            #[cfg(not(feature = "accessibility"))]
             ime.set_surrounding(&value, cursor);
         }
         ime.focus_in();

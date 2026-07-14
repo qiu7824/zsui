@@ -179,12 +179,14 @@
         "src/style.rs",
         "src/icon.rs",
         "src/native_smoke.rs",
-        "docs/native-host-smoke.md"
+        "docs/native-host-smoke.md",
+        "scripts/check-windows-text-accessibility.ps1"
       ],
       "verify": [
         "cargo test --features full --quiet",
         "cargo run --example native_smoke_run --features full -- windows",
-        "cargo run --example native_smoke_review --features full -- windows"
+        "cargo run --example native_smoke_review --features full -- windows",
+        ".\\scripts\\check-windows-text-accessibility.ps1 -Locked"
       ]
     },
     {
