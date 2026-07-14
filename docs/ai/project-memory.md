@@ -50,6 +50,11 @@ history remain authoritative for implementation status.
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent
   and GTK action-accelerator details stay inside their native adapters.
+- Applications that need native window-menu actions in their typed update loop
+  use `stateful_view_with_app_commands(...)`. Its `Command -> Option<Msg>`
+  mapping stays platform-neutral; Win32, AppKit and GTK4 dispatch through the
+  owned live-view host, rebuild the shared draw plan and request native repaint
+  without exposing a raw menu id, handle or event loop.
 - The optional Windows document acceptance path uses
   `WindowsWin32OwnedTextEditor` (only with `document-shell` + `windows-win32`)
   for owned multiline EDIT creation, DPI-scaled font lifetime, bounds, text,

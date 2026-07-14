@@ -15,7 +15,7 @@ use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, MenuService,
+    ClipboardData, ClipboardService, DesktopEvent, FileDialogService, FileDialogSpec, MenuService,
     SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
 
@@ -93,6 +93,13 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                     application.quit();
                     return;
                 }
+                if let Some(view_host) = windows.view_hosts.get(&window).cloned() {
+                    menu.set_event_handler(move |event| {
+                        if let DesktopEvent::MenuCommand { command, .. } = event {
+                            view_host.dispatch_app_command(command);
+                        }
+                    });
+                }
                 Some(menu)
             } else {
                 None
@@ -125,6 +132,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
 pub struct LinuxGtkWindowService {
     application: gtk::Application,
     windows: HashMap<WindowId, gtk::ApplicationWindow>,
+    view_hosts: HashMap<WindowId, crate::linux_gtk_renderer::LinuxGtkDrawViewHost>,
     next_window_id: u64,
 }
 
@@ -146,6 +154,7 @@ impl LinuxGtkWindowService {
         Self {
             application,
             windows: HashMap::new(),
+            view_hosts: HashMap::new(),
             next_window_id: 1,
         }
     }
@@ -173,11 +182,12 @@ impl LinuxGtkWindowService {
         runtime: crate::native::NativeViewInputRuntime,
     ) -> ZsuiResult<()> {
         ensure_gtk_main_thread("gtk_set_window_draw_plan")?;
-        crate::linux_gtk_renderer::install_linux_gtk_draw_plan(
+        let view_host = crate::linux_gtk_renderer::install_linux_gtk_draw_plan(
             self.window(window, "gtk_set_window_draw_plan")?,
             plan,
             runtime,
         );
+        self.view_hosts.insert(window, view_host);
         Ok(())
     }
 
@@ -201,6 +211,7 @@ impl LinuxGtkWindowService {
 
 impl Drop for LinuxGtkWindowService {
     fn drop(&mut self) {
+        self.view_hosts.clear();
         for (_, window) in self.windows.drain() {
             window.close();
         }
@@ -271,6 +282,7 @@ impl WindowService for LinuxGtkWindowService {
 
     fn close_window(&mut self, window: WindowId) -> ZsuiResult<()> {
         ensure_gtk_main_thread("gtk_close_window")?;
+        self.view_hosts.remove(&window);
         let window = self.windows.remove(&window).ok_or_else(|| {
             ZsuiError::host(
                 "gtk_close_window",

@@ -215,6 +215,16 @@ fn update(state: &mut AppState, message: Msg, cx: &mut AppCx) {
     }
 }
 
+fn message_for_app_command(command: &Command) -> Option<Msg> {
+    match command {
+        Command::Custom { id, .. } if id == "desktop.file.open" => Some(Msg::OpenFile),
+        Command::Custom { id, .. } if id == "desktop.file.save" => Some(Msg::SaveFile),
+        Command::CopySelection => Some(Msg::Copy),
+        Command::PasteSelection => Some(Msg::Paste),
+        _ => None,
+    }
+}
+
 fn showcase_menu() -> MenuSpec {
     MenuSpec::new()
         .submenu(
@@ -290,7 +300,7 @@ fn main() -> ZsuiResult<()> {
             "/assets/notepad/notepad.ico"
         ))
         .menu(showcase_menu())
-        .stateful_view(AppState::default(), view, update)
+        .stateful_view_with_app_commands(AppState::default(), view, update, message_for_app_command)
         .app_command_executor(|command| Ok(vec![AppEvent::MenuCommand { command }]));
 
     let args = std::env::args().collect::<Vec<_>>();

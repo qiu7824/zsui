@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 
 use objc2::rc::Retained;
@@ -11,9 +13,17 @@ use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 use crate::native_menu::{native_menu_command_event, NativeMenuModel, NativeMenuNode};
 use crate::{DesktopEvent, MenuService, MenuSpec, WindowId, ZsAccelerator, ZsuiError, ZsuiResult};
 
-#[derive(Debug)]
 struct AppKitMenuTargetIvars {
     sender: Sender<u32>,
+    command_handler: Rc<RefCell<Option<Rc<dyn Fn(u32)>>>>,
+}
+
+impl fmt::Debug for AppKitMenuTargetIvars {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AppKitMenuTargetIvars")
+            .finish_non_exhaustive()
+    }
 }
 
 define_class!(
@@ -27,7 +37,11 @@ define_class!(
         fn zsui_menu_command(&self, sender: &NSMenuItem) {
             let native_id = sender.tag();
             if let Ok(native_id) = u32::try_from(native_id) {
-                let _ = self.ivars().sender.send(native_id);
+                if let Some(handler) = self.ivars().command_handler.borrow().as_ref().cloned() {
+                    handler(native_id);
+                } else {
+                    let _ = self.ivars().sender.send(native_id);
+                }
             }
         }
     }
@@ -36,8 +50,15 @@ define_class!(
 );
 
 impl ZsuiAppKitMenuTarget {
-    fn new(mtm: MainThreadMarker, sender: Sender<u32>) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(AppKitMenuTargetIvars { sender });
+    fn new(
+        mtm: MainThreadMarker,
+        sender: Sender<u32>,
+        command_handler: Rc<RefCell<Option<Rc<dyn Fn(u32)>>>>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(AppKitMenuTargetIvars {
+            sender,
+            command_handler,
+        });
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -47,6 +68,7 @@ pub struct MacosAppKitMenuService {
     model: Option<NativeMenuModel>,
     menu: Option<Retained<NSMenu>>,
     target: Retained<ZsuiAppKitMenuTarget>,
+    command_handler: Rc<RefCell<Option<Rc<dyn Fn(u32)>>>>,
     receiver: Receiver<u32>,
     next_native_id: u32,
 }
@@ -72,11 +94,13 @@ impl MacosAppKitMenuService {
     pub fn new() -> ZsuiResult<Self> {
         let mtm = appkit_menu_main_thread_marker()?;
         let (sender, receiver) = mpsc::channel();
+        let command_handler = Rc::new(RefCell::new(None));
         Ok(Self {
             window: None,
             model: None,
             menu: None,
-            target: ZsuiAppKitMenuTarget::new(mtm, sender),
+            target: ZsuiAppKitMenuTarget::new(mtm, sender, Rc::clone(&command_handler)),
+            command_handler,
             receiver,
             next_native_id: 1,
         })
@@ -102,12 +126,23 @@ impl MacosAppKitMenuService {
             .map(NativeMenuModel::command_count)
             .unwrap_or(0)
     }
+
+    pub(crate) fn set_event_handler(&mut self, handler: impl Fn(DesktopEvent) + 'static) {
+        let model = self.model.clone();
+        let window = self.window;
+        *self.command_handler.borrow_mut() = Some(Rc::new(move |native_id| {
+            if let Some(event) = native_menu_command_event(model.as_ref(), window, native_id) {
+                handler(event);
+            }
+        }));
+    }
 }
 
 impl MenuService for MacosAppKitMenuService {
     fn set_window_menu(&mut self, window: WindowId, menu: Option<&MenuSpec>) -> ZsuiResult<()> {
         let mtm = appkit_menu_main_thread_marker()?;
         let application = NSApplication::sharedApplication(mtm);
+        self.command_handler.borrow_mut().take();
         let Some(menu_spec) = menu else {
             detach_owned_appkit_menu(&application, self.menu.as_ref());
             self.window = None;

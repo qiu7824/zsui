@@ -25,7 +25,7 @@ use crate::native_file_dialog::{
     native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, FileDialogService, FileDialogSpec, MenuService,
+    ClipboardData, ClipboardService, DesktopEvent, FileDialogService, FileDialogSpec, MenuService,
     SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
 
@@ -95,6 +95,13 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         .zip(specs.first().and_then(|spec| spec.menu.as_ref()))
     {
         menu_service.set_window_menu(window, Some(menu))?;
+        if let Some(view_host) = window_service.view_hosts.get(&window).cloned() {
+            menu_service.set_event_handler(move |event| {
+                if let DesktopEvent::MenuCommand { command, .. } = event {
+                    view_host.dispatch_app_command(command);
+                }
+            });
+        }
     }
 
     let delegate = ZsuiAppKitRuntimeDelegate::new(mtm, ids.len());
@@ -134,6 +141,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
 pub struct MacosAppKitWindowService {
     _application: Retained<NSApplication>,
     windows: HashMap<WindowId, Retained<NSWindow>>,
+    view_hosts: HashMap<WindowId, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
     next_window_id: u64,
 }
 
@@ -145,6 +153,7 @@ impl MacosAppKitWindowService {
         Ok(Self {
             _application: application,
             windows: HashMap::new(),
+            view_hosts: HashMap::new(),
             next_window_id: 1,
         })
     }
@@ -172,11 +181,12 @@ impl MacosAppKitWindowService {
         runtime: crate::native::NativeViewInputRuntime,
     ) -> ZsuiResult<()> {
         appkit_main_thread_marker("macos_set_window_draw_plan")?;
-        crate::macos_appkit_renderer::install_macos_appkit_draw_plan(
+        let view_host = crate::macos_appkit_renderer::install_macos_appkit_draw_plan(
             self.window(window, "macos_set_window_draw_plan")?,
             plan,
             runtime,
         );
+        self.view_hosts.insert(window, view_host);
         Ok(())
     }
 
@@ -201,6 +211,7 @@ impl MacosAppKitWindowService {
 
 impl Drop for MacosAppKitWindowService {
     fn drop(&mut self) {
+        self.view_hosts.clear();
         for (_, window) in self.windows.drain() {
             window.close();
         }
@@ -285,6 +296,7 @@ impl WindowService for MacosAppKitWindowService {
 
     fn close_window(&mut self, window: WindowId) -> ZsuiResult<()> {
         appkit_main_thread_marker("macos_close_window")?;
+        self.view_hosts.remove(&window);
         let window = self.windows.remove(&window).ok_or_else(|| {
             ZsuiError::host(
                 "macos_close_window",

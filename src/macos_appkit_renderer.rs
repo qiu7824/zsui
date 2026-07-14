@@ -546,11 +546,36 @@ impl ZsuiAppKitDrawView {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct MacosAppKitDrawViewHost {
+    view: Retained<ZsuiAppKitDrawView>,
+}
+
+impl std::fmt::Debug for MacosAppKitDrawViewHost {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MacosAppKitDrawViewHost")
+            .finish_non_exhaustive()
+    }
+}
+
+impl MacosAppKitDrawViewHost {
+    pub(crate) fn dispatch_app_command(&self, command: crate::Command) {
+        let report = self
+            .view
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_app_command(command);
+        self.view.apply_input_report(report);
+    }
+}
+
 pub(crate) fn install_macos_appkit_draw_plan(
     window: &objc2_app_kit::NSWindow,
     plan: NativeDrawPlan,
     runtime: crate::native::NativeViewInputRuntime,
-) {
+) -> MacosAppKitDrawViewHost {
     let mtm = window.mtm();
     let frame = window
         .contentView()
@@ -565,6 +590,7 @@ pub(crate) fn install_macos_appkit_draw_plan(
     window.setContentView(Some(&view));
     view.schedule_runtime_tick();
     view.setNeedsDisplay(true);
+    MacosAppKitDrawViewHost { view }
 }
 
 pub(crate) struct MacosAppKitTextLayout;

@@ -4540,7 +4540,6 @@ impl WindowsWin32ViewInputRoute {
     fn dispatch_app_command(&mut self, command: Command) -> WindowsWin32ViewInputDispatchReport {
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
-            app_command_count: 1,
             ..WindowsWin32ViewInputDispatchReport::default()
         };
         report
@@ -4549,7 +4548,47 @@ impl WindowsWin32ViewInputRoute {
         report
             .events
             .push(format!("win32_window_menu_command:{command:?}"));
+
+        if let Some(live_view) = &self.live_view {
+            let update = live_view.dispatch_app_command(&command);
+            if update.message_count > 0 {
+                report.handled = true;
+                report.event_count = 1;
+                report.message_count = update.message_count;
+                report.app_command_count = update.commands.len();
+                report.ui_command_count = update.ui_commands.len();
+                report.live_view_revision = update.revision;
+                report.quit_requested = update.quit_requested;
+                for effect in update.commands {
+                    report
+                        .app_command_names
+                        .push(crate::app_command_name(&effect));
+                    if effect == Command::Quit {
+                        report.quit_requested = true;
+                        self.quit_requested = true;
+                    }
+                    self.pending_app_commands.push(effect);
+                }
+                for effect in update.ui_commands {
+                    report.ui_command_ids.push(effect.id.0);
+                    self.pending_ui_commands.push(effect);
+                }
+                if update.redraw {
+                    self.interaction_plan = live_view.interaction_plan();
+                    self.rebuild_pending_draw_plan();
+                    report.hit_target_count = self.hit_target_count();
+                    report
+                        .events
+                        .push(format!("win32_live_view_menu_repaint:{}", update.revision));
+                }
+                self.quit_requested |= update.quit_requested;
+                return report;
+            }
+        }
+
+        report.app_command_count = 1;
         if command == Command::Quit {
+            report.handled = true;
             report.quit_requested = true;
             self.quit_requested = true;
         }
@@ -8608,6 +8647,67 @@ mod tests {
                 crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
             )));
 
+        clear_windows_win32_window_view_input_route(hwnd);
+        clear_windows_win32_window_draw_plan(hwnd);
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[test]
+    fn window_menu_command_updates_typed_live_view_and_repaints() {
+        let _guard = view_input_route_test_lock();
+        clear_windows_win32_window_draw_plans();
+        clear_windows_win32_window_view_input_routes();
+        clear_windows_win32_window_menu_command_tables();
+        let hwnd = 0x5454isize as HWND;
+
+        #[derive(Clone)]
+        enum Msg {
+            Open,
+        }
+        struct State {
+            status: &'static str,
+        }
+
+        let builder = crate::native_window("Menu State").stateful_view_with_app_commands(
+            State { status: "Ready" },
+            |state| crate::text::<Msg>(state.status),
+            |state, message, _cx| match message {
+                Msg::Open => state.status = "Opened from native menu",
+            },
+            |command| match command {
+                Command::Custom { id, .. } if id == "document.open" => Some(Msg::Open),
+                _ => None,
+            },
+        );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("stateful view should keep a live runtime")
+            .clone();
+        assert!(set_windows_win32_window_view_input_route(
+            hwnd,
+            WindowsWin32ViewInputRoute::from_live_view(runtime.clone()),
+        ));
+        let table = WindowsWin32StatusMenuCommandTable::from_menu(
+            &MenuSpec::new().item("Open", Command::custom("document.open")),
+        );
+        let native_id = table
+            .first_native_id()
+            .expect("menu should allocate a native command id");
+        set_windows_win32_window_menu_command_table(hwnd, table);
+
+        assert!(matches!(
+            dispatch_windows_win32_window_menu_command(hwnd, native_id),
+            Some(NativeStatusMenuCommandResult::Dispatched(Command::Custom { id, .. }))
+                if id == "document.open"
+        ));
+        assert_eq!(runtime.revision(), 1);
+        assert!(runtime.draw_plan().commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Text(text) if text.text == "Opened from native menu"
+        )));
+        assert!(window_draw_plan(hwnd).is_some());
+
+        clear_windows_win32_window_menu_command_table(hwnd);
         clear_windows_win32_window_view_input_route(hwnd);
         clear_windows_win32_window_draw_plan(hwnd);
     }

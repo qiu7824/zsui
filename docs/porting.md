@@ -59,6 +59,15 @@ disabled, checked and accelerator state and return typed `Command` values as
 images and files remain explicitly unsupported until their native formats are
 implemented and tested.
 
+For a menu that changes application state, use
+`stateful_view_with_app_commands(state, view, update, command_to_message)`.
+The final mapper converts a platform-neutral `Command` to the application's
+typed `Msg`. Win32 routes `WM_COMMAND`/`HACCEL`, AppKit invokes the owned menu
+target, and GTK4 invokes the owned `SimpleAction`; all three then run the same
+update function, rebuild the shared draw plan and request repaint. Unmapped
+commands still use the ordinary application command executor, and `Quit`
+retains native host handling.
+
 Application code can use `NativeFileDialogService` with the same
 `FileDialogSpec`/`SaveFileDialogSpec` and owned `PathBuf` values on all three
 desktop targets. The facade selects Win32, AppKit or GTK4 internally and
@@ -275,6 +284,9 @@ same typed `Command` as clicking the native menu item. Its semantic `Primary`
 modifier maps to Control on Windows and Linux and Command on macOS. AppKit maps
 the typed key to a key equivalent and GTK4 maps it to an application action
 accelerator; application code does not parse target-specific shortcut strings.
+The native menu callback is owned beside the target window's live-view host;
+it is not a global widget registry and does not expose toolkit objects to the
+application.
 
 Each backend should report real support through `HostCapabilities`.
 Use `CapabilityStatus::Partial` when a declaration can be accepted but native

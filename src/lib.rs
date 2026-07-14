@@ -571,9 +571,10 @@ pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]
 pub use view::ZsTimePickerState;
 pub use view::{
-    column, live_view_runtime, row, spacer, AppCx, LiveViewUpdate, SharedLiveViewRuntime, View,
-    ViewEvent, ViewEventCx, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx,
-    ViewNode, ViewNodeKind, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
+    column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
+    LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,
+    ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewPaintCx,
+    ViewStackDirection, ViewStyle, WidgetId,
 };
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};

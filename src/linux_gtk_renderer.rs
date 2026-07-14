@@ -25,7 +25,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
     window: &gtk::ApplicationWindow,
     plan: NativeDrawPlan,
     runtime: crate::native::NativeViewInputRuntime,
-) {
+) -> LinuxGtkDrawViewHost {
     let drawing_area = gtk::DrawingArea::new();
     drawing_area.set_hexpand(true);
     drawing_area.set_vexpand(true);
@@ -446,14 +446,63 @@ pub(crate) fn install_linux_gtk_draw_plan(
     });
     drawing_area.add_controller(focus);
     window.set_child(Some(&drawing_area));
+    let application = window.application();
     schedule_linux_gtk_runtime_tick(
         &drawing_area,
         &plan,
         &runtime,
         &ime,
-        window.application(),
+        application.clone(),
         &runtime_timer,
     );
+    LinuxGtkDrawViewHost {
+        area: drawing_area,
+        plan,
+        runtime,
+        ime,
+        application,
+        runtime_timer,
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct LinuxGtkDrawViewHost {
+    area: gtk::DrawingArea,
+    plan: Rc<RefCell<NativeDrawPlan>>,
+    runtime: Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: gtk::IMMulticontext,
+    application: Option<gtk::Application>,
+    runtime_timer: Rc<RefCell<Option<gtk::glib::SourceId>>>,
+}
+
+impl std::fmt::Debug for LinuxGtkDrawViewHost {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LinuxGtkDrawViewHost")
+            .finish_non_exhaustive()
+    }
+}
+
+impl LinuxGtkDrawViewHost {
+    pub(crate) fn dispatch_app_command(&self, command: crate::Command) {
+        let report = self.runtime.borrow_mut().dispatch_app_command(command);
+        apply_linux_gtk_input_report(
+            report,
+            &self.area,
+            &self.plan,
+            &self.runtime,
+            &self.ime,
+            self.application.as_ref(),
+        );
+        schedule_linux_gtk_runtime_tick(
+            &self.area,
+            &self.plan,
+            &self.runtime,
+            &self.ime,
+            self.application.clone(),
+            &self.runtime_timer,
+        );
+    }
 }
 
 fn schedule_linux_gtk_runtime_tick(

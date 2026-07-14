@@ -3071,6 +3071,7 @@ trait LiveViewDriver: Send {
     fn draw_plan(&self) -> NativeDrawPlan;
     fn interaction_plan(&self) -> ViewInteractionPlan;
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
+    fn dispatch_app_command(&mut self, command: &Command) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     #[cfg(feature = "password-box")]
     fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword>;
@@ -3185,6 +3186,10 @@ impl SharedLiveViewRuntime {
 
     pub fn dispatch_event(&self, event: &ViewEvent) -> LiveViewUpdate {
         self.lock().dispatch_event(event)
+    }
+
+    pub fn dispatch_app_command(&self, command: &Command) -> LiveViewUpdate {
+        self.lock().dispatch_app_command(command)
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
@@ -3384,6 +3389,7 @@ where
     state: State,
     view_fn: ViewFn,
     update_fn: UpdateFn,
+    app_command_mapper: Option<Box<dyn Fn(&Command) -> Option<Msg> + Send>>,
     view: ViewNode<Msg>,
     bounds: Rect,
     dpi: Dpi,
@@ -3397,12 +3403,20 @@ where
     ViewFn: Fn(&State) -> ViewNode<Msg>,
     UpdateFn: Fn(&mut State, Msg, &mut AppCx),
 {
-    fn new(state: State, view_fn: ViewFn, update_fn: UpdateFn, bounds: Rect, dpi: Dpi) -> Self {
+    fn new(
+        state: State,
+        view_fn: ViewFn,
+        update_fn: UpdateFn,
+        app_command_mapper: Option<Box<dyn Fn(&Command) -> Option<Msg> + Send>>,
+        bounds: Rect,
+        dpi: Dpi,
+    ) -> Self {
         let view = view_fn(&state);
         let mut driver = Self {
             state,
             view_fn,
             update_fn,
+            app_command_mapper,
             view,
             bounds,
             dpi,
@@ -3417,6 +3431,24 @@ where
         self.view = (self.view_fn)(&self.state);
         let mut cx = ViewLayoutCx::new(self.bounds, self.dpi);
         self.view.layout(&mut cx);
+    }
+
+    fn apply_messages(&mut self, messages: Vec<Msg>) -> LiveViewUpdate {
+        let message_count = messages.len();
+        let mut app_cx = AppCx::new();
+        for message in messages {
+            (self.update_fn)(&mut self.state, message, &mut app_cx);
+        }
+        self.layout();
+        self.revision = self.revision.saturating_add(1);
+        LiveViewUpdate {
+            redraw: true,
+            message_count,
+            commands: app_cx.commands().to_vec(),
+            ui_commands: app_cx.ui_commands().to_vec(),
+            quit_requested: app_cx.quit_requested(),
+            revision: self.revision,
+        }
     }
 }
 
@@ -3476,21 +3508,21 @@ where
             };
         }
 
-        let message_count = messages.len();
-        let mut app_cx = AppCx::new();
-        for message in messages {
-            (self.update_fn)(&mut self.state, message, &mut app_cx);
-        }
-        self.layout();
-        self.revision = self.revision.saturating_add(1);
-        LiveViewUpdate {
-            redraw: true,
-            message_count,
-            commands: app_cx.commands().to_vec(),
-            ui_commands: app_cx.ui_commands().to_vec(),
-            quit_requested: app_cx.quit_requested(),
-            revision: self.revision,
-        }
+        self.apply_messages(messages)
+    }
+
+    fn dispatch_app_command(&mut self, command: &Command) -> LiveViewUpdate {
+        let Some(message) = self
+            .app_command_mapper
+            .as_ref()
+            .and_then(|mapper| mapper(command))
+        else {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        };
+        self.apply_messages(vec![message])
     }
 
     fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
@@ -3676,7 +3708,34 @@ where
 {
     SharedLiveViewRuntime {
         inner: Arc::new(Mutex::new(Box::new(TypedLiveViewDriver::new(
-            state, view_fn, update_fn, bounds, dpi,
+            state, view_fn, update_fn, None, bounds, dpi,
+        )))),
+    }
+}
+
+pub fn live_view_runtime_with_app_commands<State, Msg, ViewFn, UpdateFn, CommandFn>(
+    state: State,
+    view_fn: ViewFn,
+    update_fn: UpdateFn,
+    command_fn: CommandFn,
+    bounds: Rect,
+    dpi: Dpi,
+) -> SharedLiveViewRuntime
+where
+    State: Send + 'static,
+    Msg: Clone + Send + 'static,
+    ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+    UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+    CommandFn: Fn(&Command) -> Option<Msg> + Send + 'static,
+{
+    SharedLiveViewRuntime {
+        inner: Arc::new(Mutex::new(Box::new(TypedLiveViewDriver::new(
+            state,
+            view_fn,
+            update_fn,
+            Some(Box::new(command_fn)),
+            bounds,
+            dpi,
         )))),
     }
 }

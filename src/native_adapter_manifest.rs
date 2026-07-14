@@ -398,7 +398,7 @@ fn native_ui_capability_readiness(
             PopupMenu | StatusItem => (
                 FirstPass,
                 "src/windows_win32_host.rs",
-                "status-item menus are implemented; the general popup-menu surface is not complete",
+                "window-menu commands and accelerators re-enter typed live-view state, and status-item menus are implemented; the general popup-menu surface is not complete",
             ),
             Clipboard => (
                 FirstPass,
@@ -450,7 +450,7 @@ fn native_ui_capability_readiness(
             PopupMenu => (
                 FirstPass,
                 "src/macos_appkit_menu.rs",
-                "NSMenu and NSMenuItem preserve nested state and return typed commands through a safe queue; AppKit host proof is pending",
+                "NSMenu and NSMenuItem preserve nested state and dispatch typed commands into the owned live-view host for state update and repaint; AppKit interaction proof is pending",
             ),
             Ime => (
                 FirstPass,
@@ -492,7 +492,7 @@ fn native_ui_capability_readiness(
             PopupMenu => (
                 FirstPass,
                 "src/linux_gtk_menu.rs",
-                "GMenu and SimpleAction preserve nested state and return typed commands through a safe queue; GTK host proof is pending",
+                "GMenu and SimpleAction preserve nested state and dispatch typed commands into the owned live-view host for state update and repaint; GTK interaction proof is pending",
             ),
             Ime => (
                 FirstPass,

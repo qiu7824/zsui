@@ -63,8 +63,8 @@ use crate::{
     shell_layout::{ZsShellLayoutSpec, ZsShellRuntime},
     tray::TraySpec,
     view::{
-        live_view_runtime, AppCx, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx,
-        ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewPaintCx,
+        live_view_runtime, live_view_runtime_with_app_commands, AppCx, SharedLiveViewRuntime, View,
+        ViewEvent, ViewEventCx, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewPaintCx,
     },
     window::{Window, WindowSpec},
 };
@@ -5289,6 +5289,87 @@ impl NativeViewInputRuntime {
         report
     }
 
+    pub(crate) fn dispatch_app_command(
+        &mut self,
+        command: Command,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+
+        let update = self
+            .live_view
+            .as_ref()
+            .map(|runtime| runtime.dispatch_app_command(&command));
+        if let Some(update) = update.filter(|update| update.message_count > 0) {
+            report.handled = true;
+            report.message_count = update.message_count;
+            report.app_command_count = update.commands.len();
+            report.ui_command_count = update.ui_commands.len();
+            report.quit_requested =
+                update.quit_requested || update.commands.contains(&Command::Quit);
+
+            let app_executor = self.app_command_executor.clone();
+            for effect in update.commands {
+                if let Some(executor) = &app_executor {
+                    if let Err(error) = executor.dispatch(effect) {
+                        report.errors.push(error.to_string());
+                    }
+                }
+            }
+            let ui_executor = self.ui_command_executor.clone();
+            for effect in update.ui_commands {
+                report.ui_command_ids.push(effect.id.0);
+                if let Some(executor) = &ui_executor {
+                    if let Err(error) = executor.dispatch(effect) {
+                        report.errors.push(error.to_string());
+                    }
+                }
+            }
+            if let Some(runtime) = &self.live_view {
+                self.interaction_plan = Some(runtime.interaction_plan());
+                if update.redraw {
+                    report.redraw_plan = Some(runtime.draw_plan());
+                }
+            }
+        } else if command == Command::Quit {
+            report.handled = true;
+            report.quit_requested = true;
+        } else if let Some(executor) = self.app_command_executor.clone() {
+            report.app_command_count = 1;
+            match executor.dispatch(command) {
+                Ok(_) => report.handled = true,
+                Err(error) => report.errors.push(error.to_string()),
+            }
+        }
+
+        if self.focused_widget.is_some_and(|widget| {
+            self.current_interaction_plan()
+                .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
+        }) {
+            self.focused_widget = None;
+            self.text_edit = None;
+            self.text_drag = None;
+            self.ime_preedit = None;
+            report.focus_visual_changed = true;
+        }
+        self.sync_text_edit();
+        if let Some(plan) = report.redraw_plan.take() {
+            report.redraw_plan = Some(self.compose_input_visuals(plan));
+        }
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        report.ime_caret_rect = self.text_input_caret_rect();
+        self.populate_text_report(&mut report);
+        report
+    }
+
     #[cfg(all(windows, feature = "windows-win32"))]
     fn windows_win32_route(&self) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
         let route = if let Some(runtime) = &self.live_view {
@@ -5824,6 +5905,45 @@ impl NativeWindowBuilder {
         self
     }
 
+    /// Installs a stateful view whose typed update function also receives
+    /// commands produced by the native window menu.
+    pub fn stateful_view_with_app_commands<State, Msg, ViewFn, UpdateFn, CommandFn>(
+        mut self,
+        state: State,
+        view_fn: ViewFn,
+        update_fn: UpdateFn,
+        command_fn: CommandFn,
+    ) -> Self
+    where
+        State: Send + 'static,
+        Msg: Clone + Send + 'static,
+        ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+        UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+        CommandFn: Fn(&Command) -> Option<Msg> + Send + 'static,
+    {
+        let runtime = live_view_runtime_with_app_commands(
+            state,
+            view_fn,
+            update_fn,
+            command_fn,
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.window.width as i32,
+                height: self.window.height as i32,
+            },
+            Dpi::standard(),
+        );
+        let interaction_plan = runtime.interaction_plan();
+        self.view_layout_node_count = interaction_plan.hit_target_count();
+        self.view_interaction_plan = Some(interaction_plan);
+        self.draw_plan = Some(runtime.draw_plan());
+        self.view_ui_command_tree = None;
+        self.shell_runtime = None;
+        self.live_view_runtime = Some(runtime);
+        self
+    }
+
     pub fn app_command_executor(mut self, executor: impl AppCommandExecutor + 'static) -> Self {
         self.app_command_executor = Some(SharedAppCommandExecutor::new(executor));
         self
@@ -6098,6 +6218,26 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
         UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
     {
         TypedNativeWindowBuilder::ready(self.inner.stateful_view(state, view_fn, update_fn))
+    }
+
+    pub fn stateful_view_with_app_commands<State, Msg, ViewFn, UpdateFn, CommandFn>(
+        self,
+        state: State,
+        view_fn: ViewFn,
+        update_fn: UpdateFn,
+        command_fn: CommandFn,
+    ) -> TypedNativeWindowBuilder<NativeWindowContentReady>
+    where
+        State: Send + 'static,
+        Msg: Clone + Send + 'static,
+        ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
+        UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
+        CommandFn: Fn(&Command) -> Option<Msg> + Send + 'static,
+    {
+        TypedNativeWindowBuilder::ready(
+            self.inner
+                .stateful_view_with_app_commands(state, view_fn, update_fn, command_fn),
+        )
     }
 
     pub fn shell_layout(
@@ -7751,6 +7891,48 @@ mod tests {
         assert!(runtime.draw_plan().commands.iter().any(|command| matches!(
             command,
             crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
+        )));
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_window_menu_command_reenters_typed_stateful_update() {
+        #[derive(Clone)]
+        enum Msg {
+            Open,
+        }
+        struct State {
+            status: &'static str,
+        }
+
+        let builder = native_window("Menu State")
+            .size(360, 220)
+            .stateful_view_with_app_commands(
+                State { status: "Ready" },
+                |state| crate::text::<Msg>(state.status),
+                |state, message, _cx| match message {
+                    Msg::Open => state.status = "Opened from menu",
+                },
+                |command| match command {
+                    Command::Custom { id, .. } if id == "document.open" => Some(Msg::Open),
+                    _ => None,
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("stateful view should keep a live runtime")
+            .clone();
+        let mut input = builder.native_view_input_runtime();
+
+        let report = input.dispatch_app_command(Command::custom("document.open"));
+
+        assert!(report.handled);
+        assert_eq!(report.message_count, 1);
+        assert!(report.redraw_plan.is_some());
+        assert_eq!(runtime.revision(), 1);
+        assert!(runtime.draw_plan().commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Text(text) if text.text == "Opened from menu"
         )));
     }
 

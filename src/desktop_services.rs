@@ -188,7 +188,7 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::NativeMenu,
                 CapabilitySupport::supported(
-                    "owned HMENU/HACCEL command and keyboard routing are connected",
+                    "owned HMENU/HACCEL command and keyboard routing re-enter typed stateful-view updates",
                 ),
             )
             .with_support(
@@ -329,7 +329,7 @@ impl DesktopCapabilities {
                 DesktopCapability::NativeMenu,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSMenu/NSMenuItem state and typed command polling are connected; AppKit host proof is pending",
+                        "NSMenu/NSMenuItem commands re-enter typed stateful-view updates and repaint the owned NSView; AppKit target interaction proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -471,7 +471,7 @@ impl DesktopCapabilities {
                 DesktopCapability::NativeMenu,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GMenu/SimpleAction state and typed command polling are connected; GTK host proof is pending",
+                        "GMenu/SimpleAction commands re-enter typed stateful-view updates and repaint the owned DrawingArea; GTK target interaction proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
