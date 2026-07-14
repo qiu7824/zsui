@@ -16,6 +16,9 @@ framework architecture.
 - `text_editor` owns the shared multiline editing surface, focus, selection,
   keyboard input and IME integration. Target renderers adapt its metrics and
   visuals to the platform theme.
+- `ViewNode::text_wrap(TextWrap)` switches the shared editor between word-wrap
+  and hard-line-only rendering at runtime. Paint, caret, selection and pointer
+  hit geometry consume the same typed setting on all three hosts.
 - `ZsTextSelection` reports application-independent Unicode-scalar anchor and
   caret positions through `on_text_selection_change`, including edits,
   keyboard navigation and pointer drag selection.
@@ -57,7 +60,8 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo -
 
 The smoke requires a visible native window, a routed native menu command, real
 text input through the self-drawn editor and a typed Undo routed from the
-self-drawn command bar back to that editor. On non-Windows targets the same
+self-drawn command bar back to that editor. It also toggles word wrap and
+verifies the updated shared application state. On non-Windows targets the same
 source is compiled against the AppKit or GTK4 host; target runtime evidence is
 tracked separately and is not inferred from cross-compilation.
 
@@ -73,12 +77,12 @@ tracked separately and is not inferred from cross-compilation.
 | UTF-8 save and UTF-8/UTF-16 input decode | implemented |
 | Caret-aware line/column, line count, character count and encoding status | implemented |
 | Undo/cut/copy/paste/select-all command API | implemented |
-| Runtime word-wrap toggle | pending shared editor configuration |
+| Runtime word-wrap toggle | implemented |
 | Intercepting the operating-system window-close button | pending shared close-request message |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
 
-Unsupported editor commands are not placed in the menu. This avoids claiming
-behavior that exists only in one platform service.
+Commands still outside the shared editor contract are not placed in the menu.
+This avoids claiming behavior that exists only in one platform service.
 
 ## Optional feature boundary
 
@@ -90,11 +94,11 @@ service, but the acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 620 nonblank lines,
+The shared acceptance application is one source file with 680 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 112
-lines (15.3%) smaller while adding one cross-platform source path, typed caret
-status, native menus and the shared editing-command acceptance coverage.
+files with 732 nonblank lines, so the checked-in application surface is 52
+lines (7.1%) smaller while adding one cross-platform source path, typed caret
+status, native menus, shared editing commands and runtime word-wrap coverage.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

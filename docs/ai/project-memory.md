@@ -75,6 +75,12 @@ history remain authoritative for implementation status.
   application remains authoritative. Cut/copy/paste require the optional
   `clipboard` feature and use target-native clipboard services; examples do not
   call platform clipboard APIs directly.
+- Shared multiline editors default to `TextWrap::Word` and accept runtime
+  `ViewNode::text_wrap(...)` configuration; single-line TextBox remains
+  `NoWrap`. Rendering, caret placement, selection rectangles and pointer hit
+  testing must consume the same wrap state on Win32, AppKit and GTK4. This is
+  shared self-drawn behavior and must not introduce a native child editor or a
+  WebView.
 
 ## Native platform bar
 

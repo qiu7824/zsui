@@ -7,13 +7,14 @@ use std::{
 use zsui::{
     button, column, native_window, row, spacer, text, text_editor, AppCx, Command, Dp,
     FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
-    NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, ThemeColorToken, ViewNode, WidgetId,
-    ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand,
-    ZsTextSelection, ZsuiError, ZsuiResult,
+    NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode,
+    WidgetId, ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument,
+    ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
 const UNDO_BUTTON: WidgetId = WidgetId::new(2);
+const WRAP_BUTTON: WidgetId = WidgetId::new(3);
 const EFFECT_OPEN: &str = "notepad.effect.open";
 const EFFECT_SAVE: &str = "notepad.effect.save";
 const EFFECT_SAVE_AS: &str = "notepad.effect.save-as";
@@ -43,6 +44,7 @@ struct NotepadState {
     document: ZsTextDocument,
     selection: ZsTextSelection,
     show_status: bool,
+    word_wrap: bool,
     pending: Option<PendingAction>,
     notice: String,
 }
@@ -55,6 +57,7 @@ impl Default for NotepadState {
             ),
             selection: ZsTextSelection::default(),
             show_status: true,
+            word_wrap: true,
             pending: None,
             notice: "Ready".to_string(),
         }
@@ -104,6 +107,7 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
         command_button("Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
         spacer(),
         command_button("Status", ZsDocumentShellCommand::ToggleStatus),
+        command_button("Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
         command_button("About", ZsDocumentShellCommand::About),
     ])
     .height(Dp::new(40.0))
@@ -134,6 +138,11 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
     content.push(
         text_editor(state.document.text())
             .id(DOCUMENT_EDITOR)
+            .text_wrap(if state.word_wrap {
+                TextWrap::Word
+            } else {
+                TextWrap::NoWrap
+            })
             .flex(1.0)
             .on_change(Msg::DocumentChanged)
             .on_text_selection_change(Msg::SelectionChanged),
@@ -150,7 +159,11 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
                 text(format!("Lines {line_count}")),
                 text(format!("Characters {}", cursor.character_count)),
                 text(state.document.encoding().label()),
-                text("Wrap on"),
+                text(if state.word_wrap {
+                    "Wrap on"
+                } else {
+                    "Wrap off"
+                }),
             ])
             .height(Dp::new(30.0))
             .gap(Dp::new(16.0))
@@ -232,8 +245,13 @@ fn dispatch_document_command(
             cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::SelectAll)
         }
         ZsDocumentShellCommand::ToggleWrap => {
-            state.notice =
-                "This editor command is not exposed by the shared text API yet.".to_string();
+            state.word_wrap = !state.word_wrap;
+            state.notice = if state.word_wrap {
+                "Word wrap enabled"
+            } else {
+                "Word wrap disabled"
+            }
+            .to_string();
         }
     }
 }
@@ -334,6 +352,11 @@ fn notepad_menu() -> MenuSpec {
     ));
 
     let mut view_menu = MenuSpec::new();
+    view_menu.items.push(menu_item(
+        "Word wrap",
+        ZsDocumentShellCommand::ToggleWrap,
+        None,
+    ));
     view_menu.items.push(menu_item(
         "Status bar",
         ZsDocumentShellCommand::ToggleStatus,
@@ -499,7 +522,7 @@ fn main() -> ZsuiResult<()> {
         .size(960, 680)
         .min_size(640, 440)
         .menu(notepad_menu())
-        .stateful_view_with_app_commands(shared, view, update, message_for_app_command)
+        .stateful_view_with_app_commands(shared.clone(), view, update, message_for_app_command)
         .app_command_executor(move |command| {
             let mut dialogs = NativeFileDialogService::new();
             let result = execute_effect(&executor_state, &command, &mut dialogs);
@@ -524,6 +547,17 @@ fn main() -> ZsuiResult<()> {
             x: undo_bounds.x + undo_bounds.width / 2,
             y: undo_bounds.y + undo_bounds.height / 2,
         };
+        let wrap_bounds = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(WRAP_BUTTON))
+            .map(|target| target.bounds)
+            .ok_or_else(|| {
+                ZsuiError::host("notepad_smoke", "Wrap button has no interaction bounds")
+            })?;
+        let wrap_point = Point {
+            x: wrap_bounds.x + wrap_bounds.width / 2,
+            y: wrap_bounds.y + wrap_bounds.height / 2,
+        };
         let screenshot = args
             .windows(2)
             .find(|pair| pair[0] == "--screenshot")
@@ -536,6 +570,7 @@ fn main() -> ZsuiResult<()> {
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_text_input("三平台自绘文本输入")
             .native_view_click(undo_point)
+            .native_view_click(wrap_point)
             .native_view_click(Point { x: 360, y: 220 });
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
@@ -555,6 +590,12 @@ fn main() -> ZsuiResult<()> {
             return Err(ZsuiError::host(
                 "notepad_smoke",
                 "native window, menu routing, self-drawn text input or typed undo was not verified",
+            ));
+        }
+        if lock_state(&shared)?.word_wrap {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                "runtime word-wrap toggle was not applied to shared state",
             ));
         }
     } else {
@@ -666,6 +707,28 @@ mod tests {
         assert!(commands.contains(&ZsDocumentShellCommand::Copy));
         assert!(commands.contains(&ZsDocumentShellCommand::Paste));
         assert!(commands.contains(&ZsDocumentShellCommand::SelectAll));
-        assert!(!commands.contains(&ZsDocumentShellCommand::ToggleWrap));
+        assert!(commands.contains(&ZsDocumentShellCommand::ToggleWrap));
+    }
+
+    #[test]
+    fn wrap_command_updates_the_shared_text_editor_configuration() {
+        let shared = Arc::new(Mutex::new(NotepadState::default()));
+        let mut cx = AppCx::new();
+        assert_eq!(
+            view(&shared).widget_text_wrap(DOCUMENT_EDITOR),
+            Some(TextWrap::Word)
+        );
+
+        update(
+            &mut shared.clone(),
+            Msg::Command(ZsDocumentShellCommand::ToggleWrap),
+            &mut cx,
+        );
+
+        assert!(!shared.lock().unwrap().word_wrap);
+        assert_eq!(
+            view(&shared).widget_text_wrap(DOCUMENT_EDITOR),
+            Some(TextWrap::NoWrap)
+        );
     }
 }

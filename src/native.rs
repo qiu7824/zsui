@@ -1599,7 +1599,16 @@ impl NativeViewInputRuntime {
         let interaction = self.current_interaction_plan()?;
         let target = native_text_visual_target(target, &interaction);
         let (value, selection) = self.focused_text_input_snapshot()?;
-        Some(native_text_visual_geometry(target, &value, selection, self.dpi).caret)
+        Some(
+            native_text_visual_geometry(
+                target,
+                &value,
+                selection,
+                self.widget_text_wrap(target.widget),
+                self.dpi,
+            )
+            .caret,
+        )
     }
 
     pub(crate) fn dispatch_pointer_click(&mut self, point: Point) -> NativeViewInputDispatchReport {
@@ -1713,7 +1722,13 @@ impl NativeViewInputRuntime {
             .current_interaction_plan()
             .map(|interaction| native_text_visual_target(target, &interaction))
             .unwrap_or(target);
-        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
+        let index = native_text_index_for_point(
+            visual_target,
+            &value,
+            point,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
         self.text_edit = Some(state);
@@ -1852,7 +1867,13 @@ impl NativeViewInputRuntime {
             .current_interaction_plan()
             .map(|interaction| native_text_visual_target(target, &interaction))
             .unwrap_or(target);
-        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
+        let index = native_text_index_for_point(
+            visual_target,
+            &value,
+            point,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
         self.text_edit = Some(state);
         report.handled = true;
@@ -4249,7 +4270,14 @@ impl NativeViewInputRuntime {
                 .current_interaction_plan()
                 .map(|interaction| native_text_visual_target(target, &interaction))
                 .unwrap_or(target);
-            decorate_native_text_edit_visuals(&mut plan, target, &value, selection, self.dpi);
+            decorate_native_text_edit_visuals(
+                &mut plan,
+                target,
+                &value,
+                selection,
+                self.widget_text_wrap(target.widget),
+                self.dpi,
+            );
         }
         let mut plan = self.compose_ime_preedit(plan);
         if let Some(interaction_plan) = self.current_interaction_plan() {
@@ -4863,6 +4891,26 @@ impl NativeViewInputRuntime {
                     .as_ref()
                     .and_then(|view| view.widget_text_value(widget).map(str::to_string))
             })
+    }
+
+    fn widget_text_wrap(&self, widget: crate::WidgetId) -> crate::TextWrap {
+        #[cfg(feature = "textbox")]
+        {
+            if let Some(wrap) = self
+                .live_view
+                .as_ref()
+                .and_then(|runtime| runtime.widget_text_wrap(widget))
+                .or_else(|| {
+                    self.ui_command_view
+                        .as_ref()
+                        .and_then(|view| view.widget_text_wrap(widget))
+                })
+            {
+                return wrap;
+            }
+        }
+        let _ = widget;
+        crate::TextWrap::NoWrap
     }
 
     #[cfg(feature = "password-box")]

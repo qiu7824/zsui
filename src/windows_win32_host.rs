@@ -2241,7 +2241,13 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
+        let index = native_text_index_for_point(
+            visual_target,
+            &value,
+            point,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
         self.text_edit = Some(state);
@@ -2381,7 +2387,13 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == drag.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let index = native_text_index_for_point(visual_target, &value, point, self.dpi);
+        let index = native_text_index_for_point(
+            visual_target,
+            &value,
+            point,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
         self.text_edit = Some(state);
         report.handled = true;
@@ -5792,6 +5804,26 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    fn widget_text_wrap(&self, widget: crate::WidgetId) -> crate::TextWrap {
+        #[cfg(feature = "textbox")]
+        {
+            if let Some(wrap) = self
+                .live_view
+                .as_ref()
+                .and_then(|runtime| runtime.widget_text_wrap(widget))
+                .or_else(|| {
+                    self.ui_command_view
+                        .as_ref()
+                        .and_then(|view| view.widget_text_wrap(widget))
+                })
+            {
+                return wrap;
+            }
+        }
+        let _ = widget;
+        crate::TextWrap::NoWrap
+    }
+
     #[cfg(feature = "password-box")]
     fn widget_password_value(&self, widget: crate::WidgetId) -> Option<crate::ZsPassword> {
         self.live_view
@@ -6329,6 +6361,7 @@ impl WindowsWin32ViewInputRoute {
                     target,
                     &value,
                     state.selection.clamp(&value),
+                    self.widget_text_wrap(target.widget),
                     self.dpi,
                 );
             }

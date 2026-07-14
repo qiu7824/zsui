@@ -591,6 +591,7 @@ pub enum ViewNodeKind<Msg> {
     Textbox {
         value: String,
         multiline: bool,
+        wrap: crate::TextWrap,
         on_change: Option<fn(String) -> Msg>,
         on_selection_change: Option<fn(ZsTextSelection) -> Msg>,
     },
@@ -1017,6 +1018,21 @@ impl<Msg: Clone> ViewNode<Msg> {
         } = &mut self.kind
         {
             *on_selection_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn text_wrap(mut self, wrap: crate::TextWrap) -> Self {
+        if let ViewNodeKind::Textbox {
+            multiline,
+            wrap: current,
+            ..
+        } = &mut self.kind
+        {
+            if *multiline {
+                *current = wrap;
+            }
         }
         self
     }
@@ -1748,6 +1764,7 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Textbox {
         value: value.into(),
         multiline: false,
+        wrap: crate::TextWrap::NoWrap,
         on_change: None,
         on_selection_change: None,
     })
@@ -1758,6 +1775,7 @@ pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Textbox {
         value: value.into(),
         multiline: true,
+        wrap: crate::TextWrap::Word,
         on_change: None,
         on_selection_change: None,
     })
@@ -3183,6 +3201,8 @@ trait LiveViewDriver: Send {
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn dispatch_app_command(&mut self, command: &Command) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
+    #[cfg(feature = "textbox")]
+    fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap>;
     #[cfg(feature = "password-box")]
     fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword>;
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
@@ -3304,6 +3324,11 @@ impl SharedLiveViewRuntime {
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
         self.lock().widget_text_value(widget)
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
+        self.lock().widget_text_wrap(widget)
     }
 
     #[cfg(feature = "password-box")]
@@ -3639,6 +3664,11 @@ where
 
     fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
         self.view.widget_text_value(widget).map(str::to_string)
+    }
+
+    #[cfg(feature = "textbox")]
+    fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
+        self.view.widget_text_wrap(widget)
     }
 
     #[cfg(feature = "password-box")]
@@ -5549,7 +5579,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox {
-                value, multiline, ..
+                value,
+                multiline,
+                wrap,
+                ..
             } => {
                 cx.draw(NativeDrawCommand::RoundRect {
                     rect: bounds,
@@ -5560,14 +5593,41 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 let mut text_style = SemanticTextStyle::body();
                 if *multiline {
                     text_style.vertical_align = crate::VerticalAlign::Start;
-                    text_style.wrap = crate::TextWrap::Word;
+                    text_style.wrap = *wrap;
                     text_style.ellipsis = false;
                 }
-                cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-                    value,
-                    padded_bounds(bounds, self.style.padding.or(Some(Dp::new(8.0))), cx.dpi),
-                    text_style,
-                )));
+                let text_bounds =
+                    padded_bounds(bounds, self.style.padding.or(Some(Dp::new(8.0))), cx.dpi);
+                if *multiline && *wrap == crate::TextWrap::NoWrap {
+                    let line_height = Dp::new(18.0).to_px(cx.dpi).round_i32().max(1);
+                    let bottom = text_bounds.y.saturating_add(text_bounds.height);
+                    for (row, line) in value.split('\n').enumerate() {
+                        let y = text_bounds.y.saturating_add(
+                            i32::try_from(row)
+                                .unwrap_or(i32::MAX)
+                                .saturating_mul(line_height),
+                        );
+                        if y >= bottom {
+                            break;
+                        }
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            line,
+                            Rect {
+                                x: text_bounds.x,
+                                y,
+                                width: text_bounds.width,
+                                height: line_height.min(bottom.saturating_sub(y)).max(1),
+                            },
+                            text_style,
+                        )));
+                    }
+                } else {
+                    cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                        value,
+                        text_bounds,
+                        text_style,
+                    )));
+                }
             }
             #[cfg(feature = "password-box")]
             ViewNodeKind::PasswordBox {
@@ -6203,6 +6263,18 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_text_value(widget))
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::Textbox { wrap, .. } = &self.kind {
+                return Some(*wrap);
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_text_wrap(widget))
     }
 
     #[cfg(feature = "password-box")]
@@ -9500,6 +9572,10 @@ mod tests {
         view.paint(&mut paint);
 
         assert_eq!(view.hit_target_kind(), ViewHitTargetKind::TextEditor);
+        assert_eq!(
+            view.widget_text_wrap(editor_id),
+            Some(crate::TextWrap::Word)
+        );
         assert!(paint.plan().commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::Text(text)
@@ -9530,6 +9606,33 @@ mod tests {
         );
         assert_eq!(selection.ordered(), (2, 7));
         assert!(!selection.is_collapsed());
+
+        let mut no_wrap = text_editor::<Msg>("first\nsecond")
+            .id(editor_id)
+            .text_wrap(crate::TextWrap::NoWrap);
+        no_wrap.layout(&mut layout);
+        let mut no_wrap_paint = ViewPaintCx::new(Dpi::standard());
+        no_wrap.paint(&mut no_wrap_paint);
+        let lines = no_wrap_paint
+            .plan()
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                NativeDrawCommand::Text(text) => Some((text.text.as_str(), text.style.wrap)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            lines,
+            vec![
+                ("first", crate::TextWrap::NoWrap),
+                ("second", crate::TextWrap::NoWrap),
+            ]
+        );
+        assert_eq!(
+            no_wrap.widget_text_wrap(editor_id),
+            Some(crate::TextWrap::NoWrap)
+        );
     }
 
     #[test]

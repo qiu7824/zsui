@@ -62,6 +62,7 @@ pub(crate) fn native_text_visual_geometry(
     target: ViewHitTarget,
     value: &str,
     selection: NativeTextSelection,
+    wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
@@ -69,8 +70,14 @@ pub(crate) fn native_text_visual_geometry(
     let text_bounds = metrics.text_bounds;
     let character_width = metrics.character_width;
     let line_height = metrics.line_height;
+    let max_columns = text_bounds
+        .width
+        .checked_div(character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let lines = text_lines(value, multiline, wrap, max_columns);
     let selection = selection.clamp(value);
-    let (caret_row, caret_column) = text_position(value, selection.caret, multiline);
+    let (caret_row, caret_column) = text_position(selection.caret, &lines);
     let caret_x = text_bounds
         .x
         .saturating_add((caret_column as i32).saturating_mul(character_width))
@@ -106,10 +113,12 @@ pub(crate) fn native_text_visual_geometry(
     let (start, end) = selection.ordered();
     let mut selections = Vec::new();
     if start != end {
-        for (row, line) in text_lines(value, multiline).into_iter().enumerate() {
+        for (row, line) in lines.into_iter().enumerate() {
             let overlap_start = start.max(line.start);
             let overlap_end = end.min(line.end);
-            if overlap_start >= overlap_end && !(end > line.end && start <= line.end) {
+            if overlap_start >= overlap_end
+                && !(!line.soft_wrap_after && end > line.end && start <= line.end)
+            {
                 continue;
             }
             let start_column = overlap_start.saturating_sub(line.start);
@@ -155,11 +164,18 @@ pub(crate) fn native_text_index_for_point(
     target: ViewHitTarget,
     value: &str,
     point: Point,
+    wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> usize {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
     let metrics = native_text_visual_metrics(target, dpi);
-    let lines = text_lines(value, multiline);
+    let max_columns = metrics
+        .text_bounds
+        .width
+        .checked_div(metrics.character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let lines = text_lines(value, multiline, wrap, max_columns);
     let row = if multiline {
         point
             .y
@@ -190,13 +206,15 @@ pub(crate) fn decorate_native_text_edit_visuals(
     target: ViewHitTarget,
     value: &str,
     selection: NativeTextSelection,
+    wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
-    let geometry = native_text_visual_geometry(target, value, selection, dpi);
+    let geometry = native_text_visual_geometry(target, value, selection, wrap, dpi);
     if !geometry.selections.is_empty() {
-        let text_index = plan.commands.iter().rposition(|command| match command {
+        let text_index = plan.commands.iter().position(|command| match command {
             NativeDrawCommand::Text(text) => {
-                text.text == value && rect_contains(target.bounds, text.bounds)
+                (text.text == value || target.kind == ViewHitTargetKind::TextEditor)
+                    && rect_contains(target.bounds, text.bounds)
             }
             #[cfg(feature = "password-box")]
             NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
@@ -587,6 +605,7 @@ pub(crate) fn decorate_native_pointer_visuals(
 struct NativeTextLine {
     start: usize,
     end: usize,
+    soft_wrap_after: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -622,43 +641,95 @@ fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisu
     }
 }
 
-fn text_lines(value: &str, multiline: bool) -> Vec<NativeTextLine> {
+fn text_lines(
+    value: &str,
+    multiline: bool,
+    wrap: crate::TextWrap,
+    max_columns: usize,
+) -> Vec<NativeTextLine> {
     if !multiline {
         return vec![NativeTextLine {
             start: 0,
             end: char_count(value),
+            soft_wrap_after: false,
         }];
     }
+    let characters = value.chars().collect::<Vec<_>>();
     let mut lines = Vec::new();
     let mut start = 0;
-    for (index, character) in value.chars().enumerate() {
+    for (index, character) in characters.iter().copied().enumerate() {
         if character == '\n' {
-            lines.push(NativeTextLine { start, end: index });
+            push_text_lines(&mut lines, &characters, start, index, wrap, max_columns);
             start = index + 1;
         }
     }
-    lines.push(NativeTextLine {
+    push_text_lines(
+        &mut lines,
+        &characters,
         start,
-        end: char_count(value),
-    });
+        characters.len(),
+        wrap,
+        max_columns,
+    );
     lines
 }
 
-fn text_position(value: &str, index: usize, multiline: bool) -> (usize, usize) {
-    if !multiline {
-        return (0, index.min(char_count(value)));
+fn push_text_lines(
+    lines: &mut Vec<NativeTextLine>,
+    characters: &[char],
+    start: usize,
+    end: usize,
+    wrap: crate::TextWrap,
+    max_columns: usize,
+) {
+    let max_columns = max_columns.max(1);
+    if wrap == crate::TextWrap::NoWrap || end.saturating_sub(start) <= max_columns {
+        lines.push(NativeTextLine {
+            start,
+            end,
+            soft_wrap_after: false,
+        });
+        return;
     }
-    let mut row = 0;
-    let mut column = 0;
-    for character in value.chars().take(index) {
-        if character == '\n' {
-            row += 1;
-            column = 0;
-        } else {
-            column += 1;
+
+    let mut cursor = start;
+    while end.saturating_sub(cursor) > max_columns {
+        let limit = cursor.saturating_add(max_columns).min(end);
+        let break_at = characters[cursor..limit]
+            .iter()
+            .rposition(|character| character.is_whitespace())
+            .map(|offset| cursor.saturating_add(offset).saturating_add(1))
+            .filter(|candidate| *candidate > cursor)
+            .unwrap_or(limit);
+        lines.push(NativeTextLine {
+            start: cursor,
+            end: break_at,
+            soft_wrap_after: true,
+        });
+        cursor = break_at;
+    }
+    lines.push(NativeTextLine {
+        start: cursor,
+        end,
+        soft_wrap_after: false,
+    });
+}
+
+fn text_position(index: usize, lines: &[NativeTextLine]) -> (usize, usize) {
+    for (row, line) in lines.iter().copied().enumerate() {
+        if index < line.end || (index == line.end && !line.soft_wrap_after) {
+            return (row, index.saturating_sub(line.start));
         }
     }
-    (row, column)
+    lines
+        .last()
+        .map(|line| {
+            (
+                lines.len().saturating_sub(1),
+                index.min(line.end).saturating_sub(line.start),
+            )
+        })
+        .unwrap_or((0, 0))
 }
 
 pub(crate) fn rect_contains(outer: Rect, inner: Rect) -> bool {
@@ -1248,6 +1319,7 @@ mod tests {
                 anchor: 1,
                 caret: 3,
             },
+            crate::TextWrap::NoWrap,
             Dpi::standard(),
         );
 
@@ -1323,6 +1395,7 @@ mod tests {
                 target,
                 "A中\n🙂Z",
                 Point { x: 20, y: 10 },
+                crate::TextWrap::NoWrap,
                 Dpi::standard()
             ),
             2
@@ -1332,6 +1405,7 @@ mod tests {
                 target,
                 "A中\n🙂Z",
                 Point { x: 16, y: 30 },
+                crate::TextWrap::NoWrap,
                 Dpi::standard()
             ),
             4
@@ -1341,6 +1415,7 @@ mod tests {
                 target,
                 "A中\n🙂Z",
                 Point { x: 500, y: 500 },
+                crate::TextWrap::NoWrap,
                 Dpi::standard()
             ),
             5
@@ -1350,9 +1425,53 @@ mod tests {
                 target,
                 "A中\n🙂Z",
                 Point { x: -20, y: -20 },
+                crate::TextWrap::NoWrap,
                 Dpi::standard()
             ),
             0
+        );
+    }
+
+    #[test]
+    fn text_editor_word_wrap_aligns_caret_and_pointer_with_soft_lines() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(94),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 80,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        let selection = NativeTextSelection::collapsed(4);
+
+        let wrapped = native_text_visual_geometry(
+            target,
+            "one two",
+            selection,
+            crate::TextWrap::Word,
+            Dpi::standard(),
+        );
+        let unwrapped = native_text_visual_geometry(
+            target,
+            "one two",
+            selection,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+
+        assert_eq!((wrapped.caret.x, wrapped.caret.y), (8, 26));
+        assert_eq!((unwrapped.caret.x, unwrapped.caret.y), (39, 8));
+        assert_eq!(
+            native_text_index_for_point(
+                target,
+                "one two",
+                Point { x: 16, y: 30 },
+                crate::TextWrap::Word,
+                Dpi::standard(),
+            ),
+            5
         );
     }
 }
