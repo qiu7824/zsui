@@ -669,15 +669,6 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         ICON_GAPS
     ),
     component!(
-        "webview",
-        "WebView2",
-        Media,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
-    ),
-    component!(
         "settings_card",
         "SettingsCard",
         Composite,
@@ -734,7 +725,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 1);
+        assert_eq!(summary.not_started_count, 0);
         assert!(!summary.missing_component_names.contains(&"grid_view"));
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));

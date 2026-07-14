@@ -55,10 +55,10 @@ must stay independent of raw platform handles and broad native dependencies.
 ## Component Coverage
 
 `zsui_component_catalog()` is the component-level source of truth. The current
-catalog covers 49 desktop component families: 43 have a first-pass runtime
-surface, 3 have contracts only and 3 are not started. Composite shells can
-combine working primitives, but they must not be used to claim that missing
-ColorPicker, flyout or WebView families are complete.
+catalog covers 48 desktop component families: 45 have a first-pass runtime
+surface, 3 have contracts only and none are not started. Canvas, Flyout and
+Image remain contract-only. Composite shells do not change those statuses.
+Embedded browser controls are intentionally outside the v0.2 product boundary.
 
 `workbench` is the first reusable application-shell feature. It provides
 navigation history, a message timeline, paragraph/code/tool/notice blocks,
@@ -288,7 +288,7 @@ The crate split target is:
 - `zsui-widgets-base`: Button, Label, Icon and Panel.
 - `zsui-widgets-input`: TextBox, CheckBox, Slider and IME-facing controls.
 - `zsui-widgets-list`: List, Tree and Table families.
-- `zsui-widgets-extra`: Dialog, Toast, Chart, WebView and advanced widgets.
+- `zsui-widgets-extra`: Dialog, Toast, Chart and advanced widgets.
 
 Per-widget crates such as `zsui-button`, `zsui-textbox`, `zsui-list` or
 `zsui-dialog` are acceptable later if a widget family becomes large enough to

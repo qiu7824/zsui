@@ -24,6 +24,9 @@ history remain authoritative for implementation status.
   contract. The real objective is a complete native application loop.
 - Controls and advanced capabilities should remain Cargo-feature selectable so
   unused surfaces and heavy dependencies can be omitted.
+- WebView is intentionally outside the ZSUI v0.2 product boundary. Do not add
+  WebView2, WKWebView, WebKitGTK or browser-shell dependencies unless the user
+  explicitly reopens that scope.
 
 ## Architecture preferences
 
