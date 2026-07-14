@@ -15,8 +15,6 @@ use crate::native::NativeComboTypeAheadState;
 use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
-#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
-use crate::native_input_visuals::native_text_visual_geometry_in_viewport_with_backend;
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
     move_native_text_selection_horizontally_with_backend,
@@ -48,6 +46,10 @@ use crate::native_input_visuals::{
 ))]
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
+};
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+use crate::native_input_visuals::{
+    native_text_visible_range_with_backend, native_text_visual_geometry_in_viewport_with_backend,
 };
 #[cfg(feature = "textbox")]
 use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
@@ -2929,6 +2931,72 @@ impl WindowsWin32ViewInputRoute {
         self.dispatch_text_input(text)
     }
 
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn dispatch_accessibility_set_text_selection(
+        &mut self,
+        selection: crate::native_text_edit::NativeTextSelection,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport::default();
+        let Some(target) = self.focused_target() else {
+            return report;
+        };
+        if !target.kind.accepts_text_input() {
+            return report;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return report;
+        }
+        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let previous = state.selection;
+        state.selection = selection.clamp(&value);
+        state.preferred_visual_x = None;
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_row,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        self.text_edit = Some(state);
+        report.handled = true;
+        report.text_selection_change_count = usize::from(previous != state.selection);
+        report.text_caret = Some(state.selection.caret);
+        if previous != state.selection {
+            #[cfg(feature = "textbox")]
+            if matches!(
+                target.kind,
+                crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
+            ) {
+                self.dispatch_event(
+                    crate::ViewEvent::TextSelectionChanged {
+                        widget: target.widget,
+                        selection: state.selection.into(),
+                    },
+                    &mut report,
+                );
+            }
+            self.rebuild_pending_draw_plan();
+        }
+        report
+    }
+
     fn dispatch_utf16_input_unit(&mut self, unit: u16) -> WindowsWin32ViewInputDispatchReport {
         if (0xd800..=0xdbff).contains(&unit) {
             self.pending_utf16_high_surrogate = Some(unit);
@@ -5226,6 +5294,106 @@ impl WindowsWin32ViewInputRoute {
         )
     }
 
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn text_accessibility_range_rectangles(
+        &self,
+        widget: crate::WidgetId,
+        selection: crate::native_text_edit::NativeTextSelection,
+    ) -> Option<Vec<crate::Rect>> {
+        let target = self.focused_target()?;
+        if target.widget != widget || !target.kind.accepts_text_input() {
+            return None;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return None;
+        }
+        let value = self.widget_text_value(widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        let selection = selection.clamp(&value);
+        let geometry = native_text_visual_geometry_in_viewport_with_backend(
+            visual_target,
+            &value,
+            selection,
+            state.first_visible_visual_row,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        if selection.is_collapsed() {
+            Some(vec![geometry.caret])
+        } else {
+            Some(geometry.selections)
+        }
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn text_accessibility_visible_range(
+        &self,
+    ) -> Option<(crate::WidgetId, std::ops::Range<usize>)> {
+        let target = self.focused_target()?;
+        if !target.kind.accepts_text_input() {
+            return None;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return None;
+        }
+        let value = self.widget_text_value(target.widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        Some((
+            target.widget,
+            native_text_visible_range_with_backend(
+                native_text_visual_target(target, &self.interaction_plan),
+                &value,
+                state.first_visible_visual_row,
+                self.widget_text_wrap(target.widget),
+                self.dpi,
+                &self.text_shaping,
+            ),
+        ))
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn text_accessibility_index_for_point(
+        &self,
+        point: crate::Point,
+    ) -> Option<(crate::WidgetId, usize)> {
+        let target = self.focused_target()?;
+        if !target.kind.accepts_text_input() {
+            return None;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return None;
+        }
+        let value = self.widget_text_value(target.widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        let index = native_text_index_for_point_in_viewport_with_backend(
+            visual_target,
+            &value,
+            point,
+            state.first_visible_visual_row,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        Some((target.widget, index))
+    }
+
     fn ensure_text_edit_for_target(&mut self, target: crate::ViewHitTarget) {
         if !target.kind.accepts_text_input() {
             self.text_drag = None;
@@ -7421,6 +7589,93 @@ pub(crate) fn set_windows_win32_window_accessible_text_value(hwnd: HWND, value: 
         route.dispatch_accessibility_set_text_value(value)
     })
     .is_some()
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn set_windows_win32_window_accessible_text_selection(
+    hwnd: HWND,
+    widget: crate::WidgetId,
+    selection: crate::native_text_edit::NativeTextSelection,
+) -> bool {
+    if windows_win32_window_text_accessibility_snapshot(hwnd)
+        .is_none_or(|snapshot| snapshot.widget() != widget || snapshot.kind().is_protected())
+    {
+        return false;
+    }
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_set_text_selection(selection)
+    })
+    .is_some()
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn windows_win32_window_text_accessibility_range_rectangles(
+    hwnd: HWND,
+    widget: crate::WidgetId,
+    selection: crate::native_text_edit::NativeTextSelection,
+) -> Option<Vec<crate::Rect>> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd)
+        .and_then(|record| {
+            record
+                .route
+                .text_accessibility_range_rectangles(widget, selection)
+        })
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn windows_win32_window_text_accessibility_visible_range(
+    hwnd: HWND,
+) -> Option<(crate::WidgetId, std::ops::Range<usize>)> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let hwnd = hwnd as isize;
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd)
+        .and_then(|record| record.route.text_accessibility_visible_range())
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn windows_win32_window_text_accessibility_index_for_screen_point(
+    hwnd: HWND,
+    x: f64,
+    y: f64,
+) -> Option<(crate::WidgetId, usize)> {
+    if hwnd.is_null() || !x.is_finite() || !y.is_finite() {
+        return None;
+    }
+    let mut point = POINT {
+        x: x.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32,
+        y: y.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32,
+    };
+    if unsafe { ScreenToClient(hwnd, &mut point) } == 0 {
+        return None;
+    }
+    let hwnd_key = hwnd as isize;
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd_key)
+        .and_then(|record| {
+            record
+                .route
+                .text_accessibility_index_for_point(crate::Point {
+                    x: point.x,
+                    y: point.y,
+                })
+        })
 }
 
 fn dispatch_windows_win32_window_view_utf16_input_unit(

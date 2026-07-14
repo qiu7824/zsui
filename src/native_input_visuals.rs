@@ -1929,6 +1929,40 @@ fn native_text_viewport_lines_with_backend(
     (lines, visible_rows)
 }
 
+#[cfg(any(
+    test,
+    all(
+        target_os = "windows",
+        feature = "accessibility",
+        feature = "text-input-core"
+    )
+))]
+pub(crate) fn native_text_visible_range_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    first_visible_row: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> std::ops::Range<usize> {
+    let (lines, visible_rows) =
+        native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
+    let first_visible_row = first_visible_row.min(lines.len().saturating_sub(1));
+    let last_visible_row = first_visible_row
+        .saturating_add(visible_rows.saturating_sub(1))
+        .min(lines.len().saturating_sub(1));
+    let start = lines
+        .get(first_visible_row)
+        .map(|line| line.start)
+        .unwrap_or(0);
+    let end = lines
+        .get(last_visible_row.saturating_add(1))
+        .map(|line| line.start)
+        .or_else(|| lines.get(last_visible_row).map(|line| line.end))
+        .unwrap_or(start);
+    start..end.max(start)
+}
+
 fn visual_row_y(origin: i32, row: usize, first_visible_row: usize, line_height: i32) -> i32 {
     if row >= first_visible_row {
         origin.saturating_add(
@@ -3359,6 +3393,17 @@ mod tests {
             0
         );
         assert_eq!(native_text_wheel_row_delta(Dp::new(48.0)), 3);
+        assert_eq!(
+            native_text_visible_range_with_backend(
+                target,
+                value,
+                first_visible,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &NativeTextShapingBackend::LogicalCells,
+            ),
+            10..19
+        );
 
         let mut plan =
             NativeDrawPlan::new([NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(

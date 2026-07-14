@@ -37,6 +37,7 @@ if (-not (Test-Path -LiteralPath $notepad -PathType Leaf)) {
 }
 
 Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -144,7 +145,34 @@ try {
         throw "UI Automation ValuePattern did not expose the application-owned editor text"
     }
 
-    Write-Output "Windows native text accessibility passed: HWND WM_GETOBJECT -> ZSUI Edit/ValuePattern"
+    $textPattern = $element.GetCurrentPattern(
+        [System.Windows.Automation.TextPattern]::Pattern
+    )
+    if ($null -eq $textPattern) {
+        throw "UI Automation TextPattern was not available"
+    }
+    $documentRange = $textPattern.DocumentRange
+    if (-not $documentRange.GetText(-1).Contains("ZSUI Notepad")) {
+        throw "UI Automation TextPattern did not expose the application-owned editor text"
+    }
+    $selectionRanges = $textPattern.GetSelection()
+    if ($selectionRanges.Length -ne 1) {
+        throw "UI Automation TextPattern did not expose exactly one native text selection"
+    }
+    $movedRange = $documentRange.Clone()
+    $moved = $movedRange.MoveEndpointByUnit(
+        [System.Windows.Automation.Text.TextPatternRangeEndpoint]::Start,
+        [System.Windows.Automation.Text.TextUnit]::Character,
+        1
+    )
+    if ($moved -ne 1 -or [string]::IsNullOrEmpty($movedRange.GetText(4))) {
+        throw "UI Automation TextPattern range movement did not preserve readable text"
+    }
+    if ($documentRange.GetBoundingRectangles().Length -lt 1) {
+        throw "UI Automation TextPattern returned no native shaped text rectangles"
+    }
+
+    Write-Output "Windows native text accessibility passed: HWND WM_GETOBJECT -> ZSUI Edit/ValuePattern/TextPattern"
 } finally {
     if (-not $process.HasExited) {
         Stop-Process -Id $process.Id -Force
