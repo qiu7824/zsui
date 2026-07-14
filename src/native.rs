@@ -8,7 +8,8 @@ use crate::workbench::ZsWorkbenchSpec;
 
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
-    native_text_visual_geometry, native_text_visual_target,
+    native_text_index_for_vertical_move, native_text_visual_geometry, native_text_visual_target,
+    NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -34,7 +35,7 @@ use crate::native_input_visuals::{
 #[cfg(feature = "textbox")]
 use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
 use crate::native_text_edit::{
-    apply_text_input, char_to_byte_index, move_selection, set_pointer_selection,
+    apply_text_input, char_to_byte_index, move_selection, move_selection_to, set_pointer_selection,
     NativeTextDragState, NativeTextEditState, NativeTextMovement, NativeTextSelection,
 };
 use crate::{
@@ -1747,6 +1748,7 @@ impl NativeViewInputRuntime {
         );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
+        state.preferred_visual_column = None;
         self.text_edit = Some(state);
         self.text_drag = Some(NativeTextDragState {
             widget: target.widget,
@@ -1891,6 +1893,7 @@ impl NativeViewInputRuntime {
             self.dpi,
         );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
+        state.preferred_visual_column = None;
         self.text_edit = Some(state);
         report.handled = true;
         report.text_selection_changed = edit.selection_changed;
@@ -3044,19 +3047,41 @@ impl NativeViewInputRuntime {
                 NativeViewKey::End => Some(NativeTextMovement::End),
                 _ => None,
             };
-            if let Some(movement) = movement {
+            let visual_direction = (target.kind == crate::ViewHitTargetKind::TextEditor)
+                .then(|| match key {
+                    NativeViewKey::Up => Some(NativeTextVisualDirection::Up),
+                    NativeViewKey::Down => Some(NativeTextVisualDirection::Down),
+                    _ => None,
+                })
+                .flatten();
+            if movement.is_some() || visual_direction.is_some() {
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
                     .filter(|state| state.widget == widget)
                     .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
-                let edit = move_selection(
-                    &value,
-                    &mut state.selection,
-                    movement,
-                    shift,
-                    target.kind == crate::ViewHitTargetKind::TextEditor,
-                );
+                let edit = if let Some(direction) = visual_direction {
+                    let (target_index, preferred_column) = native_text_index_for_vertical_move(
+                        target,
+                        &value,
+                        state.selection.caret,
+                        direction,
+                        state.preferred_visual_column,
+                        self.widget_text_wrap(widget),
+                        self.dpi,
+                    );
+                    state.preferred_visual_column = Some(preferred_column);
+                    move_selection_to(&value, &mut state.selection, target_index, shift)
+                } else {
+                    state.preferred_visual_column = None;
+                    move_selection(
+                        &value,
+                        &mut state.selection,
+                        movement.expect("text movement should be present"),
+                        shift,
+                        target.kind == crate::ViewHitTargetKind::TextEditor,
+                    )
+                };
                 self.text_edit = Some(state);
                 report.handled = edit.handled;
                 report.text_selection_changed = edit.selection_changed;
@@ -3838,6 +3863,7 @@ impl NativeViewInputRuntime {
         if !edit.handled {
             return report;
         }
+        state.preferred_visual_column = None;
         report.handled = true;
         report.text_selection_changed = edit.selection_changed;
         self.text_edit = Some(state);
@@ -3987,6 +4013,7 @@ impl NativeViewInputRuntime {
             self.text_edit = Some(NativeTextEditState {
                 widget: preedit.widget,
                 selection: preedit.replacement,
+                preferred_visual_column: None,
             });
         }
         let mut report = self.dispatch_text_input(text);
@@ -5563,6 +5590,9 @@ impl NativeViewInputRuntime {
             }
         };
 
+        if result.selection_changed || result.text_changed {
+            state.preferred_visual_column = None;
+        }
         self.text_edit = Some(state);
         report.handled |= result.handled;
         report.text_selection_changed |= result.selection_changed;
@@ -8975,6 +9005,53 @@ mod tests {
                 matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "A中文Z")
             })
         }));
+    }
+
+    #[cfg(feature = "textbox")]
+    #[test]
+    fn native_view_runtime_moves_wrapped_editor_caret_by_visual_row() {
+        #[derive(Clone)]
+        enum Msg {
+            Selection(crate::ZsTextSelection),
+        }
+
+        let editor = crate::WidgetId::new(760);
+        let builder = native_window("Wrapped keyboard navigation")
+            .size(48, 140)
+            .stateful_view(
+                crate::ZsTextSelection::default(),
+                move |_selection| {
+                    crate::text_editor("abcdef\nx\nuvwxyz")
+                        .id(editor)
+                        .width(crate::Dp::new(48.0))
+                        .height(crate::Dp::new(120.0))
+                        .on_text_selection_change(Msg::Selection)
+                },
+                |selection, message, _cx| match message {
+                    Msg::Selection(next) => *selection = next,
+                },
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(editor))
+            .expect("wrapped editor should expose keyboard geometry");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + 24,
+            y: target.bounds.y + 10,
+        });
+
+        let second_visual_row = runtime.dispatch_key(NativeViewKey::Down);
+        let short_hard_line = runtime.dispatch_key(NativeViewKey::Down);
+        let next_wrapped_line = runtime.dispatch_key(NativeViewKey::Down);
+        let extended = runtime.dispatch_key_with_shift(NativeViewKey::Up, true);
+
+        assert_eq!(second_visual_row.text_caret, Some(6));
+        assert_eq!(short_hard_line.text_caret, Some(8));
+        assert_eq!(next_wrapped_line.text_caret, Some(11));
+        assert_eq!(extended.text_selection, Some((8, 11)));
+        assert!(extended.text_selection_changed);
+        assert_eq!(extended.message_count, 1);
     }
 
     #[cfg(all(feature = "label", feature = "textbox"))]

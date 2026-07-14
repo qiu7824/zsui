@@ -56,6 +56,7 @@ impl From<NativeTextSelection> for crate::ZsTextSelection {
 pub(crate) struct NativeTextEditState {
     pub widget: WidgetId,
     pub selection: NativeTextSelection,
+    pub preferred_visual_column: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,11 +70,16 @@ impl NativeTextEditState {
         Self {
             widget,
             selection: NativeTextSelection::collapsed(char_count(value)),
+            preferred_visual_column: None,
         }
     }
 
     pub(crate) fn clamp(&mut self, value: &str) {
-        self.selection = self.selection.clamp(value);
+        let clamped = self.selection.clamp(value);
+        if clamped != self.selection {
+            self.preferred_visual_column = None;
+        }
+        self.selection = clamped;
     }
 }
 
@@ -330,6 +336,18 @@ pub(crate) fn move_selection(
         NativeTextMovement::Home => 0,
         NativeTextMovement::End => len,
     };
+    move_selection_to(value, selection, target, extend)
+}
+
+pub(crate) fn move_selection_to(
+    value: &str,
+    selection: &mut NativeTextSelection,
+    target: usize,
+    extend: bool,
+) -> NativeTextEditResult {
+    let before = selection.clamp(value);
+    *selection = before;
+    let target = target.min(char_count(value));
     if extend {
         selection.caret = target;
     } else {

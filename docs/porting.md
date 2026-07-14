@@ -218,8 +218,12 @@ clicks into typed `Toggled` events when the checkbox feature is enabled.
 checkbox/toggle targets, and Tab traverses the ordered `ViewInteractionPlan` focus
 targets. Textbox/TextEditor targets also route Left/Right/Home/End, Shift range
 selection, capture-backed pointer drags, Unicode replacement, Backspace and
-forward Delete through the shared
-character-indexed editor state. Feature-gated list row selection uses child IDs and dispatches through
+forward Delete through the shared character-indexed editor state. Multiline
+TextEditor Up/Down uses the same hard/soft visual rows as paint, caret,
+selection and pointer hit testing, preserving a preferred visual column across
+shorter rows. Win32 routes `VK_UP`/`VK_DOWN` into that helper; AppKit and GTK4
+already lower their native keys to the same `NativeViewKey` path. Feature-gated
+list row selection uses child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection
 and emit the same typed message. Win32 `WM_MOUSEWHEEL` can target the nearest
 scroll container and emit a typed scroll event. Other backends should add their

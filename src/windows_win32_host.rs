@@ -17,7 +17,7 @@ use crate::native_file_dialog::{
 };
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
-    native_text_visual_target,
+    native_text_index_for_vertical_move, native_text_visual_target, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -42,8 +42,8 @@ use crate::native_input_visuals::{
 #[cfg(feature = "textbox")]
 use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
 use crate::native_text_edit::{
-    apply_text_input, move_selection, set_pointer_selection, NativeTextDragState,
-    NativeTextEditState, NativeTextMovement,
+    apply_text_input, move_selection, move_selection_to, set_pointer_selection,
+    NativeTextDragState, NativeTextEditState, NativeTextMovement,
 };
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
@@ -2261,6 +2261,7 @@ impl WindowsWin32ViewInputRoute {
         );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
+        state.preferred_visual_column = None;
         self.text_edit = Some(state);
         self.text_drag = Some(NativeTextDragState {
             widget: target.widget,
@@ -2406,6 +2407,7 @@ impl WindowsWin32ViewInputRoute {
             self.dpi,
         );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
+        state.preferred_visual_column = None;
         self.text_edit = Some(state);
         report.handled = true;
         report.pointer_move_count = 1;
@@ -2964,6 +2966,7 @@ impl WindowsWin32ViewInputRoute {
             return report;
         }
 
+        state.preferred_visual_column = None;
         self.text_edit = Some(state);
         #[cfg(feature = "textbox")]
         if edit.text_changed {
@@ -3692,20 +3695,43 @@ impl WindowsWin32ViewInputRoute {
                 key if key == u32::from(VK_END) => Some(NativeTextMovement::End),
                 _ => None,
             };
-            if let Some(movement) = movement {
+            let visual_direction = (target.kind == crate::ViewHitTargetKind::TextEditor)
+                .then(|| match virtual_key {
+                    key if key == u32::from(VK_UP) => Some(NativeTextVisualDirection::Up),
+                    key if key == u32::from(VK_DOWN) => Some(NativeTextVisualDirection::Down),
+                    _ => None,
+                })
+                .flatten();
+            if movement.is_some() || visual_direction.is_some() {
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
                     .filter(|state| state.widget == widget)
                     .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
-                let edit = move_selection(
-                    &value,
-                    &mut state.selection,
-                    movement,
-                    shift,
-                    target.kind == crate::ViewHitTargetKind::TextEditor,
-                );
+                let edit = if let Some(direction) = visual_direction {
+                    let (target_index, preferred_column) = native_text_index_for_vertical_move(
+                        target,
+                        &value,
+                        state.selection.caret,
+                        direction,
+                        state.preferred_visual_column,
+                        self.widget_text_wrap(widget),
+                        self.dpi,
+                    );
+                    state.preferred_visual_column = Some(preferred_column);
+                    move_selection_to(&value, &mut state.selection, target_index, shift)
+                } else {
+                    state.preferred_visual_column = None;
+                    move_selection(
+                        &value,
+                        &mut state.selection,
+                        movement.expect("text movement should be present"),
+                        shift,
+                        target.kind == crate::ViewHitTargetKind::TextEditor,
+                    )
+                };
                 self.text_edit = Some(state);
+                report.handled = edit.handled;
                 report.text_navigation_count = 1;
                 report.text_selection_change_count = usize::from(edit.selection_changed);
                 report.text_caret = Some(state.selection.caret);
@@ -5796,6 +5822,9 @@ impl WindowsWin32ViewInputRoute {
             }
         };
 
+        if result.selection_changed || result.text_changed {
+            state.preferred_visual_column = None;
+        }
         self.text_edit = Some(state);
         report.handled |= result.handled;
         report.text_selection_change_count += usize::from(result.selection_changed);
@@ -9599,6 +9628,59 @@ mod tests {
             vec!["zsui.test.win32.text_selection"]
         );
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_moves_wrapped_editor_caret_by_visual_row() {
+        #[derive(Clone)]
+        enum Msg {
+            Selection(crate::ZsTextSelection),
+        }
+
+        let widget = crate::WidgetId::new(320);
+        let builder = crate::native_window("Win32 wrapped navigation")
+            .size(48, 140)
+            .stateful_view(
+                crate::ZsTextSelection::default(),
+                move |_selection| {
+                    crate::text_editor("abcdef\nx\nuvwxyz")
+                        .id(widget)
+                        .width(crate::Dp::new(48.0))
+                        .height(crate::Dp::new(120.0))
+                        .on_text_selection_change(Msg::Selection)
+                },
+                |selection, message, _cx| match message {
+                    Msg::Selection(next) => *selection = next,
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("wrapped editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("wrapped editor should expose Win32 geometry");
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let point = crate::Point {
+            x: target.bounds.x + 24,
+            y: target.bounds.y + 10,
+        };
+        route.dispatch_pointer_down(point, false);
+        route.dispatch_pointer_up(point);
+
+        let second_visual_row = route.dispatch_key_down(u32::from(VK_DOWN));
+        let short_hard_line = route.dispatch_key_down(u32::from(VK_DOWN));
+        let next_wrapped_line = route.dispatch_key_down(u32::from(VK_DOWN));
+        let extended = route.dispatch_key_down_with_shift(u32::from(VK_UP), true);
+
+        assert_eq!(second_visual_row.text_caret, Some(6));
+        assert_eq!(short_hard_line.text_caret, Some(8));
+        assert_eq!(next_wrapped_line.text_caret, Some(11));
+        assert_eq!(extended.text_caret, Some(8));
+        assert_eq!(extended.text_selection_change_count, 1);
+        assert_eq!(extended.message_count, 1);
     }
 
     #[test]

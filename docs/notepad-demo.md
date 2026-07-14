@@ -19,6 +19,9 @@ framework architecture.
 - `ViewNode::text_wrap(TextWrap)` switches the shared editor between word-wrap
   and hard-line-only rendering at runtime. Paint, caret, selection and pointer
   hit geometry consume the same typed setting on all three hosts.
+- Multiline Up/Down navigation consumes those same visual hard/soft rows and
+  retains the desired column when an intermediate row is shorter. Shift keeps
+  the application-owned anchor while extending the caret on all three hosts.
 - `ZsTextSelection` reports application-independent Unicode-scalar anchor and
   caret positions through `on_text_selection_change`, including edits,
   keyboard navigation and pointer drag selection.
@@ -64,9 +67,10 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo -
 
 The smoke requires a visible native window, a routed native menu command, real
 text input through the self-drawn editor and a typed Undo routed from the
-self-drawn command bar back to that editor. It also toggles word wrap, sends a
-real title-bar close request while the document is dirty, verifies that the
-request is vetoed and captures the shared unsaved-confirmation surface. On
+self-drawn command bar back to that editor. It also enters two lines, routes a
+native Up key through the shared visual-row navigation, toggles word wrap,
+sends a real title-bar close request while the document is dirty, verifies that
+the request is vetoed and captures the shared unsaved-confirmation surface. On
 non-Windows targets the same source is compiled against the AppKit or GTK4
 host; target runtime evidence is tracked separately and is not inferred from
 cross-compilation.
@@ -84,6 +88,7 @@ cross-compilation.
 | Caret-aware line/column, line count, character count and encoding status | implemented |
 | Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | implemented |
+| Wrapped visual-row Up/Down and Shift selection | implemented |
 | Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
 
@@ -100,12 +105,12 @@ service, but the acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 708 nonblank lines,
+The shared acceptance application is one source file with 712 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 24
-lines (3.3%) smaller while adding one cross-platform source path, typed caret
+files with 732 nonblank lines, so the checked-in application surface is 20
+lines (2.7%) smaller while adding one cross-platform source path, typed caret
 status, native menus, shared editing commands, runtime word-wrap coverage and
-native close-request interception.
+visual-row navigation plus native close-request interception.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

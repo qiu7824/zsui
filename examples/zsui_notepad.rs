@@ -7,9 +7,9 @@ use std::{
 use zsui::{
     button, column, native_window, row, spacer, text, text_editor, AppCx, Command, Dp,
     FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
-    NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode,
-    WidgetId, ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument,
-    ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult,
+    NativeViewKey, NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap,
+    ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus,
+    ZsTextDocument, ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
@@ -569,8 +569,10 @@ fn main() -> ZsuiResult<()> {
             .map(|pair| pair[1].clone());
         let mut options = NativeWindowSmokeRunOptions::new(1_200)
             .native_view_click(Point { x: 360, y: 220 })
-            .native_view_text_input("三平台自绘文本输入")
+            .native_view_text_input("三平台自绘文本输入\n第二行")
             .native_view_click(undo_point)
+            .native_view_click(Point { x: 360, y: 220 })
+            .native_view_key_down(NativeViewKey::Up)
             .native_view_click(wrap_point)
             .native_view_click(Point { x: 360, y: 220 })
             .native_window_close_request();
@@ -587,13 +589,15 @@ fn main() -> ZsuiResult<()> {
         if !report.visible_window_was_created()
             || report.native_view_text_input_count == 0
             || report.native_view_text_undo_count == 0
+            || report.native_view_text_navigation_count == 0
+            || report.native_view_text_selection_change_count == 0
             || report.native_view_window_close_request_count == 0
             || report.native_view_window_close_veto_count == 0
             || !report.window_menu_command_routed
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, self-drawn text input, typed undo or close veto was not verified",
+                "native window, menu routing, text input/navigation, typed undo or close veto was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {

@@ -85,9 +85,11 @@ history remain authoritative for implementation status.
 - Shared multiline editors default to `TextWrap::Word` and accept runtime
   `ViewNode::text_wrap(...)` configuration; single-line TextBox remains
   `NoWrap`. Rendering, caret placement, selection rectangles and pointer hit
-  testing must consume the same wrap state on Win32, AppKit and GTK4. This is
-  shared self-drawn behavior and must not introduce a native child editor or a
-  WebView.
+  testing must consume the same wrap state on Win32, AppKit and GTK4. Up/Down
+  navigation also follows these visual rows and preserves the desired visual
+  column across shorter hard or soft lines; horizontal input, edits and pointer
+  selection reset that transient column. This is shared self-drawn behavior and
+  must not introduce a native child editor or a WebView.
 
 ## Native platform bar
 

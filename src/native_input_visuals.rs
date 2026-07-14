@@ -10,6 +10,12 @@ pub(crate) struct NativeTextVisualGeometry {
     pub selections: Vec<Rect>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeTextVisualDirection {
+    Up,
+    Down,
+}
+
 pub(crate) fn native_text_visual_target(
     target: ViewHitTarget,
     interaction: &ViewInteractionPlan,
@@ -199,6 +205,44 @@ pub(crate) fn native_text_index_for_point(
     }
     .min(line.end.saturating_sub(line.start));
     line.start.saturating_add(column)
+}
+
+pub(crate) fn native_text_index_for_vertical_move(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualDirection,
+    preferred_column: Option<usize>,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+) -> (usize, usize) {
+    let metrics = native_text_visual_metrics(target, dpi);
+    let max_columns = metrics
+        .text_bounds
+        .width
+        .checked_div(metrics.character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let lines = text_lines(
+        value,
+        target.kind == ViewHitTargetKind::TextEditor,
+        wrap,
+        max_columns,
+    );
+    let (row, current_column) = text_position(caret.min(char_count(value)), &lines);
+    let preferred_column = preferred_column.unwrap_or(current_column);
+    let target_row = match direction {
+        NativeTextVisualDirection::Up => row.saturating_sub(1),
+        NativeTextVisualDirection::Down => row.saturating_add(1).min(lines.len() - 1),
+    };
+    let line = lines[target_row];
+    let line_columns = line.end.saturating_sub(line.start);
+    let column = if line.soft_wrap_after {
+        preferred_column.min(line_columns.saturating_sub(1))
+    } else {
+        preferred_column.min(line_columns)
+    };
+    (line.start.saturating_add(column), preferred_column)
 }
 
 pub(crate) fn decorate_native_text_edit_visuals(
@@ -1473,5 +1517,53 @@ mod tests {
             ),
             5
         );
+    }
+
+    #[test]
+    fn vertical_text_navigation_uses_visual_rows_and_preserves_the_column() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(95),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 120,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        let value = "abcdef\nx\nuvwxyz";
+
+        let (second_visual_row, preferred) = native_text_index_for_vertical_move(
+            target,
+            value,
+            2,
+            NativeTextVisualDirection::Down,
+            None,
+            crate::TextWrap::Word,
+            Dpi::standard(),
+        );
+        let (short_hard_line, preferred) = native_text_index_for_vertical_move(
+            target,
+            value,
+            second_visual_row,
+            NativeTextVisualDirection::Down,
+            Some(preferred),
+            crate::TextWrap::Word,
+            Dpi::standard(),
+        );
+        let (next_wrapped_line, _) = native_text_index_for_vertical_move(
+            target,
+            value,
+            short_hard_line,
+            NativeTextVisualDirection::Down,
+            Some(preferred),
+            crate::TextWrap::Word,
+            Dpi::standard(),
+        );
+
+        assert_eq!(second_visual_row, 6);
+        assert_eq!(short_hard_line, 8);
+        assert_eq!(next_wrapped_line, 11);
+        assert_eq!(preferred, 2);
     }
 }
