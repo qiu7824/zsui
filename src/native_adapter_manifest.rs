@@ -408,7 +408,7 @@ fn native_ui_capability_readiness(
             FileDialog => (
                 FirstPass,
                 "src/windows_win32_host.rs",
-                "safe Win32 common open/save dialog services are connected; target interaction proof is pending",
+                "safe Win32 common open/save dialogs bind hwndOwner to the active window; target interaction proof is pending",
             ),
             Ime => (
                 FirstPass,
@@ -445,7 +445,7 @@ fn native_ui_capability_readiness(
             FileDialog => (
                 FirstPass,
                 "src/macos_appkit_services.rs",
-                "NSOpenPanel and NSSavePanel are connected through the safe FileDialogService; target interaction proof is pending",
+                "NSOpenPanel and NSSavePanel use an active-window sheet through the safe FileDialogService, with modal fallback when no owner exists; target interaction proof is pending",
             ),
             PopupMenu => (
                 FirstPass,
@@ -487,7 +487,7 @@ fn native_ui_capability_readiness(
             FileDialog => (
                 FirstPass,
                 "src/linux_gtk_services.rs",
-                "GTK4 FileChooserNative open/save is connected through the safe FileDialogService; target interaction proof is pending",
+                "GTK4 FileChooserNative open/save binds transient-for to the active application window through the safe FileDialogService; target interaction proof is pending",
             ),
             PopupMenu => (
                 FirstPass,

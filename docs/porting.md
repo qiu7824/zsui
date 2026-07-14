@@ -64,6 +64,9 @@ Application code can use `NativeFileDialogService` with the same
 desktop targets. The facade selects Win32, AppKit or GTK4 internally and
 returns `ZsuiError::Unsupported` when the corresponding backend feature is not
 enabled; applications do not import a native panel type or platform `cfg`.
+When an active native window exists, Win32 assigns it to `hwndOwner`, AppKit
+presents the panel as a window sheet and GTK4 assigns it as `transient-for`.
+Only ownerless calls use the toolkit's application-modal fallback.
 
 The unified native-window path also attaches backend-neutral `NativeDrawPlan`
 content to both platforms. AppKit uses a flipped custom `NSView`,

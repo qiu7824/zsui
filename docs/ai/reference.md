@@ -257,8 +257,8 @@ platform handles. Its file selection now uses the shared
 `NativeFileDialogService`, whose owned specs dispatch to Win32, AppKit or GTK4
 without application `cfg`. Typed shortcut declarations, Win32 accelerator
 resource ownership and Win32 multiline editor hosting now live in the
-framework. Parent-window modality and dirty-close policy still live in the
-example's platform module. Use
+framework. Native file dialogs bind to the active target window; only
+dirty-close policy still lives in the example's platform module. Use
 `docs/notepad-demo.md` and `scripts/measure-notepad-comparison.ps1` to compare
 ZSUI with the isolated egui, Iced, Slint and Tauri 2 baselines. The script
 measures complete process trees, including Tauri's WebView2 descendants. Read

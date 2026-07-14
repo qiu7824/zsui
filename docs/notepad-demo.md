@@ -134,8 +134,8 @@ decoding, dirty state and transactional save now live in reusable
 `NativeFileDialogService` and keyboard shortcuts use typed framework
 accelerators with framework-owned native resources. The Win32 multiline editor,
 font, DPI, bounds, text, selection, word-wrap and edit commands now use one
-framework-owned RAII service. Parent-window modality glue and the application
-dirty-close policy still live in the example.
+framework-owned RAII service. File dialogs bind to the active parent window
+inside the target adapter. Only the dirty-close policy remains in the example.
 
 Iced is the shortest baseline and remains close to native-process memory. Slint
 also has low measured memory, with the largest binary and resolved dependency
@@ -149,7 +149,7 @@ restore, search and replace, print, spell checking, richer encoding choices and
 system integration. ZSUI's useful current advantage is a small Rust-controlled
 native stack, not feature superiority over the Windows product.
 
-The next code-reduction target is parent-window dialog binding and a shared
-AppKit/GTK document-editor path. Dirty-close confirmation remains application
-policy. This should further reduce application and AI-generated code without
-giving up the measured native-host characteristics.
+The next code-reduction target is a shared AppKit/GTK document-editor path.
+Dirty-close confirmation remains application policy. This should further
+reduce application and AI-generated code without giving up the measured
+native-host characteristics.

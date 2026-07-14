@@ -669,6 +669,8 @@ pub trait FileDialogService {
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>>;
 }
 
+/// Target-dispatched file dialogs bound to the active native window when one
+/// is available, with application-modal fallback when no owner exists.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NativeFileDialogService;
 

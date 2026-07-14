@@ -344,6 +344,7 @@ pub fn linux_gtk_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Ve
         .modal(true)
         .select_multiple(spec.allow_multiple)
         .build();
+    gtk_bind_file_dialog_to_active_window(&dialog);
     add_gtk_file_filters(&dialog, &spec.filters);
     if let Some(directory) = native_file_dialog_initial_directory(spec.current_path.as_deref()) {
         let _ = dialog.set_current_folder(Some(&gio::File::for_path(directory)));
@@ -369,6 +370,7 @@ pub fn linux_gtk_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Optio
         .modal(true)
         .select_multiple(false)
         .build();
+    gtk_bind_file_dialog_to_active_window(&dialog);
     add_gtk_file_filters(&dialog, &spec.filters);
     if let Some(directory) = native_file_dialog_initial_directory(spec.current_path.as_deref()) {
         let _ = dialog.set_current_folder(Some(&gio::File::for_path(directory)));
@@ -429,6 +431,13 @@ fn add_gtk_file_filters(dialog: &FileChooserNative, filters: &[crate::FileDialog
         }
         dialog.add_filter(&filter);
     }
+}
+
+fn gtk_bind_file_dialog_to_active_window(dialog: &FileChooserNative) {
+    let owner = gio::Application::default()
+        .and_then(|application| application.downcast::<gtk::Application>().ok())
+        .and_then(|application| application.active_window());
+    dialog.set_transient_for(owner.as_ref());
 }
 
 fn gtk_selected_local_paths(dialog: &FileChooserNative) -> ZsuiResult<Vec<PathBuf>> {

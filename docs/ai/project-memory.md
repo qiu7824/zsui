@@ -42,6 +42,10 @@ history remain authoritative for implementation status.
 - Applications request native open/save panels through the safe
   `NativeFileDialogService` facade and owned `PathBuf` specs. Target selection
   stays inside ZSUI; missing backend features return `ZsuiError::Unsupported`.
+  Dialogs bind to the active native window when available: Win32 sets
+  `hwndOwner`, AppKit presents an `NSOpenPanel`/`NSSavePanel` sheet, and GTK4
+  sets `transient-for`; targets fall back to application-modal presentation
+  only when no active owner exists.
 - Menu accelerators use the strong `ZsAccelerator` / `ZsAcceleratorKey`
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent

@@ -20,8 +20,9 @@ zeroize = { version = "1.8", features = ["alloc"], optional = true }
 winit = { version = "0.30", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = { version = "0.6", optional = true }
 objc2 = { version = "0.6", optional = true }
-objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "objc2-core-foundation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSCell", "NSColor", "NSColorSpace", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSCell", "NSColor", "NSColorSpace", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3", optional = true }
 
 [target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
@@ -91,7 +92,7 @@ calculator-demo = ["windows-gdi", "calculator"]
 desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
-macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+macos-appkit = ["dep:block2", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
 all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]

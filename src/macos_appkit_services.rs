@@ -1,7 +1,11 @@
-use std::cell::Cell;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
@@ -11,8 +15,8 @@ use objc2_app_kit::{
     NSSavePanel, NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
-    NSArray, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
-    NSTimer, NSURL,
+    NSArray, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
+    NSSize, NSString, NSTimer, NSURL,
 };
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
@@ -341,6 +345,7 @@ impl FileDialogService for MacosAppKitFileDialogService {
 
 pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
     let mtm = appkit_main_thread_marker("NSOpenPanel")?;
+    let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSOpenPanel::openPanel(mtm);
     panel.setCanChooseFiles(true);
     panel.setCanChooseDirectories(false);
@@ -353,7 +358,7 @@ pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option
     }
     appkit_set_initial_directory(&panel, spec.current_path.as_deref());
 
-    if panel.runModal() != NSModalResponseOK {
+    if appkit_run_file_panel(&panel, owner.as_deref()) != NSModalResponseOK {
         return Ok(None);
     }
 
@@ -380,6 +385,7 @@ pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option
 
 pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
     let mtm = appkit_main_thread_marker("NSSavePanel")?;
+    let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSSavePanel::savePanel(mtm);
     panel.setCanCreateDirectories(true);
     panel.setTitle(Some(&NSString::from_str(&spec.title)));
@@ -396,7 +402,7 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
     }
     appkit_set_initial_directory(&panel, spec.current_path.as_deref());
 
-    if panel.runModal() != NSModalResponseOK {
+    if appkit_run_file_panel(&panel, owner.as_deref()) != NSModalResponseOK {
         return Ok(None);
     }
     panel
@@ -410,6 +416,36 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
             })
         })
         .transpose()
+}
+
+fn appkit_active_file_dialog_owner(mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
+    let application = NSApplication::sharedApplication(mtm);
+    application.keyWindow().or_else(|| application.mainWindow())
+}
+
+fn appkit_run_file_panel(
+    panel: &NSSavePanel,
+    owner: Option<&NSWindow>,
+) -> objc2_app_kit::NSModalResponse {
+    let Some(owner) = owner else {
+        return panel.runModal();
+    };
+
+    let response = Rc::new(Cell::new(None));
+    let completed_response = Rc::clone(&response);
+    let completion = RcBlock::new(move |value: objc2_app_kit::NSModalResponse| {
+        completed_response.set(Some(value));
+    });
+    panel.beginSheetModalForWindow_completionHandler(owner, &completion);
+
+    let run_loop = NSRunLoop::currentRunLoop();
+    while response.get().is_none() {
+        run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
+    }
+    panel.orderOut(None);
+    response
+        .get()
+        .expect("AppKit sheet completion set a modal response")
 }
 
 fn appkit_main_thread_marker(operation: &'static str) -> ZsuiResult<MainThreadMarker> {
