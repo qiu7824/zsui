@@ -289,6 +289,30 @@ guidance. The Windows smoke must report no failed or unhandled input and must
 capture the selected hierarchy; AppKit and GTK4 target-machine interaction
 screenshots remain required.
 
+The independently selectable DataGrid smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,table,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-table --table-view
+```
+
+It renders application-owned columns and rows with globally unique
+`ZsTableColumnId` and `ZsTableRowId` values. Two pointer activations cycle a
+sortable header from ascending to descending, a pointer row activation selects
+and invokes a stable row, and Down/Enter/Home exercise keyboard selection and
+invocation after application-owned reordering. The artifact records separate
+sort, selection and invocation counters plus typed `UiCommand` IDs. Fixed `Dp`
+columns and weighted fill columns produce the same paint and hit geometry;
+headers, separators, selection and semantic sort chevrons remain self-drawn
+without a native child table or backend model. Windows follows current
+[Fluent collection guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/listview-and-gridview)
+and the documented row/column behavior of the archived
+[Windows Community Toolkit DataGrid](https://learn.microsoft.com/en-us/dotnet/communitytoolkit/archive/windows/datagrid),
+while macOS and GTK metrics follow [AppKit `NSTableView`](https://developer.apple.com/documentation/appkit/nstableview)
+and [GTK4 `ColumnView`](https://docs.gtk.org/gtk4/class.ColumnView.html).
+The Windows smoke must report zero failed or unhandled input. Cell editing,
+column resize/reorder, accessibility providers, large-table virtualization and
+AppKit/GTK target-machine screenshots remain required.
+
 The dedicated typed ComboBox smoke path is:
 
 ```powershell

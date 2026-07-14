@@ -127,6 +127,9 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_tree_expansion_change_count: usize,
     pub native_view_tree_selection_count: usize,
     pub native_view_tree_invoke_count: usize,
+    pub native_view_table_sort_count: usize,
+    pub native_view_table_selection_count: usize,
+    pub native_view_table_invoke_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -225,6 +228,9 @@ impl NativeHostSmokeInteractionReport {
             native_view_tree_expansion_change_count: 0,
             native_view_tree_selection_count: 0,
             native_view_tree_invoke_count: 0,
+            native_view_table_sort_count: 0,
+            native_view_table_selection_count: 0,
+            native_view_table_invoke_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -394,6 +400,24 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_tree_invoke_count
             ));
         }
+        if report.native_view_table_sort_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} typed table sort event(s)",
+                report.native_view_table_sort_count
+            ));
+        }
+        if report.native_view_table_selection_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} strong-id table selection event(s)",
+                report.native_view_table_selection_count
+            ));
+        }
+        if report.native_view_table_invoke_count > 0 {
+            notes.push(format!(
+                "native view input smoke routed {} table invocation event(s)",
+                report.native_view_table_invoke_count
+            ));
+        }
         if report.native_view_combo_expanded_change_count > 0 {
             notes.push(format!(
                 "native view input smoke routed {} combo expansion event(s)",
@@ -554,6 +578,9 @@ impl NativeHostSmokeInteractionReport {
             native_view_tree_expansion_change_count: report.native_view_tree_expansion_change_count,
             native_view_tree_selection_count: report.native_view_tree_selection_count,
             native_view_tree_invoke_count: report.native_view_tree_invoke_count,
+            native_view_table_sort_count: report.native_view_table_sort_count,
+            native_view_table_selection_count: report.native_view_table_selection_count,
+            native_view_table_invoke_count: report.native_view_table_invoke_count,
             native_view_combo_expanded_change_count: report.native_view_combo_expanded_change_count,
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
@@ -1211,6 +1238,9 @@ mod tests {
             native_view_tree_expansion_change_count: 0,
             native_view_tree_selection_count: 0,
             native_view_tree_invoke_count: 0,
+            native_view_table_sort_count: 0,
+            native_view_table_selection_count: 0,
+            native_view_table_invoke_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,

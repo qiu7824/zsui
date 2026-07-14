@@ -36,6 +36,7 @@ pub enum ZsIcon {
     Edit,
     Group,
     Phrase,
+    ChevronUp,
     ChevronDown,
     Calendar,
     ChevronLeft,
@@ -44,7 +45,7 @@ pub enum ZsIcon {
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 40] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -79,6 +80,7 @@ impl ZsIcon {
         Self::Edit,
         Self::Group,
         Self::Phrase,
+        Self::ChevronUp,
         Self::ChevronDown,
         Self::Calendar,
         Self::ChevronLeft,
@@ -120,6 +122,7 @@ impl ZsIcon {
             Self::Copy => "copy",
             Self::Paste => "paste",
             Self::Edit => "edit",
+            Self::ChevronUp => "chevron-up",
             Self::ChevronDown => "chevron-down",
             Self::Calendar => "calendar",
             Self::ChevronLeft => "chevron-left",
@@ -162,6 +165,7 @@ impl ZsIcon {
             Self::Copy => "edit-copy-symbolic",
             Self::Paste => "edit-paste-symbolic",
             Self::Edit => "document-edit-symbolic",
+            Self::ChevronUp => "pan-up-symbolic",
             Self::ChevronDown => "pan-down-symbolic",
             Self::Calendar => "x-office-calendar-symbolic",
             Self::ChevronLeft => "pan-start-symbolic",
@@ -205,6 +209,7 @@ impl ZsIcon {
             Self::Paste => "\u{E77F}",
             Self::Edit => "\u{E70F}",
             Self::Group => "\u{E902}",
+            Self::ChevronUp => "\u{E70E}",
             Self::ChevronDown => "\u{E70D}",
             Self::Calendar => "\u{E787}",
             Self::ChevronLeft => "\u{E76B}",
@@ -254,6 +259,7 @@ impl ZsIcon {
             Self::Edit => "edit.svg",
             Self::Group => "group.svg",
             Self::Phrase => "phrase.svg",
+            Self::ChevronUp => "chevron-up.svg",
             Self::ChevronDown => "chevron-down.svg",
             Self::Calendar => "calendar.svg",
             Self::ChevronLeft => "chevron-left.svg",
@@ -313,6 +319,9 @@ impl ZsIcon {
             Self::Edit => include_bytes!("../assets/fluent-system-icons/regular/edit.svg"),
             Self::Group => include_bytes!("../assets/fluent-system-icons/regular/group.svg"),
             Self::Phrase => include_bytes!("../assets/fluent-system-icons/regular/phrase.svg"),
+            Self::ChevronUp => {
+                include_bytes!("../assets/fluent-system-icons/regular/chevron-up.svg")
+            }
             Self::ChevronDown => {
                 include_bytes!("../assets/fluent-system-icons/regular/chevron-down.svg")
             }
@@ -364,6 +373,7 @@ impl ZsIcon {
             Self::Paste => "doc.on.clipboard",
             Self::Edit => "pencil",
             Self::Group => "person.2",
+            Self::ChevronUp => "chevron.up",
             Self::ChevronDown => "chevron.down",
             Self::Calendar => "calendar",
             Self::ChevronLeft => "chevron.left",
@@ -410,6 +420,7 @@ impl ZsIcon {
             | Self::Copy
             | Self::Paste
             | Self::Edit
+            | Self::ChevronUp
             | Self::ChevronDown
             | Self::Calendar
             | Self::ChevronLeft

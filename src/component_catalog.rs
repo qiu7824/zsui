@@ -152,6 +152,11 @@ const TREE_GAPS: &[&str] = &[
     "multi-selection, drag-and-drop and large-tree virtualization",
     "AppKit and GTK4 target interaction smoke",
 ];
+const TABLE_GAPS: &[&str] = &[
+    "accessibility tree-grid, row, column-header and grid-cell providers",
+    "cell focus/editing, validation, multi-selection and interactive column resize/reorder",
+    "large-table virtualization plus AppKit and GTK4 target interaction smoke",
+];
 const TOGGLE_BUTTON_GAPS: &[&str] = &[
     "optional indeterminate state and grouped selection behavior",
     "accessibility toggle-button role and checked-state provider",
@@ -490,10 +495,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "table",
         "DataGrid",
         Collection,
-        ContractOnly,
+        FirstPass,
         Some("table"),
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        "src/table.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        TABLE_GAPS
     ),
     component!(
         "items_repeater",
@@ -680,6 +685,7 @@ mod tests {
         assert!(summary.runtime_surface_count >= 15);
         assert!(summary.not_started_count >= 7);
         assert!(!summary.missing_component_names.contains(&"tree"));
+        assert!(!summary.missing_component_names.contains(&"table"));
         assert!(!summary.missing_component_names.contains(&"progress_ring"));
         assert!(!summary.missing_component_names.contains(&"toggle"));
         assert!(!summary.missing_component_names.contains(&"toggle_button"));

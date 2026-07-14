@@ -653,6 +653,16 @@ pub enum ViewNodeKind<Msg> {
         on_expansion_change: Option<fn(crate::ZsTreeExpansionChange) -> Msg>,
         on_invoke: Option<fn(crate::ZsTreeNodeId) -> Msg>,
     },
+    #[cfg(feature = "table")]
+    DataGrid {
+        columns: Vec<crate::ZsTableColumn>,
+        rows: Vec<crate::ZsTableRow>,
+        selected: Option<crate::ZsTableRowId>,
+        sort: Option<crate::ZsTableSort>,
+        on_select: Option<fn(crate::ZsTableRowId) -> Msg>,
+        on_sort: Option<fn(crate::ZsTableSort) -> Msg>,
+        on_invoke: Option<fn(crate::ZsTableRowId) -> Msg>,
+    },
     #[cfg(feature = "combo")]
     ComboBox {
         options: Vec<String>,
@@ -1079,6 +1089,49 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "tree")]
     pub fn on_tree_invoke(mut self, message: fn(crate::ZsTreeNodeId) -> Msg) -> Self {
         if let ViewNodeKind::TreeView { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn selected_table_row(mut self, selected: Option<crate::ZsTableRowId>) -> Self {
+        if let ViewNodeKind::DataGrid {
+            selected: current, ..
+        } = &mut self.kind
+        {
+            *current = selected;
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn table_sort(mut self, sort: Option<crate::ZsTableSort>) -> Self {
+        if let ViewNodeKind::DataGrid { sort: current, .. } = &mut self.kind {
+            *current = sort;
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn on_table_select(mut self, message: fn(crate::ZsTableRowId) -> Msg) -> Self {
+        if let ViewNodeKind::DataGrid { on_select, .. } = &mut self.kind {
+            *on_select = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn on_table_sort(mut self, message: fn(crate::ZsTableSort) -> Msg) -> Self {
+        if let ViewNodeKind::DataGrid { on_sort, .. } = &mut self.kind {
+            *on_sort = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn on_table_invoke(mut self, message: fn(crate::ZsTableRowId) -> Msg) -> Self {
+        if let ViewNodeKind::DataGrid { on_invoke, .. } = &mut self.kind {
             *on_invoke = Some(message);
         }
         self
@@ -1658,6 +1711,22 @@ pub fn tree_view<Msg>(roots: impl IntoIterator<Item = crate::ZsTreeNode>) -> Vie
     })
 }
 
+#[cfg(feature = "table")]
+pub fn data_grid<Msg>(
+    columns: impl IntoIterator<Item = crate::ZsTableColumn>,
+    rows: impl IntoIterator<Item = crate::ZsTableRow>,
+) -> ViewNode<Msg> {
+    ViewNode::<Msg>::new(ViewNodeKind::DataGrid {
+        columns: columns.into_iter().collect(),
+        rows: rows.into_iter().collect(),
+        selected: None,
+        sort: None,
+        on_select: None,
+        on_sort: None,
+        on_invoke: None,
+    })
+}
+
 #[cfg(feature = "virtual-list")]
 pub fn virtual_list<T, Msg>(
     total_count: usize,
@@ -1783,6 +1852,21 @@ pub enum ViewEvent {
     TreeNodeInvoked {
         widget: WidgetId,
         node: crate::ZsTreeNodeId,
+    },
+    #[cfg(feature = "table")]
+    TableRowSelected {
+        widget: WidgetId,
+        row: crate::ZsTableRowId,
+    },
+    #[cfg(feature = "table")]
+    TableSorted {
+        widget: WidgetId,
+        column: crate::ZsTableColumnId,
+    },
+    #[cfg(feature = "table")]
+    TableRowInvoked {
+        widget: WidgetId,
+        row: crate::ZsTableRowId,
     },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
@@ -1932,6 +2016,16 @@ pub enum ViewHitTargetKind {
     #[cfg(feature = "tree")]
     TreeNodeExpander {
         node: crate::ZsTreeNodeId,
+    },
+    #[cfg(feature = "table")]
+    DataGrid,
+    #[cfg(feature = "table")]
+    TableHeader {
+        column: crate::ZsTableColumnId,
+    },
+    #[cfg(feature = "table")]
+    TableRow {
+        row: crate::ZsTableRowId,
     },
     #[cfg(feature = "combo")]
     ComboBox,
@@ -2137,6 +2231,13 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "table")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::TableHeader { .. } | ViewHitTargetKind::TableRow { .. }
+        ) {
+            return false;
+        }
         #[cfg(feature = "combo")]
         if matches!(self.kind, ViewHitTargetKind::ComboBoxOption { .. }) {
             return false;
@@ -2303,6 +2404,8 @@ trait LiveViewDriver: Send {
     fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState>;
     #[cfg(feature = "tree")]
     fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState>;
+    #[cfg(feature = "table")]
+    fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2388,6 +2491,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "tree")]
     pub fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
         self.lock().widget_tree_view_state(widget)
+    }
+
+    #[cfg(feature = "table")]
+    pub fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState> {
+        self.lock().widget_table_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2660,6 +2768,11 @@ where
     #[cfg(feature = "tree")]
     fn widget_tree_view_state(&self, widget: WidgetId) -> Option<crate::ZsTreeViewState> {
         self.view.widget_tree_view_state(widget)
+    }
+
+    #[cfg(feature = "table")]
+    fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState> {
+        self.view.widget_table_state(widget)
     }
 
     #[cfg(feature = "combo")]
@@ -3530,6 +3643,61 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         }
                     }
                 }
+                #[cfg(feature = "table")]
+                (
+                    ViewNodeKind::DataGrid {
+                        rows,
+                        selected,
+                        on_select,
+                        ..
+                    },
+                    ViewEvent::TableRowSelected { row, .. },
+                ) => {
+                    let visible = crate::table::unique_table_rows(rows)
+                        .into_iter()
+                        .any(|candidate| candidate.id() == *row);
+                    if visible && *selected != Some(*row) {
+                        *selected = Some(*row);
+                        if let Some(message) = on_select {
+                            cx.emit(message(*row));
+                        }
+                    }
+                }
+                #[cfg(feature = "table")]
+                (
+                    ViewNodeKind::DataGrid {
+                        columns,
+                        sort,
+                        on_sort,
+                        ..
+                    },
+                    ViewEvent::TableSorted { column, .. },
+                ) => {
+                    if let Some(next) = crate::table::next_table_sort(columns, *sort, *column) {
+                        if *sort != Some(next) {
+                            *sort = Some(next);
+                            if let Some(message) = on_sort {
+                                cx.emit(message(next));
+                            }
+                        }
+                    }
+                }
+                #[cfg(feature = "table")]
+                (
+                    ViewNodeKind::DataGrid {
+                        rows, on_invoke, ..
+                    },
+                    ViewEvent::TableRowInvoked { row, .. },
+                ) => {
+                    let visible = crate::table::unique_table_rows(rows)
+                        .into_iter()
+                        .any(|candidate| candidate.id() == *row);
+                    if visible {
+                        if let Some(message) = on_invoke {
+                            cx.emit(message(*row));
+                        }
+                    }
+                }
                 #[cfg(feature = "password-box")]
                 (
                     ViewNodeKind::PasswordBox {
@@ -4158,6 +4326,27 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "table")]
+            ViewNodeKind::DataGrid {
+                columns,
+                rows,
+                selected,
+                sort,
+                ..
+            } => {
+                let plan = crate::zs_table_render_plan(
+                    bounds,
+                    columns,
+                    rows,
+                    *selected,
+                    *sort,
+                    crate::ZsTablePlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_table_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 options,
@@ -4333,6 +4522,10 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::TreeNodeExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::TreeNodeSelected { widget, .. })
             | (Some(id), ViewEvent::TreeNodeInvoked { widget, .. }) => id == *widget,
+            #[cfg(feature = "table")]
+            (Some(id), ViewEvent::TableRowSelected { widget, .. })
+            | (Some(id), ViewEvent::TableSorted { widget, .. })
+            | (Some(id), ViewEvent::TableRowInvoked { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -4616,6 +4809,24 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_tree_view_state(widget))
+    }
+
+    #[cfg(feature = "table")]
+    pub fn widget_table_state(&self, widget: WidgetId) -> Option<crate::ZsTableViewState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::DataGrid {
+                rows,
+                selected,
+                sort,
+                ..
+            } = &self.kind
+            {
+                return Some(crate::table::table_view_state(rows, *selected, *sort));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_table_state(widget))
     }
 
     #[cfg(feature = "combo")]
@@ -4974,6 +5185,53 @@ impl<Msg> ViewNode<Msg> {
                     bounds,
                     ViewHitTargetKind::PasswordBoxReveal,
                 ));
+            }
+        }
+
+        #[cfg(feature = "table")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::DataGrid {
+                columns,
+                rows,
+                selected,
+                sort,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan = crate::zs_table_render_plan(
+                bounds,
+                columns,
+                rows,
+                *selected,
+                *sort,
+                crate::ZsTablePlatformStyle::current(),
+                self.layout_dpi,
+            );
+            let table_clip = clipped_rect(bounds, clip);
+            for column in plan.columns {
+                if column.sortable {
+                    if let Some(header_bounds) = clipped_rect(column.bounds, table_clip) {
+                        hit_targets.push(ViewHitTarget::with_kind(
+                            widget,
+                            header_bounds,
+                            ViewHitTargetKind::TableHeader {
+                                column: column.column,
+                            },
+                        ));
+                    }
+                }
+            }
+            for row in plan.rows {
+                if let Some(row_bounds) = clipped_rect(row.bounds, table_clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        row_bounds,
+                        ViewHitTargetKind::TableRow { row: row.row },
+                    ));
+                }
             }
         }
 
@@ -5637,6 +5895,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::AutoSuggestBox { .. } => ViewHitTargetKind::AutoSuggestBox,
             #[cfg(feature = "tree")]
             ViewNodeKind::TreeView { .. } => ViewHitTargetKind::TreeView,
+            #[cfg(feature = "table")]
+            ViewNodeKind::DataGrid { .. } => ViewHitTargetKind::DataGrid,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
@@ -6200,6 +6460,7 @@ mod tests {
         feature = "time-picker",
         feature = "tabs",
         feature = "list",
+        feature = "table",
         feature = "tree"
     ))]
     #[derive(Debug, Clone, PartialEq)]
@@ -6240,6 +6501,12 @@ mod tests {
         TreeExpanded(crate::ZsTreeExpansionChange),
         #[cfg(feature = "tree")]
         TreeInvoked(crate::ZsTreeNodeId),
+        #[cfg(feature = "table")]
+        TableSelected(crate::ZsTableRowId),
+        #[cfg(feature = "table")]
+        TableSorted(crate::ZsTableSort),
+        #[cfg(feature = "table")]
+        TableInvoked(crate::ZsTableRowId),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
@@ -7244,6 +7511,92 @@ mod tests {
         assert_eq!(
             state.rows.iter().map(|row| row.node).collect::<Vec<_>>(),
             vec![root, folder, leaf, 4_u64.into()]
+        );
+    }
+
+    #[cfg(feature = "table")]
+    #[test]
+    fn table_data_grid_routes_strong_id_selection_sort_invocation_and_hit_geometry() {
+        let widget = WidgetId::new(94);
+        let name = crate::ZsTableColumnId::new(1);
+        let first = crate::ZsTableRowId::new(10);
+        let second = crate::ZsTableRowId::new(11);
+        let mut view = data_grid(
+            [
+                crate::ZsTableColumn::new(name, "Name").sortable(true),
+                crate::ZsTableColumn::new(2, "Size")
+                    .fixed_width(Dp::new(80.0))
+                    .alignment(crate::HorizontalAlign::End),
+            ],
+            [
+                crate::ZsTableRow::new(first, ["Cargo.toml", "4 KB"]),
+                crate::ZsTableRow::new(second, ["src", "—"]),
+            ],
+        )
+        .id(widget)
+        .selected_table_row(Some(first))
+        .on_table_select(Msg::TableSelected)
+        .on_table_sort(Msg::TableSorted)
+        .on_table_invoke(Msg::TableInvoked);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 300,
+                height: 160,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == ViewHitTargetKind::TableHeader { column: name } }));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == ViewHitTargetKind::TableRow { row: second } }));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::TableSorted {
+                widget,
+                column: name,
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::TableRowSelected {
+                widget,
+                row: second,
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::TableRowInvoked {
+                widget,
+                row: second,
+            },
+        );
+
+        let ascending = crate::ZsTableSort::new(name, crate::ZsTableSortDirection::Ascending);
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::TableSorted(ascending),
+                Msg::TableSelected(second),
+                Msg::TableInvoked(second),
+            ]
+        );
+        assert_eq!(
+            view.widget_table_state(widget),
+            Some(crate::ZsTableViewState {
+                selected: Some(second),
+                sort: Some(ascending),
+                rows: vec![first, second],
+            })
         );
     }
 

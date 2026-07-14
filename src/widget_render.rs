@@ -15,12 +15,18 @@ use crate::ZsAutoSuggestion;
 #[cfg(feature = "date-picker")]
 use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
-#[cfg(any(feature = "date-picker", feature = "tabs", feature = "time-picker"))]
+#[cfg(any(
+    feature = "date-picker",
+    feature = "table",
+    feature = "tabs",
+    feature = "time-picker"
+))]
 use crate::{HorizontalAlign, TextWeight};
 #[cfg(any(
     feature = "auto-suggest",
     feature = "combo",
     feature = "date-picker",
+    feature = "table",
     feature = "time-picker",
     feature = "tree"
 ))]
@@ -30,6 +36,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "combo",
     feature = "date-picker",
     feature = "number-box",
+    feature = "table",
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button",
@@ -1485,7 +1492,7 @@ pub fn zs_auto_suggest_popup_native_draw_plan(
     NativeDrawPlan::new(commands)
 }
 
-#[cfg(feature = "auto-suggest")]
+#[cfg(any(feature = "auto-suggest", feature = "table"))]
 fn inset_row_text(row: Rect, padding: i32) -> Rect {
     Rect {
         x: row.x.saturating_add(padding),
@@ -1761,6 +1768,410 @@ pub fn zs_tree_view_native_draw_plan(plan: &ZsTreeViewRenderPlan) -> NativeDrawP
             row.label_bounds,
             style,
         )));
+    }
+    commands.push(NativeDrawCommand::PopClip);
+    NativeDrawPlan::new(commands)
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsTablePlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "table")]
+impl ZsTablePlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Macos
+        } else {
+            Self::Gtk
+        }
+    }
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsTableMetrics {
+    pub header_height: Dp,
+    pub row_height: Dp,
+    pub horizontal_padding: Dp,
+    pub sort_icon_size: Dp,
+    pub radius: Dp,
+    pub separator_width: Dp,
+}
+
+#[cfg(feature = "table")]
+impl ZsTableMetrics {
+    pub const fn for_platform(platform: ZsTablePlatformStyle) -> Self {
+        match platform {
+            ZsTablePlatformStyle::Windows => Self {
+                header_height: Dp::new(36.0),
+                row_height: Dp::new(32.0),
+                horizontal_padding: Dp::new(12.0),
+                sort_icon_size: Dp::new(12.0),
+                radius: Dp::new(4.0),
+                separator_width: Dp::new(1.0),
+            },
+            ZsTablePlatformStyle::Macos => Self {
+                header_height: Dp::new(24.0),
+                row_height: Dp::new(24.0),
+                horizontal_padding: Dp::new(8.0),
+                sort_icon_size: Dp::new(10.0),
+                radius: Dp::new(5.0),
+                separator_width: Dp::new(1.0),
+            },
+            ZsTablePlatformStyle::Gtk => Self {
+                header_height: Dp::new(36.0),
+                row_height: Dp::new(34.0),
+                horizontal_padding: Dp::new(12.0),
+                sort_icon_size: Dp::new(12.0),
+                radius: Dp::new(6.0),
+                separator_width: Dp::new(1.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTableColumnRenderPlan {
+    pub column: crate::ZsTableColumnId,
+    pub header: String,
+    pub alignment: HorizontalAlign,
+    pub sortable: bool,
+    pub sort: Option<crate::ZsTableSortDirection>,
+    pub bounds: Rect,
+    pub label_bounds: Rect,
+    pub sort_icon_bounds: Option<Rect>,
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTableCellRenderPlan {
+    pub column: crate::ZsTableColumnId,
+    pub value: String,
+    pub alignment: HorizontalAlign,
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTableRowRenderPlan {
+    pub row: crate::ZsTableRowId,
+    pub selected: bool,
+    pub bounds: Rect,
+    pub cells: Vec<ZsTableCellRenderPlan>,
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTableRenderPlan {
+    pub bounds: Rect,
+    pub header_bounds: Rect,
+    pub columns: Vec<ZsTableColumnRenderPlan>,
+    pub rows: Vec<ZsTableRowRenderPlan>,
+    pub radius: i32,
+    pub separator_width: i32,
+    pub platform: ZsTablePlatformStyle,
+}
+
+#[cfg(feature = "table")]
+fn table_column_widths(
+    columns: &[&crate::ZsTableColumn],
+    available_width: i32,
+    dpi: Dpi,
+) -> Vec<i32> {
+    let available_width = available_width.max(0);
+    let fixed_total = columns
+        .iter()
+        .map(|column| match column.width() {
+            crate::ZsTableColumnWidth::Fixed(width) => width.to_px(dpi).round_i32().max(0),
+            crate::ZsTableColumnWidth::Fill(_) => 0,
+        })
+        .fold(0_i32, i32::saturating_add);
+    let fill_total = columns
+        .iter()
+        .map(|column| match column.width() {
+            crate::ZsTableColumnWidth::Fixed(_) => 0_u32,
+            crate::ZsTableColumnWidth::Fill(weight) => u32::from(weight.max(1)),
+        })
+        .fold(0_u32, u32::saturating_add);
+    let fill_available = available_width.saturating_sub(fixed_total).max(0);
+    let mut desired = columns
+        .iter()
+        .map(|column| match column.width() {
+            crate::ZsTableColumnWidth::Fixed(width) => width.to_px(dpi).round_i32().max(0),
+            crate::ZsTableColumnWidth::Fill(weight) if fill_total > 0 => {
+                let portion = i64::from(fill_available).saturating_mul(i64::from(weight.max(1)))
+                    / i64::from(fill_total);
+                i32::try_from(portion).unwrap_or(i32::MAX)
+            }
+            crate::ZsTableColumnWidth::Fill(_) => 0,
+        })
+        .collect::<Vec<_>>();
+    let desired_total = desired.iter().copied().fold(0_i32, i32::saturating_add);
+    if desired_total < available_width {
+        if let Some(last) = desired.last_mut() {
+            *last = last.saturating_add(available_width - desired_total);
+        }
+    }
+    let mut remaining = available_width;
+    for width in &mut desired {
+        *width = (*width).min(remaining).max(0);
+        remaining = remaining.saturating_sub(*width);
+    }
+    desired
+}
+
+#[cfg(feature = "table")]
+pub fn zs_table_render_plan(
+    bounds: Rect,
+    columns: &[crate::ZsTableColumn],
+    rows: &[crate::ZsTableRow],
+    selected: Option<crate::ZsTableRowId>,
+    sort: Option<crate::ZsTableSort>,
+    platform: ZsTablePlatformStyle,
+    dpi: Dpi,
+) -> ZsTableRenderPlan {
+    let metrics = ZsTableMetrics::for_platform(platform);
+    let header_height = metrics.header_height.to_px(dpi).round_i32().max(1);
+    let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
+    let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
+    let sort_icon_size = metrics.sort_icon_size.to_px(dpi).round_i32().max(1);
+    let unique_columns = crate::table::unique_table_columns(columns);
+    let widths = table_column_widths(&unique_columns, bounds.width, dpi);
+    let header_bounds = Rect {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: header_height,
+    };
+    let mut x = bounds.x;
+    let columns = unique_columns
+        .iter()
+        .zip(widths.iter().copied())
+        .map(|(column, width)| {
+            let column_bounds = Rect {
+                x,
+                y: bounds.y,
+                width,
+                height: header_height,
+            };
+            x = x.saturating_add(width);
+            let active_sort = sort
+                .filter(|sort| sort.column == column.id())
+                .map(|sort| sort.direction);
+            let sort_icon_bounds = active_sort.map(|_| Rect {
+                x: column_bounds
+                    .x
+                    .saturating_add(column_bounds.width)
+                    .saturating_sub(padding)
+                    .saturating_sub(sort_icon_size),
+                y: column_bounds
+                    .y
+                    .saturating_add((column_bounds.height.saturating_sub(sort_icon_size)) / 2),
+                width: sort_icon_size,
+                height: sort_icon_size,
+            });
+            let trailing = padding.saturating_add(if sort_icon_bounds.is_some() {
+                sort_icon_size.saturating_add(padding / 2)
+            } else {
+                0
+            });
+            ZsTableColumnRenderPlan {
+                column: column.id(),
+                header: column.header().to_string(),
+                alignment: column.column_alignment(),
+                sortable: column.is_sortable(),
+                sort: active_sort,
+                bounds: column_bounds,
+                label_bounds: Rect {
+                    x: column_bounds.x.saturating_add(padding),
+                    y: column_bounds.y,
+                    width: column_bounds
+                        .width
+                        .saturating_sub(padding)
+                        .saturating_sub(trailing)
+                        .max(0),
+                    height: column_bounds.height,
+                },
+                sort_icon_bounds,
+            }
+        })
+        .collect::<Vec<_>>();
+    let rows = crate::table::unique_table_rows(rows)
+        .into_iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let row_bounds = Rect {
+                x: bounds.x,
+                y: bounds.y.saturating_add(header_height).saturating_add(
+                    row_height.saturating_mul(i32::try_from(index).unwrap_or(i32::MAX)),
+                ),
+                width: bounds.width,
+                height: row_height,
+            };
+            let cells = columns
+                .iter()
+                .enumerate()
+                .map(|(column_index, column)| {
+                    let cell_bounds = Rect {
+                        x: column.bounds.x,
+                        y: row_bounds.y,
+                        width: column.bounds.width,
+                        height: row_bounds.height,
+                    };
+                    ZsTableCellRenderPlan {
+                        column: column.column,
+                        value: row.cell(column_index).to_string(),
+                        alignment: column.alignment,
+                        bounds: cell_bounds,
+                        text_bounds: inset_row_text(cell_bounds, padding),
+                    }
+                })
+                .collect();
+            ZsTableRowRenderPlan {
+                row: row.id(),
+                selected: selected == Some(row.id()),
+                bounds: row_bounds,
+                cells,
+            }
+        })
+        .collect();
+    ZsTableRenderPlan {
+        bounds,
+        header_bounds,
+        columns,
+        rows,
+        radius: metrics.radius.to_px(dpi).round_i32().max(1),
+        separator_width: metrics.separator_width.to_px(dpi).round_i32().max(1),
+        platform,
+    }
+}
+
+#[cfg(feature = "table")]
+pub fn zs_table_native_draw_plan(plan: &ZsTableRenderPlan) -> NativeDrawPlan {
+    let mut commands = vec![
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.radius,
+        },
+        NativeDrawCommand::PushClip { rect: plan.bounds },
+        NativeDrawCommand::FillRect {
+            rect: plan.header_bounds,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+        },
+    ];
+    for column in &plan.columns {
+        let mut style = SemanticTextStyle::body();
+        style.weight = TextWeight::Semibold;
+        style.horizontal_align = column.alignment;
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            column.header.clone(),
+            column.label_bounds,
+            style,
+        )));
+        if let (Some(direction), Some(bounds)) = (column.sort, column.sort_icon_bounds) {
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(
+                    match direction {
+                        crate::ZsTableSortDirection::Ascending => ZsIcon::ChevronUp,
+                        crate::ZsTableSortDirection::Descending => ZsIcon::ChevronDown,
+                    },
+                    bounds,
+                    NativeIconColorMode::ThemeAware,
+                )
+                .with_color(ColorRole::PrimaryText),
+            ));
+        }
+        let separator_x = column
+            .bounds
+            .x
+            .saturating_add(column.bounds.width)
+            .saturating_sub(plan.separator_width);
+        commands.push(NativeDrawCommand::FillRect {
+            rect: Rect {
+                x: separator_x,
+                y: plan.bounds.y,
+                width: plan.separator_width,
+                height: plan.bounds.height,
+            },
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Border,
+                alpha: 180,
+            },
+        });
+    }
+    commands.push(NativeDrawCommand::FillRect {
+        rect: Rect {
+            x: plan.header_bounds.x,
+            y: plan
+                .header_bounds
+                .y
+                .saturating_add(plan.header_bounds.height)
+                .saturating_sub(plan.separator_width),
+            width: plan.header_bounds.width,
+            height: plan.separator_width,
+        },
+        fill: NativeDrawFill::Role(ColorRole::Border),
+    });
+    for row in &plan.rows {
+        if row.selected {
+            let fill = match plan.platform {
+                ZsTablePlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Accent),
+                ZsTablePlatformStyle::Windows => NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 36,
+                },
+                ZsTablePlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 48,
+                },
+            };
+            commands.push(NativeDrawCommand::FillRect {
+                rect: row.bounds,
+                fill,
+            });
+        }
+        let foreground = if row.selected && plan.platform == ZsTablePlatformStyle::Macos {
+            ColorRole::AccentText
+        } else {
+            ColorRole::PrimaryText
+        };
+        for cell in &row.cells {
+            let mut style = SemanticTextStyle::body();
+            style.color = foreground;
+            style.horizontal_align = cell.alignment;
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                cell.value.clone(),
+                cell.text_bounds,
+                style,
+            )));
+        }
+        commands.push(NativeDrawCommand::FillRect {
+            rect: Rect {
+                x: row.bounds.x,
+                y: row
+                    .bounds
+                    .y
+                    .saturating_add(row.bounds.height)
+                    .saturating_sub(plan.separator_width),
+                width: row.bounds.width,
+                height: plan.separator_width,
+            },
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Border,
+                alpha: 128,
+            },
+        });
     }
     commands.push(NativeDrawCommand::PopClip);
     NativeDrawPlan::new(commands)
@@ -3015,6 +3426,73 @@ mod tests {
         assert!(draw.commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::RoundFill {
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 36,
+                },
+                ..
+            }
+        )));
+    }
+
+    #[cfg(feature = "table")]
+    #[test]
+    fn table_render_plan_preserves_typed_columns_platform_metrics_and_sort_visual() {
+        let columns = [
+            crate::ZsTableColumn::new(1, "Name")
+                .fixed_width(Dp::new(160.0))
+                .sortable(true),
+            crate::ZsTableColumn::new(2, "Size")
+                .fill_width(1)
+                .alignment(HorizontalAlign::End)
+                .sortable(true),
+        ];
+        let rows = [
+            crate::ZsTableRow::new(10, ["Cargo.toml", "4 KB"]),
+            crate::ZsTableRow::new(11, ["src", "—"]),
+        ];
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 300,
+            height: 160,
+        };
+        let windows = zs_table_render_plan(
+            bounds,
+            &columns,
+            &rows,
+            Some(crate::ZsTableRowId::new(11)),
+            Some(crate::ZsTableSort::new(
+                crate::ZsTableColumnId::new(2),
+                crate::ZsTableSortDirection::Ascending,
+            )),
+            ZsTablePlatformStyle::Windows,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.columns.len(), 2);
+        assert_eq!(windows.columns[0].bounds.width, 160);
+        assert_eq!(windows.columns[1].bounds.width, 140);
+        assert_eq!(windows.rows.len(), 2);
+        assert!(windows.rows[1].selected);
+        assert_eq!(windows.rows[0].cells[1].alignment, HorizontalAlign::End);
+        assert!(
+            ZsTableMetrics::for_platform(ZsTablePlatformStyle::Macos)
+                .row_height
+                .0
+                < ZsTableMetrics::for_platform(ZsTablePlatformStyle::Gtk)
+                    .row_height
+                    .0
+        );
+
+        let draw = zs_table_native_draw_plan(&windows);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::ChevronUp
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::FillRect {
                 fill: NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::Accent,
                     alpha: 36,

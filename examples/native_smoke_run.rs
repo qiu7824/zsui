@@ -19,6 +19,7 @@ use zsui::checkbox;
     all(feature = "progress-ring", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
+    all(feature = "table", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -52,6 +53,7 @@ use zsui::toggle_button;
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
+    all(feature = "table", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -68,6 +70,7 @@ use zsui::CommandId;
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
+    all(feature = "table", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -78,6 +81,11 @@ use zsui::NativeViewKey;
     all(feature = "progress-ring", feature = "label")
 ))]
 use zsui::ProgressRange;
+#[cfg(all(feature = "table", feature = "label"))]
+use zsui::{
+    data_grid, HorizontalAlign, ZsTableColumn, ZsTableColumnId, ZsTableRow, ZsTableRowId,
+    ZsTableSort, ZsTableSortDirection,
+};
 #[cfg(feature = "date-picker")]
 use zsui::{date_picker, ZsDate, ZsuiThemeMode};
 #[cfg(all(feature = "grid", feature = "button", feature = "label"))]
@@ -112,6 +120,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
     all(feature = "tree", feature = "label"),
+    all(feature = "table", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -165,6 +174,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--tree-view" || arg == "--tree"),
         args.iter()
+            .any(|arg| arg == "--table-view" || arg == "--table" || arg == "--data-grid"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -204,6 +215,7 @@ fn run_smoke(
     include_progress_ring_view: bool,
     include_auto_suggest_view: bool,
     include_tree_view: bool,
+    include_table_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -263,6 +275,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "tree", feature = "label")))]
     if include_tree_view {
         return Err("--tree-view requires the tree and label features".to_string());
+    }
+    #[cfg(not(all(feature = "table", feature = "label")))]
+    if include_table_view {
+        return Err("--table-view requires the table and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -433,6 +449,16 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Right)
             .native_view_click(Point { x: 180, y: 144 });
     }
+    #[cfg(all(feature = "table", feature = "label"))]
+    if include_table_view {
+        smoke_options = smoke_options
+            .native_view_click(Point { x: 180, y: 80 })
+            .native_view_click(Point { x: 180, y: 80 })
+            .native_view_click(Point { x: 180, y: 148 })
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Enter)
+            .native_view_key_down(NativeViewKey::Home);
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -502,6 +528,8 @@ fn run_smoke(
         attach_auto_suggest_view(builder)
     } else if include_tree_view {
         attach_tree_view(builder)
+    } else if include_table_view {
+        attach_table_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -1004,6 +1032,99 @@ fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     )
 }
 
+#[cfg(all(feature = "table", feature = "label"))]
+#[derive(Clone)]
+enum TableSmokeMsg {
+    Selected(ZsTableRowId),
+    Sorted(ZsTableSort),
+    Invoked(ZsTableRowId),
+}
+
+#[cfg(all(feature = "table", feature = "label"))]
+struct TableSmokeState {
+    selected: Option<ZsTableRowId>,
+    sort: Option<ZsTableSort>,
+}
+
+#[cfg(all(feature = "table", feature = "label"))]
+fn attach_table_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    let id_column = ZsTableColumnId::new(1);
+    let name_column = ZsTableColumnId::new(2);
+    let size_column = ZsTableColumnId::new(4);
+    builder.stateful_view(
+        TableSmokeState {
+            selected: Some(ZsTableRowId::new(2)),
+            sort: None,
+        },
+        move |state| {
+            let mut rows = vec![
+                ZsTableRow::new(1, ["001", "Cargo.toml", "Manifest", "4 KB"]),
+                ZsTableRow::new(2, ["002", "src", "Folder", "—"]),
+                ZsTableRow::new(3, ["003", "examples", "Folder", "—"]),
+                ZsTableRow::new(4, ["004", "README.md", "Markdown", "12 KB"]),
+            ];
+            if let Some(sort) = state.sort {
+                let index = if sort.column == id_column {
+                    0
+                } else if sort.column == name_column {
+                    1
+                } else if sort.column == size_column {
+                    3
+                } else {
+                    2
+                };
+                rows.sort_by(|left, right| left.cell(index).cmp(right.cell(index)));
+                if sort.direction == ZsTableSortDirection::Descending {
+                    rows.reverse();
+                }
+            }
+            column([
+                text::<TableSmokeMsg>("ZSUI DataGrid Smoke").height(zsui::Dp::new(28.0)),
+                data_grid(
+                    [
+                        ZsTableColumn::new(id_column, "ID")
+                            .fixed_width(zsui::Dp::new(64.0))
+                            .alignment(HorizontalAlign::End)
+                            .sortable(true),
+                        ZsTableColumn::new(name_column, "Name")
+                            .fill_width(2)
+                            .sortable(true),
+                        ZsTableColumn::new(3, "Type").fill_width(1),
+                        ZsTableColumn::new(size_column, "Size")
+                            .fixed_width(zsui::Dp::new(88.0))
+                            .alignment(HorizontalAlign::End)
+                            .sortable(true),
+                    ],
+                    rows,
+                )
+                .id(WidgetId::new(25))
+                .selected_table_row(state.selected)
+                .table_sort(state.sort)
+                .on_table_select(TableSmokeMsg::Selected)
+                .on_table_sort(TableSmokeMsg::Sorted)
+                .on_table_invoke(TableSmokeMsg::Invoked),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            TableSmokeMsg::Selected(row) => {
+                state.selected = Some(row);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.table_selected",
+                )));
+            }
+            TableSmokeMsg::Sorted(sort) => {
+                state.sort = Some(sort);
+                cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.table_sorted")));
+            }
+            TableSmokeMsg::Invoked(_row) => {
+                cx.ui_command(UiCommand::app(CommandId("zsui.native_smoke.table_invoked")));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1280,6 +1401,11 @@ fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder
 
 #[cfg(not(all(feature = "tree", feature = "label")))]
 fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "table", feature = "label")))]
+fn attach_table_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

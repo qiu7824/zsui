@@ -308,8 +308,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["list", "scroll"],
-            "table widget declarations layered on list and scroll support",
+            vec!["widgets-list"],
+            "typed read-only data grid with strong row and column IDs, sorting and platform-adaptive self-drawn metrics",
         ),
         ZsuiCargoFeature::new(
             "dark-mode",
@@ -623,12 +623,20 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "grid")
             .expect("grid feature should be listed");
+        let table = manifest
+            .iter()
+            .find(|feature| feature.name == "table")
+            .expect("table feature should be listed");
         let all_widgets = manifest
             .iter()
             .find(|feature| feature.name == "all-widgets")
             .expect("all-widgets feature should be listed");
 
         assert!(!grid.default_enabled);
+        assert!(!table.default_enabled);
+        assert_eq!(table.enables, vec!["widgets-list"]);
+        assert!(!table.enables.contains(&"list"));
+        assert!(!table.enables.contains(&"scroll"));
         assert!(!all_widgets.default_enabled);
         assert!(all_widgets.enables.contains(&"grid"));
         assert!(all_widgets.enables.contains(&"textbox"));

@@ -95,6 +95,8 @@ pub mod render_protocol;
 pub mod settings;
 pub mod shell_layout;
 pub mod style;
+#[cfg(feature = "table")]
+pub mod table;
 #[cfg(feature = "time-picker")]
 pub mod time;
 pub mod timer_protocol;
@@ -436,6 +438,11 @@ pub use style::{
     ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, ZSUI_FLUENT_SMALL_ICON_SIZE,
     ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
 };
+#[cfg(feature = "table")]
+pub use table::{
+    ZsTableColumn, ZsTableColumnId, ZsTableColumnWidth, ZsTableRow, ZsTableRowId, ZsTableSort,
+    ZsTableSortDirection, ZsTableViewState,
+};
 #[cfg(feature = "time-picker")]
 pub use time::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
 pub use timer_protocol::{
@@ -459,6 +466,8 @@ pub use view::button;
 pub use view::checkbox;
 #[cfg(feature = "combo")]
 pub use view::combo_box;
+#[cfg(feature = "table")]
+pub use view::data_grid;
 #[cfg(feature = "date-picker")]
 pub use view::date_picker;
 #[cfg(feature = "grid")]
@@ -558,6 +567,12 @@ pub use widget_render::{zs_slider_native_draw_plan, zs_slider_render_plan, ZsSli
 pub use widget_render::{
     zs_tab_view_native_draw_plan, zs_tab_view_render_plan, ZsTabHeaderRenderPlan,
     ZsTabPlatformStyle, ZsTabViewMetrics, ZsTabViewRenderPlan,
+};
+#[cfg(feature = "table")]
+pub use widget_render::{
+    zs_table_native_draw_plan, zs_table_render_plan, ZsTableCellRenderPlan,
+    ZsTableColumnRenderPlan, ZsTableMetrics, ZsTablePlatformStyle, ZsTableRenderPlan,
+    ZsTableRowRenderPlan,
 };
 #[cfg(feature = "time-picker")]
 pub use widget_render::{

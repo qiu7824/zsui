@@ -17,6 +17,7 @@ use crate::native_input_visuals::{
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button",
+    feature = "table",
     feature = "tree"
 ))]
 use crate::native_input_visuals::{
@@ -878,6 +879,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_tree_expansion_change_count: usize,
     pub native_view_tree_selection_count: usize,
     pub native_view_tree_invoke_count: usize,
+    pub native_view_table_sort_count: usize,
+    pub native_view_table_selection_count: usize,
+    pub native_view_table_invoke_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -983,6 +987,9 @@ impl NativeWindowSmokeRunReport {
             native_view_tree_expansion_change_count: 0,
             native_view_tree_selection_count: 0,
             native_view_tree_invoke_count: 0,
+            native_view_table_sort_count: 0,
+            native_view_table_selection_count: 0,
+            native_view_table_invoke_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1045,6 +1052,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     pointer_hover: Option<NativePointerVisualKey>,
@@ -1055,6 +1063,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     pointer_pressed: Option<NativePointerVisualKey>,
@@ -1137,6 +1146,7 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     pub pointer_visual_changed: bool,
@@ -1176,6 +1186,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub tree_selection_changed: bool,
     #[cfg(feature = "tree")]
     pub tree_invoked: bool,
+    #[cfg(feature = "table")]
+    pub table_sort_changed: bool,
+    #[cfg(feature = "table")]
+    pub table_selection_changed: bool,
+    #[cfg(feature = "table")]
+    pub table_invoked: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1233,6 +1249,7 @@ impl NativeViewInputRuntime {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             pointer_hover: None,
@@ -1243,6 +1260,7 @@ impl NativeViewInputRuntime {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             pointer_pressed: None,
@@ -1428,6 +1446,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         self.update_pointer_visual_state(
@@ -1523,6 +1542,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         {
@@ -1623,6 +1643,7 @@ impl NativeViewInputRuntime {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
@@ -1641,6 +1662,7 @@ impl NativeViewInputRuntime {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
@@ -1660,6 +1682,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         self.update_pointer_visual_state(
@@ -1722,6 +1745,42 @@ impl NativeViewInputRuntime {
                     ViewEvent::TreeNodeInvoked {
                         widget: target.widget,
                         node,
+                    },
+                    report,
+                );
+            }
+            _ => {}
+        }
+
+        #[cfg(feature = "table")]
+        match target.kind {
+            crate::ViewHitTargetKind::TableHeader { column } => {
+                report.table_sort_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::TableSorted {
+                        widget: target.widget,
+                        column,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::TableRow { row } => {
+                let selected = self
+                    .widget_table_state(target.widget)
+                    .and_then(|state| state.selected);
+                report.table_selection_changed = selected != Some(row);
+                report.table_invoked = true;
+                let report = self.dispatch_view_event(
+                    ViewEvent::TableRowSelected {
+                        widget: target.widget,
+                        row,
+                    },
+                    report,
+                );
+                return self.dispatch_view_event(
+                    ViewEvent::TableRowInvoked {
+                        widget: target.widget,
+                        row,
                     },
                     report,
                 );
@@ -1795,6 +1854,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
@@ -1825,6 +1885,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         {
@@ -1838,6 +1899,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         )))]
         {
@@ -2120,6 +2182,39 @@ impl NativeViewInputRuntime {
                 report.tree_invoked = true;
                 return self
                     .dispatch_view_event(ViewEvent::TreeNodeInvoked { widget, node }, report);
+            }
+        }
+
+        #[cfg(feature = "table")]
+        if target.kind == crate::ViewHitTargetKind::DataGrid {
+            let Some(state) = self.widget_table_state(widget) else {
+                return report;
+            };
+            let select = match key {
+                NativeViewKey::Up => state.relative_row(-1),
+                NativeViewKey::Down => state.relative_row(1),
+                NativeViewKey::Home => state.first_row(),
+                NativeViewKey::End => state.last_row(),
+                NativeViewKey::Space => state.selected.or_else(|| state.first_row()),
+                _ => None,
+            };
+            if let Some(row) = select {
+                report.handled = true;
+                report.table_selection_changed = state.selected != Some(row);
+                if report.table_selection_changed {
+                    return self
+                        .dispatch_view_event(ViewEvent::TableRowSelected { widget, row }, report);
+                }
+                return report;
+            }
+            if key == NativeViewKey::Enter {
+                let Some(row) = state.selected.filter(|row| state.contains_row(*row)) else {
+                    return report;
+                };
+                report.handled = true;
+                report.table_invoked = true;
+                return self
+                    .dispatch_view_event(ViewEvent::TableRowInvoked { widget, row }, report);
             }
         }
 
@@ -2729,6 +2824,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         self.update_pointer_visual_state(None, None, &mut report);
@@ -2914,6 +3010,7 @@ impl NativeViewInputRuntime {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         if let Some(interaction_plan) = self.current_interaction_plan() {
@@ -3036,6 +3133,7 @@ impl NativeViewInputRuntime {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     fn update_pointer_visual_state(
@@ -3554,6 +3652,18 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "table")]
+    fn widget_table_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTableViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_table_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_table_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -3981,6 +4091,9 @@ fn record_windows_win32_view_input_report(
     report.native_view_tree_expansion_change_count += input.tree_expansion_change_count;
     report.native_view_tree_selection_count += input.tree_selection_count;
     report.native_view_tree_invoke_count += input.tree_invoke_count;
+    report.native_view_table_sort_count += input.table_sort_count;
+    report.native_view_table_selection_count += input.table_selection_count;
+    report.native_view_table_invoke_count += input.table_invoke_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -7281,6 +7394,108 @@ mod tests {
         assert!(collapsed.tree_expansion_changed);
         let keyboard = runtime.dispatch_key(NativeViewKey::Enter);
         assert!(keyboard.tree_invoked);
+    }
+
+    #[cfg(feature = "table")]
+    #[test]
+    fn native_view_runtime_routes_table_sort_row_pointer_and_keyboard_navigation() {
+        #[derive(Clone)]
+        enum Msg {
+            Selected(crate::ZsTableRowId),
+            Sorted(crate::ZsTableSort),
+            Invoked(crate::ZsTableRowId),
+        }
+        struct State {
+            selected: Option<crate::ZsTableRowId>,
+            sort: Option<crate::ZsTableSort>,
+            invoked: Option<crate::ZsTableRowId>,
+        }
+
+        let widget = crate::WidgetId::new(186);
+        let name = crate::ZsTableColumnId::new(1);
+        let first = crate::ZsTableRowId::new(10);
+        let second = crate::ZsTableRowId::new(11);
+        let builder = native_window("Platform Table")
+            .size(360, 240)
+            .stateful_view(
+                State {
+                    selected: Some(first),
+                    sort: None,
+                    invoked: None,
+                },
+                move |state| {
+                    crate::data_grid(
+                        [
+                            crate::ZsTableColumn::new(name, "Name").sortable(true),
+                            crate::ZsTableColumn::new(2, "Size").fixed_width(crate::Dp::new(80.0)),
+                        ],
+                        [
+                            crate::ZsTableRow::new(first, ["Cargo.toml", "4 KB"]),
+                            crate::ZsTableRow::new(second, ["src", "—"]),
+                        ],
+                    )
+                    .id(widget)
+                    .selected_table_row(state.selected)
+                    .table_sort(state.sort)
+                    .on_table_select(Msg::Selected)
+                    .on_table_sort(Msg::Sorted)
+                    .on_table_invoke(Msg::Invoked)
+                },
+                |state, message, _cx| match message {
+                    Msg::Selected(row) => state.selected = Some(row),
+                    Msg::Sorted(sort) => state.sort = Some(sort),
+                    Msg::Invoked(row) => state.invoked = Some(row),
+                },
+            );
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("table interaction plan");
+        let header = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TableHeader { column: name })
+            .expect("sortable header");
+        let second_row = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TableRow { row: second })
+            .expect("second row");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let sorted = runtime.dispatch_pointer_click(Point {
+            x: header.bounds.x + header.bounds.width / 2,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
+        assert!(sorted.table_sort_changed);
+        assert_eq!(
+            runtime
+                .widget_table_state(widget)
+                .and_then(|state| state.sort),
+            Some(crate::ZsTableSort::new(
+                name,
+                crate::ZsTableSortDirection::Ascending
+            ))
+        );
+
+        let invoked = runtime.dispatch_pointer_click(Point {
+            x: second_row.bounds.x + second_row.bounds.width / 2,
+            y: second_row.bounds.y + second_row.bounds.height / 2,
+        });
+        assert!(invoked.table_selection_changed);
+        assert!(invoked.table_invoked);
+        assert_eq!(
+            runtime
+                .widget_table_state(widget)
+                .and_then(|state| state.selected),
+            Some(second)
+        );
+
+        let moved = runtime.dispatch_key(NativeViewKey::Up);
+        assert!(moved.table_selection_changed);
+        let keyboard = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(keyboard.table_invoked);
     }
 
     #[cfg(feature = "combo")]

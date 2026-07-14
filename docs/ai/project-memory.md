@@ -179,6 +179,20 @@ history remain authoritative for implementation status.
   is preserved when its row is collapsed. Accessibility tree metadata,
   multi-selection/drag-and-drop, large-tree virtualization and AppKit/GTK target
   interaction smoke remain readiness gaps.
+- DataGrid is an independent `table` feature over `widgets-list`; it must not
+  pull in ListView, ScrollView or a platform child control. Applications own
+  immutable `ZsTableColumn` and
+  `ZsTableRow` values with globally unique strong IDs, explicit selected-row and
+  sort state, and the actual data ordering. The framework emits separate typed
+  row-selection, row-invocation and column-sort messages; it never sorts a
+  product data source or keeps a backend table model. Fixed `Dp` and weighted
+  fill columns share one layout/hit plan. Windows uses Fluent-like header and
+  selection geometry, macOS uses compact NSTableView-like metrics and accent
+  selection, and GTK uses ColumnView-like headers and separators through the
+  self-drawn renderer protocol. The first pass is read-only and row-selecting;
+  cell focus/editing/validation, multi-selection, column resize/reorder,
+  accessibility tree-grid providers, large-table virtualization and AppKit/GTK
+  target smoke remain readiness gaps.
 - Every new component remains opt-in through its own Cargo feature. Default
   features stay `window`, `button` and `label`; `all-widgets`/`full` are explicit
   profile choices and must not become implicit dependencies of component APIs.

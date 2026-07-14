@@ -277,6 +277,7 @@ pub(crate) fn decorate_native_focus_ring(
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button",
+    feature = "table",
     feature = "tree"
 ))]
 pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
@@ -288,6 +289,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button",
+    feature = "table",
     feature = "tree"
 ))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
@@ -307,6 +309,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
         || matches!(
             target.kind,
             ViewHitTargetKind::TreeNode { .. } | ViewHitTargetKind::TreeNodeExpander { .. }
+        );
+    #[cfg(feature = "table")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::TableHeader { .. } | ViewHitTargetKind::TableRow { .. }
         );
     #[cfg(feature = "password-box")]
     let supported = supported || target.kind == ViewHitTargetKind::PasswordBoxReveal;
@@ -337,6 +345,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button",
+    feature = "table",
     feature = "tree"
 ))]
 pub(crate) fn decorate_native_pointer_visuals(
@@ -687,6 +696,56 @@ mod tests {
         let kind = ViewHitTargetKind::TreeNode { node };
         let interaction = ViewInteractionPlan::new([ViewHitTarget::with_kind(widget, row, kind)]);
         let mut plan = crate::zs_tree_view_native_draw_plan(&render);
+
+        assert_eq!(
+            decorate_native_pointer_visuals(
+                &mut plan,
+                &interaction,
+                Some((widget, kind)),
+                None,
+                Dpi::standard(),
+            ),
+            1
+        );
+        assert!(matches!(
+            plan.commands.get(1),
+            Some(NativeDrawCommand::RoundFill {
+                rect,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 14,
+                },
+                ..
+            }) if *rect == row
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "table")]
+    fn table_pointer_visual_uses_the_platform_row_geometry() {
+        let widget = WidgetId::new(97);
+        let row_id = crate::ZsTableRowId::new(2);
+        let render = crate::zs_table_render_plan(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 240,
+                height: 120,
+            },
+            &[crate::ZsTableColumn::new(1, "Name")],
+            &[
+                crate::ZsTableRow::new(1, ["Cargo.toml"]),
+                crate::ZsTableRow::new(row_id, ["src"]),
+            ],
+            Some(row_id),
+            None,
+            crate::ZsTablePlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let row = render.rows[1].bounds;
+        let kind = ViewHitTargetKind::TableRow { row: row_id };
+        let interaction = ViewInteractionPlan::new([ViewHitTarget::with_kind(widget, row, kind)]);
+        let mut plan = crate::zs_table_native_draw_plan(&render);
 
         assert_eq!(
             decorate_native_pointer_visuals(

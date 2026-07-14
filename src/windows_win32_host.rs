@@ -23,6 +23,7 @@ use crate::native_input_visuals::{
     feature = "tabs",
     feature = "time-picker",
     feature = "toggle-button",
+    feature = "table",
     feature = "tree"
 ))]
 use crate::native_input_visuals::{
@@ -1844,6 +1845,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     pointer_hover: Option<NativePointerVisualKey>,
@@ -1854,6 +1856,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     pointer_pressed: Option<NativePointerVisualKey>,
@@ -1895,6 +1898,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             pointer_hover: None,
@@ -1905,6 +1909,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             pointer_pressed: None,
@@ -1942,6 +1947,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             pointer_hover: None,
@@ -1952,6 +1958,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             pointer_pressed: None,
@@ -2050,6 +2057,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         self.update_pointer_visual_state(
@@ -2147,6 +2155,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         {
@@ -2250,6 +2259,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
@@ -2274,6 +2284,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "tabs",
                 feature = "time-picker",
                 feature = "toggle-button",
+                feature = "table",
                 feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
@@ -2288,6 +2299,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         {
@@ -2322,6 +2334,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         {
@@ -2336,6 +2349,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         )))]
         {
@@ -2365,6 +2379,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         {
@@ -2378,6 +2393,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         )))]
         {
@@ -2887,6 +2903,57 @@ impl WindowsWin32ViewInputRoute {
                 ));
                 self.dispatch_event(
                     crate::ViewEvent::TreeNodeInvoked { widget, node },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
+        #[cfg(feature = "table")]
+        if target.kind == crate::ViewHitTargetKind::DataGrid {
+            let Some(state) = self.widget_table_state(widget) else {
+                return report;
+            };
+            let select = match virtual_key {
+                key if key == u32::from(VK_UP) => state.relative_row(-1),
+                key if key == u32::from(VK_DOWN) => state.relative_row(1),
+                key if key == u32::from(VK_HOME) => state.first_row(),
+                key if key == u32::from(VK_END) => state.last_row(),
+                ZSUI_WIN32_VK_SPACE => state.selected.or_else(|| state.first_row()),
+                _ => None,
+            };
+            if let Some(row) = select {
+                report.handled = true;
+                if state.selected != Some(row) {
+                    report.table_selection_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_table_key_select:{}:{}",
+                        widget.0,
+                        row.get()
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::TableRowSelected { widget, row },
+                        &mut report,
+                    );
+                }
+                return report;
+            }
+            if virtual_key == ZSUI_WIN32_VK_RETURN {
+                let Some(row) = state.selected.filter(|row| state.contains_row(*row)) else {
+                    return report;
+                };
+                report.handled = true;
+                report.keyboard_activation_count = 1;
+                report.table_invoke_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_table_key_invoke:{}:{}",
+                    widget.0,
+                    row.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TableRowInvoked { widget, row },
                     &mut report,
                 );
                 return report;
@@ -3543,6 +3610,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         self.update_pointer_visual_state(None, None, &mut report);
@@ -3653,6 +3721,55 @@ impl WindowsWin32ViewInputRoute {
                     crate::ViewEvent::TreeNodeInvoked {
                         widget: target.widget,
                         node,
+                    },
+                    report,
+                );
+                return;
+            }
+            _ => {}
+        }
+        #[cfg(feature = "table")]
+        match target.kind {
+            crate::ViewHitTargetKind::TableHeader { column } => {
+                report.table_sort_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_table_sort:{}:{}",
+                    target.widget.0,
+                    column.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TableSorted {
+                        widget: target.widget,
+                        column,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::TableRow { row } => {
+                let selected = self
+                    .widget_table_state(target.widget)
+                    .and_then(|state| state.selected);
+                report.table_selection_count = usize::from(selected != Some(row));
+                report.table_invoke_count = 1;
+                report.event_count = 2;
+                report.events.push(format!(
+                    "win32_view_table_invoke:{}:{}",
+                    target.widget.0,
+                    row.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TableRowSelected {
+                        widget: target.widget,
+                        row,
+                    },
+                    report,
+                );
+                self.dispatch_event(
+                    crate::ViewEvent::TableRowInvoked {
+                        widget: target.widget,
+                        row,
                     },
                     report,
                 );
@@ -4184,6 +4301,18 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "table")]
+    fn widget_table_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTableViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_table_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_table_state(widget))
+            })
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -4387,6 +4516,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "tabs",
             feature = "time-picker",
             feature = "toggle-button",
+            feature = "table",
             feature = "tree"
         ))]
         decorate_native_pointer_visuals(
@@ -4476,6 +4606,7 @@ impl WindowsWin32ViewInputRoute {
         feature = "tabs",
         feature = "time-picker",
         feature = "toggle-button",
+        feature = "table",
         feature = "tree"
     ))]
     fn update_pointer_visual_state(
@@ -4646,6 +4777,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub tree_expansion_change_count: usize,
     pub tree_selection_count: usize,
     pub tree_invoke_count: usize,
+    pub table_sort_count: usize,
+    pub table_selection_count: usize,
+    pub table_invoke_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -4718,6 +4852,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.tree_expansion_change_count += next.tree_expansion_change_count;
         self.tree_selection_count += next.tree_selection_count;
         self.tree_invoke_count += next.tree_invoke_count;
+        self.table_sort_count += next.table_sort_count;
+        self.table_selection_count += next.table_selection_count;
+        self.table_invoke_count += next.table_invoke_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -7803,6 +7940,99 @@ mod tests {
         assert_eq!(collapsed.tree_expansion_change_count, 1);
         let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
         assert_eq!(keyboard.tree_invoke_count, 1);
+        assert_eq!(keyboard.keyboard_activation_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "table")]
+    fn window_view_input_route_handles_table_sort_rows_and_keyboard_navigation() {
+        fn selected(_row: crate::ZsTableRowId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.table_selected"))
+        }
+        fn sorted(_sort: crate::ZsTableSort) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.table_sorted"))
+        }
+        fn invoked(_row: crate::ZsTableRowId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.table_invoked"))
+        }
+
+        let widget = crate::WidgetId::new(138);
+        let name = crate::ZsTableColumnId::new(1);
+        let first = crate::ZsTableRowId::new(10);
+        let second = crate::ZsTableRowId::new(11);
+        let mut view = crate::data_grid(
+            [
+                crate::ZsTableColumn::new(name, "Name").sortable(true),
+                crate::ZsTableColumn::new(2, "Size").fixed_width(crate::Dp::new(80.0)),
+            ],
+            [
+                crate::ZsTableRow::new(first, ["Cargo.toml", "4 KB"]),
+                crate::ZsTableRow::new(second, ["src", "—"]),
+            ],
+        )
+        .id(widget)
+        .selected_table_row(Some(first))
+        .on_table_select(selected)
+        .on_table_sort(sorted)
+        .on_table_invoke(invoked);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 220,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let header = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TableHeader { column: name })
+            .expect("sortable table header");
+        let second_row = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TableRow { row: second })
+            .expect("second table row");
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        let sort = route.dispatch_click(crate::Point {
+            x: header.bounds.x + header.bounds.width / 2,
+            y: header.bounds.y + header.bounds.height / 2,
+        });
+        assert_eq!(sort.table_sort_count, 1);
+        assert_eq!(sort.ui_command_count, 1);
+        assert_eq!(
+            route
+                .widget_table_state(widget)
+                .and_then(|state| state.sort),
+            Some(crate::ZsTableSort::new(
+                name,
+                crate::ZsTableSortDirection::Ascending
+            ))
+        );
+
+        let pointer = route.dispatch_click(crate::Point {
+            x: second_row.bounds.x + second_row.bounds.width / 2,
+            y: second_row.bounds.y + second_row.bounds.height / 2,
+        });
+        assert_eq!(pointer.table_selection_count, 1);
+        assert_eq!(pointer.table_invoke_count, 1);
+        assert_eq!(pointer.ui_command_count, 2);
+
+        let moved = route.dispatch_key_down(u32::from(VK_UP));
+        assert_eq!(moved.table_selection_count, 1);
+        assert_eq!(
+            route
+                .widget_table_state(widget)
+                .and_then(|state| state.selected),
+            Some(first)
+        );
+        let keyboard = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(keyboard.table_invoke_count, 1);
         assert_eq!(keyboard.keyboard_activation_count, 1);
     }
 
