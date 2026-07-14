@@ -757,6 +757,6 @@ Rust-native UI infrastructure.
 
 ## License
 
-This project is licensed under [GPL-3.0-only](LICENSE).
+This project is licensed under [MPL-2.0](LICENSE).
 Bundled Fluent System Icons fallback assets are licensed under MIT; see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

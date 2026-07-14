@@ -2,7 +2,7 @@
 name = "zsui"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-only"
+license = "MPL-2.0"
 repository = "https://github.com/qiu7824/zsui"
 description = "Rust-first feature-gated native UI framework for Win32, AppKit, and GTK4."
 readme = "README.md"

@@ -516,6 +516,6 @@ Linux/macOS 桌面目标。
 
 ## 许可证
 
-本项目使用 [GPL-3.0-only](LICENSE) 许可证。
+本项目使用 [MPL-2.0](LICENSE) 许可证。
 内置的 Fluent System Icons SVG 回退资源使用 MIT 许可证，详见
 [第三方许可说明](THIRD_PARTY_NOTICES.md)。

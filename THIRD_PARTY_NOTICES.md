@@ -1,6 +1,6 @@
 # Third-party notices
 
-ZSUI is licensed under GPL-3.0-only. The following bundled assets retain their
+ZSUI is licensed under MPL-2.0. The following bundled assets retain their
 own license terms.
 
 ## Microsoft Fluent UI System Icons
