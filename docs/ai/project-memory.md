@@ -90,6 +90,12 @@ history remain authoritative for implementation status.
   column across shorter hard or soft lines; horizontal input, edits and pointer
   selection reset that transient column. This is shared self-drawn behavior and
   must not introduce a native child editor or a WebView.
+- Multiline editor viewport position is transient per-window interaction state,
+  not application document state. The same visual-row model must drive clipped
+  text paint, selection/caret geometry, pointer hit testing, wheel scrolling and
+  caret reveal after edits or keyboard movement. Editor wheel scrolling stays
+  available with the `textbox` slice and must not pull in the general `scroll`
+  container feature, a platform child editor or a WebView.
 
 ## Native platform bar
 

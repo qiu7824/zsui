@@ -22,6 +22,11 @@ framework architecture.
 - Multiline Up/Down navigation consumes those same visual hard/soft rows and
   retains the desired column when an intermediate row is shorter. Shift keeps
   the application-owned anchor while extending the caret on all three hosts.
+- Long documents use an editor-owned visual-row viewport. Text paint is clipped
+  to that viewport, pointer hit testing includes its first visible row, wheel
+  input moves it, and edits or keyboard movement reveal the active caret again.
+  This transient behavior does not enter application document state or require
+  the general `scroll` feature.
 - `ZsTextSelection` reports application-independent Unicode-scalar anchor and
   caret positions through `on_text_selection_change`, including edits,
   keyboard navigation and pointer drag selection.
@@ -67,10 +72,11 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo -
 
 The smoke requires a visible native window, a routed native menu command, real
 text input through the self-drawn editor and a typed Undo routed from the
-self-drawn command bar back to that editor. It also enters two lines, routes a
-native Up key through the shared visual-row navigation, toggles word wrap,
-sends a real title-bar close request while the document is dirty, verifies that
-the request is vetoed and captures the shared unsaved-confirmation surface. On
+self-drawn command bar back to that editor. It also enters 36 lines, routes a
+native Up key through the shared visual-row navigation, scrolls the editor
+viewport with a real wheel message, toggles word wrap, sends a real title-bar
+close request while the document is dirty, verifies that the request is vetoed
+and captures the shared unsaved-confirmation surface. On
 non-Windows targets the same source is compiled against the AppKit or GTK4
 host; target runtime evidence is tracked separately and is not inferred from
 cross-compilation.
@@ -89,6 +95,7 @@ cross-compilation.
 | Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | implemented |
 | Wrapped visual-row Up/Down and Shift selection | implemented |
+| Long-document clipped viewport, wheel scrolling and caret reveal | implemented |
 | Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
 
@@ -99,18 +106,21 @@ This avoids claiming behavior that exists only in one platform service.
 
 `notepad-demo` enables only `window`, `button`, `label`, `textbox`, `clipboard`
 and `document-shell`. Cargo then selects the dependency for the current desktop
-target. Clipboard support is therefore omitted when applications do not select
-it. The Windows-only `WindowsWin32OwnedTextEditor` remains an optional framework
-service, but the acceptance application does not depend on it.
+target. Editor viewport scrolling belongs to `textbox` and does not enable the
+general `scroll` container. Clipboard support is therefore omitted when
+applications do not select it. The Windows-only
+`WindowsWin32OwnedTextEditor` remains an optional framework service, but the
+acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 712 nonblank lines,
+The shared acceptance application is one source file with 719 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 20
-lines (2.7%) smaller while adding one cross-platform source path, typed caret
+files with 732 nonblank lines, so the checked-in application surface is 13
+lines (1.8%) smaller while adding one cross-platform source path, typed caret
 status, native menus, shared editing commands, runtime word-wrap coverage and
-visual-row navigation plus native close-request interception.
+visual-row navigation, editor viewport scrolling and native close-request
+interception.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

@@ -57,6 +57,7 @@ pub(crate) struct NativeTextEditState {
     pub widget: WidgetId,
     pub selection: NativeTextSelection,
     pub preferred_visual_column: Option<usize>,
+    pub first_visible_visual_row: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +72,7 @@ impl NativeTextEditState {
             widget,
             selection: NativeTextSelection::collapsed(char_count(value)),
             preferred_visual_column: None,
+            first_visible_visual_row: 0,
         }
     }
 
@@ -78,6 +80,7 @@ impl NativeTextEditState {
         let clamped = self.selection.clamp(value);
         if clamped != self.selection {
             self.preferred_visual_column = None;
+            self.first_visible_visual_row = 0;
         }
         self.selection = clamped;
     }

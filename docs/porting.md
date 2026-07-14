@@ -222,14 +222,20 @@ forward Delete through the shared character-indexed editor state. Multiline
 TextEditor Up/Down uses the same hard/soft visual rows as paint, caret,
 selection and pointer hit testing, preserving a preferred visual column across
 shorter rows. Win32 routes `VK_UP`/`VK_DOWN` into that helper; AppKit and GTK4
-already lower their native keys to the same `NativeViewKey` path. Feature-gated
-list row selection uses child IDs and dispatches through
+already lower their native keys to the same `NativeViewKey` path.
+The editor also keeps a transient first visible visual row inside each native
+window route. Win32 `WM_MOUSEWHEEL`, AppKit `scrollWheel:` and GTK4 controller
+scroll input move that shared viewport; paint is bracketed by balanced clip
+commands, pointer hit testing includes the row offset, and subsequent text or
+keyboard edits reveal the caret. This path belongs to `textbox` and does not
+enable the general `scroll` feature. Feature-gated list row selection uses
+child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection
-and emit the same typed message. Win32 `WM_MOUSEWHEEL` can target the nearest
-scroll container and emit a typed scroll event. Other backends should add their
-OS pointer, wheel/touch scroll, keyboard focus, keyboard activation and IME
-routing back into `ViewEventCx` as distinct gates instead of coupling it to
-product state.
+and emit the same typed message. When the pointer is not over a focused editor,
+Win32 `WM_MOUSEWHEEL` can target the nearest general scroll container and emit
+a typed scroll event. Additional backends should route their OS pointer,
+wheel/touch scroll, keyboard focus, keyboard activation and IME events back
+into `ViewEventCx` as distinct gates instead of coupling them to product state.
 Render `ViewHitTargetKind::Toggle` from the shared `ZsToggleRenderPlan`; do not
 replace its track/knob geometry with a backend-specific approximation.
 Use `native_smoke_run --scroll-view` on Windows to exercise the command-backed

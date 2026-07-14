@@ -567,12 +567,17 @@ fn main() -> ZsuiResult<()> {
             .windows(2)
             .find(|pair| pair[0] == "--report")
             .map(|pair| pair[1].clone());
+        let smoke_text = (1..=36)
+            .map(|line| format!("第{line:02}行"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut options = NativeWindowSmokeRunOptions::new(1_200)
             .native_view_click(Point { x: 360, y: 220 })
-            .native_view_text_input("三平台自绘文本输入\n第二行")
+            .native_view_text_input(smoke_text)
             .native_view_click(undo_point)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_key_down(NativeViewKey::Up)
+            .native_view_scroll(Point { x: 360, y: 220 }, -48)
             .native_view_click(wrap_point)
             .native_view_click(Point { x: 360, y: 220 })
             .native_window_close_request();
@@ -591,13 +596,15 @@ fn main() -> ZsuiResult<()> {
             || report.native_view_text_undo_count == 0
             || report.native_view_text_navigation_count == 0
             || report.native_view_text_selection_change_count == 0
+            || report.native_view_scroll_count == 0
+            || report.native_view_unhandled_scroll_count != 0
             || report.native_view_window_close_request_count == 0
             || report.native_view_window_close_veto_count == 0
             || !report.window_menu_command_routed
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, text input/navigation, typed undo or close veto was not verified",
+                "native window, menu routing, text input/navigation/scrolling, typed undo or close veto was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {

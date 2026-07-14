@@ -16,8 +16,10 @@ use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
 use crate::native_input_visuals::{
-    decorate_native_focus_ring, decorate_native_text_edit_visuals, native_text_index_for_point,
-    native_text_index_for_vertical_move, native_text_visual_target, NativeTextVisualDirection,
+    decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
+    native_text_first_visible_row_for_caret, native_text_index_for_point_in_viewport,
+    native_text_index_for_vertical_move, native_text_scroll_visual_rows, native_text_visual_target,
+    native_text_wheel_row_delta, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -2252,16 +2254,25 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let index = native_text_index_for_point(
+        let index = native_text_index_for_point_in_viewport(
             visual_target,
             &value,
             point,
+            state.first_visible_visual_row,
             self.widget_text_wrap(target.widget),
             self.dpi,
         );
         let anchor = if shift { state.selection.anchor } else { index };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
         state.preferred_visual_column = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_row,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
         self.text_edit = Some(state);
         self.text_drag = Some(NativeTextDragState {
             widget: target.widget,
@@ -2399,15 +2410,24 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == drag.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let index = native_text_index_for_point(
+        let index = native_text_index_for_point_in_viewport(
             visual_target,
             &value,
             point,
+            state.first_visible_visual_row,
             self.widget_text_wrap(target.widget),
             self.dpi,
         );
         let edit = set_pointer_selection(&value, &mut state.selection, drag.anchor, index);
         state.preferred_visual_column = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_row,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
         self.text_edit = Some(state);
         report.handled = true;
         report.pointer_move_count = 1;
@@ -2967,6 +2987,14 @@ impl WindowsWin32ViewInputRoute {
         }
 
         state.preferred_visual_column = None;
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+            target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_row,
+            self.widget_text_wrap(widget),
+            self.dpi,
+        );
         self.text_edit = Some(state);
         #[cfg(feature = "textbox")]
         if edit.text_changed {
@@ -3730,6 +3758,14 @@ impl WindowsWin32ViewInputRoute {
                         target.kind == crate::ViewHitTargetKind::TextEditor,
                     )
                 };
+                state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+                    target,
+                    &value,
+                    state.selection.caret,
+                    state.first_visible_visual_row,
+                    self.widget_text_wrap(widget),
+                    self.dpi,
+                );
                 self.text_edit = Some(state);
                 report.handled = edit.handled;
                 report.text_navigation_count = 1;
@@ -4625,6 +4661,38 @@ impl WindowsWin32ViewInputRoute {
                 .push(format!("win32_view_scroll_missed:{}:{}", point.x, point.y));
             return report;
         };
+
+        if target.kind == crate::ViewHitTargetKind::TextEditor
+            && self.focused_widget == Some(target.widget)
+            && delta_y.0 != 0.0
+        {
+            let value = self
+                .widget_display_text_value(target.widget)
+                .unwrap_or_default();
+            let mut state = self
+                .text_edit
+                .filter(|state| state.widget == target.widget)
+                .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+            let previous = state.first_visible_visual_row;
+            state.first_visible_visual_row = native_text_scroll_visual_rows(
+                target,
+                &value,
+                previous,
+                native_text_wheel_row_delta(delta_y),
+                self.widget_text_wrap(target.widget),
+                self.dpi,
+            );
+            self.text_edit = Some(state);
+            report.handled = true;
+            report.events.push(format!(
+                "win32_view_text_scroll:{}:{}",
+                target.widget.0, state.first_visible_visual_row
+            ));
+            if state.first_visible_visual_row != previous {
+                self.rebuild_pending_draw_plan();
+            }
+            return report;
+        }
 
         #[cfg(feature = "combo")]
         if matches!(target.kind, crate::ViewHitTargetKind::ComboBoxOption { .. })
@@ -5824,6 +5892,14 @@ impl WindowsWin32ViewInputRoute {
 
         if result.selection_changed || result.text_changed {
             state.preferred_visual_column = None;
+            state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+                target,
+                &value,
+                state.selection.caret,
+                state.first_visible_visual_row,
+                self.widget_text_wrap(widget),
+                self.dpi,
+            );
         }
         self.text_edit = Some(state);
         report.handled |= result.handled;
@@ -6420,11 +6496,12 @@ impl WindowsWin32ViewInputRoute {
         if let (Some(target), Some(state)) = (self.focused_target(), self.text_edit) {
             if let Some(value) = self.widget_display_text_value(target.widget) {
                 let target = native_text_visual_target(target, &self.interaction_plan);
-                decorate_native_text_edit_visuals(
+                decorate_native_text_edit_visuals_in_viewport(
                     &mut plan,
                     target,
                     &value,
                     state.selection.clamp(&value),
+                    state.first_visible_visual_row,
                     self.widget_text_wrap(target.widget),
                     self.dpi,
                 );
@@ -9681,6 +9758,62 @@ mod tests {
         assert_eq!(extended.text_caret, Some(8));
         assert_eq!(extended.text_selection_change_count, 1);
         assert_eq!(extended.message_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_scrolls_editor_and_reveals_keyboard_caret() {
+        let widget = crate::WidgetId::new(321);
+        let value = "row0\nrow1\nrow2\nrow3\nrow4\nrow5";
+        let builder = crate::native_window("Win32 editor viewport")
+            .size(160, 80)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::text_editor::<UiCommand>(value)
+                        .id(widget)
+                        .width(crate::Dp::new(120.0))
+                        .height(crate::Dp::new(52.0))
+                },
+                |_, _, _| {},
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("editor should expose Win32 viewport geometry");
+        let point = crate::Point {
+            x: target.bounds.x + 8,
+            y: target.bounds.y + 10,
+        };
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        route.dispatch_pointer_down(point, false);
+        route.dispatch_pointer_up(point);
+
+        let scrolled = route.dispatch_scroll(point, crate::Dp::new(48.0));
+        let scrolled_plan = route
+            .take_pending_draw_plan()
+            .expect("editor scroll should rebuild the Win32 draw plan");
+        route.dispatch_key_down(u32::from(VK_RIGHT));
+        let revealed_plan = route
+            .take_pending_draw_plan()
+            .expect("keyboard navigation should reveal the caret row");
+
+        assert!(scrolled.handled);
+        assert_eq!(scrolled.scroll_count, 1);
+        assert_eq!(scrolled.unhandled_scroll_count, 0);
+        assert!(scrolled_plan.commands.iter().any(
+            |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "row3"),
+        ));
+        assert!(!scrolled_plan.commands.iter().any(
+            |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "row0"),
+        ));
+        assert!(revealed_plan.commands.iter().any(
+            |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "row0"),
+        ));
     }
 
     #[test]
