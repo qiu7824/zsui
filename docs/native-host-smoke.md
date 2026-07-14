@@ -217,6 +217,30 @@ while keeping all three styles in the shared draw tree. Accessibility semantics,
 custom ViewNode dialog content, response deferrals, prior-focus restoration and
 target-machine AppKit/GTK interaction artifacts remain explicit gaps.
 
+The dedicated self-drawn in-app Toast smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,toast,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-toast --toast
+```
+
+It places a persistent foreground toast over an ordinary page, focuses the
+toast with Tab, moves between its semantic action and close controls with the
+arrow keys, and activates the action with Enter. The application replaces the
+responded toast with a new stable ID so `window.png` retains the surface. The
+interaction report must contain nonzero `native_view_toast_focus_count` and
+`native_view_toast_response_count`, one executed UI command, no command failure
+and a nonzero live-view revision. Deterministic shared and Win32 route tests
+separately advance the five-second deadline and require one typed timeout
+result. The visual/behavior split follows the non-targeted
+[Windows TeachingTip](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/teaching-tip),
+Apple's guidance to keep foreground notification handling subtle in
+[Notifications](https://developer.apple.com/design/human-interface-guidelines/notifications/),
+and the one-action plus mandatory-close
+[AdwToast](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.Toast.html)
+contract without copying system notification chrome. Accessibility live-region
+semantics, hover/focus timeout pause, queues/priorities and target-machine
+AppKit/GTK interaction artifacts remain explicit gaps.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

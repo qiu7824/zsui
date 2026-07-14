@@ -102,6 +102,8 @@ pub mod table;
 #[cfg(feature = "time-picker")]
 pub mod time;
 pub mod timer_protocol;
+#[cfg(feature = "toast")]
+pub mod toast;
 #[cfg(feature = "tooltip")]
 pub mod tooltip;
 pub mod tray;
@@ -455,6 +457,11 @@ pub use timer_protocol::{
     main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
     SettingsTimerIds, SettingsTimerTask,
 };
+#[cfg(feature = "toast")]
+pub use toast::{
+    ZsToastControl, ZsToastDismissReason, ZsToastDuration, ZsToastId, ZsToastResponse,
+    ZsToastResult, ZsToastSpec, ZsToastState,
+};
 #[cfg(feature = "tooltip")]
 pub use tooltip::{
     zs_tooltip_native_draw_plan, zs_tooltip_render_plan, ZsTooltipMetrics, ZsTooltipPlacement,
@@ -502,6 +509,8 @@ pub use view::text_editor;
 pub use view::textbox;
 #[cfg(feature = "time-picker")]
 pub use view::time_picker;
+#[cfg(feature = "toast")]
+pub use view::toast_presenter;
 #[cfg(feature = "toggle")]
 pub use view::toggle;
 #[cfg(feature = "toggle-button")]
@@ -593,6 +602,11 @@ pub use widget_render::{
     zs_time_picker_header_native_draw_plan, zs_time_picker_popup_native_draw_plan,
     zs_time_picker_render_plan, zs_time_picker_render_plan_in_viewport, ZsTimePickerChoice,
     ZsTimePickerMetrics, ZsTimePickerPlatformStyle, ZsTimePickerRenderPlan, ZsTimePickerSegment,
+};
+#[cfg(feature = "toast")]
+pub use widget_render::{
+    zs_toast_native_draw_plan, zs_toast_render_plan, ZsToastMetrics, ZsToastPlatformStyle,
+    ZsToastRenderPlan,
 };
 #[cfg(feature = "toggle-button")]
 pub use widget_render::{

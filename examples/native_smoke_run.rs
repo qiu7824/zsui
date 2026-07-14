@@ -21,6 +21,7 @@ use zsui::checkbox;
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
+    all(feature = "toast", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -56,6 +57,7 @@ use zsui::toggle_button;
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
+    all(feature = "toast", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -74,11 +76,31 @@ use zsui::CommandId;
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
+    all(feature = "toast", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
 ))]
 use zsui::NativeViewKey;
+#[cfg(any(
+    all(feature = "button", feature = "label"),
+    all(feature = "toggle-button", feature = "label"),
+    all(feature = "slider", feature = "label"),
+    all(feature = "number-box", feature = "label"),
+    all(feature = "password-box", feature = "label"),
+    all(feature = "tooltip", feature = "button", feature = "label"),
+    all(feature = "radio", feature = "label"),
+    all(feature = "auto-suggest", feature = "label"),
+    all(feature = "tree", feature = "label"),
+    all(feature = "table", feature = "label"),
+    all(feature = "dialog", feature = "label"),
+    all(feature = "combo", feature = "label"),
+    all(feature = "date-picker", feature = "label"),
+    all(feature = "time-picker", feature = "label"),
+    all(feature = "tabs", feature = "label"),
+    all(feature = "grid", feature = "button", feature = "label")
+))]
+use zsui::Point;
 #[cfg(any(
     all(feature = "progress", feature = "label"),
     all(feature = "progress-ring", feature = "label")
@@ -113,6 +135,8 @@ use zsui::{slider, SliderRange};
 use zsui::{tab_view, ZsTabId, ZsTabItem};
 #[cfg(feature = "time-picker")]
 use zsui::{time_picker, ZsClockFormat, ZsMinuteIncrement, ZsTime};
+#[cfg(all(feature = "toast", feature = "label"))]
+use zsui::{toast_presenter, ZsToastDuration, ZsToastResult, ZsToastSpec};
 #[cfg(all(feature = "tree", feature = "label"))]
 use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
 #[cfg(any(
@@ -127,13 +151,14 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
+    all(feature = "toast", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label"),
     all(feature = "grid", feature = "button", feature = "label")
 ))]
-use zsui::{Point, UiCommand, WidgetId};
+use zsui::{UiCommand, WidgetId};
 #[cfg(all(feature = "auto-suggest", feature = "label"))]
 use zsui::{
     ZsAutoSuggestSubmission, ZsAutoSuggestTextChange, ZsAutoSuggestTextChangeReason,
@@ -184,6 +209,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--content-dialog" || arg == "--dialog"),
         args.iter()
+            .any(|arg| arg == "--toast-view" || arg == "--toast"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -225,6 +252,7 @@ fn run_smoke(
     include_tree_view: bool,
     include_table_view: bool,
     include_dialog_view: bool,
+    include_toast_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -292,6 +320,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "dialog", feature = "label")))]
     if include_dialog_view {
         return Err("--content-dialog requires the dialog and label features".to_string());
+    }
+    #[cfg(not(all(feature = "toast", feature = "label")))]
+    if include_toast_view {
+        return Err("--toast-view requires the toast and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -479,6 +511,14 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Tab)
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "toast", feature = "label"))]
+    if include_toast_view {
+        smoke_options = smoke_options
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Left)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -552,6 +592,8 @@ fn run_smoke(
         attach_table_view(builder)
     } else if include_dialog_view {
         attach_content_dialog_view(builder)
+    } else if include_toast_view {
+        attach_toast_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -1209,6 +1251,64 @@ fn attach_content_dialog_view(builder: NativeWindowBuilder) -> NativeWindowBuild
     )
 }
 
+#[cfg(all(feature = "toast", feature = "label"))]
+#[derive(Clone)]
+enum ToastSmokeMsg {
+    Responded(ZsToastResult),
+}
+
+#[cfg(all(feature = "toast", feature = "label"))]
+struct ToastSmokeState {
+    toast_id: u64,
+    last_result: Option<ZsToastResult>,
+}
+
+#[cfg(all(feature = "toast", feature = "label"))]
+fn attach_toast_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        ToastSmokeState {
+            toast_id: 1,
+            last_result: None,
+        },
+        |state| {
+            let page = column([
+                text::<ToastSmokeMsg>("ZSUI Toast Smoke").height(zsui::Dp::new(28.0)),
+                text(format!(
+                    "Last typed response: {}",
+                    state
+                        .last_result
+                        .map(|result| format!("{:?}", result.response))
+                        .unwrap_or_else(|| "none".to_string())
+                ))
+                .height(zsui::Dp::new(28.0)),
+                text("Foreground feedback stays inside the shared self-drawn View tree.")
+                    .height(zsui::Dp::new(28.0)),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0));
+            toast_presenter(
+                WidgetId::new(27),
+                Some(
+                    ZsToastSpec::new(state.toast_id, "File deleted")
+                        .action("Undo")
+                        .duration(ZsToastDuration::Persistent),
+                ),
+                page,
+            )
+            .on_toast_result(ToastSmokeMsg::Responded)
+        },
+        |state, message, cx| match message {
+            ToastSmokeMsg::Responded(result) => {
+                state.last_result = Some(result);
+                state.toast_id = state.toast_id.saturating_add(1);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.toast_responded",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1495,6 +1595,11 @@ fn attach_table_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "dialog", feature = "label")))]
 fn attach_content_dialog_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "toast", feature = "label")))]
+fn attach_toast_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

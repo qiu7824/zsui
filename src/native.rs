@@ -17,6 +17,7 @@ use crate::native_input_visuals::{
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
+    feature = "toast",
     feature = "toggle-button",
     feature = "table",
     feature = "tree"
@@ -885,6 +886,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_table_invoke_count: usize,
     pub native_view_content_dialog_focus_count: usize,
     pub native_view_content_dialog_response_count: usize,
+    pub native_view_toast_focus_count: usize,
+    pub native_view_toast_response_count: usize,
+    pub native_view_toast_timeout_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -995,6 +999,9 @@ impl NativeWindowSmokeRunReport {
             native_view_table_invoke_count: 0,
             native_view_content_dialog_focus_count: 0,
             native_view_content_dialog_response_count: 0,
+            native_view_toast_focus_count: 0,
+            native_view_toast_response_count: 0,
+            native_view_toast_timeout_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1044,6 +1051,8 @@ pub(crate) struct NativeViewInputRuntime {
     focused_widget: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
+    #[cfg(feature = "toast")]
+    toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
     #[cfg(feature = "combo")]
@@ -1057,6 +1066,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -1069,6 +1079,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -1153,6 +1164,7 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -1204,6 +1216,10 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub content_dialog_focus_changed: bool,
     #[cfg(feature = "dialog")]
     pub content_dialog_responded: bool,
+    #[cfg(feature = "toast")]
+    pub toast_focus_changed: bool,
+    #[cfg(feature = "toast")]
+    pub toast_responded: bool,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1238,7 +1254,10 @@ impl NativeViewInputRuntime {
         app_command_executor: Option<SharedAppCommandExecutor>,
         ui_command_executor: Option<SharedUiCommandExecutor>,
     ) -> Self {
-        Self {
+        #[cfg(feature = "toast")]
+        let now = std::time::Instant::now();
+        #[allow(unused_mut)]
+        let mut runtime = Self {
             surface: Some(surface),
             dpi: Dpi::standard(),
             interaction_plan,
@@ -1248,6 +1267,8 @@ impl NativeViewInputRuntime {
             focused_widget: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::default(),
+            #[cfg(feature = "toast")]
+            toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
             text_drag: None,
             #[cfg(feature = "combo")]
@@ -1261,6 +1282,7 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1273,6 +1295,7 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1283,7 +1306,10 @@ impl NativeViewInputRuntime {
             ime_preedit: None,
             app_command_executor,
             ui_command_executor,
-        }
+        };
+        #[cfg(feature = "toast")]
+        runtime.sync_toast_runtime(now);
+        runtime
     }
 
     fn hit_target_count(&self) -> usize {
@@ -1381,6 +1407,8 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        #[cfg(feature = "toast")]
+        self.sync_toast_runtime(std::time::Instant::now());
         if let Some(plan) = report.redraw_plan.take() {
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
@@ -1460,6 +1488,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -1557,6 +1586,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -1659,6 +1689,7 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1679,6 +1710,7 @@ impl NativeViewInputRuntime {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1700,6 +1732,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -1824,6 +1857,48 @@ impl NativeViewInputRuntime {
             _ => {}
         }
 
+        #[cfg(feature = "toast")]
+        match target.kind {
+            crate::ViewHitTargetKind::ToastAction => {
+                let Some((state, _)) = self.widget_toast_state(target.widget) else {
+                    return report;
+                };
+                let Some(toast) = state.toast else {
+                    return report;
+                };
+                report.toast_responded = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ToastResponded {
+                        widget: target.widget,
+                        toast,
+                        response: crate::ZsToastResponse::Action,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::ToastClose => {
+                let Some((state, _)) = self.widget_toast_state(target.widget) else {
+                    return report;
+                };
+                let Some(toast) = state.toast else {
+                    return report;
+                };
+                report.toast_responded = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ToastResponded {
+                        widget: target.widget,
+                        toast,
+                        response: crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::CloseButton,
+                        ),
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::Toast => return report,
+            _ => {}
+        }
+
         let event = self.activation_event(target);
 
         #[cfg(feature = "radio")]
@@ -1890,6 +1965,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -1922,6 +1998,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -1937,6 +2014,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -1979,6 +2057,75 @@ impl NativeViewInputRuntime {
         let Some(interaction_plan) = self.current_interaction_plan() else {
             return report;
         };
+        #[cfg(feature = "toast")]
+        if let Some(toast_target) = interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::Toast)
+        {
+            let Some((state, spec)) = self.widget_toast_state(toast_target.widget) else {
+                return report;
+            };
+            let Some(toast) = state.toast else {
+                return report;
+            };
+            if key == NativeViewKey::Escape {
+                report.handled = true;
+                report.toast_responded = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ToastResponded {
+                        widget: toast_target.widget,
+                        toast,
+                        response: crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::EscapeKey,
+                        ),
+                    },
+                    report,
+                );
+            }
+            if self.focused_widget == Some(toast_target.widget) {
+                let focus_offset = match key {
+                    NativeViewKey::Left => Some(-1),
+                    NativeViewKey::Right => Some(1),
+                    _ => None,
+                };
+                if let Some(offset) = focus_offset {
+                    let next = spec.relative_control(state.focused_control, offset);
+                    report.handled = true;
+                    report.toast_focus_changed = next != state.focused_control;
+                    return self.dispatch_view_event(
+                        ViewEvent::ToastFocused {
+                            widget: toast_target.widget,
+                            toast,
+                            control: next,
+                        },
+                        report,
+                    );
+                }
+                if matches!(key, NativeViewKey::Enter | NativeViewKey::Space) {
+                    let response = match state.focused_control {
+                        crate::ZsToastControl::Action if spec.action_label().is_some() => {
+                            crate::ZsToastResponse::Action
+                        }
+                        _ => crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::CloseButton,
+                        ),
+                    };
+                    report.handled = true;
+                    report.toast_responded = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::ToastResponded {
+                            widget: toast_target.widget,
+                            toast,
+                            response,
+                        },
+                        report,
+                    );
+                }
+            }
+        }
         #[cfg(feature = "dialog")]
         if let Some(dialog_target) = interaction_plan
             .hit_targets
@@ -2698,6 +2845,11 @@ impl NativeViewInputRuntime {
             report.handled = true;
             return report;
         }
+        #[cfg(feature = "toast")]
+        if self.widget_toast_state(widget).is_some() {
+            report.handled = true;
+            return report;
+        }
         #[cfg(feature = "combo")]
         if target.kind == crate::ViewHitTargetKind::ComboBox {
             let Some(query) = self.combo_type_ahead.push_text(widget, text, _now) else {
@@ -2924,6 +3076,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -3111,6 +3264,7 @@ impl NativeViewInputRuntime {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -3175,16 +3329,18 @@ impl NativeViewInputRuntime {
             .ui_command_view
             .as_ref()
             .and_then(ViewNode::background_poll_interval_ms);
+        let interval = live_interval.into_iter().chain(static_interval).min();
         #[cfg(feature = "tooltip")]
-        {
-            return live_interval
-                .into_iter()
-                .chain(static_interval)
-                .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
-                .min();
-        }
-        #[cfg(not(feature = "tooltip"))]
-        live_interval.into_iter().chain(static_interval).min()
+        let interval = interval
+            .into_iter()
+            .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
+            .min();
+        #[cfg(feature = "toast")]
+        let interval = interval
+            .into_iter()
+            .chain(self.toast.poll_interval_ms(std::time::Instant::now()))
+            .min();
+        interval
     }
 
     pub(crate) fn refresh_transient_view(&mut self) -> NativeViewInputDispatchReport {
@@ -3195,7 +3351,7 @@ impl NativeViewInputRuntime {
         &mut self,
         now: std::time::Instant,
     ) -> NativeViewInputDispatchReport {
-        #[cfg(not(feature = "tooltip"))]
+        #[cfg(not(any(feature = "tooltip", feature = "toast")))]
         let _ = now;
         let mut changed = false;
         if self
@@ -3219,13 +3375,39 @@ impl NativeViewInputRuntime {
         {
             changed |= self.tooltip.refresh(now);
         }
-        NativeViewInputDispatchReport {
+        #[cfg(feature = "toast")]
+        if let Some((widget, toast)) = self.toast.take_expired(now) {
+            let mut report = NativeViewInputDispatchReport {
+                handled: true,
+                toast_responded: true,
+                hit_target_count: self.hit_target_count(),
+                focused_widget: self.focused_widget.map(|widget| widget.0),
+                ..NativeViewInputDispatchReport::default()
+            };
+            if changed {
+                report.redraw_plan = self.current_composed_draw_plan();
+            }
+            return self.dispatch_view_event(
+                ViewEvent::ToastResponded {
+                    widget,
+                    toast,
+                    response: crate::ZsToastResponse::Dismissed(
+                        crate::ZsToastDismissReason::Timeout,
+                    ),
+                },
+                report,
+            );
+        }
+        let report = NativeViewInputDispatchReport {
             handled: changed,
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             redraw_plan: changed.then(|| self.current_composed_draw_plan()).flatten(),
             ..NativeViewInputDispatchReport::default()
-        }
+        };
+        #[cfg(feature = "toast")]
+        self.sync_toast_runtime(now);
+        report
     }
 
     #[cfg(any(
@@ -3235,6 +3417,7 @@ impl NativeViewInputRuntime {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -3789,6 +3972,40 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "toast")]
+    fn widget_toast_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_toast_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_toast_state(widget))
+            })
+    }
+
+    #[cfg(feature = "toast")]
+    fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
+        let target = self
+            .current_interaction_plan()?
+            .hit_targets
+            .into_iter()
+            .rev()
+            .find(|target| target.kind == crate::ViewHitTargetKind::Toast)?;
+        self.widget_toast_state(target.widget)
+            .map(|(_, spec)| (target.widget, spec))
+    }
+
+    #[cfg(feature = "toast")]
+    fn sync_toast_runtime(&mut self, now: std::time::Instant) -> bool {
+        let active = self.active_toast();
+        self.toast
+            .sync(active.as_ref().map(|(widget, spec)| (*widget, spec)), now)
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
@@ -4221,6 +4438,9 @@ fn record_windows_win32_view_input_report(
     report.native_view_table_invoke_count += input.table_invoke_count;
     report.native_view_content_dialog_focus_count += input.content_dialog_focus_change_count;
     report.native_view_content_dialog_response_count += input.content_dialog_response_count;
+    report.native_view_toast_focus_count += input.toast_focus_change_count;
+    report.native_view_toast_response_count += input.toast_response_count;
+    report.native_view_toast_timeout_count += input.toast_timeout_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -7718,6 +7938,74 @@ mod tests {
                 .map(|target| target.widget),
             Some(background)
         );
+    }
+
+    #[cfg(feature = "toast")]
+    #[test]
+    fn native_view_runtime_routes_toast_action_and_timeout_as_typed_results() {
+        #[derive(Clone)]
+        enum Msg {
+            Responded(crate::ZsToastResult),
+        }
+        struct State {
+            toast: Option<crate::ZsToastSpec>,
+            result: Option<crate::ZsToastResult>,
+        }
+
+        let widget = crate::WidgetId::new(197);
+        let page = crate::WidgetId::new(198);
+        let build = || {
+            native_window("Platform Toast")
+                .size(640, 400)
+                .stateful_view(
+                    State {
+                        toast: Some(crate::ZsToastSpec::new(41, "File deleted").action("Undo")),
+                        result: None,
+                    },
+                    move |state| {
+                        crate::toast_presenter(
+                            widget,
+                            state.toast.clone(),
+                            crate::spacer().id(page),
+                        )
+                        .on_toast_result(Msg::Responded)
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Responded(result) => {
+                            state.toast = None;
+                            state.result = Some(result);
+                        }
+                    },
+                )
+        };
+
+        let builder = build();
+        let action = builder
+            .native_view_interaction_plan()
+            .expect("toast interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ToastAction)
+            .expect("toast action target");
+        let mut runtime = builder.native_view_input_runtime();
+        let action_report = runtime.dispatch_pointer_click(Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert!(action_report.handled);
+        assert!(action_report.toast_responded);
+        assert_eq!(action_report.message_count, 1);
+        assert!(runtime.widget_toast_state(widget).is_none());
+
+        let mut timeout_runtime = build().native_view_input_runtime();
+        let timeout = timeout_runtime.refresh_transient_view_at(
+            std::time::Instant::now() + std::time::Duration::from_secs(6),
+        );
+        assert!(timeout.handled);
+        assert!(timeout.toast_responded);
+        assert_eq!(timeout.message_count, 1);
+        assert!(timeout_runtime.widget_toast_state(widget).is_none());
     }
 
     #[cfg(feature = "combo")]

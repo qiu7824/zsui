@@ -136,6 +136,11 @@ const CONTENT_DIALOG_GAPS: &[&str] = &[
     "custom ViewNode body plus validation and asynchronous response deferrals",
     "AppKit and GTK4 target interaction smoke",
 ];
+const TOAST_GAPS: &[&str] = &[
+    "accessibility live-region announcement and reduced-motion transition",
+    "hover/focus timeout pause plus multi-toast queue and priority replacement",
+    "AppKit and GTK4 target interaction smoke",
+];
 const SLIDER_GAPS: &[&str] = &[
     "accessibility range-value provider",
     "AppKit and GTK4 target interaction smoke",
@@ -540,6 +545,15 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Some("progress-ring"),
         "src/progress.rs + src/view.rs + three desktop renderers",
         PROGRESS_RING_GAPS
+    ),
+    component!(
+        "toast",
+        "TeachingTip (non-targeted)",
+        Feedback,
+        FirstPass,
+        Some("toast"),
+        "src/toast.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        TOAST_GAPS
     ),
     component!(
         "info_bar",

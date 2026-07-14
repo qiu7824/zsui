@@ -23,6 +23,7 @@ use crate::native_input_visuals::{
     feature = "password-box",
     feature = "tabs",
     feature = "time-picker",
+    feature = "toast",
     feature = "toggle-button",
     feature = "table",
     feature = "tree"
@@ -1833,6 +1834,8 @@ pub struct WindowsWin32ViewInputRoute {
     focused_widget: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
+    #[cfg(feature = "toast")]
+    toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
     text_drag: Option<NativeTextDragState>,
     #[cfg(feature = "combo")]
@@ -1846,6 +1849,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -1858,6 +1862,7 @@ pub struct WindowsWin32ViewInputRoute {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -1881,13 +1886,18 @@ impl WindowsWin32ViewInputRoute {
         ui_command_view: ViewNode<UiCommand>,
     ) -> Self {
         let surface = ui_command_view.bounds();
-        Self {
+        #[cfg(feature = "toast")]
+        let now = std::time::Instant::now();
+        #[allow(unused_mut)]
+        let mut route = Self {
             interaction_plan,
             ui_command_view: Some(ui_command_view),
             live_view: None,
             focused_widget: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
+            #[cfg(feature = "toast")]
+            toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
             text_drag: None,
             #[cfg(feature = "combo")]
@@ -1901,6 +1911,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1913,6 +1924,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1928,17 +1940,25 @@ impl WindowsWin32ViewInputRoute {
             pending_app_commands: Vec::new(),
             ui_command_executor: None,
             pending_ui_commands: Vec::new(),
-        }
+        };
+        #[cfg(feature = "toast")]
+        route.sync_toast_runtime(now);
+        route
     }
 
     pub fn from_live_view(live_view: SharedLiveViewRuntime) -> Self {
-        Self {
+        #[cfg(feature = "toast")]
+        let now = std::time::Instant::now();
+        #[allow(unused_mut)]
+        let mut route = Self {
             interaction_plan: live_view.interaction_plan(),
             ui_command_view: None,
             live_view: Some(live_view),
             focused_widget: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
+            #[cfg(feature = "toast")]
+            toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
             text_drag: None,
             #[cfg(feature = "combo")]
@@ -1952,6 +1972,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1964,6 +1985,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -1979,7 +2001,10 @@ impl WindowsWin32ViewInputRoute {
             pending_app_commands: Vec::new(),
             ui_command_executor: None,
             pending_ui_commands: Vec::new(),
-        }
+        };
+        #[cfg(feature = "toast")]
+        route.sync_toast_runtime(now);
+        route
     }
 
     pub fn app_command_executor(mut self, executor: SharedAppCommandExecutor) -> Self {
@@ -2064,6 +2089,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2163,6 +2189,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2268,6 +2295,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -2294,6 +2322,7 @@ impl WindowsWin32ViewInputRoute {
                 feature = "password-box",
                 feature = "tabs",
                 feature = "time-picker",
+                feature = "toast",
                 feature = "toggle-button",
                 feature = "table",
                 feature = "tree"
@@ -2310,6 +2339,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2346,6 +2376,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2362,6 +2393,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2393,6 +2425,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2408,6 +2441,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -2487,6 +2521,14 @@ impl WindowsWin32ViewInputRoute {
                 "win32_view_content_dialog_text_suppressed:{}",
                 widget.0
             ));
+            return report;
+        }
+        #[cfg(feature = "toast")]
+        if self.widget_toast_state(widget).is_some() {
+            report.handled = true;
+            report
+                .events
+                .push(format!("win32_view_toast_text_suppressed:{}", widget.0));
             return report;
         }
         #[cfg(feature = "combo")]
@@ -2636,6 +2678,94 @@ impl WindowsWin32ViewInputRoute {
         if self.tooltip.dismiss() {
             report.handled = true;
             self.rebuild_pending_draw_plan();
+        }
+        #[cfg(feature = "toast")]
+        if let Some(toast_target) = self
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::Toast)
+        {
+            let Some((state, spec)) = self.widget_toast_state(toast_target.widget) else {
+                return report;
+            };
+            let Some(toast) = state.toast else {
+                return report;
+            };
+            if virtual_key == u32::from(VK_ESCAPE) {
+                report.handled = true;
+                report.toast_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_toast_response:{}:{toast:?}:EscapeKey",
+                    toast_target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ToastResponded {
+                        widget: toast_target.widget,
+                        toast,
+                        response: crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::EscapeKey,
+                        ),
+                    },
+                    &mut report,
+                );
+                return report;
+            }
+            if self.focused_widget == Some(toast_target.widget) {
+                let focus_offset = match virtual_key {
+                    key if key == u32::from(VK_LEFT) => Some(-1),
+                    key if key == u32::from(VK_RIGHT) => Some(1),
+                    _ => None,
+                };
+                if let Some(offset) = focus_offset {
+                    let next = spec.relative_control(state.focused_control, offset);
+                    report.handled = true;
+                    report.toast_focus_change_count = usize::from(next != state.focused_control);
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_toast_focus:{}:{next:?}",
+                        toast_target.widget.0
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::ToastFocused {
+                            widget: toast_target.widget,
+                            toast,
+                            control: next,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+                if matches!(virtual_key, ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE) {
+                    let response = match state.focused_control {
+                        crate::ZsToastControl::Action if spec.action_label().is_some() => {
+                            crate::ZsToastResponse::Action
+                        }
+                        _ => crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::CloseButton,
+                        ),
+                    };
+                    report.handled = true;
+                    report.toast_response_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_toast_response:{}:{toast:?}:{response:?}",
+                        toast_target.widget.0
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::ToastResponded {
+                            widget: toast_target.widget,
+                            toast,
+                            response,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+            }
         }
         #[cfg(feature = "dialog")]
         if let Some(dialog_target) = self
@@ -3706,6 +3836,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -3786,6 +3917,59 @@ impl WindowsWin32ViewInputRoute {
             }
             crate::ViewHitTargetKind::ContentDialog
             | crate::ViewHitTargetKind::ContentDialogScrim => return,
+            _ => {}
+        }
+        #[cfg(feature = "toast")]
+        match target.kind {
+            crate::ViewHitTargetKind::ToastAction => {
+                let Some((state, _)) = self.widget_toast_state(target.widget) else {
+                    return;
+                };
+                let Some(toast) = state.toast else {
+                    return;
+                };
+                report.toast_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_toast_response:{}:{toast:?}:Action",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ToastResponded {
+                        widget: target.widget,
+                        toast,
+                        response: crate::ZsToastResponse::Action,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::ToastClose => {
+                let Some((state, _)) = self.widget_toast_state(target.widget) else {
+                    return;
+                };
+                let Some(toast) = state.toast else {
+                    return;
+                };
+                report.toast_response_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_toast_response:{}:{toast:?}:CloseButton",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ToastResponded {
+                        widget: target.widget,
+                        toast,
+                        response: crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::CloseButton,
+                        ),
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::Toast => return,
             _ => {}
         }
         #[cfg(feature = "tree")]
@@ -4237,6 +4421,8 @@ impl WindowsWin32ViewInputRoute {
                     .push(format!("win32_live_view_repaint:{}", update.revision));
             }
             self.quit_requested |= update.quit_requested;
+            #[cfg(feature = "toast")]
+            self.sync_toast_runtime(std::time::Instant::now());
             return;
         }
 
@@ -4263,6 +4449,8 @@ impl WindowsWin32ViewInputRoute {
         if next_interaction_plan.hit_target_count() > 0 {
             self.interaction_plan = next_interaction_plan;
         }
+        #[cfg(feature = "toast")]
+        self.sync_toast_runtime(std::time::Instant::now());
         self.rebuild_pending_draw_plan();
     }
 
@@ -4445,6 +4633,41 @@ impl WindowsWin32ViewInputRoute {
                     .as_ref()
                     .and_then(|view| view.widget_content_dialog_state(widget))
             })
+    }
+
+    #[cfg(feature = "toast")]
+    fn widget_toast_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_toast_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_toast_state(widget))
+            })
+    }
+
+    #[cfg(feature = "toast")]
+    fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
+        let target = self
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::Toast)?;
+        self.widget_toast_state(target.widget)
+            .map(|(_, spec)| (target.widget, spec))
+    }
+
+    #[cfg(feature = "toast")]
+    fn sync_toast_runtime(&mut self, now: std::time::Instant) -> bool {
+        let active = self.active_toast();
+        self.toast
+            .sync(active.as_ref().map(|(widget, spec)| (*widget, spec)), now)
     }
 
     #[cfg(feature = "combo")]
@@ -4650,6 +4873,7 @@ impl WindowsWin32ViewInputRoute {
             feature = "password-box",
             feature = "tabs",
             feature = "time-picker",
+            feature = "toast",
             feature = "toggle-button",
             feature = "table",
             feature = "tree"
@@ -4741,6 +4965,7 @@ impl WindowsWin32ViewInputRoute {
         feature = "password-box",
         feature = "tabs",
         feature = "time-picker",
+        feature = "toast",
         feature = "toggle-button",
         feature = "table",
         feature = "tree"
@@ -4788,15 +5013,18 @@ impl WindowsWin32ViewInputRoute {
             .live_view
             .as_ref()
             .and_then(SharedLiveViewRuntime::background_poll_interval_ms);
+        let interval = live_interval;
         #[cfg(feature = "tooltip")]
-        {
-            return live_interval
-                .into_iter()
-                .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
-                .min();
-        }
-        #[cfg(not(feature = "tooltip"))]
-        live_interval
+        let interval = interval
+            .into_iter()
+            .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
+            .min();
+        #[cfg(feature = "toast")]
+        let interval = interval
+            .into_iter()
+            .chain(self.toast.poll_interval_ms(std::time::Instant::now()))
+            .min();
+        interval
     }
 
     fn refresh_background_view(&mut self) -> WindowsWin32ViewInputDispatchReport {
@@ -4807,7 +5035,7 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
         now: std::time::Instant,
     ) -> WindowsWin32ViewInputDispatchReport {
-        #[cfg(not(feature = "tooltip"))]
+        #[cfg(not(any(feature = "tooltip", feature = "toast")))]
         let _ = now;
         let mut report = WindowsWin32ViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
@@ -4831,6 +5059,30 @@ impl WindowsWin32ViewInputRoute {
             report.events.push("win32_tooltip_tick".to_string());
             redraw = true;
         }
+        #[cfg(feature = "toast")]
+        if let Some((widget, toast)) = self.toast.take_expired(now) {
+            report.handled = true;
+            report.toast_response_count = 1;
+            report.toast_timeout_count = 1;
+            report.event_count = 1;
+            report.events.push(format!(
+                "win32_view_toast_response:{}:{toast:?}:Timeout",
+                widget.0
+            ));
+            self.dispatch_event(
+                crate::ViewEvent::ToastResponded {
+                    widget,
+                    toast,
+                    response: crate::ZsToastResponse::Dismissed(
+                        crate::ZsToastDismissReason::Timeout,
+                    ),
+                },
+                &mut report,
+            );
+            redraw = true;
+        }
+        #[cfg(feature = "toast")]
+        self.sync_toast_runtime(now);
         if redraw {
             self.rebuild_pending_draw_plan();
         }
@@ -4918,6 +5170,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub table_invoke_count: usize,
     pub content_dialog_focus_change_count: usize,
     pub content_dialog_response_count: usize,
+    pub toast_focus_change_count: usize,
+    pub toast_response_count: usize,
+    pub toast_timeout_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -4995,6 +5250,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.table_invoke_count += next.table_invoke_count;
         self.content_dialog_focus_change_count += next.content_dialog_focus_change_count;
         self.content_dialog_response_count += next.content_dialog_response_count;
+        self.toast_focus_change_count += next.toast_focus_change_count;
+        self.toast_response_count += next.toast_response_count;
+        self.toast_timeout_count += next.toast_timeout_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -8252,6 +8510,57 @@ mod tests {
         });
         assert_eq!(pointer.content_dialog_response_count, 1);
         assert_eq!(pointer.ui_command_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "toast")]
+    fn window_view_input_route_routes_toast_action_and_owned_timeout() {
+        fn responded(_result: crate::ZsToastResult) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.toast_responded"))
+        }
+
+        let widget = crate::WidgetId::new(149);
+        let mut view = crate::toast_presenter(
+            widget,
+            Some(crate::ZsToastSpec::new(51, "File deleted").action("Undo")),
+            crate::spacer(),
+        )
+        .on_toast_result(responded);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 400,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let action = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::ToastAction)
+            .expect("toast action");
+
+        let mut pointer_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
+        let pointer = pointer_route.dispatch_click(crate::Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert_eq!(pointer.toast_response_count, 1);
+        assert_eq!(pointer.ui_command_count, 1);
+        assert!(pointer_route.widget_toast_state(widget).is_none());
+
+        let start = std::time::Instant::now();
+        let mut timeout_route = WindowsWin32ViewInputRoute::new(interaction, view);
+        assert!(timeout_route.background_poll_interval_ms().is_some());
+        let timeout =
+            timeout_route.refresh_background_view_at(start + std::time::Duration::from_secs(6));
+        assert_eq!(timeout.toast_response_count, 1);
+        assert_eq!(timeout.toast_timeout_count, 1);
+        assert_eq!(timeout.ui_command_count, 1);
+        assert!(timeout_route.widget_toast_state(widget).is_none());
     }
 
     #[test]

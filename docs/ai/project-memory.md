@@ -161,6 +161,17 @@ history remain authoritative for implementation status.
   and Space activate the focused action. Accessibility dialog semantics, prior
   focus restoration, arbitrary ViewNode content, validation/deferrals and
   AppKit/GTK target interaction smoke remain readiness gaps.
+- Toast is an independent `toast` Cargo feature over `widgets-base`. It is a
+  nonmodal in-window feedback layer, not an imitation of Windows or macOS
+  system-notification chrome. Applications own an optional `ZsToastSpec` with a
+  stable `ZsToastId`; the framework owns bottom-centered placement, one optional
+  action, the mandatory close affordance, keyboard routing and the active
+  timeout, then emits `ZsToastResult`. Windows follows the non-targeted WinUI
+  TeachingTip placement/surface model, macOS uses restrained foreground
+  feedback, and GTK uses AdwToast-like one-action/close geometry through the
+  same self-drawn renderer protocol. Accessibility live-region announcement,
+  hover/focus timeout pause, queues/priority replacement and AppKit/GTK target
+  interaction smoke remain readiness gaps.
 - ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
   in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
   mode and semantic size explicit, while inactive rings reserve layout space and

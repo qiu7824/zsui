@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
     feature = "dialog",
     feature = "tabs",
     feature = "time-picker",
+    feature = "toast",
     feature = "toggle-button"
 ))]
 use crate::TextRole;
@@ -21,7 +22,8 @@ use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, Native
     feature = "date-picker",
     feature = "table",
     feature = "tabs",
-    feature = "time-picker"
+    feature = "time-picker",
+    feature = "toast"
 ))]
 use crate::{HorizontalAlign, TextWeight};
 #[cfg(any(
@@ -30,6 +32,7 @@ use crate::{HorizontalAlign, TextWeight};
     feature = "date-picker",
     feature = "table",
     feature = "time-picker",
+    feature = "toast",
     feature = "tree"
 ))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
@@ -42,12 +45,315 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "table",
     feature = "tabs",
     feature = "time-picker",
+    feature = "toast",
     feature = "toggle-button",
     feature = "tree"
 ))]
 use crate::{NativeDrawTextCommand, SemanticTextStyle};
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
+
+#[cfg(feature = "toast")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsToastPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "toast")]
+impl ZsToastPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "toast")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsToastMetrics {
+    pub maximum_width: Dp,
+    pub viewport_margin: Dp,
+    pub bottom_margin: Dp,
+    pub horizontal_padding: Dp,
+    pub vertical_padding: Dp,
+    pub control_gap: Dp,
+    pub control_height: Dp,
+    pub surface_radius: Dp,
+    pub control_radius: Dp,
+    pub line_height: Dp,
+    pub average_character_width: Dp,
+}
+
+#[cfg(feature = "toast")]
+impl ZsToastMetrics {
+    pub const fn for_platform(platform: ZsToastPlatformStyle) -> Self {
+        match platform {
+            ZsToastPlatformStyle::Windows => Self {
+                maximum_width: Dp::new(420.0),
+                viewport_margin: Dp::new(24.0),
+                bottom_margin: Dp::new(24.0),
+                horizontal_padding: Dp::new(16.0),
+                vertical_padding: Dp::new(12.0),
+                control_gap: Dp::new(8.0),
+                control_height: Dp::new(32.0),
+                surface_radius: Dp::new(8.0),
+                control_radius: Dp::new(4.0),
+                line_height: Dp::new(20.0),
+                average_character_width: Dp::new(7.2),
+            },
+            ZsToastPlatformStyle::Macos => Self {
+                maximum_width: Dp::new(380.0),
+                viewport_margin: Dp::new(20.0),
+                bottom_margin: Dp::new(20.0),
+                horizontal_padding: Dp::new(14.0),
+                vertical_padding: Dp::new(10.0),
+                control_gap: Dp::new(6.0),
+                control_height: Dp::new(28.0),
+                surface_radius: Dp::new(10.0),
+                control_radius: Dp::new(6.0),
+                line_height: Dp::new(18.0),
+                average_character_width: Dp::new(6.8),
+            },
+            ZsToastPlatformStyle::Gtk => Self {
+                maximum_width: Dp::new(440.0),
+                viewport_margin: Dp::new(24.0),
+                bottom_margin: Dp::new(24.0),
+                horizontal_padding: Dp::new(16.0),
+                vertical_padding: Dp::new(10.0),
+                control_gap: Dp::new(8.0),
+                control_height: Dp::new(34.0),
+                surface_radius: Dp::new(12.0),
+                control_radius: Dp::new(17.0),
+                line_height: Dp::new(20.0),
+                average_character_width: Dp::new(7.2),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "toast")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsToastRenderPlan {
+    pub surface: Rect,
+    pub message_bounds: Rect,
+    pub action_bounds: Option<Rect>,
+    pub close_bounds: Rect,
+    pub focused_control: crate::ZsToastControl,
+    pub surface_radius: i32,
+    pub control_radius: i32,
+    pub platform: ZsToastPlatformStyle,
+}
+
+#[cfg(feature = "toast")]
+pub fn zs_toast_render_plan(
+    viewport: Rect,
+    spec: &crate::ZsToastSpec,
+    focused_control: crate::ZsToastControl,
+    platform: ZsToastPlatformStyle,
+    dpi: Dpi,
+) -> ZsToastRenderPlan {
+    let metrics = ZsToastMetrics::for_platform(platform);
+    let viewport_margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
+    let bottom_margin = metrics.bottom_margin.to_px(dpi).round_i32().max(0);
+    let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
+    let vertical_padding = metrics.vertical_padding.to_px(dpi).round_i32().max(0);
+    let control_gap = metrics.control_gap.to_px(dpi).round_i32().max(0);
+    let control_height = metrics.control_height.to_px(dpi).round_i32().max(1);
+    let line_height = metrics.line_height.to_px(dpi).round_i32().max(1);
+    let character_width = metrics
+        .average_character_width
+        .to_px(dpi)
+        .round_i32()
+        .max(1);
+    let maximum_width = metrics.maximum_width.to_px(dpi).round_i32().max(1);
+    let available_width = viewport
+        .width
+        .saturating_sub(viewport_margin.saturating_mul(2))
+        .max(1);
+    let close_width = control_height;
+    let action_width = spec.action_label().map(|label| {
+        (label.chars().count() as i32)
+            .saturating_mul(character_width)
+            .saturating_add(horizontal_padding)
+            .max(control_height)
+    });
+    let controls_width = close_width
+        .saturating_add(control_gap)
+        .saturating_add(action_width.map(|width| width + control_gap).unwrap_or(0));
+    let desired_message_width = (spec.message().chars().count() as i32)
+        .saturating_mul(character_width)
+        .clamp(scale(96, dpi), scale(280, dpi));
+    let desired_width = horizontal_padding
+        .saturating_mul(2)
+        .saturating_add(desired_message_width)
+        .saturating_add(controls_width);
+    let surface_width = desired_width.min(maximum_width).min(available_width).max(1);
+    let surface_height = control_height
+        .max(line_height)
+        .saturating_add(vertical_padding.saturating_mul(2));
+    let surface = Rect {
+        x: viewport.x + (viewport.width - surface_width) / 2,
+        y: viewport
+            .y
+            .saturating_add(viewport.height)
+            .saturating_sub(bottom_margin)
+            .saturating_sub(surface_height),
+        width: surface_width,
+        height: surface_height,
+    };
+    let controls_y = surface.y + (surface.height - control_height) / 2;
+    let close_bounds = Rect {
+        x: surface
+            .x
+            .saturating_add(surface.width)
+            .saturating_sub(horizontal_padding)
+            .saturating_sub(close_width),
+        y: controls_y,
+        width: close_width,
+        height: control_height,
+    };
+    let action_bounds = action_width.map(|width| Rect {
+        x: close_bounds
+            .x
+            .saturating_sub(control_gap)
+            .saturating_sub(width),
+        y: controls_y,
+        width,
+        height: control_height,
+    });
+    let message_right = action_bounds
+        .map(|bounds| bounds.x)
+        .unwrap_or(close_bounds.x)
+        .saturating_sub(control_gap);
+    let message_x = surface.x.saturating_add(horizontal_padding);
+    let message_bounds = Rect {
+        x: message_x,
+        y: surface.y.saturating_add(vertical_padding),
+        width: message_right.saturating_sub(message_x).max(1),
+        height: surface
+            .height
+            .saturating_sub(vertical_padding.saturating_mul(2)),
+    };
+    ZsToastRenderPlan {
+        surface,
+        message_bounds,
+        action_bounds,
+        close_bounds,
+        focused_control,
+        surface_radius: metrics.surface_radius.to_px(dpi).round_i32().max(0),
+        control_radius: metrics.control_radius.to_px(dpi).round_i32().max(0),
+        platform,
+    }
+}
+
+#[cfg(feature = "toast")]
+pub fn zs_toast_native_draw_plan(
+    plan: &ZsToastRenderPlan,
+    spec: &crate::ZsToastSpec,
+) -> NativeDrawPlan {
+    let shadow_alpha = match plan.platform {
+        ZsToastPlatformStyle::Windows => 30,
+        ZsToastPlatformStyle::Macos => 24,
+        ZsToastPlatformStyle::Gtk => 34,
+    };
+    let shadow = Rect {
+        x: plan.surface.x.saturating_sub(3),
+        y: plan.surface.y.saturating_add(2),
+        width: plan.surface.width.saturating_add(6),
+        height: plan.surface.height.saturating_add(4),
+    };
+    let mut commands = vec![
+        NativeDrawCommand::RoundFill {
+            rect: shadow,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: shadow_alpha,
+            },
+            radius: plan.surface_radius.saturating_add(3),
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.surface,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.surface_radius,
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            spec.message(),
+            plan.message_bounds,
+            SemanticTextStyle {
+                role: TextRole::Body,
+                color: ColorRole::PrimaryText,
+                weight: if plan.platform == ZsToastPlatformStyle::Gtk {
+                    TextWeight::Semibold
+                } else {
+                    TextWeight::Regular
+                },
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )),
+    ];
+    if let (Some(label), Some(bounds)) = (spec.action_label(), plan.action_bounds) {
+        let focused = plan.focused_control == crate::ZsToastControl::Action;
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: bounds,
+            fill: if plan.platform == ZsToastPlatformStyle::Windows {
+                NativeDrawFill::Role(ColorRole::Control)
+            } else {
+                NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 0,
+                }
+            },
+            stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
+            radius: plan.control_radius,
+        });
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            label,
+            bounds,
+            SemanticTextStyle {
+                role: TextRole::Button,
+                color: ColorRole::Accent,
+                weight: TextWeight::Semibold,
+                horizontal_align: HorizontalAlign::Center,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+    }
+    commands.push(NativeDrawCommand::RoundRect {
+        rect: plan.close_bounds,
+        fill: NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::PrimaryText,
+            alpha: 0,
+        },
+        stroke: (plan.focused_control == crate::ZsToastControl::Close)
+            .then_some(NativeDrawFill::Role(ColorRole::Accent)),
+        radius: plan.control_radius,
+    });
+    let icon_inset = (plan.close_bounds.width.min(plan.close_bounds.height) / 4).max(1);
+    let icon_bounds = Rect {
+        x: plan.close_bounds.x.saturating_add(icon_inset),
+        y: plan.close_bounds.y.saturating_add(icon_inset),
+        width: plan.close_bounds.width.saturating_sub(icon_inset * 2),
+        height: plan.close_bounds.height.saturating_sub(icon_inset * 2),
+    };
+    commands.push(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+        ZsIcon::Close,
+        icon_bounds,
+        NativeIconColorMode::ThemeAware,
+    )));
+    NativeDrawPlan::new(commands)
+}
 
 #[cfg(any(
     feature = "auto-suggest",
@@ -4020,6 +4326,67 @@ mod tests {
                 stroke: Some(NativeDrawFill::Role(ColorRole::Danger)),
                 ..
             }
+        )));
+    }
+
+    #[cfg(feature = "toast")]
+    #[test]
+    fn toast_render_plan_is_bottom_centered_and_preserves_platform_metrics() {
+        let spec = crate::ZsToastSpec::new(1, "File deleted").action("Undo");
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let windows = zs_toast_render_plan(
+            viewport,
+            &spec,
+            crate::ZsToastControl::Action,
+            ZsToastPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let macos = zs_toast_render_plan(
+            viewport,
+            &spec,
+            crate::ZsToastControl::Close,
+            ZsToastPlatformStyle::Macos,
+            Dpi::standard(),
+        );
+        let gtk = zs_toast_render_plan(
+            viewport,
+            &spec,
+            crate::ZsToastControl::Action,
+            ZsToastPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
+
+        assert_eq!(
+            windows.surface.x + windows.surface.width / 2,
+            viewport.x + viewport.width / 2
+        );
+        assert!(windows.surface.y > viewport.height / 2);
+        assert!(windows.action_bounds.is_some());
+        assert!(windows.close_bounds.x > windows.action_bounds.unwrap().x);
+        assert!(
+            ZsToastMetrics::for_platform(ZsToastPlatformStyle::Windows)
+                .control_height
+                .0
+                > ZsToastMetrics::for_platform(ZsToastPlatformStyle::Macos)
+                    .control_height
+                    .0
+        );
+        assert!(macos.surface.height < windows.surface.height);
+        assert!(gtk.surface_radius > windows.surface_radius);
+
+        let draw = zs_toast_native_draw_plan(&windows, &spec);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "File deleted"
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::Close
         )));
     }
 

@@ -134,6 +134,17 @@ pointer feedback, Escape/Tab/arrow/Enter/Space routing and overlay paint order.
 The same draw and interaction plans feed buffered Win32, AppKit and GTK4 hosts,
 so no HWND, Objective-C object or GtkWidget enters the public view API.
 
+The optional `toast` feature adds `toast_presenter(id, toast, page)` for
+nonmodal foreground feedback. The application owns `Option<ZsToastSpec>` and a
+stable `ZsToastId`; the shared runtime owns the active timeout and emits a typed
+action, close, Escape or timeout result. The renderer exposes one semantic
+action plus an always-available close control and chooses Windows, macOS or GTK
+metrics internally. This is deliberately an in-window feedback surface rather
+than a copy of Notification Center or Windows app-notification chrome. Windows
+uses the non-targeted TeachingTip placement model, macOS stays understated for
+foreground delivery, and GTK follows the AdwToast one-action/close structure.
+All three remain in the existing self-drawn tree and buffered paint path.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

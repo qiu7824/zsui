@@ -670,6 +670,12 @@ pub enum ViewNodeKind<Msg> {
         focused_button: crate::ZsContentDialogButton,
         on_result: Option<fn(crate::ZsContentDialogResult) -> Msg>,
     },
+    #[cfg(feature = "toast")]
+    ToastPresenter {
+        toast: Option<crate::ZsToastSpec>,
+        focused_control: crate::ZsToastControl,
+        on_result: Option<fn(crate::ZsToastResult) -> Msg>,
+    },
     #[cfg(feature = "combo")]
     ComboBox {
         options: Vec<String>,
@@ -1147,6 +1153,14 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "dialog")]
     pub fn on_dialog_result(mut self, message: fn(crate::ZsContentDialogResult) -> Msg) -> Self {
         if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
+            *on_result = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "toast")]
+    pub fn on_toast_result(mut self, message: fn(crate::ZsToastResult) -> Msg) -> Self {
+        if let ViewNodeKind::ToastPresenter { on_result, .. } = &mut self.kind {
             *on_result = Some(message);
         }
         self
@@ -1765,6 +1779,31 @@ pub fn content_dialog<Msg>(
     .child(page)
 }
 
+/// Wraps one page in a nonmodal, self-drawn in-app toast layer.
+///
+/// The application owns the optional toast and removes or replaces it after a
+/// typed result. ZSUI owns platform ordering, pointer/keyboard interaction and
+/// the timeout deadline while the toast is visible.
+#[cfg(feature = "toast")]
+pub fn toast_presenter<Msg>(
+    widget: WidgetId,
+    toast: Option<crate::ZsToastSpec>,
+    page: ViewNode<Msg>,
+) -> ViewNode<Msg> {
+    let toast = toast.filter(|toast| !toast.is_empty());
+    let focused_control = toast
+        .as_ref()
+        .map(crate::ZsToastSpec::initial_control)
+        .unwrap_or(crate::ZsToastControl::Close);
+    ViewNode::<Msg>::new(ViewNodeKind::ToastPresenter {
+        toast,
+        focused_control,
+        on_result: None,
+    })
+    .id(widget)
+    .child(page)
+}
+
 #[cfg(feature = "virtual-list")]
 pub fn virtual_list<T, Msg>(
     total_count: usize,
@@ -1915,6 +1954,18 @@ pub enum ViewEvent {
     ContentDialogResponded {
         widget: WidgetId,
         button: crate::ZsContentDialogButton,
+    },
+    #[cfg(feature = "toast")]
+    ToastFocused {
+        widget: WidgetId,
+        toast: crate::ZsToastId,
+        control: crate::ZsToastControl,
+    },
+    #[cfg(feature = "toast")]
+    ToastResponded {
+        widget: WidgetId,
+        toast: crate::ZsToastId,
+        response: crate::ZsToastResponse,
     },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
@@ -2083,6 +2134,12 @@ pub enum ViewHitTargetKind {
     ContentDialogButton {
         button: crate::ZsContentDialogButton,
     },
+    #[cfg(feature = "toast")]
+    Toast,
+    #[cfg(feature = "toast")]
+    ToastAction,
+    #[cfg(feature = "toast")]
+    ToastClose,
     #[cfg(feature = "combo")]
     ComboBox,
     #[cfg(feature = "combo")]
@@ -2300,6 +2357,13 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "toast")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::ToastAction | ViewHitTargetKind::ToastClose
+        ) {
+            return false;
+        }
         #[cfg(feature = "password-box")]
         if self.kind == ViewHitTargetKind::PasswordBoxReveal {
             return false;
@@ -2491,6 +2555,11 @@ trait LiveViewDriver: Send {
         &self,
         widget: WidgetId,
     ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)>;
+    #[cfg(feature = "toast")]
+    fn widget_toast_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2589,6 +2658,14 @@ impl SharedLiveViewRuntime {
         widget: WidgetId,
     ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
         self.lock().widget_content_dialog_state(widget)
+    }
+
+    #[cfg(feature = "toast")]
+    pub fn widget_toast_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
+        self.lock().widget_toast_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -2876,6 +2953,14 @@ where
         self.view.widget_content_dialog_state(widget)
     }
 
+    #[cfg(feature = "toast")]
+    fn widget_toast_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
+        self.view.widget_toast_state(widget)
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_type_ahead_match(
         &self,
@@ -3002,7 +3087,8 @@ impl ViewPaintCx {
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
-            feature = "time-picker"
+            feature = "time-picker",
+            feature = "toast"
         ))]
         if self.paint_depth == 0 {
             _root.paint_overlays(self, None);
@@ -3186,6 +3272,56 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "toast")]
+        if matches!(self.kind, ViewNodeKind::ToastPresenter { .. }) {
+            let mut handled = false;
+            if let ViewNodeKind::ToastPresenter {
+                toast,
+                focused_control,
+                on_result,
+            } = &mut self.kind
+            {
+                if let Some(active) = toast.as_ref() {
+                    match event {
+                        ViewEvent::ToastFocused {
+                            widget,
+                            toast: toast_id,
+                            control,
+                        } if self.id == Some(*widget)
+                            && active.id() == *toast_id
+                            && active.has_control(*control) =>
+                        {
+                            *focused_control = *control;
+                            handled = true;
+                        }
+                        ViewEvent::ToastResponded {
+                            widget,
+                            toast: toast_id,
+                            response,
+                        } if self.id == Some(*widget) && active.id() == *toast_id => {
+                            let result = crate::ZsToastResult {
+                                id: *toast_id,
+                                response: *response,
+                            };
+                            *toast = None;
+                            if let Some(message) = on_result {
+                                cx.emit(message(result));
+                            }
+                            handled = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if handled {
+                return;
+            }
+            for child in &mut self.children {
+                child.event(cx, event);
+            }
+            return;
+        }
+
         #[cfg(feature = "dialog")]
         if matches!(self.kind, ViewNodeKind::ContentDialog { .. }) {
             let mut handled = false;
@@ -4633,6 +4769,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Grid { .. } => {}
             #[cfg(feature = "dialog")]
             ViewNodeKind::ContentDialog { .. } => {}
+            #[cfg(feature = "toast")]
+            ViewNodeKind::ToastPresenter { .. } => {}
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
@@ -4675,6 +4813,9 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "dialog")]
             (Some(id), ViewEvent::ContentDialogFocused { widget, .. })
             | (Some(id), ViewEvent::ContentDialogResponded { widget, .. }) => id == *widget,
+            #[cfg(feature = "toast")]
+            (Some(id), ViewEvent::ToastFocused { widget, .. })
+            | (Some(id), ViewEvent::ToastResponded { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -4718,7 +4859,8 @@ impl<Msg> ViewNode<Msg> {
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
-            feature = "time-picker"
+            feature = "time-picker",
+            feature = "toast"
         ))]
         self.collect_overlay_hit_targets(&mut hit_targets, None);
         #[cfg(feature = "tooltip")]
@@ -5006,6 +5148,32 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_content_dialog_state(widget))
     }
 
+    #[cfg(feature = "toast")]
+    pub fn widget_toast_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::ToastPresenter {
+                toast: Some(toast),
+                focused_control,
+                ..
+            } = &self.kind
+            {
+                return Some((
+                    crate::ZsToastState {
+                        toast: Some(toast.id()),
+                        focused_control: *focused_control,
+                    },
+                    toast.clone(),
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_toast_state(widget))
+    }
+
     #[cfg(feature = "combo")]
     pub(crate) fn widget_combo_type_ahead_match(
         &self,
@@ -5252,6 +5420,14 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "toast")]
+        if matches!(self.kind, ViewNodeKind::ToastPresenter { .. }) {
+            for child in &self.children {
+                child.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
         #[cfg(feature = "dialog")]
         if matches!(self.kind, ViewNodeKind::ContentDialog { .. }) {
             for child in &self.children {
@@ -5601,13 +5777,57 @@ impl<Msg> ViewNode<Msg> {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
-        feature = "time-picker"
+        feature = "toast",
+        feature = "time-picker",
+        feature = "toast"
     ))]
     fn collect_overlay_hit_targets(
         &self,
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "toast")]
+        if let ViewNodeKind::ToastPresenter {
+            toast,
+            focused_control,
+            ..
+        } = &self.kind
+        {
+            let toast_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.collect_overlay_hit_targets(hit_targets, toast_viewport);
+            }
+            if let (Some(spec), Some(widget), Some(viewport)) =
+                (toast.as_ref(), self.id, toast_viewport)
+            {
+                let plan = crate::zs_toast_render_plan(
+                    viewport,
+                    spec,
+                    *focused_control,
+                    crate::ZsToastPlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.surface,
+                    ViewHitTargetKind::Toast,
+                ));
+                if let Some(bounds) = plan.action_bounds {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        ViewHitTargetKind::ToastAction,
+                    ));
+                }
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.close_bounds,
+                    ViewHitTargetKind::ToastClose,
+                ));
+            }
+            return;
+        }
+
         #[cfg(feature = "dialog")]
         if let ViewNodeKind::ContentDialog {
             spec,
@@ -5894,9 +6114,37 @@ impl<Msg> ViewNode<Msg> {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
-        feature = "time-picker"
+        feature = "toast",
+        feature = "time-picker",
+        feature = "toast"
     ))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
+        #[cfg(feature = "toast")]
+        if let ViewNodeKind::ToastPresenter {
+            toast,
+            focused_control,
+            ..
+        } = &self.kind
+        {
+            let toast_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.paint_overlays(cx, toast_viewport);
+            }
+            if let (Some(spec), Some(viewport)) = (toast.as_ref(), toast_viewport) {
+                let plan = crate::zs_toast_render_plan(
+                    viewport,
+                    spec,
+                    *focused_control,
+                    crate::ZsToastPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_toast_native_draw_plan(&plan, spec).commands {
+                    cx.draw(command);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "dialog")]
         if let ViewNodeKind::ContentDialog {
             spec,
@@ -6156,6 +6404,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::DataGrid { .. } => ViewHitTargetKind::DataGrid,
             #[cfg(feature = "dialog")]
             ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
+            #[cfg(feature = "toast")]
+            ViewNodeKind::ToastPresenter { .. } => ViewHitTargetKind::Toast,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { .. } => ViewHitTargetKind::ComboBox,
             #[cfg(feature = "date-picker")]
@@ -6717,6 +6967,7 @@ mod tests {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
+        feature = "toast",
         feature = "time-picker",
         feature = "tabs",
         feature = "list",
@@ -6769,6 +7020,8 @@ mod tests {
         TableInvoked(crate::ZsTableRowId),
         #[cfg(feature = "dialog")]
         DialogResult(crate::ZsContentDialogResult),
+        #[cfg(feature = "toast")]
+        ToastResult(crate::ZsToastResult),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
@@ -7977,6 +8230,81 @@ mod tests {
                 .first_focus_target()
                 .map(|target| target.widget),
             Some(background)
+        );
+    }
+
+    #[cfg(feature = "toast")]
+    #[test]
+    fn toast_presenter_overlays_page_and_routes_typed_action_without_blocking_page() {
+        let presenter = WidgetId::new(105);
+        let page = WidgetId::new(106);
+        let toast_id = crate::ZsToastId::new(9);
+        let mut view = toast_presenter(
+            presenter,
+            Some(crate::ZsToastSpec::new(toast_id, "File deleted").action("Undo")),
+            spacer::<Msg>().id(page).bg(ThemeColorToken::Surface),
+        )
+        .on_toast_result(Msg::ToastResult);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 400,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.widget == page));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::ToastAction));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::ToastClose));
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let page_index = paint
+            .plan()
+            .commands
+            .iter()
+            .position(|command| matches!(command, NativeDrawCommand::FillRect { rect, .. } if *rect == viewport))
+            .expect("page background");
+        let toast_index = paint
+            .plan()
+            .commands
+            .iter()
+            .rposition(|command| matches!(command, NativeDrawCommand::Icon(_)))
+            .expect("toast close icon");
+        assert!(toast_index > page_index);
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ToastResponded {
+                widget: presenter,
+                toast: toast_id,
+                response: crate::ZsToastResponse::Action,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ToastResult(crate::ZsToastResult {
+                id: toast_id,
+                response: crate::ZsToastResponse::Action,
+            })]
+        );
+        assert!(view.widget_toast_state(presenter).is_none());
+        assert_eq!(
+            view.interaction_plan()
+                .first_focus_target()
+                .map(|target| target.widget),
+            Some(page)
         );
     }
 
