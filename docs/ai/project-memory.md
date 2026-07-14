@@ -24,9 +24,10 @@ history remain authoritative for implementation status.
   contract. The real objective is a complete native application loop.
 - Controls and advanced capabilities should remain Cargo-feature selectable so
   unused surfaces and heavy dependencies can be omitted.
-- WebView is intentionally outside the ZSUI v0.2 product boundary. Do not add
-  WebView2, WKWebView, WebKitGTK or browser-shell dependencies unless the user
-  explicitly reopens that scope.
+- WebView is outside the ZSUI product boundary. Do not add WebView2, WKWebView,
+  WebKitGTK, Wry, Tauri or another browser-shell dependency. Keep the isolated
+  Tauri benchmark under `comparisons/` out of the root package graph. Enforce
+  this boundary with `scripts/check-native-boundary.ps1` in CI.
 
 ## Architecture preferences
 

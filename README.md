@@ -503,6 +503,8 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo
 动状态；Uniscribe、Core Text 和 Pango 的原生成形宽度统一驱动比例字体、双向文本
 插入点、选择、换行和命中，组合附加符与连接 emoji 仍按完整字素处理，也不使用 WebView。
 [验收与测量说明](docs/notepad-demo.md)记录了能力边界、代码量和验证方法。
+仓库 CI 还会检查根包依赖图和 Rust 源码入口，阻止 WebView2、WKWebView、
+WebKitGTK、Wry、Tauri 等浏览器壳能力进入 ZSUI；`comparisons/` 中隔离的基准不属于框架。
 
 ### 现代计算器
 

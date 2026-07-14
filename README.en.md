@@ -411,6 +411,10 @@ wrapping, and hit testing; no WebView is involved:
 cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
+CI checks the root dependency graph and Rust API entry points so WebView2,
+WKWebView, WebKitGTK, Wry, Tauri, and other browser shells cannot enter ZSUI.
+The isolated benchmark under `comparisons/` is not part of the framework.
+
 `docs/notepad-demo.md` records the reproducible ZSUI, egui, Iced, Slint,
 Tauri 2 and Windows Notepad comparison. The result is intentionally candid:
 ZSUI has the smallest measured native-service output and idle footprint, while

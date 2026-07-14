@@ -35,6 +35,7 @@
       "required": [
         "Cargo.toml",
         "src/feature_manifest.rs",
+        "scripts/check-native-boundary.ps1",
         "scripts/check-feature-matrix.ps1"
       ],
       "optional": [
@@ -43,6 +44,7 @@
         "docs/framework-goals.md"
       ],
       "verify": [
+        ".\\scripts\\check-native-boundary.ps1 -Locked",
         ".\\scripts\\check-feature-matrix.ps1 -Locked",
         "cargo test --features full --quiet"
       ]
@@ -300,12 +302,13 @@
       "required": [
         "Cargo.toml",
         ".github/workflows/ci.yml",
+        "scripts/check-native-boundary.ps1",
         "scripts/check-feature-matrix.ps1",
-        "README.md",
-        "README.en.md"
+        "README.md"
       ],
       "optional": [
         "AGENTS.md",
+        "README.en.md",
         "docs/ai-agent.md",
         "docs/ai/context-packs.json",
         "docs/gallery.md",
@@ -316,6 +319,7 @@
         "cargo fmt --all -- --check",
         "cargo test --no-default-features --quiet",
         "cargo test --features full --quiet",
+        ".\\scripts\\check-native-boundary.ps1 -Locked",
         ".\\scripts\\check-feature-matrix.ps1 -Locked",
         "git diff --check"
       ]

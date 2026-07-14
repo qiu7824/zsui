@@ -76,6 +76,9 @@ platform backends for a pure layout or engine task.
 - Do not place private icon-font code points or local palettes in components.
 - Preserve buffered no-flicker Windows painting and background-erase
   suppression when changing self-drawn surfaces.
+- Keep the root package native-only. `scripts/check-native-boundary.ps1` must
+  reject WebView/browser-shell packages and API entry points; the isolated
+  Tauri comparison is not part of the ZSUI dependency graph.
 - Do not introduce an unrelated reactive runtime layer. Use platform APIs only
   for a concrete backend need.
 - Return `Result<T, ZsuiError>` for recoverable failures; do not expose raw
