@@ -17,6 +17,7 @@ use crate::native_file_dialog::{
 };
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
+    move_native_text_selection_horizontally_with_backend,
     native_text_drag_viewport_for_point_with_backend,
     native_text_first_visible_row_for_caret_with_backend,
     native_text_horizontal_scroll_for_caret_with_backend,
@@ -24,7 +25,7 @@ use crate::native_input_visuals::{
     native_text_index_for_vertical_move_with_backend,
     native_text_index_for_vertical_page_move_with_backend,
     native_text_scroll_visual_rows_with_backend, native_text_visual_target,
-    native_text_wheel_row_delta, NativeTextVisualDirection,
+    native_text_wheel_row_delta, NativeTextVisualDirection, NativeTextVisualHorizontalDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -3811,10 +3812,15 @@ impl WindowsWin32ViewInputRoute {
                 return edit;
             }
             let movement = match virtual_key {
-                key if key == u32::from(VK_LEFT) => Some(NativeTextMovement::Left),
-                key if key == u32::from(VK_RIGHT) => Some(NativeTextMovement::Right),
                 key if key == u32::from(VK_HOME) => Some(NativeTextMovement::Home),
                 key if key == u32::from(VK_END) => Some(NativeTextMovement::End),
+                _ => None,
+            };
+            let horizontal_navigation = match virtual_key {
+                key if key == u32::from(VK_LEFT) => Some(NativeTextVisualHorizontalDirection::Left),
+                key if key == u32::from(VK_RIGHT) => {
+                    Some(NativeTextVisualHorizontalDirection::Right)
+                }
                 _ => None,
             };
             let visual_navigation = (target.kind == crate::ViewHitTargetKind::TextEditor)
@@ -3832,7 +3838,8 @@ impl WindowsWin32ViewInputRoute {
                     _ => None,
                 })
                 .flatten();
-            if movement.is_some() || visual_navigation.is_some() {
+            if movement.is_some() || horizontal_navigation.is_some() || visual_navigation.is_some()
+            {
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
@@ -3868,6 +3875,18 @@ impl WindowsWin32ViewInputRoute {
                     };
                     state.preferred_visual_x = Some(preferred_x);
                     move_selection_to(&value, &mut state.selection, target_index, shift)
+                } else if let Some(direction) = horizontal_navigation {
+                    state.preferred_visual_x = None;
+                    move_native_text_selection_horizontally_with_backend(
+                        target,
+                        &value,
+                        &mut state.selection,
+                        direction,
+                        shift,
+                        self.widget_text_wrap(widget),
+                        self.dpi,
+                        &self.text_shaping,
+                    )
                 } else {
                     state.preferred_visual_x = None;
                     move_selection(
@@ -9859,6 +9878,38 @@ mod tests {
             vec!["zsui.test.win32.text_selection"]
         );
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "textbox", feature = "text-input-core"))]
+    fn window_view_input_route_moves_bidirectional_caret_in_visual_order() {
+        let widget = crate::WidgetId::new(325);
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox::<UiCommand>("abאב").id(widget),
+        );
+        route.dispatch_click(crate::Point { x: 10, y: 20 });
+        route.dispatch_key_down(u32::from(VK_HOME));
+
+        for expected in [1, 4, 3, 2] {
+            let moved = route.dispatch_key_down(u32::from(VK_RIGHT));
+            assert_eq!(moved.text_caret, Some(expected));
+            assert_eq!(moved.text_navigation_count, 1);
+        }
+        for expected in [3, 4, 1, 0] {
+            let moved = route.dispatch_key_down(u32::from(VK_LEFT));
+            assert_eq!(moved.text_caret, Some(expected));
+            assert_eq!(moved.text_navigation_count, 1);
+        }
     }
 
     #[test]

@@ -121,7 +121,6 @@ pub fn zsui_component_catalog_summary() -> ZsuiComponentCatalogSummary {
 
 const BASIC_CONTROL_GAPS: &[&str] = &["accessibility", "non-Windows target interaction proof"];
 const TEXT_INPUT_GAPS: &[&str] = &[
-    "visual-order bidirectional Left/Right caret navigation",
     "accessibility text provider",
     "macOS and Linux CJK target interaction proof",
 ];
@@ -427,7 +426,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("textbox"),
-        "src/view.rs",
+        "src/view.rs + src/native_input_visuals.rs + three desktop input runtimes",
         TEXT_INPUT_GAPS
     ),
     component!(

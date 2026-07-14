@@ -133,7 +133,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec!["unicode-segmentation"],
             vec!["widgets-input"],
-            "shared Unicode grapheme editing plus target-native shaped caret and hit geometry",
+            "shared Unicode grapheme editing plus target-native shaped caret, visual navigation and hit geometry",
         ),
         ZsuiCargoFeature::new(
             "widgets-list",

@@ -593,6 +593,12 @@ fn main() -> ZsuiResult<()> {
             .native_view_key_down(NativeViewKey::End)
             .native_view_text_input(horizontal_smoke_text)
             .native_view_key_down(NativeViewKey::End)
+            .native_view_text_input("\nabאב")
+            .native_view_key_down(NativeViewKey::Home)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_key_down(NativeViewKey::Right)
             .native_window_close_request();
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
@@ -607,7 +613,7 @@ fn main() -> ZsuiResult<()> {
         if !report.visible_window_was_created()
             || report.native_view_text_input_count == 0
             || report.native_view_text_undo_count == 0
-            || report.native_view_text_navigation_count < 3
+            || report.native_view_text_navigation_count < 9
             || report.native_view_text_selection_change_count == 0
             || report.native_view_text_drag_count == 0
             || report.native_view_text_drag_scroll_count == 0

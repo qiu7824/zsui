@@ -81,9 +81,11 @@ history remain authoritative for implementation status.
   must not split combining sequences or joined emoji. Text geometry is shaped
   by Uniscribe on Win32, Core Text on AppKit and Pango on GTK4; caret, selection,
   pointer hit testing, wrapping and IME candidate anchoring consume the same
-  per-grapheme advances and strong/weak bidirectional insertion positions.
-  Visual-order Left/Right traversal and target CJK/bidirectional interaction
-  evidence remain separate work.
+  per-grapheme advances and primary/secondary bidirectional insertion positions.
+  Left/Right traversal sorts each shaped row by the platform primary-caret x
+  position, skips duplicate scalar stops at soft-wrap boundaries and keeps
+  Shift selection on the same typed scalar-index path. Target macOS/Linux
+  CJK/bidirectional interaction evidence remains separate work.
   Shaped rows use a bounded 256-entry cache owned by the per-window shaping
   backend; do not replace it with a global font/layout registry.
   Win32 assembles `WM_CHAR` UTF-16 surrogate pairs in per-window transient

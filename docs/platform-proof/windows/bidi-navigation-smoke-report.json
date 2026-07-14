@@ -1,0 +1,14 @@
+{
+  "platform": "windows",
+  "host": "windows-win32",
+  "source": "examples/zsui_notepad.rs --smoke",
+  "text_probe": "abאב",
+  "line_start_scalar": 224,
+  "right_key_carets": [225, 228, 227, 226],
+  "relative_visual_order": [1, 4, 3, 2],
+  "native_view_text_navigation_count": 10,
+  "native_view_text_selection_change_count": 366,
+  "native_view_unhandled_key_count": 0,
+  "window_menu_command_routed": true,
+  "native_window_close_veto_count": 1
+}

@@ -581,9 +581,12 @@ down/move/up drag sequence, verifies Unicode range replacement and records
 `native_view_text_drag_scroll_count` and
 `native_view_text_selection_change_count`. The notepad acceptance smoke also
 commits a combining sequence plus joined emoji, then proves Left/Backspace
-remove one extended grapheme without splitting it. Shaped-glyph/bidirectional
-hit testing, non-Windows target input evidence and resize screenshot artifacts
-remain later runtime gates. The `--date-picker-view` path also posts real
+remove one extended grapheme without splitting it. It then routes Home and four
+Right keys over a dedicated Latin/Hebrew row through the shaped visual-order
+caret path. The current Win32 probe is recorded in
+`docs/platform-proof/windows/bidi-navigation-smoke-report.json`. Non-Windows
+target CJK/bidirectional input evidence and resize
+screenshot artifacts remain later runtime gates. The `--date-picker-view` path also posts real
 pointer down/up input through the Win32 host and records
 `native_view_pointer_visual_change_count`; a nonzero count proves that the
 semantic hover/pressed decoration reached the buffered native draw plan without

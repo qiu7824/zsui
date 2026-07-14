@@ -1,5 +1,6 @@
 use crate::native_text_edit::{
-    char_count, grapheme_boundaries, snap_grapheme_index, NativeTextSelection,
+    char_count, grapheme_boundaries, move_selection, move_selection_to, snap_grapheme_index,
+    NativeTextEditResult, NativeTextMovement, NativeTextSelection,
 };
 #[cfg(test)]
 use crate::native_text_edit::{grapheme_count_in_range, grapheme_index_for_column};
@@ -316,6 +317,12 @@ pub(crate) struct NativeTextVisualGeometry {
 pub(crate) enum NativeTextVisualDirection {
     Up,
     Down,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeTextVisualHorizontalDirection {
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -759,6 +766,97 @@ pub(crate) fn native_text_index_for_vertical_move_with_backend(
         dpi,
         backend,
     )
+}
+
+pub(crate) fn native_text_index_for_horizontal_move_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualHorizontalDirection,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> usize {
+    let metrics = native_text_visual_metrics(target, dpi);
+    let lines = text_lines_with_backend(
+        value,
+        target.kind == ViewHitTargetKind::TextEditor,
+        wrap,
+        metrics.text_bounds.width,
+        metrics.character_width,
+        backend,
+    );
+    let caret = snap_grapheme_index(value, caret);
+    let (row, _) = text_position_x(value, caret, &lines);
+    let Some(line) = lines.get(row) else {
+        return caret;
+    };
+    let stops = line.visual_caret_stops();
+    let Some(position) = stops.iter().position(|stop| stop.index == caret) else {
+        return caret;
+    };
+
+    let candidate = match direction {
+        NativeTextVisualHorizontalDirection::Left => stops[..position]
+            .iter()
+            .rev()
+            .find(|stop| stop.x < stops[position].x)
+            .copied()
+            .or_else(|| {
+                lines[..row].iter().rev().find_map(|line| {
+                    line.visual_caret_stops()
+                        .into_iter()
+                        .rev()
+                        .find(|stop| stop.index != caret)
+                })
+            }),
+        NativeTextVisualHorizontalDirection::Right => stops[position.saturating_add(1)..]
+            .iter()
+            .find(|stop| stop.x > stops[position].x)
+            .copied()
+            .or_else(|| {
+                lines[row.saturating_add(1)..].iter().find_map(|line| {
+                    line.visual_caret_stops()
+                        .into_iter()
+                        .find(|stop| stop.index != caret)
+                })
+            }),
+    };
+    candidate.map(|stop| stop.index).unwrap_or(caret)
+}
+
+pub(crate) fn move_native_text_selection_horizontally_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    selection: &mut NativeTextSelection,
+    direction: NativeTextVisualHorizontalDirection,
+    extend: bool,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> NativeTextEditResult {
+    if !extend && !selection.is_collapsed() {
+        return move_selection(
+            value,
+            selection,
+            match direction {
+                NativeTextVisualHorizontalDirection::Left => NativeTextMovement::Left,
+                NativeTextVisualHorizontalDirection::Right => NativeTextMovement::Right,
+            },
+            false,
+            target.kind == ViewHitTargetKind::TextEditor,
+        );
+    }
+    let target_index = native_text_index_for_horizontal_move_with_backend(
+        target,
+        value,
+        selection.caret,
+        direction,
+        wrap,
+        dpi,
+        backend,
+    );
+    move_selection_to(value, selection, target_index, extend)
 }
 
 pub(crate) fn native_text_index_for_vertical_page_move_with_backend(
@@ -1693,6 +1791,12 @@ struct NativeTextLine {
     soft_wrap_after: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeTextVisualCaretStop {
+    index: usize,
+    x: i32,
+}
+
 impl NativeTextLine {
     fn caret_x(&self, index: usize) -> i32 {
         self.carets
@@ -1734,6 +1838,19 @@ impl NativeTextLine {
             .copied()
             .map(NativeShapedTextCluster::right_index)
             .unwrap_or(self.end)
+    }
+
+    fn visual_caret_stops(&self) -> Vec<NativeTextVisualCaretStop> {
+        let mut stops = self
+            .carets
+            .iter()
+            .map(|caret| NativeTextVisualCaretStop {
+                index: caret.index,
+                x: caret.primary_x,
+            })
+            .collect::<Vec<_>>();
+        stops.sort_by_key(|stop| (stop.x, stop.index));
+        stops
     }
 }
 
@@ -2847,6 +2964,101 @@ mod tests {
                 secondary_x: 40,
             }),
             (50, 40)
+        );
+    }
+
+    #[test]
+    fn shaped_horizontal_navigation_follows_visual_caret_order() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(923),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 40,
+            },
+            ViewHitTargetKind::Textbox,
+        );
+        let backend = NativeTextShapingBackend::Test(mixed_direction_test_shape);
+        let mut caret = 0;
+        for expected in [1, 4, 3, 2] {
+            caret = native_text_index_for_horizontal_move_with_backend(
+                target,
+                "abאב",
+                caret,
+                NativeTextVisualHorizontalDirection::Right,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            );
+            assert_eq!(caret, expected);
+        }
+        assert_eq!(
+            native_text_index_for_horizontal_move_with_backend(
+                target,
+                "abאב",
+                caret,
+                NativeTextVisualHorizontalDirection::Right,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            2
+        );
+        for expected in [3, 4, 1, 0] {
+            caret = native_text_index_for_horizontal_move_with_backend(
+                target,
+                "abאב",
+                caret,
+                NativeTextVisualHorizontalDirection::Left,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            );
+            assert_eq!(caret, expected);
+        }
+
+        let mut selection = NativeTextSelection::collapsed(0);
+        for expected in [1, 4] {
+            let moved = move_native_text_selection_horizontally_with_backend(
+                target,
+                "abאב",
+                &mut selection,
+                NativeTextVisualHorizontalDirection::Right,
+                true,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            );
+            assert!(moved.selection_changed);
+            assert_eq!(selection.anchor, 0);
+            assert_eq!(selection.caret, expected);
+        }
+    }
+
+    #[test]
+    fn visual_left_skips_the_duplicate_index_at_a_soft_wrap_boundary() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(924),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 32,
+                height: 80,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        assert_eq!(
+            native_text_index_for_horizontal_move_with_backend(
+                target,
+                "abcd",
+                2,
+                NativeTextVisualHorizontalDirection::Left,
+                crate::TextWrap::Word,
+                Dpi::standard(),
+                &NativeTextShapingBackend::LogicalCells,
+            ),
+            1
         );
     }
 

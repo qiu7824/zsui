@@ -751,8 +751,8 @@ pub(crate) fn shape_windows_gdi_text_line(
             }
             carets.push(NativeShapedTextCaret {
                 index,
-                primary_x: if position == 0 { leading } else { trailing },
-                secondary_x: leading,
+                primary_x: leading,
+                secondary_x: if position == 0 { leading } else { trailing },
             });
         }
         let width = unsafe { (*size).cx };
@@ -1495,7 +1495,23 @@ mod tests {
                 .carets
                 .iter()
                 .any(|caret| caret.primary_x != caret.secondary_x),
-            "a bidi boundary should expose strong and weak caret positions"
+            "a bidi boundary should expose primary and secondary caret positions"
+        );
+
+        let visual = shape_windows_gdi_text_line("abאב")
+            .expect("Uniscribe should expose visual caret order");
+        let mut visual_carets = visual
+            .carets
+            .iter()
+            .map(|caret| (caret.primary_x, caret.index))
+            .collect::<Vec<_>>();
+        visual_carets.sort_unstable();
+        assert_eq!(
+            visual_carets
+                .into_iter()
+                .map(|(_, index)| index)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 4, 3, 2]
         );
     }
 

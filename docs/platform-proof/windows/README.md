@@ -14,6 +14,9 @@ Current diagnostic artifacts:
 - `text-input.png`: owner-drawn text input, focus traversal, toggle and scroll smoke capture.
 - `shaped-text.png`: self-drawn notepad smoke with proportional Latin, Hebrew
   bidirectional text and CJK on the real Win32 buffered renderer.
+- `bidi-navigation-smoke-report.json`: real Win32 notepad key routing over
+  `abאב`; four Right keys move through relative scalar carets `1, 4, 3, 2`,
+  proving visual rather than logical traversal of the shaped primary positions.
 - `showcase-smoke-report.json`: machine-readable smoke counters for that interaction run.
 
 The report confirms one attached native menu with five commands and exercises

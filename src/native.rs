@@ -8,6 +8,7 @@ use crate::workbench::ZsWorkbenchSpec;
 
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
+    move_native_text_selection_horizontally_with_backend,
     native_text_drag_viewport_for_point_with_backend,
     native_text_first_visible_row_for_caret_with_backend,
     native_text_horizontal_scroll_for_caret_with_backend,
@@ -16,7 +17,7 @@ use crate::native_input_visuals::{
     native_text_index_for_vertical_page_move_with_backend,
     native_text_scroll_visual_rows_with_backend,
     native_text_visual_geometry_in_viewport_with_backend, native_text_visual_target,
-    native_text_wheel_row_delta, NativeTextVisualDirection,
+    native_text_wheel_row_delta, NativeTextVisualDirection, NativeTextVisualHorizontalDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -3141,10 +3142,13 @@ impl NativeViewInputRuntime {
 
         if target.kind.accepts_text_input() {
             let movement = match key {
-                NativeViewKey::Left => Some(NativeTextMovement::Left),
-                NativeViewKey::Right => Some(NativeTextMovement::Right),
                 NativeViewKey::Home => Some(NativeTextMovement::Home),
                 NativeViewKey::End => Some(NativeTextMovement::End),
+                _ => None,
+            };
+            let horizontal_navigation = match key {
+                NativeViewKey::Left => Some(NativeTextVisualHorizontalDirection::Left),
+                NativeViewKey::Right => Some(NativeTextVisualHorizontalDirection::Right),
                 _ => None,
             };
             let visual_navigation = (target.kind == crate::ViewHitTargetKind::TextEditor)
@@ -3156,7 +3160,8 @@ impl NativeViewInputRuntime {
                     _ => None,
                 })
                 .flatten();
-            if movement.is_some() || visual_navigation.is_some() {
+            if movement.is_some() || horizontal_navigation.is_some() || visual_navigation.is_some()
+            {
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
@@ -3192,6 +3197,18 @@ impl NativeViewInputRuntime {
                     };
                     state.preferred_visual_x = Some(preferred_x);
                     move_selection_to(&value, &mut state.selection, target_index, shift)
+                } else if let Some(direction) = horizontal_navigation {
+                    state.preferred_visual_x = None;
+                    move_native_text_selection_horizontally_with_backend(
+                        target,
+                        &value,
+                        &mut state.selection,
+                        direction,
+                        shift,
+                        self.widget_text_wrap(widget),
+                        self.dpi,
+                        &self.text_shaping,
+                    )
                 } else {
                     state.preferred_visual_x = None;
                     move_selection(

@@ -373,8 +373,9 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "minimal_native_window_runtime",
-            percent_complete: 88,
-            status_name: "win32_stateful_view_shaped_text_dual_command_and_live_shell_ready",
+            percent_complete: 89,
+            status_name:
+                "win32_stateful_view_shaped_visual_bidi_dual_command_and_live_shell_ready",
             source_path: "src/native.rs",
             missing_before_complete: vec![
                 "real native menus",
@@ -382,7 +383,6 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "clipboard",
                 "broader pointer dispatch into ViewEventCx",
                 "touch and inertial scroll dispatch",
-                "visual-order bidirectional Left/Right caret navigation",
                 "generic calculator runtime route",
                 "macOS/Linux target input and IME interaction proof",
                 "macOS/Linux target smoke artifacts",
@@ -401,8 +401,9 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "rust_first_api_model",
-            percent_complete: 89,
-            status_name: "typed_state_semantic_icons_composite_shells_and_content_typestate_ready",
+            percent_complete: 90,
+            status_name:
+                "typed_state_shaped_bidi_semantic_icons_composite_shells_and_content_typestate_ready",
             source_path: "src/workbench.rs",
             missing_before_complete: vec![
                 "preserve one-line native entrypoints across target hosts",
@@ -410,15 +411,15 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "keep platform API bindings behind concrete backend needs",
                 "keep the public facade small while splitting heavier crates/modules",
                 "full typed message coverage across menus and advanced text/list input",
-                "connect touch/inertial pointer input and visual-order bidirectional caret navigation to ViewEventCx",
+                "connect touch and inertial pointer input to ViewEventCx",
                 "complete Px/Dp/Dpi coverage",
                 "typestate AppBuilder lifecycle constraints only where they prevent real invalid states",
             ],
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
-            percent_complete: 93,
-            status_name: "three_native_event_loops_renderers_shaped_text_selection_focus_visuals_and_resize",
+            percent_complete: 94,
+            status_name: "three_native_event_loops_renderers_shaped_text_visual_bidi_selection_focus_visuals_and_resize",
             source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
                 "AppKit proportional and bidirectional text target interaction proof plus richer pointer dispatch",
@@ -455,8 +456,9 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "native_smoke_verification",
-            percent_complete: 83,
-            status_name: "win32_stateful_controls_tabs_and_high_contrast_smoke_recorded",
+            percent_complete: 88,
+            status_name:
+                "win32_stateful_controls_shaped_bidi_tabs_and_high_contrast_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
                 "required tray/menu target smoke artifacts with user popup interaction",

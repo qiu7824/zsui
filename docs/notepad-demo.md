@@ -40,9 +40,10 @@ framework architecture.
   those scalar indices on Unicode extended-grapheme boundaries, so combining
   sequences and joined emoji move, delete, wrap and hit-test as one unit.
 - Win32 Uniscribe, AppKit Core Text and GTK4 Pango shape each visual line. Their
-  proportional advances, RTL cluster boxes and strong/weak caret positions feed
-  the shared selection, hit, wrap, vertical navigation and viewport geometry;
-  application code remains platform-neutral.
+  proportional advances, RTL cluster boxes and primary/secondary caret positions feed
+  the shared selection, hit, wrap, horizontal/vertical navigation and viewport
+  geometry. Left/Right follows primary caret x order without exposing bidi run
+  state to application code.
 - `AppCx::text_edit_command(...)` and `text_edit_command_for(...)` queue
   strongly typed `ZsTextEditCommand` requests for the focused or explicitly
   identified editor. The host owns a bounded undo history and returns edits
@@ -90,7 +91,9 @@ selection drag beyond the editor edge and verifies two incremental viewport
 steps, routes a native Up key through the shared visual-row navigation, scrolls
 the editor one visual page with PageDown and with a real wheel message, toggles
 word wrap off, enters a marked long line and routes End to prove horizontal
-caret reveal while painting a mixed Latin/Hebrew/CJK proportional line. It also
+caret reveal while painting a mixed Latin/Hebrew/CJK proportional line. It then
+enters a dedicated Latin/Hebrew line and routes Home plus four Right keys through
+the shaped visual-order path. It also
 commits a combining sequence plus joined emoji and uses
 Left/Backspace to prove that one complete grapheme is removed, then sends a real
 title-bar close request while the document is dirty, verifies that the request
@@ -117,6 +120,7 @@ cross-compilation.
 | Captured selection drag with row/column edge scrolling | implemented |
 | Extended-grapheme-safe caret, deletion, wrapping and pointer hit testing | implemented |
 | Proportional advances and bidirectional caret/selection/hit geometry | implemented; AppKit/GTK4 target proof pending |
+| Visual-order bidirectional Left/Right navigation | implemented; AppKit/GTK4 target proof pending |
 | Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
 
