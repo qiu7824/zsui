@@ -170,7 +170,7 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::PointerInput,
                 CapabilitySupport::supported(
-                    "pointer click, wheel and capture-backed logical text drag selection are connected",
+                    "pointer click, wheel and capture-backed logical text drag selection with editor-edge viewport scrolling are connected",
                 ),
             )
             .with_support(
@@ -269,7 +269,7 @@ impl DesktopCapabilities {
                 DesktopCapability::PointerInput,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "NSView mouse activation, mouseDragged logical text selection and scrollWheel routing are connected; richer gestures and target proof are pending",
+                        "NSView mouse activation, mouseDragged logical text selection with shared editor-edge viewport scrolling and scrollWheel routing are connected; richer gestures and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
@@ -411,7 +411,7 @@ impl DesktopCapabilities {
                 DesktopCapability::PointerInput,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
-                        "GTK4 GestureClick, EventControllerMotion logical text selection and scroll routing are connected; richer gestures and target proof are pending",
+                        "GTK4 GestureClick, EventControllerMotion logical text selection with shared editor-edge viewport scrolling and scroll routing are connected; richer gestures and target proof are pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(

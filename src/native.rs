@@ -8,11 +8,11 @@ use crate::workbench::ZsWorkbenchSpec;
 
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
-    native_text_first_visible_column_for_caret, native_text_first_visible_row_for_caret,
-    native_text_index_for_point_in_viewport, native_text_index_for_vertical_move,
-    native_text_index_for_vertical_page_move, native_text_scroll_visual_rows,
-    native_text_visual_geometry_in_viewport, native_text_visual_target,
-    native_text_wheel_row_delta, NativeTextVisualDirection,
+    native_text_drag_viewport_for_point, native_text_first_visible_column_for_caret,
+    native_text_first_visible_row_for_caret, native_text_index_for_point_in_viewport,
+    native_text_index_for_vertical_move, native_text_index_for_vertical_page_move,
+    native_text_scroll_visual_rows, native_text_visual_geometry_in_viewport,
+    native_text_visual_target, native_text_wheel_row_delta, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -894,6 +894,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_pointer_up_count: usize,
     pub native_view_pointer_visual_change_count: usize,
     pub native_view_text_drag_count: usize,
+    pub native_view_text_drag_scroll_count: usize,
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
@@ -1032,6 +1033,7 @@ impl NativeWindowSmokeRunReport {
             native_view_pointer_up_count: 0,
             native_view_pointer_visual_change_count: 0,
             native_view_text_drag_count: 0,
+            native_view_text_drag_scroll_count: 0,
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
@@ -1286,6 +1288,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     #[cfg(feature = "textbox")]
     pub text_undo_count: usize,
     pub text_drag_active: bool,
+    pub text_drag_scroll_count: usize,
     #[cfg(feature = "slider")]
     pub slider_value: Option<f32>,
     #[cfg(feature = "slider")]
@@ -1918,10 +1921,21 @@ impl NativeViewInputRuntime {
             .current_interaction_plan()
             .map(|interaction| native_text_visual_target(target, &interaction))
             .unwrap_or(target);
-        let index = native_text_index_for_point_in_viewport(
+        let drag_viewport = native_text_drag_viewport_for_point(
             visual_target,
             &value,
             point,
+            state.first_visible_visual_row,
+            state.first_visible_visual_column,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
+        state.first_visible_visual_row = drag_viewport.first_visible_row;
+        state.first_visible_visual_column = drag_viewport.first_visible_column;
+        let index = native_text_index_for_point_in_viewport(
+            visual_target,
+            &value,
+            drag_viewport.point,
             state.first_visible_visual_row,
             state.first_visible_visual_column,
             self.widget_text_wrap(target.widget),
@@ -1949,7 +1963,8 @@ impl NativeViewInputRuntime {
         report.handled = true;
         report.text_selection_changed = edit.selection_changed;
         report.text_drag_active = true;
-        if edit.selection_changed {
+        report.text_drag_scroll_count = usize::from(drag_viewport.scrolled);
+        if edit.selection_changed || drag_viewport.scrolled {
             report.redraw_plan = self.current_composed_draw_plan();
         }
         report.ime_caret_rect = self.text_input_caret_rect();
@@ -6153,6 +6168,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_pointer_up_count += input.pointer_up_count;
     report.native_view_pointer_visual_change_count += input.pointer_visual_change_count;
     report.native_view_text_drag_count += input.text_drag_count;
+    report.native_view_text_drag_scroll_count += input.text_drag_scroll_count;
     report.native_view_slider_value_change_count += input.slider_value_change_count;
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
     report.native_view_slider_drag_count += input.slider_drag_count;
@@ -9430,6 +9446,50 @@ mod tests {
 
         assert_eq!(replaced.text_selection, Some((2, 2)));
         assert_eq!(runtime.focused_text_input_value().as_deref(), Some("A🙂Z"));
+    }
+
+    #[cfg(feature = "textbox")]
+    #[test]
+    fn native_view_runtime_scrolls_editor_viewport_during_edge_drag() {
+        let editor = crate::WidgetId::new(764);
+        let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let builder = native_window("Editor edge drag")
+            .size(160, 70)
+            .ui_command_view(
+                crate::text_editor::<UiCommand>(value)
+                    .id(editor)
+                    .text_wrap(crate::TextWrap::NoWrap)
+                    .on_text_selection_change(|_| UiCommand::app(crate::CommandId("selection"))),
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(editor))
+            .expect("editor should expose edge-drag geometry");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_down(
+            Point {
+                x: target.bounds.x + 16,
+                y: target.bounds.y + 10,
+            },
+            false,
+        );
+        let outside = Point {
+            x: target.bounds.x + 16,
+            y: target.bounds.y + target.bounds.height + 40,
+        };
+
+        let first = runtime.dispatch_pointer_move(outside);
+        let second = runtime.dispatch_pointer_move(outside);
+
+        assert_eq!(first.text_drag_scroll_count, 1);
+        assert_eq!(first.text_selection, Some((1, 10)));
+        assert_eq!(second.text_drag_scroll_count, 1);
+        assert_eq!(second.text_selection, Some((1, 13)));
+        assert!(second.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(
+                |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "c2"),
+            )
+        }));
     }
 
     #[cfg(feature = "slider")]

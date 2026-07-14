@@ -578,6 +578,7 @@ fn main() -> ZsuiResult<()> {
         let mut options = NativeWindowSmokeRunOptions::new(1_200)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_text_input(smoke_text)
+            .native_view_drag(Point { x: 360, y: 220 }, Point { x: 360, y: 100 })
             .native_view_click(undo_point)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_key_down(NativeViewKey::Up)
@@ -603,6 +604,8 @@ fn main() -> ZsuiResult<()> {
             || report.native_view_text_undo_count == 0
             || report.native_view_text_navigation_count < 3
             || report.native_view_text_selection_change_count == 0
+            || report.native_view_text_drag_count == 0
+            || report.native_view_text_drag_scroll_count == 0
             || report.native_view_scroll_count == 0
             || report.native_view_unhandled_scroll_count != 0
             || report.native_view_unhandled_key_count != 0
@@ -612,7 +615,7 @@ fn main() -> ZsuiResult<()> {
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, text input/page navigation/scrolling, typed undo or close veto was not verified",
+                "native window, menu routing, text input/page navigation/edge-drag scrolling, typed undo or close veto was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {

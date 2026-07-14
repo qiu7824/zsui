@@ -233,6 +233,11 @@ bracketed by balanced clip commands, pointer hit testing includes both offsets,
 and subsequent text or keyboard edits reveal the caret. The column offset is
 active only for `TextWrap::NoWrap` and resets in wrapped modes. This path
 belongs to `textbox` and does not enable the general `scroll` feature.
+During a capture-backed selection drag, pointer updates beyond a text edge move
+the matching row or no-wrap column offset by one visual step, clamp hit testing
+to the newly visible edge and emit the normal typed selection message. AppKit
+`mouseDragged:`, GTK4 motion and Win32 capture all consume this shared geometry;
+backends do not own a separate drag-scroll state.
 Feature-gated list row selection uses
 child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection

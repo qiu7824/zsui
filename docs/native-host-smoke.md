@@ -577,7 +577,8 @@ Tab to prove ordered focus traversal and Enter to prove focused keyboard
 activation into the same `UiCommand` path; the resulting focus-ring repaint is
 counted independently from logical focus changes. The textbox smoke also posts a
 down/move/up drag sequence, verifies Unicode range replacement and records
-`native_view_pointer_*`, `native_view_text_drag_count` and
+`native_view_pointer_*`, `native_view_text_drag_count`,
+`native_view_text_drag_scroll_count` and
 `native_view_text_selection_change_count`. Shaped-glyph/grapheme/bidirectional
 hit testing, non-Windows target input evidence and resize screenshot artifacts
 remain later runtime gates. The `--date-picker-view` path also posts real

@@ -17,10 +17,11 @@ use crate::native_file_dialog::{
 };
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
-    native_text_first_visible_column_for_caret, native_text_first_visible_row_for_caret,
-    native_text_index_for_point_in_viewport, native_text_index_for_vertical_move,
-    native_text_index_for_vertical_page_move, native_text_scroll_visual_rows,
-    native_text_visual_target, native_text_wheel_row_delta, NativeTextVisualDirection,
+    native_text_drag_viewport_for_point, native_text_first_visible_column_for_caret,
+    native_text_first_visible_row_for_caret, native_text_index_for_point_in_viewport,
+    native_text_index_for_vertical_move, native_text_index_for_vertical_page_move,
+    native_text_scroll_visual_rows, native_text_visual_target, native_text_wheel_row_delta,
+    NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -2420,10 +2421,21 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == drag.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(drag.widget, &value));
         let visual_target = native_text_visual_target(target, &self.interaction_plan);
-        let index = native_text_index_for_point_in_viewport(
+        let drag_viewport = native_text_drag_viewport_for_point(
             visual_target,
             &value,
             point,
+            state.first_visible_visual_row,
+            state.first_visible_visual_column,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
+        state.first_visible_visual_row = drag_viewport.first_visible_row;
+        state.first_visible_visual_column = drag_viewport.first_visible_column;
+        let index = native_text_index_for_point_in_viewport(
+            visual_target,
+            &value,
+            drag_viewport.point,
             state.first_visible_visual_row,
             state.first_visible_visual_column,
             self.widget_text_wrap(target.widget),
@@ -2453,13 +2465,20 @@ impl WindowsWin32ViewInputRoute {
         report.text_selection_change_count = usize::from(edit.selection_changed);
         report.text_caret = Some(state.selection.caret);
         report.text_drag_active = true;
-        if edit.selection_changed {
+        report.text_drag_scroll_count = usize::from(drag_viewport.scrolled);
+        if edit.selection_changed || drag_viewport.scrolled {
             self.rebuild_pending_draw_plan();
         }
         report.events.push(format!(
             "win32_view_text_pointer_move:{}:{}",
             drag.widget.0, index
         ));
+        if drag_viewport.scrolled {
+            report.events.push(format!(
+                "win32_view_text_drag_scroll:{}:{}:{}",
+                drag.widget.0, state.first_visible_visual_row, state.first_visible_visual_column
+            ));
+        }
         #[cfg(feature = "textbox")]
         if edit.selection_changed
             && matches!(
@@ -6858,6 +6877,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     #[cfg(feature = "textbox")]
     pub text_edit_command_errors: Vec<String>,
     pub text_drag_count: usize,
+    pub text_drag_scroll_count: usize,
     pub text_drag_active: bool,
     pub slider_value_change_count: usize,
     pub slider_keyboard_change_count: usize,
@@ -6968,6 +6988,7 @@ impl WindowsWin32ViewInputDispatchReport {
                 .extend(next.text_edit_command_errors);
         }
         self.text_drag_count += next.text_drag_count;
+        self.text_drag_scroll_count += next.text_drag_scroll_count;
         self.text_drag_active = next.text_drag_active;
         self.slider_value_change_count += next.slider_value_change_count;
         self.slider_keyboard_change_count += next.slider_keyboard_change_count;
@@ -10078,6 +10099,56 @@ mod tests {
 
         assert_eq!(replaced.text_caret, Some(2));
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A🙂Z"));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_scrolls_editor_during_captured_edge_drag() {
+        let widget = crate::WidgetId::new(324);
+        let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let builder = crate::native_window("Win32 editor edge drag")
+            .size(160, 70)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::text_editor::<UiCommand>(value)
+                        .id(widget)
+                        .text_wrap(crate::TextWrap::NoWrap)
+                },
+                |_, _, _| {},
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("edge-drag editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("edge-drag editor should expose Win32 geometry");
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        route.dispatch_pointer_down(
+            crate::Point {
+                x: target.bounds.x + 16,
+                y: target.bounds.y + 10,
+            },
+            false,
+        );
+        let outside = crate::Point {
+            x: target.bounds.x + 16,
+            y: target.bounds.y + target.bounds.height + 40,
+        };
+
+        let first = route.dispatch_pointer_move(outside);
+        let second = route.dispatch_pointer_move(outside);
+
+        assert_eq!(first.text_drag_scroll_count, 1);
+        assert_eq!(first.text_caret, Some(10));
+        assert_eq!(second.text_drag_scroll_count, 1);
+        assert_eq!(second.text_caret, Some(13));
+        assert!(second
+            .events
+            .iter()
+            .any(|event| event.starts_with("win32_view_text_drag_scroll:324:")));
     }
 
     #[test]

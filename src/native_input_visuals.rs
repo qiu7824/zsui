@@ -16,6 +16,14 @@ pub(crate) enum NativeTextVisualDirection {
     Down,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeTextDragViewport {
+    pub point: Point,
+    pub first_visible_row: usize,
+    pub first_visible_column: usize,
+    pub scrolled: bool,
+}
+
 pub(crate) fn native_text_visual_target(
     target: ViewHitTarget,
     interaction: &ViewInteractionPlan,
@@ -431,6 +439,131 @@ pub(crate) fn native_text_scroll_visual_rows(
         first_visible_row.saturating_sub(row_delta.unsigned_abs())
     } else {
         first_visible_row.min(maximum_first)
+    }
+}
+
+pub(crate) fn native_text_drag_viewport_for_point(
+    target: ViewHitTarget,
+    value: &str,
+    point: Point,
+    first_visible_row: usize,
+    first_visible_column: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+) -> NativeTextDragViewport {
+    if target.kind != ViewHitTargetKind::TextEditor {
+        return NativeTextDragViewport {
+            point,
+            first_visible_row: 0,
+            first_visible_column: 0,
+            scrolled: false,
+        };
+    }
+    let metrics = native_text_visual_metrics(target, dpi);
+    let mut adjusted = point;
+    let mut row = first_visible_row;
+    let mut column = if wrap == crate::TextWrap::NoWrap {
+        first_visible_column
+    } else {
+        0
+    };
+    let bottom = metrics
+        .text_bounds
+        .y
+        .saturating_add(metrics.text_bounds.height);
+    if point.y < metrics.text_bounds.y {
+        row = native_text_scroll_visual_rows(target, value, row, -1, wrap, dpi);
+        adjusted.y = metrics.text_bounds.y;
+    } else if point.y >= bottom {
+        row = native_text_scroll_visual_rows(target, value, row, 1, wrap, dpi);
+        let visible_rows = metrics
+            .text_bounds
+            .height
+            .saturating_add(metrics.line_height.saturating_sub(1))
+            .checked_div(metrics.line_height)
+            .unwrap_or(1)
+            .max(1);
+        adjusted.y = metrics.text_bounds.y.saturating_add(
+            visible_rows
+                .saturating_sub(1)
+                .saturating_mul(metrics.line_height),
+        );
+    }
+
+    if wrap == crate::TextWrap::NoWrap {
+        let right = metrics
+            .text_bounds
+            .x
+            .saturating_add(metrics.text_bounds.width);
+        if point.x < metrics.text_bounds.x {
+            column = native_text_scroll_visual_columns(target, value, column, -1, wrap, dpi);
+            adjusted.x = metrics.text_bounds.x;
+        } else if point.x >= right {
+            column = native_text_scroll_visual_columns(target, value, column, 1, wrap, dpi);
+            let visible_columns = metrics
+                .text_bounds
+                .width
+                .saturating_add(metrics.character_width.saturating_sub(1))
+                .checked_div(metrics.character_width)
+                .unwrap_or(1)
+                .max(1);
+            adjusted.x = metrics.text_bounds.x.saturating_add(
+                visible_columns
+                    .saturating_sub(1)
+                    .saturating_mul(metrics.character_width),
+            );
+        }
+    }
+
+    NativeTextDragViewport {
+        point: adjusted,
+        first_visible_row: row,
+        first_visible_column: column,
+        scrolled: row != first_visible_row || column != first_visible_column,
+    }
+}
+
+fn native_text_scroll_visual_columns(
+    target: ViewHitTarget,
+    value: &str,
+    first_visible_column: usize,
+    column_delta: isize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+) -> usize {
+    if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
+        return 0;
+    }
+    let metrics = native_text_visual_metrics(target, dpi);
+    let max_columns = metrics
+        .text_bounds
+        .width
+        .checked_div(metrics.character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let longest_line = text_lines(value, true, wrap, max_columns)
+        .into_iter()
+        .map(|line| line.end.saturating_sub(line.start))
+        .max()
+        .unwrap_or(0);
+    let visible_columns = metrics
+        .text_bounds
+        .width
+        .saturating_add(metrics.character_width.saturating_sub(1))
+        .checked_div(metrics.character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let maximum_first = longest_line
+        .saturating_add(1)
+        .saturating_sub(visible_columns);
+    if column_delta > 0 {
+        first_visible_column
+            .saturating_add(column_delta as usize)
+            .min(maximum_first)
+    } else if column_delta < 0 {
+        first_visible_column.saturating_sub(column_delta.unsigned_abs())
+    } else {
+        first_visible_column.min(maximum_first)
     }
 }
 
@@ -2140,6 +2273,72 @@ mod tests {
 
         assert_eq!(visible_text.first().copied(), Some("789"));
         assert_eq!(geometry.caret.x, 32);
+    }
+
+    #[test]
+    fn editor_drag_edges_scroll_one_visual_step_before_hit_testing() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(100),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 160,
+                height: 70,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let dragged = native_text_drag_viewport_for_point(
+            target,
+            value,
+            Point { x: 16, y: 500 },
+            0,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+
+        assert!(dragged.scrolled);
+        assert_eq!((dragged.first_visible_row, dragged.point.y), (1, 44));
+        assert_eq!(
+            native_text_index_for_point_in_viewport(
+                target,
+                value,
+                dragged.point,
+                dragged.first_visible_row,
+                dragged.first_visible_column,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+            ),
+            10
+        );
+
+        let long_line = native_text_drag_viewport_for_point(
+            ViewHitTarget::with_kind(
+                WidgetId::new(101),
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 48,
+                    height: 52,
+                },
+                ViewHitTargetKind::TextEditor,
+            ),
+            "0123456789",
+            Point { x: 500, y: 10 },
+            0,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+        assert_eq!(
+            (
+                long_line.first_visible_column,
+                long_line.point.x,
+                long_line.scrolled
+            ),
+            (1, 32, true)
+        );
     }
 
     #[test]

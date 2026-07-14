@@ -98,9 +98,12 @@ history remain authoritative for implementation status.
   caret reveal after edits or keyboard movement. `TextWrap::NoWrap` also keeps a
   transient first visible visual column shared by paint, selection/caret and
   pointer hit testing; caret movement reveals it horizontally, while wrapped
-  modes reset the column offset. Editor viewport scrolling stays available with
-  the `textbox` slice and must not pull in the general `scroll` container
-  feature, a platform child editor or a WebView.
+  modes reset the column offset. During captured selection drags, each pointer
+  update beyond a text edge advances that transient row or column viewport by
+  one visual step and hit-tests the newly visible edge instead of jumping to the
+  document boundary. Editor viewport scrolling stays available with the
+  `textbox` slice and must not pull in the general `scroll` container feature,
+  a platform child editor or a WebView.
 
 ## Native platform bar
 
