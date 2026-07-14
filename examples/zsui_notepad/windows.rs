@@ -54,10 +54,8 @@ use windows_sys::Win32::{
 use zsui::{
     Color, Dpi, Point, Rect, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
     ZsDocumentShellCommand, ZsDocumentShellInteraction, ZsDocumentShellLayout, ZsDocumentShellSpec,
-    ZsuiTheme,
+    ZsTextDocument, ZsuiTheme,
 };
-
-use super::document::Document;
 
 const APP_NAME: &str = "ZSUI Notepad";
 const CLASS_NAME: &str = "ZSUI_NOTEPAD_WINDOW";
@@ -86,7 +84,7 @@ struct EditorState {
     font: HFONT,
     editor_brush: HBRUSH,
     icon: HICON,
-    document: Document,
+    document: ZsTextDocument,
     suppress_change: bool,
     word_wrap: bool,
     show_status: bool,
@@ -99,7 +97,7 @@ struct EditorState {
 }
 
 impl EditorState {
-    fn new(document: Document, auto_close_ms: Option<u32>) -> Self {
+    fn new(document: ZsTextDocument, auto_close_ms: Option<u32>) -> Self {
         let theme = ZsuiTheme::light();
         Self {
             hwnd: null_mut(),
@@ -259,7 +257,6 @@ unsafe extern "system" fn window_proc(
             if wparam == STATUS_TIMER {
                 update_status(state);
             } else if wparam == AUTO_CLOSE_TIMER {
-                state.document.dirty = false;
                 DestroyWindow(hwnd);
             }
             0
@@ -368,7 +365,7 @@ fn register_window_class(instance: HINSTANCE) -> Result<(), String> {
 
 unsafe fn create_children(state: &mut EditorState) -> Result<(), String> {
     let edit_class = wide("EDIT");
-    let initial = wide(&state.document.text);
+    let initial = wide(state.document.text());
     state.edit = CreateWindowExW(
         0,
         edit_class.as_ptr(),
@@ -443,8 +440,7 @@ unsafe fn handle_command(state: &mut EditorState, wparam: WPARAM, lparam: LPARAM
     let notification = ((wparam >> 16) & 0xffff) as u16;
     if lparam as HWND == state.edit && notification as u32 == EN_CHANGE {
         if !state.suppress_change {
-            state.document.text = editor_text(state.edit);
-            state.document.dirty = true;
+            state.document.replace_text(editor_text(state.edit));
             update_title(state);
             update_status(state);
         }
@@ -539,7 +535,7 @@ unsafe fn new_document(state: &mut EditorState) {
     if !confirm_discard_or_save(state) {
         return;
     }
-    state.document = Document::untitled("");
+    state.document = ZsTextDocument::untitled("");
     replace_editor_text(state);
 }
 
@@ -547,22 +543,22 @@ unsafe fn open_document(state: &mut EditorState) {
     if !confirm_discard_or_save(state) {
         return;
     }
-    let Some(path) = choose_file(state.hwnd, false, state.document.path.as_deref()) else {
+    let Some(path) = choose_file(state.hwnd, false, state.document.path()) else {
         return;
     };
-    match Document::open(path) {
+    match ZsTextDocument::open(path) {
         Ok(document) => {
             state.document = document;
             replace_editor_text(state);
         }
-        Err(error) => show_error(state.hwnd, &error),
+        Err(error) => show_error(state.hwnd, &error.to_string()),
     }
 }
 
 unsafe fn save_document(state: &mut EditorState, force_picker: bool) -> bool {
-    state.document.text = editor_text(state.edit);
-    let result = if force_picker || state.document.path.is_none() {
-        let Some(path) = choose_file(state.hwnd, true, state.document.path.as_deref()) else {
+    state.document.replace_text(editor_text(state.edit));
+    let result = if force_picker || state.document.path().is_none() {
+        let Some(path) = choose_file(state.hwnd, true, state.document.path()) else {
             return false;
         };
         state.document.save_as(path)
@@ -576,14 +572,14 @@ unsafe fn save_document(state: &mut EditorState, force_picker: bool) -> bool {
             true
         }
         Err(error) => {
-            show_error(state.hwnd, &error);
+            show_error(state.hwnd, &error.to_string());
             false
         }
     }
 }
 
 unsafe fn confirm_discard_or_save(state: &mut EditorState) -> bool {
-    if !state.document.dirty {
+    if !state.document.is_dirty() {
         return true;
     }
     let message = format!("Save changes to {}?", state.document.display_name());
@@ -602,10 +598,9 @@ unsafe fn confirm_discard_or_save(state: &mut EditorState) -> bool {
 
 unsafe fn replace_editor_text(state: &mut EditorState) {
     state.suppress_change = true;
-    SetWindowTextW(state.edit, wide(&state.document.text).as_ptr());
+    SetWindowTextW(state.edit, wide(state.document.text()).as_ptr());
     SendMessageW(state.edit, EM_SETSEL, 0, 0);
     state.suppress_change = false;
-    state.document.dirty = false;
     update_title(state);
     update_status(state);
 }
@@ -681,10 +676,11 @@ unsafe fn editor_text(edit: HWND) -> String {
 
 fn shell_spec(state: &EditorState) -> ZsDocumentShellSpec {
     ZsDocumentShellSpec::new(APP_NAME, state.document.display_name())
-        .dirty(state.document.dirty)
+        .dirty(state.document.is_dirty())
         .word_wrap(state.word_wrap)
         .show_status(state.show_status)
         .status(state.line, state.column, state.character_count)
+        .encoding(state.document.encoding().label())
 }
 
 unsafe fn shell_layout(state: &EditorState) -> ZsDocumentShellLayout {
@@ -845,14 +841,14 @@ fn choose_file(hwnd: HWND, save: bool, current: Option<&Path>) -> Option<PathBuf
     )))
 }
 
-fn initial_document(arguments: &[String]) -> Result<Document, String> {
+fn initial_document(arguments: &[String]) -> Result<ZsTextDocument, String> {
     let path = arguments
         .windows(2)
         .find(|pair| pair[0] == "--open")
         .map(|pair| PathBuf::from(&pair[1]));
     match path {
-        Some(path) => Document::open(path),
-        None => Ok(Document::untitled(
+        Some(path) => ZsTextDocument::open(path).map_err(|error| error.to_string()),
+        None => Ok(ZsTextDocument::untitled(
             "ZSUI Notepad\r\n\r\nA complete native text editing benchmark.\r\n",
         )),
     }
@@ -869,10 +865,10 @@ fn benchmark_timeout(arguments: &[String]) -> Option<u32> {
         .map(|seconds| seconds.saturating_mul(1000))
 }
 
-fn window_title(document: &Document) -> String {
+fn window_title(document: &ZsTextDocument) -> String {
     format!(
         "{}{} - {APP_NAME}",
-        if document.dirty { "*" } else { "" },
+        if document.is_dirty() { "*" } else { "" },
         document.display_name()
     )
 }

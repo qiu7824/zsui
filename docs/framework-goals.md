@@ -67,9 +67,11 @@ execution and product commands outside the framework.
 
 `document-shell` provides the same product-neutral boundary for text-oriented
 utilities: a document tab, command bar, rounded editor frame, status surface,
-semantic icons and stable hit regions. The Windows notepad benchmark proves the
+semantic icons and stable hit regions. Its `ZsTextDocument` adds UTF-8 and
+BOM-tagged UTF-16 loading, explicit dirty state and transactional UTF-8 save or
+save-as without platform handles. The Windows notepad benchmark proves the
 hybrid route with a native text service, but it does not make multi-tab state,
-file dialogs or a reusable rich-text engine complete.
+native file-dialog composition or a reusable rich-text engine complete.
 
 `calculator` provides a complete standard-mode vertical slice at the framework
 level: typed decimal operations, memory, history, a DPI-aware Fluent keypad,

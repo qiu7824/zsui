@@ -214,7 +214,7 @@ pub use desktop_services::{
 #[cfg(feature = "document-shell")]
 pub use document_shell::{
     ZsDocumentShellCommand, ZsDocumentShellCommandRegion, ZsDocumentShellInteraction,
-    ZsDocumentShellLayout, ZsDocumentShellSpec,
+    ZsDocumentShellLayout, ZsDocumentShellSpec, ZsTextDocument, ZsTextDocumentEncoding,
 };
 pub use event_protocol::{
     ComponentPhase, KeyState, LifecycleEvent, LifecycleState, MouseButton, UiEvent,

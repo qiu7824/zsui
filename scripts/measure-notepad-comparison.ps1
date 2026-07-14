@@ -343,7 +343,6 @@ $windowsNotepad = Measure-WindowsNotepad
 $source = [ordered]@{
     zsui = Get-SourceStats -Paths @(
         (Join-Path $workspace "examples\zsui_notepad.rs"),
-        (Join-Path $workspace "examples\zsui_notepad\document.rs"),
         (Join-Path $workspace "examples\zsui_notepad\windows.rs")
     )
     egui = Get-SourceStats -Paths @($manifests.egui, (Join-Path $workspace "comparisons\egui_notepad\src\main.rs"))

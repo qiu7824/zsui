@@ -249,11 +249,12 @@ without application messages or hit targets. Windows has a real buffered
 indeterminate/determinate screenshot and repeated background-refresh evidence.
 Reduced-motion policy, accessibility and AppKit/GTK target animation artifacts
 remain open.
-`src/document_shell.rs` is the reusable visual boundary used by the Windows
-notepad benchmark. It provides a document tab, command bar, editor frame,
-status layout, semantic draw plan and hit regions without owning product state
-or raw platform handles. The native editor, file dialog, accelerator and
-lifecycle code still lives in the example's platform module. Use
+`src/document_shell.rs` is the reusable boundary used by the Windows notepad
+benchmark. It provides a document tab, command bar, editor frame, status
+layout, semantic draw plan and hit regions plus `ZsTextDocument` UTF-8/UTF-16
+loading, explicit dirty state and transactional UTF-8 save/save-as without raw
+platform handles. The native editor, file dialog, accelerator and dirty-close
+policy still live in the example's platform module. Use
 `docs/notepad-demo.md` and `scripts/measure-notepad-comparison.ps1` to compare
 ZSUI with the isolated egui, Iced, Slint and Tauri 2 baselines. The script
 measures complete process trees, including Tauri's WebView2 descendants. Read

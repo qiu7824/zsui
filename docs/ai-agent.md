@@ -52,7 +52,7 @@ and is not part of normal task context.
 | `long-list` | Virtual rows, background pagination, prefetch and LRU caching |
 | `navigation-shell` | Left navigation, grouped cards, settings rows, scroll |
 | `workbench` | Conversation/task shell, composer, inspector, message blocks |
-| `document-shell` | Document chrome, native editor inset, notepad example |
+| `document-shell` | Document chrome, text lifecycle, native editor inset, notepad example |
 | `calculator` | Decimal engine, keypad shell, calculator example/measurement |
 | `windows-renderer` | Win32/GDI+, no-flicker paint, DPI, icons, pointer input |
 | `icons` | Semantic icons, native platform sources and licensed SVG fallback |

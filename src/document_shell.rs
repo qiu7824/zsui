@@ -1,9 +1,14 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     ColorRole, Dp, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
     NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, Point, Rect, SemanticTextStyle,
-    TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon,
+    TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon, ZsuiError, ZsuiResult,
 };
 
 const TAB_STRIP_HEIGHT_DP: f32 = 48.0;
@@ -16,6 +21,172 @@ const COMMAND_GAP_DP: f32 = 4.0;
 const GROUP_GAP_DP: f32 = 12.0;
 const ICON_SIZE_DP: f32 = 16.0;
 const COMPACT_THRESHOLD_DP: f32 = 760.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZsTextDocumentEncoding {
+    Utf8,
+    Utf16LittleEndian,
+    Utf16BigEndian,
+}
+
+impl ZsTextDocumentEncoding {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Utf8 => "UTF-8",
+            Self::Utf16LittleEndian => "UTF-16 LE",
+            Self::Utf16BigEndian => "UTF-16 BE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsTextDocument {
+    path: Option<PathBuf>,
+    text: String,
+    dirty: bool,
+    encoding: ZsTextDocumentEncoding,
+}
+
+impl Default for ZsTextDocument {
+    fn default() -> Self {
+        Self::untitled("")
+    }
+}
+
+impl ZsTextDocument {
+    pub fn untitled(initial_text: impl Into<String>) -> Self {
+        Self {
+            path: None,
+            text: initial_text.into(),
+            dirty: false,
+            encoding: ZsTextDocumentEncoding::Utf8,
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> ZsuiResult<Self> {
+        let (text, encoding) = decode_text_document(bytes)
+            .map_err(|message| ZsuiError::invalid_spec("text_document.bytes", message))?;
+        Ok(Self {
+            path: None,
+            text,
+            dirty: false,
+            encoding,
+        })
+    }
+
+    pub fn open(path: impl Into<PathBuf>) -> ZsuiResult<Self> {
+        let path = validate_text_document_path(path.into(), "text_document.open.path")?;
+        let bytes = fs::read(&path)
+            .map_err(|error| ZsuiError::host("text_document.open", error.to_string()))?;
+        let (text, encoding) = decode_text_document(&bytes)
+            .map_err(|message| ZsuiError::host("text_document.open", message))?;
+        Ok(Self {
+            path: Some(path),
+            text,
+            dirty: false,
+            encoding,
+        })
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub const fn encoding(&self) -> ZsTextDocumentEncoding {
+        self.encoding
+    }
+
+    pub fn replace_text(&mut self, text: impl Into<String>) -> bool {
+        let text = text.into();
+        if self.text == text {
+            return false;
+        }
+        self.text = text;
+        self.dirty = true;
+        true
+    }
+
+    pub fn save(&mut self) -> ZsuiResult<()> {
+        let path = self.path.as_deref().ok_or_else(|| {
+            ZsuiError::invalid_spec(
+                "text_document.path",
+                "save requires an existing path or save_as",
+            )
+        })?;
+        write_utf8_text_document(path, &self.text)?;
+        self.dirty = false;
+        self.encoding = ZsTextDocumentEncoding::Utf8;
+        Ok(())
+    }
+
+    pub fn save_as(&mut self, path: impl Into<PathBuf>) -> ZsuiResult<()> {
+        let path = validate_text_document_path(path.into(), "text_document.save_as.path")?;
+        write_utf8_text_document(&path, &self.text)?;
+        self.path = Some(path);
+        self.dirty = false;
+        self.encoding = ZsTextDocumentEncoding::Utf8;
+        Ok(())
+    }
+
+    pub fn display_name(&self) -> String {
+        self.path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".to_string())
+    }
+}
+
+fn validate_text_document_path(path: PathBuf, field: &'static str) -> ZsuiResult<PathBuf> {
+    if path.as_os_str().is_empty() {
+        Err(ZsuiError::invalid_spec(field, "path must not be empty"))
+    } else {
+        Ok(path)
+    }
+}
+
+fn write_utf8_text_document(path: &Path, text: &str) -> ZsuiResult<()> {
+    fs::write(path, text.as_bytes())
+        .map_err(|error| ZsuiError::host("text_document.save", error.to_string()))
+}
+
+fn decode_text_document(bytes: &[u8]) -> Result<(String, ZsTextDocumentEncoding), String> {
+    if let Some(rest) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
+        return String::from_utf8(rest.to_vec())
+            .map(|text| (text, ZsTextDocumentEncoding::Utf8))
+            .map_err(|error| error.to_string());
+    }
+    if let Some(rest) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        return decode_utf16_text_document(rest, u16::from_le_bytes)
+            .map(|text| (text, ZsTextDocumentEncoding::Utf16LittleEndian));
+    }
+    if let Some(rest) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        return decode_utf16_text_document(rest, u16::from_be_bytes)
+            .map(|text| (text, ZsTextDocumentEncoding::Utf16BigEndian));
+    }
+    String::from_utf8(bytes.to_vec())
+        .map(|text| (text, ZsTextDocumentEncoding::Utf8))
+        .map_err(|error| format!("the file is not valid UTF-8 or BOM-tagged UTF-16: {error}"))
+}
+
+fn decode_utf16_text_document(bytes: &[u8], decode: fn([u8; 2]) -> u16) -> Result<String, String> {
+    if bytes.len() % 2 != 0 {
+        return Err("UTF-16 file has an odd byte length".to_string());
+    }
+    let units = bytes
+        .chunks_exact(2)
+        .map(|pair| decode([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16(&units).map_err(|error| error.to_string())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsDocumentShellCommand {
@@ -661,7 +832,37 @@ fn caption_style(color: ColorRole, align: HorizontalAlign) -> SemanticTextStyle 
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
     use super::*;
+
+    static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(1);
+
+    struct TempFile(PathBuf);
+
+    impl TempFile {
+        fn new() -> Self {
+            Self(std::env::temp_dir().join(format!(
+                "zsui-text-document-{}-{}.txt",
+                std::process::id(),
+                NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed)
+            )))
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
 
     fn surface() -> Rect {
         Rect {
@@ -670,6 +871,63 @@ mod tests {
             width: 960,
             height: 640,
         }
+    }
+
+    #[test]
+    fn text_document_decodes_supported_unicode_encodings() {
+        let utf8 = ZsTextDocument::from_bytes(b"hello").unwrap();
+        assert_eq!(utf8.text(), "hello");
+        assert_eq!(utf8.encoding(), ZsTextDocumentEncoding::Utf8);
+
+        let little_endian = ZsTextDocument::from_bytes(&[0xff, 0xfe, b'h', 0, b'i', 0]).unwrap();
+        assert_eq!(little_endian.text(), "hi");
+        assert_eq!(
+            little_endian.encoding(),
+            ZsTextDocumentEncoding::Utf16LittleEndian
+        );
+
+        let big_endian = ZsTextDocument::from_bytes(&[0xfe, 0xff, 0, b'h', 0, b'i']).unwrap();
+        assert_eq!(big_endian.text(), "hi");
+        assert_eq!(
+            big_endian.encoding(),
+            ZsTextDocumentEncoding::Utf16BigEndian
+        );
+    }
+
+    #[test]
+    fn text_document_tracks_dirty_state_only_when_text_changes() {
+        let mut document = ZsTextDocument::untitled("draft");
+
+        assert!(!document.replace_text("draft"));
+        assert!(!document.is_dirty());
+        assert!(document.replace_text("changed"));
+        assert!(document.is_dirty());
+        assert!(matches!(
+            document.save(),
+            Err(ZsuiError::InvalidSpec { field, .. }) if field == "text_document.path"
+        ));
+    }
+
+    #[test]
+    fn text_document_save_as_is_transactional_and_writes_utf8() {
+        let target = TempFile::new();
+        let mut document = ZsTextDocument::from_bytes(&[0xff, 0xfe, b'h', 0, b'i', 0]).unwrap();
+        document.replace_text("保存");
+
+        assert!(document.save_as(target.path().join("nested")).is_err());
+        assert_eq!(document.path(), None);
+        assert!(document.is_dirty());
+
+        document.save_as(target.path()).unwrap();
+
+        assert_eq!(document.path(), Some(target.path()));
+        assert_eq!(
+            document.display_name(),
+            target.path().file_name().unwrap().to_string_lossy()
+        );
+        assert!(!document.is_dirty());
+        assert_eq!(document.encoding(), ZsTextDocumentEncoding::Utf8);
+        assert_eq!(fs::read(target.path()).unwrap(), "保存".as_bytes());
     }
 
     #[test]

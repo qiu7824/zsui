@@ -36,6 +36,9 @@ history remain authoritative for implementation status.
 - Do not introduce a control inheritance hierarchy, string event bus, global
   mutable widget registry or an unrelated reactive runtime.
 - Demos validate framework capability; they must not define the architecture.
+- The optional document-shell boundary owns reusable `ZsTextDocument` file
+  decoding, explicit dirty state and transactional UTF-8 save/save-as. Native
+  file pickers and close-confirmation policy remain host/application concerns.
 
 ## Native platform bar
 

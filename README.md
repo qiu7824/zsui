@@ -339,7 +339,7 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | --- | --- | --- |
 | 导航/卡片外壳 | 左侧导航、右侧内容、分组卡片、设置项、说明、操作区、滚动条 | `settings` / `full` |
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
-| 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
+| 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域、UTF-8/UTF-16 文本加载与事务式保存 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
 | 基础 View | 文本、按钮、保持状态按钮、强类型二维 Grid、响应式 GridView、RGBA ColorPicker、键盘优先 CommandPalette、文本/密码输入、附着式提示、模态对话框、非模态 Toast、目标式 TeachingTip、行内 InfoBar、路径式 BreadcrumbBar、复选、开关、滑块、可编辑数值框、单选、进度条/进度环、组合框、自绘日期/时间选择、标签页、树、数据表格、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
@@ -581,7 +581,7 @@ Linux/macOS 桌面目标。
 ## 当前边界
 
 - Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器、文件对话框和文档生命周期服务仍需继续收口
+- 通用文本编辑器和文件对话框仍需继续收口；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
 - DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
 - 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块

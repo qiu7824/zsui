@@ -373,7 +373,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["style"],
-            "self-drawn document tab, command bar, editor frame and status layout",
+            "self-drawn document chrome plus reusable UTF-8/UTF-16 text document lifecycle",
         ),
         ZsuiCargoFeature::new(
             "calculator",
