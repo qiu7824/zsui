@@ -522,6 +522,7 @@ fn main() -> ZsuiResult<()> {
         .size(960, 680)
         .min_size(640, 440)
         .menu(notepad_menu())
+        .on_close_requested(ZsDocumentShellCommand::Close.to_command())
         .stateful_view_with_app_commands(shared.clone(), view, update, message_for_app_command)
         .app_command_executor(move |command| {
             let mut dialogs = NativeFileDialogService::new();
@@ -571,7 +572,8 @@ fn main() -> ZsuiResult<()> {
             .native_view_text_input("三平台自绘文本输入")
             .native_view_click(undo_point)
             .native_view_click(wrap_point)
-            .native_view_click(Point { x: 360, y: 220 });
+            .native_view_click(Point { x: 360, y: 220 })
+            .native_window_close_request();
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
         }
@@ -585,17 +587,25 @@ fn main() -> ZsuiResult<()> {
         if !report.visible_window_was_created()
             || report.native_view_text_input_count == 0
             || report.native_view_text_undo_count == 0
+            || report.native_view_window_close_request_count == 0
+            || report.native_view_window_close_veto_count == 0
             || !report.window_menu_command_routed
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, self-drawn text input or typed undo was not verified",
+                "native window, menu routing, self-drawn text input, typed undo or close veto was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {
             return Err(ZsuiError::host(
                 "notepad_smoke",
                 "runtime word-wrap toggle was not applied to shared state",
+            ));
+        }
+        if lock_state(&shared)?.pending != Some(PendingAction::Close) {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                "native title-bar close did not enter the shared unsaved-confirmation path",
             ));
         }
     } else {
@@ -647,6 +657,26 @@ mod tests {
         assert!(state.document.is_dirty());
         assert_eq!(state.pending, Some(PendingAction::Open));
         assert!(cx.commands().is_empty());
+    }
+
+    #[test]
+    fn dirty_document_vetoes_close_until_the_user_decides() {
+        let shared = Arc::new(Mutex::new(NotepadState::default()));
+        let mut cx = AppCx::new();
+        update(
+            &mut shared.clone(),
+            Msg::DocumentChanged("changed".to_string()),
+            &mut cx,
+        );
+        update(
+            &mut shared.clone(),
+            Msg::Command(ZsDocumentShellCommand::Close),
+            &mut cx,
+        );
+
+        let state = shared.lock().unwrap();
+        assert_eq!(state.pending, Some(PendingAction::Close));
+        assert!(!cx.quit_requested());
     }
 
     #[test]

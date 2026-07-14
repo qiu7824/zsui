@@ -68,6 +68,8 @@ pub struct NativeHostSmokeInteractionReport {
     pub artifact_writer_opened_real_window: bool,
     pub native_window_created_count: usize,
     pub close_requested_count: usize,
+    pub native_view_window_close_request_count: usize,
+    pub native_view_window_close_veto_count: usize,
     pub exited_by_auto_close: bool,
     pub native_window_events: Vec<String>,
     pub screenshot_captured: bool,
@@ -192,6 +194,8 @@ impl NativeHostSmokeInteractionReport {
             artifact_writer_opened_real_window: false,
             native_window_created_count: 0,
             close_requested_count: 0,
+            native_view_window_close_request_count: 0,
+            native_view_window_close_veto_count: 0,
             exited_by_auto_close: false,
             native_window_events: Vec::new(),
             screenshot_captured: false,
@@ -347,6 +351,13 @@ impl NativeHostSmokeInteractionReport {
             if report.window_menu_command_routed {
                 notes.push("window menu command routing was exercised".to_string());
             }
+        }
+        if report.native_view_window_close_request_count > 0 {
+            notes.push(format!(
+                "native window close routing observed {} request(s) and vetoed {}",
+                report.native_view_window_close_request_count,
+                report.native_view_window_close_veto_count
+            ));
         }
         if report.native_view_click_count > 0 {
             notes.push(format!(
@@ -674,6 +685,8 @@ impl NativeHostSmokeInteractionReport {
             artifact_writer_opened_real_window: report.visible_window_was_created(),
             native_window_created_count: report.created_window_count,
             close_requested_count: report.close_requested_count,
+            native_view_window_close_request_count: report.native_view_window_close_request_count,
+            native_view_window_close_veto_count: report.native_view_window_close_veto_count,
             exited_by_auto_close: report.exited_by_auto_close,
             native_window_events: report.events.clone(),
             screenshot_captured: report.screenshot_captured,
@@ -1373,6 +1386,8 @@ mod tests {
             window_menu_command_routed: false,
             window_menu_command_error: None,
             close_requested_count: 0,
+            native_view_window_close_request_count: 1,
+            native_view_window_close_veto_count: 1,
             auto_close_after_ms: 10,
             exited_by_auto_close: true,
             startup_error: None,
@@ -1517,6 +1532,8 @@ mod tests {
             .missing_required_artifacts
             .contains(&"window.png".to_string()));
         assert!(interaction_json.contains("\"artifact_writer_opened_real_window\": true"));
+        assert!(interaction_json.contains("\"native_view_window_close_request_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_window_close_veto_count\": 1"));
         assert!(interaction_json.contains("\"status_item_created\": true"));
         assert!(interaction_json.contains("\"status_menu_command_routed\": true"));
         assert!(interaction_json.contains("\"status_menu_popup_destroyed\": true"));

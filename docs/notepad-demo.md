@@ -37,6 +37,10 @@ framework architecture.
   `NSOpenPanel`/`NSSavePanel`, or GTK4 `FileChooserNative` behind one safe API.
 - File dialogs and filesystem I/O execute after the live-view lock is released.
   A successful external effect refreshes the shared view before native repaint.
+- `on_close_requested(ZsDocumentShellCommand::Close.to_command())` routes the
+  Win32, AppKit or GTK4 title-bar close affordance into the same typed update as
+  the menu/button command. Dirty state vetoes the native close until the user
+  chooses Save, Discard or Cancel; clean state approves it with `AppCx::quit()`.
 - The dirty-document decision is an in-view, self-drawn confirmation surface;
   it does not introduce a second platform widget tree.
 
@@ -60,10 +64,12 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo -
 
 The smoke requires a visible native window, a routed native menu command, real
 text input through the self-drawn editor and a typed Undo routed from the
-self-drawn command bar back to that editor. It also toggles word wrap and
-verifies the updated shared application state. On non-Windows targets the same
-source is compiled against the AppKit or GTK4 host; target runtime evidence is
-tracked separately and is not inferred from cross-compilation.
+self-drawn command bar back to that editor. It also toggles word wrap, sends a
+real title-bar close request while the document is dirty, verifies that the
+request is vetoed and captures the shared unsaved-confirmation surface. On
+non-Windows targets the same source is compiled against the AppKit or GTK4
+host; target runtime evidence is tracked separately and is not inferred from
+cross-compilation.
 
 ## Current functional boundary
 
@@ -78,7 +84,7 @@ tracked separately and is not inferred from cross-compilation.
 | Caret-aware line/column, line count, character count and encoding status | implemented |
 | Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | implemented |
-| Intercepting the operating-system window-close button | pending shared close-request message |
+| Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
 
 Commands still outside the shared editor contract are not placed in the menu.
@@ -94,11 +100,12 @@ service, but the acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 680 nonblank lines,
+The shared acceptance application is one source file with 708 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 52
-lines (7.1%) smaller while adding one cross-platform source path, typed caret
-status, native menus, shared editing commands and runtime word-wrap coverage.
+files with 732 nonblank lines, so the checked-in application surface is 24
+lines (3.3%) smaller while adding one cross-platform source path, typed caret
+status, native menus, shared editing commands, runtime word-wrap coverage and
+native close-request interception.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

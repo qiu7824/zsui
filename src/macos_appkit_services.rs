@@ -31,6 +31,7 @@ use crate::{
 
 struct ZsuiAppKitRuntimeDelegateIvars {
     open_windows: Cell<usize>,
+    close_handlers: HashMap<usize, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
 }
 
 define_class!(
@@ -44,6 +45,14 @@ define_class!(
     unsafe impl NSApplicationDelegate for ZsuiAppKitRuntimeDelegate {}
 
     unsafe impl NSWindowDelegate for ZsuiAppKitRuntimeDelegate {
+        #[unsafe(method(windowShouldClose:))]
+        fn window_should_close(&self, sender: &NSWindow) -> bool {
+            self.ivars()
+                .close_handlers
+                .get(&(sender as *const NSWindow as usize))
+                .is_none_or(|handler| handler.dispatch_window_close_requested())
+        }
+
         #[unsafe(method(windowWillClose:))]
         fn window_will_close(&self, _notification: &NSNotification) {
             let remaining = self.ivars().open_windows.get().saturating_sub(1);
@@ -56,9 +65,14 @@ define_class!(
 );
 
 impl ZsuiAppKitRuntimeDelegate {
-    fn new(mtm: MainThreadMarker, open_windows: usize) -> Retained<Self> {
+    fn new(
+        mtm: MainThreadMarker,
+        open_windows: usize,
+        close_handlers: HashMap<usize, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
+    ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitRuntimeDelegateIvars {
             open_windows: Cell::new(open_windows),
+            close_handlers,
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -104,7 +118,17 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         }
     }
 
-    let delegate = ZsuiAppKitRuntimeDelegate::new(mtm, ids.len());
+    let close_handlers = ids
+        .iter()
+        .filter_map(|id| {
+            window_service
+                .windows
+                .get(id)
+                .zip(window_service.view_hosts.get(id))
+        })
+        .map(|(window, host)| (Retained::as_ptr(window) as usize, host.clone()))
+        .collect();
+    let delegate = ZsuiAppKitRuntimeDelegate::new(mtm, ids.len(), close_handlers);
     let application = &window_service._application;
     let application_delegate: &ProtocolObject<dyn NSApplicationDelegate> =
         ProtocolObject::from_ref(&*delegate);

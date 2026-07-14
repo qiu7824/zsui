@@ -504,6 +504,28 @@ impl LinuxGtkDrawViewHost {
             &self.runtime_timer,
         );
     }
+
+    pub(crate) fn dispatch_window_close_requested(&self) -> bool {
+        let report = self.runtime.borrow_mut().dispatch_window_close_requested();
+        let allow = !report.handled || report.quit_requested;
+        apply_linux_gtk_input_report(
+            report,
+            &self.area,
+            &self.plan,
+            &self.runtime,
+            &self.ime,
+            self.application.as_ref(),
+        );
+        schedule_linux_gtk_runtime_tick(
+            &self.area,
+            &self.plan,
+            &self.runtime,
+            &self.ime,
+            self.application.clone(),
+            &self.runtime_timer,
+        );
+        allow
+    }
 }
 
 fn schedule_linux_gtk_runtime_tick(

@@ -68,6 +68,16 @@ update function, rebuild the shared draw plan and request repaint. Unmapped
 commands still use the ordinary application command executor, and `Quit`
 retains native host handling.
 
+Register operating-system title-bar close handling with
+`on_close_requested(command)`. Win32 routes `WM_CLOSE`, AppKit implements
+`windowShouldClose:`, and GTK4 connects `close-request`; all three dispatch the
+registered `Command` through the same `Command -> Option<Msg>` mapper. If the
+command is unmapped, the host preserves normal toolkit close behavior. If it
+is mapped, the update must call `AppCx::quit()` to approve closing; otherwise
+the request is vetoed after applying and repainting any state change such as an
+unsaved-document confirmation. Never expose the native sender/window object to
+application code or keep a second dirty-state policy in a backend.
+
 Application code can use `NativeFileDialogService` with the same
 `FileDialogSpec`/`SaveFileDialogSpec` and owned `PathBuf` values on all three
 desktop targets. The facade selects Win32, AppKit or GTK4 internally and

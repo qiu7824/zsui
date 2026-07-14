@@ -586,6 +586,18 @@ impl MacosAppKitDrawViewHost {
             .dispatch_app_command(command);
         self.view.apply_input_report(report);
     }
+
+    pub(crate) fn dispatch_window_close_requested(&self) -> bool {
+        let report = self
+            .view
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_window_close_requested();
+        let allow = !report.handled || report.quit_requested;
+        self.view.apply_input_report(report);
+        allow
+    }
 }
 
 pub(crate) fn install_macos_appkit_draw_plan(

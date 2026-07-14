@@ -133,6 +133,7 @@ pub struct LinuxGtkWindowService {
     application: gtk::Application,
     windows: HashMap<WindowId, gtk::ApplicationWindow>,
     view_hosts: HashMap<WindowId, crate::linux_gtk_renderer::LinuxGtkDrawViewHost>,
+    close_handlers: HashMap<WindowId, gtk::glib::SignalHandlerId>,
     next_window_id: u64,
 }
 
@@ -155,6 +156,7 @@ impl LinuxGtkWindowService {
             application,
             windows: HashMap::new(),
             view_hosts: HashMap::new(),
+            close_handlers: HashMap::new(),
             next_window_id: 1,
         }
     }
@@ -187,6 +189,19 @@ impl LinuxGtkWindowService {
             plan,
             runtime,
         );
+        let native_window = self.window(window, "gtk_set_window_draw_plan")?.clone();
+        if let Some(handler) = self.close_handlers.remove(&window) {
+            native_window.disconnect(handler);
+        }
+        let close_host = view_host.clone();
+        let handler = native_window.connect_close_request(move |_| {
+            if close_host.dispatch_window_close_requested() {
+                gtk::glib::Propagation::Proceed
+            } else {
+                gtk::glib::Propagation::Stop
+            }
+        });
+        self.close_handlers.insert(window, handler);
         self.view_hosts.insert(window, view_host);
         Ok(())
     }
@@ -211,6 +226,11 @@ impl LinuxGtkWindowService {
 
 impl Drop for LinuxGtkWindowService {
     fn drop(&mut self) {
+        for (id, handler) in self.close_handlers.drain() {
+            if let Some(window) = self.windows.get(&id) {
+                window.disconnect(handler);
+            }
+        }
         self.view_hosts.clear();
         for (_, window) in self.windows.drain() {
             window.close();
@@ -283,6 +303,9 @@ impl WindowService for LinuxGtkWindowService {
     fn close_window(&mut self, window: WindowId) -> ZsuiResult<()> {
         ensure_gtk_main_thread("gtk_close_window")?;
         self.view_hosts.remove(&window);
+        if let Some(handler) = self.close_handlers.remove(&window) {
+            self.window(window, "gtk_close_window")?.disconnect(handler);
+        }
         let window = self.windows.remove(&window).ok_or_else(|| {
             ZsuiError::host(
                 "gtk_close_window",

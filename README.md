@@ -497,7 +497,8 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
 它用同一份 Rust `State / Msg / view / update` 代码运行在 Win32、AppKit 和 GTK4
-原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，不使用 WebView。
+原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，并把三平台标题栏关闭
+统一路由到强类型未保存确认；不使用 WebView。
 [验收与测量说明](docs/notepad-demo.md)记录了能力边界、代码量和验证方法。
 
 ### 现代计算器

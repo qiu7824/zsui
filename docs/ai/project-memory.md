@@ -55,6 +55,13 @@ history remain authoritative for implementation status.
   mapping stays platform-neutral; Win32, AppKit and GTK4 dispatch through the
   owned live-view host, rebuild the shared draw plan and request native repaint
   without exposing a raw menu id, handle or event loop.
+- Applications register title-bar close policy with
+  `on_close_requested(Command)`. Win32 `WM_CLOSE`, AppKit
+  `windowShouldClose:` and GTK4 `close-request` route that command through the
+  same typed application update. An unmapped request keeps normal OS close
+  behavior; a mapped request is vetoed unless the update calls `AppCx::quit()`.
+  Test-only auto-close may bypass the policy, but application close buttons and
+  menus must use the same command so dirty-document policy has one path.
 - Application command executors run outside live-view locks. After a successful
   external effect, every desktop host refreshes the shared view, interaction
   plan and draw plan before repaint so modal dialogs and file I/O cannot leave

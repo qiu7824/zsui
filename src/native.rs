@@ -679,6 +679,7 @@ pub enum NativeViewSmokeInput {
     Text(String),
     KeyDown(NativeViewKey),
     Scroll { point: Point, delta_y: i32 },
+    WindowCloseRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -814,6 +815,12 @@ impl NativeWindowSmokeRunOptions {
         }
         self
     }
+
+    pub fn native_window_close_request(mut self) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::WindowCloseRequest);
+        self
+    }
 }
 
 impl Default for NativeWindowSmokeRunOptions {
@@ -832,6 +839,8 @@ pub struct NativeWindowSmokeRunReport {
     pub window_menu_command_routed: bool,
     pub window_menu_command_error: Option<String>,
     pub close_requested_count: usize,
+    pub native_view_window_close_request_count: usize,
+    pub native_view_window_close_veto_count: usize,
     pub auto_close_after_ms: u64,
     pub exited_by_auto_close: bool,
     pub startup_error: Option<String>,
@@ -968,6 +977,8 @@ impl NativeWindowSmokeRunReport {
             window_menu_command_routed: false,
             window_menu_command_error: None,
             close_requested_count: 0,
+            native_view_window_close_request_count: 0,
+            native_view_window_close_veto_count: 0,
             auto_close_after_ms: options.auto_close_after_ms,
             exited_by_auto_close: false,
             startup_error: None,
@@ -1160,6 +1171,7 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(feature = "password-box")]
     password_peek: Option<crate::WidgetId>,
     ime_preedit: Option<NativeViewImePreedit>,
+    window_close_request_command: Option<Command>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     defer_app_command_execution: bool,
     pending_app_commands: Vec<Command>,
@@ -1229,6 +1241,8 @@ impl std::fmt::Debug for NativeViewImePreedit {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NativeViewInputDispatchReport {
     pub handled: bool,
+    pub window_close_request_count: usize,
+    pub window_close_veto_count: usize,
     pub surface_changed: bool,
     pub focus_visual_changed: bool,
     #[cfg(any(
@@ -1377,6 +1391,7 @@ impl NativeViewInputRuntime {
         interaction_plan: Option<ViewInteractionPlan>,
         ui_command_view: Option<ViewNode<UiCommand>>,
         live_view: Option<SharedLiveViewRuntime>,
+        window_close_request_command: Option<Command>,
         app_command_executor: Option<SharedAppCommandExecutor>,
         ui_command_executor: Option<SharedUiCommandExecutor>,
     ) -> Self {
@@ -1448,6 +1463,7 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "password-box")]
             password_peek: None,
             ime_preedit: None,
+            window_close_request_command,
             app_command_executor,
             defer_app_command_execution: false,
             pending_app_commands: Vec::new(),
@@ -5676,6 +5692,22 @@ impl NativeViewInputRuntime {
         report
     }
 
+    pub(crate) fn dispatch_window_close_requested(&mut self) -> NativeViewInputDispatchReport {
+        let Some(command) = self.window_close_request_command.clone() else {
+            return NativeViewInputDispatchReport {
+                window_close_request_count: 1,
+                hit_target_count: self.hit_target_count(),
+                ..NativeViewInputDispatchReport::default()
+            };
+        };
+        let mut report = self.dispatch_app_command(command);
+        report.window_close_request_count = 1;
+        if report.handled && !report.quit_requested {
+            report.window_close_veto_count = 1;
+        }
+        report
+    }
+
     pub(crate) fn defer_app_command_execution(&mut self) {
         self.defer_app_command_execution = true;
     }
@@ -5716,6 +5748,7 @@ impl NativeViewInputRuntime {
             Some(executor) => route.app_command_executor(executor.clone()),
             None => route,
         };
+        let route = route.window_close_request_command(self.window_close_request_command.clone());
         Some(match &self.ui_command_executor {
             Some(executor) => route.ui_command_executor(executor.clone()),
             None => route,
@@ -5859,6 +5892,8 @@ fn record_windows_win32_view_input_report(
     report: &mut NativeWindowSmokeRunReport,
     input: &crate::windows_win32_host::WindowsWin32ViewInputDispatchReport,
 ) {
+    report.native_view_window_close_request_count += input.window_close_request_count;
+    report.native_view_window_close_veto_count += input.window_close_veto_count;
     report.native_view_hit_target_count = input.hit_target_count;
     report.native_view_click_count += input.click_count;
     report.native_view_event_count += input.event_count;
@@ -5989,7 +6024,7 @@ fn post_windows_native_view_input(
 ) {
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+        PostMessageW, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
         WM_MOUSEWHEEL,
     };
 
@@ -6038,6 +6073,9 @@ fn post_windows_native_view_input(
                 }),
             );
         },
+        NativeViewSmokeInput::WindowCloseRequest => unsafe {
+            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        },
     }
 }
 
@@ -6075,6 +6113,7 @@ pub struct NativeWindowBuilder {
     view_layout_node_count: usize,
     shell_runtime: Option<ZsShellRuntime>,
     live_view_runtime: Option<SharedLiveViewRuntime>,
+    window_close_request_command: Option<Command>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
 }
@@ -6089,6 +6128,7 @@ impl PartialEq for NativeWindowBuilder {
             && self.view_layout_node_count == other.view_layout_node_count
             && self.shell_runtime == other.shell_runtime
             && self.live_view_runtime == other.live_view_runtime
+            && self.window_close_request_command == other.window_close_request_command
             && self.app_command_executor == other.app_command_executor
             && self.ui_command_executor == other.ui_command_executor
     }
@@ -6106,6 +6146,7 @@ impl NativeWindowBuilder {
             view_layout_node_count: 0,
             shell_runtime: None,
             live_view_runtime: None,
+            window_close_request_command: None,
             app_command_executor: None,
             ui_command_executor: None,
         }
@@ -6183,6 +6224,15 @@ impl NativeWindowBuilder {
 
     pub fn menu(mut self, menu: MenuSpec) -> Self {
         self.window = self.window.menu(menu);
+        self
+    }
+
+    /// Routes a native title-bar close request through the stateful view's
+    /// typed application-command mapper. An unmapped command keeps normal OS
+    /// behavior; a mapped update approves closing by calling [`AppCx::quit`]
+    /// and otherwise vetoes the request.
+    pub fn on_close_requested(mut self, command: Command) -> Self {
+        self.window_close_request_command = Some(command);
         self
     }
 
@@ -6392,6 +6442,10 @@ impl NativeWindowBuilder {
         self.live_view_runtime.as_ref()
     }
 
+    pub fn native_window_close_request_command(&self) -> Option<&Command> {
+        self.window_close_request_command.as_ref()
+    }
+
     pub fn native_app_command_executor(&self) -> Option<&SharedAppCommandExecutor> {
         self.app_command_executor.as_ref()
     }
@@ -6449,6 +6503,7 @@ impl NativeWindowBuilder {
             self.view_interaction_plan.clone(),
             self.view_ui_command_tree.clone(),
             self.live_view_runtime.clone(),
+            self.window_close_request_command.clone(),
             self.app_command_executor.clone(),
             self.ui_command_executor.clone(),
         )
@@ -6530,6 +6585,11 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
 
     pub fn menu(mut self, menu: MenuSpec) -> Self {
         self.inner = self.inner.menu(menu);
+        self
+    }
+
+    pub fn on_close_requested(mut self, command: Command) -> Self {
+        self.inner = self.inner.on_close_requested(command);
         self
     }
 
@@ -6626,6 +6686,10 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
 
     pub fn window_spec(&self) -> &WindowSpec {
         self.inner.window_spec()
+    }
+
+    pub fn native_window_close_request_command(&self) -> Option<&Command> {
+        self.inner.native_window_close_request_command()
     }
 }
 
@@ -7436,6 +7500,7 @@ fn run_native_window_smoke_event_loop(
             thread::sleep(remaining);
         }
         for handle in close_handles {
+            crate::windows_win32_host::approve_windows_win32_window_close(handle as _);
             unsafe {
                 PostMessageW(handle as _, WM_CLOSE, 0, 0);
             }
@@ -8303,6 +8368,53 @@ mod tests {
             command,
             crate::NativeDrawCommand::Text(text) if text.text == "Opened from menu"
         )));
+    }
+
+    #[cfg(feature = "label")]
+    #[test]
+    fn native_window_close_request_uses_typed_update_to_veto_or_approve() {
+        #[derive(Clone)]
+        enum Msg {
+            Close,
+        }
+        struct State {
+            dirty: bool,
+        }
+        let close_command = Command::custom("document.close");
+        let build = |dirty| {
+            native_window("Close Request")
+                .on_close_requested(close_command.clone())
+                .stateful_view_with_app_commands(
+                    State { dirty },
+                    |_state| crate::text::<Msg>("Document"),
+                    |state, message, cx| match message {
+                        Msg::Close if !state.dirty => cx.quit(),
+                        Msg::Close => {}
+                    },
+                    |command| (command == &Command::custom("document.close")).then_some(Msg::Close),
+                )
+        };
+
+        let dirty = build(true);
+        assert_eq!(
+            dirty.native_window_close_request_command(),
+            Some(&close_command)
+        );
+        let dirty_report = dirty
+            .native_view_input_runtime()
+            .dispatch_window_close_requested();
+        assert!(dirty_report.handled);
+        assert!(!dirty_report.quit_requested);
+        assert_eq!(dirty_report.window_close_request_count, 1);
+        assert_eq!(dirty_report.window_close_veto_count, 1);
+
+        let clean_report = build(false)
+            .native_view_input_runtime()
+            .dispatch_window_close_requested();
+        assert!(clean_report.handled);
+        assert!(clean_report.quit_requested);
+        assert_eq!(clean_report.window_close_request_count, 1);
+        assert_eq!(clean_report.window_close_veto_count, 0);
     }
 
     #[cfg(all(feature = "label", feature = "button"))]
@@ -11046,6 +11158,8 @@ mod tests {
         assert_eq!(options.status_item, None);
         assert!(!options.require_status_item);
         assert_eq!(report.created_window_count, 0);
+        assert_eq!(report.native_view_window_close_request_count, 0);
+        assert_eq!(report.native_view_window_close_veto_count, 0);
         assert!(!report.status_item_requested);
         assert_eq!(report.status_menu_native_command_count, 0);
         assert!(!report.status_menu_command_routed);
@@ -11106,6 +11220,16 @@ mod tests {
         assert_eq!(
             options.native_view_inputs,
             vec![NativeViewSmokeInput::Drag { start, end }]
+        );
+    }
+
+    #[test]
+    fn native_window_smoke_options_preserve_close_request_sequence() {
+        let options = NativeWindowSmokeRunOptions::quick().native_window_close_request();
+
+        assert_eq!(
+            options.native_view_inputs,
+            vec![NativeViewSmokeInput::WindowCloseRequest]
         );
     }
 

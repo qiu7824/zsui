@@ -1925,6 +1925,8 @@ pub struct WindowsWin32ViewInputRoute {
     dpi: crate::Dpi,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
+    window_close_request_command: Option<Command>,
+    close_approved: bool,
     app_command_executor: Option<SharedAppCommandExecutor>,
     pending_app_commands: Vec<Command>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
@@ -2003,6 +2005,8 @@ impl WindowsWin32ViewInputRoute {
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
+            window_close_request_command: None,
+            close_approved: false,
             app_command_executor: None,
             pending_app_commands: Vec::new(),
             ui_command_executor: None,
@@ -2080,6 +2084,8 @@ impl WindowsWin32ViewInputRoute {
             dpi: crate::Dpi::standard(),
             pending_draw_plan: None,
             quit_requested: false,
+            window_close_request_command: None,
+            close_approved: false,
             app_command_executor: None,
             pending_app_commands: Vec::new(),
             ui_command_executor: None,
@@ -2092,6 +2098,11 @@ impl WindowsWin32ViewInputRoute {
 
     pub fn app_command_executor(mut self, executor: SharedAppCommandExecutor) -> Self {
         self.app_command_executor = Some(executor);
+        self
+    }
+
+    pub fn window_close_request_command(mut self, command: Option<Command>) -> Self {
+        self.window_close_request_command = command;
         self
     }
 
@@ -4718,6 +4729,30 @@ impl WindowsWin32ViewInputRoute {
         report
     }
 
+    fn dispatch_window_close_requested(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let Some(command) = self.window_close_request_command.clone() else {
+            return WindowsWin32ViewInputDispatchReport {
+                window_close_request_count: 1,
+                hit_target_count: self.hit_target_count(),
+                ..WindowsWin32ViewInputDispatchReport::default()
+            };
+        };
+        let mut report = self.dispatch_app_command(command);
+        report.window_close_request_count = 1;
+        report
+            .events
+            .push("win32_window_close_requested".to_string());
+        report
+    }
+
+    fn approve_next_close(&mut self) {
+        self.close_approved = true;
+    }
+
+    fn take_close_approved(&mut self) -> bool {
+        std::mem::take(&mut self.close_approved)
+    }
+
     fn dispatch_focus_traversal(
         &mut self,
         offset: isize,
@@ -6595,6 +6630,8 @@ impl WindowsWin32ViewInputRoute {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WindowsWin32ViewInputDispatchReport {
     pub handled: bool,
+    pub window_close_request_count: usize,
+    pub window_close_veto_count: usize,
     pub hit_target_count: usize,
     pub click_count: usize,
     pub pointer_down_count: usize,
@@ -6704,6 +6741,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
 impl WindowsWin32ViewInputDispatchReport {
     fn merge(&mut self, next: WindowsWin32ViewInputDispatchReport) {
         self.handled |= next.handled;
+        self.window_close_request_count += next.window_close_request_count;
+        self.window_close_veto_count += next.window_close_veto_count;
         self.hit_target_count = next.hit_target_count;
         self.click_count += next.click_count;
         self.pointer_down_count += next.pointer_down_count;
@@ -7074,6 +7113,14 @@ fn dispatch_windows_win32_window_view_input(
     hwnd: HWND,
     dispatch: impl FnOnce(&mut WindowsWin32ViewInputRoute) -> WindowsWin32ViewInputDispatchReport,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input_with_quit_policy(hwnd, dispatch, true)
+}
+
+fn dispatch_windows_win32_window_view_input_with_quit_policy(
+    hwnd: HWND,
+    dispatch: impl FnOnce(&mut WindowsWin32ViewInputRoute) -> WindowsWin32ViewInputDispatchReport,
+    post_close_on_quit: bool,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
     if hwnd.is_null() {
         return None;
     }
@@ -7141,12 +7188,69 @@ fn dispatch_windows_win32_window_view_input(
             InvalidateRect(hwnd, null(), 0);
         }
     }
-    if quit_requested {
+    if quit_requested && post_close_on_quit {
+        approve_windows_win32_window_close(hwnd);
         unsafe {
             PostMessageW(hwnd, WM_CLOSE, 0, 0);
         }
     }
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
+    Some(report)
+}
+
+pub fn approve_windows_win32_window_close(hwnd: HWND) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    let hwnd_value = hwnd as isize;
+    let mut routes = window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned");
+    let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) else {
+        return false;
+    };
+    record.route.approve_next_close();
+    true
+}
+
+fn take_windows_win32_window_close_approval(hwnd: HWND) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    let hwnd_value = hwnd as isize;
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter_mut()
+        .find(|record| record.hwnd == hwnd_value)
+        .is_some_and(|record| record.route.take_close_approved())
+}
+
+fn dispatch_windows_win32_window_close_requested(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    let mut report = dispatch_windows_win32_window_view_input_with_quit_policy(
+        hwnd,
+        WindowsWin32ViewInputRoute::dispatch_window_close_requested,
+        false,
+    )?;
+    if report.handled && !report.quit_requested {
+        report.window_close_veto_count = 1;
+        report.events.push("win32_window_close_vetoed".to_string());
+        let hwnd_value = hwnd as isize;
+        if let Some(record) = window_view_input_routes()
+            .lock()
+            .expect("window view input route registry should not be poisoned")
+            .iter_mut()
+            .find(|record| record.hwnd == hwnd_value)
+        {
+            record.report.window_close_veto_count += 1;
+            record
+                .report
+                .events
+                .push("win32_window_close_vetoed".to_string());
+        }
+    }
     Some(report)
 }
 
@@ -8086,6 +8190,17 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 WindowsWindowCreateParams::from_create_struct(lparam as *const CREATESTRUCTW);
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, create_params.role as isize);
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_CLOSE => {
+            if take_windows_win32_window_close_approval(hwnd) {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            } else if dispatch_windows_win32_window_close_requested(hwnd)
+                .is_some_and(|report| report.handled && !report.quit_requested)
+            {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
         }
         WM_NCDESTROY => {
             let role = WindowsWindowRole::from_create_param(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
