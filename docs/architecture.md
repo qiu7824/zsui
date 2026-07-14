@@ -209,6 +209,27 @@ providers, HDR/color-space management and AppKit/GTK target evidence remain
 explicit readiness work. This is a platform-informed first pass, not a claim
 of control-for-control WinUI 3 parity.
 
+The optional `command-palette` feature adds
+`command_palette(widget, open, query, items, page)` as a keyboard-first modal
+overlay. Applications own immutable command metadata, stable
+`ZsCommandPaletteItemId` identities, query, highlight and open state, then
+execute the typed invocation message themselves. ZSUI owns stable
+case-insensitive all-term substring filtering, a bounded eight-row render/hit
+plan, disabled-item skipping and the modal search focus scope; it never owns a
+global accelerator, persistence or product command behavior. Windows uses a
+Fluent/PowerToys launcher-like profile, macOS an NSSearchField/Spotlight-like
+profile and GTK a SearchEntry/list-popover-like profile. These are three
+platform-informed self-drawn metric sets, not wrapped child controls or one
+platform skin reused everywhere. The design follows
+[PowerToys Command Palette](https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview),
+[WinUI commanding](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/commanding),
+[AppKit NSSearchField](https://developer.apple.com/documentation/appkit/nssearchfield),
+[GTK4 SearchEntry](https://docs.gtk.org/gtk4/class.SearchEntry.html) and
+[GTK4 Popover](https://docs.gtk.org/gtk4/class.Popover.html). Fuzzy and
+multilingual ranking, recent-command storage, result virtualization,
+search-dialog/result-list accessibility semantics and AppKit/GTK target proof
+remain explicit readiness work.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

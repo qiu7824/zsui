@@ -18,6 +18,7 @@ use zsui::checkbox;
     all(feature = "progress", feature = "label"),
     all(feature = "progress-ring", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "command-palette", feature = "label"),
     all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
@@ -36,6 +37,8 @@ use zsui::checkbox;
 use zsui::column;
 #[cfg(feature = "combo")]
 use zsui::combo_box;
+#[cfg(all(feature = "command-palette", feature = "label"))]
+use zsui::command_palette;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
 #[cfg(all(feature = "progress", feature = "label"))]
@@ -59,6 +62,7 @@ use zsui::toggle_button;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "command-palette", feature = "label"),
     all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
@@ -83,6 +87,7 @@ use zsui::CommandId;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "command-palette", feature = "label"),
     all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
@@ -174,6 +179,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "command-palette", feature = "label"),
     all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
@@ -234,6 +240,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--auto-suggest-view" || arg == "--auto-suggest"),
         args.iter()
+            .any(|arg| arg == "--command-palette-view" || arg == "--command-palette"),
+        args.iter()
             .any(|arg| arg == "--tree-view" || arg == "--tree"),
         args.iter()
             .any(|arg| arg == "--gallery-view" || arg == "--gallery"),
@@ -290,6 +298,7 @@ fn run_smoke(
     include_progress_view: bool,
     include_progress_ring_view: bool,
     include_auto_suggest_view: bool,
+    include_command_palette_view: bool,
     include_tree_view: bool,
     include_gallery_view: bool,
     include_color_picker_view: bool,
@@ -354,6 +363,12 @@ fn run_smoke(
     #[cfg(not(all(feature = "auto-suggest", feature = "label")))]
     if include_auto_suggest_view {
         return Err("--auto-suggest-view requires the auto-suggest and label features".to_string());
+    }
+    #[cfg(not(all(feature = "command-palette", feature = "label")))]
+    if include_command_palette_view {
+        return Err(
+            "--command-palette-view requires the command-palette and label features".to_string(),
+        );
     }
     #[cfg(not(all(feature = "tree", feature = "label")))]
     if include_tree_view {
@@ -551,6 +566,13 @@ fn run_smoke(
             .native_view_click(Point { x: 480, y: 80 })
             .native_view_text_input("B");
     }
+    #[cfg(all(feature = "command-palette", feature = "label"))]
+    if include_command_palette_view {
+        smoke_options = smoke_options
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_text_input("settings")
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "tree", feature = "label"))]
     if include_tree_view {
         smoke_options = smoke_options
@@ -663,6 +685,8 @@ fn run_smoke(
         520,
         if include_date_picker_view {
             480
+        } else if include_command_palette_view {
+            620
         } else if include_gallery_view {
             464
         } else if include_color_picker_view {
@@ -701,6 +725,8 @@ fn run_smoke(
         attach_progress_ring_view(builder)
     } else if include_auto_suggest_view {
         attach_auto_suggest_view(builder)
+    } else if include_command_palette_view {
+        attach_command_palette_view(builder)
     } else if include_tree_view {
         attach_tree_view(builder)
     } else if include_gallery_view {
@@ -1145,6 +1171,111 @@ fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder
                 }
                 cx.ui_command(UiCommand::app(CommandId(
                     "zsui.native_smoke.auto_suggest_expanded",
+                )));
+            }
+        },
+    )
+}
+
+#[cfg(all(feature = "command-palette", feature = "label"))]
+#[derive(Clone)]
+enum CommandPaletteSmokeMsg {
+    Query(String),
+    Highlight(zsui::ZsCommandPaletteItemId),
+    Invoke(zsui::ZsCommandPaletteItemId),
+    Open(bool),
+}
+
+#[cfg(all(feature = "command-palette", feature = "label"))]
+struct CommandPaletteSmokeState {
+    query: String,
+    highlighted: Option<zsui::ZsCommandPaletteItemId>,
+    open: bool,
+}
+
+#[cfg(all(feature = "command-palette", feature = "label"))]
+fn attach_command_palette_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        CommandPaletteSmokeState {
+            query: String::new(),
+            highlighted: Some(1_u64.into()),
+            open: true,
+        },
+        |state| {
+            command_palette(
+                WidgetId::new(40),
+                state.open,
+                state.query.clone(),
+                [
+                    zsui::ZsCommandPaletteItem::new(1_u64, "Open file")
+                        .subtitle("Choose a document from disk")
+                        .icon(zsui::ZsIcon::File)
+                        .shortcut("Ctrl+O"),
+                    zsui::ZsCommandPaletteItem::new(2_u64, "Open settings")
+                        .keywords(["preferences", "configuration"])
+                        .icon(zsui::ZsIcon::Settings)
+                        .shortcut("Ctrl+,"),
+                    zsui::ZsCommandPaletteItem::new(3_u64, "New window")
+                        .icon(zsui::ZsIcon::Add)
+                        .shortcut("Ctrl+N"),
+                    zsui::ZsCommandPaletteItem::new(4_u64, "Save document")
+                        .icon(zsui::ZsIcon::Save)
+                        .shortcut("Ctrl+S"),
+                    zsui::ZsCommandPaletteItem::new(5_u64, "Copy")
+                        .icon(zsui::ZsIcon::Copy)
+                        .shortcut("Ctrl+C"),
+                    zsui::ZsCommandPaletteItem::new(6_u64, "Paste")
+                        .icon(zsui::ZsIcon::Paste)
+                        .shortcut("Ctrl+V"),
+                    zsui::ZsCommandPaletteItem::new(7_u64, "Toggle sidebar")
+                        .icon(zsui::ZsIcon::Sidebar),
+                    zsui::ZsCommandPaletteItem::new(8_u64, "Developer tools")
+                        .icon(zsui::ZsIcon::Tool),
+                    zsui::ZsCommandPaletteItem::new(9_u64, "Unavailable command").enabled(false),
+                ],
+                column([
+                    text::<CommandPaletteSmokeMsg>("ZSUI CommandPalette Smoke")
+                        .height(zsui::Dp::new(28.0)),
+                    text::<CommandPaletteSmokeMsg>("Press Ctrl+Shift+P in the application to open")
+                        .height(zsui::Dp::new(24.0)),
+                ])
+                .padding(zsui::Dp::new(24.0))
+                .gap(zsui::Dp::new(8.0)),
+            )
+            .highlighted_command(state.highlighted)
+            .command_palette_placeholder("Type a command")
+            .command_palette_no_results_text("No matching commands")
+            .on_command_palette_query_change(CommandPaletteSmokeMsg::Query)
+            .on_command_palette_highlight_change(CommandPaletteSmokeMsg::Highlight)
+            .on_command_palette_invoke(CommandPaletteSmokeMsg::Invoke)
+            .on_command_palette_open_change(CommandPaletteSmokeMsg::Open)
+        },
+        |state, message, cx| match message {
+            CommandPaletteSmokeMsg::Query(query) => {
+                state.query = query;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.command_palette_query",
+                )));
+            }
+            CommandPaletteSmokeMsg::Highlight(item) => {
+                state.highlighted = Some(item);
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.command_palette_highlight",
+                )));
+            }
+            CommandPaletteSmokeMsg::Invoke(item) => {
+                state.highlighted = Some(item);
+                // Keep the smoke surface visible after verifying the close event so
+                // the captured artifact still contains the component under test.
+                state.open = true;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.command_palette_invoke",
+                )));
+            }
+            CommandPaletteSmokeMsg::Open(_open) => {
+                state.open = true;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.command_palette_open",
                 )));
             }
         },
@@ -2004,6 +2135,11 @@ fn attach_combo_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "auto-suggest", feature = "label")))]
 fn attach_auto_suggest_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "command-palette", feature = "label")))]
+fn attach_command_palette_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

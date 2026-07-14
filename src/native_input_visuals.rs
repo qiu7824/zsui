@@ -330,6 +330,7 @@ pub(crate) fn decorate_native_focus_ring(
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -349,6 +350,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -385,6 +387,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
         || matches!(
             target.kind,
             ViewHitTargetKind::ColorPicker | ViewHitTargetKind::ColorPickerChannel { .. }
+        );
+    #[cfg(feature = "command-palette")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::CommandPaletteClear | ViewHitTargetKind::CommandPaletteItem { .. }
         );
     #[cfg(feature = "grid-view")]
     let supported = supported || matches!(target.kind, ViewHitTargetKind::GridViewItem { .. });
@@ -449,6 +457,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",

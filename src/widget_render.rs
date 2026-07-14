@@ -8,6 +8,7 @@ use crate::Point;
 #[cfg(any(
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -27,6 +28,7 @@ use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, Native
 #[cfg(any(
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "dialog",
     feature = "grid-view",
     feature = "info-bar",
@@ -43,6 +45,7 @@ use crate::{HorizontalAlign, TextWeight};
     not(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "command-palette",
         feature = "combo",
         feature = "date-picker",
         feature = "info-bar",
@@ -58,6 +61,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode};
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "combo",
     feature = "date-picker",
     feature = "info-bar",
@@ -72,6 +76,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "combo",
     feature = "date-picker",
     feature = "dialog",
@@ -6225,6 +6230,512 @@ pub fn zs_color_picker_popup_native_draw_plan(
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(feature = "command-palette")]
+pub const ZS_COMMAND_PALETTE_MAX_VISIBLE_ITEMS: usize = 8;
+
+#[cfg(feature = "command-palette")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsCommandPalettePlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "command-palette")]
+impl ZsCommandPalettePlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "command-palette")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsCommandPaletteMetrics {
+    pub preferred_width: Dp,
+    pub viewport_margin: Dp,
+    pub top_offset: Dp,
+    pub search_height: Dp,
+    pub row_height: Dp,
+    pub horizontal_padding: Dp,
+    pub icon_size: Dp,
+    pub icon_column_width: Dp,
+    pub shortcut_width: Dp,
+    pub surface_radius: Dp,
+    pub search_radius: Dp,
+    pub row_radius: Dp,
+}
+
+#[cfg(feature = "command-palette")]
+impl ZsCommandPaletteMetrics {
+    pub const fn for_platform(platform: ZsCommandPalettePlatformStyle) -> Self {
+        match platform {
+            ZsCommandPalettePlatformStyle::Windows => Self {
+                preferred_width: Dp::new(640.0),
+                viewport_margin: Dp::new(24.0),
+                top_offset: Dp::new(72.0),
+                search_height: Dp::new(52.0),
+                row_height: Dp::new(48.0),
+                horizontal_padding: Dp::new(12.0),
+                icon_size: Dp::new(20.0),
+                icon_column_width: Dp::new(36.0),
+                shortcut_width: Dp::new(112.0),
+                surface_radius: Dp::new(8.0),
+                search_radius: Dp::new(4.0),
+                row_radius: Dp::new(4.0),
+            },
+            ZsCommandPalettePlatformStyle::Macos => Self {
+                preferred_width: Dp::new(560.0),
+                viewport_margin: Dp::new(24.0),
+                top_offset: Dp::new(64.0),
+                search_height: Dp::new(48.0),
+                row_height: Dp::new(44.0),
+                horizontal_padding: Dp::new(12.0),
+                icon_size: Dp::new(18.0),
+                icon_column_width: Dp::new(32.0),
+                shortcut_width: Dp::new(96.0),
+                surface_radius: Dp::new(14.0),
+                search_radius: Dp::new(8.0),
+                row_radius: Dp::new(7.0),
+            },
+            ZsCommandPalettePlatformStyle::Gtk => Self {
+                preferred_width: Dp::new(560.0),
+                viewport_margin: Dp::new(24.0),
+                top_offset: Dp::new(72.0),
+                search_height: Dp::new(46.0),
+                row_height: Dp::new(44.0),
+                horizontal_padding: Dp::new(12.0),
+                icon_size: Dp::new(18.0),
+                icon_column_width: Dp::new(34.0),
+                shortcut_width: Dp::new(96.0),
+                surface_radius: Dp::new(12.0),
+                search_radius: Dp::new(9.0),
+                row_radius: Dp::new(7.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "command-palette")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsCommandPaletteRowRenderPlan {
+    pub item: crate::ZsCommandPaletteItemId,
+    pub bounds: Rect,
+    pub icon_bounds: Rect,
+    pub title_bounds: Rect,
+    pub subtitle_bounds: Option<Rect>,
+    pub shortcut_bounds: Rect,
+    pub highlighted: bool,
+    pub enabled: bool,
+}
+
+#[cfg(feature = "command-palette")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsCommandPaletteRenderPlan {
+    pub viewport: Rect,
+    pub surface: Rect,
+    pub search_bounds: Rect,
+    pub search_icon_bounds: Rect,
+    pub query_bounds: Rect,
+    pub clear_bounds: Option<Rect>,
+    pub rows: Vec<ZsCommandPaletteRowRenderPlan>,
+    pub empty_bounds: Option<Rect>,
+    pub first_visible_item: usize,
+    pub surface_radius: i32,
+    pub search_radius: i32,
+    pub row_radius: i32,
+    pub platform: ZsCommandPalettePlatformStyle,
+}
+
+#[cfg(feature = "command-palette")]
+pub fn zs_command_palette_render_plan(
+    viewport: Rect,
+    query: &str,
+    items: &[crate::ZsCommandPaletteItem],
+    highlighted: Option<crate::ZsCommandPaletteItemId>,
+    platform: ZsCommandPalettePlatformStyle,
+    dpi: Dpi,
+) -> ZsCommandPaletteRenderPlan {
+    let metrics = ZsCommandPaletteMetrics::for_platform(platform);
+    let margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
+    let top_offset = metrics.top_offset.to_px(dpi).round_i32().max(margin);
+    let width = metrics.preferred_width.to_px(dpi).round_i32().max(1).min(
+        viewport
+            .width
+            .saturating_sub(margin.saturating_mul(2))
+            .max(1),
+    );
+    let search_height = metrics.search_height.to_px(dpi).round_i32().max(1);
+    let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
+    let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(1);
+    let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(1);
+    let icon_column = metrics
+        .icon_column_width
+        .to_px(dpi)
+        .round_i32()
+        .max(icon_size);
+    let shortcut_width = metrics.shortcut_width.to_px(dpi).round_i32().max(0);
+    let filtered = crate::command_palette::filtered_command_palette_items(items, query);
+    let maximum_rows_by_viewport = viewport
+        .height
+        .saturating_sub(top_offset)
+        .saturating_sub(margin)
+        .saturating_sub(search_height)
+        .checked_div(row_height)
+        .unwrap_or_default()
+        .max(1) as usize;
+    let visible_count = filtered
+        .len()
+        .max(1)
+        .min(ZS_COMMAND_PALETTE_MAX_VISIBLE_ITEMS)
+        .min(maximum_rows_by_viewport);
+    let highlighted_index = highlighted.and_then(|highlighted| {
+        filtered
+            .iter()
+            .position(|candidate| candidate.id() == highlighted)
+    });
+    let maximum_first = filtered.len().saturating_sub(visible_count);
+    let first_visible_item = highlighted_index
+        .map(|index| {
+            index
+                .saturating_add(1)
+                .saturating_sub(visible_count)
+                .min(maximum_first)
+        })
+        .unwrap_or_default();
+    let surface_height = search_height.saturating_add(
+        row_height.saturating_mul(i32::try_from(visible_count).unwrap_or(i32::MAX)),
+    );
+    let surface = Rect {
+        x: viewport
+            .x
+            .saturating_add((viewport.width.saturating_sub(width)) / 2),
+        y: viewport.y.saturating_add(top_offset).min(
+            viewport
+                .y
+                .saturating_add(viewport.height)
+                .saturating_sub(surface_height)
+                .max(viewport.y),
+        ),
+        width,
+        height: surface_height.min(viewport.height.max(1)),
+    };
+    let search_bounds = Rect {
+        x: surface.x.saturating_add(padding),
+        y: surface.y.saturating_add(padding / 2),
+        width: surface
+            .width
+            .saturating_sub(padding.saturating_mul(2))
+            .max(1),
+        height: search_height.saturating_sub(padding).max(1),
+    };
+    let search_icon_bounds = Rect {
+        x: search_bounds
+            .x
+            .saturating_add((icon_column.saturating_sub(icon_size)) / 2),
+        y: search_bounds
+            .y
+            .saturating_add((search_bounds.height.saturating_sub(icon_size)) / 2),
+        width: icon_size,
+        height: icon_size,
+    };
+    let clear_bounds = (!query.is_empty()).then_some(Rect {
+        x: search_bounds
+            .x
+            .saturating_add(search_bounds.width)
+            .saturating_sub(icon_column),
+        y: search_bounds.y,
+        width: icon_column,
+        height: search_bounds.height,
+    });
+    let query_right = clear_bounds
+        .map(|clear| clear.x)
+        .unwrap_or_else(|| search_bounds.x.saturating_add(search_bounds.width));
+    let query_bounds = Rect {
+        x: search_bounds.x.saturating_add(icon_column),
+        y: search_bounds.y,
+        width: query_right
+            .saturating_sub(search_bounds.x.saturating_add(icon_column))
+            .max(0),
+        height: search_bounds.height,
+    };
+    let rows_y = surface.y.saturating_add(search_height);
+    let rows = filtered
+        .iter()
+        .skip(first_visible_item)
+        .take(visible_count)
+        .enumerate()
+        .map(|(visible_index, item)| {
+            let bounds = Rect {
+                x: surface.x.saturating_add(padding / 2),
+                y: rows_y.saturating_add(
+                    row_height.saturating_mul(i32::try_from(visible_index).unwrap_or(i32::MAX)),
+                ),
+                width: surface.width.saturating_sub(padding).max(1),
+                height: row_height,
+            };
+            let icon_bounds = Rect {
+                x: bounds
+                    .x
+                    .saturating_add((icon_column.saturating_sub(icon_size)) / 2),
+                y: bounds
+                    .y
+                    .saturating_add((bounds.height.saturating_sub(icon_size)) / 2),
+                width: icon_size,
+                height: icon_size,
+            };
+            let text_x = bounds.x.saturating_add(icon_column);
+            let text_right = bounds
+                .x
+                .saturating_add(bounds.width)
+                .saturating_sub(shortcut_width)
+                .saturating_sub(padding);
+            let has_subtitle = item.item_subtitle().is_some();
+            let title_bounds = Rect {
+                x: text_x,
+                y: if has_subtitle {
+                    bounds.y.saturating_add(scale(4, dpi))
+                } else {
+                    bounds.y
+                },
+                width: text_right.saturating_sub(text_x).max(0),
+                height: if has_subtitle {
+                    bounds.height / 2
+                } else {
+                    bounds.height
+                },
+            };
+            let subtitle_bounds = has_subtitle.then_some(Rect {
+                x: text_x,
+                y: bounds.y.saturating_add(bounds.height / 2),
+                width: text_right.saturating_sub(text_x).max(0),
+                height: (bounds.height / 2).saturating_sub(scale(3, dpi)),
+            });
+            let shortcut_bounds = Rect {
+                x: text_right,
+                y: bounds.y,
+                width: shortcut_width,
+                height: bounds.height,
+            };
+            ZsCommandPaletteRowRenderPlan {
+                item: item.id(),
+                bounds,
+                icon_bounds,
+                title_bounds,
+                subtitle_bounds,
+                shortcut_bounds,
+                highlighted: highlighted == Some(item.id()),
+                enabled: item.is_enabled(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let empty_bounds = filtered.is_empty().then_some(Rect {
+        x: surface
+            .x
+            .saturating_add(padding)
+            .saturating_add(icon_column),
+        y: rows_y,
+        width: surface
+            .width
+            .saturating_sub(padding.saturating_mul(2))
+            .saturating_sub(icon_column)
+            .max(0),
+        height: row_height,
+    });
+
+    ZsCommandPaletteRenderPlan {
+        viewport,
+        surface,
+        search_bounds,
+        search_icon_bounds,
+        query_bounds,
+        clear_bounds,
+        rows,
+        empty_bounds,
+        first_visible_item,
+        surface_radius: metrics.surface_radius.to_px(dpi).round_i32().max(0),
+        search_radius: metrics.search_radius.to_px(dpi).round_i32().max(0),
+        row_radius: metrics.row_radius.to_px(dpi).round_i32().max(0),
+        platform,
+    }
+}
+
+#[cfg(feature = "command-palette")]
+pub fn zs_command_palette_native_draw_plan(
+    plan: &ZsCommandPaletteRenderPlan,
+    query: &str,
+    placeholder: &str,
+    no_results_text: &str,
+    items: &[crate::ZsCommandPaletteItem],
+) -> NativeDrawPlan {
+    let scrim_alpha = match plan.platform {
+        ZsCommandPalettePlatformStyle::Windows => 56,
+        ZsCommandPalettePlatformStyle::Macos => 44,
+        ZsCommandPalettePlatformStyle::Gtk => 72,
+    };
+    let shadow = Rect {
+        x: plan.surface.x.saturating_sub(5),
+        y: plan.surface.y.saturating_add(3),
+        width: plan.surface.width.saturating_add(10),
+        height: plan.surface.height.saturating_add(8),
+    };
+    let mut commands = vec![
+        NativeDrawCommand::FillRect {
+            rect: plan.viewport,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: scrim_alpha,
+            },
+        },
+        NativeDrawCommand::RoundFill {
+            rect: shadow,
+            fill: NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 30,
+            },
+            radius: plan.surface_radius.saturating_add(5),
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.surface,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.surface_radius,
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.search_bounds,
+            fill: NativeDrawFill::Role(ColorRole::Control),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+            radius: plan.search_radius,
+        },
+        NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                ZsIcon::Search,
+                plan.search_icon_bounds,
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(ColorRole::SecondaryText),
+        ),
+    ];
+    let query_text = if query.is_empty() { placeholder } else { query };
+    let mut query_style = SemanticTextStyle::body();
+    query_style.color = if query.is_empty() {
+        ColorRole::SecondaryText
+    } else {
+        ColorRole::PrimaryText
+    };
+    commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+        query_text,
+        plan.query_bounds,
+        query_style,
+    )));
+    if let Some(clear) = plan.clear_bounds {
+        let size = clear.width.min(clear.height).min(16).max(1);
+        let icon = Rect {
+            x: clear
+                .x
+                .saturating_add((clear.width.saturating_sub(size)) / 2),
+            y: clear
+                .y
+                .saturating_add((clear.height.saturating_sub(size)) / 2),
+            width: size,
+            height: size,
+        };
+        commands.push(NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(ZsIcon::Close, icon, NativeIconColorMode::ThemeAware)
+                .with_color(ColorRole::SecondaryText),
+        ));
+    }
+    for row in &plan.rows {
+        let Some(item) = items.iter().find(|candidate| candidate.id() == row.item) else {
+            continue;
+        };
+        if row.highlighted {
+            commands.push(NativeDrawCommand::RoundFill {
+                rect: row.bounds,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 38,
+                },
+                radius: plan.row_radius,
+            });
+        }
+        if let Some(icon) = item.item_icon() {
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(icon, row.icon_bounds, NativeIconColorMode::ThemeAware)
+                    .with_color(if row.enabled {
+                        ColorRole::PrimaryText
+                    } else {
+                        ColorRole::DisabledText
+                    }),
+            ));
+        }
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            item.title(),
+            row.title_bounds,
+            SemanticTextStyle {
+                color: if row.enabled {
+                    ColorRole::PrimaryText
+                } else {
+                    ColorRole::DisabledText
+                },
+                weight: if row.highlighted {
+                    TextWeight::Semibold
+                } else {
+                    TextWeight::Regular
+                },
+                ..SemanticTextStyle::body()
+            },
+        )));
+        if let (Some(subtitle), Some(bounds)) = (item.item_subtitle(), row.subtitle_bounds) {
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                subtitle,
+                bounds,
+                SemanticTextStyle {
+                    role: TextRole::Caption,
+                    color: if row.enabled {
+                        ColorRole::SecondaryText
+                    } else {
+                        ColorRole::DisabledText
+                    },
+                    ..SemanticTextStyle::body()
+                },
+            )));
+        }
+        if let Some(shortcut) = item.shortcut_label() {
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                shortcut,
+                row.shortcut_bounds,
+                SemanticTextStyle {
+                    role: TextRole::Caption,
+                    color: if row.enabled {
+                        ColorRole::SecondaryText
+                    } else {
+                        ColorRole::DisabledText
+                    },
+                    horizontal_align: HorizontalAlign::End,
+                    ..SemanticTextStyle::body()
+                },
+            )));
+        }
+    }
+    if let Some(bounds) = plan.empty_bounds {
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            no_results_text,
+            bounds,
+            SemanticTextStyle {
+                color: ColorRole::SecondaryText,
+                ..SemanticTextStyle::body()
+            },
+        )));
+    }
+    NativeDrawPlan::new(commands)
+}
+
 #[cfg(feature = "dialog")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsContentDialogPlatformStyle {
@@ -8209,5 +8720,63 @@ mod tests {
             .channels
             .iter()
             .all(|row| row.channel != ZsColorChannel::Alpha));
+    }
+
+    #[cfg(feature = "command-palette")]
+    #[test]
+    fn command_palette_uses_distinct_platform_metrics_and_bounded_rows() {
+        let items = (0_u64..10)
+            .map(|index| {
+                crate::ZsCommandPaletteItem::new(index, format!("Command {index}"))
+                    .subtitle(format!("Description {index}"))
+                    .shortcut(format!("Ctrl+{index}"))
+                    .icon(ZsIcon::Search)
+                    .enabled(index != 2)
+            })
+            .collect::<Vec<_>>();
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 900,
+            height: 620,
+        };
+        let highlighted = crate::ZsCommandPaletteItemId::new(9);
+        let windows = zs_command_palette_render_plan(
+            viewport,
+            "",
+            &items,
+            Some(highlighted),
+            ZsCommandPalettePlatformStyle::Windows,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.surface.width, 640);
+        assert_eq!(windows.rows.len(), ZS_COMMAND_PALETTE_MAX_VISIBLE_ITEMS);
+        assert!(windows.first_visible_item > 0);
+        assert!(windows
+            .rows
+            .iter()
+            .any(|row| row.item == highlighted && row.highlighted));
+        assert!(windows.rows.iter().any(|row| !row.enabled));
+        let draw = zs_command_palette_native_draw_plan(
+            &windows,
+            "",
+            "Type a command",
+            "No results",
+            &items,
+        );
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::Search
+        )));
+
+        let macos = ZsCommandPaletteMetrics::for_platform(ZsCommandPalettePlatformStyle::Macos);
+        let gtk = ZsCommandPaletteMetrics::for_platform(ZsCommandPalettePlatformStyle::Gtk);
+        let windows_metrics =
+            ZsCommandPaletteMetrics::for_platform(ZsCommandPalettePlatformStyle::Windows);
+        assert!(windows_metrics.preferred_width.0 > macos.preferred_width.0);
+        assert!(windows_metrics.row_height.0 > gtk.row_height.0);
+        assert!(macos.surface_radius.0 > windows_metrics.surface_radius.0);
+        assert_ne!(macos.search_radius, gtk.search_radius);
     }
 }

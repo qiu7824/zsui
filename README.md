@@ -330,7 +330,7 @@ zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, feat
 ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定后继续拆分较大的
 控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
 删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
-`password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`color-picker`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
+`password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
 开启；`all-widgets` 和 `full` 只在应用显式选择时才会打包全部能力。
 
 ## 已有应用外壳
@@ -341,11 +341,11 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本、按钮、保持状态按钮、强类型二维 Grid、响应式 GridView、RGBA ColorPicker、文本/密码输入、附着式提示、模态对话框、非模态 Toast、目标式 TeachingTip、行内 InfoBar、路径式 BreadcrumbBar、复选、开关、滑块、可编辑数值框、单选、进度条/进度环、组合框、自绘日期/时间选择、标签页、树、数据表格、列表、滚动和强类型事件 | 对应 widget feature |
+| 基础 View | 文本、按钮、保持状态按钮、强类型二维 Grid、响应式 GridView、RGBA ColorPicker、键盘优先 CommandPalette、文本/密码输入、附着式提示、模态对话框、非模态 Toast、目标式 TeachingTip、行内 InfoBar、路径式 BreadcrumbBar、复选、开关、滑块、可编辑数值框、单选、进度条/进度环、组合框、自绘日期/时间选择、标签页、树、数据表格、列表、滚动和强类型事件 | 对应 widget feature |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 49 个桌面控件家族：44 个已有第一阶段运行面，3 个只有
-契约，2 个尚未开始。独立 `grid` feature 已提供固定/比例轨道、独立行列间距、
+组件目录当前记录 49 个桌面控件家族：45 个已有第一阶段运行面，3 个只有
+契约，1 个尚未开始。独立 `grid` feature 已提供固定/比例轨道、独立行列间距、
 强类型显式单元格/跨度、DPI 缩放以及共享绘制/命中几何。DatePicker 已具备强类型日期、范围约束、本地时区“今天”标记、
 窗口边缘自动翻转与水平约束的日历弹层、外部点击与焦点丢失关闭、点击与键盘路由、
 语义主题绘制、跨 Win32/AppKit/GTK4 的自绘悬停与按下/高对比度状态，以及 Windows
@@ -385,6 +385,18 @@ ColorDialogButton 式入口和 HSV 编辑面。三平台都走 ZSUI 的共享绘
 [Microsoft ColorPicker](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/color-picker)、
 [Apple color wells](https://developer.apple.com/design/human-interface-guidelines/color-wells) 与
 [GTK4 ColorDialogButton](https://docs.gtk.org/gtk4/class.ColorDialogButton.html)。
+独立 `command-palette` feature 提供 `command_palette(widget, open, query, items, page)`
+键盘优先模态命令面板。应用持有强类型命令 ID、显示元数据、查询、高亮和开关状态，
+并自行执行收到的命令；框架只做稳定的多词子串过滤、最多八行的共享绘制/命中、
+Up/Down/Home/End 高亮、Enter 调用、Escape/遮罩关闭和单一搜索焦点范围。禁用命令仍
+显示但不会被键盘选中。Windows 采用 Fluent/PowerToys 启动器式指标，macOS 采用
+Spotlight/NSSearchField 式紧凑指标，GTK 采用 SearchEntry/列表弹层式指标，三者均为
+各自平台惯例指导下的 ZSUI 自绘，不创建或驱动平台子控件。模糊/拼音排序、最近命令
+持久化、结果虚拟化、完整无障碍语义及 AppKit/GTK 目标机证据仍待完成。设计依据见
+[PowerToys Command Palette](https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview)、
+[WinUI commanding](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/commanding)、
+[AppKit NSSearchField](https://developer.apple.com/documentation/appkit/nssearchfield) 与
+[GTK4 SearchEntry](https://docs.gtk.org/gtk4/class.SearchEntry.html)。
 ToolTip 通过 `.tooltip(...)` 或 `.tooltip_spec(...)` 附着到具有稳定 ID 的节点，
 不增加命中目标，也不嵌入平台子控件。它按 Windows/macOS/GTK 内部指标自绘，支持
 延迟悬停、键盘焦点立即显示、自动翻转/窗口内约束和定时关闭；Windows 已有真实

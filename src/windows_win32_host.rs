@@ -2872,6 +2872,10 @@ impl WindowsWin32ViewInputRoute {
             .push(format!("win32_view_text_changed:{}", widget.0));
         if edit.text_changed {
             report.event_count = 1;
+            #[cfg(feature = "command-palette")]
+            if target.kind == crate::ViewHitTargetKind::CommandPalette {
+                report.command_palette_query_change_count = 1;
+            }
             #[cfg(feature = "auto-suggest")]
             if target.kind == crate::ViewHitTargetKind::AutoSuggestBox {
                 report.auto_suggest_expanded_change_count = usize::from(
@@ -3319,6 +3323,100 @@ impl WindowsWin32ViewInputRoute {
                 }
             }
         }
+        #[cfg(feature = "command-palette")]
+        if let Some(palette_target) = self
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::CommandPalette)
+        {
+            if self.focused_widget != Some(palette_target.widget) {
+                self.focus_target(palette_target, &mut report);
+            }
+            report.focused_widget = Some(palette_target.widget.0);
+            let Some(state) = self.widget_command_palette_state(palette_target.widget) else {
+                return report;
+            };
+            if !state.open {
+                return report;
+            }
+            let next = match virtual_key {
+                key if key == u32::from(VK_UP) => state.relative_highlight(-1),
+                key if key == u32::from(VK_DOWN) => state.relative_highlight(1),
+                key if key == u32::from(VK_HOME) => state.first_enabled(),
+                key if key == u32::from(VK_END) => state.last_enabled(),
+                _ => None,
+            };
+            if let Some(item) = next {
+                report.handled = true;
+                report.command_palette_highlight_change_count =
+                    usize::from(state.highlighted != Some(item));
+                report.event_count = usize::from(report.command_palette_highlight_change_count > 0);
+                if report.command_palette_highlight_change_count > 0 {
+                    report.events.push(format!(
+                        "win32_view_command_palette_highlight:{}:{}",
+                        palette_target.widget.0,
+                        item.get()
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::CommandPaletteHighlighted {
+                            widget: palette_target.widget,
+                            item,
+                        },
+                        &mut report,
+                    );
+                }
+                return report;
+            }
+            match virtual_key {
+                ZSUI_WIN32_VK_RETURN => {
+                    if let Some(item) = state.highlighted.or_else(|| state.first_enabled()) {
+                        report.handled = true;
+                        report.command_palette_invoke_count = 1;
+                        report.command_palette_open_change_count = 1;
+                        report.event_count = 1;
+                        report.events.push(format!(
+                            "win32_view_command_palette_invoke:{}:{}",
+                            palette_target.widget.0,
+                            item.get()
+                        ));
+                        self.dispatch_event(
+                            crate::ViewEvent::CommandPaletteInvoked {
+                                widget: palette_target.widget,
+                                item,
+                            },
+                            &mut report,
+                        );
+                        return report;
+                    }
+                }
+                key if key == u32::from(VK_ESCAPE) => {
+                    report.handled = true;
+                    report.command_palette_open_change_count = 1;
+                    report.event_count = 1;
+                    report.events.push(format!(
+                        "win32_view_command_palette_dismissed:{}",
+                        palette_target.widget.0
+                    ));
+                    self.dispatch_event(
+                        crate::ViewEvent::CommandPaletteOpenChanged {
+                            widget: palette_target.widget,
+                            open: false,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+                ZSUI_WIN32_VK_TAB => {
+                    report.handled = true;
+                    return report;
+                }
+                _ => {}
+            }
+        }
+
         #[cfg(feature = "dialog")]
         if let Some(dialog_target) = self
             .interaction_plan
@@ -4632,6 +4730,63 @@ impl WindowsWin32ViewInputRoute {
             );
             return;
         }
+        #[cfg(feature = "command-palette")]
+        match target.kind {
+            crate::ViewHitTargetKind::CommandPaletteItem { item } => {
+                report.command_palette_invoke_count = 1;
+                report.command_palette_open_change_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_command_palette_invoke:{}:{}",
+                    target.widget.0,
+                    item.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::CommandPaletteInvoked {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::CommandPaletteClear => {
+                report.command_palette_query_change_count = 1;
+                report.command_palette_clear_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_command_palette_cleared:{}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::TextChanged {
+                        widget: target.widget,
+                        value: String::new(),
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::CommandPaletteScrim => {
+                report.command_palette_open_change_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_command_palette_dismissed:{}",
+                    target.widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::CommandPaletteOpenChanged {
+                        widget: target.widget,
+                        open: false,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::CommandPalette => return,
+            _ => {}
+        }
+
         #[cfg(feature = "dialog")]
         match target.kind {
             crate::ViewHitTargetKind::ContentDialogButton { button } => {
@@ -5553,6 +5708,21 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "command-palette")]
+    fn widget_command_palette_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsCommandPaletteState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_command_palette_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_command_palette_state(widget))
+            })
+    }
+
     #[cfg(feature = "toast")]
     fn widget_toast_state(
         &self,
@@ -6165,6 +6335,11 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub table_invoke_count: usize,
     pub content_dialog_focus_change_count: usize,
     pub content_dialog_response_count: usize,
+    pub command_palette_query_change_count: usize,
+    pub command_palette_highlight_change_count: usize,
+    pub command_palette_invoke_count: usize,
+    pub command_palette_open_change_count: usize,
+    pub command_palette_clear_count: usize,
     pub toast_focus_change_count: usize,
     pub toast_response_count: usize,
     pub toast_timeout_count: usize,
@@ -6259,6 +6434,11 @@ impl WindowsWin32ViewInputDispatchReport {
         self.table_invoke_count += next.table_invoke_count;
         self.content_dialog_focus_change_count += next.content_dialog_focus_change_count;
         self.content_dialog_response_count += next.content_dialog_response_count;
+        self.command_palette_query_change_count += next.command_palette_query_change_count;
+        self.command_palette_highlight_change_count += next.command_palette_highlight_change_count;
+        self.command_palette_invoke_count += next.command_palette_invoke_count;
+        self.command_palette_open_change_count += next.command_palette_open_change_count;
+        self.command_palette_clear_count += next.command_palette_clear_count;
         self.toast_focus_change_count += next.toast_focus_change_count;
         self.toast_response_count += next.toast_response_count;
         self.toast_timeout_count += next.toast_timeout_count;
@@ -9375,6 +9555,84 @@ mod tests {
         });
         assert_eq!(cleared.auto_suggest_clear_count, 1);
         assert_eq!(route.widget_text_value(widget).as_deref(), Some(""));
+    }
+
+    #[test]
+    #[cfg(feature = "command-palette")]
+    fn window_view_input_route_filters_navigates_and_invokes_command_palette() {
+        fn query(_query: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.command_palette_query"))
+        }
+        fn highlight(_item: crate::ZsCommandPaletteItemId) -> UiCommand {
+            UiCommand::app(crate::CommandId(
+                "zsui.test.win32.command_palette_highlight",
+            ))
+        }
+        fn invoke(_item: crate::ZsCommandPaletteItemId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.command_palette_invoke"))
+        }
+        fn open(_open: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.command_palette_open"))
+        }
+
+        let widget = crate::WidgetId::new(341);
+        let first = crate::ZsCommandPaletteItemId::new(1);
+        let settings = crate::ZsCommandPaletteItemId::new(2);
+        let mut view = crate::command_palette(
+            widget,
+            true,
+            "",
+            [
+                crate::ZsCommandPaletteItem::new(first, "Open file"),
+                crate::ZsCommandPaletteItem::new(settings, "Open settings")
+                    .keywords(["preferences"]),
+                crate::ZsCommandPaletteItem::new(3_u64, "Unavailable").enabled(false),
+            ],
+            crate::spacer(),
+        )
+        .highlighted_command(Some(first))
+        .on_command_palette_query_change(query)
+        .on_command_palette_highlight_change(highlight)
+        .on_command_palette_invoke(invoke)
+        .on_command_palette_open_change(open);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 900,
+                height: 620,
+            },
+            crate::Dpi::standard(),
+        ));
+        let mut route = WindowsWin32ViewInputRoute::new(view.interaction_plan(), view);
+
+        let moved = route.dispatch_key_down(u32::from(VK_DOWN));
+        assert_eq!(moved.command_palette_highlight_change_count, 1);
+        assert_eq!(
+            route
+                .widget_command_palette_state(widget)
+                .and_then(|state| state.highlighted),
+            Some(settings)
+        );
+
+        let typed = route.dispatch_text_input("settings");
+        assert_eq!(typed.command_palette_query_change_count, 1);
+        assert!(route
+            .widget_command_palette_state(widget)
+            .is_some_and(
+                |state| state.query == "settings" && state.visible_items == vec![settings]
+            ));
+
+        let invoked = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(invoked.command_palette_invoke_count, 1);
+        assert_eq!(invoked.command_palette_open_change_count, 1);
+        assert!(route
+            .widget_command_palette_state(widget)
+            .is_some_and(|state| !state.open));
+        assert!(invoked
+            .events
+            .iter()
+            .any(|event| event == "win32_view_command_palette_invoke:341:2"));
     }
 
     #[test]

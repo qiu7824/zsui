@@ -280,6 +280,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "application-owned strong-id suggestions with platform search-field metrics, popup overlay and typed text, choice or submission events",
         ),
         ZsuiCargoFeature::new(
+            "command-palette",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "application-owned strong-id commands with self-drawn platform search/list overlays and typed query, highlight, invoke or dismiss events",
+        ),
+        ZsuiCargoFeature::new(
             "combo",
             Widget,
             false,
@@ -553,6 +561,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "progress",
                 "progress-ring",
                 "auto-suggest",
+                "command-palette",
                 "tree",
                 "combo",
                 "date-picker",
@@ -675,6 +684,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"progress"));
         assert!(all_widgets.enables.contains(&"progress-ring"));
         assert!(all_widgets.enables.contains(&"auto-suggest"));
+        assert!(all_widgets.enables.contains(&"command-palette"));
         assert!(all_widgets.enables.contains(&"tree"));
         assert!(all_widgets.enables.contains(&"combo"));
         assert!(all_widgets.enables.contains(&"date-picker"));

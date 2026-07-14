@@ -269,6 +269,22 @@ history remain authoritative for implementation status.
   fields, swatches, eyedropper, accessibility, HDR/color-space management and
   AppKit/GTK target interaction smoke remain readiness gaps. Do not describe
   this bounded first pass as control-for-control WinUI 3 parity.
+- CommandPalette is an independent `command-palette` feature over
+  `widgets-input`; it must not pull in AutoSuggestBox, ListView or a native
+  child search control. Applications own immutable `ZsCommandPaletteItem`
+  metadata, globally unique `ZsCommandPaletteItemId` values, the query,
+  highlighted command and open state. ZSUI performs stable, case-insensitive
+  all-term substring filtering, draws at most eight visible rows and emits
+  typed query/highlight/invoke/open messages; it never executes a command or
+  owns a global shortcut. Disabled commands remain visible but are skipped by
+  keyboard navigation. Windows follows a Fluent/PowerToys launcher-like
+  profile, macOS a Spotlight/NSSearchField-like profile and GTK a
+  SearchEntry/list-popover-like profile; all three are separate self-drawn
+  metrics over the same paint/hit plan. Up/Down/Home/End move the highlight,
+  Enter invokes and closes, Escape or scrim click dismisses, and Tab remains
+  trapped in the modal search scope. Fuzzy/pinyin ranking, recent-command
+  persistence, result virtualization, search-dialog/result-list accessibility
+  semantics and AppKit/GTK target interaction smoke remain readiness gaps.
 - DataGrid is an independent `table` feature over `widgets-list`; it must not
   pull in ListView, ScrollView or a platform child control. Applications own
   immutable `ZsTableColumn` and

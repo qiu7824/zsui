@@ -20,6 +20,8 @@ pub mod capability;
 pub mod clipboard;
 #[cfg(feature = "color-picker")]
 pub mod color_picker;
+#[cfg(feature = "command-palette")]
+pub mod command_palette;
 pub mod command_protocol;
 pub mod component_catalog;
 pub mod component_protocol;
@@ -171,6 +173,8 @@ pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, Plat
 pub use clipboard::ClipboardData;
 #[cfg(feature = "color-picker")]
 pub use color_picker::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
+#[cfg(feature = "command-palette")]
+pub use command_palette::{ZsCommandPaletteItem, ZsCommandPaletteItemId, ZsCommandPaletteState};
 pub use command_protocol::{
     CommandId, CommandPayload, CommandQueue, CommandScope, SharedUiCommandExecutor, UiCommand,
     UiCommandDispatchReport, UiCommandExecutor,
@@ -510,6 +514,8 @@ pub use view::checkbox;
 pub use view::color_picker;
 #[cfg(feature = "combo")]
 pub use view::combo_box;
+#[cfg(feature = "command-palette")]
+pub use view::command_palette;
 #[cfg(feature = "dialog")]
 pub use view::content_dialog;
 #[cfg(feature = "table")]
@@ -611,6 +617,12 @@ pub use widget_render::{
     zs_combo_box_render_plan, zs_combo_box_render_plan_in_viewport,
     zs_combo_box_render_plan_in_viewport_with_scroll, zs_combo_box_render_plan_with_scroll,
     ZsComboBoxRenderPlan, ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS,
+};
+#[cfg(feature = "command-palette")]
+pub use widget_render::{
+    zs_command_palette_native_draw_plan, zs_command_palette_render_plan, ZsCommandPaletteMetrics,
+    ZsCommandPalettePlatformStyle, ZsCommandPaletteRenderPlan, ZsCommandPaletteRowRenderPlan,
+    ZS_COMMAND_PALETTE_MAX_VISIBLE_ITEMS,
 };
 #[cfg(feature = "dialog")]
 pub use widget_render::{

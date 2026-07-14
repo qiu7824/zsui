@@ -445,6 +445,29 @@ RGB/HSV/hex fields, saved swatches, eyedropper, accessibility providers,
 HDR/color-space management and AppKit/GTK target-machine evidence remain
 required, so this smoke is not evidence of control-for-control WinUI 3 parity.
 
+The independently selectable CommandPalette smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,command-palette,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-command-palette --command-palette-view
+```
+
+It renders the Windows self-drawn Fluent/PowerToys launcher-like profile with
+a focused search field, semantic icons, shortcut labels and disabled-command
+state. The script types `settings`, moves the strong-ID highlight and invokes
+the result with Enter. The interaction artifact must record nonzero
+`native_view_command_palette_query_change_count`,
+`native_view_command_palette_highlight_change_count`,
+`native_view_command_palette_invoke_count` and
+`native_view_command_palette_open_change_count`, executed example UI commands,
+no command failure and a captured `window.png`. The component only filters,
+renders and routes application-owned metadata; command execution and the
+global accelerator remain application responsibilities. The profile is
+informed by [PowerToys Command Palette](https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview)
+and [WinUI commanding](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/commanding).
+Fuzzy/pinyin ranking, recent-command persistence, result virtualization,
+complete accessibility semantics and AppKit/GTK target-machine evidence remain
+required.
+
 The independently selectable DataGrid smoke path is:
 
 ```powershell

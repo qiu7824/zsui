@@ -14,6 +14,7 @@ use crate::native_input_visuals::{
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "color-picker",
+    feature = "command-palette",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -897,6 +898,11 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_table_invoke_count: usize,
     pub native_view_content_dialog_focus_count: usize,
     pub native_view_content_dialog_response_count: usize,
+    pub native_view_command_palette_query_change_count: usize,
+    pub native_view_command_palette_highlight_change_count: usize,
+    pub native_view_command_palette_invoke_count: usize,
+    pub native_view_command_palette_open_change_count: usize,
+    pub native_view_command_palette_clear_count: usize,
     pub native_view_toast_focus_count: usize,
     pub native_view_toast_response_count: usize,
     pub native_view_toast_timeout_count: usize,
@@ -1023,6 +1029,11 @@ impl NativeWindowSmokeRunReport {
             native_view_table_invoke_count: 0,
             native_view_content_dialog_focus_count: 0,
             native_view_content_dialog_response_count: 0,
+            native_view_command_palette_query_change_count: 0,
+            native_view_command_palette_highlight_change_count: 0,
+            native_view_command_palette_invoke_count: 0,
+            native_view_command_palette_open_change_count: 0,
+            native_view_command_palette_clear_count: 0,
             native_view_toast_focus_count: 0,
             native_view_toast_response_count: 0,
             native_view_toast_timeout_count: 0,
@@ -1096,6 +1107,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "auto-suggest",
         feature = "breadcrumb",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1114,6 +1126,7 @@ pub(crate) struct NativeViewInputRuntime {
         feature = "auto-suggest",
         feature = "breadcrumb",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1204,6 +1217,7 @@ pub(crate) struct NativeViewInputDispatchReport {
         feature = "auto-suggest",
         feature = "breadcrumb",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1278,6 +1292,16 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub content_dialog_focus_changed: bool,
     #[cfg(feature = "dialog")]
     pub content_dialog_responded: bool,
+    #[cfg(feature = "command-palette")]
+    pub command_palette_query_changed: bool,
+    #[cfg(feature = "command-palette")]
+    pub command_palette_highlight_changed: bool,
+    #[cfg(feature = "command-palette")]
+    pub command_palette_invoked: bool,
+    #[cfg(feature = "command-palette")]
+    pub command_palette_open_changed: bool,
+    #[cfg(feature = "command-palette")]
+    pub command_palette_cleared: bool,
     #[cfg(feature = "toast")]
     pub toast_focus_changed: bool,
     #[cfg(feature = "toast")]
@@ -1357,6 +1381,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "breadcrumb",
                 feature = "color-picker",
+                feature = "command-palette",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1375,6 +1400,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "breadcrumb",
                 feature = "color-picker",
+                feature = "command-palette",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1577,6 +1603,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -1697,6 +1724,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -1817,6 +1845,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "breadcrumb",
                 feature = "color-picker",
+                feature = "command-palette",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1843,6 +1872,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "breadcrumb",
                 feature = "color-picker",
+                feature = "command-palette",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1869,6 +1899,7 @@ impl NativeViewInputRuntime {
                 feature = "auto-suggest",
                 feature = "breadcrumb",
                 feature = "color-picker",
+                feature = "command-palette",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1896,6 +1927,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2036,6 +2068,44 @@ impl NativeViewInputRuntime {
                     report,
                 );
             }
+            _ => {}
+        }
+
+        #[cfg(feature = "command-palette")]
+        match target.kind {
+            crate::ViewHitTargetKind::CommandPaletteItem { item } => {
+                report.command_palette_invoked = true;
+                report.command_palette_open_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::CommandPaletteInvoked {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::CommandPaletteClear => {
+                report.command_palette_query_changed = true;
+                report.command_palette_cleared = true;
+                return self.dispatch_view_event(
+                    ViewEvent::TextChanged {
+                        widget: target.widget,
+                        value: String::new(),
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::CommandPaletteScrim => {
+                report.command_palette_open_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::CommandPaletteOpenChanged {
+                        widget: target.widget,
+                        open: false,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::CommandPalette => return report,
             _ => {}
         }
 
@@ -2257,6 +2327,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2295,6 +2366,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2316,6 +2388,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2676,6 +2749,78 @@ impl NativeViewInputRuntime {
                 }
             }
         }
+        #[cfg(feature = "command-palette")]
+        if let Some(palette_target) = interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::CommandPalette)
+        {
+            if self.focused_widget != Some(palette_target.widget) {
+                self.focus_target(palette_target, &mut report);
+            }
+            let Some(state) = self.widget_command_palette_state(palette_target.widget) else {
+                return report;
+            };
+            if !state.open {
+                return report;
+            }
+            let next = match key {
+                NativeViewKey::Up => state.relative_highlight(-1),
+                NativeViewKey::Down => state.relative_highlight(1),
+                NativeViewKey::Home => state.first_enabled(),
+                NativeViewKey::End => state.last_enabled(),
+                _ => None,
+            };
+            if let Some(item) = next {
+                report.handled = true;
+                report.command_palette_highlight_changed = state.highlighted != Some(item);
+                if report.command_palette_highlight_changed {
+                    return self.dispatch_view_event(
+                        ViewEvent::CommandPaletteHighlighted {
+                            widget: palette_target.widget,
+                            item,
+                        },
+                        report,
+                    );
+                }
+                return report;
+            }
+            match key {
+                NativeViewKey::Enter => {
+                    if let Some(item) = state.highlighted.or_else(|| state.first_enabled()) {
+                        report.handled = true;
+                        report.command_palette_invoked = true;
+                        report.command_palette_open_changed = true;
+                        return self.dispatch_view_event(
+                            ViewEvent::CommandPaletteInvoked {
+                                widget: palette_target.widget,
+                                item,
+                            },
+                            report,
+                        );
+                    }
+                }
+                NativeViewKey::Escape => {
+                    report.handled = true;
+                    report.command_palette_open_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::CommandPaletteOpenChanged {
+                            widget: palette_target.widget,
+                            open: false,
+                        },
+                        report,
+                    );
+                }
+                NativeViewKey::Tab => {
+                    report.handled = true;
+                    return report;
+                }
+                _ => {}
+            }
+        }
+
         #[cfg(feature = "dialog")]
         if let Some(dialog_target) = interaction_plan
             .hit_targets
@@ -3577,6 +3722,10 @@ impl NativeViewInputRuntime {
         report.text_selection_changed = edit.selection_changed;
         self.text_edit = Some(state);
         if edit.text_changed {
+            #[cfg(feature = "command-palette")]
+            if target.kind == crate::ViewHitTargetKind::CommandPalette {
+                report.command_palette_query_changed = true;
+            }
             #[cfg(feature = "auto-suggest")]
             if target.kind == crate::ViewHitTargetKind::AutoSuggestBox {
                 report.auto_suggest_expanded_changed = self
@@ -3942,6 +4091,7 @@ impl NativeViewInputRuntime {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -4100,6 +4250,7 @@ impl NativeViewInputRuntime {
         feature = "auto-suggest",
         feature = "breadcrumb",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -4772,6 +4923,21 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "command-palette")]
+    fn widget_command_palette_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsCommandPaletteState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_command_palette_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_command_palette_state(widget))
+            })
+    }
+
     #[cfg(feature = "toast")]
     fn widget_toast_state(
         &self,
@@ -5323,6 +5489,13 @@ fn record_windows_win32_view_input_report(
     report.native_view_table_invoke_count += input.table_invoke_count;
     report.native_view_content_dialog_focus_count += input.content_dialog_focus_change_count;
     report.native_view_content_dialog_response_count += input.content_dialog_response_count;
+    report.native_view_command_palette_query_change_count +=
+        input.command_palette_query_change_count;
+    report.native_view_command_palette_highlight_change_count +=
+        input.command_palette_highlight_change_count;
+    report.native_view_command_palette_invoke_count += input.command_palette_invoke_count;
+    report.native_view_command_palette_open_change_count += input.command_palette_open_change_count;
+    report.native_view_command_palette_clear_count += input.command_palette_clear_count;
     report.native_view_toast_focus_count += input.toast_focus_change_count;
     report.native_view_toast_response_count += input.toast_response_count;
     report.native_view_toast_timeout_count += input.toast_timeout_count;
@@ -8525,6 +8698,95 @@ mod tests {
         });
         assert!(cleared.auto_suggest_cleared);
         assert_eq!(runtime.widget_text_value(widget).as_deref(), Some(""));
+    }
+
+    #[cfg(feature = "command-palette")]
+    #[test]
+    fn native_view_runtime_routes_command_palette_query_navigation_and_invocation() {
+        #[derive(Clone)]
+        enum Msg {
+            Query(String),
+            Highlight(crate::ZsCommandPaletteItemId),
+            Invoke(crate::ZsCommandPaletteItemId),
+            Open(bool),
+        }
+        struct State {
+            query: String,
+            highlighted: Option<crate::ZsCommandPaletteItemId>,
+            invoked: Option<crate::ZsCommandPaletteItemId>,
+            open: bool,
+        }
+
+        let widget = crate::WidgetId::new(204);
+        let settings = crate::ZsCommandPaletteItemId::new(2);
+        let builder = native_window("Platform Command Palette")
+            .size(900, 620)
+            .stateful_view(
+                State {
+                    query: String::new(),
+                    highlighted: Some(1_u64.into()),
+                    invoked: None,
+                    open: true,
+                },
+                move |state| {
+                    crate::command_palette(
+                        widget,
+                        state.open,
+                        state.query.clone(),
+                        [
+                            crate::ZsCommandPaletteItem::new(1_u64, "Open file")
+                                .icon(crate::ZsIcon::File),
+                            crate::ZsCommandPaletteItem::new(settings, "Open settings")
+                                .keywords(["preferences"])
+                                .shortcut("Ctrl+,"),
+                            crate::ZsCommandPaletteItem::new(3_u64, "Unavailable").enabled(false),
+                        ],
+                        crate::spacer(),
+                    )
+                    .highlighted_command(state.highlighted)
+                    .on_command_palette_query_change(Msg::Query)
+                    .on_command_palette_highlight_change(Msg::Highlight)
+                    .on_command_palette_invoke(Msg::Invoke)
+                    .on_command_palette_open_change(Msg::Open)
+                },
+                |state, message, _cx| match message {
+                    Msg::Query(query) => state.query = query,
+                    Msg::Highlight(item) => state.highlighted = Some(item),
+                    Msg::Invoke(item) => {
+                        state.invoked = Some(item);
+                        state.open = false;
+                    }
+                    Msg::Open(open) => state.open = open,
+                },
+            );
+        let mut runtime = builder.native_view_input_runtime();
+
+        let moved = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(moved.handled);
+        assert!(moved.command_palette_highlight_changed);
+        assert_eq!(
+            runtime
+                .widget_command_palette_state(widget)
+                .and_then(|state| state.highlighted),
+            Some(settings)
+        );
+
+        let typed = runtime.dispatch_text_input("settings");
+        assert!(typed.handled);
+        assert!(typed.command_palette_query_changed);
+        assert!(runtime
+            .widget_command_palette_state(widget)
+            .is_some_and(
+                |state| state.query == "settings" && state.visible_items == vec![settings]
+            ));
+
+        let invoked = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(invoked.handled);
+        assert!(invoked.command_palette_invoked);
+        assert!(invoked.command_palette_open_changed);
+        assert!(runtime
+            .widget_command_palette_state(widget)
+            .is_some_and(|state| !state.open));
     }
 
     #[cfg(feature = "tree")]

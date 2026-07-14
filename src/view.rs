@@ -687,6 +687,19 @@ pub enum ViewNodeKind<Msg> {
         focused_button: crate::ZsContentDialogButton,
         on_result: Option<fn(crate::ZsContentDialogResult) -> Msg>,
     },
+    #[cfg(feature = "command-palette")]
+    CommandPalette {
+        items: Vec<crate::ZsCommandPaletteItem>,
+        query: String,
+        highlighted: Option<crate::ZsCommandPaletteItemId>,
+        open: bool,
+        placeholder: String,
+        no_results_text: String,
+        on_query_change: Option<fn(String) -> Msg>,
+        on_highlight_change: Option<fn(crate::ZsCommandPaletteItemId) -> Msg>,
+        on_invoke: Option<fn(crate::ZsCommandPaletteItemId) -> Msg>,
+        on_open_change: Option<fn(bool) -> Msg>,
+    },
     #[cfg(feature = "toast")]
     ToastPresenter {
         toast: Option<crate::ZsToastSpec>,
@@ -1227,6 +1240,93 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_dialog_result(mut self, message: fn(crate::ZsContentDialogResult) -> Msg) -> Self {
         if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
             *on_result = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn highlighted_command(
+        mut self,
+        highlighted_item: Option<crate::ZsCommandPaletteItemId>,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            items,
+            query,
+            highlighted,
+            ..
+        } = &mut self.kind
+        {
+            let state =
+                crate::command_palette::command_palette_state(true, query, items, highlighted_item);
+            *highlighted = state.highlighted;
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn command_palette_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            placeholder: current,
+            ..
+        } = &mut self.kind
+        {
+            *current = placeholder.into();
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn command_palette_no_results_text(mut self, text: impl Into<String>) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            no_results_text, ..
+        } = &mut self.kind
+        {
+            *no_results_text = text.into();
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_query_change(mut self, message: fn(String) -> Msg) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            on_query_change, ..
+        } = &mut self.kind
+        {
+            *on_query_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_highlight_change(
+        mut self,
+        message: fn(crate::ZsCommandPaletteItemId) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            on_highlight_change,
+            ..
+        } = &mut self.kind
+        {
+            *on_highlight_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_invoke(
+        mut self,
+        message: fn(crate::ZsCommandPaletteItemId) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_open_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::CommandPalette { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(message);
         }
         self
     }
@@ -1951,6 +2051,41 @@ pub fn content_dialog<Msg>(
     .child(page)
 }
 
+/// Wraps one page in a keyboard-first, self-drawn command-palette layer.
+///
+/// ZSUI filters application-owned display metadata and emits strong IDs. It
+/// does not execute commands or install a global shortcut.
+#[cfg(feature = "command-palette")]
+pub fn command_palette<T, Msg>(
+    widget: WidgetId,
+    open: bool,
+    query: impl Into<String>,
+    items: impl IntoIterator<Item = T>,
+    page: ViewNode<Msg>,
+) -> ViewNode<Msg>
+where
+    T: Into<crate::ZsCommandPaletteItem>,
+{
+    let query = query.into();
+    let items = items.into_iter().map(Into::into).collect::<Vec<_>>();
+    let highlighted =
+        crate::command_palette::command_palette_state(true, &query, &items, None).first_enabled();
+    ViewNode::<Msg>::new(ViewNodeKind::CommandPalette {
+        items,
+        query,
+        highlighted,
+        open,
+        placeholder: "Type a command".into(),
+        no_results_text: "No matching commands".into(),
+        on_query_change: None,
+        on_highlight_change: None,
+        on_invoke: None,
+        on_open_change: None,
+    })
+    .id(widget)
+    .child(page)
+}
+
 /// Wraps one page in a nonmodal, self-drawn in-app toast layer.
 ///
 /// The application owns the optional toast and removes or replaces it after a
@@ -2178,6 +2313,21 @@ pub enum ViewEvent {
     ContentDialogResponded {
         widget: WidgetId,
         button: crate::ZsContentDialogButton,
+    },
+    #[cfg(feature = "command-palette")]
+    CommandPaletteHighlighted {
+        widget: WidgetId,
+        item: crate::ZsCommandPaletteItemId,
+    },
+    #[cfg(feature = "command-palette")]
+    CommandPaletteInvoked {
+        widget: WidgetId,
+        item: crate::ZsCommandPaletteItemId,
+    },
+    #[cfg(feature = "command-palette")]
+    CommandPaletteOpenChanged {
+        widget: WidgetId,
+        open: bool,
     },
     #[cfg(feature = "toast")]
     ToastFocused {
@@ -2416,6 +2566,16 @@ pub enum ViewHitTargetKind {
     ContentDialogButton {
         button: crate::ZsContentDialogButton,
     },
+    #[cfg(feature = "command-palette")]
+    CommandPalette,
+    #[cfg(feature = "command-palette")]
+    CommandPaletteScrim,
+    #[cfg(feature = "command-palette")]
+    CommandPaletteClear,
+    #[cfg(feature = "command-palette")]
+    CommandPaletteItem {
+        item: crate::ZsCommandPaletteItemId,
+    },
     #[cfg(feature = "toast")]
     Toast,
     #[cfg(feature = "toast")]
@@ -2533,6 +2693,12 @@ impl ViewInteractionPlan {
     }
 
     pub fn hit_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
+        #[cfg(feature = "command-palette")]
+        if let Some(target) = self.hit_targets.iter().copied().find(|target| {
+            target.widget == widget && target.kind == ViewHitTargetKind::CommandPalette
+        }) {
+            return Some(target);
+        }
         self.hit_targets
             .iter()
             .copied()
@@ -2652,6 +2818,16 @@ impl ViewInteractionPlan {
     }
 
     fn accepts_focus_scope(&self, _target: ViewHitTarget) -> bool {
+        #[cfg(feature = "command-palette")]
+        if let Some(palette) = self
+            .hit_targets
+            .iter()
+            .rev()
+            .find(|candidate| candidate.kind == ViewHitTargetKind::CommandPalette)
+        {
+            return _target.widget == palette.widget
+                && _target.kind == ViewHitTargetKind::CommandPalette;
+        }
         #[cfg(feature = "dialog")]
         if let Some(dialog) = self
             .hit_targets
@@ -2668,6 +2844,15 @@ impl ViewInteractionPlan {
 
 impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
+        #[cfg(feature = "command-palette")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::CommandPaletteScrim
+                | ViewHitTargetKind::CommandPaletteClear
+                | ViewHitTargetKind::CommandPaletteItem { .. }
+        ) {
+            return false;
+        }
         #[cfg(feature = "dialog")]
         if matches!(
             self.kind,
@@ -2783,6 +2968,8 @@ impl ViewHitTargetKind {
         let accepts = accepts || self == Self::NumberBox;
         #[cfg(feature = "auto-suggest")]
         let accepts = accepts || self == Self::AutoSuggestBox;
+        #[cfg(feature = "command-palette")]
+        let accepts = accepts || self == Self::CommandPalette;
         accepts
     }
 }
@@ -2912,6 +3099,11 @@ trait LiveViewDriver: Send {
         &self,
         widget: WidgetId,
     ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)>;
+    #[cfg(feature = "command-palette")]
+    fn widget_command_palette_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<crate::ZsCommandPaletteState>;
     #[cfg(feature = "toast")]
     fn widget_toast_state(
         &self,
@@ -3034,6 +3226,14 @@ impl SharedLiveViewRuntime {
         widget: WidgetId,
     ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
         self.lock().widget_content_dialog_state(widget)
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn widget_command_palette_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<crate::ZsCommandPaletteState> {
+        self.lock().widget_command_palette_state(widget)
     }
 
     #[cfg(feature = "toast")]
@@ -3360,6 +3560,14 @@ where
         self.view.widget_content_dialog_state(widget)
     }
 
+    #[cfg(feature = "command-palette")]
+    fn widget_command_palette_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<crate::ZsCommandPaletteState> {
+        self.view.widget_command_palette_state(widget)
+    }
+
     #[cfg(feature = "toast")]
     fn widget_toast_state(
         &self,
@@ -3519,6 +3727,7 @@ impl ViewPaintCx {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
@@ -3883,6 +4092,122 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
             }
             if handled {
+                return;
+            }
+            for child in &mut self.children {
+                child.event(cx, event);
+            }
+            return;
+        }
+
+        #[cfg(feature = "command-palette")]
+        if matches!(self.kind, ViewNodeKind::CommandPalette { .. }) {
+            let mut handled = false;
+            let mut palette_open = false;
+            if let ViewNodeKind::CommandPalette {
+                items,
+                query,
+                highlighted,
+                open,
+                on_query_change,
+                on_highlight_change,
+                on_invoke,
+                on_open_change,
+                ..
+            } = &mut self.kind
+            {
+                palette_open = *open;
+                if let ViewEvent::CommandPaletteOpenChanged {
+                    widget,
+                    open: requested,
+                } = event
+                {
+                    if self.id == Some(*widget) {
+                        *open = *requested;
+                        if *requested {
+                            let state = crate::command_palette::command_palette_state(
+                                true,
+                                query,
+                                items,
+                                *highlighted,
+                            );
+                            *highlighted = state.highlighted.or_else(|| state.first_enabled());
+                        }
+                        if let Some(message) = on_open_change {
+                            cx.emit(message(*requested));
+                        }
+                        handled = true;
+                    }
+                }
+                if !handled && *open {
+                    match event {
+                        ViewEvent::TextChanged { widget, value }
+                            if self.id == Some(*widget) && *query != *value =>
+                        {
+                            *query = value.clone();
+                            let state = crate::command_palette::command_palette_state(
+                                true,
+                                query,
+                                items,
+                                *highlighted,
+                            );
+                            let next = state.highlighted.or_else(|| state.first_enabled());
+                            if *highlighted != next {
+                                *highlighted = next;
+                                if let (Some(message), Some(item)) = (on_highlight_change, next) {
+                                    cx.emit(message(item));
+                                }
+                            }
+                            if let Some(message) = on_query_change {
+                                cx.emit(message(value.clone()));
+                            }
+                            handled = true;
+                        }
+                        ViewEvent::CommandPaletteHighlighted { widget, item }
+                            if self.id == Some(*widget)
+                                && crate::command_palette::command_palette_state(
+                                    true,
+                                    query,
+                                    items,
+                                    Some(*item),
+                                )
+                                .highlighted
+                                    == Some(*item) =>
+                        {
+                            if *highlighted != Some(*item) {
+                                *highlighted = Some(*item);
+                                if let Some(message) = on_highlight_change {
+                                    cx.emit(message(*item));
+                                }
+                            }
+                            handled = true;
+                        }
+                        ViewEvent::CommandPaletteInvoked { widget, item }
+                            if self.id == Some(*widget)
+                                && crate::command_palette::command_palette_state(
+                                    true,
+                                    query,
+                                    items,
+                                    Some(*item),
+                                )
+                                .highlighted
+                                    == Some(*item) =>
+                        {
+                            *highlighted = Some(*item);
+                            *open = false;
+                            if let Some(message) = on_invoke {
+                                cx.emit(message(*item));
+                            }
+                            if let Some(message) = on_open_change {
+                                cx.emit(message(false));
+                            }
+                            handled = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if handled || palette_open {
                 return;
             }
             for child in &mut self.children {
@@ -5501,6 +5826,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Grid { .. } => {}
             #[cfg(feature = "dialog")]
             ViewNodeKind::ContentDialog { .. } => {}
+            #[cfg(feature = "command-palette")]
+            ViewNodeKind::CommandPalette { .. } => {}
             #[cfg(feature = "toast")]
             ViewNodeKind::ToastPresenter { .. } => {}
             #[cfg(feature = "teaching-tip")]
@@ -5550,6 +5877,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "dialog")]
             (Some(id), ViewEvent::ContentDialogFocused { widget, .. })
             | (Some(id), ViewEvent::ContentDialogResponded { widget, .. }) => id == *widget,
+            #[cfg(feature = "command-palette")]
+            (Some(id), ViewEvent::CommandPaletteHighlighted { widget, .. })
+            | (Some(id), ViewEvent::CommandPaletteInvoked { widget, .. })
+            | (Some(id), ViewEvent::CommandPaletteOpenChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "toast")]
             (Some(id), ViewEvent::ToastFocused { widget, .. })
             | (Some(id), ViewEvent::ToastResponded { widget, .. }) => id == *widget,
@@ -5621,6 +5952,7 @@ impl<Msg> ViewNode<Msg> {
             feature = "auto-suggest",
             feature = "breadcrumb",
             feature = "color-picker",
+            feature = "command-palette",
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
@@ -5652,6 +5984,10 @@ impl<Msg> ViewNode<Msg> {
             }
             #[cfg(feature = "auto-suggest")]
             if let ViewNodeKind::AutoSuggestBox { query, .. } = &self.kind {
+                return Some(query);
+            }
+            #[cfg(feature = "command-palette")]
+            if let ViewNodeKind::CommandPalette { query, .. } = &self.kind {
                 return Some(query);
             }
         }
@@ -5944,6 +6280,33 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_content_dialog_state(widget))
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn widget_command_palette_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<crate::ZsCommandPaletteState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::CommandPalette {
+                items,
+                query,
+                highlighted,
+                open,
+                ..
+            } = &self.kind
+            {
+                return Some(crate::command_palette::command_palette_state(
+                    *open,
+                    query,
+                    items,
+                    *highlighted,
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_command_palette_state(widget))
     }
 
     #[cfg(feature = "toast")]
@@ -6465,6 +6828,14 @@ impl<Msg> ViewNode<Msg> {
             return;
         }
 
+        #[cfg(feature = "command-palette")]
+        if matches!(self.kind, ViewNodeKind::CommandPalette { .. }) {
+            for child in &self.children {
+                child.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
         #[cfg(feature = "dialog")]
         if matches!(self.kind, ViewNodeKind::ContentDialog { .. }) {
             for child in &self.children {
@@ -6813,6 +7184,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "auto-suggest",
         feature = "breadcrumb",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -6941,6 +7313,56 @@ impl<Msg> ViewNode<Msg> {
                     plan.close_bounds,
                     ViewHitTargetKind::ToastClose,
                 ));
+            }
+            return;
+        }
+
+        #[cfg(feature = "command-palette")]
+        if let ViewNodeKind::CommandPalette {
+            items,
+            query,
+            highlighted,
+            open,
+            ..
+        } = &self.kind
+        {
+            let palette_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.collect_overlay_hit_targets(hit_targets, palette_viewport);
+            }
+            if let (true, Some(widget), Some(viewport)) = (*open, self.id, palette_viewport) {
+                let plan = crate::zs_command_palette_render_plan(
+                    viewport,
+                    query,
+                    items,
+                    *highlighted,
+                    crate::ZsCommandPalettePlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    viewport,
+                    ViewHitTargetKind::CommandPaletteScrim,
+                ));
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.search_bounds,
+                    ViewHitTargetKind::CommandPalette,
+                ));
+                if let Some(bounds) = plan.clear_bounds {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        ViewHitTargetKind::CommandPaletteClear,
+                    ));
+                }
+                hit_targets.extend(plan.rows.into_iter().filter(|row| row.enabled).map(|row| {
+                    ViewHitTarget::with_kind(
+                        widget,
+                        row.bounds,
+                        ViewHitTargetKind::CommandPaletteItem { item: row.item },
+                    )
+                }));
             }
             return;
         }
@@ -7291,6 +7713,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "auto-suggest",
         feature = "breadcrumb",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -7380,6 +7803,45 @@ impl<Msg> ViewNode<Msg> {
                     cx.dpi,
                 );
                 for command in crate::zs_toast_native_draw_plan(&plan, spec).commands {
+                    cx.draw(command);
+                }
+            }
+            return;
+        }
+
+        #[cfg(feature = "command-palette")]
+        if let ViewNodeKind::CommandPalette {
+            items,
+            query,
+            highlighted,
+            open,
+            placeholder,
+            no_results_text,
+            ..
+        } = &self.kind
+        {
+            let palette_viewport = viewport.or(self.bounds);
+            for child in &self.children {
+                child.paint_overlays(cx, palette_viewport);
+            }
+            if let (true, Some(viewport)) = (*open, palette_viewport) {
+                let plan = crate::zs_command_palette_render_plan(
+                    viewport,
+                    query,
+                    items,
+                    *highlighted,
+                    crate::ZsCommandPalettePlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_command_palette_native_draw_plan(
+                    &plan,
+                    query,
+                    placeholder,
+                    no_results_text,
+                    items,
+                )
+                .commands
+                {
                     cx.draw(command);
                 }
             }
@@ -7677,6 +8139,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::DataGrid { .. } => ViewHitTargetKind::DataGrid,
             #[cfg(feature = "dialog")]
             ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
+            #[cfg(feature = "command-palette")]
+            ViewNodeKind::CommandPalette { .. } => ViewHitTargetKind::CommandPalette,
             #[cfg(feature = "toast")]
             ViewNodeKind::ToastPresenter { .. } => ViewHitTargetKind::Toast,
             #[cfg(feature = "teaching-tip")]
@@ -8247,6 +8711,7 @@ mod tests {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
+        feature = "command-palette",
         feature = "info-bar",
         feature = "teaching-tip",
         feature = "toast",
@@ -8307,6 +8772,14 @@ mod tests {
         TableInvoked(crate::ZsTableRowId),
         #[cfg(feature = "dialog")]
         DialogResult(crate::ZsContentDialogResult),
+        #[cfg(feature = "command-palette")]
+        CommandQuery(String),
+        #[cfg(feature = "command-palette")]
+        CommandHighlight(crate::ZsCommandPaletteItemId),
+        #[cfg(feature = "command-palette")]
+        CommandInvoke(crate::ZsCommandPaletteItemId),
+        #[cfg(feature = "command-palette")]
+        CommandOpen(bool),
         #[cfg(feature = "toast")]
         ToastResult(crate::ZsToastResult),
         #[cfg(feature = "teaching-tip")]
@@ -9604,6 +10077,114 @@ mod tests {
                 .first_focus_target()
                 .map(|target| target.widget),
             Some(background)
+        );
+    }
+
+    #[cfg(feature = "command-palette")]
+    #[test]
+    fn command_palette_is_filtered_modal_self_drawn_and_routes_strong_ids() {
+        let palette = WidgetId::new(197);
+        let page = WidgetId::new(198);
+        let settings = crate::ZsCommandPaletteItemId::new(2);
+        let file = crate::ZsCommandPaletteItemId::new(3);
+        let mut view = command_palette(
+            palette,
+            true,
+            "open",
+            [
+                crate::ZsCommandPaletteItem::new(1_u64, "New window").icon(crate::ZsIcon::Add),
+                crate::ZsCommandPaletteItem::new(settings, "Open settings")
+                    .keywords(["preferences"])
+                    .shortcut("Ctrl+,"),
+                crate::ZsCommandPaletteItem::new(file, "Open file")
+                    .subtitle("Choose from disk")
+                    .icon(crate::ZsIcon::File),
+                crate::ZsCommandPaletteItem::new(4_u64, "Open recent").enabled(false),
+            ],
+            spacer::<Msg>().id(page).bg(ThemeColorToken::Surface),
+        )
+        .highlighted_command(Some(file))
+        .on_command_palette_query_change(Msg::CommandQuery)
+        .on_command_palette_highlight_change(Msg::CommandHighlight)
+        .on_command_palette_invoke(Msg::CommandInvoke)
+        .on_command_palette_open_change(Msg::CommandOpen);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 900,
+            height: 620,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let state = view
+            .widget_command_palette_state(palette)
+            .expect("command palette state");
+        assert_eq!(state.visible_items, vec![settings, file, 4_u64.into()]);
+        assert_eq!(state.enabled_items, vec![settings, file]);
+        assert_eq!(state.highlighted, Some(file));
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::CommandPalette)
+        );
+        assert_eq!(
+            interaction.target_kind_at(Point { x: 4, y: 4 }),
+            Some(ViewHitTargetKind::CommandPaletteScrim)
+        );
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == ViewHitTargetKind::CommandPaletteItem { item: file } }));
+        assert!(!interaction.hit_targets.iter().any(|target| {
+            target.kind == ViewHitTargetKind::CommandPaletteItem { item: 4_u64.into() }
+        }));
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Search
+        )));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::CommandPaletteInvoked {
+                widget: palette,
+                item: file,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::CommandInvoke(file), Msg::CommandOpen(false)]
+        );
+        assert!(view
+            .widget_command_palette_state(palette)
+            .is_some_and(|state| !state.open));
+        assert_eq!(
+            view.interaction_plan()
+                .first_focus_target()
+                .map(|target| target.widget),
+            Some(page)
+        );
+
+        let mut reopen_events = ViewEventCx::new();
+        view.event(
+            &mut reopen_events,
+            &ViewEvent::CommandPaletteOpenChanged {
+                widget: palette,
+                open: true,
+            },
+        );
+        assert_eq!(reopen_events.into_messages(), vec![Msg::CommandOpen(true)]);
+        assert!(view
+            .widget_command_palette_state(palette)
+            .is_some_and(|state| state.open && state.highlighted == Some(file)));
+        assert_eq!(
+            view.interaction_plan()
+                .first_focus_target()
+                .map(|target| target.widget),
+            Some(palette)
         );
     }
 

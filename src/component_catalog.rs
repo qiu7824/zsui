@@ -173,6 +173,11 @@ const AUTO_SUGGEST_GAPS: &[&str] = &[
     "mouse-wheel paging for long suggestion lists",
     "AppKit and GTK4 target interaction smoke",
 ];
+const COMMAND_PALETTE_GAPS: &[&str] = &[
+    "accessibility search-dialog, result-list and active-descendant providers",
+    "ranked fuzzy matching, multilingual transliteration and application-managed recent commands",
+    "virtualized large command sets plus AppKit and GTK4 target interaction smoke",
+];
 const TREE_GAPS: &[&str] = &[
     "accessibility tree level, expanded-state and selection providers",
     "multi-selection, drag-and-drop and large-tree virtualization",
@@ -640,10 +645,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "command_palette",
         "CommandPalette",
         Overlay,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("command-palette"),
+        "src/command_palette.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        COMMAND_PALETTE_GAPS
     ),
     component!(
         "image",
@@ -729,7 +734,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 2);
+        assert!(summary.not_started_count >= 1);
         assert!(!summary.missing_component_names.contains(&"grid_view"));
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));
@@ -741,6 +746,7 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"teaching_tip"));
         assert!(!summary.missing_component_names.contains(&"breadcrumb"));
         assert!(!summary.missing_component_names.contains(&"color_picker"));
+        assert!(!summary.missing_component_names.contains(&"command_palette"));
     }
 
     #[test]

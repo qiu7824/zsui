@@ -138,6 +138,11 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_table_invoke_count: usize,
     pub native_view_content_dialog_focus_count: usize,
     pub native_view_content_dialog_response_count: usize,
+    pub native_view_command_palette_query_change_count: usize,
+    pub native_view_command_palette_highlight_change_count: usize,
+    pub native_view_command_palette_invoke_count: usize,
+    pub native_view_command_palette_open_change_count: usize,
+    pub native_view_command_palette_clear_count: usize,
     pub native_view_toast_focus_count: usize,
     pub native_view_toast_response_count: usize,
     pub native_view_toast_timeout_count: usize,
@@ -257,6 +262,11 @@ impl NativeHostSmokeInteractionReport {
             native_view_table_invoke_count: 0,
             native_view_content_dialog_focus_count: 0,
             native_view_content_dialog_response_count: 0,
+            native_view_command_palette_query_change_count: 0,
+            native_view_command_palette_highlight_change_count: 0,
+            native_view_command_palette_invoke_count: 0,
+            native_view_command_palette_open_change_count: 0,
+            native_view_command_palette_clear_count: 0,
             native_view_toast_focus_count: 0,
             native_view_toast_response_count: 0,
             native_view_toast_timeout_count: 0,
@@ -416,6 +426,36 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} auto-suggest clear event(s)",
                 report.native_view_auto_suggest_clear_count
+            ));
+        }
+        if report.native_view_command_palette_query_change_count > 0 {
+            notes.push(format!(
+                "native command-palette query changes: {}",
+                report.native_view_command_palette_query_change_count
+            ));
+        }
+        if report.native_view_command_palette_highlight_change_count > 0 {
+            notes.push(format!(
+                "native command-palette strong-id highlight changes: {}",
+                report.native_view_command_palette_highlight_change_count
+            ));
+        }
+        if report.native_view_command_palette_invoke_count > 0 {
+            notes.push(format!(
+                "native command-palette typed invocations: {}",
+                report.native_view_command_palette_invoke_count
+            ));
+        }
+        if report.native_view_command_palette_open_change_count > 0 {
+            notes.push(format!(
+                "native command-palette open changes: {}",
+                report.native_view_command_palette_open_change_count
+            ));
+        }
+        if report.native_view_command_palette_clear_count > 0 {
+            notes.push(format!(
+                "native command-palette clear actions: {}",
+                report.native_view_command_palette_clear_count
             ));
         }
         if report.native_view_tree_expansion_change_count > 0 {
@@ -713,6 +753,15 @@ impl NativeHostSmokeInteractionReport {
             native_view_content_dialog_focus_count: report.native_view_content_dialog_focus_count,
             native_view_content_dialog_response_count: report
                 .native_view_content_dialog_response_count,
+            native_view_command_palette_query_change_count: report
+                .native_view_command_palette_query_change_count,
+            native_view_command_palette_highlight_change_count: report
+                .native_view_command_palette_highlight_change_count,
+            native_view_command_palette_invoke_count: report
+                .native_view_command_palette_invoke_count,
+            native_view_command_palette_open_change_count: report
+                .native_view_command_palette_open_change_count,
+            native_view_command_palette_clear_count: report.native_view_command_palette_clear_count,
             native_view_toast_focus_count: report.native_view_toast_focus_count,
             native_view_toast_response_count: report.native_view_toast_response_count,
             native_view_toast_timeout_count: report.native_view_toast_timeout_count,
@@ -1392,6 +1441,11 @@ mod tests {
             native_view_table_invoke_count: 0,
             native_view_content_dialog_focus_count: 1,
             native_view_content_dialog_response_count: 1,
+            native_view_command_palette_query_change_count: 0,
+            native_view_command_palette_highlight_change_count: 0,
+            native_view_command_palette_invoke_count: 0,
+            native_view_command_palette_open_change_count: 0,
+            native_view_command_palette_clear_count: 0,
             native_view_toast_focus_count: 1,
             native_view_toast_response_count: 1,
             native_view_toast_timeout_count: 1,
