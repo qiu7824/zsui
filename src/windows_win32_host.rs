@@ -18,6 +18,7 @@ use crate::native_input_visuals::{
 };
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
@@ -1846,6 +1847,7 @@ pub struct WindowsWin32ViewInputRoute {
     slider_drag: Option<crate::WidgetId>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -1861,6 +1863,7 @@ pub struct WindowsWin32ViewInputRoute {
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -1912,6 +1915,7 @@ impl WindowsWin32ViewInputRoute {
             slider_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1927,6 +1931,7 @@ impl WindowsWin32ViewInputRoute {
             pointer_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1977,6 +1982,7 @@ impl WindowsWin32ViewInputRoute {
             slider_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1992,6 +1998,7 @@ impl WindowsWin32ViewInputRoute {
             pointer_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -2098,6 +2105,7 @@ impl WindowsWin32ViewInputRoute {
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2200,6 +2208,7 @@ impl WindowsWin32ViewInputRoute {
         let _ = now;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2308,6 +2317,7 @@ impl WindowsWin32ViewInputRoute {
             report.events.push("win32_view_text_pointer_up".to_string());
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -2337,6 +2347,7 @@ impl WindowsWin32ViewInputRoute {
                 .push("win32_view_slider_pointer_up".to_string());
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -2356,6 +2367,7 @@ impl WindowsWin32ViewInputRoute {
         report.pointer_up_count = 1;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2395,6 +2407,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2414,6 +2427,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(not(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2448,6 +2462,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2466,6 +2481,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(not(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2960,6 +2976,159 @@ impl WindowsWin32ViewInputRoute {
                             );
                             return report;
                         }
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "breadcrumb")]
+        if let Some(widget) = self.focused_widget {
+            if let Some(state) = self.widget_breadcrumb_state(widget) {
+                let mut visible = self
+                    .interaction_plan
+                    .hit_targets
+                    .iter()
+                    .filter_map(|target| match target.kind {
+                        crate::ViewHitTargetKind::BreadcrumbOverflow if target.widget == widget => {
+                            Some((target.bounds.x, crate::ZsBreadcrumbFocusTarget::Overflow))
+                        }
+                        crate::ViewHitTargetKind::BreadcrumbItem { item }
+                            if target.widget == widget =>
+                        {
+                            Some((target.bounds.x, crate::ZsBreadcrumbFocusTarget::Item(item)))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                visible.sort_by_key(|(x, _)| *x);
+                let visible = visible
+                    .into_iter()
+                    .map(|(_, target)| target)
+                    .collect::<Vec<_>>();
+                let mut hidden = self
+                    .interaction_plan
+                    .hit_targets
+                    .iter()
+                    .filter_map(|target| match target.kind {
+                        crate::ViewHitTargetKind::BreadcrumbOverflowItem { item }
+                            if target.widget == widget =>
+                        {
+                            Some((target.bounds.y, crate::ZsBreadcrumbFocusTarget::Item(item)))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                hidden.sort_by_key(|(y, _)| *y);
+                let hidden = hidden
+                    .into_iter()
+                    .map(|(_, target)| target)
+                    .collect::<Vec<_>>();
+
+                if virtual_key == u32::from(VK_ESCAPE) && state.overflow_open {
+                    report.handled = true;
+                    report.breadcrumb_expanded_change_count = 1;
+                    report.event_count = 1;
+                    report
+                        .events
+                        .push(format!("win32_view_breadcrumb_expanded:{}:false", widget.0));
+                    self.dispatch_event(
+                        crate::ViewEvent::BreadcrumbExpandedChanged {
+                            widget,
+                            expanded: false,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+
+                let focus_list = if state.overflow_open
+                    && matches!(virtual_key, key if key == u32::from(VK_UP) || key == u32::from(VK_DOWN))
+                    && !hidden.is_empty()
+                {
+                    &hidden
+                } else {
+                    &visible
+                };
+                let focus_offset = match virtual_key {
+                    key if key == u32::from(VK_LEFT) || key == u32::from(VK_UP) => Some(-1),
+                    key if key == u32::from(VK_RIGHT) || key == u32::from(VK_DOWN) => Some(1),
+                    key if key == u32::from(VK_HOME) => Some(isize::MIN),
+                    key if key == u32::from(VK_END) => Some(isize::MAX),
+                    _ => None,
+                };
+                if let Some(offset) = focus_offset.filter(|_| !focus_list.is_empty()) {
+                    let current_index = state.focused.and_then(|current| {
+                        focus_list.iter().position(|target| *target == current)
+                    });
+                    let next_index = if offset == isize::MIN {
+                        0
+                    } else if offset == isize::MAX {
+                        focus_list.len() - 1
+                    } else {
+                        match current_index {
+                            Some(index) => (index as isize + offset)
+                                .clamp(0, focus_list.len().saturating_sub(1) as isize)
+                                as usize,
+                            None if offset < 0 => focus_list.len() - 1,
+                            None => 0,
+                        }
+                    };
+                    let next = focus_list[next_index];
+                    report.handled = true;
+                    report.breadcrumb_focus_change_count = usize::from(state.focused != Some(next));
+                    report.event_count = 1;
+                    report
+                        .events
+                        .push(format!("win32_view_breadcrumb_focus:{}:{next:?}", widget.0));
+                    self.dispatch_event(
+                        crate::ViewEvent::BreadcrumbFocused {
+                            widget,
+                            target: next,
+                        },
+                        &mut report,
+                    );
+                    return report;
+                }
+                if matches!(virtual_key, ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE) {
+                    let active = state
+                        .focused
+                        .or_else(|| visible.first().copied())
+                        .or_else(|| state.current().map(crate::ZsBreadcrumbFocusTarget::Item));
+                    match active {
+                        Some(crate::ZsBreadcrumbFocusTarget::Overflow) => {
+                            report.handled = true;
+                            report.breadcrumb_expanded_change_count = 1;
+                            report.event_count = 1;
+                            report.events.push(format!(
+                                "win32_view_breadcrumb_expanded:{}:{}",
+                                widget.0, !state.overflow_open
+                            ));
+                            self.dispatch_event(
+                                crate::ViewEvent::BreadcrumbExpandedChanged {
+                                    widget,
+                                    expanded: !state.overflow_open,
+                                },
+                                &mut report,
+                            );
+                            return report;
+                        }
+                        Some(crate::ZsBreadcrumbFocusTarget::Item(item)) => {
+                            report.handled = true;
+                            report.breadcrumb_selection_count = 1;
+                            report.breadcrumb_expanded_change_count =
+                                usize::from(state.overflow_open);
+                            report.event_count = 1;
+                            report.events.push(format!(
+                                "win32_view_breadcrumb_selected:{}:{}",
+                                widget.0,
+                                item.get()
+                            ));
+                            self.dispatch_event(
+                                crate::ViewEvent::BreadcrumbSelected { widget, item },
+                                &mut report,
+                            );
+                            return report;
+                        }
+                        None => {}
                     }
                 }
             }
@@ -4028,6 +4197,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -4246,6 +4416,52 @@ impl WindowsWin32ViewInputRoute {
                 return;
             }
             crate::ViewHitTargetKind::TeachingTip => return,
+            _ => {}
+        }
+        #[cfg(feature = "breadcrumb")]
+        match target.kind {
+            crate::ViewHitTargetKind::BreadcrumbOverflow => {
+                let expanded = self
+                    .widget_breadcrumb_state(target.widget)
+                    .map_or(true, |state| !state.overflow_open);
+                report.breadcrumb_expanded_change_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_breadcrumb_expanded:{}:{}",
+                    target.widget.0, expanded
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::BreadcrumbExpandedChanged {
+                        widget: target.widget,
+                        expanded,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::BreadcrumbItem { item }
+            | crate::ViewHitTargetKind::BreadcrumbOverflowItem { item } => {
+                report.breadcrumb_selection_count = 1;
+                report.breadcrumb_expanded_change_count = usize::from(
+                    self.widget_breadcrumb_state(target.widget)
+                        .is_some_and(|state| state.overflow_open),
+                );
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_breadcrumb_selected:{}:{}",
+                    target.widget.0,
+                    item.get()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::BreadcrumbSelected {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+                return;
+            }
+            crate::ViewHitTargetKind::BreadcrumbBar => return,
             _ => {}
         }
         #[cfg(feature = "tree")]
@@ -4941,6 +5157,18 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "breadcrumb")]
+    fn widget_breadcrumb_state(&self, widget: crate::WidgetId) -> Option<crate::ZsBreadcrumbState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_breadcrumb_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_breadcrumb_state(widget))
+            })
+    }
+
     #[cfg(feature = "teaching-tip")]
     fn widget_teaching_tip_state(
         &self,
@@ -5174,6 +5402,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -5268,6 +5497,7 @@ impl WindowsWin32ViewInputRoute {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -5487,6 +5717,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub info_bar_event_count: usize,
     pub teaching_tip_focus_change_count: usize,
     pub teaching_tip_response_count: usize,
+    pub breadcrumb_focus_change_count: usize,
+    pub breadcrumb_expanded_change_count: usize,
+    pub breadcrumb_selection_count: usize,
     pub combo_expanded_change_count: usize,
     pub combo_selection_count: usize,
     pub combo_keyboard_selection_count: usize,
@@ -5571,6 +5804,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.info_bar_event_count += next.info_bar_event_count;
         self.teaching_tip_focus_change_count += next.teaching_tip_focus_change_count;
         self.teaching_tip_response_count += next.teaching_tip_response_count;
+        self.breadcrumb_focus_change_count += next.breadcrumb_focus_change_count;
+        self.breadcrumb_expanded_change_count += next.breadcrumb_expanded_change_count;
+        self.breadcrumb_selection_count += next.breadcrumb_selection_count;
         self.combo_expanded_change_count += next.combo_expanded_change_count;
         self.combo_selection_count += next.combo_selection_count;
         self.combo_keyboard_selection_count += next.combo_keyboard_selection_count;
@@ -9006,6 +9242,88 @@ mod tests {
         let close = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
         assert_eq!(close.teaching_tip_response_count, 1);
         assert_eq!(close.ui_command_count, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "breadcrumb")]
+    fn window_view_input_route_routes_breadcrumb_overflow_focus_and_selection() {
+        fn expanded(_expanded: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.breadcrumb_expanded"))
+        }
+        fn selected(_item: crate::ZsBreadcrumbId) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.breadcrumb_selected"))
+        }
+
+        let widget = crate::WidgetId::new(153);
+        let mut view = crate::breadcrumb_bar([
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(1), "Home"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(2), "Projects"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(3), "ZSUI Framework"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(4), "Documentation"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(5), "BreadcrumbBar"),
+        ])
+        .id(widget)
+        .width(crate::Dp::new(240.0))
+        .expanded(false)
+        .on_expanded_change(expanded)
+        .on_breadcrumb_select(selected);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 220,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let overflow = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::BreadcrumbOverflow)
+            .expect("narrow breadcrumb overflow");
+
+        let mut pointer_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
+        let open = pointer_route.dispatch_click(crate::Point {
+            x: overflow.bounds.x + overflow.bounds.width / 2,
+            y: overflow.bounds.y + overflow.bounds.height / 2,
+        });
+        assert_eq!(open.breadcrumb_expanded_change_count, 1);
+        assert_eq!(open.ui_command_count, 1);
+        let row = pointer_route
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::BreadcrumbOverflowItem { .. }
+                )
+            })
+            .expect("open overflow row");
+        let pointer = pointer_route.dispatch_click(crate::Point {
+            x: row.bounds.x + row.bounds.width / 2,
+            y: row.bounds.y + row.bounds.height / 2,
+        });
+        assert_eq!(pointer.breadcrumb_selection_count, 1);
+        assert_eq!(pointer.breadcrumb_expanded_change_count, 1);
+        assert_eq!(pointer.ui_command_count, 2);
+
+        let mut keyboard_route = WindowsWin32ViewInputRoute::new(interaction, view);
+        let focus = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_TAB);
+        assert_eq!(focus.focused_widget, Some(widget.0));
+        let home = keyboard_route.dispatch_key_down(u32::from(VK_HOME));
+        assert_eq!(home.breadcrumb_focus_change_count, 1);
+        let open = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(open.breadcrumb_expanded_change_count, 1);
+        let down = keyboard_route.dispatch_key_down(u32::from(VK_DOWN));
+        assert_eq!(down.breadcrumb_focus_change_count, 1);
+        let selection = keyboard_route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(selection.breadcrumb_selection_count, 1);
+        assert_eq!(selection.breadcrumb_expanded_change_count, 1);
+        assert_eq!(selection.ui_command_count, 2);
     }
 
     #[test]

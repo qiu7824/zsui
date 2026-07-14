@@ -196,6 +196,20 @@ history remain authoritative for implementation status.
   Light-dismiss, close cancellation/deferrals, arbitrary View/hero/icon
   content, complete RTL/placement coverage, accessibility focus handoff and
   AppKit/GTK target interaction smoke remain readiness gaps.
+- BreadcrumbBar is an independent `breadcrumb` Cargo feature over
+  `widgets-base`; it must not pull in Tabs, TreeView or a native child control.
+  Applications own the root-to-current `ZsBreadcrumbItem` sequence, stable
+  `ZsBreadcrumbId` values and explicit overflow-open state. The framework owns
+  width-aware collapse, transient semantic focus, one Tab stop, internal
+  arrow/Home/End navigation, overflow Up/Down navigation and typed expanded/
+  selection messages. Windows and GTK collapse leftmost ancestors behind a
+  leading ellipsis; macOS preserves the root before the ellipsis when space
+  permits. Windows follows Fluent BreadcrumbBar, macOS uses compact Path
+  Control-like metrics, and GTK uses a ZSUI self-drawn profile informed by
+  GNOME navigation/Adwaita because GTK has no public breadcrumb widget.
+  Accessibility relationships, editable/file paths, semantic item icons,
+  drag-and-drop, complete RTL and AppKit/GTK target interaction smoke remain
+  readiness gaps.
 - ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
   in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
   mode and semantic size explicit, while inactive rings reserve layout space and

@@ -165,6 +165,18 @@ NSPopover-like and GtkPopover-like metric profiles while consuming the same
 self-drawn surface and `FillTriangle` tail command; no child native widget or
 global target registry is introduced.
 
+The optional `breadcrumb` feature adds `breadcrumb_bar(items)` as a compact
+root-to-current navigation path. Applications own immutable
+`ZsBreadcrumbItem` values, stable `ZsBreadcrumbId` identities and the explicit
+overflow-open flag; the framework owns transient semantic focus, width-aware
+collapse, popup placement and typed selection/expanded events. The bar is one
+Tab stop with internal arrow/Home/End navigation. Windows and GTK place the
+ellipsis before the surviving trailing path, while the macOS profile preserves
+the root before the ellipsis when space permits. All three profiles use the
+same self-drawn View, hit plan and popup overlay. GTK has no public breadcrumb
+widget to wrap, so its metrics are a ZSUI profile informed by GNOME navigation
+and Adwaita conventions rather than a false native-control claim.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

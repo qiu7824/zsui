@@ -139,6 +139,9 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_info_bar_event_count: usize,
     pub native_view_teaching_tip_focus_count: usize,
     pub native_view_teaching_tip_response_count: usize,
+    pub native_view_breadcrumb_focus_count: usize,
+    pub native_view_breadcrumb_expanded_change_count: usize,
+    pub native_view_breadcrumb_selection_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -249,6 +252,9 @@ impl NativeHostSmokeInteractionReport {
             native_view_info_bar_event_count: 0,
             native_view_teaching_tip_focus_count: 0,
             native_view_teaching_tip_response_count: 0,
+            native_view_breadcrumb_focus_count: 0,
+            native_view_breadcrumb_expanded_change_count: 0,
+            native_view_breadcrumb_selection_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -490,6 +496,24 @@ impl NativeHostSmokeInteractionReport {
                 report.native_view_teaching_tip_response_count
             ));
         }
+        if report.native_view_breadcrumb_focus_count > 0 {
+            notes.push(format!(
+                "native breadcrumb semantic focus changes: {}",
+                report.native_view_breadcrumb_focus_count
+            ));
+        }
+        if report.native_view_breadcrumb_expanded_change_count > 0 {
+            notes.push(format!(
+                "native breadcrumb expansion changes: {}",
+                report.native_view_breadcrumb_expanded_change_count
+            ));
+        }
+        if report.native_view_breadcrumb_selection_count > 0 {
+            notes.push(format!(
+                "native breadcrumb typed selections: {}",
+                report.native_view_breadcrumb_selection_count
+            ));
+        }
         if report.native_view_combo_expanded_change_count > 0 {
             notes.push(format!(
                 "native view input smoke routed {} combo expansion event(s)",
@@ -663,6 +687,10 @@ impl NativeHostSmokeInteractionReport {
             native_view_info_bar_event_count: report.native_view_info_bar_event_count,
             native_view_teaching_tip_focus_count: report.native_view_teaching_tip_focus_count,
             native_view_teaching_tip_response_count: report.native_view_teaching_tip_response_count,
+            native_view_breadcrumb_focus_count: report.native_view_breadcrumb_focus_count,
+            native_view_breadcrumb_expanded_change_count: report
+                .native_view_breadcrumb_expanded_change_count,
+            native_view_breadcrumb_selection_count: report.native_view_breadcrumb_selection_count,
             native_view_combo_expanded_change_count: report.native_view_combo_expanded_change_count,
             native_view_combo_selection_count: report.native_view_combo_selection_count,
             native_view_combo_keyboard_selection_count: report
@@ -1332,6 +1360,9 @@ mod tests {
             native_view_info_bar_event_count: 1,
             native_view_teaching_tip_focus_count: 1,
             native_view_teaching_tip_response_count: 1,
+            native_view_breadcrumb_focus_count: 1,
+            native_view_breadcrumb_expanded_change_count: 2,
+            native_view_breadcrumb_selection_count: 1,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1410,6 +1441,9 @@ mod tests {
         assert!(interaction_json.contains("\"native_view_info_bar_event_count\": 1"));
         assert!(interaction_json.contains("\"native_view_teaching_tip_focus_count\": 1"));
         assert!(interaction_json.contains("\"native_view_teaching_tip_response_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_breadcrumb_focus_count\": 1"));
+        assert!(interaction_json.contains("\"native_view_breadcrumb_expanded_change_count\": 2"));
+        assert!(interaction_json.contains("\"native_view_breadcrumb_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_combo_scroll_count\": 1"));
         assert!(interaction_json.contains("\"native_view_tab_selection_count\": 1"));
         assert!(interaction_json.contains("\"native_view_tab_keyboard_selection_count\": 1"));

@@ -571,6 +571,14 @@ pub enum ViewNodeKind<Msg> {
         label: String,
         on_click: Option<Msg>,
     },
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbBar {
+        items: Vec<crate::ZsBreadcrumbItem>,
+        overflow_open: bool,
+        focused: Option<crate::ZsBreadcrumbFocusTarget>,
+        on_select: Option<fn(crate::ZsBreadcrumbId) -> Msg>,
+        on_expanded_change: Option<fn(bool) -> Msg>,
+    },
     #[cfg(feature = "toggle-button")]
     ToggleButton {
         label: String,
@@ -955,6 +963,14 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    #[cfg(feature = "breadcrumb")]
+    pub fn on_breadcrumb_select(mut self, message: fn(crate::ZsBreadcrumbId) -> Msg) -> Self {
+        if let ViewNodeKind::BreadcrumbBar { on_select, .. } = &mut self.kind {
+            *on_select = Some(message);
+        }
+        self
+    }
+
     #[cfg(feature = "textbox")]
     pub fn on_change(mut self, message: fn(String) -> Msg) -> Self {
         if let ViewNodeKind::Textbox { on_change, .. } = &mut self.kind {
@@ -1201,6 +1217,7 @@ impl<Msg: Clone> ViewNode<Msg> {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -1209,6 +1226,8 @@ impl<Msg: Clone> ViewNode<Msg> {
         match &mut self.kind {
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox { expanded, .. } => *expanded = is_expanded,
+            #[cfg(feature = "breadcrumb")]
+            ViewNodeKind::BreadcrumbBar { overflow_open, .. } => *overflow_open = is_expanded,
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { expanded, .. } => *expanded = is_expanded,
             #[cfg(feature = "date-picker")]
@@ -1302,6 +1321,7 @@ impl<Msg: Clone> ViewNode<Msg> {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -1310,6 +1330,10 @@ impl<Msg: Clone> ViewNode<Msg> {
         match &mut self.kind {
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox {
+                on_expanded_change, ..
+            } => *on_expanded_change = Some(message),
+            #[cfg(feature = "breadcrumb")]
+            ViewNodeKind::BreadcrumbBar {
                 on_expanded_change, ..
             } => *on_expanded_change = Some(message),
             #[cfg(feature = "combo")]
@@ -1501,6 +1525,27 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
         label: label.into(),
         on_click: None,
     })
+}
+
+/// Creates a self-drawn root-to-current breadcrumb path.
+///
+/// Item IDs remain application-owned. The overflow flyout is controlled with
+/// `.expanded(...)` and `.on_expanded_change(...)` like other shared popups.
+#[cfg(feature = "breadcrumb")]
+pub fn breadcrumb_bar<T, Msg>(items: impl IntoIterator<Item = T>) -> ViewNode<Msg>
+where
+    T: Into<crate::ZsBreadcrumbItem>,
+{
+    let metrics =
+        crate::ZsBreadcrumbMetrics::for_platform(crate::ZsBreadcrumbPlatformStyle::current());
+    ViewNode::new(ViewNodeKind::BreadcrumbBar {
+        items: items.into_iter().map(Into::into).collect(),
+        overflow_open: false,
+        focused: None,
+        on_select: None,
+        on_expanded_change: None,
+    })
+    .height(metrics.control_height)
 }
 
 #[cfg(feature = "toggle-button")]
@@ -2062,6 +2107,21 @@ pub enum ViewEvent {
         widget: WidgetId,
         event: crate::ZsInfoBarEvent,
     },
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbFocused {
+        widget: WidgetId,
+        target: crate::ZsBreadcrumbFocusTarget,
+    },
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbExpandedChanged {
+        widget: WidgetId,
+        expanded: bool,
+    },
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbSelected {
+        widget: WidgetId,
+        item: crate::ZsBreadcrumbId,
+    },
     #[cfg(feature = "combo")]
     ComboBoxExpandedChanged {
         widget: WidgetId,
@@ -2109,6 +2169,7 @@ pub enum ViewEvent {
     },
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -2247,6 +2308,18 @@ pub enum ViewHitTargetKind {
     InfoBarAction,
     #[cfg(feature = "info-bar")]
     InfoBarClose,
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbBar,
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbOverflow,
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbItem {
+        item: crate::ZsBreadcrumbId,
+    },
+    #[cfg(feature = "breadcrumb")]
+    BreadcrumbOverflowItem {
+        item: crate::ZsBreadcrumbId,
+    },
     #[cfg(feature = "combo")]
     ComboBox,
     #[cfg(feature = "combo")]
@@ -2485,6 +2558,15 @@ impl ViewHitTarget {
         ) {
             return false;
         }
+        #[cfg(feature = "breadcrumb")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::BreadcrumbOverflow
+                | ViewHitTargetKind::BreadcrumbItem { .. }
+                | ViewHitTargetKind::BreadcrumbOverflowItem { .. }
+        ) {
+            return false;
+        }
         #[cfg(feature = "password-box")]
         if self.kind == ViewHitTargetKind::PasswordBoxReveal {
             return false;
@@ -2691,6 +2773,8 @@ trait LiveViewDriver: Send {
         &self,
         widget: WidgetId,
     ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)>;
+    #[cfg(feature = "breadcrumb")]
+    fn widget_breadcrumb_state(&self, widget: WidgetId) -> Option<crate::ZsBreadcrumbState>;
     #[cfg(feature = "combo")]
     fn widget_combo_state(&self, widget: WidgetId) -> Option<(Option<usize>, usize, bool)>;
     #[cfg(feature = "combo")]
@@ -2813,6 +2897,11 @@ impl SharedLiveViewRuntime {
         widget: WidgetId,
     ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
         self.lock().widget_info_bar_state(widget)
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    pub fn widget_breadcrumb_state(&self, widget: WidgetId) -> Option<crate::ZsBreadcrumbState> {
+        self.lock().widget_breadcrumb_state(widget)
     }
 
     #[cfg(feature = "radio")]
@@ -3124,6 +3213,11 @@ where
         self.view.widget_info_bar_state(widget)
     }
 
+    #[cfg(feature = "breadcrumb")]
+    fn widget_breadcrumb_state(&self, widget: WidgetId) -> Option<crate::ZsBreadcrumbState> {
+        self.view.widget_breadcrumb_state(widget)
+    }
+
     #[cfg(feature = "combo")]
     fn widget_combo_type_ahead_match(
         &self,
@@ -3247,6 +3341,7 @@ impl ViewPaintCx {
         self.paint_depth = self.paint_depth.saturating_sub(1);
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
@@ -3505,6 +3600,63 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 {
                     if let Some(message) = on_event {
                         cx.emit(message(*event));
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        #[cfg(feature = "breadcrumb")]
+        if let ViewNodeKind::BreadcrumbBar {
+            items,
+            overflow_open,
+            focused,
+            on_select,
+            on_expanded_change,
+        } = &mut self.kind
+        {
+            match event {
+                ViewEvent::BreadcrumbFocused { widget, target }
+                    if self.id == Some(*widget)
+                        && match target {
+                            crate::ZsBreadcrumbFocusTarget::Overflow => true,
+                            crate::ZsBreadcrumbFocusTarget::Item(id) => {
+                                items.iter().any(|item| item.id() == *id)
+                            }
+                        } =>
+                {
+                    *focused = Some(*target);
+                }
+                ViewEvent::BreadcrumbExpandedChanged { widget, expanded }
+                    if self.id == Some(*widget) =>
+                {
+                    *overflow_open = *expanded;
+                    if let Some(message) = on_expanded_change {
+                        cx.emit(message(*expanded));
+                    }
+                }
+                ViewEvent::BreadcrumbSelected { widget, item }
+                    if self.id == Some(*widget)
+                        && items.iter().any(|candidate| candidate.id() == *item) =>
+                {
+                    *focused = Some(crate::ZsBreadcrumbFocusTarget::Item(*item));
+                    if *overflow_open {
+                        *overflow_open = false;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                    if let Some(message) = on_select {
+                        cx.emit(message(*item));
+                    }
+                }
+                ViewEvent::DismissPopupOverlays { except }
+                    if self.id.is_some() && self.id != *except && *overflow_open =>
+                {
+                    *overflow_open = false;
+                    if let Some(message) = on_expanded_change {
+                        cx.emit(message(false));
                     }
                 }
                 _ => {}
@@ -4571,6 +4723,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "breadcrumb")]
+            ViewNodeKind::BreadcrumbBar { items, focused, .. } => {
+                let plan = crate::zs_breadcrumb_render_plan(
+                    bounds,
+                    items,
+                    false,
+                    crate::ZsBreadcrumbPlatformStyle::current(),
+                    cx.dpi,
+                    None,
+                );
+                for command in
+                    crate::zs_breadcrumb_native_draw_plan(&plan, items, *focused).commands
+                {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox {
                 value, multiline, ..
@@ -5081,6 +5249,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "info-bar")]
             (Some(id), ViewEvent::InfoBarFocused { widget, .. })
             | (Some(id), ViewEvent::InfoBarInvoked { widget, .. }) => id == *widget,
+            #[cfg(feature = "breadcrumb")]
+            (Some(id), ViewEvent::BreadcrumbFocused { widget, .. })
+            | (Some(id), ViewEvent::BreadcrumbExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::BreadcrumbSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "combo")]
             (Some(id), ViewEvent::ComboBoxExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::ComboBoxSelected { widget, .. })
@@ -5098,6 +5270,7 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "combo",
                 feature = "date-picker",
                 feature = "time-picker"
@@ -5131,6 +5304,7 @@ impl<Msg> ViewNode<Msg> {
         self.collect_hit_targets(&mut hit_targets, None);
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
@@ -5504,6 +5678,28 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_info_bar_state(widget))
     }
 
+    #[cfg(feature = "breadcrumb")]
+    pub fn widget_breadcrumb_state(&self, widget: WidgetId) -> Option<crate::ZsBreadcrumbState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::BreadcrumbBar {
+                items,
+                overflow_open,
+                focused,
+                ..
+            } = &self.kind
+            {
+                return Some(crate::ZsBreadcrumbState {
+                    items: items.clone(),
+                    overflow_open: *overflow_open,
+                    focused: *focused,
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_breadcrumb_state(widget))
+    }
+
     #[cfg(feature = "combo")]
     pub(crate) fn widget_combo_type_ahead_match(
         &self,
@@ -5750,6 +5946,52 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "breadcrumb")]
+        if let (Some(widget), Some(bounds), ViewNodeKind::BreadcrumbBar { items, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            if items.is_empty() {
+                return;
+            }
+            let plan = crate::zs_breadcrumb_render_plan(
+                bounds,
+                items,
+                false,
+                crate::ZsBreadcrumbPlatformStyle::current(),
+                self.layout_dpi,
+                None,
+            );
+            if let Some(bounds) = clipped_rect(bounds, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::BreadcrumbBar,
+                ));
+            }
+            for item in &plan.items {
+                if let (Some(spec), Some(bounds)) =
+                    (items.get(item.item_index), clipped_rect(item.bounds, clip))
+                {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        ViewHitTargetKind::BreadcrumbItem { item: spec.id() },
+                    ));
+                }
+            }
+            if let Some(bounds) = plan
+                .overflow_bounds
+                .and_then(|bounds| clipped_rect(bounds, clip))
+            {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::BreadcrumbOverflow,
+                ));
+            }
+            return;
+        }
+
         #[cfg(feature = "info-bar")]
         if let (
             Some(widget),
@@ -6162,6 +6404,7 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -6174,6 +6417,35 @@ impl<Msg> ViewNode<Msg> {
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "breadcrumb")]
+        if let ViewNodeKind::BreadcrumbBar {
+            items,
+            overflow_open,
+            ..
+        } = &self.kind
+        {
+            if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
+                let plan = crate::zs_breadcrumb_render_plan(
+                    bounds,
+                    items,
+                    *overflow_open,
+                    crate::ZsBreadcrumbPlatformStyle::current(),
+                    self.layout_dpi,
+                    viewport.or(self.bounds),
+                );
+                for row in &plan.popup_rows {
+                    if let Some(item) = items.get(row.item_index) {
+                        hit_targets.push(ViewHitTarget::with_kind(
+                            widget,
+                            row.bounds,
+                            ViewHitTargetKind::BreadcrumbOverflowItem { item: item.id() },
+                        ));
+                    }
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "teaching-tip")]
         if let ViewNodeKind::TeachingTip {
             spec,
@@ -6548,6 +6820,7 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -6556,6 +6829,32 @@ impl<Msg> ViewNode<Msg> {
         feature = "toast"
     ))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
+        #[cfg(feature = "breadcrumb")]
+        if let ViewNodeKind::BreadcrumbBar {
+            items,
+            overflow_open,
+            focused,
+            ..
+        } = &self.kind
+        {
+            if let Some(bounds) = self.bounds {
+                let plan = crate::zs_breadcrumb_render_plan(
+                    bounds,
+                    items,
+                    *overflow_open,
+                    crate::ZsBreadcrumbPlatformStyle::current(),
+                    cx.dpi,
+                    viewport.or(self.bounds),
+                );
+                for command in
+                    crate::zs_breadcrumb_popup_native_draw_plan(&plan, items, *focused).commands
+                {
+                    cx.draw(command);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "teaching-tip")]
         if let ViewNodeKind::TeachingTip {
             spec,
@@ -6846,6 +7145,8 @@ impl<Msg> ViewNode<Msg> {
         match &self.kind {
             #[cfg(feature = "button")]
             ViewNodeKind::Button { .. } => ViewHitTargetKind::Button,
+            #[cfg(feature = "breadcrumb")]
+            ViewNodeKind::BreadcrumbBar { .. } => ViewHitTargetKind::BreadcrumbBar,
             #[cfg(feature = "toggle-button")]
             ViewNodeKind::ToggleButton { .. } => ViewHitTargetKind::ToggleButton,
             #[cfg(feature = "textbox")]
@@ -7440,6 +7741,7 @@ mod tests {
         feature = "slider",
         feature = "number-box",
         feature = "radio",
+        feature = "breadcrumb",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -7504,6 +7806,10 @@ mod tests {
         TeachingTipResult(crate::ZsTeachingTipResult),
         #[cfg(feature = "info-bar")]
         InfoBarEvent(crate::ZsInfoBarEvent),
+        #[cfg(feature = "breadcrumb")]
+        BreadcrumbSelected(crate::ZsBreadcrumbId),
+        #[cfg(feature = "breadcrumb")]
+        BreadcrumbExpanded(bool),
         #[cfg(feature = "scroll")]
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
@@ -8934,6 +9240,102 @@ mod tests {
             events.into_messages(),
             vec![Msg::InfoBarEvent(crate::ZsInfoBarEvent::Action)]
         );
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    #[test]
+    fn breadcrumb_routes_one_tab_stop_overflow_focus_and_typed_selection() {
+        let widget = WidgetId::new(118);
+        let first = crate::ZsBreadcrumbId::new(1);
+        let selected = crate::ZsBreadcrumbId::new(2);
+        let current = crate::ZsBreadcrumbId::new(5);
+        let mut view = column([
+            breadcrumb_bar([
+                crate::ZsBreadcrumbItem::new(first, "Home"),
+                crate::ZsBreadcrumbItem::new(selected, "Projects"),
+                crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(3), "ZSUI Framework"),
+                crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(4), "Documentation"),
+                crate::ZsBreadcrumbItem::new(current, "BreadcrumbBar"),
+            ])
+            .id(widget)
+            .width(Dp::new(240.0))
+            .expanded(true)
+            .on_expanded_change(Msg::BreadcrumbExpanded)
+            .on_breadcrumb_select(Msg::BreadcrumbSelected),
+            spacer::<Msg>(),
+        ]);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 220,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.widget),
+            Some(widget)
+        );
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| target.accepts_focus())
+                .filter(|target| target.widget == widget)
+                .count(),
+            1
+        );
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::BreadcrumbOverflow));
+        assert!(interaction.hit_targets.iter().any(|target| matches!(
+            target.kind,
+            ViewHitTargetKind::BreadcrumbOverflowItem { .. }
+        )));
+
+        let mut focus = ViewEventCx::new();
+        view.event(
+            &mut focus,
+            &ViewEvent::BreadcrumbFocused {
+                widget,
+                target: crate::ZsBreadcrumbFocusTarget::Overflow,
+            },
+        );
+        assert!(focus.messages().is_empty());
+        assert_eq!(
+            view.widget_breadcrumb_state(widget)
+                .and_then(|state| state.focused),
+            Some(crate::ZsBreadcrumbFocusTarget::Overflow)
+        );
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::BreadcrumbSelected {
+                widget,
+                item: selected,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::BreadcrumbExpanded(false),
+                Msg::BreadcrumbSelected(selected),
+            ]
+        );
+        assert!(view
+            .widget_breadcrumb_state(widget)
+            .is_some_and(|state| !state.overflow_open
+                && state.focused == Some(crate::ZsBreadcrumbFocusTarget::Item(selected))));
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::More
+        )));
     }
 
     #[cfg(feature = "combo")]

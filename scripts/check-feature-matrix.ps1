@@ -12,6 +12,7 @@ if ($Locked) {
 $singleFeatures = @(
     "window",
     "button",
+    "breadcrumb",
     "toggle-button",
     "label",
     "grid",
@@ -73,7 +74,7 @@ $singleFeatures = @(
 )
 
 $featureSets = @(
-    "button,label,grid",
+    "button,breadcrumb,label,grid",
     "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,tabs",
     "list,tree,table",
     "virtual-list,paged-list,label",

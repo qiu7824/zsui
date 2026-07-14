@@ -255,6 +255,15 @@ pub(crate) fn decorate_native_focus_ring(
     ) {
         return None;
     }
+    #[cfg(feature = "breadcrumb")]
+    if matches!(
+        target.kind,
+        ViewHitTargetKind::BreadcrumbOverflow
+            | ViewHitTargetKind::BreadcrumbItem { .. }
+            | ViewHitTargetKind::BreadcrumbOverflowItem { .. }
+    ) {
+        return None;
+    }
     #[cfg(feature = "teaching-tip")]
     if matches!(
         target.kind,
@@ -306,6 +315,7 @@ pub(crate) fn decorate_native_focus_ring(
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
@@ -322,6 +332,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
@@ -343,6 +354,14 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
             ViewHitTargetKind::AutoSuggestSearch
                 | ViewHitTargetKind::AutoSuggestClear
                 | ViewHitTargetKind::AutoSuggestSuggestion { .. }
+        );
+    #[cfg(feature = "breadcrumb")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::BreadcrumbOverflow
+                | ViewHitTargetKind::BreadcrumbItem { .. }
+                | ViewHitTargetKind::BreadcrumbOverflowItem { .. }
         );
     #[cfg(feature = "toggle-button")]
     let supported = supported || target.kind == ViewHitTargetKind::ToggleButton;
@@ -403,6 +422,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",

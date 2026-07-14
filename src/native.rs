@@ -12,6 +12,7 @@ use crate::native_input_visuals::{
 };
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
@@ -895,6 +896,9 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_info_bar_event_count: usize,
     pub native_view_teaching_tip_focus_count: usize,
     pub native_view_teaching_tip_response_count: usize,
+    pub native_view_breadcrumb_focus_count: usize,
+    pub native_view_breadcrumb_expanded_change_count: usize,
+    pub native_view_breadcrumb_selection_count: usize,
     pub native_view_combo_expanded_change_count: usize,
     pub native_view_combo_selection_count: usize,
     pub native_view_combo_keyboard_selection_count: usize,
@@ -1012,6 +1016,9 @@ impl NativeWindowSmokeRunReport {
             native_view_info_bar_event_count: 0,
             native_view_teaching_tip_focus_count: 0,
             native_view_teaching_tip_response_count: 0,
+            native_view_breadcrumb_focus_count: 0,
+            native_view_breadcrumb_expanded_change_count: 0,
+            native_view_breadcrumb_selection_count: 0,
             native_view_combo_expanded_change_count: 0,
             native_view_combo_selection_count: 0,
             native_view_combo_keyboard_selection_count: 0,
@@ -1071,6 +1078,7 @@ pub(crate) struct NativeViewInputRuntime {
     slider_drag: Option<crate::WidgetId>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -1086,6 +1094,7 @@ pub(crate) struct NativeViewInputRuntime {
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -1173,6 +1182,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub focus_visual_changed: bool,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -1244,6 +1254,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub teaching_tip_focus_changed: bool,
     #[cfg(feature = "teaching-tip")]
     pub teaching_tip_response: Option<crate::ZsTeachingTipResponse>,
+    #[cfg(feature = "breadcrumb")]
+    pub breadcrumb_focus_changed: bool,
+    #[cfg(feature = "breadcrumb")]
+    pub breadcrumb_expanded_changed: bool,
+    #[cfg(feature = "breadcrumb")]
+    pub breadcrumb_selection: Option<crate::ZsBreadcrumbId>,
     #[cfg(feature = "combo")]
     pub combo_expanded_changed: bool,
     #[cfg(feature = "combo")]
@@ -1301,6 +1317,7 @@ impl NativeViewInputRuntime {
             slider_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1316,6 +1333,7 @@ impl NativeViewInputRuntime {
             pointer_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1511,6 +1529,7 @@ impl NativeViewInputRuntime {
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -1611,6 +1630,7 @@ impl NativeViewInputRuntime {
         let _ = now;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -1716,6 +1736,7 @@ impl NativeViewInputRuntime {
             report.text_drag_active = false;
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1739,6 +1760,7 @@ impl NativeViewInputRuntime {
             report.slider_drag_active = false;
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "breadcrumb",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "info-bar",
@@ -1763,6 +1785,7 @@ impl NativeViewInputRuntime {
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -1992,6 +2015,39 @@ impl NativeViewInputRuntime {
             _ => {}
         }
 
+        #[cfg(feature = "breadcrumb")]
+        match target.kind {
+            crate::ViewHitTargetKind::BreadcrumbOverflow => {
+                let expanded = self
+                    .widget_breadcrumb_state(target.widget)
+                    .map_or(true, |state| !state.overflow_open);
+                report.breadcrumb_expanded_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::BreadcrumbExpandedChanged {
+                        widget: target.widget,
+                        expanded,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::BreadcrumbItem { item }
+            | crate::ViewHitTargetKind::BreadcrumbOverflowItem { item } => {
+                report.breadcrumb_selection = Some(item);
+                report.breadcrumb_expanded_changed = self
+                    .widget_breadcrumb_state(target.widget)
+                    .is_some_and(|state| state.overflow_open);
+                return self.dispatch_view_event(
+                    ViewEvent::BreadcrumbSelected {
+                        widget: target.widget,
+                        item,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::BreadcrumbBar => return report,
+            _ => {}
+        }
+
         let event = self.activation_event(target);
 
         #[cfg(feature = "radio")]
@@ -2053,6 +2109,7 @@ impl NativeViewInputRuntime {
         };
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2088,6 +2145,7 @@ impl NativeViewInputRuntime {
         }
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2106,6 +2164,7 @@ impl NativeViewInputRuntime {
         }
         #[cfg(not(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -2334,6 +2393,133 @@ impl NativeViewInputRuntime {
                                 report,
                             );
                         }
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "breadcrumb")]
+        if let Some(widget) = self.focused_widget {
+            if let Some(state) = self.widget_breadcrumb_state(widget) {
+                let mut visible = interaction_plan
+                    .hit_targets
+                    .iter()
+                    .filter_map(|target| match target.kind {
+                        crate::ViewHitTargetKind::BreadcrumbOverflow if target.widget == widget => {
+                            Some((target.bounds.x, crate::ZsBreadcrumbFocusTarget::Overflow))
+                        }
+                        crate::ViewHitTargetKind::BreadcrumbItem { item }
+                            if target.widget == widget =>
+                        {
+                            Some((target.bounds.x, crate::ZsBreadcrumbFocusTarget::Item(item)))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                visible.sort_by_key(|(x, _)| *x);
+                let visible = visible
+                    .into_iter()
+                    .map(|(_, target)| target)
+                    .collect::<Vec<_>>();
+                let mut hidden = interaction_plan
+                    .hit_targets
+                    .iter()
+                    .filter_map(|target| match target.kind {
+                        crate::ViewHitTargetKind::BreadcrumbOverflowItem { item }
+                            if target.widget == widget =>
+                        {
+                            Some((target.bounds.y, crate::ZsBreadcrumbFocusTarget::Item(item)))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                hidden.sort_by_key(|(y, _)| *y);
+                let hidden = hidden
+                    .into_iter()
+                    .map(|(_, target)| target)
+                    .collect::<Vec<_>>();
+
+                if key == NativeViewKey::Escape && state.overflow_open {
+                    report.handled = true;
+                    report.breadcrumb_expanded_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::BreadcrumbExpandedChanged {
+                            widget,
+                            expanded: false,
+                        },
+                        report,
+                    );
+                }
+
+                let focus_list = if state.overflow_open
+                    && matches!(key, NativeViewKey::Up | NativeViewKey::Down)
+                    && !hidden.is_empty()
+                {
+                    &hidden
+                } else {
+                    &visible
+                };
+                let focus_offset = match key {
+                    NativeViewKey::Left | NativeViewKey::Up => Some(-1),
+                    NativeViewKey::Right | NativeViewKey::Down => Some(1),
+                    NativeViewKey::Home => Some(isize::MIN),
+                    NativeViewKey::End => Some(isize::MAX),
+                    _ => None,
+                };
+                if let Some(offset) = focus_offset.filter(|_| !focus_list.is_empty()) {
+                    let current_index = state.focused.and_then(|current| {
+                        focus_list.iter().position(|target| *target == current)
+                    });
+                    let next_index = if offset == isize::MIN {
+                        0
+                    } else if offset == isize::MAX {
+                        focus_list.len() - 1
+                    } else {
+                        match current_index {
+                            Some(index) => (index as isize + offset)
+                                .clamp(0, focus_list.len().saturating_sub(1) as isize)
+                                as usize,
+                            None if offset < 0 => focus_list.len() - 1,
+                            None => 0,
+                        }
+                    };
+                    let next = focus_list[next_index];
+                    report.handled = true;
+                    report.breadcrumb_focus_changed = state.focused != Some(next);
+                    return self.dispatch_view_event(
+                        ViewEvent::BreadcrumbFocused {
+                            widget,
+                            target: next,
+                        },
+                        report,
+                    );
+                }
+                if matches!(key, NativeViewKey::Enter | NativeViewKey::Space) {
+                    let active = state
+                        .focused
+                        .or_else(|| visible.first().copied())
+                        .or_else(|| state.current().map(crate::ZsBreadcrumbFocusTarget::Item));
+                    match active {
+                        Some(crate::ZsBreadcrumbFocusTarget::Overflow) => {
+                            report.handled = true;
+                            report.breadcrumb_expanded_changed = true;
+                            return self.dispatch_view_event(
+                                ViewEvent::BreadcrumbExpandedChanged {
+                                    widget,
+                                    expanded: !state.overflow_open,
+                                },
+                                report,
+                            );
+                        }
+                        Some(crate::ZsBreadcrumbFocusTarget::Item(item)) => {
+                            report.handled = true;
+                            report.breadcrumb_selection = Some(item);
+                            report.breadcrumb_expanded_changed = state.overflow_open;
+                            return self.dispatch_view_event(
+                                ViewEvent::BreadcrumbSelected { widget, item },
+                                report,
+                            );
+                        }
+                        None => {}
                     }
                 }
             }
@@ -3293,6 +3479,7 @@ impl NativeViewInputRuntime {
         let had_preedit = self.ime_preedit.take().is_some();
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -3483,6 +3670,7 @@ impl NativeViewInputRuntime {
         let mut plan = plan;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
             feature = "info-bar",
@@ -3638,6 +3826,7 @@ impl NativeViewInputRuntime {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "breadcrumb",
         feature = "date-picker",
         feature = "dialog",
         feature = "info-bar",
@@ -4230,6 +4419,18 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "breadcrumb")]
+    fn widget_breadcrumb_state(&self, widget: crate::WidgetId) -> Option<crate::ZsBreadcrumbState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_breadcrumb_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_breadcrumb_state(widget))
+            })
+    }
+
     #[cfg(feature = "teaching-tip")]
     fn widget_teaching_tip_state(
         &self,
@@ -4703,6 +4904,9 @@ fn record_windows_win32_view_input_report(
     report.native_view_info_bar_event_count += input.info_bar_event_count;
     report.native_view_teaching_tip_focus_count += input.teaching_tip_focus_change_count;
     report.native_view_teaching_tip_response_count += input.teaching_tip_response_count;
+    report.native_view_breadcrumb_focus_count += input.breadcrumb_focus_change_count;
+    report.native_view_breadcrumb_expanded_change_count += input.breadcrumb_expanded_change_count;
+    report.native_view_breadcrumb_selection_count += input.breadcrumb_selection_count;
     report.native_view_combo_expanded_change_count += input.combo_expanded_change_count;
     report.native_view_combo_selection_count += input.combo_selection_count;
     report.native_view_combo_keyboard_selection_count += input.combo_keyboard_selection_count;
@@ -8425,6 +8629,116 @@ mod tests {
             ))
         );
         assert_eq!(close.message_count, 1);
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    #[test]
+    fn native_view_runtime_routes_breadcrumb_overflow_focus_and_selection() {
+        #[derive(Clone)]
+        enum Msg {
+            Expanded(bool),
+            Selected(crate::ZsBreadcrumbId),
+        }
+        struct State {
+            expanded: bool,
+            selected: Option<crate::ZsBreadcrumbId>,
+        }
+
+        let widget = crate::WidgetId::new(203);
+        let selected = crate::ZsBreadcrumbId::new(2);
+        let build = || {
+            native_window("Platform Breadcrumb")
+                .size(320, 220)
+                .stateful_view(
+                    State {
+                        expanded: false,
+                        selected: None,
+                    },
+                    move |state| {
+                        crate::breadcrumb_bar([
+                            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(1), "Home"),
+                            crate::ZsBreadcrumbItem::new(selected, "Projects"),
+                            crate::ZsBreadcrumbItem::new(
+                                crate::ZsBreadcrumbId::new(3),
+                                "ZSUI Framework",
+                            ),
+                            crate::ZsBreadcrumbItem::new(
+                                crate::ZsBreadcrumbId::new(4),
+                                "Documentation",
+                            ),
+                            crate::ZsBreadcrumbItem::new(
+                                crate::ZsBreadcrumbId::new(5),
+                                "BreadcrumbBar",
+                            ),
+                        ])
+                        .id(widget)
+                        .width(crate::Dp::new(240.0))
+                        .expanded(state.expanded)
+                        .on_expanded_change(Msg::Expanded)
+                        .on_breadcrumb_select(Msg::Selected)
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Expanded(expanded) => state.expanded = expanded,
+                        Msg::Selected(item) => state.selected = Some(item),
+                    },
+                )
+        };
+
+        let builder = build();
+        let overflow = builder
+            .native_view_interaction_plan()
+            .expect("breadcrumb interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::BreadcrumbOverflow)
+            .expect("narrow breadcrumb should expose overflow");
+        let mut pointer_runtime = builder.native_view_input_runtime();
+        let opened = pointer_runtime.dispatch_pointer_click(Point {
+            x: overflow.bounds.x + overflow.bounds.width / 2,
+            y: overflow.bounds.y + overflow.bounds.height / 2,
+        });
+        assert!(opened.handled);
+        assert!(opened.breadcrumb_expanded_changed);
+        let row = pointer_runtime
+            .current_interaction_plan()
+            .expect("open breadcrumb interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::BreadcrumbOverflowItem { .. }
+                )
+            })
+            .expect("open overflow should expose hidden rows");
+        let selected_report = pointer_runtime.dispatch_pointer_click(Point {
+            x: row.bounds.x + row.bounds.width / 2,
+            y: row.bounds.y + row.bounds.height / 2,
+        });
+        assert!(selected_report.handled);
+        assert!(selected_report.breadcrumb_selection.is_some());
+        assert!(selected_report.breadcrumb_expanded_changed);
+
+        let mut keyboard_runtime = build().native_view_input_runtime();
+        assert!(keyboard_runtime.dispatch_key(NativeViewKey::Tab).handled);
+        let home = keyboard_runtime.dispatch_key(NativeViewKey::Home);
+        assert!(home.handled);
+        assert!(home.breadcrumb_focus_changed);
+        let open = keyboard_runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(open.handled);
+        assert!(open.breadcrumb_expanded_changed);
+        let down = keyboard_runtime.dispatch_key(NativeViewKey::Down);
+        assert!(down.handled);
+        assert!(down.breadcrumb_focus_changed);
+        let select = keyboard_runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(select.handled);
+        assert!(select.breadcrumb_selection.is_some());
+        assert!(select.breadcrumb_expanded_changed);
+        assert!(keyboard_runtime
+            .widget_breadcrumb_state(widget)
+            .is_some_and(|state| !state.overflow_open));
     }
 
     #[cfg(feature = "combo")]

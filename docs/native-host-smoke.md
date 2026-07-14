@@ -282,6 +282,29 @@ chrome. Accessibility live-region announcement, close deferrals, arbitrary View
 content, bidirectional layout and target-machine AppKit/GTK interaction artifacts
 remain explicit gaps.
 
+The dedicated self-drawn BreadcrumbBar smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,breadcrumb,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-breadcrumb --breadcrumb
+```
+
+It constrains a six-item path to force overflow, focuses the bar with Tab,
+moves semantic focus to the ellipsis with Home, opens it with Enter, moves to a
+hidden ancestor with Down and selects it with Enter. The application records
+the typed `ZsBreadcrumbId`, executes one UI command and reopens the flyout so
+`window.png` retains both the shortened path and hidden rows. The interaction
+report must contain nonzero `native_view_breadcrumb_focus_count`, at least two
+`native_view_breadcrumb_expanded_change_count` events, one
+`native_view_breadcrumb_selection_count`, one executed UI command, no command
+failure and a nonzero live-view revision. Windows follows
+[BreadcrumbBar](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/breadcrumbbar),
+macOS uses [Path Control](https://developer.apple.com/design/human-interface-guidelines/path-controls)
+metrics, and GTK uses a ZSUI self-drawn profile informed by
+[GNOME Navigation](https://developer.gnome.org/hig/guidelines/navigation.html),
+because GTK exposes no public breadcrumb control. Accessibility relationships,
+editable/file paths, item icons, drag-and-drop, complete RTL and target-machine
+AppKit/GTK interaction artifacts remain explicit gaps.
+
 The dedicated typed RadioButton smoke path is:
 
 ```powershell

@@ -12,6 +12,8 @@ pub mod app;
 pub mod app_command;
 #[cfg(feature = "auto-suggest")]
 pub mod auto_suggest;
+#[cfg(feature = "breadcrumb")]
+pub mod breadcrumb;
 #[cfg(feature = "calculator")]
 pub mod calculator;
 pub mod capability;
@@ -150,6 +152,10 @@ pub use app_command::{
 pub use auto_suggest::{
     ZsAutoSuggestState, ZsAutoSuggestSubmission, ZsAutoSuggestTextChange,
     ZsAutoSuggestTextChangeReason, ZsAutoSuggestion, ZsAutoSuggestionId,
+};
+#[cfg(feature = "breadcrumb")]
+pub use breadcrumb::{
+    ZsBreadcrumbFocusTarget, ZsBreadcrumbId, ZsBreadcrumbItem, ZsBreadcrumbState,
 };
 #[cfg(feature = "calculator")]
 pub use calculator::{
@@ -486,6 +492,8 @@ pub use tree::{ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId, ZsTreeRowState, 
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 #[cfg(feature = "auto-suggest")]
 pub use view::auto_suggest_box;
+#[cfg(feature = "breadcrumb")]
+pub use view::breadcrumb_bar;
 #[cfg(feature = "button")]
 pub use view::button;
 #[cfg(feature = "checkbox")]
@@ -559,6 +567,7 @@ pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTr
 pub use view::{ZsNumberBoxState, ZsNumberFormat, ZsNumberRange};
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -569,6 +578,12 @@ pub use widget_render::{
     zs_auto_suggest_header_native_draw_plan, zs_auto_suggest_popup_native_draw_plan,
     zs_auto_suggest_render_plan, zs_auto_suggest_render_plan_in_viewport, ZsAutoSuggestMetrics,
     ZsAutoSuggestPlatformStyle, ZsAutoSuggestRenderPlan, ZS_AUTO_SUGGEST_MAX_VISIBLE_ITEMS,
+};
+#[cfg(feature = "breadcrumb")]
+pub use widget_render::{
+    zs_breadcrumb_native_draw_plan, zs_breadcrumb_popup_native_draw_plan,
+    zs_breadcrumb_render_plan, ZsBreadcrumbItemRenderPlan, ZsBreadcrumbMetrics,
+    ZsBreadcrumbOverflowRowRenderPlan, ZsBreadcrumbPlatformStyle, ZsBreadcrumbRenderPlan,
 };
 #[cfg(feature = "combo")]
 pub use widget_render::{

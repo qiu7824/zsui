@@ -24,6 +24,7 @@ use zsui::checkbox;
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
     all(feature = "teaching-tip", feature = "button", feature = "label"),
+    all(feature = "breadcrumb", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -62,6 +63,7 @@ use zsui::toggle_button;
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
     all(feature = "teaching-tip", feature = "button", feature = "label"),
+    all(feature = "breadcrumb", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -83,6 +85,7 @@ use zsui::CommandId;
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
     all(feature = "teaching-tip", feature = "button", feature = "label"),
+    all(feature = "breadcrumb", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "time-picker", feature = "label"),
     all(feature = "tabs", feature = "label")
@@ -112,6 +115,8 @@ use zsui::Point;
     all(feature = "progress-ring", feature = "label")
 ))]
 use zsui::ProgressRange;
+#[cfg(all(feature = "breadcrumb", feature = "label"))]
+use zsui::{breadcrumb_bar, ZsBreadcrumbId, ZsBreadcrumbItem};
 #[cfg(all(feature = "dialog", feature = "label"))]
 use zsui::{content_dialog, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec};
 #[cfg(all(feature = "table", feature = "label"))]
@@ -164,6 +169,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "toast", feature = "label"),
     all(feature = "info-bar", feature = "label"),
     all(feature = "teaching-tip", feature = "button", feature = "label"),
+    all(feature = "breadcrumb", feature = "label"),
     all(feature = "combo", feature = "label"),
     all(feature = "date-picker", feature = "label"),
     all(feature = "time-picker", feature = "label"),
@@ -227,6 +233,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--teaching-tip-view" || arg == "--teaching-tip"),
         args.iter()
+            .any(|arg| arg == "--breadcrumb-view" || arg == "--breadcrumb"),
+        args.iter()
             .any(|arg| arg == "--combo-view" || arg == "--combo"),
         args.iter()
             .any(|arg| arg == "--date-picker-view" || arg == "--date-picker")
@@ -271,6 +279,7 @@ fn run_smoke(
     include_toast_view: bool,
     include_info_bar_view: bool,
     include_teaching_tip_view: bool,
+    include_breadcrumb_view: bool,
     include_combo_view: bool,
     include_date_picker_view: bool,
     date_picker_high_contrast: bool,
@@ -352,6 +361,10 @@ fn run_smoke(
         return Err(
             "--teaching-tip-view requires the teaching-tip, button and label features".to_string(),
         );
+    }
+    #[cfg(not(all(feature = "breadcrumb", feature = "label")))]
+    if include_breadcrumb_view {
+        return Err("--breadcrumb-view requires the breadcrumb and label features".to_string());
     }
     #[cfg(not(all(feature = "combo", feature = "label")))]
     if include_combo_view {
@@ -564,6 +577,15 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Left)
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "breadcrumb", feature = "label"))]
+    if include_breadcrumb_view {
+        smoke_options = smoke_options
+            .native_view_key_down(NativeViewKey::Tab)
+            .native_view_key_down(NativeViewKey::Home)
+            .native_view_key_down(NativeViewKey::Enter)
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::Enter);
+    }
     #[cfg(all(feature = "date-picker", feature = "label"))]
     if include_date_picker_view {
         smoke_options = smoke_options
@@ -643,6 +665,8 @@ fn run_smoke(
         attach_info_bar_view(builder)
     } else if include_teaching_tip_view {
         attach_teaching_tip_view(builder)
+    } else if include_breadcrumb_view {
+        attach_breadcrumb_view(builder)
     } else if include_combo_view {
         attach_combo_view(builder)
     } else if include_date_picker_view {
@@ -1472,6 +1496,71 @@ fn attach_teaching_tip_view(builder: NativeWindowBuilder) -> NativeWindowBuilder
     )
 }
 
+#[cfg(all(feature = "breadcrumb", feature = "label"))]
+#[derive(Clone)]
+enum BreadcrumbSmokeMsg {
+    Expanded(bool),
+    Selected(ZsBreadcrumbId),
+}
+
+#[cfg(all(feature = "breadcrumb", feature = "label"))]
+struct BreadcrumbSmokeState {
+    expanded: bool,
+    last_selected: Option<ZsBreadcrumbId>,
+}
+
+#[cfg(all(feature = "breadcrumb", feature = "label"))]
+fn attach_breadcrumb_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        BreadcrumbSmokeState {
+            expanded: false,
+            last_selected: None,
+        },
+        |state| {
+            let items = [
+                ZsBreadcrumbItem::new(ZsBreadcrumbId::new(1), "Home"),
+                ZsBreadcrumbItem::new(ZsBreadcrumbId::new(2), "Projects"),
+                ZsBreadcrumbItem::new(ZsBreadcrumbId::new(3), "ZSUI Framework"),
+                ZsBreadcrumbItem::new(ZsBreadcrumbId::new(4), "Documentation"),
+                ZsBreadcrumbItem::new(ZsBreadcrumbId::new(5), "Design Assets"),
+                ZsBreadcrumbItem::new(ZsBreadcrumbId::new(6), "BreadcrumbBar"),
+            ];
+            column([
+                text::<BreadcrumbSmokeMsg>("ZSUI BreadcrumbBar Smoke").height(zsui::Dp::new(28.0)),
+                text(format!(
+                    "Last typed selection: {}",
+                    state
+                        .last_selected
+                        .map(|item| item.get().to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ))
+                .height(zsui::Dp::new(28.0)),
+                breadcrumb_bar(items)
+                    .id(WidgetId::new(31))
+                    .width(zsui::Dp::new(320.0))
+                    .expanded(state.expanded)
+                    .on_expanded_change(BreadcrumbSmokeMsg::Expanded)
+                    .on_breadcrumb_select(BreadcrumbSmokeMsg::Selected),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            BreadcrumbSmokeMsg::Expanded(expanded) => {
+                state.expanded = expanded;
+            }
+            BreadcrumbSmokeMsg::Selected(item) => {
+                state.last_selected = Some(item);
+                // Keep the overflow visible in window.png after the synthetic selection.
+                state.expanded = true;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.breadcrumb_selected",
+                )));
+            }
+        },
+    )
+}
+
 #[cfg(all(feature = "combo", feature = "label"))]
 #[derive(Clone)]
 enum ComboSmokeMsg {
@@ -1773,6 +1862,11 @@ fn attach_info_bar_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "teaching-tip", feature = "button", feature = "label")))]
 fn attach_teaching_tip_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "breadcrumb", feature = "label")))]
+fn attach_breadcrumb_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

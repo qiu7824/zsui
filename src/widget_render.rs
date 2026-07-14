@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(
+    feature = "breadcrumb",
     feature = "date-picker",
     feature = "dialog",
     feature = "info-bar",
@@ -20,6 +21,7 @@ use crate::ZsAutoSuggestion;
 use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
 #[cfg(any(
+    feature = "breadcrumb",
     feature = "dialog",
     feature = "info-bar",
     feature = "teaching-tip",
@@ -32,6 +34,7 @@ use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, Native
 use crate::{HorizontalAlign, TextWeight};
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "combo",
     feature = "date-picker",
     feature = "info-bar",
@@ -44,6 +47,7 @@ use crate::{HorizontalAlign, TextWeight};
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "combo",
     feature = "date-picker",
     feature = "dialog",
@@ -1352,8 +1356,486 @@ pub fn zs_toast_native_draw_plan(
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsBreadcrumbPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "breadcrumb")]
+impl ZsBreadcrumbPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsBreadcrumbMetrics {
+    pub control_height: Dp,
+    pub horizontal_padding: Dp,
+    pub minimum_item_width: Dp,
+    pub separator_width: Dp,
+    pub icon_size: Dp,
+    pub radius: Dp,
+    pub character_width: Dp,
+    pub popup_row_height: Dp,
+    pub popup_padding: Dp,
+}
+
+#[cfg(feature = "breadcrumb")]
+impl ZsBreadcrumbMetrics {
+    pub const fn for_platform(platform: ZsBreadcrumbPlatformStyle) -> Self {
+        match platform {
+            ZsBreadcrumbPlatformStyle::Windows => Self {
+                control_height: Dp::new(32.0),
+                horizontal_padding: Dp::new(8.0),
+                minimum_item_width: Dp::new(32.0),
+                separator_width: Dp::new(20.0),
+                icon_size: Dp::new(16.0),
+                radius: Dp::new(4.0),
+                character_width: Dp::new(7.2),
+                popup_row_height: Dp::new(32.0),
+                popup_padding: Dp::new(4.0),
+            },
+            ZsBreadcrumbPlatformStyle::Macos => Self {
+                control_height: Dp::new(24.0),
+                horizontal_padding: Dp::new(7.0),
+                minimum_item_width: Dp::new(28.0),
+                separator_width: Dp::new(16.0),
+                icon_size: Dp::new(13.0),
+                radius: Dp::new(5.0),
+                character_width: Dp::new(6.6),
+                popup_row_height: Dp::new(24.0),
+                popup_padding: Dp::new(4.0),
+            },
+            ZsBreadcrumbPlatformStyle::Gtk => Self {
+                control_height: Dp::new(34.0),
+                horizontal_padding: Dp::new(10.0),
+                minimum_item_width: Dp::new(36.0),
+                separator_width: Dp::new(20.0),
+                icon_size: Dp::new(16.0),
+                radius: Dp::new(6.0),
+                character_width: Dp::new(7.0),
+                popup_row_height: Dp::new(34.0),
+                popup_padding: Dp::new(4.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsBreadcrumbItemRenderPlan {
+    pub item_index: usize,
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+    pub separator_bounds: Option<Rect>,
+    pub current: bool,
+}
+
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsBreadcrumbOverflowRowRenderPlan {
+    pub item_index: usize,
+    pub bounds: Rect,
+    pub text_bounds: Rect,
+}
+
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsBreadcrumbRenderPlan {
+    pub bounds: Rect,
+    pub items: Vec<ZsBreadcrumbItemRenderPlan>,
+    pub hidden_indices: Vec<usize>,
+    pub overflow_bounds: Option<Rect>,
+    pub overflow_separator_bounds: Option<Rect>,
+    pub popup: Option<Rect>,
+    pub popup_placement: Option<ZsPopupPlacement>,
+    pub popup_rows: Vec<ZsBreadcrumbOverflowRowRenderPlan>,
+    pub icon_size: i32,
+    pub radius: i32,
+    pub platform: ZsBreadcrumbPlatformStyle,
+}
+
+#[cfg(feature = "breadcrumb")]
+pub fn zs_breadcrumb_render_plan(
+    bounds: Rect,
+    items: &[crate::ZsBreadcrumbItem],
+    overflow_open: bool,
+    platform: ZsBreadcrumbPlatformStyle,
+    dpi: Dpi,
+    viewport: Option<Rect>,
+) -> ZsBreadcrumbRenderPlan {
+    let metrics = ZsBreadcrumbMetrics::for_platform(platform);
+    let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(1);
+    let minimum_width = metrics.minimum_item_width.to_px(dpi).round_i32().max(1);
+    let separator_width = metrics.separator_width.to_px(dpi).round_i32().max(1);
+    let character_width = metrics.character_width.to_px(dpi).round_i32().max(1);
+    let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(1);
+    let control_height = metrics
+        .control_height
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
+    let y = bounds
+        .y
+        .saturating_add((bounds.height.saturating_sub(control_height)) / 2);
+    let desired_widths = items
+        .iter()
+        .map(|item| {
+            (item.label().chars().count() as i32)
+                .saturating_mul(character_width)
+                .saturating_add(padding.saturating_mul(2))
+                .max(minimum_width)
+        })
+        .collect::<Vec<_>>();
+    let full_width = desired_widths
+        .iter()
+        .copied()
+        .fold(0_i32, i32::saturating_add)
+        .saturating_add(separator_width.saturating_mul(items.len().saturating_sub(1) as i32));
+
+    let mut visible_indices = (0..items.len()).collect::<Vec<_>>();
+    let mut hidden_indices = Vec::new();
+    let overflow_width = control_height;
+    if full_width > bounds.width.max(1) && items.len() > 1 {
+        visible_indices.clear();
+        let keep_root = platform == ZsBreadcrumbPlatformStyle::Macos && items.len() > 1;
+        let reserved_root = if keep_root {
+            desired_widths[0].saturating_add(separator_width)
+        } else {
+            0
+        };
+        let mut used = overflow_width
+            .saturating_add(separator_width)
+            .saturating_add(reserved_root);
+        for index in (if keep_root { 1 } else { 0 }..items.len()).rev() {
+            let width = desired_widths[index].saturating_add(if index + 1 < items.len() {
+                separator_width
+            } else {
+                0
+            });
+            if index == items.len() - 1 || used.saturating_add(width) <= bounds.width.max(1) {
+                visible_indices.push(index);
+                used = used.saturating_add(width);
+            } else {
+                hidden_indices.push(index);
+            }
+        }
+        visible_indices.reverse();
+        hidden_indices.reverse();
+        if keep_root {
+            visible_indices.insert(0, 0);
+        }
+        hidden_indices = (0..items.len())
+            .filter(|index| !visible_indices.contains(index))
+            .collect();
+    }
+
+    let has_overflow = !hidden_indices.is_empty();
+    let mut ordered = Vec::<Option<usize>>::new();
+    if has_overflow {
+        if platform == ZsBreadcrumbPlatformStyle::Macos && visible_indices.first() == Some(&0) {
+            ordered.push(Some(0));
+            ordered.push(None);
+            ordered.extend(visible_indices.iter().copied().skip(1).map(Some));
+        } else {
+            ordered.push(None);
+            ordered.extend(visible_indices.iter().copied().map(Some));
+        }
+    } else {
+        ordered.extend(visible_indices.iter().copied().map(Some));
+    }
+
+    let mut x = bounds.x;
+    let mut item_plans = Vec::new();
+    let mut overflow_bounds = None;
+    let mut overflow_separator_bounds = None;
+    let right = bounds.x.saturating_add(bounds.width.max(1));
+    for (position, entry) in ordered.iter().copied().enumerate() {
+        let is_last = position + 1 == ordered.len();
+        let width = entry.map_or(overflow_width, |index| desired_widths[index]);
+        let remaining = right.saturating_sub(x).max(1);
+        let future_count = ordered.len().saturating_sub(position + 1) as i32;
+        let future_reserve = future_count.saturating_mul(2);
+        let segment_limit = remaining.saturating_sub(future_reserve).max(1);
+        let segment_width = width.min(segment_limit).max(1);
+        let segment = Rect {
+            x,
+            y,
+            width: segment_width,
+            height: control_height,
+        };
+        let separator_remaining = right.saturating_sub(x.saturating_add(segment_width));
+        let minimum_after_separator = future_count.saturating_mul(2).saturating_sub(1);
+        let separator = (!is_last && separator_remaining > 0).then_some(Rect {
+            x: x.saturating_add(segment_width),
+            y,
+            width: separator_width.min(
+                separator_remaining
+                    .saturating_sub(minimum_after_separator)
+                    .max(1),
+            ),
+            height: control_height,
+        });
+        let text_inset = padding.min(segment.width.saturating_sub(1) / 2);
+        if let Some(index) = entry {
+            item_plans.push(ZsBreadcrumbItemRenderPlan {
+                item_index: index,
+                bounds: segment,
+                text_bounds: Rect {
+                    x: segment.x.saturating_add(text_inset),
+                    y: segment.y,
+                    width: segment
+                        .width
+                        .saturating_sub(text_inset.saturating_mul(2))
+                        .max(1),
+                    height: segment.height,
+                },
+                separator_bounds: separator,
+                current: index + 1 == items.len(),
+            });
+        } else {
+            overflow_bounds = Some(segment);
+            overflow_separator_bounds = separator;
+        }
+        x = separator
+            .map(|separator| separator.x.saturating_add(separator.width))
+            .unwrap_or_else(|| x.saturating_add(segment_width));
+    }
+
+    let popup_padding = metrics.popup_padding.to_px(dpi).round_i32().max(0);
+    let popup_row_height = metrics.popup_row_height.to_px(dpi).round_i32().max(1);
+    let popup_width = hidden_indices
+        .iter()
+        .map(|index| desired_widths[*index])
+        .max()
+        .unwrap_or(minimum_width)
+        .max(minimum_width.saturating_mul(2));
+    let popup_height = popup_row_height
+        .saturating_mul(hidden_indices.len() as i32)
+        .saturating_add(popup_padding.saturating_mul(2));
+    let placed_popup = (overflow_open && has_overflow).then(|| {
+        place_popup(
+            overflow_bounds.unwrap_or(bounds),
+            popup_width,
+            popup_height,
+            Dp::new(4.0).to_px(dpi).round_i32().max(1),
+            viewport,
+        )
+    });
+    let popup_rows = placed_popup
+        .map(|placed| {
+            hidden_indices
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(row, item_index)| {
+                    let bounds = Rect {
+                        x: placed.bounds.x.saturating_add(popup_padding),
+                        y: placed
+                            .bounds
+                            .y
+                            .saturating_add(popup_padding)
+                            .saturating_add((row as i32).saturating_mul(popup_row_height)),
+                        width: placed
+                            .bounds
+                            .width
+                            .saturating_sub(popup_padding.saturating_mul(2))
+                            .max(1),
+                        height: popup_row_height,
+                    };
+                    ZsBreadcrumbOverflowRowRenderPlan {
+                        item_index,
+                        bounds,
+                        text_bounds: Rect {
+                            x: bounds.x.saturating_add(padding),
+                            y: bounds.y,
+                            width: bounds
+                                .width
+                                .saturating_sub(padding.saturating_mul(2))
+                                .max(1),
+                            height: bounds.height,
+                        },
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    ZsBreadcrumbRenderPlan {
+        bounds,
+        items: item_plans,
+        hidden_indices,
+        overflow_bounds,
+        overflow_separator_bounds,
+        popup: placed_popup.map(|placed| placed.bounds),
+        popup_placement: placed_popup.map(|placed| placed.placement),
+        popup_rows,
+        icon_size,
+        radius: metrics.radius.to_px(dpi).round_i32().max(1),
+        platform,
+    }
+}
+
+#[cfg(feature = "breadcrumb")]
+pub fn zs_breadcrumb_native_draw_plan(
+    plan: &ZsBreadcrumbRenderPlan,
+    items: &[crate::ZsBreadcrumbItem],
+    focused: Option<crate::ZsBreadcrumbFocusTarget>,
+) -> NativeDrawPlan {
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: plan.bounds,
+        fill: NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Control,
+            alpha: 0,
+        },
+        stroke: None,
+        radius: plan.radius,
+    }];
+    let draw_separator = |commands: &mut Vec<NativeDrawCommand>, bounds: Rect| {
+        let size = bounds.width.min(bounds.height).min(plan.icon_size).max(1);
+        commands.push(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+            ZsIcon::ChevronRight,
+            Rect {
+                x: bounds
+                    .x
+                    .saturating_add((bounds.width.saturating_sub(size)) / 2),
+                y: bounds
+                    .y
+                    .saturating_add((bounds.height.saturating_sub(size)) / 2),
+                width: size,
+                height: size,
+            },
+            NativeIconColorMode::ThemeAware,
+        )));
+    };
+    for item in &plan.items {
+        let Some(spec) = items.get(item.item_index) else {
+            continue;
+        };
+        if focused == Some(crate::ZsBreadcrumbFocusTarget::Item(spec.id())) {
+            commands.push(NativeDrawCommand::RoundRect {
+                rect: item.bounds,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 12,
+                },
+                stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+                radius: plan.radius,
+            });
+        }
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            spec.label(),
+            item.text_bounds,
+            SemanticTextStyle {
+                role: TextRole::Body,
+                color: if item.current {
+                    ColorRole::PrimaryText
+                } else {
+                    ColorRole::SecondaryText
+                },
+                weight: if item.current {
+                    TextWeight::Semibold
+                } else {
+                    TextWeight::Regular
+                },
+                horizontal_align: HorizontalAlign::Start,
+                vertical_align: crate::VerticalAlign::Center,
+                wrap: crate::TextWrap::NoWrap,
+                ellipsis: true,
+            },
+        )));
+        if let Some(separator) = item.separator_bounds {
+            draw_separator(&mut commands, separator);
+        }
+    }
+    if let Some(bounds) = plan.overflow_bounds {
+        if focused == Some(crate::ZsBreadcrumbFocusTarget::Overflow) {
+            commands.push(NativeDrawCommand::RoundRect {
+                rect: bounds,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 12,
+                },
+                stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+                radius: plan.radius,
+            });
+        }
+        let size = bounds.width.min(bounds.height).min(plan.icon_size).max(1);
+        commands.push(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+            ZsIcon::More,
+            Rect {
+                x: bounds
+                    .x
+                    .saturating_add((bounds.width.saturating_sub(size)) / 2),
+                y: bounds
+                    .y
+                    .saturating_add((bounds.height.saturating_sub(size)) / 2),
+                width: size,
+                height: size,
+            },
+            NativeIconColorMode::ThemeAware,
+        )));
+        if let Some(separator) = plan.overflow_separator_bounds {
+            draw_separator(&mut commands, separator);
+        }
+    }
+    NativeDrawPlan::new(commands)
+}
+
+#[cfg(feature = "breadcrumb")]
+pub fn zs_breadcrumb_popup_native_draw_plan(
+    plan: &ZsBreadcrumbRenderPlan,
+    items: &[crate::ZsBreadcrumbItem],
+    focused: Option<crate::ZsBreadcrumbFocusTarget>,
+) -> NativeDrawPlan {
+    let mut commands = Vec::new();
+    if let Some(popup) = plan.popup {
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: popup,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: plan.radius,
+        });
+        for row in &plan.popup_rows {
+            let Some(spec) = items.get(row.item_index) else {
+                continue;
+            };
+            if focused == Some(crate::ZsBreadcrumbFocusTarget::Item(spec.id())) {
+                commands.push(NativeDrawCommand::RoundRect {
+                    rect: row.bounds,
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::Accent,
+                        alpha: 28,
+                    },
+                    stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+                    radius: plan.radius,
+                });
+            }
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                spec.label(),
+                row.text_bounds,
+                SemanticTextStyle::body(),
+            )));
+        }
+    }
+    NativeDrawPlan::new(commands)
+}
+
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -1366,6 +1848,7 @@ pub enum ZsPopupPlacement {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -5031,6 +5514,7 @@ pub fn zs_content_dialog_native_draw_plan(
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -5480,6 +5964,114 @@ mod tests {
                 .commands
                 .iter()
                 .any(|command| matches!(command, NativeDrawCommand::FillTriangle { .. })));
+        }
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    #[test]
+    fn breadcrumb_plan_collapses_by_platform_and_keeps_popup_inside_viewport() {
+        let items = [
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(1), "Home"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(2), "Projects"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(3), "ZSUI Framework"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(4), "Documentation"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(5), "BreadcrumbBar"),
+        ];
+        let bounds = Rect {
+            x: 24,
+            y: 40,
+            width: 240,
+            height: 34,
+        };
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 220,
+        };
+        let windows = zs_breadcrumb_render_plan(
+            bounds,
+            &items,
+            true,
+            ZsBreadcrumbPlatformStyle::Windows,
+            Dpi::standard(),
+            Some(viewport),
+        );
+        let macos = zs_breadcrumb_render_plan(
+            bounds,
+            &items,
+            true,
+            ZsBreadcrumbPlatformStyle::Macos,
+            Dpi::standard(),
+            Some(viewport),
+        );
+        let gtk = zs_breadcrumb_render_plan(
+            bounds,
+            &items,
+            true,
+            ZsBreadcrumbPlatformStyle::Gtk,
+            Dpi::standard(),
+            Some(viewport),
+        );
+
+        assert!(!windows.hidden_indices.is_empty());
+        assert_eq!(windows.popup_rows.len(), windows.hidden_indices.len());
+        assert_eq!(windows.items.last().map(|item| item.item_index), Some(4));
+        assert_eq!(macos.items.first().map(|item| item.item_index), Some(0));
+        assert!(gtk.overflow_bounds.is_some());
+        for plan in [&windows, &macos, &gtk] {
+            let popup = plan.popup.expect("open overflow should have a popup");
+            assert!(popup.x >= viewport.x);
+            assert!(popup.y >= viewport.y);
+            assert!(popup.x + popup.width <= viewport.x + viewport.width);
+            assert!(popup.y + popup.height <= viewport.y + viewport.height);
+        }
+
+        let draw = zs_breadcrumb_native_draw_plan(
+            &windows,
+            &items,
+            Some(crate::ZsBreadcrumbFocusTarget::Overflow),
+        );
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::More
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::ChevronRight
+        )));
+        let popup_draw = zs_breadcrumb_popup_native_draw_plan(
+            &windows,
+            &items,
+            Some(crate::ZsBreadcrumbFocusTarget::Item(
+                items[windows.hidden_indices[0]].id(),
+            )),
+        );
+        assert_eq!(popup_draw.text_count(), windows.hidden_indices.len());
+
+        let narrow_bounds = Rect {
+            x: 7,
+            y: 9,
+            width: 3,
+            height: 12,
+        };
+        let narrow = zs_breadcrumb_render_plan(
+            narrow_bounds,
+            &items,
+            false,
+            ZsBreadcrumbPlatformStyle::Windows,
+            Dpi::standard(),
+            Some(viewport),
+        );
+        for rect in narrow
+            .items
+            .iter()
+            .flat_map(|item| [Some(item.bounds), item.separator_bounds])
+            .chain([narrow.overflow_bounds, narrow.overflow_separator_bounds])
+            .flatten()
+        {
+            assert!(rect.x >= narrow_bounds.x);
+            assert!(rect.x + rect.width <= narrow_bounds.x + narrow_bounds.width);
         }
     }
 

@@ -137,6 +137,13 @@ target `WidgetId` from the final shared layout, pass that rectangle and the
 current viewport to the shared placement planner, and route its semantic root,
 action and close hit targets through the existing native input runtime. Do not
 replace it with a platform popover object or add a backend target registry.
+Treat `breadcrumb_bar(...)` as one shared self-drawn navigation control. Keep
+`ZsBreadcrumbId` values application-owned, derive visible and hidden items from
+the shared width-aware render plan, and route item/ellipsis/popup-row hit targets
+through the existing input runtime. Preserve one Tab stop plus semantic
+Left/Right/Home/End and popup Up/Down navigation. Select Windows, macOS or GTK
+metric profiles internally; do not create a child BreadcrumbBar, NSPathControl
+or an invented GTK widget, and do not keep a backend path model.
 Treat `tab_view(...)` as one shared self-drawn tab list and page host, not as a
 request to create native child controls. Preserve `ZsTabId` identity and lay
 out, paint, hit-test and dispatch only the selected page. On Windows,
