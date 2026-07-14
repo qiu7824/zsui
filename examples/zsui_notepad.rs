@@ -581,6 +581,7 @@ fn main() -> ZsuiResult<()> {
             .native_view_click(undo_point)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_key_down(NativeViewKey::Up)
+            .native_view_key_down(NativeViewKey::PageDown)
             .native_view_scroll(Point { x: 360, y: 220 }, -48)
             .native_view_click(wrap_point)
             .native_view_click(Point { x: 360, y: 220 })
@@ -600,17 +601,18 @@ fn main() -> ZsuiResult<()> {
         if !report.visible_window_was_created()
             || report.native_view_text_input_count == 0
             || report.native_view_text_undo_count == 0
-            || report.native_view_text_navigation_count == 0
+            || report.native_view_text_navigation_count < 3
             || report.native_view_text_selection_change_count == 0
             || report.native_view_scroll_count == 0
             || report.native_view_unhandled_scroll_count != 0
+            || report.native_view_unhandled_key_count != 0
             || report.native_view_window_close_request_count == 0
             || report.native_view_window_close_veto_count == 0
             || !report.window_menu_command_routed
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, text input/navigation/scrolling, typed undo or close veto was not verified",
+                "native window, menu routing, text input/page navigation/scrolling, typed undo or close veto was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {

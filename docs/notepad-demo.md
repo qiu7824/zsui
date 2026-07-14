@@ -19,9 +19,11 @@ framework architecture.
 - `ViewNode::text_wrap(TextWrap)` switches the shared editor between word-wrap
   and hard-line-only rendering at runtime. Paint, caret, selection and pointer
   hit geometry consume the same typed setting on all three hosts.
-- Multiline Up/Down navigation consumes those same visual hard/soft rows and
-  retains the desired column when an intermediate row is shorter. Shift keeps
-  the application-owned anchor while extending the caret on all three hosts.
+- Multiline Up/Down navigation consumes those same visual hard/soft rows.
+  PageUp/PageDown moves by the current visible-row count and scrolls the editor
+  viewport by the same page. Both retain the desired column when an intermediate
+  row is shorter; Shift keeps the application-owned anchor while extending the
+  caret on all three hosts.
 - Long documents use an editor-owned visual-row viewport. Text paint is clipped
   to that viewport, pointer hit testing includes its first visible row, wheel
   input moves it, and edits or keyboard movement reveal the active caret again.
@@ -76,8 +78,9 @@ The smoke requires a visible native window, a routed native menu command, real
 text input through the self-drawn editor and a typed Undo routed from the
 self-drawn command bar back to that editor. It also enters 36 lines, routes a
 native Up key through the shared visual-row navigation, scrolls the editor
-viewport with a real wheel message, toggles word wrap off, enters a marked long
-line and routes End to prove horizontal caret reveal, then sends a real
+one visual page with a native PageDown key, scrolls the editor viewport with a
+real wheel message, toggles word wrap off, enters a marked long line and routes
+End to prove horizontal caret reveal, then sends a real
 title-bar close request while the document is dirty, verifies that the request
 is vetoed and captures the shared unsaved-confirmation surface. On
 non-Windows targets the same source is compiled against the AppKit or GTK4
@@ -97,7 +100,7 @@ cross-compilation.
 | Caret-aware line/column, line count, character count and encoding status | implemented |
 | Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | implemented |
-| Wrapped visual-row Up/Down and Shift selection | implemented |
+| Wrapped visual-row Up/Down, PageUp/PageDown and Shift selection | implemented |
 | Long-document vertical viewport and no-wrap horizontal caret reveal | implemented |
 | Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
 | AppKit and GTK4 physical-machine interaction evidence | pending target runners |
@@ -117,13 +120,13 @@ acceptance application does not depend on it.
 
 ## Code-volume and runtime comparison
 
-The shared acceptance application is one source file with 725 nonblank lines,
+The shared acceptance application is one source file with 727 nonblank lines,
 including its tests. The former Windows-only application path used two source
-files with 732 nonblank lines, so the checked-in application surface is 7
-lines (1.0%) smaller while adding one cross-platform source path, typed caret
+files with 732 nonblank lines, so the checked-in application surface is 5
+lines (0.7%) smaller while adding one cross-platform source path, typed caret
 status, native menus, shared editing commands, runtime word-wrap coverage and
-visual-row navigation, two-axis editor caret reveal and native close-request
-interception.
+visual-row/page navigation, two-axis editor caret reveal and native
+close-request interception.
 
 Runtime, package-count and binary-size data must be regenerated after this
 rewrite; earlier Windows-only measurements are not presented as current data.

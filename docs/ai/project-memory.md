@@ -86,10 +86,12 @@ history remain authoritative for implementation status.
   `ViewNode::text_wrap(...)` configuration; single-line TextBox remains
   `NoWrap`. Rendering, caret placement, selection rectangles and pointer hit
   testing must consume the same wrap state on Win32, AppKit and GTK4. Up/Down
-  navigation also follows these visual rows and preserves the desired visual
-  column across shorter hard or soft lines; horizontal input, edits and pointer
-  selection reset that transient column. This is shared self-drawn behavior and
-  must not introduce a native child editor or a WebView.
+  navigation follows these visual rows, while PageUp/PageDown moves by the
+  current visible-row count and scrolls the transient viewport by the same page.
+  Both preserve the desired visual column across shorter hard or soft lines;
+  Shift extends the application-owned selection. Horizontal input, edits and
+  pointer selection reset that transient column. This is shared self-drawn
+  behavior and must not introduce a native child editor or a WebView.
 - Multiline editor viewport position is transient per-window interaction state,
   not application document state. The same visual-row model must drive clipped
   text paint, selection/caret geometry, pointer hit testing, wheel scrolling and

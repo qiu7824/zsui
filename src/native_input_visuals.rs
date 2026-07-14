@@ -255,6 +255,67 @@ pub(crate) fn native_text_index_for_vertical_move(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> (usize, usize) {
+    native_text_index_for_vertical_row_delta(
+        target,
+        value,
+        caret,
+        direction,
+        preferred_column,
+        1,
+        wrap,
+        dpi,
+    )
+}
+
+pub(crate) fn native_text_index_for_vertical_page_move(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualDirection,
+    preferred_column: Option<usize>,
+    first_visible_row: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+) -> (usize, usize, usize) {
+    let (_, visible_rows) = native_text_viewport_lines(target, value, wrap, dpi);
+    let (target_index, preferred_column) = native_text_index_for_vertical_row_delta(
+        target,
+        value,
+        caret,
+        direction,
+        preferred_column,
+        visible_rows,
+        wrap,
+        dpi,
+    );
+    let row_delta = isize::try_from(visible_rows).unwrap_or(isize::MAX);
+    let row_delta = match direction {
+        NativeTextVisualDirection::Up => row_delta.saturating_neg(),
+        NativeTextVisualDirection::Down => row_delta,
+    };
+    let first_visible_row =
+        native_text_scroll_visual_rows(target, value, first_visible_row, row_delta, wrap, dpi);
+    let first_visible_row = native_text_first_visible_row_for_caret(
+        target,
+        value,
+        target_index,
+        first_visible_row,
+        wrap,
+        dpi,
+    );
+    (target_index, preferred_column, first_visible_row)
+}
+
+fn native_text_index_for_vertical_row_delta(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    direction: NativeTextVisualDirection,
+    preferred_column: Option<usize>,
+    row_delta: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+) -> (usize, usize) {
     let metrics = native_text_visual_metrics(target, dpi);
     let max_columns = metrics
         .text_bounds
@@ -271,8 +332,8 @@ pub(crate) fn native_text_index_for_vertical_move(
     let (row, current_column) = text_position(caret.min(char_count(value)), &lines);
     let preferred_column = preferred_column.unwrap_or(current_column);
     let target_row = match direction {
-        NativeTextVisualDirection::Up => row.saturating_sub(1),
-        NativeTextVisualDirection::Down => row.saturating_add(1).min(lines.len() - 1),
+        NativeTextVisualDirection::Up => row.saturating_sub(row_delta),
+        NativeTextVisualDirection::Down => row.saturating_add(row_delta).min(lines.len() - 1),
     };
     let line = lines[target_row];
     let line_columns = line.end.saturating_sub(line.start);
@@ -2079,5 +2140,71 @@ mod tests {
 
         assert_eq!(visible_text.first().copied(), Some("789"));
         assert_eq!(geometry.caret.x, 32);
+    }
+
+    #[test]
+    fn editor_page_move_preserves_column_and_scrolls_one_visual_page() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(98),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 160,
+                height: 70,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+
+        let (down, preferred, first_visible) = native_text_index_for_vertical_page_move(
+            target,
+            value,
+            1,
+            NativeTextVisualDirection::Down,
+            None,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+        assert_eq!((down, preferred, first_visible), (10, 1, 3));
+
+        let (up, preferred, first_visible) = native_text_index_for_vertical_page_move(
+            target,
+            value,
+            down,
+            NativeTextVisualDirection::Up,
+            Some(preferred),
+            first_visible,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+        assert_eq!((up, preferred, first_visible), (1, 1, 0));
+    }
+
+    #[test]
+    fn editor_page_move_counts_soft_wrapped_visual_rows() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(99),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 52,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+
+        let moved = native_text_index_for_vertical_page_move(
+            target,
+            "abcdefghijkl",
+            1,
+            NativeTextVisualDirection::Down,
+            None,
+            0,
+            crate::TextWrap::Word,
+            Dpi::standard(),
+        );
+
+        assert_eq!(moved, (9, 1, 1));
     }
 }

@@ -9,10 +9,10 @@ use objc2_app_kit::{
     NSEnterCharacter, NSEvent, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold,
     NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName,
     NSGraphicsContext, NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode,
-    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSRightArrowFunctionKey,
-    NSStringDrawing, NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter,
-    NSTextAlignment, NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions,
-    NSUpArrowFunctionKey, NSView,
+    NSMutableParagraphStyle, NSPageDownFunctionKey, NSPageUpFunctionKey,
+    NSParagraphStyleAttributeName, NSRightArrowFunctionKey, NSStringDrawing,
+    NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment,
+    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
@@ -422,6 +422,13 @@ define_class!(
                     .dispatch_key_with_shift(crate::NativeViewKey::Home, shift),
                 Some(code) if code == NSEndFunctionKey => runtime
                     .dispatch_key_with_shift(crate::NativeViewKey::End, shift),
+                Some(code) if code == NSPageUpFunctionKey => runtime.dispatch_key_with_modifiers(
+                    crate::NativeViewKey::PageUp,
+                    shift,
+                    control,
+                ),
+                Some(code) if code == NSPageDownFunctionKey => runtime
+                    .dispatch_key_with_modifiers(crate::NativeViewKey::PageDown, shift, control),
                 Some(code) if code == NSBackspaceCharacter => {
                     runtime.dispatch_text_input("\u{8}")
                 }

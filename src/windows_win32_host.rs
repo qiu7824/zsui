@@ -19,8 +19,8 @@ use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
     native_text_first_visible_column_for_caret, native_text_first_visible_row_for_caret,
     native_text_index_for_point_in_viewport, native_text_index_for_vertical_move,
-    native_text_scroll_visual_rows, native_text_visual_target, native_text_wheel_row_delta,
-    NativeTextVisualDirection,
+    native_text_index_for_vertical_page_move, native_text_scroll_visual_rows,
+    native_text_visual_target, native_text_wheel_row_delta, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -3750,29 +3750,53 @@ impl WindowsWin32ViewInputRoute {
                 key if key == u32::from(VK_END) => Some(NativeTextMovement::End),
                 _ => None,
             };
-            let visual_direction = (target.kind == crate::ViewHitTargetKind::TextEditor)
+            let visual_navigation = (target.kind == crate::ViewHitTargetKind::TextEditor)
                 .then(|| match virtual_key {
-                    key if key == u32::from(VK_UP) => Some(NativeTextVisualDirection::Up),
-                    key if key == u32::from(VK_DOWN) => Some(NativeTextVisualDirection::Down),
+                    key if key == u32::from(VK_UP) => Some((NativeTextVisualDirection::Up, false)),
+                    key if key == u32::from(VK_DOWN) => {
+                        Some((NativeTextVisualDirection::Down, false))
+                    }
+                    key if key == u32::from(VK_PRIOR) => {
+                        Some((NativeTextVisualDirection::Up, true))
+                    }
+                    key if key == u32::from(VK_NEXT) => {
+                        Some((NativeTextVisualDirection::Down, true))
+                    }
                     _ => None,
                 })
                 .flatten();
-            if movement.is_some() || visual_direction.is_some() {
+            if movement.is_some() || visual_navigation.is_some() {
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
                     .filter(|state| state.widget == widget)
                     .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
-                let edit = if let Some(direction) = visual_direction {
-                    let (target_index, preferred_column) = native_text_index_for_vertical_move(
-                        target,
-                        &value,
-                        state.selection.caret,
-                        direction,
-                        state.preferred_visual_column,
-                        self.widget_text_wrap(widget),
-                        self.dpi,
-                    );
+                let edit = if let Some((direction, page)) = visual_navigation {
+                    let (target_index, preferred_column) = if page {
+                        let (target_index, preferred_column, first_visible_row) =
+                            native_text_index_for_vertical_page_move(
+                                target,
+                                &value,
+                                state.selection.caret,
+                                direction,
+                                state.preferred_visual_column,
+                                state.first_visible_visual_row,
+                                self.widget_text_wrap(widget),
+                                self.dpi,
+                            );
+                        state.first_visible_visual_row = first_visible_row;
+                        (target_index, preferred_column)
+                    } else {
+                        native_text_index_for_vertical_move(
+                            target,
+                            &value,
+                            state.selection.caret,
+                            direction,
+                            state.preferred_visual_column,
+                            self.widget_text_wrap(widget),
+                            self.dpi,
+                        )
+                    };
                     state.preferred_visual_column = Some(preferred_column);
                     move_selection_to(&value, &mut state.selection, target_index, shift)
                 } else {
@@ -3785,14 +3809,16 @@ impl WindowsWin32ViewInputRoute {
                         target.kind == crate::ViewHitTargetKind::TextEditor,
                     )
                 };
-                state.first_visible_visual_row = native_text_first_visible_row_for_caret(
-                    target,
-                    &value,
-                    state.selection.caret,
-                    state.first_visible_visual_row,
-                    self.widget_text_wrap(widget),
-                    self.dpi,
-                );
+                if !visual_navigation.is_some_and(|(_, page)| page) {
+                    state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+                        target,
+                        &value,
+                        state.selection.caret,
+                        state.first_visible_visual_row,
+                        self.widget_text_wrap(widget),
+                        self.dpi,
+                    );
+                }
                 state.first_visible_visual_column = native_text_first_visible_column_for_caret(
                     target,
                     &value,
@@ -9909,6 +9935,64 @@ mod tests {
             |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "789"),
         ));
         assert_eq!(clicked.text_caret, Some(7));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_pages_editor_by_visible_rows() {
+        let widget = crate::WidgetId::new(323);
+        let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let builder = crate::native_window("Win32 paged editor viewport")
+            .size(160, 70)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::text_editor::<UiCommand>(value)
+                        .id(widget)
+                        .text_wrap(crate::TextWrap::NoWrap)
+                        .width(crate::Dp::new(160.0))
+                        .height(crate::Dp::new(70.0))
+                },
+                |_, _, _| {},
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("paged editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("paged editor should expose Win32 viewport geometry");
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        route.dispatch_pointer_down(
+            crate::Point {
+                x: target.bounds.x + 16,
+                y: target.bounds.y + 10,
+            },
+            false,
+        );
+        route.dispatch_pointer_up(crate::Point {
+            x: target.bounds.x + 16,
+            y: target.bounds.y + 10,
+        });
+
+        let page_down = route.dispatch_key_down(u32::from(VK_NEXT));
+        let page_plan = route
+            .take_pending_draw_plan()
+            .expect("PageDown should rebuild the paged editor viewport");
+        let shift_page_down = route.dispatch_key_down_with_shift(u32::from(VK_NEXT), true);
+        let page_up = route.dispatch_key_down(u32::from(VK_PRIOR));
+
+        assert_eq!(page_down.text_caret, Some(10));
+        assert!(page_plan.commands.iter().any(
+            |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "d3"),
+        ));
+        assert_eq!(shift_page_down.text_caret, Some(19));
+        assert_eq!(page_up.text_caret, Some(10));
+        assert_eq!(
+            route.text_edit.map(|state| state.selection),
+            Some(crate::native_text_edit::NativeTextSelection::collapsed(10))
+        );
     }
 
     #[test]

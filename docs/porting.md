@@ -221,8 +221,11 @@ selection, capture-backed pointer drags, Unicode replacement, Backspace and
 forward Delete through the shared character-indexed editor state. Multiline
 TextEditor Up/Down uses the same hard/soft visual rows as paint, caret,
 selection and pointer hit testing, preserving a preferred visual column across
-shorter rows. Win32 routes `VK_UP`/`VK_DOWN` into that helper; AppKit and GTK4
-already lower their native keys to the same `NativeViewKey` path.
+shorter rows. PageUp/PageDown moves the caret and viewport by the current
+visible-row count while preserving that column and Shift selection anchor.
+Win32 routes `VK_UP`/`VK_DOWN`/`VK_PRIOR`/`VK_NEXT` into those helpers; AppKit
+and GTK4 lower their arrow and page function keys to the same `NativeViewKey`
+path.
 The editor also keeps transient first visible visual row and column offsets
 inside each native window route. Win32 `WM_MOUSEWHEEL`, AppKit `scrollWheel:`
 and GTK4 controller scroll input move the shared vertical viewport; paint is

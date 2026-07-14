@@ -10,8 +10,9 @@ use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
     native_text_first_visible_column_for_caret, native_text_first_visible_row_for_caret,
     native_text_index_for_point_in_viewport, native_text_index_for_vertical_move,
-    native_text_scroll_visual_rows, native_text_visual_geometry_in_viewport,
-    native_text_visual_target, native_text_wheel_row_delta, NativeTextVisualDirection,
+    native_text_index_for_vertical_page_move, native_text_scroll_visual_rows,
+    native_text_visual_geometry_in_viewport, native_text_visual_target,
+    native_text_wheel_row_delta, NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -3097,29 +3098,47 @@ impl NativeViewInputRuntime {
                 NativeViewKey::End => Some(NativeTextMovement::End),
                 _ => None,
             };
-            let visual_direction = (target.kind == crate::ViewHitTargetKind::TextEditor)
+            let visual_navigation = (target.kind == crate::ViewHitTargetKind::TextEditor)
                 .then(|| match key {
-                    NativeViewKey::Up => Some(NativeTextVisualDirection::Up),
-                    NativeViewKey::Down => Some(NativeTextVisualDirection::Down),
+                    NativeViewKey::Up => Some((NativeTextVisualDirection::Up, false)),
+                    NativeViewKey::Down => Some((NativeTextVisualDirection::Down, false)),
+                    NativeViewKey::PageUp => Some((NativeTextVisualDirection::Up, true)),
+                    NativeViewKey::PageDown => Some((NativeTextVisualDirection::Down, true)),
                     _ => None,
                 })
                 .flatten();
-            if movement.is_some() || visual_direction.is_some() {
+            if movement.is_some() || visual_navigation.is_some() {
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
                     .filter(|state| state.widget == widget)
                     .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
-                let edit = if let Some(direction) = visual_direction {
-                    let (target_index, preferred_column) = native_text_index_for_vertical_move(
-                        target,
-                        &value,
-                        state.selection.caret,
-                        direction,
-                        state.preferred_visual_column,
-                        self.widget_text_wrap(widget),
-                        self.dpi,
-                    );
+                let edit = if let Some((direction, page)) = visual_navigation {
+                    let (target_index, preferred_column) = if page {
+                        let (target_index, preferred_column, first_visible_row) =
+                            native_text_index_for_vertical_page_move(
+                                target,
+                                &value,
+                                state.selection.caret,
+                                direction,
+                                state.preferred_visual_column,
+                                state.first_visible_visual_row,
+                                self.widget_text_wrap(widget),
+                                self.dpi,
+                            );
+                        state.first_visible_visual_row = first_visible_row;
+                        (target_index, preferred_column)
+                    } else {
+                        native_text_index_for_vertical_move(
+                            target,
+                            &value,
+                            state.selection.caret,
+                            direction,
+                            state.preferred_visual_column,
+                            self.widget_text_wrap(widget),
+                            self.dpi,
+                        )
+                    };
                     state.preferred_visual_column = Some(preferred_column);
                     move_selection_to(&value, &mut state.selection, target_index, shift)
                 } else {
@@ -3132,14 +3151,16 @@ impl NativeViewInputRuntime {
                         target.kind == crate::ViewHitTargetKind::TextEditor,
                     )
                 };
-                state.first_visible_visual_row = native_text_first_visible_row_for_caret(
-                    target,
-                    &value,
-                    state.selection.caret,
-                    state.first_visible_visual_row,
-                    self.widget_text_wrap(widget),
-                    self.dpi,
-                );
+                if !visual_navigation.is_some_and(|(_, page)| page) {
+                    state.first_visible_visual_row = native_text_first_visible_row_for_caret(
+                        target,
+                        &value,
+                        state.selection.caret,
+                        state.first_visible_visual_row,
+                        self.widget_text_wrap(widget),
+                        self.dpi,
+                    );
+                }
                 state.first_visible_visual_column = native_text_first_visible_column_for_caret(
                     target,
                     &value,
@@ -9302,6 +9323,45 @@ mod tests {
             )
         }));
         assert_eq!(clicked.text_caret, Some(7));
+    }
+
+    #[cfg(feature = "textbox")]
+    #[test]
+    fn native_view_runtime_pages_editor_by_visible_rows_with_shift_selection() {
+        let editor = crate::WidgetId::new(763);
+        let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let builder = native_window("Paged editor viewport")
+            .size(160, 70)
+            .ui_command_view(
+                crate::text_editor::<UiCommand>(value)
+                    .id(editor)
+                    .text_wrap(crate::TextWrap::NoWrap)
+                    .width(crate::Dp::new(160.0))
+                    .height(crate::Dp::new(70.0))
+                    .on_text_selection_change(|_| UiCommand::app(crate::CommandId("selection"))),
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(editor))
+            .expect("editor should expose page viewport geometry");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + 16,
+            y: target.bounds.y + 10,
+        });
+
+        let page_down = runtime.dispatch_key(NativeViewKey::PageDown);
+        let shift_page_down = runtime.dispatch_key_with_shift(NativeViewKey::PageDown, true);
+        let page_up = runtime.dispatch_key(NativeViewKey::PageUp);
+
+        assert_eq!(page_down.text_caret, Some(10));
+        assert!(page_down.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(
+                |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "d3"),
+            )
+        }));
+        assert_eq!(shift_page_down.text_selection, Some((10, 19)));
+        assert_eq!(page_up.text_selection, Some((10, 10)));
     }
 
     #[cfg(all(feature = "label", feature = "textbox"))]
