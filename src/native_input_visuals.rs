@@ -72,7 +72,7 @@ pub(crate) fn native_text_visual_geometry(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
-    native_text_visual_geometry_in_viewport(target, value, selection, 0, wrap, dpi)
+    native_text_visual_geometry_in_viewport(target, value, selection, 0, 0, wrap, dpi)
 }
 
 pub(crate) fn native_text_visual_geometry_in_viewport(
@@ -80,6 +80,7 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
     value: &str,
     selection: NativeTextSelection,
     first_visible_row: usize,
+    first_visible_column: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
@@ -95,17 +96,25 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
         .max(1) as usize;
     let lines = text_lines(value, multiline, wrap, max_columns);
     let first_visible_row = first_visible_row.min(lines.len().saturating_sub(1));
+    let first_visible_column = if multiline && wrap == crate::TextWrap::NoWrap {
+        first_visible_column
+    } else {
+        0
+    };
     let selection = selection.clamp(value);
     let (caret_row, caret_column) = text_position(selection.caret, &lines);
-    let caret_x = text_bounds
-        .x
-        .saturating_add((caret_column as i32).saturating_mul(character_width))
-        .min(
-            text_bounds
-                .x
-                .saturating_add(text_bounds.width)
-                .saturating_sub(1),
-        );
+    let caret_x = visual_column_x(
+        text_bounds.x,
+        caret_column,
+        first_visible_column,
+        character_width,
+    );
+    let caret_x = caret_x.min(
+        text_bounds
+            .x
+            .saturating_add(text_bounds.width)
+            .saturating_sub(1),
+    );
     let caret_y = visual_row_y(text_bounds.y, caret_row, first_visible_row, line_height);
     let caret = Rect {
         x: caret_x,
@@ -132,11 +141,19 @@ pub(crate) fn native_text_visual_geometry_in_viewport(
             {
                 continue;
             }
-            let start_column = overlap_start.saturating_sub(line.start);
+            let start_column = overlap_start
+                .saturating_sub(line.start)
+                .max(first_visible_column);
             let end_column = overlap_end.saturating_sub(line.start);
-            let x = text_bounds
-                .x
-                .saturating_add((start_column as i32).saturating_mul(character_width));
+            if end_column <= first_visible_column {
+                continue;
+            }
+            let x = visual_column_x(
+                text_bounds.x,
+                start_column,
+                first_visible_column,
+                character_width,
+            );
             let selected_columns = end_column.saturating_sub(start_column).max(1) as i32;
             let width = selected_columns
                 .saturating_mul(character_width)
@@ -177,7 +194,7 @@ pub(crate) fn native_text_index_for_point(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> usize {
-    native_text_index_for_point_in_viewport(target, value, point, 0, wrap, dpi)
+    native_text_index_for_point_in_viewport(target, value, point, 0, 0, wrap, dpi)
 }
 
 pub(crate) fn native_text_index_for_point_in_viewport(
@@ -185,6 +202,7 @@ pub(crate) fn native_text_index_for_point_in_viewport(
     value: &str,
     point: Point,
     first_visible_row: usize,
+    first_visible_column: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> usize {
@@ -219,6 +237,11 @@ pub(crate) fn native_text_index_for_point_in_viewport(
             .checked_div(metrics.character_width)
             .unwrap_or(0) as usize
     }
+    .saturating_add(if multiline && wrap == crate::TextWrap::NoWrap {
+        first_visible_column
+    } else {
+        0
+    })
     .min(line.end.saturating_sub(line.start));
     line.start.saturating_add(column)
 }
@@ -288,6 +311,44 @@ pub(crate) fn native_text_first_visible_row_for_caret(
     }
 }
 
+pub(crate) fn native_text_first_visible_column_for_caret(
+    target: ViewHitTarget,
+    value: &str,
+    caret: usize,
+    first_visible_column: usize,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+) -> usize {
+    if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
+        return 0;
+    }
+    let metrics = native_text_visual_metrics(target, dpi);
+    let max_columns = metrics
+        .text_bounds
+        .width
+        .checked_div(metrics.character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let lines = text_lines(value, true, wrap, max_columns);
+    let (_, caret_column) = text_position(caret.min(char_count(value)), &lines);
+    let visible_columns = metrics
+        .text_bounds
+        .width
+        .saturating_add(metrics.character_width.saturating_sub(1))
+        .checked_div(metrics.character_width)
+        .unwrap_or(1)
+        .max(1) as usize;
+    if caret_column < first_visible_column {
+        caret_column
+    } else if caret_column >= first_visible_column.saturating_add(visible_columns) {
+        caret_column
+            .saturating_add(1)
+            .saturating_sub(visible_columns)
+    } else {
+        first_visible_column
+    }
+}
+
 pub(crate) fn native_text_scroll_visual_rows(
     target: ViewHitTarget,
     value: &str,
@@ -333,7 +394,7 @@ pub(crate) fn decorate_native_text_edit_visuals(
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
-    decorate_native_text_edit_visuals_in_viewport(plan, target, value, selection, 0, wrap, dpi)
+    decorate_native_text_edit_visuals_in_viewport(plan, target, value, selection, 0, 0, wrap, dpi)
 }
 
 pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
@@ -342,6 +403,7 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
     value: &str,
     selection: NativeTextSelection,
     first_visible_row: usize,
+    first_visible_column: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
 ) -> NativeTextVisualGeometry {
@@ -350,6 +412,7 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
         value,
         selection,
         first_visible_row,
+        first_visible_column,
         wrap,
         dpi,
     );
@@ -359,6 +422,7 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport(
             target,
             value,
             first_visible_row,
+            first_visible_column,
             wrap,
             dpi,
             &geometry,
@@ -401,6 +465,7 @@ fn decorate_native_text_editor_viewport(
     target: ViewHitTarget,
     value: &str,
     first_visible_row: usize,
+    first_visible_column: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
     geometry: &NativeTextVisualGeometry,
@@ -427,6 +492,11 @@ fn decorate_native_text_editor_viewport(
     let (lines, visible_rows) = native_text_viewport_lines(target, value, wrap, dpi);
     let maximum_first = lines.len().saturating_sub(visible_rows);
     let first_visible_row = first_visible_row.min(maximum_first);
+    let first_visible_column = if wrap == crate::TextWrap::NoWrap {
+        first_visible_column
+    } else {
+        0
+    };
     style.wrap = crate::TextWrap::NoWrap;
     style.vertical_align = crate::VerticalAlign::Start;
     style.ellipsis = false;
@@ -455,8 +525,12 @@ fn decorate_native_text_editor_viewport(
         .skip(first_visible_row)
         .take(visible_rows)
     {
+        let visible_start = line
+            .start
+            .saturating_add(first_visible_column)
+            .min(line.end);
         commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
-            char_slice(value, line.start, line.end),
+            char_slice(value, visible_start, line.end),
             Rect {
                 x: metrics.text_bounds.x,
                 y: visual_row_y(
@@ -920,6 +994,27 @@ fn visual_row_y(origin: i32, row: usize, first_visible_row: usize, line_height: 
             i32::try_from(first_visible_row.saturating_sub(row))
                 .unwrap_or(i32::MAX)
                 .saturating_mul(line_height),
+        )
+    }
+}
+
+fn visual_column_x(
+    origin: i32,
+    column: usize,
+    first_visible_column: usize,
+    character_width: i32,
+) -> i32 {
+    if column >= first_visible_column {
+        origin.saturating_add(
+            i32::try_from(column.saturating_sub(first_visible_column))
+                .unwrap_or(i32::MAX)
+                .saturating_mul(character_width),
+        )
+    } else {
+        origin.saturating_sub(
+            i32::try_from(first_visible_column.saturating_sub(column))
+                .unwrap_or(i32::MAX)
+                .saturating_mul(character_width),
         )
     }
 }
@@ -1844,6 +1939,7 @@ mod tests {
                 value,
                 Point { x: 8, y: 10 },
                 first_visible,
+                0,
                 crate::TextWrap::NoWrap,
                 Dpi::standard(),
             ),
@@ -1879,6 +1975,7 @@ mod tests {
             value,
             NativeTextSelection::collapsed(caret),
             first_visible,
+            0,
             crate::TextWrap::NoWrap,
             Dpi::standard(),
         );
@@ -1901,5 +1998,86 @@ mod tests {
             plan.commands.last(),
             Some(NativeDrawCommand::PopClip)
         ));
+    }
+
+    #[test]
+    fn no_wrap_editor_viewport_reveals_columns_and_offsets_pointer_hits() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(97),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 52,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        let value = "0123456789\nabc";
+        let first_column = native_text_first_visible_column_for_caret(
+            target,
+            value,
+            10,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+
+        assert_eq!(first_column, 7);
+        assert_eq!(
+            native_text_index_for_point_in_viewport(
+                target,
+                value,
+                Point { x: 8, y: 10 },
+                0,
+                first_column,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+            ),
+            7
+        );
+        assert_eq!(
+            native_text_first_visible_column_for_caret(
+                target,
+                value,
+                10,
+                first_column,
+                crate::TextWrap::Word,
+                Dpi::standard(),
+            ),
+            0
+        );
+
+        let mut plan =
+            NativeDrawPlan::new([NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+                value,
+                Rect {
+                    x: 8,
+                    y: 8,
+                    width: 32,
+                    height: 36,
+                },
+                crate::SemanticTextStyle::body(),
+            ))]);
+        let geometry = decorate_native_text_edit_visuals_in_viewport(
+            &mut plan,
+            target,
+            value,
+            NativeTextSelection::collapsed(10),
+            0,
+            first_column,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+        );
+        let visible_text = plan
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                NativeDrawCommand::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(visible_text.first().copied(), Some("789"));
+        assert_eq!(geometry.caret.x, 32);
     }
 }

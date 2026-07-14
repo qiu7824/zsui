@@ -223,12 +223,14 @@ TextEditor Up/Down uses the same hard/soft visual rows as paint, caret,
 selection and pointer hit testing, preserving a preferred visual column across
 shorter rows. Win32 routes `VK_UP`/`VK_DOWN` into that helper; AppKit and GTK4
 already lower their native keys to the same `NativeViewKey` path.
-The editor also keeps a transient first visible visual row inside each native
-window route. Win32 `WM_MOUSEWHEEL`, AppKit `scrollWheel:` and GTK4 controller
-scroll input move that shared viewport; paint is bracketed by balanced clip
-commands, pointer hit testing includes the row offset, and subsequent text or
-keyboard edits reveal the caret. This path belongs to `textbox` and does not
-enable the general `scroll` feature. Feature-gated list row selection uses
+The editor also keeps transient first visible visual row and column offsets
+inside each native window route. Win32 `WM_MOUSEWHEEL`, AppKit `scrollWheel:`
+and GTK4 controller scroll input move the shared vertical viewport; paint is
+bracketed by balanced clip commands, pointer hit testing includes both offsets,
+and subsequent text or keyboard edits reveal the caret. The column offset is
+active only for `TextWrap::NoWrap` and resets in wrapped modes. This path
+belongs to `textbox` and does not enable the general `scroll` feature.
+Feature-gated list row selection uses
 child IDs and dispatches through
 the same `ViewEventCx` path; Win32 Up/Down keys can move focused list selection
 and emit the same typed message. When the pointer is not over a focused editor,

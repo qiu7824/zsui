@@ -58,6 +58,7 @@ pub(crate) struct NativeTextEditState {
     pub selection: NativeTextSelection,
     pub preferred_visual_column: Option<usize>,
     pub first_visible_visual_row: usize,
+    pub first_visible_visual_column: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +74,7 @@ impl NativeTextEditState {
             selection: NativeTextSelection::collapsed(char_count(value)),
             preferred_visual_column: None,
             first_visible_visual_row: 0,
+            first_visible_visual_column: 0,
         }
     }
 
@@ -81,6 +83,7 @@ impl NativeTextEditState {
         if clamped != self.selection {
             self.preferred_visual_column = None;
             self.first_visible_visual_row = 0;
+            self.first_visible_visual_column = 0;
         }
         self.selection = clamped;
     }

@@ -17,9 +17,10 @@ use crate::native_file_dialog::{
 };
 use crate::native_input_visuals::{
     decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport,
-    native_text_first_visible_row_for_caret, native_text_index_for_point_in_viewport,
-    native_text_index_for_vertical_move, native_text_scroll_visual_rows, native_text_visual_target,
-    native_text_wheel_row_delta, NativeTextVisualDirection,
+    native_text_first_visible_column_for_caret, native_text_first_visible_row_for_caret,
+    native_text_index_for_point_in_viewport, native_text_index_for_vertical_move,
+    native_text_scroll_visual_rows, native_text_visual_target, native_text_wheel_row_delta,
+    NativeTextVisualDirection,
 };
 #[cfg(any(
     feature = "auto-suggest",
@@ -2259,6 +2260,7 @@ impl WindowsWin32ViewInputRoute {
             &value,
             point,
             state.first_visible_visual_row,
+            state.first_visible_visual_column,
             self.widget_text_wrap(target.widget),
             self.dpi,
         );
@@ -2270,6 +2272,14 @@ impl WindowsWin32ViewInputRoute {
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
+        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_column,
             self.widget_text_wrap(target.widget),
             self.dpi,
         );
@@ -2415,6 +2425,7 @@ impl WindowsWin32ViewInputRoute {
             &value,
             point,
             state.first_visible_visual_row,
+            state.first_visible_visual_column,
             self.widget_text_wrap(target.widget),
             self.dpi,
         );
@@ -2425,6 +2436,14 @@ impl WindowsWin32ViewInputRoute {
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+        );
+        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_column,
             self.widget_text_wrap(target.widget),
             self.dpi,
         );
@@ -2992,6 +3011,14 @@ impl WindowsWin32ViewInputRoute {
             &value,
             state.selection.caret,
             state.first_visible_visual_row,
+            self.widget_text_wrap(widget),
+            self.dpi,
+        );
+        state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+            target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_column,
             self.widget_text_wrap(widget),
             self.dpi,
         );
@@ -3763,6 +3790,14 @@ impl WindowsWin32ViewInputRoute {
                     &value,
                     state.selection.caret,
                     state.first_visible_visual_row,
+                    self.widget_text_wrap(widget),
+                    self.dpi,
+                );
+                state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+                    target,
+                    &value,
+                    state.selection.caret,
+                    state.first_visible_visual_column,
                     self.widget_text_wrap(widget),
                     self.dpi,
                 );
@@ -5019,6 +5054,11 @@ impl WindowsWin32ViewInputRoute {
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
         state.clamp(&value);
+        if target.kind != crate::ViewHitTargetKind::TextEditor
+            || self.widget_text_wrap(target.widget) != crate::TextWrap::NoWrap
+        {
+            state.first_visible_visual_column = 0;
+        }
         self.text_edit = Some(state);
     }
 
@@ -5900,6 +5940,14 @@ impl WindowsWin32ViewInputRoute {
                 self.widget_text_wrap(widget),
                 self.dpi,
             );
+            state.first_visible_visual_column = native_text_first_visible_column_for_caret(
+                target,
+                &value,
+                state.selection.caret,
+                state.first_visible_visual_column,
+                self.widget_text_wrap(widget),
+                self.dpi,
+            );
         }
         self.text_edit = Some(state);
         report.handled |= result.handled;
@@ -6502,6 +6550,7 @@ impl WindowsWin32ViewInputRoute {
                     &value,
                     state.selection.clamp(&value),
                     state.first_visible_visual_row,
+                    state.first_visible_visual_column,
                     self.widget_text_wrap(target.widget),
                     self.dpi,
                 );
@@ -9814,6 +9863,52 @@ mod tests {
         assert!(revealed_plan.commands.iter().any(
             |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "row0"),
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_reveals_no_wrap_columns_for_pointer_hits() {
+        let widget = crate::WidgetId::new(322);
+        let builder = crate::native_window("Win32 horizontal editor viewport")
+            .size(48, 70)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::text_editor::<UiCommand>("0123456789")
+                        .id(widget)
+                        .text_wrap(crate::TextWrap::NoWrap)
+                        .width(crate::Dp::new(48.0))
+                        .height(crate::Dp::new(52.0))
+                },
+                |_, _, _| {},
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("no-wrap editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("no-wrap editor should expose Win32 viewport geometry");
+        let left = crate::Point {
+            x: target.bounds.x + 8,
+            y: target.bounds.y + 10,
+        };
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        route.dispatch_pointer_down(left, false);
+        route.dispatch_pointer_up(left);
+
+        let revealed = route.dispatch_key_down(u32::from(VK_END));
+        let revealed_plan = route
+            .take_pending_draw_plan()
+            .expect("End should reveal the no-wrap caret column");
+        let clicked = route.dispatch_pointer_down(left, false);
+
+        assert_eq!(revealed.text_caret, Some(10));
+        assert!(revealed_plan.commands.iter().any(
+            |command| matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "789"),
+        ));
+        assert_eq!(clicked.text_caret, Some(7));
     }
 
     #[test]

@@ -571,6 +571,10 @@ fn main() -> ZsuiResult<()> {
             .map(|line| format!("第{line:02}行"))
             .collect::<Vec<_>>()
             .join("\n");
+        let horizontal_smoke_text = format!(
+            "horizontal-start-{}-HORIZONTAL-END",
+            "viewport-fill-".repeat(16)
+        );
         let mut options = NativeWindowSmokeRunOptions::new(1_200)
             .native_view_click(Point { x: 360, y: 220 })
             .native_view_text_input(smoke_text)
@@ -580,6 +584,8 @@ fn main() -> ZsuiResult<()> {
             .native_view_scroll(Point { x: 360, y: 220 }, -48)
             .native_view_click(wrap_point)
             .native_view_click(Point { x: 360, y: 220 })
+            .native_view_text_input(horizontal_smoke_text)
+            .native_view_key_down(NativeViewKey::End)
             .native_window_close_request();
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);

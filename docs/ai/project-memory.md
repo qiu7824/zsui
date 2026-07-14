@@ -93,9 +93,12 @@ history remain authoritative for implementation status.
 - Multiline editor viewport position is transient per-window interaction state,
   not application document state. The same visual-row model must drive clipped
   text paint, selection/caret geometry, pointer hit testing, wheel scrolling and
-  caret reveal after edits or keyboard movement. Editor wheel scrolling stays
-  available with the `textbox` slice and must not pull in the general `scroll`
-  container feature, a platform child editor or a WebView.
+  caret reveal after edits or keyboard movement. `TextWrap::NoWrap` also keeps a
+  transient first visible visual column shared by paint, selection/caret and
+  pointer hit testing; caret movement reveals it horizontally, while wrapped
+  modes reset the column offset. Editor viewport scrolling stays available with
+  the `textbox` slice and must not pull in the general `scroll` container
+  feature, a platform child editor or a WebView.
 
 ## Native platform bar
 
