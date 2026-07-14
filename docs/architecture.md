@@ -188,6 +188,27 @@ metric profiles internally, but no backend creates a child collection widget
 or stores an application collection model. Scrolling and virtualization remain
 outside this bounded first pass and are explicit readiness work.
 
+The optional `color-picker` feature adds `color_picker(state)` as a compact
+color well with an expanded color editor. Applications own the selected
+`Color`, expanded flag, active `ZsColorChannel` and alpha policy in
+`ZsColorPickerState`; the framework owns viewport-aware popup placement,
+shared paint/hit geometry, pointer dragging and one root Tab stop with typed
+channel, value and expanded events. Windows uses a Fluent ColorPicker-like
+square HSV spectrum, hue track, preview and RGBA sliders; its first-pass
+spectrum remains at least 256 DIPs high while editable precision fields are
+absent. macOS uses NSColorWell/custom-panel-like compact slider metrics, and
+GTK uses a ColorDialogButton-like entry and HSV editor surface. All remain
+self-drawn through the existing render protocol; no backend creates or drives
+a child picker.
+This bounded first pass follows [Microsoft ColorPicker](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/color-picker),
+[Apple color wells](https://developer.apple.com/design/human-interface-guidelines/color-wells),
+[AppKit NSColorWell](https://developer.apple.com/documentation/appkit/nscolorwell)
+and [GTK4 ColorDialogButton](https://docs.gtk.org/gtk4/class.ColorDialogButton.html).
+Editable RGB/HSV/hex fields, swatches, eyedropper, accessibility range
+providers, HDR/color-space management and AppKit/GTK target evidence remain
+explicit readiness work. This is a platform-informed first pass, not a claim
+of control-for-control WinUI 3 parity.
+
 For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
 `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
 surface contract, not a settings-storage model: it describes a left navigation

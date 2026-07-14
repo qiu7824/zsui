@@ -228,6 +228,11 @@ const TIME_PICKER_GAPS: &[&str] = &[
     "accessibility value and picker-column providers",
     "AppKit and GTK4 target interaction smoke",
 ];
+const COLOR_PICKER_GAPS: &[&str] = &[
+    "editable RGB/HSV/hexadecimal text fields, saved swatches and eyedropper",
+    "accessibility color-value and range-value providers",
+    "HDR and color-space management plus AppKit and GTK4 target interaction smoke",
+];
 const GRID_GAPS: &[&str] = &[
     "content-sized automatic tracks and baseline alignment",
     "accessibility grouping semantics",
@@ -491,10 +496,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "color_picker",
         "ColorPicker",
         Input,
-        NotStarted,
-        None,
-        "src/view.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("color-picker"),
+        "src/color_picker.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        COLOR_PICKER_GAPS
     ),
     component!(
         "list",
@@ -724,7 +729,7 @@ mod tests {
 
         assert_eq!(summary.total_count, ZSUI_COMPONENT_CATALOG.len());
         assert!(summary.runtime_surface_count >= 15);
-        assert!(summary.not_started_count >= 3);
+        assert!(summary.not_started_count >= 2);
         assert!(!summary.missing_component_names.contains(&"grid_view"));
         assert!(!summary.missing_component_names.contains(&"tree"));
         assert!(!summary.missing_component_names.contains(&"table"));
@@ -735,6 +740,7 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"info_bar"));
         assert!(!summary.missing_component_names.contains(&"teaching_tip"));
         assert!(!summary.missing_component_names.contains(&"breadcrumb"));
+        assert!(!summary.missing_component_names.contains(&"color_picker"));
     }
 
     #[test]

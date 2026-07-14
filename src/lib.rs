@@ -18,6 +18,8 @@ pub mod breadcrumb;
 pub mod calculator;
 pub mod capability;
 pub mod clipboard;
+#[cfg(feature = "color-picker")]
+pub mod color_picker;
 pub mod command_protocol;
 pub mod component_catalog;
 pub mod component_protocol;
@@ -167,6 +169,8 @@ pub use calculator::{
 };
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
 pub use clipboard::ClipboardData;
+#[cfg(feature = "color-picker")]
+pub use color_picker::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
 pub use command_protocol::{
     CommandId, CommandPayload, CommandQueue, CommandScope, SharedUiCommandExecutor, UiCommand,
     UiCommandDispatchReport, UiCommandExecutor,
@@ -502,6 +506,8 @@ pub use view::breadcrumb_bar;
 pub use view::button;
 #[cfg(feature = "checkbox")]
 pub use view::checkbox;
+#[cfg(feature = "color-picker")]
+pub use view::color_picker;
 #[cfg(feature = "combo")]
 pub use view::combo_box;
 #[cfg(feature = "dialog")]
@@ -574,6 +580,7 @@ pub use view::{ZsNumberBoxState, ZsNumberFormat, ZsNumberRange};
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -590,6 +597,13 @@ pub use widget_render::{
     zs_breadcrumb_native_draw_plan, zs_breadcrumb_popup_native_draw_plan,
     zs_breadcrumb_render_plan, ZsBreadcrumbItemRenderPlan, ZsBreadcrumbMetrics,
     ZsBreadcrumbOverflowRowRenderPlan, ZsBreadcrumbPlatformStyle, ZsBreadcrumbRenderPlan,
+};
+#[cfg(feature = "color-picker")]
+pub use widget_render::{
+    zs_color_picker_header_native_draw_plan, zs_color_picker_popup_native_draw_plan,
+    zs_color_picker_render_plan, zs_color_picker_render_plan_in_viewport,
+    ZsColorPickerChannelRenderPlan, ZsColorPickerMetrics, ZsColorPickerPlatformStyle,
+    ZsColorPickerRenderPlan,
 };
 #[cfg(feature = "combo")]
 pub use widget_render::{

@@ -329,6 +329,7 @@ pub(crate) fn decorate_native_focus_ring(
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -347,6 +348,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -377,6 +379,12 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
             ViewHitTargetKind::BreadcrumbOverflow
                 | ViewHitTargetKind::BreadcrumbItem { .. }
                 | ViewHitTargetKind::BreadcrumbOverflowItem { .. }
+        );
+    #[cfg(feature = "color-picker")]
+    let supported = supported
+        || matches!(
+            target.kind,
+            ViewHitTargetKind::ColorPicker | ViewHitTargetKind::ColorPickerChannel { .. }
         );
     #[cfg(feature = "grid-view")]
     let supported = supported || matches!(target.kind, ViewHitTargetKind::GridViewItem { .. });
@@ -440,6 +448,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",

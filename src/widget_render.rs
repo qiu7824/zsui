@@ -3,8 +3,11 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "color-picker")]
+use crate::Point;
 #[cfg(any(
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -23,6 +26,7 @@ use crate::ZsDate;
 use crate::{Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Rect};
 #[cfg(any(
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "dialog",
     feature = "grid-view",
     feature = "info-bar",
@@ -53,6 +57,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode};
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "combo",
     feature = "date-picker",
     feature = "info-bar",
@@ -66,6 +71,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "combo",
     feature = "date-picker",
     feature = "dialog",
@@ -83,6 +89,8 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 use crate::{NativeDrawTextCommand, SemanticTextStyle};
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
+#[cfg(feature = "color-picker")]
+use crate::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
 
 #[cfg(feature = "info-bar")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1855,6 +1863,7 @@ pub fn zs_breadcrumb_popup_native_draw_plan(
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -1868,6 +1877,7 @@ pub enum ZsPopupPlacement {
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -5470,6 +5480,751 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
     NativeDrawPlan::new(commands)
 }
 
+#[cfg(feature = "color-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsColorPickerPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+#[cfg(feature = "color-picker")]
+impl ZsColorPickerPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[cfg(feature = "color-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsColorPickerMetrics {
+    pub popup_width: Dp,
+    pub popup_padding: Dp,
+    pub preview_size: Dp,
+    pub preview_gap: Dp,
+    pub spectrum_height: Dp,
+    pub spectrum_gap: Dp,
+    pub hue_track_height: Dp,
+    pub row_height: Dp,
+    pub row_gap: Dp,
+    pub label_width: Dp,
+    pub value_width: Dp,
+    pub track_height: Dp,
+    pub thumb_width: Dp,
+    pub popup_gap: Dp,
+    pub control_radius: Dp,
+    pub overlay_radius: Dp,
+}
+
+#[cfg(feature = "color-picker")]
+impl ZsColorPickerMetrics {
+    pub const fn for_platform(platform: ZsColorPickerPlatformStyle) -> Self {
+        match platform {
+            ZsColorPickerPlatformStyle::Windows => Self {
+                popup_width: Dp::new(320.0),
+                popup_padding: Dp::new(16.0),
+                preview_size: Dp::new(48.0),
+                preview_gap: Dp::new(10.0),
+                // WinUI recommends a square spectrum of at least 256 px when
+                // editable precision fields are not present. The 288-DP
+                // content width keeps this first-pass picker above that
+                // accuracy floor without introducing a native child control.
+                spectrum_height: Dp::new(256.0),
+                spectrum_gap: Dp::new(8.0),
+                hue_track_height: Dp::new(10.0),
+                row_height: Dp::new(28.0),
+                row_gap: Dp::new(4.0),
+                label_width: Dp::new(24.0),
+                value_width: Dp::new(42.0),
+                track_height: Dp::new(8.0),
+                thumb_width: Dp::new(12.0),
+                popup_gap: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                overlay_radius: Dp::new(8.0),
+            },
+            ZsColorPickerPlatformStyle::Macos => Self {
+                popup_width: Dp::new(264.0),
+                popup_padding: Dp::new(12.0),
+                preview_size: Dp::new(40.0),
+                preview_gap: Dp::new(10.0),
+                spectrum_height: Dp::new(0.0),
+                spectrum_gap: Dp::new(0.0),
+                hue_track_height: Dp::new(0.0),
+                row_height: Dp::new(32.0),
+                row_gap: Dp::new(3.0),
+                label_width: Dp::new(20.0),
+                value_width: Dp::new(36.0),
+                track_height: Dp::new(6.0),
+                thumb_width: Dp::new(10.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(10.0),
+            },
+            ZsColorPickerPlatformStyle::Gtk => Self {
+                popup_width: Dp::new(288.0),
+                popup_padding: Dp::new(16.0),
+                preview_size: Dp::new(44.0),
+                preview_gap: Dp::new(12.0),
+                spectrum_height: Dp::new(96.0),
+                spectrum_gap: Dp::new(8.0),
+                hue_track_height: Dp::new(10.0),
+                row_height: Dp::new(36.0),
+                row_gap: Dp::new(4.0),
+                label_width: Dp::new(24.0),
+                value_width: Dp::new(40.0),
+                track_height: Dp::new(8.0),
+                thumb_width: Dp::new(12.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(12.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "color-picker")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsColorPickerChannelRenderPlan {
+    pub channel: ZsColorChannel,
+    pub bounds: Rect,
+    pub label_bounds: Rect,
+    pub track: Rect,
+    pub thumb: Rect,
+    pub value_bounds: Rect,
+    pub active: bool,
+}
+
+#[cfg(feature = "color-picker")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsColorPickerRenderPlan {
+    pub bounds: Rect,
+    pub swatch_bounds: Rect,
+    pub text_bounds: Rect,
+    pub icon_bounds: Rect,
+    pub popup: Option<Rect>,
+    pub popup_placement: Option<ZsPopupPlacement>,
+    pub spectrum_bounds: Option<Rect>,
+    pub spectrum_thumb: Option<Rect>,
+    pub hue_track: Option<Rect>,
+    pub hue_thumb: Option<Rect>,
+    pub preview_bounds: Option<Rect>,
+    pub hex_bounds: Option<Rect>,
+    pub channels: Vec<ZsColorPickerChannelRenderPlan>,
+    pub platform: ZsColorPickerPlatformStyle,
+    pub control_radius: i32,
+    pub overlay_radius: i32,
+}
+
+/// Computes shared paint and hit geometry for the self-drawn color well and editor.
+///
+/// The closed control follows the platform color-well/button idiom. The expanded
+/// editor keeps one application-owned RGBA value and exposes precise channel
+/// sliders without creating or driving a native child control.
+#[cfg(feature = "color-picker")]
+pub fn zs_color_picker_render_plan(
+    bounds: Rect,
+    state: ZsColorPickerState,
+    platform: ZsColorPickerPlatformStyle,
+    dpi: Dpi,
+) -> ZsColorPickerRenderPlan {
+    zs_color_picker_render_plan_impl(bounds, state, platform, dpi, None)
+}
+
+#[cfg(feature = "color-picker")]
+pub fn zs_color_picker_render_plan_in_viewport(
+    bounds: Rect,
+    state: ZsColorPickerState,
+    platform: ZsColorPickerPlatformStyle,
+    dpi: Dpi,
+    viewport: Rect,
+) -> ZsColorPickerRenderPlan {
+    zs_color_picker_render_plan_impl(bounds, state, platform, dpi, Some(viewport))
+}
+
+#[cfg(feature = "color-picker")]
+fn zs_color_picker_render_plan_impl(
+    bounds: Rect,
+    state: ZsColorPickerState,
+    platform: ZsColorPickerPlatformStyle,
+    dpi: Dpi,
+    viewport: Option<Rect>,
+) -> ZsColorPickerRenderPlan {
+    let state = state.normalized();
+    let metrics = ZsColorPickerMetrics::for_platform(platform);
+    let inset = metrics.popup_padding.to_px(dpi).round_i32().max(1);
+    let swatch_size = scale(
+        match platform {
+            ZsColorPickerPlatformStyle::Windows => 22,
+            ZsColorPickerPlatformStyle::Macos => 18,
+            ZsColorPickerPlatformStyle::Gtk => 20,
+        },
+        dpi,
+    )
+    .min(bounds.height.saturating_sub(scale(8, dpi)).max(1));
+    let header_padding = scale(8, dpi);
+    let icon_column = scale(28, dpi).min(bounds.width.max(1));
+    let swatch_bounds = Rect {
+        x: bounds.x.saturating_add(header_padding),
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(swatch_size)) / 2),
+        width: swatch_size,
+        height: swatch_size,
+    };
+    let icon_size = scale(12, dpi).min(bounds.height.max(1));
+    let icon_bounds = Rect {
+        x: bounds
+            .x
+            .saturating_add(bounds.width)
+            .saturating_sub(icon_column)
+            .saturating_add((icon_column.saturating_sub(icon_size)) / 2),
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(icon_size)) / 2),
+        width: icon_size,
+        height: icon_size,
+    };
+    let text_x = swatch_bounds
+        .x
+        .saturating_add(swatch_bounds.width)
+        .saturating_add(scale(8, dpi));
+    let text_bounds = Rect {
+        x: text_x,
+        y: bounds.y,
+        width: icon_bounds.x.saturating_sub(text_x).max(0),
+        height: bounds.height,
+    };
+
+    let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
+    let row_gap = metrics.row_gap.to_px(dpi).round_i32().max(0);
+    let preview_size = metrics.preview_size.to_px(dpi).round_i32().max(1);
+    let preview_gap = metrics.preview_gap.to_px(dpi).round_i32().max(0);
+    let spectrum_height = metrics.spectrum_height.to_px(dpi).round_i32().max(0);
+    let spectrum_gap = metrics.spectrum_gap.to_px(dpi).round_i32().max(0);
+    let hue_track_height = metrics.hue_track_height.to_px(dpi).round_i32().max(0);
+    let spectrum_section_height = if spectrum_height > 0 && hue_track_height > 0 {
+        spectrum_height
+            .saturating_add(spectrum_gap)
+            .saturating_add(hue_track_height)
+            .saturating_add(spectrum_gap)
+    } else {
+        0
+    };
+    let channel_count = state.channels().len() as i32;
+    let popup_height = inset
+        .saturating_mul(2)
+        .saturating_add(spectrum_section_height)
+        .saturating_add(preview_size)
+        .saturating_add(preview_gap)
+        .saturating_add(row_height.saturating_mul(channel_count))
+        .saturating_add(row_gap.saturating_mul(channel_count.saturating_sub(1)));
+    let placed_popup = state.expanded.then(|| {
+        place_popup(
+            bounds,
+            metrics.popup_width.to_px(dpi).round_i32().max(1),
+            popup_height,
+            metrics.popup_gap.to_px(dpi).round_i32().max(0),
+            viewport,
+        )
+    });
+    let popup = placed_popup.map(|placed| placed.bounds);
+    let mut spectrum_bounds = None;
+    let mut spectrum_thumb = None;
+    let mut hue_track = None;
+    let mut hue_thumb = None;
+    let mut preview_bounds = None;
+    let mut hex_bounds = None;
+    let mut channels = Vec::new();
+
+    if let Some(popup) = popup {
+        let content = Rect {
+            x: popup.x.saturating_add(inset),
+            y: popup.y.saturating_add(inset),
+            width: popup.width.saturating_sub(inset.saturating_mul(2)).max(1),
+            height: popup.height.saturating_sub(inset.saturating_mul(2)).max(1),
+        };
+        let hsv = ZsHsvColor::from_color(state.color);
+        let mut content_y = content.y;
+        if spectrum_section_height > 0 {
+            let spectrum = Rect {
+                x: content.x,
+                y: content_y,
+                width: content.width,
+                height: spectrum_height,
+            };
+            let spectrum_thumb_size = scale(14, dpi);
+            spectrum_bounds = Some(spectrum);
+            spectrum_thumb = Some(Rect {
+                x: spectrum
+                    .x
+                    .saturating_add(
+                        ((spectrum.width.saturating_sub(1) as f32) * hsv.saturation).round() as i32,
+                    )
+                    .saturating_sub(spectrum_thumb_size / 2),
+                y: spectrum
+                    .y
+                    .saturating_add(
+                        ((spectrum.height.saturating_sub(1) as f32) * (1.0 - hsv.value)).round()
+                            as i32,
+                    )
+                    .saturating_sub(spectrum_thumb_size / 2),
+                width: spectrum_thumb_size,
+                height: spectrum_thumb_size,
+            });
+            content_y = content_y
+                .saturating_add(spectrum.height)
+                .saturating_add(spectrum_gap);
+            let hue = Rect {
+                x: content.x,
+                y: content_y,
+                width: content.width,
+                height: hue_track_height,
+            };
+            let hue_thumb_width = scale(8, dpi);
+            hue_track = Some(hue);
+            hue_thumb = Some(Rect {
+                x: hue
+                    .x
+                    .saturating_add(
+                        ((hue.width.saturating_sub(1) as f32) * (hsv.hue / 360.0)).round() as i32,
+                    )
+                    .saturating_sub(hue_thumb_width / 2),
+                y: hue.y.saturating_sub(scale(3, dpi)),
+                width: hue_thumb_width,
+                height: hue.height.saturating_add(scale(6, dpi)),
+            });
+            content_y = content_y
+                .saturating_add(hue.height)
+                .saturating_add(spectrum_gap);
+        }
+        let preview = Rect {
+            x: content.x,
+            y: content_y,
+            width: preview_size.min(content.width),
+            height: preview_size.min(content.height),
+        };
+        preview_bounds = Some(preview);
+        hex_bounds = Some(Rect {
+            x: preview
+                .x
+                .saturating_add(preview.width)
+                .saturating_add(preview_gap),
+            y: preview.y,
+            width: content
+                .x
+                .saturating_add(content.width)
+                .saturating_sub(preview.x.saturating_add(preview.width))
+                .saturating_sub(preview_gap)
+                .max(0),
+            height: preview.height,
+        });
+
+        let label_width = metrics.label_width.to_px(dpi).round_i32().max(1);
+        let value_width = metrics.value_width.to_px(dpi).round_i32().max(1);
+        let track_height = metrics.track_height.to_px(dpi).round_i32().max(1);
+        let thumb_width = metrics.thumb_width.to_px(dpi).round_i32().max(1);
+        let rows_y = preview
+            .y
+            .saturating_add(preview.height)
+            .saturating_add(preview_gap);
+        for (index, channel) in state.channels().iter().copied().enumerate() {
+            let row = Rect {
+                x: content.x,
+                y: rows_y.saturating_add(
+                    (row_height.saturating_add(row_gap)).saturating_mul(index as i32),
+                ),
+                width: content.width,
+                height: row_height,
+            };
+            let label_bounds = Rect {
+                x: row.x,
+                y: row.y,
+                width: label_width.min(row.width),
+                height: row.height,
+            };
+            let value_bounds = Rect {
+                x: row.x.saturating_add(row.width).saturating_sub(value_width),
+                y: row.y,
+                width: value_width.min(row.width),
+                height: row.height,
+            };
+            let track_x = label_bounds.x.saturating_add(label_bounds.width);
+            let track_right = value_bounds.x.saturating_sub(scale(8, dpi));
+            let track = Rect {
+                x: track_x,
+                y: row
+                    .y
+                    .saturating_add((row.height.saturating_sub(track_height)) / 2),
+                width: track_right.saturating_sub(track_x).max(1),
+                height: track_height,
+            };
+            let fraction = f32::from(state.channel_value(channel)) / 255.0;
+            let thumb_x = track
+                .x
+                .saturating_add(((track.width.saturating_sub(1) as f32) * fraction).round() as i32)
+                .saturating_sub(thumb_width / 2);
+            let thumb = Rect {
+                x: thumb_x,
+                y: row.y.saturating_add(scale(6, dpi)),
+                width: thumb_width,
+                height: row.height.saturating_sub(scale(12, dpi)).max(1),
+            };
+            channels.push(ZsColorPickerChannelRenderPlan {
+                channel,
+                bounds: row,
+                label_bounds,
+                track,
+                thumb,
+                value_bounds,
+                active: channel == state.active_channel,
+            });
+        }
+    }
+
+    ZsColorPickerRenderPlan {
+        bounds,
+        swatch_bounds,
+        text_bounds,
+        icon_bounds,
+        popup,
+        popup_placement: placed_popup.map(|placed| placed.placement),
+        spectrum_bounds,
+        spectrum_thumb,
+        hue_track,
+        hue_thumb,
+        preview_bounds,
+        hex_bounds,
+        channels,
+        platform,
+        control_radius: metrics.control_radius.to_px(dpi).round_i32().max(1),
+        overlay_radius: metrics.overlay_radius.to_px(dpi).round_i32().max(1),
+    }
+}
+
+#[cfg(feature = "color-picker")]
+impl ZsColorPickerRenderPlan {
+    pub fn spectrum_color_at(&self, state: ZsColorPickerState, point: Point) -> Option<Color> {
+        let bounds = self.spectrum_bounds?;
+        let saturation =
+            point.x.saturating_sub(bounds.x) as f32 / bounds.width.saturating_sub(1).max(1) as f32;
+        let value = 1.0
+            - point.y.saturating_sub(bounds.y) as f32
+                / bounds.height.saturating_sub(1).max(1) as f32;
+        Some(
+            ZsHsvColor::from_color(state.color)
+                .with_saturation_value(saturation, value)
+                .to_color(state.color.a),
+        )
+    }
+
+    pub fn hue_color_at(&self, state: ZsColorPickerState, point: Point) -> Option<Color> {
+        let bounds = self.hue_track?;
+        let fraction =
+            point.x.saturating_sub(bounds.x) as f32 / bounds.width.saturating_sub(1).max(1) as f32;
+        Some(
+            ZsHsvColor::from_color(state.color)
+                .with_hue(fraction.clamp(0.0, 1.0) * 359.999)
+                .to_color(state.color.a),
+        )
+    }
+}
+
+#[cfg(feature = "color-picker")]
+pub fn zs_color_picker_header_native_draw_plan(
+    plan: &ZsColorPickerRenderPlan,
+    state: ZsColorPickerState,
+) -> NativeDrawPlan {
+    let state = state.normalized();
+    let fill = match plan.platform {
+        ZsColorPickerPlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Surface),
+        ZsColorPickerPlatformStyle::Windows | ZsColorPickerPlatformStyle::Gtk => {
+            NativeDrawFill::Role(ColorRole::Control)
+        }
+    };
+    let swatch_color = Color::rgb(state.color.r, state.color.g, state.color.b);
+    NativeDrawPlan::new([
+        NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill,
+            stroke: Some(NativeDrawFill::Role(if state.expanded {
+                ColorRole::Accent
+            } else {
+                ColorRole::Border
+            })),
+            radius: plan.control_radius,
+        },
+        NativeDrawCommand::RoundRect {
+            rect: plan.swatch_bounds,
+            fill: NativeDrawFill::Color(swatch_color),
+            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+            radius: (plan.control_radius / 2).max(1),
+        },
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            state.hex_label(),
+            plan.text_bounds,
+            SemanticTextStyle::body(),
+        )),
+        NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                if state.expanded {
+                    ZsIcon::ChevronUp
+                } else {
+                    ZsIcon::ChevronDown
+                },
+                plan.icon_bounds,
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(ColorRole::PrimaryText),
+        ),
+    ])
+}
+
+#[cfg(feature = "color-picker")]
+fn color_over_background(color: Color, background: Color) -> Color {
+    let alpha = u32::from(color.a);
+    let inverse = 255_u32.saturating_sub(alpha);
+    let blend = |foreground: u8, behind: u8| {
+        ((u32::from(foreground) * alpha + u32::from(behind) * inverse + 127) / 255) as u8
+    };
+    Color::rgb(
+        blend(color.r, background.r),
+        blend(color.g, background.g),
+        blend(color.b, background.b),
+    )
+}
+
+#[cfg(feature = "color-picker")]
+fn color_picker_channel_color(
+    state: ZsColorPickerState,
+    channel: ZsColorChannel,
+    value: u8,
+    light_background: bool,
+) -> Color {
+    let candidate = channel.with_value(state.color, value);
+    if channel == ZsColorChannel::Alpha {
+        color_over_background(
+            candidate,
+            if light_background {
+                Color::rgb(238, 238, 238)
+            } else {
+                Color::rgb(184, 184, 184)
+            },
+        )
+    } else {
+        Color::rgb(candidate.r, candidate.g, candidate.b)
+    }
+}
+
+#[cfg(feature = "color-picker")]
+pub fn zs_color_picker_popup_native_draw_plan(
+    plan: &ZsColorPickerRenderPlan,
+    state: ZsColorPickerState,
+) -> NativeDrawPlan {
+    let state = state.normalized();
+    let Some(popup) = plan.popup else {
+        return NativeDrawPlan::default();
+    };
+    let mut commands = vec![NativeDrawCommand::RoundRect {
+        rect: popup,
+        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+        stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+        radius: plan.overlay_radius,
+    }];
+
+    if let Some(spectrum) = plan.spectrum_bounds {
+        let hsv = ZsHsvColor::from_color(state.color);
+        let columns = 64_i32.min(spectrum.width.max(1));
+        let rows = 64_i32.min(spectrum.height.max(1));
+        for row in 0..rows {
+            for column in 0..columns {
+                let x0 = spectrum.x + spectrum.width * column / columns;
+                let x1 = spectrum.x + spectrum.width * (column + 1) / columns;
+                let y0 = spectrum.y + spectrum.height * row / rows;
+                let y1 = spectrum.y + spectrum.height * (row + 1) / rows;
+                let saturation = column as f32 / columns.saturating_sub(1).max(1) as f32;
+                let value = 1.0 - row as f32 / rows.saturating_sub(1).max(1) as f32;
+                commands.push(NativeDrawCommand::FillRect {
+                    rect: Rect {
+                        x: x0,
+                        y: y0,
+                        width: x1.saturating_sub(x0).max(1),
+                        height: y1.saturating_sub(y0).max(1),
+                    },
+                    fill: NativeDrawFill::Color(
+                        ZsHsvColor::new(hsv.hue, saturation, value).to_color(255),
+                    ),
+                });
+            }
+        }
+        commands.push(NativeDrawCommand::StrokeRect {
+            rect: spectrum,
+            stroke: NativeDrawFill::Role(ColorRole::Border),
+            width: 1,
+        });
+        if let Some(thumb) = plan.spectrum_thumb {
+            commands.push(NativeDrawCommand::RoundRect {
+                rect: thumb,
+                fill: NativeDrawFill::Color(Color::rgb(
+                    state.color.r,
+                    state.color.g,
+                    state.color.b,
+                )),
+                stroke: Some(NativeDrawFill::Role(ColorRole::Surface)),
+                radius: (thumb.width / 2).max(1),
+            });
+        }
+    }
+    if let Some(hue) = plan.hue_track {
+        let segments = 48_i32.min(hue.width.max(1));
+        for segment in 0..segments {
+            let x0 = hue.x + hue.width * segment / segments;
+            let x1 = hue.x + hue.width * (segment + 1) / segments;
+            let hue_degrees = segment as f32 / segments.saturating_sub(1).max(1) as f32 * 359.999;
+            commands.push(NativeDrawCommand::FillRect {
+                rect: Rect {
+                    x: x0,
+                    y: hue.y,
+                    width: x1.saturating_sub(x0).max(1),
+                    height: hue.height,
+                },
+                fill: NativeDrawFill::Color(ZsHsvColor::new(hue_degrees, 1.0, 1.0).to_color(255)),
+            });
+        }
+        if let Some(thumb) = plan.hue_thumb {
+            commands.push(NativeDrawCommand::RoundRect {
+                rect: thumb,
+                fill: NativeDrawFill::Role(ColorRole::Surface),
+                stroke: Some(NativeDrawFill::Role(ColorRole::PrimaryText)),
+                radius: (thumb.width / 2).max(1),
+            });
+        }
+    }
+
+    if let Some(preview) = plan.preview_bounds {
+        let cells = 6_i32;
+        for row in 0..cells {
+            for column in 0..cells {
+                let x0 = preview.x + preview.width * column / cells;
+                let x1 = preview.x + preview.width * (column + 1) / cells;
+                let y0 = preview.y + preview.height * row / cells;
+                let y1 = preview.y + preview.height * (row + 1) / cells;
+                let background = if (row + column) % 2 == 0 {
+                    Color::rgb(238, 238, 238)
+                } else {
+                    Color::rgb(184, 184, 184)
+                };
+                commands.push(NativeDrawCommand::FillRect {
+                    rect: Rect {
+                        x: x0,
+                        y: y0,
+                        width: x1.saturating_sub(x0).max(1),
+                        height: y1.saturating_sub(y0).max(1),
+                    },
+                    fill: NativeDrawFill::Color(color_over_background(state.color, background)),
+                });
+            }
+        }
+        commands.push(NativeDrawCommand::StrokeRect {
+            rect: preview,
+            stroke: NativeDrawFill::Role(ColorRole::Border),
+            width: 1,
+        });
+    }
+    if let Some(hex_bounds) = plan.hex_bounds {
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            state.hex_label(),
+            hex_bounds,
+            SemanticTextStyle {
+                role: TextRole::BodyLarge,
+                weight: TextWeight::Semibold,
+                ..SemanticTextStyle::body()
+            },
+        )));
+    }
+
+    for row in &plan.channels {
+        if row.active {
+            commands.push(NativeDrawCommand::RoundFill {
+                rect: row.bounds,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: match plan.platform {
+                        ZsColorPickerPlatformStyle::Windows => 24,
+                        ZsColorPickerPlatformStyle::Macos => 18,
+                        ZsColorPickerPlatformStyle::Gtk => 20,
+                    },
+                },
+                radius: plan.control_radius,
+            });
+        }
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            row.channel.label(),
+            row.label_bounds,
+            SemanticTextStyle {
+                color: if row.active {
+                    ColorRole::Accent
+                } else {
+                    ColorRole::SecondaryText
+                },
+                weight: if row.active {
+                    TextWeight::Semibold
+                } else {
+                    TextWeight::Regular
+                },
+                horizontal_align: HorizontalAlign::Center,
+                ..SemanticTextStyle::body()
+            },
+        )));
+
+        let segments = 32_i32.min(row.track.width.max(1));
+        for segment in 0..segments {
+            let x0 = row.track.x + row.track.width * segment / segments;
+            let x1 = row.track.x + row.track.width * (segment + 1) / segments;
+            let value = ((segment * 255) / (segments.saturating_sub(1).max(1))) as u8;
+            commands.push(NativeDrawCommand::FillRect {
+                rect: Rect {
+                    x: x0,
+                    y: row.track.y,
+                    width: x1.saturating_sub(x0).max(1),
+                    height: row.track.height,
+                },
+                fill: NativeDrawFill::Color(color_picker_channel_color(
+                    state,
+                    row.channel,
+                    value,
+                    segment % 2 == 0,
+                )),
+            });
+        }
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: row.thumb,
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+            stroke: Some(NativeDrawFill::Role(if row.active {
+                ColorRole::Accent
+            } else {
+                ColorRole::Border
+            })),
+            radius: (row.thumb.width / 2).max(1),
+        });
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            state.channel_value(row.channel).to_string(),
+            row.value_bounds,
+            SemanticTextStyle {
+                horizontal_align: HorizontalAlign::End,
+                ..SemanticTextStyle::body()
+            },
+        )));
+    }
+
+    NativeDrawPlan::new(commands)
+}
+
 #[cfg(feature = "dialog")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsContentDialogPlatformStyle {
@@ -5893,6 +6648,7 @@ pub fn zs_content_dialog_native_draw_plan(
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker"
@@ -7338,5 +8094,120 @@ mod tests {
             .choices
             .iter()
             .all(|choice| choice.bounds.x >= 60 && choice.bounds.x < 300));
+    }
+
+    #[cfg(feature = "color-picker")]
+    #[test]
+    fn color_picker_uses_platform_color_well_metrics_and_shared_channel_geometry() {
+        let state = ZsColorPickerState::new(Color::rgba(12, 96, 220, 144))
+            .with_expanded(true)
+            .with_active_channel(ZsColorChannel::Blue);
+        let bounds = Rect {
+            x: 24,
+            y: 20,
+            width: 220,
+            height: 32,
+        };
+        let windows = zs_color_picker_render_plan(
+            bounds,
+            state,
+            ZsColorPickerPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+
+        assert_eq!(windows.popup_placement, Some(ZsPopupPlacement::Below));
+        assert_eq!(windows.popup.unwrap().width, 320);
+        assert!(windows.spectrum_bounds.is_some());
+        assert!(windows.hue_track.is_some());
+        assert_eq!(windows.channels.len(), 4);
+        assert_eq!(windows.channels[2].channel, ZsColorChannel::Blue);
+        assert!(windows.channels[2].active);
+        assert!(windows.channels.iter().all(|row| row.track.width > 0));
+        assert!(matches!(
+            zs_color_picker_header_native_draw_plan(&windows, state)
+                .commands
+                .as_slice(),
+            [
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::RoundRect { .. },
+                NativeDrawCommand::Text(_),
+                NativeDrawCommand::Icon(NativeDrawIconCommand {
+                    icon: ZsIcon::ChevronUp,
+                    ..
+                })
+            ]
+        ));
+        let popup = zs_color_picker_popup_native_draw_plan(&windows, state);
+        assert!(
+            popup
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    NativeDrawCommand::FillRect {
+                        fill: NativeDrawFill::Color(_),
+                        ..
+                    }
+                ))
+                .count()
+                >= 64 * 64
+        );
+        assert!(popup.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "#0C60DC90"
+        )));
+
+        let macos = ZsColorPickerMetrics::for_platform(ZsColorPickerPlatformStyle::Macos);
+        let gtk = ZsColorPickerMetrics::for_platform(ZsColorPickerPlatformStyle::Gtk);
+        assert!(macos.row_height.0 < gtk.row_height.0);
+        assert!(macos.popup_width.0 < gtk.popup_width.0);
+        assert_eq!(macos.spectrum_height, Dp::new(0.0));
+        let spectrum = windows.spectrum_bounds.unwrap();
+        assert!(spectrum.width >= 256);
+        assert!(spectrum.height >= 256);
+        let saturated = windows
+            .spectrum_color_at(
+                state,
+                Point {
+                    x: spectrum.x + spectrum.width - 1,
+                    y: spectrum.y,
+                },
+            )
+            .unwrap();
+        assert_eq!(saturated.a, state.color.a);
+        assert_eq!(ZsHsvColor::from_color(saturated).saturation, 1.0);
+    }
+
+    #[cfg(feature = "color-picker")]
+    #[test]
+    fn color_picker_popup_flips_clamps_and_omits_alpha_when_disabled() {
+        let state = ZsColorPickerState::new(Color::rgba(32, 64, 96, 40))
+            .without_alpha()
+            .with_expanded(true);
+        let plan = zs_color_picker_render_plan_in_viewport(
+            Rect {
+                x: 250,
+                y: 250,
+                width: 120,
+                height: 32,
+            },
+            state,
+            ZsColorPickerPlatformStyle::Gtk,
+            Dpi::standard(),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 300,
+            },
+        );
+
+        assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Above));
+        assert_eq!(plan.popup.unwrap().x, 12);
+        assert_eq!(plan.channels.len(), 3);
+        assert!(plan
+            .channels
+            .iter()
+            .all(|row| row.channel != ZsColorChannel::Alpha));
     }
 }

@@ -28,6 +28,8 @@ use crate::{
 };
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime, ZsTimePickerPlatformStyle};
+#[cfg(feature = "color-picker")]
+use crate::{ZsColorChannel, ZsColorPickerPlatformStyle, ZsColorPickerState};
 #[cfg(feature = "tabs")]
 use crate::{ZsTabId, ZsTabSpec};
 use serde::{Deserialize, Serialize};
@@ -734,6 +736,13 @@ pub enum ViewNodeKind<Msg> {
         on_time_change: Option<fn(ZsTime) -> Msg>,
         on_expanded_change: Option<fn(bool) -> Msg>,
     },
+    #[cfg(feature = "color-picker")]
+    ColorPicker {
+        state: ZsColorPickerState,
+        on_color_change: Option<fn(crate::Color) -> Msg>,
+        on_expanded_change: Option<fn(bool) -> Msg>,
+        on_channel_change: Option<fn(ZsColorChannel) -> Msg>,
+    },
     #[cfg(feature = "tabs")]
     Tabs {
         tabs: Vec<ZsTabSpec>,
@@ -1252,6 +1261,7 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -1268,6 +1278,8 @@ impl<Msg: Clone> ViewNode<Msg> {
             ViewNodeKind::DatePicker { expanded, .. } => *expanded = is_expanded,
             #[cfg(feature = "time-picker")]
             ViewNodeKind::TimePicker { expanded, .. } => *expanded = is_expanded,
+            #[cfg(feature = "color-picker")]
+            ViewNodeKind::ColorPicker { state, .. } => state.expanded = is_expanded,
             _ => {}
         }
         self
@@ -1356,6 +1368,7 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -1380,6 +1393,10 @@ impl<Msg: Clone> ViewNode<Msg> {
             } => *on_expanded_change = Some(message),
             #[cfg(feature = "time-picker")]
             ViewNodeKind::TimePicker {
+                on_expanded_change, ..
+            } => *on_expanded_change = Some(message),
+            #[cfg(feature = "color-picker")]
+            ViewNodeKind::ColorPicker {
                 on_expanded_change, ..
             } => *on_expanded_change = Some(message),
             _ => {}
@@ -1453,6 +1470,28 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_time_change(mut self, message: fn(ZsTime) -> Msg) -> Self {
         if let ViewNodeKind::TimePicker { on_time_change, .. } = &mut self.kind {
             *on_time_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn on_color_change(mut self, message: fn(crate::Color) -> Msg) -> Self {
+        if let ViewNodeKind::ColorPicker {
+            on_color_change, ..
+        } = &mut self.kind
+        {
+            *on_color_change = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn on_color_channel_change(mut self, message: fn(ZsColorChannel) -> Msg) -> Self {
+        if let ViewNodeKind::ColorPicker {
+            on_channel_change, ..
+        } = &mut self.kind
+        {
+            *on_channel_change = Some(message);
         }
         self
     }
@@ -1766,6 +1805,16 @@ pub fn time_picker<Msg>(value: ZsTime) -> ViewNode<Msg> {
         expanded: false,
         on_time_change: None,
         on_expanded_change: None,
+    })
+}
+
+#[cfg(feature = "color-picker")]
+pub fn color_picker<Msg>(state: ZsColorPickerState) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::ColorPicker {
+        state: state.normalized(),
+        on_color_change: None,
+        on_expanded_change: None,
+        on_channel_change: None,
     })
 }
 
@@ -2217,6 +2266,21 @@ pub enum ViewEvent {
         widget: WidgetId,
         value: ZsTime,
     },
+    #[cfg(feature = "color-picker")]
+    ColorPickerExpandedChanged {
+        widget: WidgetId,
+        expanded: bool,
+    },
+    #[cfg(feature = "color-picker")]
+    ColorPickerChannelChanged {
+        widget: WidgetId,
+        channel: ZsColorChannel,
+    },
+    #[cfg(feature = "color-picker")]
+    ColorChanged {
+        widget: WidgetId,
+        color: crate::Color,
+    },
     #[cfg(feature = "tabs")]
     TabSelected {
         widget: WidgetId,
@@ -2225,6 +2289,7 @@ pub enum ViewEvent {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -2402,6 +2467,18 @@ pub enum ViewHitTargetKind {
     #[cfg(feature = "time-picker")]
     TimePickerChoice {
         value: ZsTime,
+    },
+    #[cfg(feature = "color-picker")]
+    ColorPicker,
+    #[cfg(feature = "color-picker")]
+    ColorPickerPopup,
+    #[cfg(feature = "color-picker")]
+    ColorPickerSpectrum,
+    #[cfg(feature = "color-picker")]
+    ColorPickerHue,
+    #[cfg(feature = "color-picker")]
+    ColorPickerChannel {
+        channel: ZsColorChannel,
     },
     #[cfg(feature = "tabs")]
     Tab {
@@ -2683,6 +2760,16 @@ impl ViewHitTarget {
         if matches!(self.kind, ViewHitTargetKind::TimePickerChoice { .. }) {
             return false;
         }
+        #[cfg(feature = "color-picker")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::ColorPickerPopup
+                | ViewHitTargetKind::ColorPickerSpectrum
+                | ViewHitTargetKind::ColorPickerHue
+                | ViewHitTargetKind::ColorPickerChannel { .. }
+        ) {
+            return false;
+        }
         true
     }
 }
@@ -2855,6 +2942,8 @@ trait LiveViewDriver: Send {
     fn widget_date_picker_state(&self, widget: WidgetId) -> Option<ZsDatePickerState>;
     #[cfg(feature = "time-picker")]
     fn widget_time_picker_state(&self, widget: WidgetId) -> Option<ZsTimePickerState>;
+    #[cfg(feature = "color-picker")]
+    fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState>;
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState>;
     #[cfg(feature = "tabs")]
@@ -3021,6 +3110,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "time-picker")]
     pub fn widget_time_picker_state(&self, widget: WidgetId) -> Option<ZsTimePickerState> {
         self.lock().widget_time_picker_state(widget)
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState> {
+        self.lock().widget_color_picker_state(widget)
     }
 
     #[cfg(feature = "tabs")]
@@ -3316,6 +3410,11 @@ where
         self.view.widget_time_picker_state(widget)
     }
 
+    #[cfg(feature = "color-picker")]
+    fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState> {
+        self.view.widget_color_picker_state(widget)
+    }
+
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
         self.view.widget_tab_header_state(widget)
@@ -3419,6 +3518,7 @@ impl ViewPaintCx {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
@@ -3861,6 +3961,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
 
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "color-picker",
             feature = "combo",
             feature = "date-picker",
             feature = "time-picker"
@@ -3928,6 +4029,22 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 {
                     if *expanded {
                         *expanded = false;
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(false));
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "color-picker")]
+            if should_dismiss {
+                if let ViewNodeKind::ColorPicker {
+                    state,
+                    on_expanded_change,
+                    ..
+                } = &mut self.kind
+                {
+                    if state.expanded {
+                        state.expanded = false;
                         if let Some(message) = on_expanded_change {
                             cx.emit(message(false));
                         }
@@ -4099,6 +4216,54 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(next_value));
                     }
                 }
+            }
+        }
+
+        #[cfg(feature = "color-picker")]
+        if let ViewNodeKind::ColorPicker {
+            state,
+            on_color_change,
+            on_expanded_change,
+            on_channel_change,
+        } = &mut self.kind
+        {
+            match event {
+                ViewEvent::ColorPickerExpandedChanged { widget, expanded }
+                    if self.id == Some(*widget) =>
+                {
+                    let changed = state.expanded != *expanded;
+                    state.expanded = *expanded;
+                    if changed {
+                        if let Some(message) = on_expanded_change {
+                            cx.emit(message(*expanded));
+                        }
+                    }
+                }
+                ViewEvent::ColorPickerChannelChanged { widget, channel }
+                    if self.id == Some(*widget)
+                        && (state.alpha_enabled || *channel != ZsColorChannel::Alpha) =>
+                {
+                    if state.active_channel != *channel {
+                        state.active_channel = *channel;
+                        if let Some(message) = on_channel_change {
+                            cx.emit(message(*channel));
+                        }
+                    }
+                }
+                ViewEvent::ColorChanged { widget, color } if self.id == Some(*widget) => {
+                    let color = if state.alpha_enabled {
+                        *color
+                    } else {
+                        crate::Color::rgb(color.r, color.g, color.b)
+                    };
+                    if state.color != color {
+                        state.color = color;
+                        if let Some(message) = on_color_change {
+                            cx.emit(message(color));
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -4949,6 +5114,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.draw(command);
                 }
             }
+            #[cfg(feature = "color-picker")]
+            ViewNodeKind::ColorPicker { state, .. } => {
+                let plan = crate::zs_color_picker_render_plan(
+                    bounds,
+                    *state,
+                    ZsColorPickerPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in
+                    crate::zs_color_picker_header_native_draw_plan(&plan, *state).commands
+                {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "date-picker")]
             ViewNodeKind::DatePicker {
                 value,
@@ -5395,6 +5574,10 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "time-picker")]
             (Some(id), ViewEvent::TimePickerExpandedChanged { widget, .. })
             | (Some(id), ViewEvent::TimeChanged { widget, .. }) => id == *widget,
+            #[cfg(feature = "color-picker")]
+            (Some(id), ViewEvent::ColorPickerExpandedChanged { widget, .. })
+            | (Some(id), ViewEvent::ColorPickerChannelChanged { widget, .. })
+            | (Some(id), ViewEvent::ColorChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "tabs")]
             (Some(id), ViewEvent::TabSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
@@ -5402,6 +5585,7 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "combo",
                 feature = "date-picker",
                 feature = "time-picker"
@@ -5436,6 +5620,7 @@ impl<Msg> ViewNode<Msg> {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
@@ -5937,6 +6122,18 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_time_picker_state(widget))
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::ColorPicker { state, .. } = &self.kind {
+                return Some(state.normalized());
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_color_picker_state(widget))
     }
 
     #[cfg(feature = "tabs")]
@@ -6615,6 +6812,7 @@ impl<Msg> ViewNode<Msg> {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -7022,6 +7220,67 @@ impl<Msg> ViewNode<Msg> {
                 )
             }));
         }
+        #[cfg(feature = "color-picker")]
+        if let (Some(widget), Some(bounds), ViewNodeKind::ColorPicker { state, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            if state.expanded {
+                let plan = viewport.map_or_else(
+                    || {
+                        crate::zs_color_picker_render_plan(
+                            bounds,
+                            *state,
+                            ZsColorPickerPlatformStyle::current(),
+                            self.layout_dpi,
+                        )
+                    },
+                    |viewport| {
+                        crate::zs_color_picker_render_plan_in_viewport(
+                            bounds,
+                            *state,
+                            ZsColorPickerPlatformStyle::current(),
+                            self.layout_dpi,
+                            viewport,
+                        )
+                    },
+                );
+                if let Some(popup) = plan.popup {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        popup,
+                        ViewHitTargetKind::ColorPickerPopup,
+                    ));
+                }
+                if let Some(spectrum) = plan.spectrum_bounds {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        spectrum,
+                        ViewHitTargetKind::ColorPickerSpectrum,
+                    ));
+                }
+                if let Some(hue) = plan.hue_track {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        Rect {
+                            x: hue.x,
+                            y: hue.y.saturating_sub(6),
+                            width: hue.width,
+                            height: hue.height.saturating_add(12),
+                        },
+                        ViewHitTargetKind::ColorPickerHue,
+                    ));
+                }
+                hit_targets.extend(plan.channels.into_iter().map(|row| {
+                    ViewHitTarget::with_kind(
+                        widget,
+                        row.bounds,
+                        ViewHitTargetKind::ColorPickerChannel {
+                            channel: row.channel,
+                        },
+                    )
+                }));
+            }
+        }
         let child_viewport = viewport.or(self.bounds);
         for child in &self.children {
             child.collect_overlay_hit_targets(hit_targets, child_viewport);
@@ -7031,6 +7290,7 @@ impl<Msg> ViewNode<Msg> {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
@@ -7345,6 +7605,34 @@ impl<Msg> ViewNode<Msg> {
                 cx.draw(command);
             }
         }
+        #[cfg(feature = "color-picker")]
+        if let (Some(bounds), ViewNodeKind::ColorPicker { state, .. }) = (self.bounds, &self.kind) {
+            if state.expanded {
+                let plan = viewport.map_or_else(
+                    || {
+                        crate::zs_color_picker_render_plan(
+                            bounds,
+                            *state,
+                            ZsColorPickerPlatformStyle::current(),
+                            cx.dpi,
+                        )
+                    },
+                    |viewport| {
+                        crate::zs_color_picker_render_plan_in_viewport(
+                            bounds,
+                            *state,
+                            ZsColorPickerPlatformStyle::current(),
+                            cx.dpi,
+                            viewport,
+                        )
+                    },
+                );
+                for command in crate::zs_color_picker_popup_native_draw_plan(&plan, *state).commands
+                {
+                    cx.draw(command);
+                }
+            }
+        }
         let child_viewport = viewport.or(self.bounds);
         for child in &self.children {
             child.paint_overlays(cx, child_viewport);
@@ -7401,6 +7689,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::DatePicker { .. } => ViewHitTargetKind::DatePicker,
             #[cfg(feature = "time-picker")]
             ViewNodeKind::TimePicker { .. } => ViewHitTargetKind::TimePicker,
+            #[cfg(feature = "color-picker")]
+            ViewNodeKind::ColorPicker { .. } => ViewHitTargetKind::ColorPicker,
             #[cfg(feature = "scroll")]
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
@@ -10461,6 +10751,121 @@ mod tests {
         assert_eq!(cx.commands(), &[Command::OpenSettings]);
         assert_eq!(cx.ui_commands()[0].id, crate::CommandId("view.save"));
         assert!(cx.quit_requested());
+    }
+
+    #[cfg(feature = "color-picker")]
+    #[test]
+    fn color_picker_keeps_rgba_state_typed_and_uses_one_tab_stop_with_overlay_rows() {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Msg {
+            Color(crate::Color),
+            Expanded(bool),
+            Channel(ZsColorChannel),
+        }
+
+        let widget = WidgetId::new(218);
+        let initial =
+            ZsColorPickerState::new(crate::Color::rgba(24, 80, 160, 200)).with_expanded(true);
+        let mut view = color_picker(initial)
+            .id(widget)
+            .height(Dp::new(32.0))
+            .on_color_change(Msg::Color)
+            .on_expanded_change(Msg::Expanded)
+            .on_color_channel_change(Msg::Channel);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 24,
+                y: 20,
+                width: 220,
+                height: 32,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::ColorPicker)
+        );
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| target.accepts_focus())
+                .count(),
+            1
+        );
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::ColorPickerPopup));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::ColorPickerSpectrum));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.kind == ViewHitTargetKind::ColorPickerHue));
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| matches!(
+                    target.kind,
+                    ViewHitTargetKind::ColorPickerChannel { .. }
+                ))
+                .count(),
+            4
+        );
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "#1850A0C8"
+        )));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ColorPickerChannelChanged {
+                widget,
+                channel: ZsColorChannel::Green,
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::ColorChanged {
+                widget,
+                color: crate::Color::rgba(24, 192, 160, 200),
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::ColorPickerExpandedChanged {
+                widget,
+                expanded: false,
+            },
+        );
+
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::Channel(ZsColorChannel::Green),
+                Msg::Color(crate::Color::rgba(24, 192, 160, 200)),
+                Msg::Expanded(false),
+            ]
+        );
+        assert_eq!(
+            view.widget_color_picker_state(widget),
+            Some(ZsColorPickerState {
+                color: crate::Color::rgba(24, 192, 160, 200),
+                expanded: false,
+                active_channel: ZsColorChannel::Green,
+                alpha_enabled: true,
+            })
+        );
     }
 
     #[test]

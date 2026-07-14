@@ -906,9 +906,9 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 49);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 43);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 44);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 3);
-        assert_eq!(context.readiness.component_catalog.not_started_count, 3);
+        assert_eq!(context.readiness.component_catalog.not_started_count, 2);
         let component_area = context
             .completion_areas
             .iter()

@@ -304,6 +304,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "time picker with typed wall-clock state, minute increments and platform-adaptive popup selection",
         ),
         ZsuiCargoFeature::new(
+            "color-picker",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-input"],
+            "application-owned RGBA color well with platform-adaptive self-drawn channel editor and typed input",
+        ),
+        ZsuiCargoFeature::new(
             "tabs",
             Widget,
             false,
@@ -549,6 +557,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "combo",
                 "date-picker",
                 "time-picker",
+                "color-picker",
                 "tabs",
                 "table",
                 "workbench",
@@ -670,6 +679,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"combo"));
         assert!(all_widgets.enables.contains(&"date-picker"));
         assert!(all_widgets.enables.contains(&"time-picker"));
+        assert!(all_widgets.enables.contains(&"color-picker"));
         assert!(all_widgets.enables.contains(&"tabs"));
         assert!(all_widgets.enables.contains(&"table"));
         assert!(all_widgets.enables.contains(&"workbench"));

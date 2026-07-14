@@ -19,6 +19,7 @@ use crate::native_input_visuals::{
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -1846,9 +1847,12 @@ pub struct WindowsWin32ViewInputRoute {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
+    #[cfg(feature = "color-picker")]
+    color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1866,6 +1870,7 @@ pub struct WindowsWin32ViewInputRoute {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1916,9 +1921,12 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "color-picker")]
+            color_picker_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1936,6 +1944,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1985,9 +1994,12 @@ impl WindowsWin32ViewInputRoute {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "color-picker")]
+            color_picker_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -2005,6 +2017,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -2113,6 +2126,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2150,11 +2164,28 @@ impl WindowsWin32ViewInputRoute {
             report.slider_drag_active = true;
             return self.dispatch_slider_pointer(target, point, report);
         }
+        #[cfg(feature = "color-picker")]
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::ColorPickerSpectrum
+                | crate::ViewHitTargetKind::ColorPickerHue
+                | crate::ViewHitTargetKind::ColorPickerChannel { .. }
+        ) {
+            self.text_drag = None;
+            self.focus_target(target, &mut report);
+            self.color_picker_drag = Some((target.widget, target.kind));
+            report.color_picker_drag_active = true;
+            return self.dispatch_color_picker_pointer(target, point, report);
+        }
         if !target.kind.accepts_text_input() {
             self.text_drag = None;
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
+            }
+            #[cfg(feature = "color-picker")]
+            {
+                self.color_picker_drag = None;
             }
             return report;
         }
@@ -2217,6 +2248,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2254,6 +2286,21 @@ impl WindowsWin32ViewInputRoute {
             return report;
         }
         let Some(drag) = self.text_drag else {
+            #[cfg(feature = "color-picker")]
+            if let Some((widget, kind)) = self.color_picker_drag {
+                if let Some(target) = self
+                    .interaction_plan
+                    .hit_targets
+                    .iter()
+                    .copied()
+                    .find(|target| target.widget == widget && target.kind == kind)
+                {
+                    report.pointer_move_count = 1;
+                    report.color_picker_drag_active = true;
+                    return self.dispatch_color_picker_pointer(target, point, report);
+                }
+                self.color_picker_drag = None;
+            }
             #[cfg(feature = "slider")]
             if let Some(widget) = self.slider_drag {
                 if let Some(target) = self.interaction_plan.hit_target_for_widget(widget) {
@@ -2327,6 +2374,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -2358,6 +2406,7 @@ impl WindowsWin32ViewInputRoute {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -2374,11 +2423,27 @@ impl WindowsWin32ViewInputRoute {
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
             return report;
         }
+        #[cfg(feature = "color-picker")]
+        if self.color_picker_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            report.pointer_move_count = 0;
+            self.color_picker_drag = None;
+            report.handled = true;
+            report.pointer_up_count = 1;
+            report.color_picker_drag_count = 1;
+            report.color_picker_drag_active = false;
+            report
+                .events
+                .push("win32_view_color_picker_pointer_up".to_string());
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
+            return report;
+        }
         let mut report = self.dispatch_click(point);
         report.pointer_up_count = 1;
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2408,6 +2473,8 @@ impl WindowsWin32ViewInputRoute {
         let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
+        #[cfg(feature = "color-picker")]
+        let had_drag = had_drag | self.color_picker_drag.take().is_some();
         let report = WindowsWin32ViewInputDispatchReport {
             handled: had_drag,
             hit_target_count: self.hit_target_count(),
@@ -2420,6 +2487,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2441,6 +2509,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(not(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2477,6 +2546,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2497,6 +2567,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(not(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2544,6 +2615,105 @@ impl WindowsWin32ViewInputRoute {
             crate::ViewEvent::SliderChanged {
                 widget: target.widget,
                 value,
+            },
+            &mut report,
+        );
+        report
+    }
+
+    #[cfg(feature = "color-picker")]
+    fn dispatch_color_picker_pointer(
+        &mut self,
+        target: crate::ViewHitTarget,
+        point: crate::Point,
+        mut report: WindowsWin32ViewInputDispatchReport,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let Some(state) = self.widget_color_picker_state(target.widget) else {
+            self.color_picker_drag = None;
+            return report;
+        };
+        let root_bounds = self
+            .interaction_plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|candidate| {
+                candidate.widget == target.widget
+                    && candidate.kind == crate::ViewHitTargetKind::ColorPicker
+            })
+            .map(|target| target.bounds)
+            .unwrap_or(target.bounds);
+        let plan = self.surface.map_or_else(
+            || {
+                crate::zs_color_picker_render_plan(
+                    root_bounds,
+                    state,
+                    crate::ZsColorPickerPlatformStyle::Windows,
+                    self.dpi,
+                )
+            },
+            |viewport| {
+                crate::zs_color_picker_render_plan_in_viewport(
+                    root_bounds,
+                    state,
+                    crate::ZsColorPickerPlatformStyle::Windows,
+                    self.dpi,
+                    viewport,
+                )
+            },
+        );
+        let (color, channel) = match target.kind {
+            crate::ViewHitTargetKind::ColorPickerSpectrum => {
+                (plan.spectrum_color_at(state, point), None)
+            }
+            crate::ViewHitTargetKind::ColorPickerHue => (plan.hue_color_at(state, point), None),
+            crate::ViewHitTargetKind::ColorPickerChannel { channel } => {
+                let Some(row) = plan.channels.iter().find(|row| row.channel == channel) else {
+                    self.color_picker_drag = None;
+                    return report;
+                };
+                let fraction =
+                    point.x.saturating_sub(row.track.x) as f32 / row.track.width.max(1) as f32;
+                let value = (fraction.clamp(0.0, 1.0) * 255.0).round() as u8;
+                (Some(channel.with_value(state.color, value)), Some(channel))
+            }
+            _ => (None, None),
+        };
+        let Some(color) = color else {
+            self.color_picker_drag = None;
+            return report;
+        };
+        report.handled = true;
+        report.color_picker_drag_active = self.color_picker_drag.is_some();
+        if let Some(channel) = channel.filter(|channel| state.active_channel != *channel) {
+            report.color_picker_channel_change_count = 1;
+            report.event_count += 1;
+            report.events.push(format!(
+                "win32_view_color_picker_channel:{}:{channel:?}",
+                target.widget.0
+            ));
+            self.dispatch_event(
+                crate::ViewEvent::ColorPickerChannelChanged {
+                    widget: target.widget,
+                    channel,
+                },
+                &mut report,
+            );
+        }
+        if color == state.color {
+            return report;
+        }
+        report.color_picker_value_change_count = 1;
+        report.event_count += 1;
+        report.events.push(format!(
+            "win32_view_color_picker_changed:{}:{}",
+            target.widget.0,
+            crate::ZsColorPickerState::new(color).hex_label()
+        ));
+        self.dispatch_event(
+            crate::ViewEvent::ColorChanged {
+                widget: target.widget,
+                color,
             },
             &mut report,
         );
@@ -3661,6 +3831,99 @@ impl WindowsWin32ViewInputRoute {
             }
         }
 
+        #[cfg(feature = "color-picker")]
+        if target.kind == crate::ViewHitTargetKind::ColorPicker {
+            let Some(state) = self.widget_color_picker_state(widget) else {
+                return report;
+            };
+            let next_expanded = match virtual_key {
+                ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE => Some(!state.expanded),
+                key if key == u32::from(VK_ESCAPE) && state.expanded => Some(false),
+                _ => None,
+            };
+            if let Some(expanded) = next_expanded {
+                report.handled = true;
+                report.color_picker_expanded_change_count = 1;
+                report.keyboard_activation_count = usize::from(matches!(
+                    virtual_key,
+                    ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE
+                ));
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_color_picker_expanded:{}:{expanded}",
+                    widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ColorPickerExpandedChanged { widget, expanded },
+                    &mut report,
+                );
+                return report;
+            }
+            if !state.expanded {
+                return report;
+            }
+
+            let next_channel = match virtual_key {
+                key if key == u32::from(VK_UP) => {
+                    Some(state.active_channel.previous(state.alpha_enabled))
+                }
+                key if key == u32::from(VK_DOWN) => {
+                    Some(state.active_channel.next(state.alpha_enabled))
+                }
+                _ => None,
+            };
+            if let Some(channel) = next_channel {
+                report.handled = true;
+                if channel == state.active_channel {
+                    return report;
+                }
+                report.color_picker_channel_change_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_color_picker_channel:{}:{channel:?}",
+                    widget.0
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ColorPickerChannelChanged { widget, channel },
+                    &mut report,
+                );
+                return report;
+            }
+
+            let current = state.channel_value(state.active_channel);
+            let delta = if shift { 10_i16 } else { 1_i16 };
+            let next = match virtual_key {
+                key if key == u32::from(VK_LEFT) => {
+                    Some((i16::from(current) - delta).clamp(0, 255) as u8)
+                }
+                key if key == u32::from(VK_RIGHT) => {
+                    Some((i16::from(current) + delta).clamp(0, 255) as u8)
+                }
+                key if key == u32::from(VK_HOME) => Some(0),
+                key if key == u32::from(VK_END) => Some(255),
+                _ => None,
+            };
+            if let Some(value) = next {
+                report.handled = true;
+                let color = state.active_channel.with_value(state.color, value);
+                if color == state.color {
+                    return report;
+                }
+                report.color_picker_value_change_count = 1;
+                report.event_count = 1;
+                report.events.push(format!(
+                    "win32_view_color_picker_key:{}:{}",
+                    widget.0,
+                    crate::ZsColorPickerState::new(color).hex_label()
+                ));
+                self.dispatch_event(
+                    crate::ViewEvent::ColorChanged { widget, color },
+                    &mut report,
+                );
+                return report;
+            }
+        }
+
         #[cfg(feature = "number-box")]
         if target.kind == crate::ViewHitTargetKind::NumberBox {
             let event = match virtual_key {
@@ -4227,6 +4490,10 @@ impl WindowsWin32ViewInputRoute {
         {
             self.slider_drag = None;
         }
+        #[cfg(feature = "color-picker")]
+        {
+            self.color_picker_drag = None;
+        }
         self.focused_widget = Some(target.widget);
         self.ensure_text_edit_for_target(target);
         report.focus_count = 1;
@@ -4271,6 +4538,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -4303,6 +4571,10 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
+        }
+        #[cfg(feature = "color-picker")]
+        {
+            self.color_picker_drag = None;
         }
         if self.rebuild_pending_draw_plan() {
             report.focus_visual_count = 1;
@@ -4340,6 +4612,26 @@ impl WindowsWin32ViewInputRoute {
         target: crate::ViewHitTarget,
         report: &mut WindowsWin32ViewInputDispatchReport,
     ) {
+        #[cfg(feature = "color-picker")]
+        if target.kind == crate::ViewHitTargetKind::ColorPicker {
+            let expanded = self
+                .widget_color_picker_state(target.widget)
+                .is_none_or(|state| !state.expanded);
+            report.color_picker_expanded_change_count = 1;
+            report.event_count = 1;
+            report.events.push(format!(
+                "win32_view_color_picker_expanded:{}:{expanded}",
+                target.widget.0
+            ));
+            self.dispatch_event(
+                crate::ViewEvent::ColorPickerExpandedChanged {
+                    widget: target.widget,
+                    expanded,
+                },
+                report,
+            );
+            return;
+        }
         #[cfg(feature = "dialog")]
         match target.kind {
             crate::ViewHitTargetKind::ContentDialogButton { button } => {
@@ -5180,6 +5472,21 @@ impl WindowsWin32ViewInputRoute {
             })
     }
 
+    #[cfg(feature = "color-picker")]
+    fn widget_color_picker_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsColorPickerState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_color_picker_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_color_picker_state(widget))
+            })
+    }
+
     #[cfg(feature = "auto-suggest")]
     fn widget_auto_suggest_state(
         &self,
@@ -5354,6 +5661,7 @@ impl WindowsWin32ViewInputRoute {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -5379,6 +5687,14 @@ impl WindowsWin32ViewInputRoute {
                     .widget_combo_state(target.widget)
                     .is_some_and(|(_, _, expanded)| expanded)
         });
+        #[cfg(feature = "color-picker")]
+        let color_picker_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
+            Some(target.widget) != except
+                && target.kind == crate::ViewHitTargetKind::ColorPicker
+                && self
+                    .widget_color_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded)
+        });
         let should_dismiss = self.interaction_plan.hit_targets.iter().any(|target| {
             if Some(target.widget) == except {
                 return false;
@@ -5392,6 +5708,10 @@ impl WindowsWin32ViewInputRoute {
                 crate::ViewHitTargetKind::ComboBox => self
                     .widget_combo_state(target.widget)
                     .is_some_and(|(_, _, expanded)| expanded),
+                #[cfg(feature = "color-picker")]
+                crate::ViewHitTargetKind::ColorPicker => self
+                    .widget_color_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded),
                 #[cfg(feature = "date-picker")]
                 crate::ViewHitTargetKind::DatePicker => self
                     .widget_date_picker_state(target.widget)
@@ -5414,6 +5734,10 @@ impl WindowsWin32ViewInputRoute {
         {
             report.combo_expanded_change_count += usize::from(combo_was_dismissed);
         }
+        #[cfg(feature = "color-picker")]
+        {
+            report.color_picker_expanded_change_count += usize::from(color_picker_was_dismissed);
+        }
         report.handled = true;
         report.event_count += 1;
         report
@@ -5424,6 +5748,7 @@ impl WindowsWin32ViewInputRoute {
 
     #[cfg(not(any(
         feature = "auto-suggest",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -5522,6 +5847,7 @@ impl WindowsWin32ViewInputRoute {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -5618,6 +5944,7 @@ impl WindowsWin32ViewInputRoute {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -5816,6 +6143,11 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_keyboard_change_count: usize,
     pub slider_drag_count: usize,
     pub slider_drag_active: bool,
+    pub color_picker_value_change_count: usize,
+    pub color_picker_channel_change_count: usize,
+    pub color_picker_expanded_change_count: usize,
+    pub color_picker_drag_count: usize,
+    pub color_picker_drag_active: bool,
     pub radio_selection_count: usize,
     pub radio_keyboard_selection_count: usize,
     pub radio_keyboard_focus_only_count: usize,
@@ -5905,6 +6237,11 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_keyboard_change_count += next.slider_keyboard_change_count;
         self.slider_drag_count += next.slider_drag_count;
         self.slider_drag_active = next.slider_drag_active;
+        self.color_picker_value_change_count += next.color_picker_value_change_count;
+        self.color_picker_channel_change_count += next.color_picker_channel_change_count;
+        self.color_picker_expanded_change_count += next.color_picker_expanded_change_count;
+        self.color_picker_drag_count += next.color_picker_drag_count;
+        self.color_picker_drag_active = next.color_picker_drag_active;
         self.radio_selection_count += next.radio_selection_count;
         self.radio_keyboard_selection_count += next.radio_keyboard_selection_count;
         self.radio_keyboard_focus_only_count += next.radio_keyboard_focus_only_count;
@@ -8625,6 +8962,113 @@ mod tests {
         assert_eq!(stepped.slider_value_change_count, 1);
         assert_eq!(route.widget_slider_state(widget), Some((70.0, range)));
         assert_eq!(route.pending_ui_commands.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "color-picker")]
+    fn window_view_input_route_drags_and_keys_color_picker_channels() {
+        fn color_changed(_: crate::Color) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.color_picker_changed"))
+        }
+        fn channel_changed(_: crate::ZsColorChannel) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.color_picker_channel"))
+        }
+        fn expanded_changed(_: bool) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.color_picker_expanded"))
+        }
+
+        let widget = crate::WidgetId::new(341);
+        let viewport = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 480,
+            height: 680,
+        };
+        let state = crate::ZsColorPickerState::new(crate::Color::rgba(32, 96, 160, 224))
+            .with_expanded(true);
+        let mut view = crate::column([
+            crate::color_picker(state)
+                .id(widget)
+                .height(crate::Dp::new(32.0))
+                .on_color_change(color_changed)
+                .on_color_channel_change(channel_changed)
+                .on_expanded_change(expanded_changed),
+            crate::spacer(),
+        ])
+        .padding(crate::Dp::new(24.0))
+        .gap(crate::Dp::new(12.0));
+        view.layout(&mut crate::ViewLayoutCx::new(
+            viewport,
+            crate::Dpi::standard(),
+        ));
+        let plan = view.interaction_plan();
+        let root = plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.widget == widget && target.kind == crate::ViewHitTargetKind::ColorPicker
+            })
+            .expect("color picker root");
+        let render = crate::zs_color_picker_render_plan_in_viewport(
+            root.bounds,
+            state,
+            crate::ZsColorPickerPlatformStyle::Windows,
+            crate::Dpi::standard(),
+            viewport,
+        );
+        let red = render
+            .channels
+            .iter()
+            .find(|row| row.channel == crate::ZsColorChannel::Red)
+            .expect("red row");
+        let mut route = WindowsWin32ViewInputRoute::new(plan, view);
+
+        let pressed = route.dispatch_pointer_down(
+            crate::Point {
+                x: red.track.x + red.track.width / 4,
+                y: red.track.y + red.track.height / 2,
+            },
+            false,
+        );
+        let dragged = route.dispatch_pointer_move(crate::Point {
+            x: red.track.x + red.track.width * 9 / 10,
+            y: red.track.y + red.track.height / 2,
+        });
+        let released = route.dispatch_pointer_up(crate::Point {
+            x: red.track.x + red.track.width * 9 / 10,
+            y: red.track.y + red.track.height / 2,
+        });
+
+        assert!(pressed.handled);
+        assert!(pressed.color_picker_drag_active);
+        assert_eq!(pressed.color_picker_value_change_count, 1);
+        assert!(dragged.handled);
+        assert!(dragged.color_picker_drag_active);
+        assert_eq!(dragged.color_picker_value_change_count, 1);
+        assert_eq!(released.color_picker_drag_count, 1);
+        assert!(!released.color_picker_drag_active);
+        assert!(route
+            .widget_color_picker_state(widget)
+            .is_some_and(|state| state.color.r > 220));
+
+        let channel = route.dispatch_key_down(u32::from(VK_DOWN));
+        let maximum = route.dispatch_key_down(u32::from(VK_END));
+        let closed = route.dispatch_key_down(u32::from(VK_ESCAPE));
+        let reopened = route.dispatch_key_down(ZSUI_WIN32_VK_SPACE);
+
+        assert_eq!(channel.color_picker_channel_change_count, 1);
+        assert_eq!(maximum.color_picker_value_change_count, 1);
+        assert_eq!(closed.color_picker_expanded_change_count, 1);
+        assert_eq!(reopened.color_picker_expanded_change_count, 1);
+        assert!(route
+            .widget_color_picker_state(widget)
+            .is_some_and(|state| {
+                state.active_channel == crate::ZsColorChannel::Green
+                    && state.color.g == 255
+                    && state.expanded
+            }));
+        assert_eq!(route.pending_ui_commands.len(), 6);
     }
 
     #[test]

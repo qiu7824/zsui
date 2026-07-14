@@ -43,6 +43,7 @@ $singleFeatures = @(
     "combo",
     "date-picker",
     "time-picker",
+    "color-picker",
     "tabs",
     "table",
     "dark-mode",
@@ -76,7 +77,7 @@ $singleFeatures = @(
 
 $featureSets = @(
     "button,breadcrumb,label,grid",
-    "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,tabs",
+    "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,combo,date-picker,time-picker,color-picker,tabs",
     "list,grid-view,tree,table",
     "virtual-list,paged-list,label",
     "window,shell,tray,hotkey",

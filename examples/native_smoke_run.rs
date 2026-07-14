@@ -18,6 +18,7 @@ use zsui::checkbox;
     all(feature = "progress", feature = "label"),
     all(feature = "progress-ring", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
@@ -58,6 +59,7 @@ use zsui::toggle_button;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
@@ -81,6 +83,7 @@ use zsui::CommandId;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
@@ -103,6 +106,7 @@ use zsui::NativeViewKey;
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "color-picker", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
     all(feature = "dialog", feature = "label"),
@@ -120,6 +124,8 @@ use zsui::Point;
 use zsui::ProgressRange;
 #[cfg(all(feature = "breadcrumb", feature = "label"))]
 use zsui::{breadcrumb_bar, ZsBreadcrumbId, ZsBreadcrumbItem};
+#[cfg(all(feature = "color-picker", feature = "label"))]
+use zsui::{color_picker, Color, ZsColorChannel, ZsColorPickerState};
 #[cfg(all(feature = "dialog", feature = "label"))]
 use zsui::{content_dialog, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec};
 #[cfg(all(feature = "table", feature = "label"))]
@@ -168,6 +174,7 @@ use zsui::{tree_view, ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId};
     all(feature = "tooltip", feature = "button", feature = "label"),
     all(feature = "radio", feature = "label"),
     all(feature = "auto-suggest", feature = "label"),
+    all(feature = "color-picker", feature = "label"),
     all(feature = "grid-view", feature = "label"),
     all(feature = "tree", feature = "label"),
     all(feature = "table", feature = "label"),
@@ -231,6 +238,8 @@ fn main() -> ExitCode {
         args.iter()
             .any(|arg| arg == "--gallery-view" || arg == "--gallery"),
         args.iter()
+            .any(|arg| arg == "--color-picker-view" || arg == "--color-picker"),
+        args.iter()
             .any(|arg| arg == "--table-view" || arg == "--table" || arg == "--data-grid"),
         args.iter()
             .any(|arg| arg == "--content-dialog" || arg == "--dialog"),
@@ -283,6 +292,7 @@ fn run_smoke(
     include_auto_suggest_view: bool,
     include_tree_view: bool,
     include_gallery_view: bool,
+    include_color_picker_view: bool,
     include_table_view: bool,
     include_dialog_view: bool,
     include_toast_view: bool,
@@ -352,6 +362,10 @@ fn run_smoke(
     #[cfg(not(all(feature = "grid-view", feature = "label")))]
     if include_gallery_view {
         return Err("--gallery-view requires the grid-view and label features".to_string());
+    }
+    #[cfg(not(all(feature = "color-picker", feature = "label")))]
+    if include_color_picker_view {
+        return Err("--color-picker-view requires the color-picker and label features".to_string());
     }
     #[cfg(not(all(feature = "table", feature = "label")))]
     if include_table_view {
@@ -556,6 +570,15 @@ fn run_smoke(
             .native_view_key_down(NativeViewKey::Down)
             .native_view_key_down(NativeViewKey::Enter);
     }
+    #[cfg(all(feature = "color-picker", feature = "label"))]
+    if include_color_picker_view {
+        smoke_options = smoke_options
+            .native_view_drag(Point { x: 100, y: 200 }, Point { x: 280, y: 200 })
+            .native_view_key_down(NativeViewKey::Down)
+            .native_view_key_down(NativeViewKey::End)
+            .native_view_key_down(NativeViewKey::Escape)
+            .native_view_key_down(NativeViewKey::Space);
+    }
     #[cfg(all(feature = "table", feature = "label"))]
     if include_table_view {
         smoke_options = smoke_options
@@ -642,6 +665,8 @@ fn run_smoke(
             480
         } else if include_gallery_view {
             464
+        } else if include_color_picker_view {
+            650
         } else if include_time_picker_view {
             360
         } else if include_grid_view {
@@ -680,6 +705,8 @@ fn run_smoke(
         attach_tree_view(builder)
     } else if include_gallery_view {
         attach_gallery_view(builder)
+    } else if include_color_picker_view {
+        attach_color_picker_view(builder)
     } else if include_table_view {
         attach_table_view(builder)
     } else if include_dialog_view {
@@ -1261,6 +1288,55 @@ fn attach_gallery_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
                     "zsui.native_smoke.grid_view_invoked",
                 )));
             }
+        },
+    )
+}
+
+#[cfg(all(feature = "color-picker", feature = "label"))]
+#[derive(Clone, Copy)]
+enum ColorPickerSmokeMsg {
+    Color(Color),
+    Channel(ZsColorChannel),
+    Expanded(bool),
+}
+
+#[cfg(all(feature = "color-picker", feature = "label"))]
+struct ColorPickerSmokeState {
+    picker: ZsColorPickerState,
+}
+
+#[cfg(all(feature = "color-picker", feature = "label"))]
+fn attach_color_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder.stateful_view(
+        ColorPickerSmokeState {
+            picker: ZsColorPickerState::new(Color::rgba(32, 96, 160, 224)).with_expanded(true),
+        },
+        |state| {
+            column([
+                text::<ColorPickerSmokeMsg>(format!(
+                    "ZSUI ColorPicker Smoke · {}",
+                    state.picker.hex_label()
+                ))
+                .height(zsui::Dp::new(28.0)),
+                color_picker(state.picker)
+                    .id(WidgetId::new(39))
+                    .height(zsui::Dp::new(32.0))
+                    .on_color_change(ColorPickerSmokeMsg::Color)
+                    .on_color_channel_change(ColorPickerSmokeMsg::Channel)
+                    .on_expanded_change(ColorPickerSmokeMsg::Expanded),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |state, message, cx| match message {
+            ColorPickerSmokeMsg::Color(color) => {
+                state.picker.color = color;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.color_picker_changed",
+                )));
+            }
+            ColorPickerSmokeMsg::Channel(channel) => state.picker.active_channel = channel,
+            ColorPickerSmokeMsg::Expanded(expanded) => state.picker.expanded = expanded,
         },
     )
 }
@@ -1938,6 +2014,11 @@ fn attach_tree_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(not(all(feature = "grid-view", feature = "label")))]
 fn attach_gallery_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
+    builder
+}
+
+#[cfg(not(all(feature = "color-picker", feature = "label")))]
+fn attach_color_picker_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
 }
 

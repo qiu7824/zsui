@@ -13,6 +13,7 @@ use crate::native_input_visuals::{
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
+    feature = "color-picker",
     feature = "date-picker",
     feature = "dialog",
     feature = "grid-view",
@@ -875,6 +876,10 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
+    pub native_view_color_picker_value_change_count: usize,
+    pub native_view_color_picker_channel_change_count: usize,
+    pub native_view_color_picker_expanded_change_count: usize,
+    pub native_view_color_picker_drag_count: usize,
     pub native_view_radio_selection_count: usize,
     pub native_view_radio_keyboard_selection_count: usize,
     pub native_view_radio_keyboard_focus_only_count: usize,
@@ -997,6 +1002,10 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
+            native_view_color_picker_value_change_count: 0,
+            native_view_color_picker_channel_change_count: 0,
+            native_view_color_picker_expanded_change_count: 0,
+            native_view_color_picker_drag_count: 0,
             native_view_radio_selection_count: 0,
             native_view_radio_keyboard_selection_count: 0,
             native_view_radio_keyboard_focus_only_count: 0,
@@ -1081,9 +1090,12 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
+    #[cfg(feature = "color-picker")]
+    color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1101,6 +1113,7 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1190,6 +1203,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -1220,6 +1234,16 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub slider_value_changed: bool,
     #[cfg(feature = "slider")]
     pub slider_drag_active: bool,
+    #[cfg(feature = "color-picker")]
+    pub color_picker_value: Option<crate::Color>,
+    #[cfg(feature = "color-picker")]
+    pub color_picker_value_changed: bool,
+    #[cfg(feature = "color-picker")]
+    pub color_picker_channel_changed: bool,
+    #[cfg(feature = "color-picker")]
+    pub color_picker_expanded_changed: bool,
+    #[cfg(feature = "color-picker")]
+    pub color_picker_drag_active: bool,
     #[cfg(feature = "radio")]
     pub radio_selection_changed: bool,
     #[cfg(feature = "radio")]
@@ -1327,9 +1351,12 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "color-picker")]
+            color_picker_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1347,6 +1374,7 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1463,6 +1491,10 @@ impl NativeViewInputRuntime {
             {
                 self.slider_drag = None;
             }
+            #[cfg(feature = "color-picker")]
+            {
+                self.color_picker_drag = None;
+            }
             self.ime_preedit = None;
             report.focus_visual_changed = true;
         }
@@ -1544,6 +1576,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -1581,11 +1614,28 @@ impl NativeViewInputRuntime {
             report.slider_drag_active = true;
             return self.dispatch_slider_pointer(target, point, report);
         }
+        #[cfg(feature = "color-picker")]
+        if matches!(
+            target.kind,
+            crate::ViewHitTargetKind::ColorPickerSpectrum
+                | crate::ViewHitTargetKind::ColorPickerHue
+                | crate::ViewHitTargetKind::ColorPickerChannel { .. }
+        ) {
+            self.text_drag = None;
+            self.focus_target(target, &mut report);
+            self.color_picker_drag = Some((target.widget, target.kind));
+            report.color_picker_drag_active = true;
+            return self.dispatch_color_picker_pointer(target, point, report);
+        }
         if !target.kind.accepts_text_input() {
             self.text_drag = None;
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
+            }
+            #[cfg(feature = "color-picker")]
+            {
+                self.color_picker_drag = None;
             }
             return report;
         }
@@ -1646,6 +1696,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -1683,6 +1734,18 @@ impl NativeViewInputRuntime {
             return report;
         }
         let Some(drag) = self.text_drag else {
+            #[cfg(feature = "color-picker")]
+            if let Some((widget, kind)) = self.color_picker_drag {
+                if let Some(target) = self.current_interaction_plan().and_then(|plan| {
+                    plan.hit_targets
+                        .into_iter()
+                        .find(|target| target.widget == widget && target.kind == kind)
+                }) {
+                    report.color_picker_drag_active = true;
+                    return self.dispatch_color_picker_pointer(target, point, report);
+                }
+                self.color_picker_drag = None;
+            }
             #[cfg(feature = "slider")]
             if let Some(widget) = self.slider_drag {
                 if let Some(target) = self
@@ -1753,6 +1816,33 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
+                feature = "date-picker",
+                feature = "dialog",
+                feature = "grid-view",
+                feature = "info-bar",
+                feature = "teaching-tip",
+                feature = "password-box",
+                feature = "tabs",
+                feature = "time-picker",
+                feature = "toast",
+                feature = "toggle-button",
+                feature = "table",
+                feature = "tree"
+            ))]
+            self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
+            return report;
+        }
+        #[cfg(feature = "color-picker")]
+        if self.color_picker_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            self.color_picker_drag = None;
+            report.handled = true;
+            report.color_picker_drag_active = false;
+            #[cfg(any(
+                feature = "auto-suggest",
+                feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1778,6 +1868,7 @@ impl NativeViewInputRuntime {
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
+                feature = "color-picker",
                 feature = "date-picker",
                 feature = "dialog",
                 feature = "grid-view",
@@ -1804,6 +1895,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2128,6 +2220,10 @@ impl NativeViewInputRuntime {
             }
             _ => {}
         }
+        #[cfg(feature = "color-picker")]
+        if target.kind == crate::ViewHitTargetKind::ColorPicker {
+            report.color_picker_expanded_changed = true;
+        }
         #[cfg(feature = "tabs")]
         if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
             report.tab_selection_changed = self
@@ -2144,6 +2240,8 @@ impl NativeViewInputRuntime {
         let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
+        #[cfg(feature = "color-picker")]
+        let had_drag = had_drag | self.color_picker_drag.take().is_some();
         let mut report = NativeViewInputDispatchReport {
             handled: had_drag,
             hit_target_count: self.hit_target_count(),
@@ -2151,11 +2249,14 @@ impl NativeViewInputRuntime {
             text_drag_active: false,
             #[cfg(feature = "slider")]
             slider_drag_active: false,
+            #[cfg(feature = "color-picker")]
+            color_picker_drag_active: false,
             ..NativeViewInputDispatchReport::default()
         };
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2193,6 +2294,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2213,6 +2315,7 @@ impl NativeViewInputRuntime {
         #[cfg(not(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -2681,6 +2784,10 @@ impl NativeViewInputRuntime {
             {
                 self.slider_drag = None;
             }
+            #[cfg(feature = "color-picker")]
+            {
+                self.color_picker_drag = None;
+            }
             report.focused_widget = None;
             return report;
         };
@@ -3054,6 +3161,66 @@ impl NativeViewInputRuntime {
             }
         }
 
+        #[cfg(feature = "color-picker")]
+        if target.kind == crate::ViewHitTargetKind::ColorPicker {
+            let Some(state) = self.widget_color_picker_state(widget) else {
+                return report;
+            };
+            let next_expanded = match key {
+                NativeViewKey::Enter | NativeViewKey::Space => Some(!state.expanded),
+                NativeViewKey::Escape if state.expanded => Some(false),
+                _ => None,
+            };
+            if let Some(expanded) = next_expanded {
+                report.handled = true;
+                report.color_picker_expanded_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ColorPickerExpandedChanged { widget, expanded },
+                    report,
+                );
+            }
+            if !state.expanded {
+                return report;
+            }
+
+            let next_channel = match key {
+                NativeViewKey::Up => Some(state.active_channel.previous(state.alpha_enabled)),
+                NativeViewKey::Down => Some(state.active_channel.next(state.alpha_enabled)),
+                _ => None,
+            };
+            if let Some(channel) = next_channel {
+                report.handled = true;
+                if channel == state.active_channel {
+                    return report;
+                }
+                report.color_picker_channel_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ColorPickerChannelChanged { widget, channel },
+                    report,
+                );
+            }
+
+            let current = state.channel_value(state.active_channel);
+            let delta = if shift { 10_i16 } else { 1_i16 };
+            let next = match key {
+                NativeViewKey::Left => Some((i16::from(current) - delta).clamp(0, 255) as u8),
+                NativeViewKey::Right => Some((i16::from(current) + delta).clamp(0, 255) as u8),
+                NativeViewKey::Home => Some(0),
+                NativeViewKey::End => Some(255),
+                _ => None,
+            };
+            if let Some(value) = next {
+                report.handled = true;
+                let color = state.active_channel.with_value(state.color, value);
+                report.color_picker_value = Some(color);
+                if color == state.color {
+                    return report;
+                }
+                report.color_picker_value_changed = true;
+                return self.dispatch_view_event(ViewEvent::ColorChanged { widget, color }, report);
+            }
+        }
+
         #[cfg(feature = "radio")]
         if target.kind == crate::ViewHitTargetKind::RadioButton {
             let navigation = match key {
@@ -3322,6 +3489,10 @@ impl NativeViewInputRuntime {
             {
                 self.slider_drag = None;
             }
+            #[cfg(feature = "color-picker")]
+            {
+                self.color_picker_drag = None;
+            }
             report.focused_widget = None;
             return report;
         };
@@ -3566,6 +3737,10 @@ impl NativeViewInputRuntime {
         {
             self.slider_drag = None;
         }
+        #[cfg(feature = "color-picker")]
+        {
+            self.color_picker_drag = None;
+        }
         let had_preedit = self.ime_preedit.take().is_some();
         #[cfg(any(
             feature = "auto-suggest",
@@ -3708,6 +3883,10 @@ impl NativeViewInputRuntime {
         {
             self.slider_drag = None;
         }
+        #[cfg(feature = "color-picker")]
+        {
+            self.color_picker_drag = None;
+        }
         self.focused_widget = Some(target.widget);
         self.ensure_text_edit_for_target(target);
         report.focused_widget = Some(target.widget.0);
@@ -3762,6 +3941,7 @@ impl NativeViewInputRuntime {
         #[cfg(any(
             feature = "auto-suggest",
             feature = "breadcrumb",
+            feature = "color-picker",
             feature = "date-picker",
             feature = "dialog",
             feature = "grid-view",
@@ -3919,6 +4099,7 @@ impl NativeViewInputRuntime {
     #[cfg(any(
         feature = "auto-suggest",
         feature = "breadcrumb",
+        feature = "color-picker",
         feature = "date-picker",
         feature = "dialog",
         feature = "grid-view",
@@ -4138,7 +4319,104 @@ impl NativeViewInputRuntime {
         )
     }
 
+    #[cfg(feature = "color-picker")]
+    fn dispatch_color_picker_pointer(
+        &mut self,
+        target: crate::ViewHitTarget,
+        point: Point,
+        mut report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        let Some(state) = self.widget_color_picker_state(target.widget) else {
+            self.color_picker_drag = None;
+            return report;
+        };
+        let root_bounds = self
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.into_iter().find(|candidate| {
+                    candidate.widget == target.widget
+                        && candidate.kind == crate::ViewHitTargetKind::ColorPicker
+                })
+            })
+            .map(|target| target.bounds)
+            .unwrap_or(target.bounds);
+        let plan = self.surface.map_or_else(
+            || {
+                crate::zs_color_picker_render_plan(
+                    root_bounds,
+                    state,
+                    crate::ZsColorPickerPlatformStyle::current(),
+                    self.dpi,
+                )
+            },
+            |viewport| {
+                crate::zs_color_picker_render_plan_in_viewport(
+                    root_bounds,
+                    state,
+                    crate::ZsColorPickerPlatformStyle::current(),
+                    self.dpi,
+                    viewport,
+                )
+            },
+        );
+        let (color, channel) = match target.kind {
+            crate::ViewHitTargetKind::ColorPickerSpectrum => {
+                (plan.spectrum_color_at(state, point), None)
+            }
+            crate::ViewHitTargetKind::ColorPickerHue => (plan.hue_color_at(state, point), None),
+            crate::ViewHitTargetKind::ColorPickerChannel { channel } => {
+                let Some(row) = plan.channels.iter().find(|row| row.channel == channel) else {
+                    self.color_picker_drag = None;
+                    return report;
+                };
+                let fraction =
+                    point.x.saturating_sub(row.track.x) as f32 / row.track.width.max(1) as f32;
+                let value = (fraction.clamp(0.0, 1.0) * 255.0).round() as u8;
+                (Some(channel.with_value(state.color, value)), Some(channel))
+            }
+            _ => (None, None),
+        };
+        let Some(color) = color else {
+            self.color_picker_drag = None;
+            return report;
+        };
+        report.handled = true;
+        report.color_picker_value = Some(color);
+        report.color_picker_drag_active = self.color_picker_drag.is_some();
+        if let Some(channel) = channel.filter(|channel| state.active_channel != *channel) {
+            report.color_picker_channel_changed = true;
+            report = self.dispatch_view_event(
+                ViewEvent::ColorPickerChannelChanged {
+                    widget: target.widget,
+                    channel,
+                },
+                report,
+            );
+        }
+        if color == state.color {
+            return report;
+        }
+        report.color_picker_value_changed = true;
+        self.dispatch_view_event(
+            ViewEvent::ColorChanged {
+                widget: target.widget,
+                color,
+            },
+            report,
+        )
+    }
+
     fn activation_event(&self, target: crate::ViewHitTarget) -> ViewEvent {
+        #[cfg(feature = "color-picker")]
+        if target.kind == crate::ViewHitTargetKind::ColorPicker {
+            let expanded = self
+                .widget_color_picker_state(target.widget)
+                .is_none_or(|state| !state.expanded);
+            return ViewEvent::ColorPickerExpandedChanged {
+                widget: target.widget,
+                expanded,
+            };
+        }
         #[cfg(feature = "dialog")]
         if let crate::ViewHitTargetKind::ContentDialogButton { button } = target.kind {
             return ViewEvent::ContentDialogResponded {
@@ -4601,6 +4879,7 @@ impl NativeViewInputRuntime {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -4634,6 +4913,10 @@ impl NativeViewInputRuntime {
                 crate::ViewHitTargetKind::TimePicker => self
                     .widget_time_picker_state(target.widget)
                     .is_some_and(|state| state.expanded),
+                #[cfg(feature = "color-picker")]
+                crate::ViewHitTargetKind::ColorPicker => self
+                    .widget_color_picker_state(target.widget)
+                    .is_some_and(|state| state.expanded),
                 _ => false,
             }
         });
@@ -4661,12 +4944,24 @@ impl NativeViewInputRuntime {
                         .is_some_and(|(_, _, expanded)| expanded)
             });
         }
+        #[cfg(feature = "color-picker")]
+        {
+            report.color_picker_expanded_changed |=
+                interaction_plan.hit_targets.iter().any(|target| {
+                    Some(target.widget) != except
+                        && target.kind == crate::ViewHitTargetKind::ColorPicker
+                        && self
+                            .widget_color_picker_state(target.widget)
+                            .is_some_and(|state| state.expanded)
+                });
+        }
         report.handled = true;
         self.dispatch_view_event(crate::ViewEvent::DismissPopupOverlays { except }, report)
     }
 
     #[cfg(not(any(
         feature = "auto-suggest",
+        feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker"
@@ -4706,6 +5001,21 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_time_picker_state(widget))
+            })
+    }
+
+    #[cfg(feature = "color-picker")]
+    fn widget_color_picker_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsColorPickerState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_color_picker_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_color_picker_state(widget))
             })
     }
 
@@ -4790,6 +5100,10 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "slider")]
             {
                 self.slider_drag = None;
+            }
+            #[cfg(feature = "color-picker")]
+            {
+                self.color_picker_drag = None;
             }
             self.ime_preedit = None;
             report.focus_visual_changed = true;
@@ -4985,6 +5299,11 @@ fn record_windows_win32_view_input_report(
     report.native_view_slider_value_change_count += input.slider_value_change_count;
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
     report.native_view_slider_drag_count += input.slider_drag_count;
+    report.native_view_color_picker_value_change_count += input.color_picker_value_change_count;
+    report.native_view_color_picker_channel_change_count += input.color_picker_channel_change_count;
+    report.native_view_color_picker_expanded_change_count +=
+        input.color_picker_expanded_change_count;
+    report.native_view_color_picker_drag_count += input.color_picker_drag_count;
     report.native_view_radio_selection_count += input.radio_selection_count;
     report.native_view_radio_keyboard_selection_count += input.radio_keyboard_selection_count;
     report.native_view_radio_keyboard_focus_only_count += input.radio_keyboard_focus_only_count;
@@ -10039,5 +10358,159 @@ mod tests {
         assert!(driver
             .native_operation_names()
             .contains(&"update_settings_item_value"));
+    }
+
+    #[cfg(feature = "color-picker")]
+    #[test]
+    fn native_view_runtime_routes_color_picker_drag_and_keyboard_channels() {
+        #[derive(Clone, Copy)]
+        enum Msg {
+            Color(crate::Color),
+            Expanded(bool),
+            Channel(crate::ZsColorChannel),
+        }
+
+        struct State {
+            picker: crate::ZsColorPickerState,
+        }
+
+        let widget = crate::WidgetId::new(219);
+        let build = || {
+            native_window("Platform ColorPicker")
+                .size(480, 680)
+                .stateful_view(
+                    State {
+                        picker: crate::ZsColorPickerState::new(crate::Color::rgba(
+                            32, 96, 160, 224,
+                        ))
+                        .with_expanded(true),
+                    },
+                    move |state| {
+                        crate::column([
+                            crate::color_picker(state.picker)
+                                .id(widget)
+                                .height(Dp::new(32.0))
+                                .on_color_change(Msg::Color)
+                                .on_expanded_change(Msg::Expanded)
+                                .on_color_channel_change(Msg::Channel),
+                            crate::spacer(),
+                        ])
+                        .padding(Dp::new(24.0))
+                        .gap(Dp::new(12.0))
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Color(color) => state.picker.color = color,
+                        Msg::Expanded(expanded) => state.picker.expanded = expanded,
+                        Msg::Channel(channel) => state.picker.active_channel = channel,
+                    },
+                )
+        };
+
+        let builder = build();
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("color picker interaction plan");
+        let root = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.widget == widget && target.kind == crate::ViewHitTargetKind::ColorPicker
+            })
+            .expect("color picker root target");
+        let red = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.kind
+                    == (crate::ViewHitTargetKind::ColorPickerChannel {
+                        channel: crate::ZsColorChannel::Red,
+                    })
+            })
+            .expect("red channel target");
+        let plan = crate::zs_color_picker_render_plan_in_viewport(
+            root.bounds,
+            crate::ZsColorPickerState::new(crate::Color::rgba(32, 96, 160, 224))
+                .with_expanded(true),
+            crate::ZsColorPickerPlatformStyle::current(),
+            Dpi::standard(),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 480,
+                height: 680,
+            },
+        );
+        let red_track = plan
+            .channels
+            .iter()
+            .find(|row| row.channel == crate::ZsColorChannel::Red)
+            .expect("red channel geometry")
+            .track;
+        assert!(red.bounds.contains(Point {
+            x: red_track.x,
+            y: red_track.y,
+        }));
+
+        let mut runtime = builder.native_view_input_runtime();
+        let pressed = runtime.dispatch_pointer_down(
+            Point {
+                x: red_track.x + red_track.width / 4,
+                y: red_track.y + red_track.height / 2,
+            },
+            false,
+        );
+        assert!(pressed.handled);
+        assert!(pressed.color_picker_drag_active);
+        assert!(pressed.color_picker_value_changed);
+        let moved = runtime.dispatch_pointer_move(Point {
+            x: red_track.x + red_track.width * 9 / 10,
+            y: red_track.y + red_track.height / 2,
+        });
+        assert!(moved.handled);
+        assert!(moved.color_picker_drag_active);
+        let released = runtime.dispatch_pointer_up(Point {
+            x: red_track.x + red_track.width * 9 / 10,
+            y: red_track.y + red_track.height / 2,
+        });
+        assert!(released.handled);
+        assert!(!released.color_picker_drag_active);
+        assert!(runtime
+            .widget_color_picker_state(widget)
+            .is_some_and(|state| state.color.r > 220));
+
+        let mut keyboard = build().native_view_input_runtime();
+        let focused = keyboard.dispatch_key(NativeViewKey::Tab);
+        assert!(focused.handled);
+        assert_eq!(focused.focused_widget, Some(widget.0));
+        let channel = keyboard.dispatch_key(NativeViewKey::Down);
+        assert!(channel.handled);
+        assert!(channel.color_picker_channel_changed);
+        assert_eq!(
+            keyboard
+                .widget_color_picker_state(widget)
+                .map(|state| state.active_channel),
+            Some(crate::ZsColorChannel::Green)
+        );
+        let maximum = keyboard.dispatch_key(NativeViewKey::End);
+        assert!(maximum.handled);
+        assert!(maximum.color_picker_value_changed);
+        assert_eq!(
+            keyboard
+                .widget_color_picker_state(widget)
+                .map(|state| state.color.g),
+            Some(255)
+        );
+        let closed = keyboard.dispatch_key(NativeViewKey::Escape);
+        assert!(closed.color_picker_expanded_changed);
+        assert!(keyboard
+            .widget_color_picker_state(widget)
+            .is_some_and(|state| !state.expanded));
+        let reopened = keyboard.dispatch_key(NativeViewKey::Space);
+        assert!(reopened.color_picker_expanded_changed);
+        assert!(keyboard
+            .widget_color_picker_state(widget)
+            .is_some_and(|state| state.expanded));
     }
 }

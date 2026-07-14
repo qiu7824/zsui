@@ -255,6 +255,20 @@ history remain authoritative for implementation status.
   Owned scrolling/virtualization, multi-selection, rubber-band selection,
   drag-and-drop, sections, arbitrary item templates, accessibility grid
   providers and AppKit/GTK target smoke remain readiness gaps.
+- ColorPicker is an independent `color-picker` feature over `widgets-input`;
+  it must not pull in TextBox, ComboBox or a platform child picker. Applications
+  own `ZsColorPickerState`, including the selected RGBA `Color`, expanded flag,
+  active channel and alpha policy. The shared renderer and hit plan own the HSV
+  spectrum, hue track, preview, RGBA sliders and viewport-aware overlay, while
+  pointer and keyboard routes emit typed value/channel/expanded messages.
+  Windows follows the documented Fluent ColorPicker structure and keeps a
+  square spectrum at least 256 DIPs high while editable precision fields are
+  absent. macOS deliberately uses an NSColorWell/custom-panel-like compact
+  slider mode, and GTK uses a ColorDialogButton-like entry and HSV editor; the
+  three skins remain separate self-drawn metric profiles. Editable RGB/HSV/hex
+  fields, swatches, eyedropper, accessibility, HDR/color-space management and
+  AppKit/GTK target interaction smoke remain readiness gaps. Do not describe
+  this bounded first pass as control-for-control WinUI 3 parity.
 - DataGrid is an independent `table` feature over `widgets-list`; it must not
   pull in ListView, ScrollView or a platform child control. Applications own
   immutable `ZsTableColumn` and

@@ -65,6 +65,7 @@ tree = ["widgets-list"]
 combo = ["widgets-input"]
 date-picker = ["widgets-input", "dep:chrono"]
 time-picker = ["widgets-input"]
+color-picker = ["widgets-input"]
 tabs = ["widgets-base"]
 table = ["widgets-list"]
 dark-mode = []
@@ -92,7 +93,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "tree", "combo", "date-picker", "time-picker", "tabs", "table", "workbench"]
+all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
 full = [
     "all-widgets",
     "clipboard",

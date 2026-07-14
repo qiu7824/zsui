@@ -422,6 +422,29 @@ Owned scrolling/virtualization, multi-selection, rubber-band selection, custom
 item templates, accessibility providers and AppKit/GTK target-machine evidence
 remain required.
 
+The independently selectable ColorPicker smoke path is:
+
+```powershell
+cargo run --locked --no-default-features --features "window,label,color-picker,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-color-picker --color-picker-view
+```
+
+It renders the Windows self-drawn Fluent-style first pass with a square HSV
+spectrum, hue track, alpha-aware preview and RGBA sliders. The scripted pointer
+drag changes saturation/value inside the spectrum; Down changes the active
+typed channel, End changes that channel value, and Escape/Space close and reopen
+the overlay without adding internal Tab stops. The interaction artifact must
+record nonzero `native_view_color_picker_value_change_count`,
+`native_view_color_picker_channel_change_count`,
+`native_view_color_picker_drag_count` and
+`native_view_color_picker_expanded_change_count`, three executed example UI
+commands, no command failure and a captured `window.png`. The official
+[WinUI ColorPicker guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/color-picker)
+recommends a square spectrum of at least 256 pixels when editable precision
+fields are absent; the Windows profile keeps a 288-by-256-DP spectrum. Editable
+RGB/HSV/hex fields, saved swatches, eyedropper, accessibility providers,
+HDR/color-space management and AppKit/GTK target-machine evidence remain
+required, so this smoke is not evidence of control-for-control WinUI 3 parity.
+
 The independently selectable DataGrid smoke path is:
 
 ```powershell
