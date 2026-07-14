@@ -150,7 +150,7 @@ use zsui::{
     native_ui_platform_for_current_target, native_window,
     write_native_host_smoke_artifacts_with_interaction_to, Command, MenuItemSpec, MenuSpec,
     NativeHostSmokeInteractionReport, NativeUiPlatform, NativeWindowBuilder,
-    NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, TraySpec,
+    NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, TraySpec, ZsAccelerator,
 };
 #[cfg(feature = "number-box")]
 use zsui::{number_box, ZsNumberRange};
@@ -2202,11 +2202,11 @@ fn smoke_window_menu() -> MenuSpec {
     let mut file = MenuSpec::new();
     file.items.push(
         MenuItemSpec::command("Open", Command::custom("zsui.native_smoke.open"))
-            .accelerator("Primary+O"),
+            .accelerator(ZsAccelerator::primary_character('O')),
     );
     file.items.push(
         MenuItemSpec::command("Save", Command::custom("zsui.native_smoke.save"))
-            .accelerator("Primary+S"),
+            .accelerator(ZsAccelerator::primary_character('S')),
     );
     file.items.push(MenuItemSpec::Separator);
     file.items.push(

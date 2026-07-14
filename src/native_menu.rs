@@ -10,7 +10,12 @@ use std::collections::BTreeMap;
     target_os = "macos",
     all(target_os = "linux", not(target_env = "ohos"))
 ))]
-use crate::{Command, DesktopEvent, MenuItemSpec, MenuSpec, WindowId};
+use crate::{Command, DesktopEvent, MenuItemSpec, MenuSpec, WindowId, ZsAccelerator};
+#[cfg(any(
+    test,
+    target_os = "macos",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 use crate::{ZsuiError, ZsuiResult};
 
 #[cfg(any(
@@ -97,7 +102,7 @@ pub(crate) enum NativeMenuNode {
         label: String,
         enabled: bool,
         checked: bool,
-        accelerator: Option<NativeMenuAccelerator>,
+        accelerator: Option<ZsAccelerator>,
     },
     Separator,
     Submenu {
@@ -165,8 +170,10 @@ impl NativeMenuLowerer {
                         enabled,
                         checked: *checked,
                         accelerator: accelerator
-                            .as_deref()
-                            .map(NativeMenuAccelerator::parse)
+                            .map(|accelerator| {
+                                accelerator.validate()?;
+                                Ok(accelerator)
+                            })
                             .transpose()?,
                     })
                 }
@@ -198,156 +205,6 @@ impl NativeMenuLowerer {
         })?;
         Ok(native_id)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NativeMenuAccelerator {
-    pub key: String,
-    pub primary: bool,
-    pub shift: bool,
-    pub alt: bool,
-    pub super_key: bool,
-}
-
-impl NativeMenuAccelerator {
-    pub fn parse(value: &str) -> ZsuiResult<Self> {
-        let mut accelerator = Self {
-            key: String::new(),
-            primary: false,
-            shift: false,
-            alt: false,
-            super_key: false,
-        };
-
-        for part in value
-            .split('+')
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-        {
-            match part.to_ascii_lowercase().as_str() {
-                "primary" | "ctrl" | "control" => accelerator.primary = true,
-                "shift" => accelerator.shift = true,
-                "alt" | "option" => accelerator.alt = true,
-                "cmd" | "command" | "meta" | "super" | "win" => accelerator.super_key = true,
-                _ if accelerator.key.is_empty() => {
-                    accelerator.key = normalize_accelerator_key(part)?;
-                }
-                _ => {
-                    return Err(ZsuiError::invalid_spec(
-                        "menu.accelerator",
-                        format!("accelerator `{value}` contains more than one key"),
-                    ));
-                }
-            }
-        }
-
-        if accelerator.key.is_empty() {
-            return Err(ZsuiError::invalid_spec(
-                "menu.accelerator",
-                format!("accelerator `{value}` does not contain a key"),
-            ));
-        }
-        Ok(accelerator)
-    }
-
-    #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
-    pub fn gtk_accelerator(&self) -> String {
-        let mut value = String::new();
-        if self.primary {
-            value.push_str("<Primary>");
-        }
-        if self.super_key {
-            value.push_str("<Super>");
-        }
-        if self.alt {
-            value.push_str("<Alt>");
-        }
-        if self.shift {
-            value.push_str("<Shift>");
-        }
-        value.push_str(match self.key.as_str() {
-            "Enter" => "Return",
-            "Space" => "space",
-            "Backspace" => "BackSpace",
-            "PageUp" => "Page_Up",
-            "PageDown" => "Page_Down",
-            key => key,
-        });
-        value
-    }
-
-    #[cfg(any(test, target_os = "macos"))]
-    pub fn appkit_key_equivalent(&self) -> Option<String> {
-        let value = match self.key.as_str() {
-            "Enter" | "Return" => "\r".to_string(),
-            "Tab" => "\t".to_string(),
-            "Escape" => "\u{1b}".to_string(),
-            "Space" => " ".to_string(),
-            "Backspace" => "\u{8}".to_string(),
-            "Delete" => "\u{7f}".to_string(),
-            "Up" => "\u{f700}".to_string(),
-            "Down" => "\u{f701}".to_string(),
-            "Left" => "\u{f702}".to_string(),
-            "Right" => "\u{f703}".to_string(),
-            "Home" => "\u{f729}".to_string(),
-            "End" => "\u{f72b}".to_string(),
-            "PageUp" => "\u{f72c}".to_string(),
-            "PageDown" => "\u{f72d}".to_string(),
-            key if key.len() == 1 => key.to_ascii_lowercase(),
-            key if key.starts_with('F') => {
-                let number = key[1..].parse::<u32>().ok()?;
-                char::from_u32(0xf703 + number)?.to_string()
-            }
-            _ => return None,
-        };
-        Some(value)
-    }
-}
-
-fn normalize_accelerator_key(key: &str) -> ZsuiResult<String> {
-    if key.chars().count() == 1 {
-        return Ok(key.to_ascii_uppercase());
-    }
-
-    let normalized = match key.to_ascii_lowercase().as_str() {
-        "enter" => "Enter",
-        "return" => "Return",
-        "tab" => "Tab",
-        "esc" | "escape" => "Escape",
-        "space" => "Space",
-        "backspace" => "Backspace",
-        "delete" | "del" => "Delete",
-        "up" => "Up",
-        "down" => "Down",
-        "left" => "Left",
-        "right" => "Right",
-        "home" => "Home",
-        "end" => "End",
-        "pageup" | "page_up" => "PageUp",
-        "pagedown" | "page_down" => "PageDown",
-        other if other.len() >= 2 && other.starts_with('f') => {
-            let number = other[1..].parse::<u8>().map_err(|_| {
-                ZsuiError::invalid_spec(
-                    "menu.accelerator",
-                    format!("unsupported accelerator key `{key}`"),
-                )
-            })?;
-            if !(1..=24).contains(&number) {
-                return Err(ZsuiError::invalid_spec(
-                    "menu.accelerator",
-                    format!("function key `{key}` is outside F1-F24"),
-                ));
-            }
-            return Ok(format!("F{number}"));
-        }
-        _ => {
-            return Err(ZsuiError::invalid_spec(
-                "menu.accelerator",
-                format!("unsupported accelerator key `{key}`"),
-            ));
-        }
-    };
-    Ok(normalized.to_string())
 }
 
 #[cfg(test)]
@@ -392,25 +249,15 @@ mod tests {
     }
 
     #[test]
-    fn accelerator_is_normalized_for_gtk_and_appkit() {
-        let accelerator =
-            NativeMenuAccelerator::parse("Ctrl+Alt+Shift+O").expect("valid accelerator");
+    fn invalid_typed_accelerators_fail_before_reaching_a_backend() {
+        let menu = MenuSpec {
+            id: None,
+            title: None,
+            items: vec![MenuItemSpec::command("Invalid", Command::Quit)
+                .accelerator(ZsAccelerator::new(crate::ZsAcceleratorKey::Function(25)))],
+        };
 
-        assert_eq!(accelerator.gtk_accelerator(), "<Primary><Alt><Shift>O");
-        assert_eq!(accelerator.appkit_key_equivalent().as_deref(), Some("o"));
-        assert!(accelerator.primary);
-        assert!(accelerator.alt);
-        assert!(accelerator.shift);
-
-        let f12 = NativeMenuAccelerator::parse("Cmd+F12").expect("function key");
-        assert_eq!(f12.appkit_key_equivalent(), Some("\u{f70f}".to_string()));
-    }
-
-    #[test]
-    fn invalid_accelerators_fail_before_reaching_a_backend() {
-        assert!(NativeMenuAccelerator::parse("Ctrl+Shift").is_err());
-        assert!(NativeMenuAccelerator::parse("Ctrl+O+P").is_err());
-        assert!(NativeMenuAccelerator::parse("Ctrl+F25").is_err());
+        assert!(NativeMenuModel::lower(&menu, 1).is_err());
         assert!(NativeMenuModel::lower(&MenuSpec::new(), 0).is_err());
     }
 

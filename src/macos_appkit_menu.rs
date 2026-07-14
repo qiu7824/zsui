@@ -8,10 +8,8 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 
-use crate::native_menu::{
-    native_menu_command_event, NativeMenuAccelerator, NativeMenuModel, NativeMenuNode,
-};
-use crate::{DesktopEvent, MenuService, MenuSpec, WindowId, ZsuiError, ZsuiResult};
+use crate::native_menu::{native_menu_command_event, NativeMenuModel, NativeMenuNode};
+use crate::{DesktopEvent, MenuService, MenuSpec, WindowId, ZsAccelerator, ZsuiError, ZsuiResult};
 
 #[derive(Debug)]
 struct AppKitMenuTargetIvars {
@@ -191,7 +189,7 @@ fn append_appkit_menu_nodes(
                 let title = NSString::from_str(label);
                 let key_equivalent = accelerator
                     .as_ref()
-                    .and_then(NativeMenuAccelerator::appkit_key_equivalent)
+                    .and_then(|accelerator| accelerator.appkit_key_equivalent())
                     .unwrap_or_default();
                 let key_equivalent = NSString::from_str(&key_equivalent);
                 let item = unsafe {
@@ -238,15 +236,15 @@ fn append_appkit_menu_nodes(
     }
 }
 
-fn appkit_modifier_flags(accelerator: &NativeMenuAccelerator) -> NSEventModifierFlags {
+fn appkit_modifier_flags(accelerator: &ZsAccelerator) -> NSEventModifierFlags {
     let mut flags = NSEventModifierFlags::empty();
-    if accelerator.primary || accelerator.super_key {
+    if accelerator.uses_primary() || accelerator.uses_super() {
         flags |= NSEventModifierFlags::Command;
     }
-    if accelerator.alt {
+    if accelerator.uses_alt() {
         flags |= NSEventModifierFlags::Option;
     }
-    if accelerator.shift {
+    if accelerator.uses_shift() {
         flags |= NSEventModifierFlags::Shift;
     }
     flags

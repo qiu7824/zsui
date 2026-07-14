@@ -42,6 +42,10 @@ history remain authoritative for implementation status.
 - Applications request native open/save panels through the safe
   `NativeFileDialogService` facade and owned `PathBuf` specs. Target selection
   stays inside ZSUI; missing backend features return `ZsuiError::Unsupported`.
+- Menu accelerators use the strong `ZsAccelerator` / `ZsAcceleratorKey`
+  contract rather than application-parsed strings. `Primary` means Control on
+  Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent
+  and GTK action-accelerator details stay inside their native adapters.
 
 ## Native platform bar
 

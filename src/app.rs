@@ -538,10 +538,10 @@ fn validate_menu_item(
                 ));
             }
             if let Some(accelerator) = accelerator {
-                if accelerator.trim().is_empty() {
+                if let Err(error) = accelerator.validate() {
                     issues.push(ZsuiDeclarationIssue::error(
                         format!("{path}.accelerator"),
-                        "menu item accelerator cannot be empty",
+                        error.to_string(),
                     ));
                 }
             }
@@ -945,6 +945,25 @@ mod declaration_tests {
         assert!(
             matches!(err, ZsuiError::InvalidSpec { field, .. } if field == "tray.menu.items[0].label")
         );
+    }
+
+    #[test]
+    fn declaration_report_rejects_invalid_typed_menu_accelerators() {
+        let mut menu = MenuSpec::new();
+        menu.items
+            .push(MenuItemSpec::command("Invalid", Command::Quit).accelerator(
+                crate::ZsAccelerator::new(crate::ZsAcceleratorKey::Function(25)),
+            ));
+
+        let err = app("Example")
+            .tray(TraySpec::new().menu(menu))
+            .build()
+            .expect_err("invalid typed menu accelerators must be rejected");
+
+        assert!(matches!(
+            err,
+            ZsuiError::InvalidSpec { field, .. } if field == "tray.menu.items[0].accelerator"
+        ));
     }
 
     #[cfg(all(feature = "label", feature = "button"))]

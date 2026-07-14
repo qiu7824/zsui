@@ -430,7 +430,7 @@ Task Manager memory means summed private working set. Working set includes resid
 - Slint: declarative Slint markup with safe Rust callbacks.
 - Tauri 2: HTML/CSS/JavaScript UI in the system WebView2 runtime with Rust commands.
 
-Source counts include nonblank lines in demo-owned manifests and UI/frontend files for standalone baselines. ZSUI reuses the workspace manifest and counts only its three application source files. Generated schemas, Cargo downloads, ``target`` directories and measurement output are excluded.
+Source counts include nonblank lines in demo-owned manifests and UI/frontend files for standalone baselines. ZSUI reuses the workspace manifest and counts only its two application source files. Generated schemas, Cargo downloads, ``target`` directories and measurement output are excluded.
 "@
 $markdownPath = Join-Path $outputDir "report.md"
 Set-Content -LiteralPath $markdownPath -Value $markdown -Encoding utf8

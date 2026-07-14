@@ -22,25 +22,23 @@ use windows_sys::Win32::{
         },
         Input::KeyboardAndMouse::{
             ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
-            VK_F1,
         },
         WindowsAndMessaging::{
-            CreateAcceleratorTableW, CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable,
-            DestroyIcon, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-            GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, LoadCursorW, LoadImageW,
-            MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassExW, SendMessageW,
-            SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-            TranslateAcceleratorW, TranslateMessage, ACCEL, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
+            CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, DispatchMessageW,
+            GetClientRect, GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
+            LoadCursorW, LoadImageW, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage,
+            RegisterClassExW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos,
+            SetWindowTextW, ShowWindow, TranslateMessage, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
             CW_USEDEFAULT, EN_CHANGE, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_LEFT, ES_MULTILINE,
-            ES_NOHIDESEL, ES_WANTRETURN, FCONTROL, FSHIFT, FVIRTKEY, GWLP_USERDATA, GWL_STYLE,
-            HACCEL, HICON, IDCANCEL, IDC_ARROW, IDNO, IDYES, IMAGE_ICON, LR_DEFAULTSIZE,
-            LR_LOADFROMFILE, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK,
-            MB_YESNOCANCEL, MSG, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-            SWP_NOZORDER, SW_SHOW, WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_COPY, WM_CREATE,
-            WM_CTLCOLOREDIT, WM_CUT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
-            WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_PASTE, WM_SETFOCUS,
-            WM_SETFONT, WM_SETICON, WM_SIZE, WM_TIMER, WM_UNDO, WNDCLASSEXW, WS_CHILD,
-            WS_CLIPCHILDREN, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+            ES_NOHIDESEL, ES_WANTRETURN, GWLP_USERDATA, GWL_STYLE, HICON, IDCANCEL, IDC_ARROW,
+            IDNO, IDYES, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE, MB_ICONERROR,
+            MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNOCANCEL, MSG, SWP_FRAMECHANGED,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, WM_CAPTURECHANGED,
+            WM_CLOSE, WM_COMMAND, WM_COPY, WM_CREATE, WM_CTLCOLOREDIT, WM_CUT, WM_DESTROY,
+            WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE,
+            WM_NCDESTROY, WM_PAINT, WM_PASTE, WM_SETFOCUS, WM_SETFONT, WM_SETICON, WM_SIZE,
+            WM_TIMER, WM_UNDO, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_HSCROLL,
+            WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
         },
     },
 };
@@ -48,8 +46,9 @@ use windows_sys::Win32::{
 use zsui::{
     Color, Dpi, FileDialogService, FileDialogSpec, NativeFileDialogService, Point, Rect,
     SaveFileDialogSpec, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
-    ZsDocumentShellCommand, ZsDocumentShellInteraction, ZsDocumentShellLayout, ZsDocumentShellSpec,
-    ZsTextDocument, ZsuiTheme,
+    WindowsWin32OwnedAcceleratorTable, ZsAccelerator, ZsAcceleratorKey, ZsDocumentShellCommand,
+    ZsDocumentShellInteraction, ZsDocumentShellLayout, ZsDocumentShellSpec, ZsTextDocument,
+    ZsuiTheme,
 };
 
 const APP_NAME: &str = "ZSUI Notepad";
@@ -178,15 +177,12 @@ pub fn run() -> Result<(), String> {
     let accelerators = create_accelerators()?;
     let mut message: MSG = unsafe { mem::zeroed() };
     while unsafe { GetMessageW(&mut message, null_mut(), 0, 0) } > 0 {
-        if unsafe { TranslateAcceleratorW(hwnd, accelerators, &message) } == 0 {
+        if !accelerators.translate(hwnd, &message) {
             unsafe {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
         }
-    }
-    unsafe {
-        DestroyAcceleratorTable(accelerators);
     }
     Ok(())
 }
@@ -768,30 +764,22 @@ fn point_from_lparam(lparam: LPARAM) -> Point {
     }
 }
 
-fn create_accelerators() -> Result<HACCEL, String> {
-    let mut accelerators = [
-        accelerator(FCONTROL | FVIRTKEY, b'N', ID_FILE_NEW),
-        accelerator(FCONTROL | FVIRTKEY, b'O', ID_FILE_OPEN),
-        accelerator(FCONTROL | FVIRTKEY, b'S', ID_FILE_SAVE),
-        accelerator(FCONTROL | FSHIFT | FVIRTKEY, b'S', ID_FILE_SAVE_AS),
-        accelerator(FCONTROL | FVIRTKEY, b'A', ID_EDIT_SELECT_ALL),
-        accelerator(FVIRTKEY, VK_F1 as u8, ID_HELP_ABOUT),
+fn create_accelerators() -> Result<WindowsWin32OwnedAcceleratorTable, String> {
+    let bindings = [
+        (ID_FILE_NEW, ZsAccelerator::primary_character('N')),
+        (ID_FILE_OPEN, ZsAccelerator::primary_character('O')),
+        (ID_FILE_SAVE, ZsAccelerator::primary_character('S')),
+        (
+            ID_FILE_SAVE_AS,
+            ZsAccelerator::primary_character('S').shifted(),
+        ),
+        (ID_EDIT_SELECT_ALL, ZsAccelerator::primary_character('A')),
+        (
+            ID_HELP_ABOUT,
+            ZsAccelerator::new(ZsAcceleratorKey::Function(1)),
+        ),
     ];
-    let handle =
-        unsafe { CreateAcceleratorTableW(accelerators.as_mut_ptr(), accelerators.len() as i32) };
-    if handle.is_null() {
-        Err("CreateAcceleratorTableW failed".to_string())
-    } else {
-        Ok(handle)
-    }
-}
-
-const fn accelerator(flags: u8, key: u8, command: u16) -> ACCEL {
-    ACCEL {
-        fVirt: flags,
-        key: key as u16,
-        cmd: command,
-    }
+    WindowsWin32OwnedAcceleratorTable::from_bindings(&bindings).map_err(|error| error.to_string())
 }
 
 unsafe fn choose_file(hwnd: HWND, save: bool, current: Option<&Path>) -> Option<PathBuf> {

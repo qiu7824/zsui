@@ -58,8 +58,9 @@ use crate::{
     NativeTransientWindowHostOperation, NativeTransientWindowPresentation,
     NativeTransientWindowRequest, NativeWindowOptions, Renderer, SaveFileDialogSpec,
     SharedAppCommandExecutor, SharedUiCommandExecutor, Size, TraySpec, UiCommand, UiRect, View,
-    ViewEventCx, ViewInteractionPlan, ViewNode, ViewPaintCx, WindowSpec, ZsShellInteractionEvent,
-    ZsShellInteractionUpdate, ZsShellRuntime, ZsuiError, ZsuiResult,
+    ViewEventCx, ViewInteractionPlan, ViewNode, ViewPaintCx, WindowSpec, ZsAccelerator,
+    ZsAcceleratorKey, ZsShellInteractionEvent, ZsShellInteractionUpdate, ZsShellRuntime, ZsuiError,
+    ZsuiResult,
 };
 use windows_sys::Win32::{
     Foundation::{
@@ -711,7 +712,7 @@ pub struct WindowsWin32StatusMenuCommandEntry {
     pub label: String,
     pub command: Command,
     pub enabled: bool,
-    pub accelerator: Option<String>,
+    pub accelerator: Option<ZsAccelerator>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -875,33 +876,59 @@ impl Drop for WindowsWin32OwnedPopupMenu {
 }
 
 #[derive(Debug)]
-struct WindowsWin32OwnedAcceleratorTable {
+pub struct WindowsWin32OwnedAcceleratorTable {
     handle: HACCEL,
     entry_count: usize,
 }
 
 impl WindowsWin32OwnedAcceleratorTable {
     fn from_command_table(table: &WindowsWin32StatusMenuCommandTable) -> ZsuiResult<Option<Self>> {
-        let mut entries = Vec::new();
+        let mut bindings = Vec::new();
         for command in table.entries().iter().filter(|entry| entry.enabled) {
-            let Some(accelerator) = command.accelerator.as_deref() else {
+            let Some(accelerator) = command.accelerator.as_ref() else {
                 continue;
             };
-            let accelerator = crate::native_menu::NativeMenuAccelerator::parse(accelerator)?;
             let cmd = u16::try_from(command.native_id).map_err(|_| {
                 ZsuiError::invalid_spec(
                     "menu.accelerator",
                     "Win32 menu command id does not fit an accelerator table",
                 )
             })?;
-            entries.push(ACCEL {
-                fVirt: windows_accelerator_flags(&accelerator),
-                key: windows_accelerator_virtual_key(&accelerator)?,
-                cmd,
-            });
+            bindings.push((cmd, *accelerator));
         }
-        if entries.is_empty() {
-            return Ok(None);
+        if bindings.is_empty() {
+            Ok(None)
+        } else {
+            Self::from_bindings(&bindings).map(Some)
+        }
+    }
+
+    pub fn from_bindings(bindings: &[(u16, ZsAccelerator)]) -> ZsuiResult<Self> {
+        if bindings.is_empty() {
+            return Err(ZsuiError::invalid_spec(
+                "accelerator.bindings",
+                "Win32 accelerator bindings cannot be empty",
+            ));
+        }
+        let mut entries = Vec::with_capacity(bindings.len());
+        for (command, accelerator) in bindings {
+            accelerator.validate()?;
+            let flags = windows_accelerator_flags(accelerator);
+            let key = windows_accelerator_virtual_key(accelerator)?;
+            if entries
+                .iter()
+                .any(|entry: &ACCEL| entry.fVirt == flags && entry.key == key)
+            {
+                return Err(ZsuiError::invalid_spec(
+                    "accelerator.bindings",
+                    format!("duplicate accelerator `{accelerator}`"),
+                ));
+            }
+            entries.push(ACCEL {
+                fVirt: flags,
+                key,
+                cmd: *command,
+            });
         }
         let handle = unsafe { CreateAcceleratorTableW(entries.as_ptr(), entries.len() as i32) };
         if handle.is_null() {
@@ -910,67 +937,54 @@ impl WindowsWin32OwnedAcceleratorTable {
                 "CreateAcceleratorTableW failed",
             ));
         }
-        Ok(Some(Self {
+        Ok(Self {
             handle,
             entry_count: entries.len(),
-        }))
+        })
     }
 
-    fn translate(&self, window: HWND, message: &MSG) -> bool {
+    pub fn entry_count(&self) -> usize {
+        self.entry_count
+    }
+
+    pub fn translate(&self, window: HWND, message: &MSG) -> bool {
         unsafe { TranslateAcceleratorW(window, self.handle, message) != 0 }
     }
 }
 
-fn windows_accelerator_flags(accelerator: &crate::native_menu::NativeMenuAccelerator) -> u8 {
+fn windows_accelerator_flags(accelerator: &ZsAccelerator) -> u8 {
     let mut flags = FVIRTKEY;
-    if accelerator.primary || accelerator.super_key {
+    if accelerator.uses_primary() || accelerator.uses_super() {
         flags |= FCONTROL;
     }
-    if accelerator.alt {
+    if accelerator.uses_alt() {
         flags |= FALT;
     }
-    if accelerator.shift {
+    if accelerator.uses_shift() {
         flags |= FSHIFT;
     }
     flags
 }
 
-fn windows_accelerator_virtual_key(
-    accelerator: &crate::native_menu::NativeMenuAccelerator,
-) -> ZsuiResult<u16> {
-    let key = match accelerator.key.as_str() {
-        "Enter" | "Return" => VK_RETURN,
-        "Tab" => VK_TAB,
-        "Escape" => VK_ESCAPE,
-        "Space" => VK_SPACE,
-        "Backspace" => VK_BACK,
-        "Delete" => VK_DELETE,
-        "Up" => VK_UP,
-        "Down" => VK_DOWN,
-        "Left" => VK_LEFT,
-        "Right" => VK_RIGHT,
-        "Home" => VK_HOME,
-        "End" => VK_END,
-        "PageUp" => VK_PRIOR,
-        "PageDown" => VK_NEXT,
-        key if key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric() => {
-            key.as_bytes()[0] as u16
-        }
-        key if key.starts_with('F') => {
-            let number = key[1..].parse::<u16>().map_err(|_| {
-                ZsuiError::invalid_spec(
-                    "menu.accelerator",
-                    format!("unsupported Win32 accelerator key `{key}`"),
-                )
-            })?;
-            VK_F1 + number - 1
-        }
-        key => {
-            return Err(ZsuiError::invalid_spec(
-                "menu.accelerator",
-                format!("unsupported Win32 accelerator key `{key}`"),
-            ));
-        }
+fn windows_accelerator_virtual_key(accelerator: &ZsAccelerator) -> ZsuiResult<u16> {
+    accelerator.validate()?;
+    let key = match accelerator.key() {
+        ZsAcceleratorKey::Character(key) => key.to_ascii_uppercase() as u16,
+        ZsAcceleratorKey::Enter => VK_RETURN,
+        ZsAcceleratorKey::Tab => VK_TAB,
+        ZsAcceleratorKey::Escape => VK_ESCAPE,
+        ZsAcceleratorKey::Space => VK_SPACE,
+        ZsAcceleratorKey::Backspace => VK_BACK,
+        ZsAcceleratorKey::Delete => VK_DELETE,
+        ZsAcceleratorKey::Up => VK_UP,
+        ZsAcceleratorKey::Down => VK_DOWN,
+        ZsAcceleratorKey::Left => VK_LEFT,
+        ZsAcceleratorKey::Right => VK_RIGHT,
+        ZsAcceleratorKey::Home => VK_HOME,
+        ZsAcceleratorKey::End => VK_END,
+        ZsAcceleratorKey::PageUp => VK_PRIOR,
+        ZsAcceleratorKey::PageDown => VK_NEXT,
+        ZsAcceleratorKey::Function(number) => VK_F1 + u16::from(number) - 1,
     };
     Ok(key)
 }
@@ -1042,7 +1056,7 @@ impl WindowsWin32OwnedWindowMenu {
     pub fn accelerator_count(&self) -> usize {
         self.accelerator_table
             .as_ref()
-            .map(|table| table.entry_count)
+            .map(WindowsWin32OwnedAcceleratorTable::entry_count)
             .unwrap_or(0)
     }
 
@@ -1379,7 +1393,7 @@ fn append_status_popup_menu_items(
                 })?;
                 *command_index += 1;
                 let display_label = accelerator
-                    .as_deref()
+                    .as_ref()
                     .map(|accelerator| format!("{label}\t{accelerator}"))
                     .unwrap_or_else(|| label.clone());
                 let label = wide_null(&display_label);
@@ -10820,11 +10834,12 @@ mod tests {
     fn owned_accelerator_table_uses_typed_menu_commands_and_raii() {
         let mut menu = MenuSpec::new();
         menu.items.push(
-            MenuItemSpec::command("Open", Command::custom("file.open")).accelerator("Ctrl+O"),
+            MenuItemSpec::command("Open", Command::custom("file.open"))
+                .accelerator(ZsAccelerator::primary_character('O')),
         );
         menu.items.push(
             MenuItemSpec::command("Save As", Command::custom("file.save_as"))
-                .accelerator("Ctrl+Shift+S"),
+                .accelerator(ZsAccelerator::primary_character('S').shifted()),
         );
         let table = WindowsWin32StatusMenuCommandTable::from_menu(&menu);
         let accelerators = WindowsWin32OwnedAcceleratorTable::from_command_table(&table)
@@ -10832,8 +10847,21 @@ mod tests {
             .expect("accelerator table should be created");
 
         assert!(std::mem::needs_drop::<WindowsWin32OwnedAcceleratorTable>());
-        assert_eq!(accelerators.entry_count, 2);
-        assert_eq!(table.entries()[0].accelerator.as_deref(), Some("Ctrl+O"));
+        assert_eq!(accelerators.entry_count(), 2);
+        assert_eq!(
+            table.entries()[0].accelerator,
+            Some(ZsAccelerator::primary_character('O'))
+        );
+
+        let duplicate = WindowsWin32OwnedAcceleratorTable::from_bindings(&[
+            (1, ZsAccelerator::primary_character('O')),
+            (2, ZsAccelerator::primary_character('O')),
+        ])
+        .expect_err("duplicate native bindings must be rejected");
+        assert!(matches!(
+            duplicate,
+            ZsuiError::InvalidSpec { field, .. } if field == "accelerator.bindings"
+        ));
     }
 
     #[test]

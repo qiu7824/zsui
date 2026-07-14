@@ -267,9 +267,11 @@ popup menu selection before claiming system completion.
 
 Window menus retain their `HMENU` and `HACCEL` resources through RAII. The
 message loop calls `TranslateAcceleratorW` before normal dispatch, so a shared
-`MenuItemSpec::accelerator` routes the same typed `Command` as clicking the
-native menu item. AppKit maps the same accelerator to key equivalents and GTK4
-maps it to application action accelerators.
+`MenuItemSpec::accelerator` accepts a validated `ZsAccelerator` and routes the
+same typed `Command` as clicking the native menu item. Its semantic `Primary`
+modifier maps to Control on Windows and Linux and Command on macOS. AppKit maps
+the typed key to a key equivalent and GTK4 maps it to an application action
+accelerator; application code does not parse target-specific shortcut strings.
 
 Each backend should report real support through `HostCapabilities`.
 Use `CapabilityStatus::Partial` when a declaration can be accepted but native

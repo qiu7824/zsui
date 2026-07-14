@@ -272,7 +272,7 @@ pub use icon::ZsIcon;
 pub use info_bar::{
     ZsInfoBarControl, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec, ZsInfoBarState,
 };
-pub use menu::{MenuItemSpec, MenuSpec};
+pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
 pub use mobile_host::{
     mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,
     mobile_runtime_bridge_contract_artifact_file_names,
@@ -727,9 +727,10 @@ pub use windows_win32_host::{
     windows_win32_open_file_dialog, windows_win32_save_file_dialog,
     windows_win32_window_view_input_report, zsui_win32_default_window_proc, WindowsWin32ClassNames,
     WindowsWin32FileDialogService, WindowsWin32MainWindowHost, WindowsWin32MessageLoop,
-    WindowsWin32MessageLoopResult, WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon,
-    WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon,
-    WindowsWin32OwnedWindowMenu, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
+    WindowsWin32MessageLoopResult, WindowsWin32OwnedAcceleratorTable,
+    WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon, WindowsWin32OwnedMainWindowHandles,
+    WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon, WindowsWin32OwnedWindowMenu,
+    WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
     WindowsWin32StatusMenuCommandTable, WindowsWin32TransientWindowHost,
     WindowsWin32ViewInputDispatchReport, WindowsWin32ViewInputRoute, WindowsWin32WindowStylePlan,
     WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,

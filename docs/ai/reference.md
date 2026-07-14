@@ -255,7 +255,8 @@ layout, semantic draw plan and hit regions plus `ZsTextDocument` UTF-8/UTF-16
 loading, explicit dirty state and transactional UTF-8 save/save-as without raw
 platform handles. Its file selection now uses the shared
 `NativeFileDialogService`, whose owned specs dispatch to Win32, AppKit or GTK4
-without application `cfg`. The native editor, accelerator, parent-window
+without application `cfg`. Typed shortcut declarations and Win32 accelerator
+resource ownership now live in the framework. The native editor, parent-window
 modality and dirty-close policy still live in the example's platform module. Use
 `docs/notepad-demo.md` and `scripts/measure-notepad-comparison.ps1` to compare
 ZSUI with the isolated egui, Iced, Slint and Tauri 2 baselines. The script

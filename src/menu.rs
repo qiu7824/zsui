@@ -1,5 +1,231 @@
-use crate::core::Command;
+use std::fmt;
+
+use crate::core::{Command, ZsuiError, ZsuiResult};
 use serde::{Deserialize, Serialize};
+
+/// A platform-neutral key that can participate in a native menu accelerator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZsAcceleratorKey {
+    Character(char),
+    Enter,
+    Escape,
+    Tab,
+    Space,
+    Backspace,
+    Delete,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Function(u8),
+}
+
+impl ZsAcceleratorKey {
+    pub fn validate(self) -> ZsuiResult<()> {
+        match self {
+            Self::Character(key) if key.is_ascii_alphanumeric() => Ok(()),
+            Self::Character(key) => Err(ZsuiError::invalid_spec(
+                "menu.accelerator.key",
+                format!("character accelerator `{key}` must be ASCII alphanumeric"),
+            )),
+            Self::Function(number) if (1..=24).contains(&number) => Ok(()),
+            Self::Function(number) => Err(ZsuiError::invalid_spec(
+                "menu.accelerator.key",
+                format!("function key F{number} is outside F1-F24"),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    fn label(self) -> String {
+        match self {
+            Self::Character(key) => key.to_ascii_uppercase().to_string(),
+            Self::Enter => "Enter".to_string(),
+            Self::Escape => "Escape".to_string(),
+            Self::Tab => "Tab".to_string(),
+            Self::Space => "Space".to_string(),
+            Self::Backspace => "Backspace".to_string(),
+            Self::Delete => "Delete".to_string(),
+            Self::Up => "Up".to_string(),
+            Self::Down => "Down".to_string(),
+            Self::Left => "Left".to_string(),
+            Self::Right => "Right".to_string(),
+            Self::Home => "Home".to_string(),
+            Self::End => "End".to_string(),
+            Self::PageUp => "PageUp".to_string(),
+            Self::PageDown => "PageDown".to_string(),
+            Self::Function(number) => format!("F{number}"),
+        }
+    }
+
+    #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
+    pub(crate) fn gtk_key_name(self) -> String {
+        match self {
+            Self::Character(key) => key.to_ascii_uppercase().to_string(),
+            Self::Enter => "Return".to_string(),
+            Self::Escape => "Escape".to_string(),
+            Self::Tab => "Tab".to_string(),
+            Self::Space => "space".to_string(),
+            Self::Backspace => "BackSpace".to_string(),
+            Self::Delete => "Delete".to_string(),
+            Self::Up => "Up".to_string(),
+            Self::Down => "Down".to_string(),
+            Self::Left => "Left".to_string(),
+            Self::Right => "Right".to_string(),
+            Self::Home => "Home".to_string(),
+            Self::End => "End".to_string(),
+            Self::PageUp => "Page_Up".to_string(),
+            Self::PageDown => "Page_Down".to_string(),
+            Self::Function(number) => format!("F{number}"),
+        }
+    }
+
+    #[cfg(any(test, target_os = "macos"))]
+    pub(crate) fn appkit_key_equivalent(self) -> Option<String> {
+        let value = match self {
+            Self::Character(key) => key.to_ascii_lowercase().to_string(),
+            Self::Enter => "\r".to_string(),
+            Self::Escape => "\u{1b}".to_string(),
+            Self::Tab => "\t".to_string(),
+            Self::Space => " ".to_string(),
+            Self::Backspace => "\u{8}".to_string(),
+            Self::Delete => "\u{7f}".to_string(),
+            Self::Up => "\u{f700}".to_string(),
+            Self::Down => "\u{f701}".to_string(),
+            Self::Left => "\u{f702}".to_string(),
+            Self::Right => "\u{f703}".to_string(),
+            Self::Home => "\u{f729}".to_string(),
+            Self::End => "\u{f72b}".to_string(),
+            Self::PageUp => "\u{f72c}".to_string(),
+            Self::PageDown => "\u{f72d}".to_string(),
+            Self::Function(number) if (1..=24).contains(&number) => {
+                char::from_u32(0xf703 + u32::from(number))?.to_string()
+            }
+            Self::Function(_) => return None,
+        };
+        Some(value)
+    }
+}
+
+/// A typed native menu accelerator.
+///
+/// `primary` maps to Control on Windows and Linux and Command on macOS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsAccelerator {
+    key: ZsAcceleratorKey,
+    primary: bool,
+    shift: bool,
+    alt: bool,
+    super_key: bool,
+}
+
+impl ZsAccelerator {
+    pub const fn new(key: ZsAcceleratorKey) -> Self {
+        Self {
+            key,
+            primary: false,
+            shift: false,
+            alt: false,
+            super_key: false,
+        }
+    }
+
+    pub const fn primary(key: ZsAcceleratorKey) -> Self {
+        Self {
+            primary: true,
+            ..Self::new(key)
+        }
+    }
+
+    pub fn primary_character(key: char) -> Self {
+        Self::primary(ZsAcceleratorKey::Character(key.to_ascii_uppercase()))
+    }
+
+    pub const fn shifted(mut self) -> Self {
+        self.shift = true;
+        self
+    }
+
+    pub const fn with_alt(mut self) -> Self {
+        self.alt = true;
+        self
+    }
+
+    pub const fn with_super(mut self) -> Self {
+        self.super_key = true;
+        self
+    }
+
+    pub const fn key(self) -> ZsAcceleratorKey {
+        self.key
+    }
+
+    pub const fn uses_primary(self) -> bool {
+        self.primary
+    }
+
+    pub const fn uses_shift(self) -> bool {
+        self.shift
+    }
+
+    pub const fn uses_alt(self) -> bool {
+        self.alt
+    }
+
+    pub const fn uses_super(self) -> bool {
+        self.super_key
+    }
+
+    pub fn validate(self) -> ZsuiResult<()> {
+        self.key.validate()
+    }
+
+    #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
+    pub(crate) fn gtk_accelerator(self) -> String {
+        let mut value = String::new();
+        if self.primary {
+            value.push_str("<Primary>");
+        }
+        if self.super_key {
+            value.push_str("<Super>");
+        }
+        if self.alt {
+            value.push_str("<Alt>");
+        }
+        if self.shift {
+            value.push_str("<Shift>");
+        }
+        value.push_str(&self.key.gtk_key_name());
+        value
+    }
+
+    #[cfg(any(test, target_os = "macos"))]
+    pub(crate) fn appkit_key_equivalent(self) -> Option<String> {
+        self.key.appkit_key_equivalent()
+    }
+}
+
+impl fmt::Display for ZsAccelerator {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.primary {
+            formatter.write_str("Primary+")?;
+        }
+        if self.super_key {
+            formatter.write_str("Super+")?;
+        }
+        if self.alt {
+            formatter.write_str("Alt+")?;
+        }
+        if self.shift {
+            formatter.write_str("Shift+")?;
+        }
+        formatter.write_str(&self.key.label())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MenuSpec {
@@ -62,7 +288,7 @@ pub enum MenuItemSpec {
         command: Command,
         enabled: bool,
         checked: bool,
-        accelerator: Option<String>,
+        accelerator: Option<ZsAccelerator>,
     },
     Separator,
     Submenu {
@@ -99,9 +325,9 @@ impl MenuItemSpec {
         self
     }
 
-    pub fn accelerator(mut self, value: impl Into<String>) -> Self {
+    pub fn accelerator(mut self, value: ZsAccelerator) -> Self {
         if let Self::Command { accelerator, .. } = &mut self {
-            *accelerator = Some(value.into());
+            *accelerator = Some(value);
         }
         self
     }
@@ -112,5 +338,30 @@ impl MenuItemSpec {
             Self::Separator => {}
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn typed_accelerator_has_stable_platform_forms() {
+        let accelerator = ZsAccelerator::primary_character('o').with_alt().shifted();
+
+        assert_eq!(accelerator.to_string(), "Primary+Alt+Shift+O");
+        assert_eq!(accelerator.gtk_accelerator(), "<Primary><Alt><Shift>O");
+        assert_eq!(accelerator.appkit_key_equivalent().as_deref(), Some("o"));
+        assert!(accelerator.validate().is_ok());
+    }
+
+    #[test]
+    fn typed_accelerator_rejects_nonportable_keys() {
+        assert!(ZsAccelerator::new(ZsAcceleratorKey::Character('+'))
+            .validate()
+            .is_err());
+        assert!(ZsAccelerator::new(ZsAcceleratorKey::Function(25))
+            .validate()
+            .is_err());
     }
 }
