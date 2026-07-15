@@ -360,6 +360,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "style tokens, theme data and future renderer style binding",
         ),
         ZsuiCargoFeature::new(
+            "localization",
+            Service,
+            false,
+            vec!["fluent-bundle", "sys-locale", "unic-langid"],
+            Vec::new(),
+            "application-owned Fluent catalogs, locale fallback, runtime language changes and text-direction metadata",
+        ),
+        ZsuiCargoFeature::new(
             "shell",
             Shell,
             false,
@@ -624,6 +632,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "desktop-native",
                 "desktop-winit",
                 "hotkey",
+                "localization",
                 "mobile",
                 "native-smoke",
                 "product-adapter",
@@ -678,6 +687,7 @@ mod tests {
         assert!(names.contains(&"linux-gtk"));
         assert!(names.contains(&"password-box"));
         assert!(names.contains(&"text-input-core"));
+        assert!(names.contains(&"localization"));
         assert!(!names.contains(&"button"));
         assert!(!names.contains(&"label"));
     }
@@ -731,6 +741,31 @@ mod tests {
         );
         assert!(!all_widgets.enables.contains(&"accessibility"));
         assert!(full.enables.contains(&"accessibility"));
+    }
+
+    #[test]
+    fn localization_is_an_opt_in_service_included_by_full() {
+        let manifest = zsui_feature_manifest();
+        let localization = manifest
+            .iter()
+            .find(|feature| feature.name == "localization")
+            .expect("localization feature should be listed");
+        let all_widgets = manifest
+            .iter()
+            .find(|feature| feature.name == "all-widgets")
+            .expect("all-widgets feature should be listed");
+        let full = manifest
+            .iter()
+            .find(|feature| feature.name == "full")
+            .expect("full feature should be listed");
+
+        assert!(!localization.default_enabled);
+        assert_eq!(
+            localization.optional_dependency_names,
+            vec!["fluent-bundle", "sys-locale", "unic-langid"]
+        );
+        assert!(!all_widgets.enables.contains(&"localization"));
+        assert!(full.enables.contains(&"localization"));
     }
 
     #[test]

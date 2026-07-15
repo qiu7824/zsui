@@ -10,10 +10,13 @@ readme = "README.md"
 [dependencies]
 arboard = { version = "3.4", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+fluent-bundle = { version = "0.16", optional = true }
 png = { version = "0.18", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rust_decimal = { version = "1.42.1", default-features = false, features = ["maths", "std"], optional = true }
+sys-locale = { version = "0.3.2", optional = true }
+unic-langid = { version = "0.9.6", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
 zeroize = { version = "1.8", features = ["alloc"], optional = true }
 
@@ -77,6 +80,7 @@ tabs = ["widgets-base"]
 table = ["widgets-list"]
 dark-mode = []
 style = []
+localization = ["dep:fluent-bundle", "dep:sys-locale", "dep:unic-langid"]
 shell = []
 workbench = ["button", "label", "scroll", "textbox", "style"]
 document-shell = ["style"]
@@ -112,6 +116,7 @@ full = [
     "desktop-native",
     "desktop-winit",
     "hotkey",
+    "localization",
     "mobile",
     "native-smoke",
     "product-adapter",
@@ -189,3 +194,8 @@ required-features = ["component-gallery-demo"]
 name = "product_adapter_view"
 path = "examples/product_adapter_view.rs"
 required-features = ["button", "label"]
+
+[[example]]
+name = "localization"
+path = "examples/localization.rs"
+required-features = ["localization"]

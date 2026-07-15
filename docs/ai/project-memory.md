@@ -49,6 +49,12 @@ history remain authoritative for implementation status.
   handles and `unsafe` remain confined to that backend.
 - Do not introduce a control inheritance hierarchy, string event bus, global
   mutable widget registry or an unrelated reactive runtime.
+- Localization is an opt-in application-owned service. `ZsLocalizer` uses
+  stable Fluent message ids, Unicode locale identifiers, parent/fallback
+  lookup, named values, plural/select rules and direction-isolated formatting.
+  Locale changes remain explicit application state and rebuild the View so
+  intrinsic text metrics are recomputed; do not add a process-global mutable
+  translation catalog or use source copy as message identity.
 - Demos validate framework capability; they must not define the architecture.
 - The optional document-shell boundary owns reusable `ZsTextDocument` file
   decoding, explicit dirty state and transactional UTF-8 save/save-as. Native

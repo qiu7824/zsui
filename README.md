@@ -341,6 +341,11 @@ UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，Linux
 均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择时才会
 打包全部能力。
 
+多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
+ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；切换语言走普通的
+强类型状态更新与 View 重建，不依赖全局可变翻译表。完整用法见
+[多语言文档](docs/localization.md)。
+
 ## 已有应用外壳
 
 | 能力 | 当前内容 | Feature |

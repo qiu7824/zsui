@@ -334,6 +334,10 @@ individually; `all-widgets` and `full` are included only when an application
 explicitly opts in. Native focused-text accessibility is also opt-in through
 `accessibility`: it uses UI Automation on Win32, AppKit Accessibility on macOS,
 and GTK4 Accessibility on Linux without embedding a platform editor or WebView.
+Localization is an independent `localization` service feature. Applications own
+their `ZsLocalizer`, use stable message IDs, Fluent parameters and plural rules,
+Unicode locale fallback, and normal typed state updates for runtime language
+changes. See the [localization guide](docs/localization.md).
 The `window` feature selects Win32, AppKit or GTK4 through
 target-specific dependencies, so the one-line window entry does not require an
 extra backend feature on supported desktop targets. Cargo features are additive

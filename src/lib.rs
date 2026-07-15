@@ -54,6 +54,8 @@ pub mod linux_gtk_menu;
 mod linux_gtk_renderer;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_services;
+#[cfg(feature = "localization")]
+pub mod localization;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 pub mod macos_appkit_menu;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
@@ -287,6 +289,8 @@ pub use icon::ZsIcon;
 pub use info_bar::{
     ZsInfoBarControl, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec, ZsInfoBarState,
 };
+#[cfg(feature = "localization")]
+pub use localization::{ZsLocale, ZsLocalizer, ZsMessageArgs, ZsMessageValue, ZsTextDirection};
 pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
 pub use mobile_host::{
     mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,
