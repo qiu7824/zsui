@@ -18,13 +18,37 @@ actions and scrolling share one DPI-aware layout and hit-test model.
 
 ## Workbench / 工作台
 
-![Workbench](images/workbench.png)
+![Workbench](images/workbench-v2.png)
 
 工作台组合会话导航、消息内容、代码/工具块、操作区、编辑区和检查器，同时把业务
 数据与命令留给应用。
 
 The workbench composes navigation, messages, code/tool blocks, actions, a
 composer and inspector while leaving product data and commands to the app.
+
+## Invoice Workbench Comparison / 发票工作台对比
+
+<table>
+  <tr><th>ZSUI</th><th>eframe / egui</th><th>Iced</th></tr>
+  <tr>
+    <td><img src="images/invoice-zsui.png" alt="ZSUI Invoice Workbench"></td>
+    <td><img src="images/invoice-egui.png" alt="egui Invoice Workbench"></td>
+    <td><img src="images/invoice-iced.png" alt="Iced Invoice Workbench"></td>
+  </tr>
+</table>
+<table>
+  <tr><th>Slint</th><th>Tauri 2</th></tr>
+  <tr>
+    <td><img src="images/invoice-slint.png" alt="Slint Invoice Workbench"></td>
+    <td><img src="images/invoice-tauri.png" alt="Tauri 2 Invoice Workbench"></td>
+  </tr>
+</table>
+
+相同功能、相同机器上的 release 截图和测量数据见
+[`invoice-workbench-comparison.md`](invoice-workbench-comparison.md)。
+
+See [`invoice-workbench-comparison.md`](invoice-workbench-comparison.md) for
+the release screenshots, methodology and measurements from the same machine.
 
 ## Typed Stateful View / 强类型状态界面
 
@@ -151,11 +175,13 @@ See [`calculator-demo.md`](calculator-demo.md) for the complete methodology.
 ```powershell
 cargo run --example navigation_shell_layout --features full -- --smoke
 cargo run --example workbench_shell --features full -- --smoke
+cargo run --release --example invoice_workbench
 cargo run --example desktop_native_showcase --features full -- --smoke --scenario startup --screenshot docs/platform-proof/windows/startup.png
 cargo run --example zsui_notepad --no-default-features --features notepad-demo -- --smoke
 cargo run --example zsui_calculator --no-default-features --features calculator-demo -- --smoke
 .\scripts\measure-notepad-comparison.ps1
 .\scripts\measure-calculator-comparison.ps1
+.\scripts\measure-invoice-ui-comparison.ps1
 ```
 
 Comparison file sizes marked with `*` are package components, not complete

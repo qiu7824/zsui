@@ -127,7 +127,7 @@ slint::slint! {
 
                     InfoCard {
                         title: "销售方名称_税额";
-                        description: "自定义重命名规则 · 示例：永新行业协会_28.30.pdf";
+                        description: "自定义重命名规则 · 示例：示例销售方_28.30.pdf";
                         trailing: "✓ 已启用";
                     }
 
@@ -137,7 +137,7 @@ slint::slint! {
                         Text { text: "识别状态：完成"; font-size: 13px; color: #2f8a51; }
                     }
                     if root.file-count > 0: FileCard {
-                        file-name: "永新行业协会_28.30.pdf";
+                        file-name: "示例销售方_28.30.pdf";
                         source-name: "原文件：20260714_001.pdf · 电子发票";
                         remove => { root.remove-file(); }
                     }

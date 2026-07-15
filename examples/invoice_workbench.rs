@@ -54,7 +54,7 @@ fn invoice_shell() -> ZsShellLayoutSpec {
                 .description("使用发票字段生成清晰、稳定的文件名")
                 .row(
                     ZsShellContentRowSpec::new("rule-template", "销售方名称_税额")
-                        .description("示例：永新行业协会_28.30.pdf")
+                        .description("示例：示例销售方_28.30.pdf")
                         .accessory(ZsRowAccessory::value("已启用")),
                 )
                 .row(
@@ -69,7 +69,7 @@ fn invoice_shell() -> ZsShellLayoutSpec {
         .card(
             ZsGroupCardSpec::new("files", "待处理发票 · 2")
                 .row(
-                    ZsShellContentRowSpec::new("invoice-1", "永新行业协会_28.30.pdf")
+                    ZsShellContentRowSpec::new("invoice-1", "示例销售方_28.30.pdf")
                         .description("原文件：20260714_001.pdf · 电子发票")
                         .accessory(ZsRowAccessory::button("移除", "invoice.remove.1")),
                 )

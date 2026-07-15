@@ -34,7 +34,7 @@ host/render/input paths; target-machine proof is still incomplete and is not
 substituted by the optional winit fallback.
 
 <p align="center">
-  <img src="docs/images/workbench.png" alt="ZSUI workbench" width="100%">
+  <img src="docs/images/workbench-v2.png" alt="ZSUI workbench" width="100%">
 </p>
 
 <table>
@@ -402,6 +402,10 @@ Run the standalone workbench gallery with
 real Win32 screenshot or `--manifest` for its structural report. Use
 `zsui_component_catalog_summary()` to inspect the current WinUI-style component
 coverage without treating declaration-only components as implemented.
+
+The invoice rename workbench has matching ZSUI, eframe/egui, Iced, Slint and
+Tauri 2 implementations. See the
+[`release screenshots and measurements`](docs/invoice-workbench-comparison.md).
 
 The shared notepad acceptance app combines `document-shell` with the self-drawn
 multiline editor on target-native Win32, AppKit, and GTK4 hosts. One Rust

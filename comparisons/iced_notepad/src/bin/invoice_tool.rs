@@ -141,7 +141,7 @@ impl InvoiceTool {
                 column![
                     text("自定义重命名规则").size(15),
                     text("销售方名称_税额").size(19),
-                    text("示例：永新行业协会_28.30.pdf").size(12),
+                    text("示例：示例销售方_28.30.pdf").size(12),
                 ]
                 .spacing(5),
                 space::horizontal(),
@@ -159,7 +159,7 @@ impl InvoiceTool {
         .spacing(8);
         if self.file_count > 0 {
             files = files.push(file_panel(
-                "永新行业协会_28.30.pdf",
+                "示例销售方_28.30.pdf",
                 "原文件：20260714_001.pdf · 电子发票",
             ));
         }

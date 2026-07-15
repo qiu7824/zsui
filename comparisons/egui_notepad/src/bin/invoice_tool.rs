@@ -148,7 +148,7 @@ impl InvoiceApp {
                             .color(Color32::from_rgb(36, 93, 201))
                             .strong(),
                     );
-                    ui.label(RichText::new("示例：永新行业协会_28.30.pdf").color(Color32::GRAY));
+                    ui.label(RichText::new("示例：示例销售方_28.30.pdf").color(Color32::GRAY));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
@@ -176,7 +176,7 @@ impl InvoiceApp {
         if self.file_count > 0 {
             file_card(
                 ui,
-                "永新行业协会_28.30.pdf",
+                "示例销售方_28.30.pdf",
                 "原文件：20260714_001.pdf",
                 || {
                     self.file_count = self.file_count.saturating_sub(1);

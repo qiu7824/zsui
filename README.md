@@ -18,7 +18,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/workbench.png" alt="ZSUI 工作台" width="100%">
+  <img src="docs/images/workbench-v2.png" alt="ZSUI 工作台" width="100%">
 </p>
 
 <table>
@@ -344,124 +344,13 @@ UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，Linux
 | 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域、UTF-8/UTF-16 文本加载与事务式保存 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、Fluent 键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本、按钮、保持状态按钮、强类型二维 Grid、响应式 GridView、RGBA ColorPicker、键盘优先 CommandPalette、文本/密码输入、附着式提示、模态对话框、非模态 Toast、目标式 TeachingTip、行内 InfoBar、路径式 BreadcrumbBar、复选、开关、滑块、可编辑数值框、单选、进度条/进度环、组合框、自绘日期/时间选择、标签页、树、数据表格、列表、滚动和强类型事件 | 对应 widget feature |
+| 基础 View | 文本与输入、选择控件、弹层反馈、导航、日期时间、进度、列表、树和数据表格 | 按控件启用 |
 | 分页虚拟列表 | 可见区绘制、后台预取、请求去重、LRU 页缓存、稳定锚点 | `paged-list` |
 
-组件目录当前记录 48 个桌面控件家族：45 个已有第一阶段运行面，3 个只有
-契约，没有尚未开始的目录项。独立 `grid` feature 已提供固定/比例轨道、独立行列间距、
-强类型显式单元格/跨度、DPI 缩放以及共享绘制/命中几何。DatePicker 已具备强类型日期、范围约束、本地时区“今天”标记、
-窗口边缘自动翻转与水平约束的日历弹层、外部点击与焦点丢失关闭、点击与键盘路由、
-语义主题绘制、跨 Win32/AppKit/GTK4 的自绘悬停与按下/高对比度状态，以及 Windows
-WinUI 3 风格普通与高对比度 smoke；Tabs 已具备强类型标签 ID、单一活动页、
-三平台原生键盘策略、自绘平台指标及 Windows 指针/键盘 smoke；TimePicker 已具备
-强类型 `ZsTime`、可验证的分钟步长、12/24 小时格式、自绘平台指标、共享弹层放置、
-指针/键盘选择及 Windows 实机 smoke。NumberBox 已提供可验证的有限数值范围、小/大
-步长、空值、编辑草稿、提交/取消、三平台自绘指标及 Windows 实机 smoke。ToggleButton
-已具备显式布尔状态、三平台自绘指标、悬停/按下反馈、点击与 Space 路由及 Windows
-实机 smoke。PasswordBox 已提供脱敏值/事件/绘制协议、Unicode 编辑与 IME 掩码、
-三平台自绘指标和 Windows 按住临时显示的实机 smoke；Alt+F8、完整无障碍和
-macOS/GTK 实机证据仍是明确缺口。TreeView 和只读 DataGrid 已具备强 ID、应用所有
-状态、三平台自绘指标与 Windows 交互 smoke，但无障碍、编辑/多选、虚拟化及
-AppKit/GTK 目标机证据仍待补齐。它们都保持独立 feature，不会用组合外壳冒充
-其他控件；嵌入式浏览器控件不在 v0.2 产品范围内。
-独立 `grid-view` feature 提供 `grid_view(items)` 响应式图块集合。应用持有
-`ZsGridViewItem`、稳定 `ZsGridViewItemId` 和单选状态，并接收分离的选择/调用消息；
-框架负责等宽列数、共享绘制/命中几何、单一 Tab 停靠点以及二维方向键、Home/End、
-Space/Enter 路由。Windows 按 Fluent GridView 从左到右再换行，macOS 采用紧凑
-NSCollectionView 式网格指标，GTK 采用 GtkGridView 式列宽和间距；三者都是 ZSUI
-自绘而不是伪称创建平台子控件。首轮只面向有界图库；内建滚动/虚拟化、多选、框选、
-拖放、分区、任意项模板、完整无障碍和 AppKit/GTK 目标机证据仍待完成。设计依据见
-[Microsoft ListView/GridView](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/listview-and-gridview)、
-[Apple NSCollectionView](https://developer.apple.com/documentation/appkit/nscollectionview) 与
-[GTK4 GridView](https://docs.gtk.org/gtk4/class.GridView.html)。
-独立 `color-picker` feature 提供 `color_picker(state)` 自绘颜色井和展开式颜色编辑器。
-应用显式持有 `ZsColorPickerState`，框架只负责共享绘制/命中几何、窗口内翻转约束、
-色谱/色相/通道拖动以及单一 Tab 停靠点上的 Up/Down、Left/Right、Home/End、
-Enter/Space/Escape 路由。Windows 采用 Fluent ColorPicker 的方形 HSV 色谱、色相条、
-颜色预览和 RGBA 通道结构，且在没有精确文本输入的首轮实现中保持至少 256-DP 高的
-方形色谱；macOS 采用 NSColorWell/自定义颜色面板的紧凑滑块模式，GTK 采用
-ColorDialogButton 式入口和 HSV 编辑面。三平台都走 ZSUI 的共享绘制协议，不创建或
-驱动平台子控件。Windows 已有真实截图和色谱拖动/键盘交互报告；可编辑 RGB/HSV/
-十六进制字段、色板/吸管、无障碍、HDR 色彩空间和 AppKit/GTK 目标机证据仍待完成。
-这是有意限定的 WinUI 风格首轮实现，而不是对 WinUI 3 默认 ColorPicker 的逐项等价
-声明。设计依据见
-[Microsoft ColorPicker](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/color-picker)、
-[Apple color wells](https://developer.apple.com/design/human-interface-guidelines/color-wells) 与
-[GTK4 ColorDialogButton](https://docs.gtk.org/gtk4/class.ColorDialogButton.html)。
-独立 `command-palette` feature 提供 `command_palette(widget, open, query, items, page)`
-键盘优先模态命令面板。应用持有强类型命令 ID、显示元数据、查询、高亮和开关状态，
-并自行执行收到的命令；框架只做稳定的多词子串过滤、最多八行的共享绘制/命中、
-Up/Down/Home/End 高亮、Enter 调用、Escape/遮罩关闭和单一搜索焦点范围。禁用命令仍
-显示但不会被键盘选中。Windows 采用 Fluent/PowerToys 启动器式指标，macOS 采用
-Spotlight/NSSearchField 式紧凑指标，GTK 采用 SearchEntry/列表弹层式指标，三者均为
-各自平台惯例指导下的 ZSUI 自绘，不创建或驱动平台子控件。模糊/拼音排序、最近命令
-持久化、结果虚拟化、完整无障碍语义及 AppKit/GTK 目标机证据仍待完成。设计依据见
-[PowerToys Command Palette](https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview)、
-[WinUI commanding](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/commanding)、
-[AppKit NSSearchField](https://developer.apple.com/documentation/appkit/nssearchfield) 与
-[GTK4 SearchEntry](https://docs.gtk.org/gtk4/class.SearchEntry.html)。
-ToolTip 通过 `.tooltip(...)` 或 `.tooltip_spec(...)` 附着到具有稳定 ID 的节点，
-不增加命中目标，也不嵌入平台子控件。它按 Windows/macOS/GTK 内部指标自绘，支持
-延迟悬停、键盘焦点立即显示、自动翻转/窗口内约束和定时关闭；Windows 已有真实
-缓冲绘制截图，跨窗口边界弹出、完整无障碍关系和 macOS/GTK 目标机证据仍待完成。
-独立 `dialog` feature 提供 `content_dialog(id, open, spec, page)` 组合式模态层。
-应用持有开关状态并接收 `ZsContentDialogResult`，框架负责遮罩、焦点陷阱、语义按钮、
-Escape/Tab/方向键/Enter/Space 路由和 Windows/macOS/GTK 各自的按钮顺序与尺寸。
-整个对话框继续使用共享自绘树，不创建子 HWND、NSView 或 GtkWidget；Windows 已有
-真实缓冲绘制与交互 smoke，自定义 View 内容、响应延迟、完整无障碍和 AppKit/GTK
-目标机证据仍待完成。
-独立 `toast` feature 提供 `toast_presenter(id, toast, page)` 非模态组合层。应用持有
-`Option<ZsToastSpec>` 并按稳定 `ZsToastId` 接收 `ZsToastResult`；框架负责一个可选操作、
-始终可用的关闭入口、Escape/方向键/Enter/Space、5/10 秒或持久时长以及窗口底部居中
-放置。它不是系统通知的仿制品：Windows 采用无目标 TeachingTip 式 Fluent 表面，macOS
-采用低干扰前台反馈，GTK 采用 AdwToast 式单操作与关闭结构，均继续走共享自绘和缓冲
-绘制路径。Windows 已有真实截图和键盘交互证据；无障碍 live region、悬停/焦点暂停、
-队列/优先级和 AppKit/GTK 目标机证据仍待完成。设计依据见
-[Microsoft TeachingTip](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/teaching-tip)、
-[Apple Notifications](https://developer.apple.com/design/human-interface-guidelines/notifications/) 与
-[AdwToast](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.Toast.html)。
-独立 `teaching-tip` feature 提供
-`teaching_tip(id, open, target_id, spec, page)` 目标式教学提示。应用持有显隐状态并按
-稳定目标 `WidgetId` 接收 `ZsTeachingTipResult`；框架负责指向目标的三角尾部、窗口内
-自动翻转与约束、一个可选操作、始终可用的关闭入口，以及 Escape/方向键/Enter/Space
-路由。Windows 使用 Fluent TeachingTip 指标，macOS 使用克制的 NSPopover 式指标，
-GTK 使用 GtkPopover 式指标；三者共享同一自绘树，不创建平台子控件。Windows 已有真实
-截图和键盘交互证据；light-dismiss、关闭延迟/取消、任意 View/图标/hero 内容、完整
-无障碍、RTL/全部放置方向和 AppKit/GTK 目标机证据仍待完成。设计依据见
-[Microsoft TeachingTip](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/teaching-tip)、
-[Apple Popovers](https://developer.apple.com/design/human-interface-guidelines/popovers/) 与
-[GtkPopover](https://docs.gtk.org/gtk4/class.Popover.html)。
-独立 `info-bar` feature 提供 `info_bar(id, spec)` 行内状态面。应用决定它是否存在，
-并接收 `ZsInfoBarEvent::Action` 或 `Close`；框架负责信息/成功/警告/错误严重级别、
-语义图标、标题与正文、一个可选操作、默认可关闭入口，以及方向键/Enter/Space/Escape
-路由。它始终占据普通布局而不覆盖页面：Windows 采用 Fluent InfoBar 式强调边与
-高度，macOS 采用克制的系统状态色圆角面，GTK 采用 AdwBanner 式紧凑行内面，均由
-共享树自绘。Windows 已有真实截图和键盘交互证据；live-region、复杂自定义内容、
-双向布局和 AppKit/GTK 目标机证据仍待完成。设计依据见
-[Microsoft InfoBar](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar)、
-[Apple NSAlert](https://developer.apple.com/documentation/appkit/nsalert)（用于明确不采用模态
-Alert 外形）与 [AdwBanner](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.Banner.html)。
-独立 `breadcrumb` feature 提供 `breadcrumb_bar(items)` 根到当前位置路径。应用持有
-稳定 `ZsBreadcrumbId`、路径数据和展开状态，并接收强类型选择/展开消息；框架负责
-单一 Tab 停靠点、方向键/Home/End/Enter/Space/Escape 路由，以及空间不足时的省略号
-和隐藏层级弹层。Windows 按 Fluent BreadcrumbBar 折叠左侧层级，macOS 保留根项并
-采用紧凑 Path Control 式指标；GTK 没有可假装调用的公共 breadcrumb 控件，因此使用
-符合 GNOME 层级导航与 Adwaita 尺寸习惯的 ZSUI 自绘指标。三者共享同一强类型布局、
-命中与绘制树，不创建平台子控件。Windows 已有真实缓冲绘制和键盘交互证据；完整
-无障碍、图标/可编辑文件路径、拖放、RTL 和 AppKit/GTK 目标机证据仍待完成。设计依据见
-[Microsoft BreadcrumbBar](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/breadcrumbbar)、
-[Apple Path Controls](https://developer.apple.com/design/human-interface-guidelines/path-controls) 与
-[GNOME Navigation](https://developer.gnome.org/hig/guidelines/navigation.html)。
-独立 `progress-ring` feature 提供非交互的确定/不确定进度环，共享抗锯齿圆弧命令，
-按 WinUI、AppKit 与 GTK4 的内部尺寸和速度配置自绘。三平台事件循环均由框架定时器
-推进动画；Windows 已有真实缓冲绘制截图，macOS/GTK 目标机动画证据仍待补齐。
-
-查看机器可读目录：
-
-```rust
-let summary = zsui::zsui_component_catalog_summary();
-println!("{summary:#?}");
-```
+组件目录记录 48 个桌面控件家族，其中 45 个已有第一阶段运行面，3 个保留为契约。
+控件均通过独立 Cargo feature 按需启用，并复用强类型状态、布局、绘制和事件协议。
+详细能力与验证状态以 [`src/component_catalog.rs`](src/component_catalog.rs) 和
+[`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md) 为准。
 
 ## 真实示例
 
@@ -491,6 +380,13 @@ cargo run --example paged_virtual_list --no-default-features --features window,b
 
 ```powershell
 cargo run --example workbench_shell --features full
+```
+
+发票重命名工作台还提供 ZSUI、eframe/egui、Iced、Slint 和 Tauri 2 的同功能
+[截图与 release 测量对比](docs/invoice-workbench-comparison.md)：
+
+```powershell
+cargo run --release --example invoice_workbench
 ```
 
 ### 现代记事本
