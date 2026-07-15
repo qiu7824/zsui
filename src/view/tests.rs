@@ -177,7 +177,7 @@ mod tests {
             button_bounds,
             Rect {
                 x: 0,
-                y: 48,
+                y: 20,
                 width: 120,
                 height: 32,
             }
@@ -200,7 +200,7 @@ mod tests {
                 if text.text == "Copy"
                     && text.bounds == Rect {
                         x: 11,
-                        y: 53,
+                        y: 25,
                         width: 98,
                         height: 21,
                     }
@@ -244,6 +244,43 @@ mod tests {
         assert_eq!(navigation_bounds.width, 240);
         assert_eq!(content_bounds.x, 252);
         assert_eq!(content_bounds.width, 708);
+    }
+
+    #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn row_uses_intrinsic_child_height_inside_a_column() {
+        let row_id = WidgetId::new(711);
+        let button_id = WidgetId::new(712);
+        let mut view: ViewNode<()> = column([
+            text("Heading"),
+            row([text("Action"), button("Save").id(button_id)])
+                .id(row_id)
+                .gap(Dp::new(8.0)),
+            text("Status"),
+        ])
+        .gap(Dp::new(12.0));
+
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 480,
+                height: 320,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("nested row child should expose layout bounds")
+                .bounds
+        };
+
+        assert_eq!(bounds_for(row_id).height, 32);
+        assert_eq!(bounds_for(button_id).height, 32);
+        assert_eq!(bounds_for(row_id).y, 32);
     }
 
     #[test]
@@ -494,7 +531,7 @@ mod tests {
 
         assert_eq!(plan.hit_target_count(), 1);
         assert_eq!(
-            plan.target_kind_at(Point { x: 60, y: 104 }),
+            plan.target_kind_at(Point { x: 60, y: 36 }),
             Some(ViewHitTargetKind::Button)
         );
         assert_eq!(
@@ -503,7 +540,7 @@ mod tests {
             Some(ViewHitTargetKind::Button)
         );
         assert_eq!(
-            plan.click_event_at(Point { x: 60, y: 104 }),
+            plan.click_event_at(Point { x: 60, y: 36 }),
             Some(ViewEvent::Click { widget: save_id })
         );
         assert_eq!(
@@ -2433,8 +2470,8 @@ mod tests {
         let bottom = WidgetId::new(21);
         let scroll_id = WidgetId::new(22);
         let mut view: ViewNode<Msg> = scroll(column([
-            text("Top row").id(top),
-            text("Bottom row").id(bottom),
+            text("Top row").id(top).height(Dp::new(60.0)),
+            text("Bottom row").id(bottom).height(Dp::new(60.0)),
         ]))
         .id(scroll_id)
         .content_height(Dp::new(120.0))

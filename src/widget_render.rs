@@ -97,6 +97,231 @@ use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
 #[cfg(feature = "color-picker")]
 use crate::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
 
+/// Desktop-native sizing used by the small built-in control surfaces.
+///
+/// Windows values mirror the WinUI theme-resource geometry used by ZSUI's
+/// self-drawn controls. AppKit and GTK values preserve their denser desktop
+/// control character instead of reusing the Windows profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsBaseControlPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+impl ZsBaseControlPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsBaseControlMetrics {
+    pub body_line_height: Dp,
+    pub average_character_width: Dp,
+    pub button_minimum_width: Dp,
+    pub button_height: Dp,
+    pub button_radius: Dp,
+    pub button_padding_left: Dp,
+    pub button_padding_top: Dp,
+    pub button_padding_right: Dp,
+    pub button_padding_bottom: Dp,
+    pub text_input_minimum_width: Dp,
+    pub text_input_height: Dp,
+    pub text_input_radius: Dp,
+    pub text_input_padding_left: Dp,
+    pub text_input_padding_top: Dp,
+    pub text_input_padding_right: Dp,
+    pub text_input_padding_bottom: Dp,
+    pub check_minimum_width: Dp,
+    pub check_height: Dp,
+    pub check_indicator_size: Dp,
+    pub toggle_width: Dp,
+    pub toggle_height: Dp,
+    pub toggle_track_width: Dp,
+    pub toggle_track_height: Dp,
+    pub toggle_knob_off_size: Dp,
+    pub toggle_knob_on_size: Dp,
+    pub slider_minimum_width: Dp,
+    pub slider_height: Dp,
+    pub slider_track_height: Dp,
+    pub slider_thumb_size: Dp,
+    pub radio_minimum_width: Dp,
+    pub radio_height: Dp,
+    pub radio_indicator_size: Dp,
+    pub radio_dot_size: Dp,
+    pub progress_slot_height: Dp,
+    pub progress_track_height: Dp,
+    pub selection_minimum_width: Dp,
+    pub selection_height: Dp,
+    pub time_picker_minimum_width: Dp,
+}
+
+impl ZsBaseControlMetrics {
+    pub const fn for_platform(platform: ZsBaseControlPlatformStyle) -> Self {
+        match platform {
+            ZsBaseControlPlatformStyle::Windows => Self {
+                body_line_height: Dp::new(20.0),
+                average_character_width: Dp::new(7.2),
+                button_minimum_width: Dp::new(120.0),
+                button_height: Dp::new(32.0),
+                button_radius: Dp::new(4.0),
+                button_padding_left: Dp::new(11.0),
+                button_padding_top: Dp::new(5.0),
+                button_padding_right: Dp::new(11.0),
+                button_padding_bottom: Dp::new(6.0),
+                text_input_minimum_width: Dp::new(64.0),
+                text_input_height: Dp::new(32.0),
+                text_input_radius: Dp::new(4.0),
+                text_input_padding_left: Dp::new(10.0),
+                text_input_padding_top: Dp::new(5.0),
+                text_input_padding_right: Dp::new(6.0),
+                text_input_padding_bottom: Dp::new(6.0),
+                check_minimum_width: Dp::new(120.0),
+                check_height: Dp::new(32.0),
+                check_indicator_size: Dp::new(20.0),
+                toggle_width: Dp::new(48.0),
+                toggle_height: Dp::new(32.0),
+                toggle_track_width: Dp::new(40.0),
+                toggle_track_height: Dp::new(20.0),
+                toggle_knob_off_size: Dp::new(12.0),
+                toggle_knob_on_size: Dp::new(14.0),
+                slider_minimum_width: Dp::new(120.0),
+                slider_height: Dp::new(32.0),
+                slider_track_height: Dp::new(4.0),
+                slider_thumb_size: Dp::new(18.0),
+                radio_minimum_width: Dp::new(120.0),
+                radio_height: Dp::new(32.0),
+                radio_indicator_size: Dp::new(20.0),
+                radio_dot_size: Dp::new(8.0),
+                progress_slot_height: Dp::new(16.0),
+                progress_track_height: Dp::new(3.0),
+                selection_minimum_width: Dp::new(120.0),
+                selection_height: Dp::new(32.0),
+                time_picker_minimum_width: Dp::new(242.0),
+            },
+            ZsBaseControlPlatformStyle::Macos => Self {
+                body_line_height: Dp::new(18.0),
+                average_character_width: Dp::new(6.8),
+                button_minimum_width: Dp::new(82.0),
+                button_height: Dp::new(28.0),
+                button_radius: Dp::new(6.0),
+                button_padding_left: Dp::new(12.0),
+                button_padding_top: Dp::new(4.0),
+                button_padding_right: Dp::new(12.0),
+                button_padding_bottom: Dp::new(4.0),
+                text_input_minimum_width: Dp::new(72.0),
+                text_input_height: Dp::new(28.0),
+                text_input_radius: Dp::new(5.0),
+                text_input_padding_left: Dp::new(7.0),
+                text_input_padding_top: Dp::new(4.0),
+                text_input_padding_right: Dp::new(7.0),
+                text_input_padding_bottom: Dp::new(4.0),
+                check_minimum_width: Dp::new(82.0),
+                check_height: Dp::new(22.0),
+                check_indicator_size: Dp::new(14.0),
+                toggle_width: Dp::new(42.0),
+                toggle_height: Dp::new(28.0),
+                toggle_track_width: Dp::new(36.0),
+                toggle_track_height: Dp::new(20.0),
+                toggle_knob_off_size: Dp::new(16.0),
+                toggle_knob_on_size: Dp::new(16.0),
+                slider_minimum_width: Dp::new(96.0),
+                slider_height: Dp::new(28.0),
+                slider_track_height: Dp::new(3.0),
+                slider_thumb_size: Dp::new(14.0),
+                radio_minimum_width: Dp::new(82.0),
+                radio_height: Dp::new(22.0),
+                radio_indicator_size: Dp::new(16.0),
+                radio_dot_size: Dp::new(6.0),
+                progress_slot_height: Dp::new(12.0),
+                progress_track_height: Dp::new(3.0),
+                selection_minimum_width: Dp::new(96.0),
+                selection_height: Dp::new(28.0),
+                time_picker_minimum_width: Dp::new(120.0),
+            },
+            ZsBaseControlPlatformStyle::Gtk => Self {
+                body_line_height: Dp::new(20.0),
+                average_character_width: Dp::new(7.2),
+                button_minimum_width: Dp::new(86.0),
+                button_height: Dp::new(34.0),
+                button_radius: Dp::new(6.0),
+                button_padding_left: Dp::new(14.0),
+                button_padding_top: Dp::new(6.0),
+                button_padding_right: Dp::new(14.0),
+                button_padding_bottom: Dp::new(6.0),
+                text_input_minimum_width: Dp::new(80.0),
+                text_input_height: Dp::new(34.0),
+                text_input_radius: Dp::new(6.0),
+                text_input_padding_left: Dp::new(10.0),
+                text_input_padding_top: Dp::new(6.0),
+                text_input_padding_right: Dp::new(10.0),
+                text_input_padding_bottom: Dp::new(6.0),
+                check_minimum_width: Dp::new(86.0),
+                check_height: Dp::new(34.0),
+                check_indicator_size: Dp::new(20.0),
+                toggle_width: Dp::new(52.0),
+                toggle_height: Dp::new(34.0),
+                toggle_track_width: Dp::new(44.0),
+                toggle_track_height: Dp::new(24.0),
+                toggle_knob_off_size: Dp::new(16.0),
+                toggle_knob_on_size: Dp::new(18.0),
+                slider_minimum_width: Dp::new(120.0),
+                slider_height: Dp::new(34.0),
+                slider_track_height: Dp::new(4.0),
+                slider_thumb_size: Dp::new(18.0),
+                radio_minimum_width: Dp::new(86.0),
+                radio_height: Dp::new(34.0),
+                radio_indicator_size: Dp::new(20.0),
+                radio_dot_size: Dp::new(8.0),
+                progress_slot_height: Dp::new(16.0),
+                progress_track_height: Dp::new(4.0),
+                selection_minimum_width: Dp::new(120.0),
+                selection_height: Dp::new(34.0),
+                time_picker_minimum_width: Dp::new(140.0),
+            },
+        }
+    }
+
+    pub fn estimated_text_width(self, text: &str) -> Dp {
+        let units = text
+            .chars()
+            .map(|character| if character.is_ascii() { 1.0 } else { 1.75 })
+            .sum::<f32>();
+        Dp::new(units * self.average_character_width.0)
+    }
+
+    pub fn button_minimum_width_for_label(self, label: &str) -> Dp {
+        Dp::new(self.button_minimum_width.0.max(
+            self.estimated_text_width(label).0
+                + self.button_padding_left.0
+                + self.button_padding_right.0,
+        ))
+    }
+
+    pub fn check_minimum_width_for_label(self, label: &str) -> Dp {
+        Dp::new(
+            self.check_minimum_width
+                .0
+                .max(self.check_indicator_size.0 + 8.0 + self.estimated_text_width(label).0),
+        )
+    }
+
+    pub fn radio_minimum_width_for_label(self, label: &str) -> Dp {
+        Dp::new(
+            self.radio_minimum_width
+                .0
+                .max(self.radio_indicator_size.0 + 8.0 + self.estimated_text_width(label).0),
+        )
+    }
+}
+
 #[cfg(feature = "info-bar")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsInfoBarPlatformStyle {
@@ -141,7 +366,7 @@ impl ZsInfoBarMetrics {
     pub const fn for_platform(platform: ZsInfoBarPlatformStyle) -> Self {
         match platform {
             ZsInfoBarPlatformStyle::Windows => Self {
-                minimum_height: Dp::new(64.0),
+                minimum_height: Dp::new(48.0),
                 horizontal_padding: Dp::new(16.0),
                 vertical_padding: Dp::new(10.0),
                 content_gap: Dp::new(12.0),
@@ -186,6 +411,24 @@ impl ZsInfoBarMetrics {
                 average_character_width: Dp::new(7.2),
             },
         }
+    }
+
+    pub fn desired_height(self, spec: &crate::ZsInfoBarSpec) -> Dp {
+        let text_height = match (
+            spec.title_text().is_some(),
+            !spec.message().trim().is_empty(),
+        ) {
+            (true, true) => self.title_line_height.0 + self.message_line_height.0,
+            (true, false) => self.title_line_height.0,
+            (false, true) => self.message_line_height.0,
+            (false, false) => 0.0,
+        };
+        let desired = self
+            .minimum_height
+            .0
+            .max(text_height + self.vertical_padding.0 * 2.0)
+            .max(self.control_height.0 + self.vertical_padding.0 * 2.0);
+        Dp::new((desired / 4.0).ceil() * 4.0)
     }
 }
 
@@ -1911,11 +2154,35 @@ pub fn zs_toggle_render_plan(
     checked: bool,
     dpi: Dpi,
 ) -> ZsToggleRenderPlan {
-    let row_h = bounds.height.max(scale(24, dpi));
-    let row_w = bounds.width.max(scale(48, dpi));
-    let track_height = ((row_h * 20) / 32).clamp(scale(20, dpi), row_h - scale(4, dpi));
-    let track_width =
-        ((track_height * 40) / 20).clamp(track_height + scale(12, dpi), row_w - scale(6, dpi));
+    zs_toggle_render_plan_for_platform(
+        bounds,
+        hovered,
+        checked,
+        ZsBaseControlPlatformStyle::current(),
+        dpi,
+    )
+}
+
+pub fn zs_toggle_render_plan_for_platform(
+    bounds: Rect,
+    hovered: bool,
+    checked: bool,
+    platform: ZsBaseControlPlatformStyle,
+    dpi: Dpi,
+) -> ZsToggleRenderPlan {
+    let metrics = ZsBaseControlMetrics::for_platform(platform);
+    let track_height = metrics
+        .toggle_track_height
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
+    let track_width = metrics
+        .toggle_track_width
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.width.max(1))
+        .max(track_height);
     let track_x = bounds.x + (bounds.width - track_width) / 2;
     let track_y = bounds.y + (bounds.height - track_height) / 2;
     let track = Rect {
@@ -1924,19 +2191,19 @@ pub fn zs_toggle_render_plan(
         width: track_width,
         height: track_height,
     };
-    let track_radius = (track_height / 2).max(scale(6, dpi));
-
-    let knob_size = if checked {
-        ((track_height * 14) / 20).max(scale(12, dpi))
+    let track_radius = (track_height / 2).max(1);
+    let preferred_knob = if checked {
+        metrics.toggle_knob_on_size
     } else {
-        ((track_height * 12) / 20).max(scale(10, dpi))
+        metrics.toggle_knob_off_size
     };
+    let knob_size = preferred_knob
+        .to_px(dpi)
+        .round_i32()
+        .min(track_height)
+        .max(1);
     let knob_y = track_y + (track_height - knob_size) / 2;
-    let knob_pad = if checked {
-        ((track_height - knob_size) / 2).max(scale(3, dpi))
-    } else {
-        ((track_height - knob_size) / 2).max(scale(4, dpi))
-    };
+    let knob_pad = ((track_height - knob_size) / 2).max(1);
     let knob_x = if checked {
         track_x + track_width - knob_size - knob_pad
     } else {
@@ -1953,7 +2220,7 @@ pub fn zs_toggle_render_plan(
             height: knob_size,
         },
         track_radius,
-        knob_radius: scale(if checked { 7 } else { 6 }, dpi),
+        knob_radius: (knob_size / 2).max(1),
         hovered,
         checked,
     }
@@ -2187,9 +2454,30 @@ pub struct ZsSliderRenderPlan {
 
 #[cfg(feature = "slider")]
 pub fn zs_slider_render_plan(bounds: Rect, fraction: f32, dpi: Dpi) -> ZsSliderRenderPlan {
-    let thumb_size = scale(16, dpi).min(bounds.height.max(1)).max(1);
+    zs_slider_render_plan_for_platform(bounds, fraction, ZsBaseControlPlatformStyle::current(), dpi)
+}
+
+#[cfg(feature = "slider")]
+pub fn zs_slider_render_plan_for_platform(
+    bounds: Rect,
+    fraction: f32,
+    platform: ZsBaseControlPlatformStyle,
+    dpi: Dpi,
+) -> ZsSliderRenderPlan {
+    let metrics = ZsBaseControlMetrics::for_platform(platform);
+    let thumb_size = metrics
+        .slider_thumb_size
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
     let thumb_radius = (thumb_size / 2).max(1);
-    let track_height = scale(4, dpi).min(bounds.height.max(1)).max(1);
+    let track_height = metrics
+        .slider_track_height
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
     let track_x = bounds.x.saturating_add(thumb_radius);
     let track_width = bounds
         .width
@@ -2477,7 +2765,23 @@ pub struct ZsRadioRenderPlan {
 
 #[cfg(feature = "radio")]
 pub fn zs_radio_render_plan(bounds: Rect, selected: bool, dpi: Dpi) -> ZsRadioRenderPlan {
-    let indicator_size = scale(20, dpi).min(bounds.height.max(1)).max(1);
+    zs_radio_render_plan_for_platform(bounds, selected, ZsBaseControlPlatformStyle::current(), dpi)
+}
+
+#[cfg(feature = "radio")]
+pub fn zs_radio_render_plan_for_platform(
+    bounds: Rect,
+    selected: bool,
+    platform: ZsBaseControlPlatformStyle,
+    dpi: Dpi,
+) -> ZsRadioRenderPlan {
+    let metrics = ZsBaseControlMetrics::for_platform(platform);
+    let indicator_size = metrics
+        .radio_indicator_size
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
     let indicator_radius = (indicator_size / 2).max(1);
     let indicator = Rect {
         x: bounds.x,
@@ -2487,7 +2791,12 @@ pub fn zs_radio_render_plan(bounds: Rect, selected: bool, dpi: Dpi) -> ZsRadioRe
         width: indicator_size,
         height: indicator_size,
     };
-    let dot_size = scale(8, dpi).min(indicator_size).max(1);
+    let dot_size = metrics
+        .radio_dot_size
+        .to_px(dpi)
+        .round_i32()
+        .min(indicator_size)
+        .max(1);
     let dot_inset = (indicator_size.saturating_sub(dot_size)) / 2;
     ZsRadioRenderPlan {
         bounds,
@@ -2541,7 +2850,28 @@ pub fn zs_progress_bar_render_plan(
     fraction: f32,
     dpi: Dpi,
 ) -> ZsProgressBarRenderPlan {
-    let track_height = scale(4, dpi).min(bounds.height.max(1)).max(1);
+    zs_progress_bar_render_plan_for_platform(
+        bounds,
+        fraction,
+        ZsBaseControlPlatformStyle::current(),
+        dpi,
+    )
+}
+
+#[cfg(feature = "progress")]
+pub fn zs_progress_bar_render_plan_for_platform(
+    bounds: Rect,
+    fraction: f32,
+    platform: ZsBaseControlPlatformStyle,
+    dpi: Dpi,
+) -> ZsProgressBarRenderPlan {
+    let metrics = ZsBaseControlMetrics::for_platform(platform);
+    let track_height = metrics
+        .progress_track_height
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
     let track = Rect {
         x: bounds.x,
         y: bounds
@@ -2635,7 +2965,7 @@ impl ZsTabViewMetrics {
                 outer_inset: Dp::new(0.0),
                 item_gap: Dp::new(2.0),
                 horizontal_padding: Dp::new(16.0),
-                minimum_item_width: Dp::new(120.0),
+                minimum_item_width: Dp::new(100.0),
                 maximum_item_width: Dp::new(240.0),
                 radius: Dp::new(8.0),
                 selection_indicator_height: Dp::new(2.0),
@@ -7224,6 +7554,7 @@ fn place_popup(
     }
 }
 
+#[allow(dead_code)]
 fn scale(value: i32, dpi: Dpi) -> i32 {
     Dp::new(value as f32).to_px(dpi).round_i32().max(1)
 }
@@ -7231,6 +7562,36 @@ fn scale(value: i32, dpi: Dpi) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base_control_metrics_keep_windows_exact_and_platform_profiles_distinct() {
+        let windows = ZsBaseControlMetrics::for_platform(ZsBaseControlPlatformStyle::Windows);
+        let macos = ZsBaseControlMetrics::for_platform(ZsBaseControlPlatformStyle::Macos);
+        let gtk = ZsBaseControlMetrics::for_platform(ZsBaseControlPlatformStyle::Gtk);
+
+        assert_eq!(windows.button_minimum_width, Dp::new(120.0));
+        assert_eq!(windows.button_height, Dp::new(32.0));
+        assert_eq!(windows.button_radius, Dp::new(4.0));
+        assert_eq!(windows.text_input_height, Dp::new(32.0));
+        assert_eq!(windows.check_indicator_size, Dp::new(20.0));
+        assert_eq!(windows.toggle_track_width, Dp::new(40.0));
+        assert_eq!(windows.slider_thumb_size, Dp::new(18.0));
+        assert_eq!(windows.selection_height, Dp::new(32.0));
+        assert_eq!(windows.time_picker_minimum_width, Dp::new(242.0));
+        assert!(
+            windows
+                .button_minimum_width_for_label("Open command palette")
+                .0
+                > windows.button_minimum_width.0
+        );
+        assert!(
+            windows.check_minimum_width_for_label("Automatic updates").0
+                > windows.check_minimum_width.0
+        );
+        assert!(macos.button_height.0 < windows.button_height.0);
+        assert!(gtk.button_height.0 > windows.button_height.0);
+        assert_ne!(macos.text_input_radius, gtk.text_input_radius);
+    }
 
     #[cfg(feature = "tree")]
     #[test]
@@ -7569,13 +7930,13 @@ mod tests {
         assert!(windows.close_bounds.unwrap().x > windows.action_bounds.unwrap().x);
         assert!(windows.title_bounds.is_some());
         assert!(windows.message_bounds.is_some());
-        assert!(
-            ZsInfoBarMetrics::for_platform(ZsInfoBarPlatformStyle::Windows)
-                .minimum_height
-                .0
-                > ZsInfoBarMetrics::for_platform(ZsInfoBarPlatformStyle::Gtk)
-                    .minimum_height
-                    .0
+        assert_eq!(
+            ZsInfoBarMetrics::for_platform(ZsInfoBarPlatformStyle::Windows).minimum_height,
+            Dp::new(48.0)
+        );
+        assert_eq!(
+            ZsInfoBarMetrics::for_platform(ZsInfoBarPlatformStyle::Windows).desired_height(&spec),
+            Dp::new(60.0)
         );
 
         let draw = zs_info_bar_native_draw_plan(&windows, &spec);
@@ -7897,6 +8258,8 @@ mod tests {
         let gtk = ZsTabViewMetrics::for_platform(ZsTabPlatformStyle::Gtk);
 
         assert!(windows.strip_height.0 > macos.strip_height.0);
+        assert_eq!(windows.minimum_item_width, Dp::new(100.0));
+        assert_eq!(windows.maximum_item_width, Dp::new(240.0));
         assert!(macos.outer_inset.0 > windows.outer_inset.0);
         assert!(gtk.selection_indicator_height.0 > windows.selection_indicator_height.0);
         assert!(!ZsTabPlatformStyle::Windows.arrow_selects());
@@ -8065,8 +8428,8 @@ mod tests {
             Dpi::standard(),
         );
 
-        assert_eq!(plan.track.x, 8);
-        assert_eq!(plan.track.width, 184);
+        assert_eq!(plan.track.x, 9);
+        assert_eq!(plan.track.width, 182);
         assert_eq!(plan.filled_track.width, 46);
         assert_eq!(plan.thumb.x, 46);
         assert!(matches!(
@@ -8126,7 +8489,7 @@ mod tests {
         let plan = zs_progress_bar_render_plan(bounds, 0.625, Dpi::standard());
 
         assert_eq!(plan.track.width, 200);
-        assert_eq!(plan.track.height, 4);
+        assert_eq!(plan.track.height, 3);
         assert_eq!(plan.filled_track.expect("determinate fill").width, 125);
         assert_eq!(zs_progress_bar_native_draw_plan(&plan).command_count(), 2);
         assert_eq!(

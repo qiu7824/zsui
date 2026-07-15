@@ -29,6 +29,7 @@ use crate::native_input_visuals::{
 };
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "button",
     feature = "breadcrumb",
     feature = "color-picker",
     feature = "date-picker",

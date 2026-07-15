@@ -134,6 +134,7 @@ pub fn teaching_tip<Msg>(
 #[cfg(feature = "info-bar")]
 pub fn info_bar<Msg>(widget: WidgetId, spec: crate::ZsInfoBarSpec) -> ViewNode<Msg> {
     let metrics = crate::ZsInfoBarMetrics::for_platform(crate::ZsInfoBarPlatformStyle::current());
+    let desired_height = metrics.desired_height(&spec);
     let focused_control = spec.initial_control();
     ViewNode::<Msg>::new(ViewNodeKind::InfoBar {
         spec,
@@ -141,5 +142,5 @@ pub fn info_bar<Msg>(widget: WidgetId, spec: crate::ZsInfoBarSpec) -> ViewNode<M
         on_event: None,
     })
     .id(widget)
-    .height(metrics.minimum_height)
+    .height(desired_height)
 }

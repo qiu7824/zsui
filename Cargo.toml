@@ -1,6 +1,6 @@
 [package]
 name = "zsui"
-version = "0.1.0"
+version = "0.2.0-preview.1"
 edition = "2021"
 license = "MPL-2.0"
 repository = "https://github.com/qiu7824/zsui"
@@ -94,6 +94,7 @@ native-smoke = ["image"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "clipboard", "document-shell"]
 calculator-demo = ["windows-gdi", "calculator"]
+component-gallery-demo = ["window", "all-widgets", "native-smoke", "style", "dark-mode"]
 desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
@@ -178,6 +179,11 @@ required-features = ["window", "button", "label", "paged-list"]
 name = "desktop_native_showcase"
 path = "examples/desktop_native_showcase.rs"
 required-features = ["desktop-native", "window", "button", "label", "textbox", "toggle", "list", "scroll", "style"]
+
+[[example]]
+name = "component_gallery"
+path = "examples/component_gallery.rs"
+required-features = ["component-gallery-demo"]
 
 [[example]]
 name = "product_adapter_view"

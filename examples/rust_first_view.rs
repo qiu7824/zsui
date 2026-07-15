@@ -32,13 +32,11 @@ fn view(state: &AppState) -> ViewNode<Msg> {
                 .id(DARK_MODE)
                 .on_toggle(Msg::DarkModeChanged),
         ]),
-        button("Save")
-            .id(SAVE)
-            .padding(Dp::new(12.0))
-            .radius(Dp::new(8.0))
-            .on_click(Msg::SaveClicked),
+        button("Save").id(SAVE).on_click(Msg::SaveClicked),
         text(format!("Saved {} time(s)", state.save_count)),
     ])
+    .gap(Dp::new(12.0))
+    .padding(Dp::new(20.0))
 }
 
 fn update(state: &mut AppState, msg: Msg, cx: &mut AppCx) {
@@ -76,10 +74,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             NativeWindowSmokeRunOptions::new(1200)
                 .screenshot_file(format!("{artifact_dir}/window.png"))
                 .require_screenshot(cfg!(windows))
-                .native_view_click(Point { x: 260, y: 108 })
+                .native_view_click(Point { x: 260, y: 68 })
                 .native_view_text_input(" Native")
-                .native_view_click(Point { x: 260, y: 180 })
-                .native_view_click(Point { x: 60, y: 252 }),
+                .native_view_click(Point { x: 476, y: 112 })
+                .native_view_click(Point { x: 80, y: 156 }),
         )?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());

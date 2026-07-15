@@ -1504,6 +1504,39 @@ pub(crate) fn decorate_native_focus_ring(
         });
         return Some(indicator);
     }
+    #[allow(unused_mut)]
+    let mut uses_windows_text_indicator = matches!(
+        target.kind,
+        ViewHitTargetKind::Textbox | ViewHitTargetKind::TextEditor
+    );
+    #[cfg(feature = "password-box")]
+    {
+        uses_windows_text_indicator |= target.kind == ViewHitTargetKind::PasswordBox;
+    }
+    #[cfg(feature = "number-box")]
+    {
+        uses_windows_text_indicator |= target.kind == ViewHitTargetKind::NumberBox;
+    }
+    if crate::ZsBaseControlPlatformStyle::current() == crate::ZsBaseControlPlatformStyle::Windows
+        && uses_windows_text_indicator
+    {
+        let height = Dp::new(2.0).to_px(dpi).round_i32().max(1);
+        let indicator = Rect {
+            x: target.bounds.x,
+            y: target
+                .bounds
+                .y
+                .saturating_add(target.bounds.height)
+                .saturating_sub(height),
+            width: target.bounds.width,
+            height,
+        };
+        plan.push(NativeDrawCommand::FillRect {
+            rect: indicator,
+            fill: NativeDrawFill::Role(ColorRole::Accent),
+        });
+        return Some(indicator);
+    }
     let requested_inset = Dp::new(1.0).to_px(dpi).round_i32().max(1);
     let maximum_inset = (target.bounds.width.min(target.bounds.height).max(1) - 1) / 2;
     let inset = requested_inset.min(maximum_inset.max(0));
@@ -1524,6 +1557,7 @@ pub(crate) fn decorate_native_focus_ring(
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "button",
     feature = "breadcrumb",
     feature = "color-picker",
     feature = "command-palette",
@@ -1544,6 +1578,7 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "button",
     feature = "breadcrumb",
     feature = "color-picker",
     feature = "command-palette",
@@ -1562,6 +1597,8 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 ))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
     let supported = false;
+    #[cfg(feature = "button")]
+    let supported = supported || target.kind == ViewHitTargetKind::Button;
     #[cfg(feature = "auto-suggest")]
     let supported = supported
         || matches!(
@@ -1651,6 +1688,7 @@ pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativeP
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "button",
     feature = "breadcrumb",
     feature = "color-picker",
     feature = "command-palette",

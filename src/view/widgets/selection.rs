@@ -6,6 +6,9 @@ pub fn combo_box<T, Msg>(
 where
     T: Into<String>,
 {
+    let metrics = crate::ZsBaseControlMetrics::for_platform(
+        crate::ZsBaseControlPlatformStyle::current(),
+    );
     let options = options.into_iter().map(Into::into).collect::<Vec<_>>();
     let selected_index = selected_index.filter(|index| *index < options.len());
     ViewNode::new(ViewNodeKind::ComboBox {
@@ -16,6 +19,8 @@ where
         on_select: None,
         on_expanded_change: None,
     })
+    .min_width(metrics.selection_minimum_width)
+    .height(metrics.selection_height)
 }
 
 #[cfg(feature = "tabs")]

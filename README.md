@@ -7,7 +7,7 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.1.0-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.1-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -365,6 +365,17 @@ cargo run --example desktop_native_showcase --features full
 `NSApplication` 和 `GtkApplication` 原生事件循环。Windows 已有真实 smoke 截图；
 AppKit 与 GTK4 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
 完成绘制、输入、截图和目标机交互证据。
+
+### 完整组件 Gallery
+
+```powershell
+cargo run --release --example component_gallery --no-default-features --features component-gallery-demo
+```
+
+Gallery 通过独立 profile 显式启用全部控件，包含输入、集合、导航、反馈、弹层、
+布局和组件目录五页。普通应用仍按控件 feature 选择依赖；默认构建不打包完整组件集。
+Windows 截图验收可追加 `-- --smoke --page inputs`，页面参数还支持
+`collections`、`navigation`、`feedback` 和 `catalog`。
 
 ### 十万行分页虚拟列表
 

@@ -673,12 +673,19 @@ pub use widget_render::{
 };
 #[cfg(feature = "progress")]
 pub use widget_render::{
-    zs_progress_bar_native_draw_plan, zs_progress_bar_render_plan, ZsProgressBarRenderPlan,
+    zs_progress_bar_native_draw_plan, zs_progress_bar_render_plan,
+    zs_progress_bar_render_plan_for_platform, ZsProgressBarRenderPlan,
 };
 #[cfg(feature = "radio")]
-pub use widget_render::{zs_radio_native_draw_plan, zs_radio_render_plan, ZsRadioRenderPlan};
+pub use widget_render::{
+    zs_radio_native_draw_plan, zs_radio_render_plan, zs_radio_render_plan_for_platform,
+    ZsRadioRenderPlan,
+};
 #[cfg(feature = "slider")]
-pub use widget_render::{zs_slider_native_draw_plan, zs_slider_render_plan, ZsSliderRenderPlan};
+pub use widget_render::{
+    zs_slider_native_draw_plan, zs_slider_render_plan, zs_slider_render_plan_for_platform,
+    ZsSliderRenderPlan,
+};
 #[cfg(feature = "tabs")]
 pub use widget_render::{
     zs_tab_view_native_draw_plan, zs_tab_view_render_plan, ZsTabHeaderRenderPlan,
@@ -711,12 +718,16 @@ pub use widget_render::{
     zs_toggle_button_native_draw_plan, zs_toggle_button_render_plan, ZsToggleButtonMetrics,
     ZsToggleButtonPlatformStyle, ZsToggleButtonRenderPlan,
 };
-pub use widget_render::{zs_toggle_native_draw_plan, zs_toggle_render_plan, ZsToggleRenderPlan};
+pub use widget_render::{
+    zs_toggle_native_draw_plan, zs_toggle_render_plan, zs_toggle_render_plan_for_platform,
+    ZsToggleRenderPlan,
+};
 #[cfg(feature = "tree")]
 pub use widget_render::{
     zs_tree_view_native_draw_plan, zs_tree_view_render_plan, ZsTreePlatformStyle,
     ZsTreeRowRenderPlan, ZsTreeViewMetrics, ZsTreeViewRenderPlan,
 };
+pub use widget_render::{ZsBaseControlMetrics, ZsBaseControlPlatformStyle};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub use windows_gdi_renderer::{

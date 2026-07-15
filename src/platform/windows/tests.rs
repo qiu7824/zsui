@@ -337,7 +337,7 @@ mod tests {
                 .ui_command_executor(ui_executor.clone()),
         ));
 
-        let report = dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 60, y: 104 })
+        let report = dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 60, y: 36 })
             .expect("live view route should handle click");
 
         assert_eq!(report.message_count, 1);

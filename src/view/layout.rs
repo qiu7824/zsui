@@ -530,39 +530,58 @@ fn button_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     if padding.is_some() {
         return padded_bounds(bounds, padding, dpi);
     }
+    let metrics = crate::ZsBaseControlMetrics::for_platform(
+        crate::ZsBaseControlPlatformStyle::current(),
+    );
+    side_inset_bounds(
+        bounds,
+        metrics.button_padding_left,
+        metrics.button_padding_top,
+        metrics.button_padding_right,
+        metrics.button_padding_bottom,
+        dpi,
+    )
+}
 
-    #[cfg(windows)]
-    {
-        let left = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_LEFT as f32)
-            .to_px(dpi)
-            .round_i32()
-            .max(0);
-        let top = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_TOP as f32)
-            .to_px(dpi)
-            .round_i32()
-            .max(0);
-        let right = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_RIGHT as f32)
-            .to_px(dpi)
-            .round_i32()
-            .max(0);
-        let bottom = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_BOTTOM as f32)
-            .to_px(dpi)
-            .round_i32()
-            .max(0);
-        return Rect {
-            x: bounds.x.saturating_add(left),
-            y: bounds.y.saturating_add(top),
-            width: bounds.width.saturating_sub(left.saturating_add(right)).max(0),
-            height: bounds
-                .height
-                .saturating_sub(top.saturating_add(bottom))
-                .max(0),
-        };
+#[cfg(feature = "textbox")]
+fn text_input_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+    if padding.is_some() {
+        return padded_bounds(bounds, padding, dpi);
     }
+    let metrics = crate::ZsBaseControlMetrics::for_platform(
+        crate::ZsBaseControlPlatformStyle::current(),
+    );
+    side_inset_bounds(
+        bounds,
+        metrics.text_input_padding_left,
+        metrics.text_input_padding_top,
+        metrics.text_input_padding_right,
+        metrics.text_input_padding_bottom,
+        dpi,
+    )
+}
 
-    #[cfg(not(windows))]
-    {
-        padded_bounds(bounds, Some(Dp::new(8.0)), dpi)
+#[cfg(any(feature = "button", feature = "textbox"))]
+fn side_inset_bounds(
+    bounds: Rect,
+    left: Dp,
+    top: Dp,
+    right: Dp,
+    bottom: Dp,
+    dpi: Dpi,
+) -> Rect {
+    let left = left.to_px(dpi).round_i32().max(0);
+    let top = top.to_px(dpi).round_i32().max(0);
+    let right = right.to_px(dpi).round_i32().max(0);
+    let bottom = bottom.to_px(dpi).round_i32().max(0);
+    Rect {
+        x: bounds.x.saturating_add(left),
+        y: bounds.y.saturating_add(top),
+        width: bounds.width.saturating_sub(left.saturating_add(right)).max(0),
+        height: bounds
+            .height
+            .saturating_sub(top.saturating_add(bottom))
+            .max(0),
     }
 }
 

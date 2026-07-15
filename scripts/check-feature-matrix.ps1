@@ -68,6 +68,7 @@ $singleFeatures = @(
     "fluent-icons",
     "notepad-demo",
     "calculator-demo",
+    "component-gallery-demo",
     "desktop-winit",
     "windows-gdi",
     "windows-win32",
@@ -90,6 +91,7 @@ $featureSets = @(
     "document-shell,windows-win32",
     "notepad-demo,style",
     "calculator,windows-gdi",
+    "component-gallery-demo",
     "desktop-native,all-widgets,style,dark-mode"
 )
 

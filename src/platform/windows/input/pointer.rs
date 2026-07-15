@@ -62,6 +62,7 @@ impl WindowsWin32ViewInputRoute {
         self.dismiss_popup_overlays_except(target.map(|target| target.widget), &mut report);
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -227,6 +228,7 @@ impl WindowsWin32ViewInputRoute {
         let _ = now;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -415,6 +417,7 @@ impl WindowsWin32ViewInputRoute {
             report.events.push("win32_view_text_pointer_up".to_string());
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "date-picker",
@@ -447,6 +450,7 @@ impl WindowsWin32ViewInputRoute {
                 .push("win32_view_slider_pointer_up".to_string());
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "date-picker",
@@ -484,6 +488,7 @@ impl WindowsWin32ViewInputRoute {
         report.pointer_up_count = 1;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -528,6 +533,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -550,6 +556,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(not(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -587,6 +594,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -608,6 +616,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(not(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",

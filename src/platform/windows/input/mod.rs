@@ -24,6 +24,7 @@ pub struct WindowsWin32ViewInputRoute {
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "date-picker",
@@ -42,6 +43,7 @@ pub struct WindowsWin32ViewInputRoute {
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "date-picker",
@@ -106,6 +108,7 @@ impl WindowsWin32ViewInputRoute {
             color_picker_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "date-picker",
@@ -124,6 +127,7 @@ impl WindowsWin32ViewInputRoute {
             pointer_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "date-picker",
@@ -187,6 +191,7 @@ impl WindowsWin32ViewInputRoute {
             color_picker_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "date-picker",
@@ -205,6 +210,7 @@ impl WindowsWin32ViewInputRoute {
             pointer_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "date-picker",
@@ -997,6 +1003,7 @@ impl WindowsWin32ViewInputRoute {
         };
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "date-picker",
@@ -1106,6 +1113,7 @@ impl WindowsWin32ViewInputRoute {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "date-picker",
@@ -2091,7 +2099,7 @@ pub(crate) fn windows_win32_view_input_route_test_lock() -> std::sync::MutexGuar
     VIEW_INPUT_ROUTE_TEST_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
-        .expect("view input route test lock should not be poisoned")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn completed_window_view_input_reports(

@@ -1,9 +1,17 @@
 
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
+    let children = children.into_iter().collect::<Vec<_>>();
+    let intrinsic_height = children
+        .iter()
+        .filter_map(|child| child.style.height.or(child.style.min_height))
+        .map(|height| height.0)
+        .fold(0.0_f32, f32::max);
     ViewNode::<Msg>::new(ViewNodeKind::Stack {
         direction: ViewStackDirection::Row,
     })
     .children(children)
+    .min_height(Dp::new(intrinsic_height))
+    .flex(0.0)
 }
 
 pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {

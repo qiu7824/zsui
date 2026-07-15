@@ -1650,15 +1650,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "button")]
             ViewNodeKind::Button { label, .. } => {
-                #[cfg(windows)]
-                let default_radius = Dp::new(crate::style::ZSUI_FLUENT_CONTROL_RADIUS as f32);
-                #[cfg(not(windows))]
-                let default_radius = Dp::new(6.0);
+                let metrics = crate::ZsBaseControlMetrics::for_platform(
+                    crate::ZsBaseControlPlatformStyle::current(),
+                );
                 cx.draw(NativeDrawCommand::RoundRect {
                     rect: bounds,
                     fill: NativeDrawFill::Role(ColorRole::Control),
                     stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
-                    radius: radius_px(self.style.radius.or(Some(default_radius)), cx.dpi),
+                    radius: radius_px(self.style.radius.or(Some(metrics.button_radius)), cx.dpi),
                 });
                 let mut text_style = SemanticTextStyle::body();
                 text_style.role = TextRole::Button;
@@ -1704,11 +1703,17 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 wrap,
                 ..
             } => {
+                let metrics = crate::ZsBaseControlMetrics::for_platform(
+                    crate::ZsBaseControlPlatformStyle::current(),
+                );
                 cx.draw(NativeDrawCommand::RoundRect {
                     rect: bounds,
                     fill: NativeDrawFill::Role(ColorRole::Surface),
-                    stroke: Some(NativeDrawFill::Role(ColorRole::Control)),
-                    radius: radius_px(self.style.radius.or(Some(Dp::new(6.0))), cx.dpi),
+                    stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                    radius: radius_px(
+                        self.style.radius.or(Some(metrics.text_input_radius)),
+                        cx.dpi,
+                    ),
                 });
                 let mut text_style = SemanticTextStyle::body();
                 if *multiline {
@@ -1716,8 +1721,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     text_style.wrap = *wrap;
                     text_style.ellipsis = false;
                 }
-                let text_bounds =
-                    padded_bounds(bounds, self.style.padding.or(Some(Dp::new(8.0))), cx.dpi);
+                let text_bounds = text_input_content_bounds(bounds, self.style.padding, cx.dpi);
                 if *multiline && *wrap == crate::TextWrap::NoWrap {
                     let line_height = Dp::new(18.0).to_px(cx.dpi).round_i32().max(1);
                     let bottom = text_bounds.y.saturating_add(text_bounds.height);
@@ -1769,11 +1773,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { label, checked, .. } => {
+                let metrics = crate::ZsBaseControlMetrics::for_platform(
+                    crate::ZsBaseControlPlatformStyle::current(),
+                );
+                let indicator_size = metrics
+                    .check_indicator_size
+                    .to_px(cx.dpi)
+                    .round_i32()
+                    .min(bounds.height.max(1))
+                    .max(1);
                 let check_bounds = Rect {
                     x: bounds.x,
-                    y: bounds.y,
-                    width: bounds.height.min(20),
-                    height: bounds.height.min(20),
+                    y: bounds.y + (bounds.height - indicator_size) / 2,
+                    width: indicator_size,
+                    height: indicator_size,
                 };
                 cx.draw(NativeDrawCommand::RoundRect {
                     rect: check_bounds,
@@ -1782,9 +1795,37 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     } else {
                         ColorRole::Control
                     }),
-                    stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
-                    radius: 4,
+                    stroke: Some(NativeDrawFill::Role(if *checked {
+                        ColorRole::Accent
+                    } else {
+                        ColorRole::Border
+                    })),
+                    radius: metrics
+                        .button_radius
+                        .to_px(cx.dpi)
+                        .round_i32()
+                        .max(1),
                 });
+                if *checked {
+                    let glyph_size = Dp::new(12.0)
+                        .to_px(cx.dpi)
+                        .round_i32()
+                        .min(indicator_size)
+                        .max(1);
+                    cx.draw(NativeDrawCommand::Icon(
+                        crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Check,
+                            Rect {
+                                x: check_bounds.x + (check_bounds.width - glyph_size) / 2,
+                                y: check_bounds.y + (check_bounds.height - glyph_size) / 2,
+                                width: glyph_size,
+                                height: glyph_size,
+                            },
+                            crate::NativeIconColorMode::ThemeAware,
+                        )
+                        .with_color(ColorRole::AccentText),
+                    ));
+                }
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                     label,
                     Rect {

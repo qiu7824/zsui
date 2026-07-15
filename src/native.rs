@@ -21,6 +21,7 @@ use crate::native_input_visuals::{
 };
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "button",
     feature = "breadcrumb",
     feature = "color-picker",
     feature = "command-palette",
@@ -1145,6 +1146,7 @@ pub(crate) struct NativeViewInputRuntime {
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "command-palette",
@@ -1164,6 +1166,7 @@ pub(crate) struct NativeViewInputRuntime {
     pointer_hover: Option<NativePointerVisualKey>,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "command-palette",
@@ -1260,6 +1263,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub focus_visual_changed: bool,
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "command-palette",
@@ -1439,6 +1443,7 @@ impl NativeViewInputRuntime {
             color_picker_drag: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "command-palette",
@@ -1458,6 +1463,7 @@ impl NativeViewInputRuntime {
             pointer_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "command-palette",
@@ -1717,6 +1723,7 @@ impl NativeViewInputRuntime {
         report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -1881,6 +1888,7 @@ impl NativeViewInputRuntime {
         let _ = now;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -2058,6 +2066,7 @@ impl NativeViewInputRuntime {
             report.text_drag_active = false;
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "command-palette",
@@ -2085,6 +2094,7 @@ impl NativeViewInputRuntime {
             report.color_picker_drag_active = false;
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "command-palette",
@@ -2112,6 +2122,7 @@ impl NativeViewInputRuntime {
             report.slider_drag_active = false;
             #[cfg(any(
                 feature = "auto-suggest",
+                feature = "button",
                 feature = "breadcrumb",
                 feature = "color-picker",
                 feature = "command-palette",
@@ -2140,6 +2151,7 @@ impl NativeViewInputRuntime {
         let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -2540,6 +2552,7 @@ impl NativeViewInputRuntime {
         };
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -2579,6 +2592,7 @@ impl NativeViewInputRuntime {
         }
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -2601,6 +2615,7 @@ impl NativeViewInputRuntime {
         }
         #[cfg(not(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -4281,6 +4296,7 @@ impl NativeViewInputRuntime {
         let had_preedit = self.ime_preedit.take().is_some();
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "date-picker",
             feature = "dialog",
@@ -4506,6 +4522,7 @@ impl NativeViewInputRuntime {
         let mut plan = plan;
         #[cfg(any(
             feature = "auto-suggest",
+            feature = "button",
             feature = "breadcrumb",
             feature = "color-picker",
             feature = "command-palette",
@@ -4685,6 +4702,7 @@ impl NativeViewInputRuntime {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "button",
         feature = "breadcrumb",
         feature = "color-picker",
         feature = "command-palette",
@@ -8905,7 +8923,8 @@ mod tests {
         let shown =
             runtime.refresh_transient_view_at(start + std::time::Duration::from_millis(100));
 
-        assert!(!hover.handled);
+        assert!(hover.handled);
+        assert!(hover.pointer_visual_changed);
         assert!(early.redraw_plan.is_none());
         let shown = shown
             .redraw_plan
@@ -8936,13 +8955,13 @@ mod tests {
             ]))
             .shared_ui_command_executor(executor.clone());
         let mut report = NativeWindowSmokeRunReport::empty(
-            NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 60, y: 204 }),
+            NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 60, y: 36 }),
         );
 
         record_native_view_input_smoke(
             &mut report,
             &mut builder.native_view_input_runtime(),
-            &NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 60, y: 204 }),
+            &NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 60, y: 36 }),
         );
 
         assert!(builder.native_view_has_ui_command_routing());
@@ -9008,6 +9027,56 @@ mod tests {
                 )
             })
         }));
+    }
+
+    #[cfg(feature = "button")]
+    #[test]
+    fn native_view_runtime_decorates_default_button_hover_and_pressed_states() {
+        let button_id = crate::WidgetId::new(73);
+        let builder = native_window("Button states").size(240, 100).stateful_view(
+            false,
+            move |_| crate::button("Save").id(button_id).on_click(true),
+            |clicked, message, _cx| *clicked = message,
+        );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(button_id))
+            .expect("button should expose pointer geometry");
+        let point = Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        };
+        let mut runtime = builder.native_view_input_runtime();
+
+        let hovered = runtime.dispatch_pointer_move(point);
+        let pressed = runtime.dispatch_pointer_down(point, false);
+
+        assert!(hovered.pointer_visual_changed);
+        assert!(pressed.pointer_visual_changed);
+        assert!(hovered
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::RoundFill {
+                    fill: crate::NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::PrimaryText,
+                        alpha: 14,
+                    },
+                    ..
+                }
+            ))));
+        assert!(pressed
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::RoundFill {
+                    fill: crate::NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::PrimaryText,
+                        alpha: 28,
+                    },
+                    ..
+                }
+            ))));
     }
 
     #[cfg(feature = "toggle-button")]

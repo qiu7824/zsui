@@ -169,6 +169,17 @@ history remain authoritative for implementation status.
   semantic control border. A Button is content-sized in a row/column instead
   of silently consuming an equal flex share; explicit width/height/flex still
   override the defaults.
+- Platform minimum widths are floors, not fixed label widths. Button,
+  ToggleButton, CheckBox and RadioButton constructors estimate an intrinsic
+  label width from the active desktop profile so longer labels remain visible;
+  applications can still request a larger explicit width. WinUI InfoBar keeps
+  its 48 epx minimum but grows to fit title plus message content instead of
+  clipping the second line.
+- The complete component acceptance surface is the optional
+  `component-gallery-demo` profile. It intentionally enables `all-widgets` and
+  native smoke support, while the default build remains `window`, `button` and
+  `label`. Its five pages and target screenshots validate the framework; they
+  do not change component readiness or make contract-only families complete.
 - A stateful View is built once before the first frame. Client-size or DPI-only
   changes relayout the existing tree; only state updates and explicit refresh
   rebuild it. Application storage reconciliation, initial page I/O and retry
