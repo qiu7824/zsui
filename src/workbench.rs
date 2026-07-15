@@ -746,7 +746,11 @@ pub fn zs_workbench_layout(
             let action_y = bounds.y + bounds.height - scale(30, dpi);
             let mut action_x = if is_user { bounds.x } else { content_bounds.x };
             for action in &message.actions {
-                let action_width = scale(30 + (action.label.chars().count() as i32 * 7), dpi)
+                let action_width = scale(30, dpi)
+                    .saturating_add(crate::widget_render::zs_estimated_text_width_px(
+                        &action.label,
+                        scale(7, dpi),
+                    ))
                     .clamp(scale(32, dpi), scale(128, dpi));
                 regions.push(ZsWorkbenchLayoutRegion {
                     kind: ZsWorkbenchRegionKind::MessageAction,
@@ -900,7 +904,11 @@ fn layout_composer_regions(
     });
     let mut action_x = metrics.composer.x + scale(12, dpi);
     for action in &spec.composer.actions {
-        let width = scale(34 + action.label.chars().count() as i32 * 7, dpi)
+        let width = scale(34, dpi)
+            .saturating_add(crate::widget_render::zs_estimated_text_width_px(
+                &action.label,
+                scale(7, dpi),
+            ))
             .clamp(scale(34, dpi), scale(140, dpi));
         regions.push(ZsWorkbenchLayoutRegion {
             kind: ZsWorkbenchRegionKind::ComposerAction,
@@ -949,7 +957,11 @@ fn layout_inspector_regions(
     };
     let mut x = bounds.x + scale(20, dpi);
     for tab in &inspector.tabs {
-        let width = scale(24 + tab.label.chars().count() as i32 * 7, dpi)
+        let width = scale(24, dpi)
+            .saturating_add(crate::widget_render::zs_estimated_text_width_px(
+                &tab.label,
+                scale(7, dpi),
+            ))
             .clamp(scale(48, dpi), scale(128, dpi));
         regions.push(ZsWorkbenchLayoutRegion {
             kind: ZsWorkbenchRegionKind::InspectorTab,
@@ -1007,7 +1019,10 @@ fn estimate_text_height(text: &str, width: i32, line_height: i32, dpi: Dpi) -> i
     let chars_per_line = (width / scale(7, dpi).max(1)).max(1) as usize;
     let lines = text
         .lines()
-        .map(|line| line.chars().count().max(1).div_ceil(chars_per_line))
+        .map(|line| {
+            (crate::widget_render::zs_estimated_text_flow_units(line).max(1) as usize)
+                .div_ceil(chars_per_line)
+        })
         .sum::<usize>()
         .max(1);
     lines as i32 * line_height

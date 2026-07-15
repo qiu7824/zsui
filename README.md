@@ -7,7 +7,7 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.3-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.4-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -383,8 +383,9 @@ cargo run --release --example component_gallery --no-default-features --features
 ```
 
 Gallery 通过独立 profile 显式启用全部控件，包含输入、集合、导航、反馈、弹层、
-布局和组件目录五页。普通应用仍按控件 feature 选择依赖；默认构建不打包完整组件集。
-Windows 截图验收可追加 `-- --smoke --page inputs`，页面参数还支持
+布局和组件目录五页，界面文案同屏提供中文与英文。普通应用仍按控件 feature 选择
+依赖；默认构建不打包完整组件集。Windows 截图验收可追加
+`-- --smoke --page inputs`，页面参数还支持
 `collections`、`navigation`、`feedback` 和 `catalog`。
 
 ### 十万行分页虚拟列表

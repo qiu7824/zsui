@@ -73,6 +73,55 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode};
     feature = "tree"
 ))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
+
+fn zs_character_width_units(character: char) -> i32 {
+    let codepoint = character as u32;
+    if character == '\n' || character == '\r' || character.is_control() {
+        0
+    } else if matches!(
+        codepoint,
+        0x0300..=0x036f
+            | 0x1ab0..=0x1aff
+            | 0x1dc0..=0x1dff
+            | 0x20d0..=0x20ff
+            | 0xfe00..=0xfe0f
+            | 0xfe20..=0xfe2f
+            | 0xe0100..=0xe01ef
+            | 0x200b..=0x200f
+            | 0x202a..=0x202e
+            | 0x2060..=0x206f
+            | 0xfeff
+    ) {
+        0
+    } else if character.is_ascii() {
+        1
+    } else {
+        2
+    }
+}
+
+pub(crate) fn zs_estimated_text_width_units(text: &str) -> i32 {
+    text.lines()
+        .map(|line| {
+            line.chars().fold(0_i32, |width, character| {
+                width.saturating_add(zs_character_width_units(character))
+            })
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+#[allow(dead_code)]
+pub(crate) fn zs_estimated_text_flow_units(text: &str) -> i32 {
+    text.chars().fold(0_i32, |width, character| {
+        width.saturating_add(zs_character_width_units(character))
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn zs_estimated_text_width_px(text: &str, ascii_width: i32) -> i32 {
+    zs_estimated_text_width_units(text).saturating_mul(ascii_width.max(1))
+}
 #[cfg(any(
     feature = "auto-suggest",
     feature = "breadcrumb",
@@ -291,10 +340,7 @@ impl ZsBaseControlMetrics {
     }
 
     pub fn estimated_text_width(self, text: &str) -> Dp {
-        let units = text
-            .chars()
-            .map(|character| if character.is_ascii() { 1.0 } else { 1.75 })
-            .sum::<f32>();
+        let units = zs_estimated_text_width_units(text) as f32;
         Dp::new(units * self.average_character_width.0)
     }
 
@@ -699,8 +745,7 @@ pub fn zs_info_bar_render_plan(
         trailing_x = trailing_x.saturating_sub(control_gap).max(surface.x);
     }
     let action_bounds = spec.action_label().map(|label| {
-        let desired_width = (label.chars().count() as i32)
-            .saturating_mul(character_width)
+        let desired_width = zs_estimated_text_width_px(label, character_width)
             .saturating_add(horizontal_padding)
             .max(control_height);
         let width = desired_width.min(trailing_x.saturating_sub(surface.x).max(0));
@@ -1053,13 +1098,9 @@ pub fn zs_teaching_tip_render_plan(
         .width
         .saturating_sub(margin.saturating_mul(2))
         .max(1);
-    let longest_text = spec
-        .title()
-        .chars()
-        .count()
-        .max(spec.subtitle().chars().count()) as i32;
+    let longest_text = zs_estimated_text_width_px(spec.title(), character_width)
+        .max(zs_estimated_text_width_px(spec.subtitle(), character_width));
     let desired_width = longest_text
-        .saturating_mul(character_width)
         .saturating_add(horizontal_padding.saturating_mul(2))
         .saturating_add(control_height);
     let surface_width = desired_width
@@ -1181,8 +1222,7 @@ pub fn zs_teaching_tip_render_plan(
         height: subtitle_height,
     });
     let action_bounds = spec.action_label().map(|label| {
-        let desired = (label.chars().count() as i32)
-            .saturating_mul(character_width)
+        let desired = zs_estimated_text_width_px(label, character_width)
             .saturating_add(horizontal_padding)
             .max(control_height);
         let width = desired.min(
@@ -1636,16 +1676,14 @@ pub fn zs_toast_render_plan(
         .max(1);
     let close_width = control_height;
     let action_width = spec.action_label().map(|label| {
-        (label.chars().count() as i32)
-            .saturating_mul(character_width)
+        zs_estimated_text_width_px(label, character_width)
             .saturating_add(horizontal_padding)
             .max(control_height)
     });
     let controls_width = close_width
         .saturating_add(control_gap)
         .saturating_add(action_width.map(|width| width + control_gap).unwrap_or(0));
-    let desired_message_width = (spec.message().chars().count() as i32)
-        .saturating_mul(character_width)
+    let desired_message_width = zs_estimated_text_width_px(spec.message(), character_width)
         .clamp(scale(96, dpi), scale(280, dpi));
     let desired_width = horizontal_padding
         .saturating_mul(2)
@@ -1959,8 +1997,7 @@ pub fn zs_breadcrumb_render_plan(
     let desired_widths = items
         .iter()
         .map(|item| {
-            (item.label().chars().count() as i32)
-                .saturating_mul(character_width)
+            zs_estimated_text_width_px(item.label(), character_width)
                 .saturating_add(label_measurement_guard)
                 .saturating_add(padding.saturating_mul(2))
                 .max(minimum_width)
@@ -3345,8 +3382,7 @@ pub fn zs_tab_view_render_plan_for_tabs(
     let mut widths = tabs
         .iter()
         .map(|tab| {
-            (tab.label.chars().count() as i32)
-                .saturating_mul(text_unit)
+            zs_estimated_text_width_px(&tab.label, text_unit)
                 .saturating_add(if tab.icon.is_some() {
                     icon_size.saturating_add(icon_gap)
                 } else {
@@ -7599,11 +7635,13 @@ pub fn zs_content_dialog_render_plan(
     let title_height = spec
         .dialog_title()
         .map(|title| {
-            let lines = ((title.chars().count() + 39) / 40).clamp(1, 2) as i32;
+            let units = zs_estimated_text_flow_units(title).max(1) as usize;
+            let lines = units.div_ceil(40).clamp(1, 2) as i32;
             lines.saturating_mul(scale(24, dpi))
         })
         .unwrap_or(0);
-    let content_lines = ((spec.content().chars().count() + 55) / 56).clamp(1, 5) as i32;
+    let content_units = zs_estimated_text_flow_units(spec.content()).max(1) as usize;
+    let content_lines = content_units.div_ceil(56).clamp(1, 5) as i32;
     let content_height = content_lines.saturating_mul(scale(20, dpi));
     let desired_height = padding
         .saturating_mul(2)
@@ -7673,8 +7711,7 @@ pub fn zs_content_dialog_render_plan(
                     } else {
                         scale(8, dpi)
                     };
-                    let label_width = (label.chars().count() as i32)
-                        .saturating_mul(glyph_width)
+                    let label_width = zs_estimated_text_width_px(&label, glyph_width)
                         .saturating_add(scale(28, dpi));
                     label_width.max(minimum_button_width)
                 }
@@ -7930,6 +7967,14 @@ fn scale(value: i32, dpi: Dpi) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_text_width_units_keep_cjk_full_width_and_combining_marks_zero_width() {
+        assert_eq!(zs_estimated_text_width_units("AB"), 2);
+        assert_eq!(zs_estimated_text_width_units("中文"), 4);
+        assert_eq!(zs_estimated_text_width_units("e\u{301}"), 1);
+        assert_eq!(zs_estimated_text_width_units("A\n中文"), 4);
+    }
 
     #[test]
     fn base_control_metrics_keep_windows_exact_and_platform_profiles_distinct() {
@@ -8328,6 +8373,26 @@ mod tests {
                 ..
             }
         )));
+
+        let ascii_title =
+            crate::ZsContentDialogSpec::new("Body", "Close").title("aaaaaaaaaaaaaaaaaaaaaa");
+        let cjk_title = crate::ZsContentDialogSpec::new("正文", "关闭")
+            .title("中文中文中文中文中文中文中文中文中文中文中文");
+        let ascii_plan = zs_content_dialog_render_plan(
+            viewport,
+            &ascii_title,
+            Close,
+            ZsContentDialogPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let cjk_plan = zs_content_dialog_render_plan(
+            viewport,
+            &cjk_title,
+            Close,
+            ZsContentDialogPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        assert!(cjk_plan.title_bounds.unwrap().height > ascii_plan.title_bounds.unwrap().height);
     }
 
     #[cfg(feature = "info-bar")]
@@ -8420,6 +8485,24 @@ mod tests {
                     <= narrow_bounds.x.saturating_add(narrow_bounds.width)
             );
         }
+
+        let ascii_action = crate::ZsInfoBarSpec::new("Ready").action("OK");
+        let cjk_action = crate::ZsInfoBarSpec::new("就绪").action("确定");
+        let ascii_plan = zs_info_bar_render_plan(
+            bounds,
+            &ascii_action,
+            None,
+            ZsInfoBarPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let cjk_plan = zs_info_bar_render_plan(
+            bounds,
+            &cjk_action,
+            None,
+            ZsInfoBarPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        assert!(cjk_plan.action_bounds.unwrap().width > ascii_plan.action_bounds.unwrap().width);
     }
 
     #[cfg(feature = "teaching-tip")]
@@ -8533,6 +8616,27 @@ mod tests {
         assert!(wide.hidden_indices.is_empty());
         assert!(wide.items[0].text_bounds.width >= 38);
         assert!(wide.items[1].text_bounds.width >= 66);
+        let cjk_items = [
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(11), "首页"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(12), "组件"),
+            crate::ZsBreadcrumbItem::new(crate::ZsBreadcrumbId::new(13), "当前页面"),
+        ];
+        let cjk = zs_breadcrumb_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 32,
+            },
+            &cjk_items,
+            false,
+            ZsBreadcrumbPlatformStyle::Windows,
+            Dpi::standard(),
+            None,
+        );
+        assert!(cjk.hidden_indices.is_empty());
+        assert!(cjk.items[0].text_bounds.width >= 28);
+        assert!(cjk.items[2].text_bounds.width >= 56);
         let macos = zs_breadcrumb_render_plan(
             bounds,
             &items,
@@ -8851,6 +8955,22 @@ mod tests {
                     && text.style.horizontal_align == HorizontalAlign::Start
                     && text.style.weight == TextWeight::Regular
         )));
+
+        let ascii = zs_tab_view_render_plan(
+            bounds,
+            &["AAAA".into()],
+            Some(0),
+            ZsTabPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let cjk = zs_tab_view_render_plan(
+            bounds,
+            &["常规设置选项".into()],
+            Some(0),
+            ZsTabPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        assert!(cjk.headers[0].bounds.width > ascii.headers[0].bounds.width);
     }
 
     #[test]

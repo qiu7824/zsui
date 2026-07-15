@@ -43,21 +43,21 @@ enum GalleryPage {
 }
 
 impl GalleryPage {
-    const ALL: [(Self, &'static str, WidgetId); 5] = [
-        (Self::Inputs, "Inputs and actions", NAV_INPUTS),
-        (Self::Collections, "Collections", NAV_COLLECTIONS),
-        (Self::Navigation, "Navigation", NAV_NAVIGATION),
-        (Self::Feedback, "Feedback and overlays", NAV_FEEDBACK),
-        (Self::Catalog, "Catalog and layout", NAV_CATALOG),
+    const ALL: [(Self, WidgetId); 5] = [
+        (Self::Inputs, NAV_INPUTS),
+        (Self::Collections, NAV_COLLECTIONS),
+        (Self::Navigation, NAV_NAVIGATION),
+        (Self::Feedback, NAV_FEEDBACK),
+        (Self::Catalog, NAV_CATALOG),
     ];
 
     const fn title(self) -> &'static str {
         match self {
-            Self::Inputs => "Inputs and actions",
-            Self::Collections => "Collections",
-            Self::Navigation => "Navigation",
-            Self::Feedback => "Feedback and overlays",
-            Self::Catalog => "Catalog and layout",
+            Self::Inputs => "输入与操作 / Inputs",
+            Self::Collections => "集合 / Collections",
+            Self::Navigation => "导航 / Navigation",
+            Self::Feedback => "反馈与浮层 / Feedback",
+            Self::Catalog => "目录与布局 / Catalog",
         }
     }
 
@@ -73,11 +73,11 @@ impl GalleryPage {
 
     const fn description(self) -> &'static str {
         match self {
-            Self::Inputs => "Typed values, focus, keyboard and pointer states",
-            Self::Collections => "Lists, virtualization, trees, tiles and tabular data",
-            Self::Navigation => "Breadcrumbs, tabs and keyboard-first commands",
-            Self::Feedback => "Inline status, modal and nonmodal overlay surfaces",
-            Self::Catalog => "Feature-gated framework inventory and layout primitives",
+            Self::Inputs => "强类型值、焦点和输入状态 / Typed values, focus and input",
+            Self::Collections => "列表、虚拟化、树、磁贴与表格 / Lists, trees, tiles and tables",
+            Self::Navigation => "面包屑、标签页与键盘命令 / Breadcrumbs, tabs and commands",
+            Self::Feedback => "行内状态、模态与非模态浮层 / Inline, modal and nonmodal feedback",
+            Self::Catalog => "按特性启用的组件目录与布局 / Feature-gated catalog and layout",
         }
     }
 
@@ -94,7 +94,7 @@ impl GalleryPage {
     fn from_slug(value: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .map(|(page, _, _)| page)
+            .map(|(page, _)| page)
             .find(|page| page.slug() == value)
     }
 }
@@ -147,7 +147,7 @@ impl Default for GalleryState {
             page: GalleryPage::Inputs,
             dark: false,
             click_count: 0,
-            text: "ZSUI Native".to_string(),
+            text: "ZSUI 原生界面 / Native UI".to_string(),
             password: ZsPassword::from("desktop"),
             checkbox: true,
             toggle: true,
@@ -174,7 +174,7 @@ impl Default for GalleryState {
             palette_open: false,
             palette_query: String::new(),
             overlay: None,
-            status: "Ready".to_string(),
+            status: "就绪 / Ready".to_string(),
         }
     }
 }
@@ -243,6 +243,74 @@ fn secondary_text(value: impl Into<String>, role: TextRole) -> ViewNode<Msg> {
     styled_text(value, style)
 }
 
+const fn category_label(category: ZsuiComponentCategory) -> &'static str {
+    match category {
+        ZsuiComponentCategory::Layout => "布局 / Layout",
+        ZsuiComponentCategory::Navigation => "导航 / Navigation",
+        ZsuiComponentCategory::Input => "输入 / Input",
+        ZsuiComponentCategory::Collection => "集合 / Collection",
+        ZsuiComponentCategory::Feedback => "反馈 / Feedback",
+        ZsuiComponentCategory::Overlay => "浮层 / Overlay",
+        ZsuiComponentCategory::Media => "媒体 / Media",
+        ZsuiComponentCategory::Composite => "组合 / Composite",
+    }
+}
+
+fn component_label(name: &str) -> String {
+    let chinese = match name {
+        "stack" => "栈布局",
+        "grid" => "网格",
+        "border" => "边框",
+        "scroll" => "滚动视图",
+        "split_view" => "拆分视图",
+        "canvas" => "画布",
+        "navigation" => "导航视图",
+        "tabs" => "标签页",
+        "breadcrumb" => "面包屑",
+        "command_bar" => "命令栏",
+        "text" => "文本",
+        "button" => "按钮",
+        "toggle_button" => "切换按钮",
+        "checkbox" => "复选框",
+        "toggle" => "切换开关",
+        "textbox" => "文本框",
+        "password_box" => "密码框",
+        "combo_box" => "组合框",
+        "radio_button" => "单选按钮",
+        "slider" => "滑块",
+        "number_box" => "数值框",
+        "auto_suggest" => "自动建议框",
+        "date_picker" => "日期选择器",
+        "time_picker" => "时间选择器",
+        "color_picker" => "颜色选择器",
+        "list" => "列表",
+        "grid_view" => "网格视图",
+        "tree" => "树视图",
+        "table" => "数据表格",
+        "items_repeater" => "项目重复器",
+        "badge" => "徽章",
+        "progress_bar" => "进度条",
+        "progress_ring" => "进度环",
+        "toast" => "轻量通知",
+        "info_bar" => "信息栏",
+        "tooltip" => "工具提示",
+        "content_dialog" => "内容对话框",
+        "flyout" => "浮出层",
+        "menu_flyout" => "菜单浮出层",
+        "teaching_tip" => "教学提示",
+        "command_palette" => "命令面板",
+        "image" => "图像",
+        "icon" => "图标",
+        "settings_card" => "设置卡片",
+        "workbench_shell" => "工作台外壳",
+        "message_timeline" => "消息时间线",
+        "composer" => "撰写器",
+        "inspector_panel" => "检查器面板",
+        _ => return name.to_string(),
+    };
+    format!("{chinese} / {name}")
+}
+
 fn card(title: impl Into<String>, children: Vec<ViewNode<Msg>>) -> ViewNode<Msg> {
     let mut nodes = Vec::with_capacity(children.len() + 1);
     nodes.push(body_strong(title));
@@ -272,37 +340,37 @@ fn compact_card(
 
 fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
     let actions = card(
-        "Buttons and choices",
+        "按钮与选择 / Buttons and choices",
         vec![
             row([
-                button(format!("Save ({})", state.click_count))
+                button(format!("保存 / Save ({})", state.click_count))
                     .id(PRIMARY_ACTION)
-                    .tooltip("Invokes a typed application message")
+                    .tooltip("发送强类型应用消息 / Sends a typed message")
                     .on_click(Msg::PrimaryAction),
-                toggle_button("Pinned", state.toggle_button).on_toggle(Msg::ToggleButton),
+                toggle_button("固定 / Pinned", state.toggle_button).on_toggle(Msg::ToggleButton),
             ])
             .gap(Dp::new(12.0)),
-            checkbox("Automatic updates", state.checkbox)
+            checkbox("自动更新 / Automatic updates", state.checkbox)
                 .id(CHECKBOX_INPUT)
                 .on_toggle(Msg::Checkbox),
             row([
-                text("Notifications"),
+                text("通知 / Notifications"),
                 spacer(),
                 toggle(state.toggle).id(TOGGLE_INPUT).on_toggle(Msg::Toggle),
             ])
             .gap(Dp::new(8.0)),
             row([
-                text("Dark mode"),
+                text("深色模式 / Dark mode"),
                 spacer(),
                 toggle(state.dark).on_toggle(Msg::Dark),
             ])
             .gap(Dp::new(8.0)),
             row([
-                radio_button("Balanced", state.radio == 0).on_choose(Msg::Radio(0)),
-                radio_button("Performance", state.radio == 1).on_choose(Msg::Radio(1)),
+                radio_button("均衡 / Balanced", state.radio == 0).on_choose(Msg::Radio(0)),
+                radio_button("性能 / Performance", state.radio == 1).on_choose(Msg::Radio(1)),
             ])
             .gap(Dp::new(12.0)),
-            text(format!("Slider: {:.0}", state.slider)),
+            text(format!("滑块 / Slider: {:.0}", state.slider)),
             slider(state.slider, SliderRange::new(0.0, 100.0)).on_slide(Msg::Slider),
             progress_bar(state.slider, ProgressRange::new(0.0, 100.0)),
             row([
@@ -319,7 +387,7 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
     );
 
     let editors = card(
-        "Text and selection",
+        "文本与选择 / Text and selection",
         vec![
             textbox(&state.text).id(TEXT_INPUT).on_change(Msg::Text),
             password_box(&state.password)
@@ -338,16 +406,19 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
                 ],
             )
             .id(AUTO_SUGGEST)
-            .placeholder("Search a desktop platform")
+            .placeholder("搜索桌面平台 / Search platform")
             .expanded(!state.auto_query.is_empty())
             .on_auto_suggest_text_change(Msg::AutoQuery)
             .on_suggestion_chosen(Msg::AutoChosen)
             .on_query_submit(Msg::AutoSubmitted),
-            combo_box(["Balanced", "Fast", "Quiet"], state.combo)
-                .id(COMBO_INPUT)
-                .expanded(state.combo_expanded)
-                .on_select(Msg::Combo)
-                .on_expanded_change(Msg::ComboExpanded),
+            combo_box(
+                ["均衡 / Balanced", "快速 / Fast", "安静 / Quiet"],
+                state.combo,
+            )
+            .id(COMBO_INPUT)
+            .expanded(state.combo_expanded)
+            .on_select(Msg::Combo)
+            .on_expanded_change(Msg::ComboExpanded),
             date_picker(state.date)
                 .id(DATE_INPUT)
                 .expanded(state.date_expanded)
@@ -372,7 +443,7 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
 }
 
 fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
-    let tree = tree_view([ZsTreeNode::new(1, "Workspace")
+    let tree = tree_view([ZsTreeNode::new(1, "工作区 / Workspace")
         .icon(ZsIcon::Folder)
         .children([
             ZsTreeNode::new(2, "src").icon(ZsIcon::Folder).children([
@@ -392,7 +463,13 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
 
     let list = scroll(
         list(
-            ["Button", "TextBox", "ToggleSwitch", "TreeView", "DataGrid"],
+            [
+                "按钮 / Button",
+                "文本框 / TextBox",
+                "切换开关 / ToggleSwitch",
+                "树视图 / TreeView",
+                "数据表格 / DataGrid",
+            ],
             |label| text(label).height(Dp::new(32.0)),
         )
         .id(LIST_VIEW)
@@ -404,24 +481,24 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
 
     let virtualized = virtual_list(
         10_000,
-        (240..246).map(|index| (index, format!("Virtual row {index}"))),
+        (0..6).map(|index| (index, format!("虚拟行 {index} / Virtual row {index}"))),
         |index, label| text(label).id(WidgetId::new(10_000 + index as u64)),
     )
     .id(VIRTUAL_LIST_VIEW)
     .height(Dp::new(144.0));
 
     let tiles = grid_view([
-        ZsGridViewItem::new(1, "Desktop")
-            .subtitle("Folder")
+        ZsGridViewItem::new(1, "桌面 / Desktop")
+            .subtitle("文件夹 / Folder")
             .icon(ZsIcon::Folder),
-        ZsGridViewItem::new(2, "Documents")
-            .subtitle("Folder")
+        ZsGridViewItem::new(2, "文档 / Documents")
+            .subtitle("文件夹 / Folder")
             .icon(ZsIcon::Folder),
-        ZsGridViewItem::new(3, "Photos")
-            .subtitle("Collection")
+        ZsGridViewItem::new(3, "照片 / Photos")
+            .subtitle("集合 / Collection")
             .icon(ZsIcon::Image),
-        ZsGridViewItem::new(4, "README")
-            .subtitle("Markdown")
+        ZsGridViewItem::new(4, "说明 / README")
+            .subtitle("文档 / Markdown")
             .icon(ZsIcon::Text),
     ])
     .id(GRID_VIEW)
@@ -432,17 +509,21 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
 
     let table = data_grid(
         [
-            ZsTableColumn::new(1, "Name").fill_width(2).sortable(true),
-            ZsTableColumn::new(2, "Type").fill_width(1).sortable(true),
-            ZsTableColumn::new(3, "Size")
-                .fixed_width(Dp::new(88.0))
+            ZsTableColumn::new(1, "名称 / Name")
+                .fill_width(1)
+                .sortable(true),
+            ZsTableColumn::new(2, "类型 / Type")
+                .fill_width(1)
+                .sortable(true),
+            ZsTableColumn::new(3, "大小 / Size")
+                .fill_width(1)
                 .alignment(HorizontalAlign::End),
         ],
         [
-            ZsTableRow::new(1, ["Cargo.toml", "Manifest", "4 KB"]),
-            ZsTableRow::new(2, ["src", "Folder", "—"]),
-            ZsTableRow::new(3, ["README.md", "Markdown", "12 KB"]),
-            ZsTableRow::new(4, ["examples", "Folder", "—"]),
+            ZsTableRow::new(1, ["Cargo.toml", "清单 / TOML", "4 KB"]),
+            ZsTableRow::new(2, ["src", "文件夹 / Dir", "—"]),
+            ZsTableRow::new(3, ["README.md", "文档 / MD", "12 KB"]),
+            ZsTableRow::new(4, ["examples", "文件夹 / Dir", "—"]),
         ],
     )
     .id(TABLE_VIEW)
@@ -454,8 +535,11 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
     .on_table_invoke(Msg::TableInvoked);
 
     row([
-        card("Lists and hierarchy", vec![tree, list, virtualized]),
-        card("Tiles and data", vec![tiles, table]),
+        card(
+            "列表与层级 / Lists and hierarchy",
+            vec![tree, list, virtualized],
+        ),
+        card("磁贴与数据 / Tiles and data", vec![tiles, table]),
     ])
     .flex(1.0)
     .gap(Dp::new(16.0))
@@ -463,10 +547,9 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
 
 fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
     let breadcrumb = breadcrumb_bar([
-        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(1), "Home"),
-        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(2), "Components"),
-        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(3), "Navigation"),
-        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(4), "Current page"),
+        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(1), "首页"),
+        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(2), "组件"),
+        ZsBreadcrumbItem::new(ZsBreadcrumbId::new(3), "当前页面"),
     ])
     .id(BREADCRUMB)
     .expanded(state.breadcrumb_expanded)
@@ -477,10 +560,10 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
         [
             ZsTabItem::new(
                 ZsTabId::new(1),
-                "General",
+                "常规 / General",
                 column([
-                    text("Shared state owns the selected page."),
-                    checkbox("Show navigation labels", true),
+                    text("共享状态持有所选页面 / Shared state owns the selected page"),
+                    checkbox("显示导航标签 / Show navigation labels", true),
                 ])
                 .padding(Dp::new(16.0))
                 .gap(Dp::new(12.0)),
@@ -488,10 +571,10 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
             .icon(ZsIcon::Settings),
             ZsTabItem::new(
                 ZsTabId::new(2),
-                "Advanced",
+                "高级 / Advanced",
                 column([
-                    text("Keyboard and pointer selection use typed messages."),
-                    toggle_button("Compact mode", false),
+                    text("键盘和指针选择使用强类型消息 / Typed keyboard and pointer selection"),
+                    toggle_button("紧凑模式 / Compact mode", false),
                 ])
                 .padding(Dp::new(16.0))
                 .gap(Dp::new(12.0)),
@@ -499,8 +582,8 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
             .icon(ZsIcon::Tool),
             ZsTabItem::new(
                 ZsTabId::new(3),
-                "About",
-                text("ZSUI v0.2 component gallery"),
+                "关于 / About",
+                text("ZSUI v0.2 组件库 / Component gallery"),
             )
             .icon(ZsIcon::Info),
         ],
@@ -510,11 +593,11 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
     .on_tab_select(Msg::Tab);
 
     let page = column([
-        compact_card("BreadcrumbBar", vec![breadcrumb], Dp::new(32.0)),
-        card("TabView", vec![tabs]),
+        compact_card("面包屑 / BreadcrumbBar", vec![breadcrumb], Dp::new(32.0)),
+        card("标签页 / TabView", vec![tabs]),
         row([
-            button("Open command palette").on_click(Msg::PaletteOpen(true)),
-            text("Ctrl+Shift+P style keyboard-first surface"),
+            button("打开命令面板 / Open palette").on_click(Msg::PaletteOpen(true)),
+            text("键盘优先的 Ctrl+Shift+P 式界面 / Keyboard-first surface"),
         ])
         .gap(Dp::new(12.0)),
     ])
@@ -526,13 +609,13 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
         state.palette_open,
         state.palette_query.clone(),
         [
-            ZsCommandPaletteItem::new(1, "Open file")
+            ZsCommandPaletteItem::new(1, "打开文件 / Open file")
                 .icon(ZsIcon::File)
                 .shortcut("Ctrl+O"),
-            ZsCommandPaletteItem::new(2, "Open settings")
+            ZsCommandPaletteItem::new(2, "打开设置 / Open settings")
                 .icon(ZsIcon::Settings)
                 .shortcut("Ctrl+,"),
-            ZsCommandPaletteItem::new(3, "Toggle theme")
+            ZsCommandPaletteItem::new(3, "切换主题 / Toggle theme")
                 .icon(ZsIcon::App)
                 .shortcut("Ctrl+T"),
         ],
@@ -548,31 +631,40 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
     let page = column([
         info_bar(
             INFO_BAR,
-            ZsInfoBarSpec::new("All changes are stored in the typed gallery state.")
-                .title("Native feedback")
+            ZsInfoBarSpec::new("所有更改均保存在强类型状态中 / Changes stay in typed state")
+                .title("原生反馈 / Native feedback")
                 .severity(ZsInfoBarSeverity::Success)
-                .action("Details"),
+                .action("详情 / Details"),
         )
         .on_info_bar_event(Msg::InfoBar),
         card(
-            "Overlay surfaces",
+            "浮层界面 / Overlay surfaces",
             vec![
                 row([
-                    button("Content dialog")
+                    button("内容对话框 / Dialog")
                         .on_click(Msg::OpenOverlay(GalleryOverlay::Dialog)),
-                    button("Toast").on_click(Msg::OpenOverlay(GalleryOverlay::Toast)),
-                    button("Teaching tip")
+                    button("轻量通知 / Toast").on_click(Msg::OpenOverlay(GalleryOverlay::Toast)),
+                    button("教学提示 / Tip")
                         .id(TEACHING_TARGET)
                         .on_click(Msg::OpenOverlay(GalleryOverlay::TeachingTip)),
                 ])
                 .gap(Dp::new(12.0)),
-                text("Dialog owns a modal focus scope. Toast and teaching tip remain in the shared View tree."),
-                button("Hover for Tooltip")
-                    .tooltip_spec(ZsTooltipSpec::new("Native delayed tooltip").open_delay_ms(250)),
+                column([
+                    text("对话框拥有模态焦点域；通知与教学提示仍在共享视图树中"),
+                    secondary_text(
+                        "Dialog owns modal focus; toast and tip stay in the shared View tree",
+                        TextRole::Caption,
+                    ),
+                ])
+                .gap(Dp::new(2.0)),
+                button("悬停显示工具提示 / Hover for Tooltip").tooltip_spec(
+                    ZsTooltipSpec::new("原生延时工具提示 / Native delayed tooltip")
+                        .open_delay_ms(250),
+                ),
             ],
         ),
         card(
-            "Status",
+            "状态 / Status",
             vec![
                 text(&state.status),
                 row([
@@ -595,18 +687,18 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
         state.overlay == Some(GalleryOverlay::TeachingTip),
         TEACHING_TARGET,
         ZsTeachingTipSpec::new(
-            "Teaching tip",
-            "This surface tracks a stable target without a WebView.",
+            "教学提示 / Teaching tip",
+            "该界面跟随稳定目标，不使用 WebView / Tracks a stable target without WebView",
         )
-        .action("Got it"),
+        .action("知道了 / Got it"),
         page,
     )
     .on_teaching_tip_result(Msg::TeachingTipResult);
     let page = toast_presenter(
         TOAST,
         (state.overlay == Some(GalleryOverlay::Toast)).then(|| {
-            ZsToastSpec::new(1, "Settings saved")
-                .action("Undo")
+            ZsToastSpec::new(1, "设置已保存 / Settings saved")
+                .action("撤销 / Undo")
                 .duration(ZsToastDuration::Persistent)
         }),
         page,
@@ -615,10 +707,10 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
     content_dialog(
         DIALOG,
         state.overlay == Some(GalleryOverlay::Dialog),
-        ZsContentDialogSpec::new("Choose how to continue.", "Cancel")
-            .title("Save changes?")
-            .primary_button("Save")
-            .secondary_button("Discard")
+        ZsContentDialogSpec::new("请选择后续操作 / Choose how to continue", "取消 / Cancel")
+            .title("保存更改？ / Save changes?")
+            .primary_button("保存 / Save")
+            .secondary_button("放弃 / Discard")
             .default_button(ZsContentDialogButton::Primary),
         page,
     )
@@ -630,7 +722,7 @@ fn catalog_page() -> ViewNode<Msg> {
     let contract_only = zsui_component_catalog()
         .iter()
         .filter(|component| component.status == ZsuiComponentStatus::ContractOnly)
-        .map(|component| component.component_name)
+        .map(|component| component_label(component.component_name))
         .collect::<Vec<_>>()
         .join(", ");
     let mut categories = Vec::new();
@@ -647,19 +739,19 @@ fn catalog_page() -> ViewNode<Msg> {
         let names = zsui_component_catalog()
             .iter()
             .filter(|component| component.category == category)
-            .map(|component| component.component_name)
+            .map(|component| component_label(component.component_name))
             .collect::<Vec<_>>();
-        categories.push(text(format!("{}", category.category_name())).height(Dp::new(22.0)));
+        categories.push(body_strong(category_label(category)).height(Dp::new(22.0)));
         categories.extend(
             names
-                .chunks(4)
+                .chunks(2)
                 .map(|names| text(names.join(", ")).height(Dp::new(24.0))),
         );
     }
 
     let inventory = scroll(column(categories).gap(Dp::new(6.0)))
-        .height(Dp::new(340.0))
-        .content_height(Dp::new(620.0));
+        .height(Dp::new(324.0))
+        .content_height(Dp::new(960.0));
     let layout_sample = grid(
         [ZsGridTrack::FLEX, ZsGridTrack::FLEX],
         [
@@ -670,21 +762,21 @@ fn catalog_page() -> ViewNode<Msg> {
             ZsGridCell::new(
                 0,
                 0,
-                text("Grid cell A")
+                text("网格单元 A / Grid cell A")
                     .bg(ThemeColorToken::Control)
                     .padding(Dp::new(12.0)),
             ),
             ZsGridCell::new(
                 0,
                 1,
-                text("Grid cell B")
+                text("网格单元 B / Grid cell B")
                     .bg(ThemeColorToken::Control)
                     .padding(Dp::new(12.0)),
             ),
             ZsGridCell::new(
                 1,
                 0,
-                text("Spanning layout")
+                text("跨列布局 / Spanning layout")
                     .bg(ThemeColorToken::Control)
                     .padding(Dp::new(12.0)),
             )
@@ -698,21 +790,31 @@ fn catalog_page() -> ViewNode<Msg> {
         info_bar(
             WidgetId::new(500),
             ZsInfoBarSpec::new(format!(
-                "{} runtime surfaces; {} contract-only families.",
-                summary.runtime_surface_count, summary.contract_only_count
+                "{} 个运行界面，{} 个仅契约组件 / {} runtime surfaces, {} contract-only",
+                summary.runtime_surface_count,
+                summary.contract_only_count,
+                summary.runtime_surface_count,
+                summary.contract_only_count
             ))
-            .title(format!("{} catalog families", summary.total_count))
+            .title(format!(
+                "{} 个组件家族 / {} component families",
+                summary.total_count, summary.total_count
+            ))
             .severity(ZsInfoBarSeverity::Informational),
         ),
         row([
-            card("Feature-gated inventory", vec![inventory]),
             card(
-                "Layout and contracts",
+                "按特性启用的目录 / Feature-gated inventory",
+                vec![inventory],
+            ),
+            card(
+                "布局与契约 / Layout and contracts",
                 vec![
                     layout_sample,
-                    text(format!("Contract only: {contract_only}")),
-                    text("Default build: window, button and label"),
-                    text("Gallery build: explicit component-gallery-demo feature"),
+                    body_strong("仅有契约 / Contract only"),
+                    text(contract_only),
+                    text("默认 / Default: window + button + label"),
+                    text("组件库 / Gallery: component-gallery-demo"),
                 ],
             ),
         ])
@@ -731,14 +833,17 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
     let navigation_item_width =
         Dp::new(navigation_metrics.open_pane_width.0 - navigation_padding.0 * 2.0);
     let mut navigation = vec![
-        role_text("ZSUI Gallery", TextRole::Subtitle),
+        role_text("ZSUI 组件库 / Gallery", TextRole::Subtitle),
         secondary_text(
-            format!("{} runtime surfaces", summary.runtime_surface_count),
+            format!(
+                "{} 个运行界面 / {} runtime surfaces",
+                summary.runtime_surface_count, summary.runtime_surface_count
+            ),
             TextRole::Caption,
         ),
     ];
-    navigation.extend(GalleryPage::ALL.into_iter().map(|(page, label, id)| {
-        navigation_item(label, page.icon(), page == state.page)
+    navigation.extend(GalleryPage::ALL.into_iter().map(|(page, id)| {
+        navigation_item(page.title(), page.icon(), page == state.page)
             .id(id)
             .width(navigation_item_width)
             .on_click(Msg::Navigate(page))
@@ -746,7 +851,11 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
     navigation.push(spacer());
     navigation.push(
         row([
-            text(if state.dark { "Dark" } else { "Light" }),
+            text(if state.dark {
+                "深色 / Dark"
+            } else {
+                "浅色 / Light"
+            }),
             spacer(),
             toggle(state.dark).on_toggle(Msg::Dark),
         ])
@@ -800,11 +909,19 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
         }
         Msg::Dark(value) => {
             state.dark = value;
-            state.status = if value { "Dark theme" } else { "Light theme" }.to_string();
+            state.status = if value {
+                "深色主题 / Dark theme"
+            } else {
+                "浅色主题 / Light theme"
+            }
+            .to_string();
         }
         Msg::PrimaryAction => {
             state.click_count = state.click_count.saturating_add(1);
-            state.status = format!("Saved {} time(s)", state.click_count);
+            state.status = format!(
+                "已保存 {} 次 / Saved {} time(s)",
+                state.click_count, state.click_count
+            );
         }
         Msg::Text(value) => state.text = value,
         Msg::Password(value) => state.password = value,
@@ -815,8 +932,19 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
         Msg::Slider(value) => state.slider = value,
         Msg::Number(value) => state.number = value,
         Msg::AutoQuery(value) => state.auto_query = value.text,
-        Msg::AutoChosen(value) => state.status = format!("Suggestion {} selected", value.get()),
-        Msg::AutoSubmitted(value) => state.status = format!("Query submitted: {}", value.query),
+        Msg::AutoChosen(value) => {
+            state.status = format!(
+                "已选择建议 {} / Suggestion {} selected",
+                value.get(),
+                value.get()
+            )
+        }
+        Msg::AutoSubmitted(value) => {
+            state.status = format!(
+                "已提交查询：{} / Query submitted: {}",
+                value.query, value.query
+            )
+        }
         Msg::Combo(value) => state.combo = Some(value),
         Msg::ComboExpanded(value) => state.combo_expanded = value,
         Msg::Date(value) => state.date = value,
@@ -828,7 +956,13 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
         Msg::ColorExpanded(value) => state.color.expanded = value,
         Msg::List(value) => state.list_selection = Some(value),
         Msg::GridSelected(value) => state.grid_selection = Some(value),
-        Msg::GridInvoked(value) => state.status = format!("Grid item {} invoked", value.get()),
+        Msg::GridInvoked(value) => {
+            state.status = format!(
+                "已调用网格项 {} / Grid item {} invoked",
+                value.get(),
+                value.get()
+            )
+        }
         Msg::TreeSelected(value) => state.tree_selection = Some(value),
         Msg::TreeExpanded(change) => {
             if change.expanded {
@@ -837,36 +971,62 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
                 state.tree_expanded.remove(&change.node);
             }
         }
-        Msg::TreeInvoked(value) => state.status = format!("Tree node {} invoked", value.get()),
+        Msg::TreeInvoked(value) => {
+            state.status = format!(
+                "已调用树节点 {} / Tree node {} invoked",
+                value.get(),
+                value.get()
+            )
+        }
         Msg::TableSelected(value) => state.table_selection = Some(value),
         Msg::TableSorted(value) => state.table_sort = Some(value),
-        Msg::TableInvoked(value) => state.status = format!("Table row {} invoked", value.get()),
+        Msg::TableInvoked(value) => {
+            state.status = format!(
+                "已调用表格行 {} / Table row {} invoked",
+                value.get(),
+                value.get()
+            )
+        }
         Msg::Tab(value) => state.tab = value,
-        Msg::Breadcrumb(value) => state.status = format!("Breadcrumb {} selected", value.get()),
+        Msg::Breadcrumb(value) => {
+            state.status = format!(
+                "已选择面包屑 {} / Breadcrumb {} selected",
+                value.get(),
+                value.get()
+            )
+        }
         Msg::BreadcrumbExpanded(value) => state.breadcrumb_expanded = value,
         Msg::PaletteOpen(value) => state.palette_open = value,
         Msg::PaletteQuery(value) => state.palette_query = value,
         Msg::PaletteHighlight(value) => {
-            state.status = format!("Command {} highlighted", value.get())
+            state.status = format!(
+                "已高亮命令 {} / Command {} highlighted",
+                value.get(),
+                value.get()
+            )
         }
         Msg::PaletteInvoke(value) => {
             state.palette_open = false;
-            state.status = format!("Command {} invoked", value.get());
+            state.status = format!(
+                "已调用命令 {} / Command {} invoked",
+                value.get(),
+                value.get()
+            );
         }
         Msg::OpenOverlay(value) => state.overlay = Some(value),
         Msg::DialogResult(value) => {
             state.overlay = None;
-            state.status = format!("Dialog: {value:?}");
+            state.status = format!("对话框 / Dialog: {value:?}");
         }
         Msg::ToastResult(value) => {
             state.overlay = None;
-            state.status = format!("Toast: {:?}", value.response);
+            state.status = format!("轻量通知 / Toast: {:?}", value.response);
         }
         Msg::TeachingTipResult(value) => {
             state.overlay = None;
-            state.status = format!("Teaching tip: {:?}", value.response);
+            state.status = format!("教学提示 / Teaching tip: {:?}", value.response);
         }
-        Msg::InfoBar(value) => state.status = format!("InfoBar: {value:?}"),
+        Msg::InfoBar(value) => state.status = format!("信息栏 / InfoBar: {value:?}"),
     }
 }
 
@@ -898,7 +1058,7 @@ fn main() -> ZsuiResult<()> {
         .unwrap_or(GalleryPage::Inputs);
     let mut state = GalleryState::default();
     state.page = initial_page;
-    let builder = native_window("ZSUI v0.2 Component Gallery")
+    let builder = native_window("ZSUI v0.2 组件库 / Component Gallery")
         .size(1180, 780)
         .min_size(980, 680)
         .stateful_view(state, view, update);
@@ -977,6 +1137,32 @@ fn main() -> ZsuiResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn has_chinese_and_english(value: &str) -> bool {
+        value.contains(" / ")
+            && value
+                .chars()
+                .any(|character| ('\u{4e00}'..='\u{9fff}').contains(&character))
+            && value
+                .chars()
+                .any(|character| character.is_ascii_alphabetic())
+    }
+
+    #[test]
+    fn gallery_navigation_and_catalog_labels_are_bilingual() {
+        for (page, _) in GalleryPage::ALL {
+            assert!(has_chinese_and_english(page.title()), "{}", page.title());
+            assert!(
+                has_chinese_and_english(page.description()),
+                "{}",
+                page.description()
+            );
+        }
+        for component in zsui_component_catalog() {
+            let label = component_label(component.component_name);
+            assert!(has_chinese_and_english(&label), "{label}");
+        }
+    }
 
     #[test]
     fn gallery_declares_every_catalog_family_and_keeps_contracts_explicit() {

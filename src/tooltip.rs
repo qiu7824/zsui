@@ -226,10 +226,8 @@ fn tooltip_text_shape(text: &str, maximum_columns: usize) -> (usize, usize) {
     let mut maximum_line = 0usize;
     let mut lines = 0usize;
     for source_line in text.lines().chain(text.is_empty().then_some("")) {
-        let columns = source_line
-            .chars()
-            .map(|character| if character.is_ascii() { 1 } else { 2 })
-            .sum::<usize>();
+        let columns =
+            crate::widget_render::zs_estimated_text_flow_units(source_line).max(0) as usize;
         let wrapped_lines = columns.max(1).div_ceil(maximum_columns);
         lines = lines.saturating_add(wrapped_lines);
         maximum_line = maximum_line.max(columns.min(maximum_columns).max(1));
@@ -504,6 +502,14 @@ mod tests {
             y: plan.bounds.y,
         }));
         assert!(plan.bounds.x + plan.bounds.width <= viewport.x + viewport.width);
+    }
+
+    #[test]
+    fn text_shape_uses_unicode_display_units_without_counting_combining_marks() {
+        assert_eq!(tooltip_text_shape("AB", 20), (2, 1));
+        assert_eq!(tooltip_text_shape("中文", 20), (4, 1));
+        assert_eq!(tooltip_text_shape("e\u{301}", 20), (1, 1));
+        assert_eq!(tooltip_text_shape("中文测试", 4), (4, 2));
     }
 
     #[test]

@@ -8,7 +8,7 @@ Compose with traits, route typed messages, and compile only the controls,
 services, and platform backends an application enables.
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.3-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.4-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -400,10 +400,10 @@ Run the complete, opt-in component gallery with:
 cargo run --release --example component_gallery --no-default-features --features component-gallery-demo
 ```
 
-Its five pages cover input, collection, navigation, feedback/overlay, layout,
-and catalog surfaces. The gallery profile explicitly enables all widgets;
-ordinary applications keep selecting individual Cargo features, and the
-default build does not bundle the full component set. Add
+Its five bilingual Chinese/English pages cover input, collection, navigation,
+feedback/overlay, layout, and catalog surfaces. The gallery profile explicitly
+enables all widgets; ordinary applications keep selecting individual Cargo
+features, and the default build does not bundle the full component set. Add
 `-- --smoke --page inputs` for a native Windows screenshot, or select
 `collections`, `navigation`, `feedback`, or `catalog`.
 
