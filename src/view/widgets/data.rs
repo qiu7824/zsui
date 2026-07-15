@@ -90,6 +90,17 @@ pub fn scroll<Msg>(child: ViewNode<Msg>) -> ViewNode<Msg> {
     .child(child)
 }
 
+#[cfg(feature = "image-preview")]
+pub fn image_preview<Msg>(snapshot: &ZsImagePreviewSnapshot) -> ViewNode<Msg> {
+    ViewNode::<Msg>::new(ViewNodeKind::ImagePreview {
+        snapshot: snapshot.clone(),
+        fit: ZsImageFit::Contain,
+        interpolation: NativeImageInterpolation::Smooth,
+    })
+    .min_width(Dp::new(48.0))
+    .min_height(Dp::new(48.0))
+}
+
 pub fn spacer<Msg>() -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Spacer)
 }

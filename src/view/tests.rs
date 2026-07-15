@@ -3047,4 +3047,51 @@ mod tests {
             NativeDrawCommand::Text(text) if text.text == "Count: 1"
         )));
     }
+
+    #[test]
+    #[cfg(feature = "image-preview")]
+    fn image_preview_paints_one_complete_frame_and_polls_only_while_loading() {
+        let frame = crate::ZsImageFrame::from_rgba8(
+            crate::ZsImageFrameId::new(9),
+            2,
+            1,
+            vec![255, 0, 0, 255, 0, 255, 0, 255],
+        )
+        .unwrap();
+        let snapshot = crate::ZsImagePreviewSnapshot {
+            generation: 1,
+            frame: Some(frame),
+            loading: false,
+            last_error: None,
+        };
+        let mut view: ViewNode<()> = image_preview(&snapshot).image_fit(crate::ZsImageFit::Cover);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let plan = paint.into_plan();
+        assert_eq!(plan.image_count(), 1);
+        assert!(plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Image(image)
+                if image.frame.id() == crate::ZsImageFrameId::new(9)
+                    && image.source.width == 1
+        )));
+        assert_eq!(view.background_poll_interval_ms(), None);
+
+        let loading: ViewNode<()> = image_preview(&crate::ZsImagePreviewSnapshot {
+            generation: 2,
+            frame: None,
+            loading: true,
+            last_error: None,
+        });
+        assert_eq!(loading.background_poll_interval_ms(), Some(16));
+    }
 }

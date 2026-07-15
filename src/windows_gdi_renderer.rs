@@ -3,10 +3,10 @@ use std::{ffi::c_void, io::Cursor, ptr::null, sync::OnceLock};
 use crate::{
     native_icons::{WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY},
     Color, ColorRole, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawCommandOperation,
-    NativeDrawCommandSink, NativeDrawFill, NativeDrawIconCommand, NativeDrawPlan,
-    NativeDrawTextCommand, NativeIconColorMode, NativeStyleResolver, Rect, Renderer,
-    SemanticTextStyle, Size, TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
-    ZsIcon,
+    NativeDrawCommandSink, NativeDrawFill, NativeDrawIconCommand, NativeDrawImageCommand,
+    NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, NativeImageInterpolation,
+    NativeStyleResolver, Rect, Renderer, SemanticTextStyle, Size, TextLayout, TextRun, TextStyle,
+    TextWeight, TextWrap, VerticalAlign, ZsIcon,
 };
 use windows_sys::Win32::{
     Foundation::{POINT, RECT},
@@ -171,7 +171,37 @@ unsafe extern "system" {
         start_angle: f32,
         sweep_angle: f32,
     ) -> i32;
+    fn GdipCreateBitmapFromScan0(
+        width: i32,
+        height: i32,
+        stride: i32,
+        pixel_format: i32,
+        scan0: *mut u8,
+        bitmap: *mut *mut c_void,
+    ) -> i32;
+    fn GdipDisposeImage(image: *mut c_void) -> i32;
+    fn GdipSetInterpolationMode(graphics: *mut c_void, interpolation_mode: i32) -> i32;
+    fn GdipDrawImageRectRectI(
+        graphics: *mut c_void,
+        image: *mut c_void,
+        dst_x: i32,
+        dst_y: i32,
+        dst_width: i32,
+        dst_height: i32,
+        src_x: i32,
+        src_y: i32,
+        src_width: i32,
+        src_height: i32,
+        src_unit: i32,
+        image_attributes: *const c_void,
+        callback: *const c_void,
+        callback_data: *const c_void,
+    ) -> i32;
 }
+
+const GDIP_PIXEL_FORMAT_32BPP_PARGB: i32 = 0x000e_200b;
+const GDIP_INTERPOLATION_MODE_NEAREST_NEIGHBOR: i32 = 5;
+const GDIP_INTERPOLATION_MODE_HIGH_QUALITY_BICUBIC: i32 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowsNoFlickerPaintStrategy {
@@ -1192,6 +1222,24 @@ impl WindowsGdiDrawSink {
         );
         true
     }
+
+    fn draw_image_command(&mut self, command: &NativeDrawImageCommand) {
+        if self.renderer.hdc().is_null() || command.bounds.width <= 0 || command.bounds.height <= 0
+        {
+            return;
+        }
+        if unsafe { draw_image_frame_gdiplus(self.renderer.hdc(), command) } {
+            return;
+        }
+        stretch_top_down_32bpp_region(
+            self.renderer.hdc(),
+            command.bounds,
+            command.source,
+            i32::try_from(command.frame.width()).unwrap_or(0),
+            i32::try_from(command.frame.height()).unwrap_or(0),
+            command.frame.premultiplied_bgra8(),
+        );
+    }
 }
 
 fn detect_windows_system_icon_font(dc: HDC) -> WindowsSystemIconFont {
@@ -1355,6 +1403,7 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
                 ));
             }
             NativeDrawCommand::Icon(command) => self.draw_icon_command(command),
+            NativeDrawCommand::Image(command) => self.draw_image_command(command),
             NativeDrawCommand::PushClip { rect } => self.renderer.push_clip(*rect),
             NativeDrawCommand::PopClip => self.renderer.pop_clip(),
         }
@@ -1468,12 +1517,46 @@ pub fn color_from_colorref(color: u32) -> Color {
 }
 
 fn stretch_top_down_32bpp(dc: HDC, rect: Rect, src_width: i32, src_height: i32, bgra_bits: &[u8]) {
+    stretch_top_down_32bpp_region(
+        dc,
+        rect,
+        Rect {
+            x: 0,
+            y: 0,
+            width: src_width,
+            height: src_height,
+        },
+        src_width,
+        src_height,
+        bgra_bits,
+    );
+}
+
+fn stretch_top_down_32bpp_region(
+    dc: HDC,
+    rect: Rect,
+    source: Rect,
+    src_width: i32,
+    src_height: i32,
+    bgra_bits: &[u8],
+) {
     if dc.is_null()
         || rect.width <= 0
         || rect.height <= 0
+        || source.width <= 0
+        || source.height <= 0
         || src_width <= 0
         || src_height <= 0
-        || bgra_bits.is_empty()
+        || bgra_bits.len()
+            != usize::try_from(src_width)
+                .ok()
+                .and_then(|width| {
+                    usize::try_from(src_height)
+                        .ok()
+                        .and_then(|height| width.checked_mul(height))
+                })
+                .and_then(|pixels| pixels.checked_mul(4))
+                .unwrap_or(0)
     {
         return;
     }
@@ -1493,16 +1576,104 @@ fn stretch_top_down_32bpp(dc: HDC, rect: Rect, src_width: i32, src_height: i32, 
             rect.y,
             rect.width,
             rect.height,
-            0,
-            0,
-            src_width,
-            src_height,
+            source.x.max(0).min(src_width.saturating_sub(1)),
+            source.y.max(0).min(src_height.saturating_sub(1)),
+            source
+                .width
+                .min(src_width.saturating_sub(source.x.max(0)))
+                .max(1),
+            source
+                .height
+                .min(src_height.saturating_sub(source.y.max(0)))
+                .max(1),
             bgra_bits.as_ptr() as _,
             &info,
             DIB_RGB_COLORS,
             SRCCOPY,
         );
     }
+}
+
+unsafe fn draw_image_frame_gdiplus(dc: HDC, command: &NativeDrawImageCommand) -> bool {
+    if ensure_gdiplus_startup().is_none() {
+        return false;
+    }
+    let Ok(width) = i32::try_from(command.frame.width()) else {
+        return false;
+    };
+    let Ok(height) = i32::try_from(command.frame.height()) else {
+        return false;
+    };
+    let Some(stride) = width.checked_mul(4) else {
+        return false;
+    };
+    let expected = usize::try_from(stride).ok().and_then(|stride| {
+        usize::try_from(height)
+            .ok()
+            .and_then(|height| stride.checked_mul(height))
+    });
+    if width <= 0
+        || height <= 0
+        || expected != Some(command.frame.premultiplied_bgra8().len())
+        || command.source.width <= 0
+        || command.source.height <= 0
+    {
+        return false;
+    }
+
+    let mut image = std::ptr::null_mut();
+    if GdipCreateBitmapFromScan0(
+        width,
+        height,
+        stride,
+        GDIP_PIXEL_FORMAT_32BPP_PARGB,
+        command.frame.premultiplied_bgra8().as_ptr() as *mut u8,
+        &mut image,
+    ) != 0
+        || image.is_null()
+    {
+        return false;
+    }
+    let mut graphics = std::ptr::null_mut();
+    let created_graphics = GdipCreateFromHDC(dc, &mut graphics) == 0 && !graphics.is_null();
+    let drawn = if created_graphics {
+        let interpolation = match command.interpolation {
+            NativeImageInterpolation::Nearest => GDIP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+            NativeImageInterpolation::Smooth => GDIP_INTERPOLATION_MODE_HIGH_QUALITY_BICUBIC,
+        };
+        let _ = GdipSetInterpolationMode(graphics, interpolation);
+        GdipDrawImageRectRectI(
+            graphics,
+            image,
+            command.bounds.x,
+            command.bounds.y,
+            command.bounds.width,
+            command.bounds.height,
+            command.source.x.max(0).min(width.saturating_sub(1)),
+            command.source.y.max(0).min(height.saturating_sub(1)),
+            command
+                .source
+                .width
+                .min(width.saturating_sub(command.source.x.max(0)))
+                .max(1),
+            command
+                .source
+                .height
+                .min(height.saturating_sub(command.source.y.max(0)))
+                .max(1),
+            GDIP_UNIT_PIXEL,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+        ) == 0
+    } else {
+        false
+    };
+    if created_graphics {
+        let _ = GdipDeleteGraphics(graphics);
+    }
+    let _ = GdipDisposeImage(image);
+    drawn
 }
 
 fn decode_png_to_bgra(bytes: &'static [u8]) -> Option<(i32, i32, Vec<u8>)> {
@@ -1853,6 +2024,22 @@ mod tests {
                 rect,
                 NativeIconColorMode::ThemeAware,
             )),
+            NativeDrawCommand::Image(crate::NativeDrawImageCommand::new(
+                crate::ZsImageFrame::from_rgba8(
+                    crate::ZsImageFrameId::new(3),
+                    1,
+                    1,
+                    vec![255, 255, 255, 255],
+                )
+                .unwrap(),
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                rect,
+            )),
             NativeDrawCommand::PushClip { rect },
             NativeDrawCommand::PopClip,
         ]);
@@ -1867,6 +2054,7 @@ mod tests {
                 NativeDrawCommandOperation::RoundRect,
                 NativeDrawCommandOperation::DrawText,
                 NativeDrawCommandOperation::DrawIcon,
+                NativeDrawCommandOperation::DrawImage,
                 NativeDrawCommandOperation::PushClip,
                 NativeDrawCommandOperation::PopClip,
             ]

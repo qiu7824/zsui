@@ -46,6 +46,8 @@ pub mod host;
 pub mod host_protocol;
 pub mod hotkey;
 pub mod icon;
+#[cfg(feature = "image-preview")]
+pub mod image_preview;
 #[cfg(feature = "info-bar")]
 pub mod info_bar;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
@@ -285,6 +287,11 @@ pub use host_protocol::{
 };
 pub use hotkey::HotkeySpec;
 pub use icon::ZsIcon;
+#[cfg(feature = "image-preview")]
+pub use image_preview::{
+    zs_image_native_draw_command, zs_image_render_geometry, ZsImageFit, ZsImagePreviewConfig,
+    ZsImagePreviewSnapshot, ZsImagePreviewState, ZsImageRenderGeometry,
+};
 #[cfg(feature = "info-bar")]
 pub use info_bar::{
     ZsInfoBarControl, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec, ZsInfoBarState,
@@ -432,7 +439,7 @@ pub use native_smoke::{
 #[cfg(feature = "paged-list")]
 pub use paged_list::{
     paged_list, Page, PageIndex, PageLoadError, PageRequest, PagedDataSource, PagedItem,
-    PagedListAnchor, PagedListConfig, PagedListSnapshot, PagedListState,
+    PagedListAnchor, PagedListConfig, PagedListSnapshot, PagedListState, PagedListSyncReconcile,
 };
 #[cfg(feature = "password-box")]
 pub use password_box::{
@@ -466,12 +473,12 @@ pub use render_protocol::NativeDrawSecureTextCommand;
 pub use render_protocol::{
     required_native_draw_command_operation_names, Color, ColorRole, HorizontalAlign,
     NativeDrawCommand, NativeDrawCommandOperation, NativeDrawCommandSink, NativeDrawFill,
-    NativeDrawIconCommand, NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode,
-    NativeStyleHostOperation, NativeStyleResolver, Renderer, RendererHostOperation,
-    SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole, TextRun, TextStyle,
-    TextWeight, TextWrap, VerticalAlign, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
-    REQUIRED_NATIVE_STYLE_HOST_OPERATIONS, REQUIRED_RENDERER_HOST_OPERATIONS,
-    REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
+    NativeDrawIconCommand, NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand,
+    NativeIconColorMode, NativeImageInterpolation, NativeStyleHostOperation, NativeStyleResolver,
+    Renderer, RendererHostOperation, SemanticTextStyle, TextLayout, TextLayoutHostOperation,
+    TextRole, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign, ZsImageFrame,
+    ZsImageFrameId, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS, REQUIRED_NATIVE_STYLE_HOST_OPERATIONS,
+    REQUIRED_RENDERER_HOST_OPERATIONS, REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};
 pub use shell_layout::{
@@ -544,6 +551,8 @@ pub use view::date_picker;
 pub use view::grid;
 #[cfg(feature = "grid-view")]
 pub use view::grid_view;
+#[cfg(feature = "image-preview")]
+pub use view::image_preview;
 #[cfg(feature = "info-bar")]
 pub use view::info_bar;
 #[cfg(feature = "list")]

@@ -1647,6 +1647,50 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *style,
                 )));
             }
+            #[cfg(feature = "image-preview")]
+            ViewNodeKind::ImagePreview {
+                snapshot,
+                fit,
+                interpolation,
+            } => {
+                if self.style.background.is_none() {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: bounds,
+                        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                    });
+                }
+                let content_bounds = inset_bounds(bounds, self.style.padding, cx.dpi);
+                if let Some(frame) = snapshot.frame.clone() {
+                    if let Some(command) = crate::zs_image_native_draw_command(
+                        frame,
+                        content_bounds,
+                        *fit,
+                        *interpolation,
+                    ) {
+                        cx.draw(NativeDrawCommand::PushClip {
+                            rect: content_bounds,
+                        });
+                        cx.draw(NativeDrawCommand::Image(command));
+                        cx.draw(NativeDrawCommand::PopClip);
+                    }
+                } else {
+                    let side = content_bounds
+                        .width
+                        .min(content_bounds.height)
+                        .min(Dp::new(32.0).to_px(cx.dpi).round_i32())
+                        .max(1);
+                    cx.draw(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+                        crate::ZsIcon::Image,
+                        Rect {
+                            x: content_bounds.x + (content_bounds.width - side) / 2,
+                            y: content_bounds.y + (content_bounds.height - side) / 2,
+                            width: side,
+                            height: side,
+                        },
+                        NativeIconColorMode::ThemeAware,
+                    )));
+                }
+            }
             #[cfg(feature = "button")]
             ViewNodeKind::Button {
                 label,

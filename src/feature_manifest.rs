@@ -480,6 +480,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "PNG decode/encode helpers used by smoke screenshots and GDI icons",
         ),
         ZsuiCargoFeature::new(
+            "image-preview",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["image", "widgets-base"],
+            "retained image preview with coalesced background PNG decode and atomic frame replacement",
+        ),
+        ZsuiCargoFeature::new(
             "native-smoke",
             Tooling,
             false,
@@ -590,6 +598,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "list",
                 "virtual-list",
                 "paged-list",
+                "image-preview",
                 "textbox",
                 "password-box",
                 "tooltip",
@@ -783,6 +792,10 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "dialog")
             .expect("dialog feature should be listed");
+        let image_preview = manifest
+            .iter()
+            .find(|feature| feature.name == "image-preview")
+            .expect("image preview feature should be listed");
         let all_widgets = manifest
             .iter()
             .find(|feature| feature.name == "all-widgets")
@@ -793,12 +806,14 @@ mod tests {
         assert!(!dialog.default_enabled);
         assert_eq!(dialog.enables, vec!["widgets-base"]);
         assert_eq!(table.enables, vec!["widgets-list"]);
+        assert_eq!(image_preview.enables, vec!["image", "widgets-base"]);
         assert!(!table.enables.contains(&"list"));
         assert!(!table.enables.contains(&"scroll"));
         assert!(!all_widgets.default_enabled);
         assert!(all_widgets.enables.contains(&"grid"));
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
+        assert!(all_widgets.enables.contains(&"image-preview"));
         assert!(all_widgets.enables.contains(&"tooltip"));
         assert!(all_widgets.enables.contains(&"dialog"));
         assert!(all_widgets.enables.contains(&"toggle-button"));

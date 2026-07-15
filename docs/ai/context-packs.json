@@ -90,7 +90,7 @@
     },
     {
       "id": "long-list",
-      "purpose": "Virtual rows, background pagination, prefetch and bounded page caching",
+      "purpose": "Virtual rows, background pagination, sync reconciliation, prefetch and bounded page caching",
       "required": [
         "src/paged_list.rs",
         "src/view/layout.rs",
@@ -106,6 +106,29 @@
         "cargo test --no-default-features --features paged-list,label --quiet",
         "cargo check --example paged_virtual_list --no-default-features --features window,button,label,paged-list",
         "cargo run --example paged_virtual_list --no-default-features --features window,button,label,paged-list -- --smoke"
+      ]
+    },
+    {
+      "id": "image-preview",
+      "purpose": "Retained raster frames, coalesced background PNG decode and buffered Win32 presentation",
+      "required": [
+        "src/image_preview.rs",
+        "src/render_protocol.rs",
+        "src/windows_gdi_renderer.rs",
+        "examples/image_preview.rs",
+        "docs/image-preview.md"
+      ],
+      "optional": [
+        "src/view/node.rs",
+        "src/view/paint.rs",
+        "src/native.rs",
+        "src/platform/windows/window.rs",
+        "Cargo.toml"
+      ],
+      "verify": [
+        "cargo test --lib --no-default-features --features image-preview --quiet",
+        "cargo check --example image_preview --no-default-features --features window,button,label,image-preview",
+        "cargo run --example image_preview --no-default-features --features window,button,label,image-preview -- --smoke"
       ]
     },
     {

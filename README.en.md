@@ -349,11 +349,24 @@ feature modules such as `zsui-core`, `zsui-shell`, `zsui-render`,
 
 Long uniform-row collections use the optional `paged-list` feature. It combines
 visible-range-only layout and painting with a dedicated loader thread, request
-deduplication, stale-generation rejection and a bounded LRU page cache:
+deduplication, stale-generation rejection, direction-aware queue pruning,
+anchor-preserving synchronized reconciliation and a bounded LRU page cache:
 
 ```text
 cargo run --example paged_virtual_list --no-default-features --features window,button,label,paged-list
 ```
+
+The optional `image-preview` feature decodes PNG frames on an owned worker,
+coalesces pending requests, rejects stale generations and retains the last
+complete frame until the next frame is ready. Win32 draws the published raster
+inside the buffered paint transaction:
+
+```text
+cargo run --example image_preview --no-default-features --features window,button,label,image-preview
+```
+
+See [`docs/image-preview.md`](docs/image-preview.md) for lifecycle and target
+status details.
 
 See [`docs/paged-virtual-list.md`](docs/paged-virtual-list.md) for the data-source
 contract and verification commands.

@@ -12,7 +12,8 @@ use std::{
 
 use crate::{
     view::{
-        virtual_list, ViewNode, VirtualListRange, VirtualListScrollDirection, VirtualListViewport,
+        virtual_list, virtual_list_viewport, ViewNode, VirtualListRange,
+        VirtualListScrollDirection, VirtualListViewport,
     },
     Dp, ZsuiError, ZsuiResult,
 };
@@ -153,6 +154,21 @@ pub struct PagedListAnchor<K> {
     pub offset_within_row: Dp,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PagedListSyncReconcile {
+    pub previous_generation: u64,
+    pub generation: u64,
+    pub previous_anchor_index: Option<usize>,
+    pub anchor_index: Option<usize>,
+    pub offset_y: Dp,
+}
+
+impl PagedListSyncReconcile {
+    pub const fn anchor_preserved(self) -> bool {
+        self.previous_anchor_index.is_some() && self.anchor_index.is_some()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageLoadError {
     pub request: PageRequest,
@@ -191,6 +207,7 @@ struct PagedListInner<K, T> {
     visible_range: VirtualListRange,
     materialized_range: VirtualListRange,
     offset_y: Dp,
+    row_height: Dp,
     anchor: Option<PagedListAnchor<K>>,
     last_error: Option<PageLoadError>,
 }
@@ -323,6 +340,7 @@ where
             visible_range: VirtualListRange::new(0, config.initial_viewport_rows),
             materialized_range: VirtualListRange::new(0, config.initial_viewport_rows),
             offset_y: Dp::new(0.0),
+            row_height: Dp::new(40.0),
             anchor: None,
             last_error: None,
         }));
@@ -341,6 +359,9 @@ where
                     let WorkerCommand::Load(request) = command else {
                         break;
                     };
+                    if !page_request_is_relevant(&worker_inner, request) {
+                        continue;
+                    }
                     let result = source.load_page(request);
                     for request in complete_page_request(&worker_inner, request, result) {
                         if worker_sender.send(WorkerCommand::Load(request)).is_err() {
@@ -389,17 +410,23 @@ where
             inner.visible_range = viewport.visible_range;
             inner.materialized_range = viewport.materialized_range;
             inner.offset_y = viewport.offset_y;
-            inner.anchor =
-                inner
-                    .item_at(viewport.visible_range.start)
-                    .map(|item| PagedListAnchor {
-                        key: item.key.clone(),
-                        index: viewport.visible_range.start,
-                        offset_within_row: Dp::new(
-                            viewport.offset_y.0
-                                - viewport.visible_range.start as f32 * viewport.row_height.0,
-                        ),
-                    });
+            inner.row_height = viewport.row_height;
+            inner.anchor = inner
+                .item_at(viewport.visible_range.start)
+                .map(|item| PagedListAnchor {
+                    key: item.key.clone(),
+                    index: viewport.visible_range.start,
+                    offset_within_row: Dp::new(
+                        viewport.offset_y.0
+                            - viewport.visible_range.start as f32 * viewport.row_height.0,
+                    ),
+                })
+                .or_else(|| {
+                    inner
+                        .anchor
+                        .clone()
+                        .filter(|anchor| viewport.visible_range.contains(anchor.index))
+                });
             inner.evict_lru_pages();
         }
         self.enqueue_range(viewport.materialized_range, viewport.direction);
@@ -417,6 +444,7 @@ where
             inner.visible_range = VirtualListRange::new(0, inner.config.initial_viewport_rows);
             inner.materialized_range = inner.visible_range;
             inner.offset_y = Dp::new(0.0);
+            inner.row_height = Dp::new(40.0);
             inner.anchor = None;
             inner.last_error = None;
             inner.config.initial_viewport_rows
@@ -425,6 +453,93 @@ where
             VirtualListRange::new(0, initial_rows),
             VirtualListScrollDirection::Forward,
         );
+    }
+
+    pub fn reconcile_synced(
+        &mut self,
+        total_count: usize,
+        locate_anchor: impl FnOnce(&K) -> Option<usize>,
+    ) -> PagedListSyncReconcile
+    where
+        K: Clone,
+    {
+        let previous_anchor = self.lock().anchor.clone();
+        let next_anchor_index = previous_anchor
+            .as_ref()
+            .and_then(|anchor| locate_anchor(&anchor.key))
+            .filter(|index| *index < total_count);
+        let (report, materialized_range) = {
+            let mut inner = self.lock();
+            let previous_generation = inner.generation;
+            let previous_anchor_index = previous_anchor.as_ref().map(|anchor| anchor.index);
+            let visible_rows = inner.visible_range.len().max(1);
+            let overscan_rows = inner
+                .visible_range
+                .start
+                .saturating_sub(inner.materialized_range.start)
+                .max(
+                    inner
+                        .materialized_range
+                        .end
+                        .saturating_sub(inner.visible_range.end),
+                );
+            let row_height = if inner.row_height.0.is_finite() {
+                Dp::new(inner.row_height.0.max(1.0))
+            } else {
+                Dp::new(40.0)
+            };
+            let anchor_offset = previous_anchor
+                .as_ref()
+                .map(|anchor| anchor.offset_within_row.0)
+                .unwrap_or(0.0);
+            let viewport_offset_within_row = (inner.offset_y.0
+                - inner.visible_range.start as f32 * row_height.0)
+                .clamp(0.0, row_height.0);
+            let viewport_height =
+                (row_height.0 * visible_rows as f32 - viewport_offset_within_row).max(0.0);
+            let requested_offset = next_anchor_index
+                .map(|index| index as f32 * row_height.0 + anchor_offset)
+                .unwrap_or(inner.offset_y.0);
+            let viewport = virtual_list_viewport(
+                total_count,
+                row_height,
+                Dp::new(requested_offset),
+                Dp::new(viewport_height),
+                overscan_rows,
+                VirtualListScrollDirection::Stationary,
+            );
+
+            inner.generation = inner.generation.saturating_add(1);
+            inner.revision = inner.revision.saturating_add(1);
+            inner.total_count = Some(total_count);
+            inner.has_more = false;
+            inner.pages.clear();
+            inner.in_flight.clear();
+            inner.visible_range = viewport.visible_range;
+            inner.materialized_range = viewport.materialized_range;
+            inner.offset_y = viewport.offset_y;
+            inner.row_height = viewport.row_height;
+            inner.anchor = previous_anchor.as_ref().and_then(|anchor| {
+                next_anchor_index.map(|index| PagedListAnchor {
+                    key: anchor.key.clone(),
+                    index,
+                    offset_within_row: anchor.offset_within_row,
+                })
+            });
+            inner.last_error = None;
+            (
+                PagedListSyncReconcile {
+                    previous_generation,
+                    generation: inner.generation,
+                    previous_anchor_index,
+                    anchor_index: next_anchor_index,
+                    offset_y: inner.offset_y,
+                },
+                inner.materialized_range,
+            )
+        };
+        self.enqueue_range(materialized_range, VirtualListScrollDirection::Stationary);
+        report
     }
 
     pub fn retry_failed(&mut self) -> bool {
@@ -599,6 +714,44 @@ fn collect_page_requests<K, T>(
         });
     }
     requests
+}
+
+fn page_request_is_relevant<K, T>(
+    inner: &Arc<Mutex<PagedListInner<K, T>>>,
+    request: PageRequest,
+) -> bool {
+    let mut inner = inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if request.generation != inner.generation {
+        return false;
+    }
+    if !inner.in_flight.contains(&request.page) {
+        return false;
+    }
+    if inner.pages.contains_key(&request.page) {
+        inner.in_flight.remove(&request.page);
+        return false;
+    }
+
+    let total_count = inner.effective_total_count();
+    let range = inner.materialized_range.clamp(total_count);
+    if range.is_empty() || total_count == 0 {
+        inner.in_flight.remove(&request.page);
+        return false;
+    }
+    let first_page = range.start / inner.config.page_size;
+    let last_page = range.end.saturating_sub(1) / inner.config.page_size;
+    let max_page = total_count.saturating_sub(1) / inner.config.page_size;
+    let first_wanted = first_page.saturating_sub(inner.config.prefetch_pages);
+    let last_wanted = last_page
+        .saturating_add(inner.config.prefetch_pages)
+        .min(max_page);
+    let relevant = request.page.0 >= first_wanted && request.page.0 <= last_wanted;
+    if !relevant {
+        inner.in_flight.remove(&request.page);
+    }
+    relevant
 }
 
 fn complete_page_request<K, T>(
@@ -870,6 +1023,89 @@ mod tests {
         assert_eq!(anchor.key, "id-2");
         assert_eq!(anchor.index, 2);
         assert_eq!(anchor.offset_within_row, Dp::new(4.0));
+    }
+
+    #[test]
+    fn synced_reconcile_keeps_the_visible_key_at_the_same_pixel_position() {
+        let mut state = PagedListState::new(
+            PagedListConfig::default()
+                .page_size(10)
+                .prefetch_pages(0)
+                .initial_viewport_rows(5)
+                .total_count_hint(30),
+            |request: PageRequest| {
+                Ok(Page::new((0..request.page_size).map(|offset| {
+                    let index = request.offset() + offset;
+                    PagedItem::new(format!("id-{index}"), index)
+                }))
+                .total_count(40))
+            },
+        )
+        .unwrap();
+        assert!(state.wait_for_idle(Duration::from_secs(1)));
+        state.update_viewport(VirtualListViewport {
+            offset_y: Dp::new(44.0),
+            row_height: Dp::new(20.0),
+            visible_range: VirtualListRange::new(2, 7),
+            materialized_range: VirtualListRange::new(1, 8),
+            direction: VirtualListScrollDirection::Forward,
+        });
+
+        let report = state.reconcile_synced(40, |key| (key == "id-2").then_some(5));
+
+        assert!(report.anchor_preserved());
+        assert_eq!(report.previous_anchor_index, Some(2));
+        assert_eq!(report.anchor_index, Some(5));
+        assert_eq!(report.offset_y, Dp::new(104.0));
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.offset_y, Dp::new(104.0));
+        assert_eq!(snapshot.visible_range, VirtualListRange::new(5, 10));
+        assert_eq!(snapshot.anchor.unwrap().key, "id-2");
+    }
+
+    #[test]
+    fn reversing_far_away_skips_obsolete_queued_prefetch_pages() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let source_calls = Arc::clone(&calls);
+        let started = Arc::new(AtomicBool::new(false));
+        let source_started = Arc::clone(&started);
+        let release = Arc::new(AtomicBool::new(false));
+        let source_release = Arc::clone(&release);
+        let mut state = PagedListState::new(
+            PagedListConfig::default()
+                .page_size(10)
+                .cache_pages(8)
+                .prefetch_pages(2)
+                .initial_viewport_rows(5)
+                .total_count_hint(100),
+            move |request: PageRequest| {
+                source_calls.lock().unwrap().push(request.page);
+                if request.page == PageIndex(0) {
+                    source_started.store(true, Ordering::Release);
+                    while !source_release.load(Ordering::Acquire) {
+                        thread::yield_now();
+                    }
+                }
+                Ok(Page::new((0..request.page_size).map(|offset| {
+                    let index = request.offset() + offset;
+                    PagedItem::new(index, index)
+                }))
+                .total_count(100))
+            },
+        )
+        .unwrap();
+        while !started.load(Ordering::Acquire) {
+            thread::yield_now();
+        }
+        state.update_viewport(viewport(80, 85, VirtualListScrollDirection::Forward));
+        release.store(true, Ordering::Release);
+
+        assert!(state.wait_for_idle(Duration::from_secs(1)));
+        let calls = calls.lock().unwrap();
+        assert!(calls.contains(&PageIndex(0)));
+        assert!(calls.contains(&PageIndex(8)));
+        assert!(!calls.contains(&PageIndex(1)));
+        assert!(!calls.contains(&PageIndex(2)));
     }
 
     #[test]

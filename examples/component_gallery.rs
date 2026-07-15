@@ -138,11 +138,16 @@ struct GalleryState {
     palette_open: bool,
     palette_query: String,
     overlay: Option<GalleryOverlay>,
+    image_preview: ZsImagePreviewState,
     status: String,
 }
 
 impl Default for GalleryState {
     fn default() -> Self {
+        let mut image_preview = ZsImagePreviewState::default();
+        if let Some(bytes) = ZsIcon::Image.png_24_bytes() {
+            image_preview.set_png(ZsImageFrameId::new(1), std::sync::Arc::from(bytes));
+        }
         Self {
             page: GalleryPage::Inputs,
             dark: false,
@@ -174,6 +179,7 @@ impl Default for GalleryState {
             palette_open: false,
             palette_query: String::new(),
             overlay: None,
+            image_preview,
             status: "就绪 / Ready".to_string(),
         }
     }
@@ -717,7 +723,7 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
     .on_dialog_result(Msg::DialogResult)
 }
 
-fn catalog_page() -> ViewNode<Msg> {
+fn catalog_page(state: &GalleryState) -> ViewNode<Msg> {
     let summary = zsui_component_catalog_summary();
     let contract_only = zsui_component_catalog()
         .iter()
@@ -811,6 +817,10 @@ fn catalog_page() -> ViewNode<Msg> {
                 "布局与契约 / Layout and contracts",
                 vec![
                     layout_sample,
+                    body_strong("保留帧图片 / Retained image"),
+                    image_preview(&state.image_preview.snapshot())
+                        .height(Dp::new(96.0))
+                        .image_fit(ZsImageFit::Contain),
                     body_strong("仅有契约 / Contract only"),
                     text(contract_only),
                     text("默认 / Default: window + button + label"),
@@ -878,7 +888,7 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
         GalleryPage::Collections => collections_page(state),
         GalleryPage::Navigation => navigation_page(state),
         GalleryPage::Feedback => feedback_page(state),
-        GalleryPage::Catalog => catalog_page(),
+        GalleryPage::Catalog => catalog_page(state),
     };
     let content = column([
         role_text(state.page.title(), TextRole::Subtitle),
@@ -1168,8 +1178,8 @@ mod tests {
     fn gallery_declares_every_catalog_family_and_keeps_contracts_explicit() {
         let summary = zsui_component_catalog_summary();
         assert_eq!(summary.total_count, 48);
-        assert_eq!(summary.runtime_surface_count, 45);
-        assert_eq!(summary.contract_only_count, 3);
+        assert_eq!(summary.runtime_surface_count, 46);
+        assert_eq!(summary.contract_only_count, 2);
     }
 
     #[test]

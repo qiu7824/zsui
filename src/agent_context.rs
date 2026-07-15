@@ -908,8 +908,8 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 45);
-        assert_eq!(context.readiness.component_catalog.contract_only_count, 3);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 46);
+        assert_eq!(context.readiness.component_catalog.contract_only_count, 2);
         assert_eq!(context.readiness.component_catalog.not_started_count, 0);
         let component_area = context
             .completion_areas
@@ -1188,7 +1188,7 @@ mod tests {
         let packs = manifest["packs"]
             .as_array()
             .expect("AI context packs should be an array");
-        assert_eq!(packs.len(), 15);
+        assert_eq!(packs.len(), 16);
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut ids = HashSet::new();
         for pack in packs {

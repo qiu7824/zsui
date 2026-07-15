@@ -13,7 +13,7 @@ overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: about 93% complete (45 first-pass runtime surfaces out of
+- Component library: about 96% complete (46 first-pass runtime surfaces out of
   48 catalogued component families).
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
@@ -40,8 +40,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 45 families have
-a first-pass runtime surface, 3 are contract-only and none are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: 46 families have
+a first-pass runtime surface, 2 are contract-only and none are not started. A
 composite workbench does not make its underlying contract-only controls
 complete. WebView is intentionally outside the v0.2 product boundary.
 
@@ -201,8 +201,8 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 48 component families: 45 have a first-pass
-runtime surface, 3 are contract-only and none are not started. The
+`src/component_catalog.rs` tracks 48 component families: 46 have a first-pass
+runtime surface, 2 are contract-only and none are not started. The
 optional Grid surface uses typed fixed/fractional tracks, nonzero spans,
 independent row/column gaps, explicit typed cell placement and one DPI-aware
 layout result for paint and hit testing on Win32/AppKit/GTK4. Windows has a

@@ -9,8 +9,9 @@ use gtk4 as gtk;
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
 use crate::{
     Color, HorizontalAlign, NativeDrawCommand, NativeDrawCommandSink, NativeDrawIconCommand,
-    NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, NativeStyleResolver, Rect, Size,
-    TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
+    NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode,
+    NativeImageInterpolation, NativeStyleResolver, Rect, Size, TextLayout, TextRun, TextStyle,
+    TextWeight, TextWrap, VerticalAlign,
 };
 
 #[link(name = "pangocairo-1.0")]
@@ -496,6 +497,36 @@ impl std::fmt::Debug for LinuxGtkDrawViewHost {
 }
 
 impl LinuxGtkDrawViewHost {
+    pub(crate) fn set_window_suspended(&self, suspended: bool) {
+        if suspended {
+            if !self.runtime.borrow_mut().suspend_view_when_hidden() {
+                return;
+            }
+            if let Some(source) = self.runtime_timer.borrow_mut().take() {
+                source.remove();
+            }
+            *self.plan.borrow_mut() = NativeDrawPlan::default();
+            self.ime.reset();
+            self.ime.focus_out();
+            self.area.queue_draw();
+            return;
+        }
+
+        let Some(plan) = self.runtime.borrow_mut().resume_view_when_visible() else {
+            return;
+        };
+        *self.plan.borrow_mut() = plan;
+        self.area.queue_draw();
+        schedule_linux_gtk_runtime_tick(
+            &self.area,
+            &self.plan,
+            &self.runtime,
+            &self.ime,
+            self.application.clone(),
+            &self.runtime_timer,
+        );
+    }
+
     pub(crate) fn dispatch_app_command(&self, command: crate::Command) {
         let report = self.runtime.borrow_mut().dispatch_app_command(command);
         apply_linux_gtk_input_report(
@@ -1045,6 +1076,73 @@ impl<'a> LinuxGtkDrawSink<'a> {
         }
     }
 
+    fn draw_image(&self, command: &NativeDrawImageCommand) {
+        let Ok(width) = i32::try_from(command.frame.width()) else {
+            return;
+        };
+        let Ok(height) = i32::try_from(command.frame.height()) else {
+            return;
+        };
+        if width <= 0
+            || height <= 0
+            || command.source.width <= 0
+            || command.source.height <= 0
+            || command.bounds.width <= 0
+            || command.bounds.height <= 0
+        {
+            return;
+        }
+        let Ok(stride) = gtk::cairo::Format::ARgb32.stride_for_width(command.frame.width()) else {
+            return;
+        };
+        if usize::try_from(stride).ok().and_then(|stride| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| stride.checked_mul(height))
+        }) != Some(command.frame.decoded_bytes())
+        {
+            return;
+        }
+        let Ok(surface) = gtk::cairo::ImageSurface::create_for_data(
+            command.frame.premultiplied_bgra8().to_vec(),
+            gtk::cairo::Format::ARgb32,
+            width,
+            height,
+            stride,
+        ) else {
+            return;
+        };
+        if self.context.save().is_err() {
+            return;
+        }
+        self.add_rect(command.bounds);
+        self.context.clip();
+        self.context
+            .translate(f64::from(command.bounds.x), f64::from(command.bounds.y));
+        self.context.scale(
+            f64::from(command.bounds.width) / f64::from(command.source.width),
+            f64::from(command.bounds.height) / f64::from(command.source.height),
+        );
+        if self
+            .context
+            .set_source_surface(
+                &surface,
+                -f64::from(command.source.x),
+                -f64::from(command.source.y),
+            )
+            .is_ok()
+        {
+            self.context
+                .source()
+                .set_filter(match command.interpolation {
+                    NativeImageInterpolation::Nearest => gtk::cairo::Filter::Nearest,
+                    NativeImageInterpolation::Smooth => gtk::cairo::Filter::Good,
+                });
+            let _ = self.context.paint();
+        }
+        let _ = self.context.restore();
+    }
+
     fn push_clip(&mut self, rect: Rect) {
         if self.context.save().is_ok() {
             self.add_rect(rect);
@@ -1152,6 +1250,7 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 ));
             }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
+            NativeDrawCommand::Image(command) => self.draw_image(command),
             NativeDrawCommand::PushClip { rect } => self.push_clip(*rect),
             NativeDrawCommand::PopClip => self.pop_clip(),
         }

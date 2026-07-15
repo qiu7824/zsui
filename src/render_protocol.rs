@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::{fmt, sync::Arc};
 
 use crate::{
     geometry::{Rect, Size},
@@ -366,6 +367,171 @@ pub struct NativeDrawIconCommand {
     pub color: ColorRole,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsImageFrameId(pub u64);
+
+impl ZsImageFrameId {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsImageFrame {
+    id: ZsImageFrameId,
+    width: u32,
+    height: u32,
+    #[serde(with = "arc_bytes")]
+    premultiplied_bgra8: Arc<[u8]>,
+}
+
+impl fmt::Debug for ZsImageFrame {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ZsImageFrame")
+            .field("id", &self.id)
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("decoded_bytes", &self.premultiplied_bgra8.len())
+            .finish()
+    }
+}
+
+impl ZsImageFrame {
+    pub fn from_rgba8(
+        id: ZsImageFrameId,
+        width: u32,
+        height: u32,
+        rgba8: impl Into<Vec<u8>>,
+    ) -> crate::ZsuiResult<Self> {
+        let rgba8 = rgba8.into();
+        validate_image_buffer(width, height, rgba8.len())?;
+        let mut bgra = Vec::with_capacity(rgba8.len());
+        for pixel in rgba8.chunks_exact(4) {
+            let alpha = u16::from(pixel[3]);
+            let premultiply = |channel: u8| ((u16::from(channel) * alpha + 127) / 255) as u8;
+            bgra.extend_from_slice(&[
+                premultiply(pixel[2]),
+                premultiply(pixel[1]),
+                premultiply(pixel[0]),
+                pixel[3],
+            ]);
+        }
+        Ok(Self {
+            id,
+            width,
+            height,
+            premultiplied_bgra8: Arc::from(bgra),
+        })
+    }
+
+    pub fn from_premultiplied_bgra8(
+        id: ZsImageFrameId,
+        width: u32,
+        height: u32,
+        premultiplied_bgra8: impl Into<Vec<u8>>,
+    ) -> crate::ZsuiResult<Self> {
+        let pixels = premultiplied_bgra8.into();
+        validate_image_buffer(width, height, pixels.len())?;
+        Ok(Self {
+            id,
+            width,
+            height,
+            premultiplied_bgra8: Arc::from(pixels),
+        })
+    }
+
+    pub const fn id(&self) -> ZsImageFrameId {
+        self.id
+    }
+
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn premultiplied_bgra8(&self) -> &[u8] {
+        &self.premultiplied_bgra8
+    }
+
+    pub fn decoded_bytes(&self) -> usize {
+        self.premultiplied_bgra8.len()
+    }
+}
+
+fn validate_image_buffer(width: u32, height: u32, actual: usize) -> crate::ZsuiResult<()> {
+    let expected = usize::try_from(width)
+        .ok()
+        .and_then(|width| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| width.checked_mul(height))
+        })
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| {
+            crate::ZsuiError::invalid_spec("image_frame.dimensions", "image dimensions overflow")
+        })?;
+    if width == 0 || height == 0 || actual != expected {
+        return Err(crate::ZsuiError::invalid_spec(
+            "image_frame.pixels",
+            format!("expected {expected} BGRA/RGBA bytes for {width}x{height}, received {actual}"),
+        ));
+    }
+    Ok(())
+}
+
+mod arc_bytes {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::sync::Arc;
+
+    pub fn serialize<S>(bytes: &Arc<[u8]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(bytes)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<[u8]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::<u8>::deserialize(deserializer).map(Arc::from)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NativeImageInterpolation {
+    Nearest,
+    Smooth,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeDrawImageCommand {
+    pub frame: ZsImageFrame,
+    pub source: Rect,
+    pub bounds: Rect,
+    pub interpolation: NativeImageInterpolation,
+}
+
+impl NativeDrawImageCommand {
+    pub const fn new(frame: ZsImageFrame, source: Rect, bounds: Rect) -> Self {
+        Self {
+            frame,
+            source,
+            bounds,
+            interpolation: NativeImageInterpolation::Smooth,
+        }
+    }
+
+    pub const fn interpolation(mut self, interpolation: NativeImageInterpolation) -> Self {
+        self.interpolation = interpolation;
+        self
+    }
+}
+
 impl NativeDrawIconCommand {
     pub const fn new(icon: ZsIcon, bounds: Rect, color_mode: NativeIconColorMode) -> Self {
         Self {
@@ -419,6 +585,7 @@ pub enum NativeDrawCommand {
     #[cfg(feature = "password-box")]
     SecureText(NativeDrawSecureTextCommand),
     Icon(NativeDrawIconCommand),
+    Image(NativeDrawImageCommand),
     PushClip {
         rect: Rect,
     },
@@ -438,6 +605,7 @@ impl NativeDrawCommand {
             #[cfg(feature = "password-box")]
             Self::SecureText(_) => NativeDrawCommandOperation::DrawText,
             Self::Icon(_) => NativeDrawCommandOperation::DrawIcon,
+            Self::Image(_) => NativeDrawCommandOperation::DrawImage,
             Self::PushClip { .. } => NativeDrawCommandOperation::PushClip,
             Self::PopClip => NativeDrawCommandOperation::PopClip,
         }
@@ -454,6 +622,7 @@ pub enum NativeDrawCommandOperation {
     RoundFill,
     DrawText,
     DrawIcon,
+    DrawImage,
     PushClip,
     PopClip,
 }
@@ -469,13 +638,14 @@ impl NativeDrawCommandOperation {
             Self::RoundFill => "draw_round_fill",
             Self::DrawText => "draw_text",
             Self::DrawIcon => "draw_icon",
+            Self::DrawImage => "draw_image",
             Self::PushClip => "push_clip",
             Self::PopClip => "pop_clip",
         }
     }
 }
 
-pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 10] = [
+pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 11] = [
     NativeDrawCommandOperation::FillRect,
     NativeDrawCommandOperation::StrokeRect,
     NativeDrawCommandOperation::StrokeArc,
@@ -484,6 +654,7 @@ pub const REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS: [NativeDrawCommandOperation; 
     NativeDrawCommandOperation::RoundFill,
     NativeDrawCommandOperation::DrawText,
     NativeDrawCommandOperation::DrawIcon,
+    NativeDrawCommandOperation::DrawImage,
     NativeDrawCommandOperation::PushClip,
     NativeDrawCommandOperation::PopClip,
 ];
@@ -544,6 +715,13 @@ impl NativeDrawPlan {
             .filter(|command| matches!(command, NativeDrawCommand::Icon(_)))
             .count()
     }
+
+    pub fn image_count(&self) -> usize {
+        self.commands
+            .iter()
+            .filter(|command| matches!(command, NativeDrawCommand::Image(_)))
+            .count()
+    }
 }
 
 pub trait NativeDrawCommandSink {
@@ -600,11 +778,23 @@ mod draw_command_tests {
                 rect,
                 NativeIconColorMode::ThemeAware,
             )),
+            NativeDrawCommand::Image(NativeDrawImageCommand::new(
+                ZsImageFrame::from_rgba8(ZsImageFrameId::new(7), 1, 1, vec![255, 0, 0, 255])
+                    .unwrap(),
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                rect,
+            )),
         ]);
 
-        assert_eq!(plan.command_count(), 4);
+        assert_eq!(plan.command_count(), 5);
         assert_eq!(plan.text_count(), 1);
         assert_eq!(plan.icon_count(), 1);
+        assert_eq!(plan.image_count(), 1);
 
         let mut sink = RecordingDrawSink::default();
         sink.draw_plan(&plan);
@@ -615,6 +805,7 @@ mod draw_command_tests {
                 NativeDrawCommandOperation::RoundRect,
                 NativeDrawCommandOperation::DrawText,
                 NativeDrawCommandOperation::DrawIcon,
+                NativeDrawCommandOperation::DrawImage,
             ]
         );
     }
@@ -632,10 +823,26 @@ mod draw_command_tests {
                 "draw_round_fill",
                 "draw_text",
                 "draw_icon",
+                "draw_image",
                 "push_clip",
                 "pop_clip",
             ]
         );
+    }
+
+    #[test]
+    fn image_frame_is_premultiplied_once_and_clones_share_storage() {
+        let frame =
+            ZsImageFrame::from_rgba8(ZsImageFrameId::new(11), 1, 1, vec![255, 64, 0, 128]).unwrap();
+        assert_eq!(frame.premultiplied_bgra8(), &[0, 32, 128, 128]);
+        let clone = frame.clone();
+        assert_eq!(
+            frame.premultiplied_bgra8().as_ptr(),
+            clone.premultiplied_bgra8().as_ptr()
+        );
+        let json = serde_json::to_string(&frame).unwrap();
+        let restored: ZsImageFrame = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, frame);
     }
 
     #[test]

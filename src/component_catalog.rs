@@ -129,6 +129,12 @@ const VIRTUAL_LIST_GAPS: &[&str] = &[
     "scrollbar thumb dragging",
     "non-Windows runtime smoke",
 ];
+const IMAGE_PREVIEW_GAPS: &[&str] = &[
+    "animated and multi-frame image formats",
+    "color-profile, HDR and wide-gamut management",
+    "image accessibility semantics",
+    "AppKit and GTK4 target screenshot evidence",
+];
 const PLATFORM_GAPS: &[&str] = &["native platform binding", "target interaction smoke"];
 const NAVIGATION_GAPS: &[&str] = &[
     "adaptive pane, compact mode, top mode and back-button behavior",
@@ -668,10 +674,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "image",
         "Image",
         Media,
-        ContractOnly,
-        Some("image"),
-        "src/render_protocol.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("image-preview"),
+        "src/image_preview.rs + src/view/mod.rs + three desktop raster renderers",
+        IMAGE_PREVIEW_GAPS
     ),
     component!(
         "icon",
@@ -752,6 +758,7 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"breadcrumb"));
         assert!(!summary.missing_component_names.contains(&"color_picker"));
         assert!(!summary.missing_component_names.contains(&"command_palette"));
+        assert!(!summary.missing_component_names.contains(&"image"));
     }
 
     #[test]

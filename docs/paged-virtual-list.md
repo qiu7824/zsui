@@ -65,6 +65,26 @@ Msg::RecordsViewport(viewport) => state.records.update_viewport(viewport),
    filters are discarded even when they finish later.
 7. The first loaded visible key is retained as a scroll anchor, keeping
    selection and position independent from cache eviction.
+8. Before a queued request starts, its generation and page range are checked
+   against the newest viewport. Obsolete forward-prefetch work is skipped after
+   a fast reversal instead of delaying the newly visible backward pages.
+
+## Reconciliation after remote updates
+
+When an external synchronization batch inserts, removes or reorders records,
+locate the retained key in the new ordering and reconcile the list once:
+
+```rust
+let result = state.records.reconcile_synced(new_total_count, |anchor_key| {
+    synchronized_index.get(anchor_key).copied()
+});
+```
+
+Reconciliation increments the data generation, rejects earlier page results,
+clears index-based cache entries and places the retained key at the same
+sub-row pixel offset. Rapid synchronization revisions are coalesced by
+generation checks before queued page I/O starts. If the key was removed, the
+current pixel offset is clamped to the new total instead.
 
 The initial implementation uses fixed row heights. Variable-height metrics and
 scrollbar thumb dragging remain separate follow-up capabilities; neither is
@@ -80,4 +100,5 @@ cargo run --example paged_virtual_list --no-default-features --features window,b
 
 The tests cover range math at 100,000 rows, visible-only layout and painting,
 global selection indices, background prefetch, request deduplication, LRU
-eviction, stale generation rejection, retry and stable anchors.
+eviction, stale generation rejection, direction reversal, synchronized
+reconciliation, retry and stable anchors.

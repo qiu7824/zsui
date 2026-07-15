@@ -94,6 +94,7 @@ harmony = []
 mobile = ["android", "harmony"]
 clipboard = ["dep:arboard"]
 image = ["dep:png"]
+image-preview = ["image", "widgets-base"]
 native-smoke = ["image"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "clipboard", "document-shell"]
@@ -105,7 +106,7 @@ windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:block2", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
-all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
+all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
 full = [
     "accessibility",
     "all-widgets",
@@ -179,6 +180,11 @@ required-features = ["scroll", "label"]
 name = "paged_virtual_list"
 path = "examples/paged_virtual_list.rs"
 required-features = ["window", "button", "label", "paged-list"]
+
+[[example]]
+name = "image_preview"
+path = "examples/image_preview.rs"
+required-features = ["window", "button", "label", "image-preview"]
 
 [[example]]
 name = "desktop_native_showcase"

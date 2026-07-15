@@ -476,6 +476,14 @@ history remain authoritative for implementation status.
   Indeterminate mode, accessibility and non-Windows target proof remain gaps.
 - Large collections use virtualization, pagination, background prefetch and a
   small bounded cache; product storage remains outside the framework.
+- Image previews use application-owned `ZsImagePreviewState`: decoding is
+  coalesced on one owned worker, stale generations are rejected and the last
+  complete immutable `Arc` frame stays visible until an atomic replacement is
+  ready. Win32 raster presentation remains inside the buffered paint path.
+- Paged collections receiving external synchronization revisions reconcile by
+  stable item key and sub-row pixel offset. Index-based pages are invalidated,
+  stale generations are rejected, and queued page work is rechecked against the
+  newest viewport before product I/O begins.
 
 ## Verification and delivery
 

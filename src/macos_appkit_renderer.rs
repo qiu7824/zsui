@@ -32,9 +32,71 @@ use objc2_foundation::{
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
 use crate::{
     Color, HorizontalAlign, NativeDrawCommand, NativeDrawCommandSink, NativeDrawIconCommand,
-    NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, NativeStyleResolver, Rect, Size,
-    TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
+    NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode,
+    NativeImageInterpolation, NativeStyleResolver, Rect, Size, TextLayout, TextRun, TextStyle,
+    TextWeight, TextWrap, VerticalAlign,
 };
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CoreGraphicsPoint {
+    x: f64,
+    y: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CoreGraphicsSize {
+    width: f64,
+    height: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CoreGraphicsRect {
+    origin: CoreGraphicsPoint,
+    size: CoreGraphicsSize,
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGDataProviderCreateWithData(
+        info: *mut c_void,
+        data: *const c_void,
+        size: usize,
+        release_data: Option<unsafe extern "C" fn(*mut c_void, *const c_void, usize)>,
+    ) -> *mut c_void;
+    fn CGDataProviderRelease(provider: *mut c_void);
+    fn CGColorSpaceCreateDeviceRGB() -> *mut c_void;
+    fn CGColorSpaceRelease(color_space: *mut c_void);
+    fn CGImageCreate(
+        width: usize,
+        height: usize,
+        bits_per_component: usize,
+        bits_per_pixel: usize,
+        bytes_per_row: usize,
+        color_space: *mut c_void,
+        bitmap_info: u32,
+        provider: *mut c_void,
+        decode: *const f64,
+        should_interpolate: bool,
+        intent: i32,
+    ) -> *mut c_void;
+    fn CGImageCreateWithImageInRect(image: *mut c_void, rect: CoreGraphicsRect) -> *mut c_void;
+    fn CGImageRelease(image: *mut c_void);
+    fn CGContextSaveGState(context: *mut c_void);
+    fn CGContextRestoreGState(context: *mut c_void);
+    fn CGContextTranslateCTM(context: *mut c_void, tx: f64, ty: f64);
+    fn CGContextScaleCTM(context: *mut c_void, sx: f64, sy: f64);
+    fn CGContextSetInterpolationQuality(context: *mut c_void, quality: i32);
+    fn CGContextDrawImage(context: *mut c_void, rect: CoreGraphicsRect, image: *mut c_void);
+}
+
+const CORE_GRAPHICS_ALPHA_PREMULTIPLIED_FIRST: u32 = 2;
+const CORE_GRAPHICS_BYTE_ORDER_32_LITTLE: u32 = 2 << 12;
+const CORE_GRAPHICS_RENDERING_INTENT_DEFAULT: i32 = 0;
+const CORE_GRAPHICS_INTERPOLATION_NONE: i32 = 1;
+const CORE_GRAPHICS_INTERPOLATION_HIGH: i32 = 3;
 
 struct ZsuiAppKitDrawViewIvars {
     plan: RefCell<NativeDrawPlan>,
@@ -757,6 +819,41 @@ impl std::fmt::Debug for MacosAppKitDrawViewHost {
 }
 
 impl MacosAppKitDrawViewHost {
+    pub(crate) fn set_window_suspended(&self, suspended: bool) {
+        if suspended {
+            if !self
+                .view
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .suspend_view_when_hidden()
+            {
+                return;
+            }
+            if let Some(timer) = self.view.ivars().runtime_timer.borrow_mut().take() {
+                timer.invalidate();
+            }
+            *self.view.ivars().plan.borrow_mut() = NativeDrawPlan::default();
+            self.view.ivars().marked_text.borrow_mut().clear();
+            self.view.ivars().marked_selection.set(None);
+            self.view.setNeedsDisplay(true);
+            return;
+        }
+
+        let Some(plan) = self
+            .view
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .resume_view_when_visible()
+        else {
+            return;
+        };
+        *self.view.ivars().plan.borrow_mut() = plan;
+        self.view.schedule_runtime_tick();
+        self.view.setNeedsDisplay(true);
+    }
+
     pub(crate) fn dispatch_app_command(&self, command: crate::Command) {
         let report = self
             .view
@@ -1050,6 +1147,108 @@ impl MacosAppKitDrawSink {
         image.drawInRect(appkit_rect(command.bounds));
     }
 
+    fn draw_image(&self, command: &NativeDrawImageCommand) {
+        let Some(graphics_context) = NSGraphicsContext::currentContext() else {
+            return;
+        };
+        let context: *mut c_void = unsafe { msg_send![&*graphics_context, CGContext] };
+        if context.is_null()
+            || command.bounds.width <= 0
+            || command.bounds.height <= 0
+            || command.source.width <= 0
+            || command.source.height <= 0
+        {
+            return;
+        }
+        let width = command.frame.width() as usize;
+        let height = command.frame.height() as usize;
+        let Some(bytes_per_row) = width.checked_mul(4) else {
+            return;
+        };
+        if height.checked_mul(bytes_per_row) != Some(command.frame.decoded_bytes()) {
+            return;
+        }
+        unsafe {
+            let provider = CGDataProviderCreateWithData(
+                std::ptr::null_mut(),
+                command.frame.premultiplied_bgra8().as_ptr().cast(),
+                command.frame.decoded_bytes(),
+                None,
+            );
+            if provider.is_null() {
+                return;
+            }
+            let color_space = CGColorSpaceCreateDeviceRGB();
+            if color_space.is_null() {
+                CGDataProviderRelease(provider);
+                return;
+            }
+            let image = CGImageCreate(
+                width,
+                height,
+                8,
+                32,
+                bytes_per_row,
+                color_space,
+                CORE_GRAPHICS_ALPHA_PREMULTIPLIED_FIRST | CORE_GRAPHICS_BYTE_ORDER_32_LITTLE,
+                provider,
+                std::ptr::null(),
+                true,
+                CORE_GRAPHICS_RENDERING_INTENT_DEFAULT,
+            );
+            if image.is_null() {
+                CGColorSpaceRelease(color_space);
+                CGDataProviderRelease(provider);
+                return;
+            }
+            let cropped = CGImageCreateWithImageInRect(
+                image,
+                CoreGraphicsRect {
+                    origin: CoreGraphicsPoint {
+                        x: f64::from(command.source.x),
+                        y: f64::from(command.source.y),
+                    },
+                    size: CoreGraphicsSize {
+                        width: f64::from(command.source.width),
+                        height: f64::from(command.source.height),
+                    },
+                },
+            );
+            if !cropped.is_null() {
+                CGContextSaveGState(context);
+                CGContextSetInterpolationQuality(
+                    context,
+                    match command.interpolation {
+                        NativeImageInterpolation::Nearest => CORE_GRAPHICS_INTERPOLATION_NONE,
+                        NativeImageInterpolation::Smooth => CORE_GRAPHICS_INTERPOLATION_HIGH,
+                    },
+                );
+                CGContextTranslateCTM(
+                    context,
+                    f64::from(command.bounds.x),
+                    f64::from(command.bounds.y + command.bounds.height),
+                );
+                CGContextScaleCTM(context, 1.0, -1.0);
+                CGContextDrawImage(
+                    context,
+                    CoreGraphicsRect {
+                        origin: CoreGraphicsPoint { x: 0.0, y: 0.0 },
+                        size: CoreGraphicsSize {
+                            width: f64::from(command.bounds.width),
+                            height: f64::from(command.bounds.height),
+                        },
+                    },
+                    cropped,
+                );
+                CGContextRestoreGState(context);
+                CGImageRelease(cropped);
+            }
+            CGImageRelease(image);
+            CGColorSpaceRelease(color_space);
+            CGDataProviderRelease(provider);
+        }
+    }
+
     fn pop_clip(&mut self) {
         if self.clip_depth > 0 {
             NSGraphicsContext::restoreGraphicsState_class();
@@ -1158,6 +1357,7 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                 ));
             }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
+            NativeDrawCommand::Image(command) => self.draw_image(command),
             NativeDrawCommand::PushClip { rect } => {
                 NSGraphicsContext::saveGraphicsState_class();
                 NSBezierPath::bezierPathWithRect(appkit_rect(*rect)).addClip();

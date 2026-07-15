@@ -38,8 +38,8 @@ and is not part of normal task context.
   explicit features or optional dependencies.
 - Windows is the strongest real runtime today. macOS/Linux are first-pass
   desktop paths. Android/Harmony still require real runtime and device proof.
-- The component catalog currently tracks 48 families: 45 first-pass runtime,
-  3 contract-only and none not started. WebView is intentionally outside the
+- The component catalog currently tracks 48 families: 46 first-pass runtime,
+  2 contract-only and none not started. WebView is intentionally outside the
   v0.2 product boundary; composite shells do not change the catalog count.
 
 ## Task Router
@@ -50,6 +50,7 @@ and is not part of normal task context.
 | `features` | Cargo features, optional dependencies, compile trimming |
 | `view-widgets` | `View<Msg>`, state/update, basic controls, input routing |
 | `long-list` | Virtual rows, background pagination, prefetch and LRU caching |
+| `image-preview` | Retained raster frames, background PNG decode and no-flicker presentation |
 | `navigation-shell` | Left navigation, grouped cards, settings rows, scroll |
 | `workbench` | Conversation/task shell, composer, inspector, message blocks |
 | `document-shell` | Document chrome, text lifecycle, native editor inset, notepad example |

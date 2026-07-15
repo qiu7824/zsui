@@ -26,6 +26,11 @@ use crate::{
     style::{ThemeColorToken, ZsuiThemeMode},
     Command, UiCommand,
 };
+#[cfg(feature = "image-preview")]
+use crate::{
+    NativeDrawIconCommand, NativeIconColorMode, NativeImageInterpolation, ZsImageFit,
+    ZsImagePreviewSnapshot,
+};
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime, ZsTimePickerPlatformStyle};
 #[cfg(feature = "color-picker")]

@@ -548,6 +548,12 @@ pub enum ViewNodeKind<Msg> {
         text: String,
         style: SemanticTextStyle,
     },
+    #[cfg(feature = "image-preview")]
+    ImagePreview {
+        snapshot: ZsImagePreviewSnapshot,
+        fit: ZsImageFit,
+        interpolation: NativeImageInterpolation,
+    },
     #[cfg(feature = "button")]
     Button {
         label: String,
@@ -964,6 +970,16 @@ impl<Msg> ViewNode<Msg> {
         #[cfg(feature = "virtual-list")]
         if matches!(self.kind, ViewNodeKind::VirtualList { loading: true, .. }) {
             return Some(33);
+        }
+        #[cfg(feature = "image-preview")]
+        if matches!(
+            self.kind,
+            ViewNodeKind::ImagePreview {
+                snapshot: ZsImagePreviewSnapshot { loading: true, .. },
+                ..
+            }
+        ) {
+            return Some(16);
         }
         self.children
             .iter()
@@ -1706,6 +1722,26 @@ impl<Msg: Clone> ViewNode<Msg> {
         } = &mut self.kind
         {
             *show_placeholders = visible;
+        }
+        self
+    }
+
+    #[cfg(feature = "image-preview")]
+    pub fn image_fit(mut self, fit: ZsImageFit) -> Self {
+        if let ViewNodeKind::ImagePreview { fit: current, .. } = &mut self.kind {
+            *current = fit;
+        }
+        self
+    }
+
+    #[cfg(feature = "image-preview")]
+    pub fn image_interpolation(mut self, interpolation: NativeImageInterpolation) -> Self {
+        if let ViewNodeKind::ImagePreview {
+            interpolation: current,
+            ..
+        } = &mut self.kind
+        {
+            *current = interpolation;
         }
         self
     }
