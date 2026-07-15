@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::{collections::BTreeSet, env, fs};
 
 use zsui::*;
@@ -56,6 +58,16 @@ impl GalleryPage {
             Self::Navigation => "Navigation",
             Self::Feedback => "Feedback and overlays",
             Self::Catalog => "Catalog and layout",
+        }
+    }
+
+    const fn icon(self) -> ZsIcon {
+        match self {
+            Self::Inputs => ZsIcon::Tool,
+            Self::Collections => ZsIcon::Folder,
+            Self::Navigation => ZsIcon::Sidebar,
+            Self::Feedback => ZsIcon::Info,
+            Self::Catalog => ZsIcon::Group,
         }
     }
 
@@ -225,6 +237,21 @@ fn card(title: impl Into<String>, children: Vec<ViewNode<Msg>>) -> ViewNode<Msg>
         .gap(Dp::new(10.0))
         .radius(Dp::new(8.0))
         .bg(ThemeColorToken::SurfaceRaised)
+}
+
+fn compact_card(
+    title: impl Into<String>,
+    children: Vec<ViewNode<Msg>>,
+    content_height: Dp,
+) -> ViewNode<Msg> {
+    const VERTICAL_PADDING: f32 = 16.0 * 2.0;
+    const TITLE_HEIGHT: f32 = 24.0;
+    const TITLE_GAP: f32 = 10.0;
+    card(title, children)
+        .height(Dp::new(
+            VERTICAL_PADDING + TITLE_HEIGHT + TITLE_GAP + content_height.0,
+        ))
+        .flex(0.0)
 }
 
 fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
@@ -441,7 +468,8 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
                 ])
                 .padding(Dp::new(16.0))
                 .gap(Dp::new(12.0)),
-            ),
+            )
+            .icon(ZsIcon::Settings),
             ZsTabItem::new(
                 ZsTabId::new(2),
                 "Advanced",
@@ -451,21 +479,22 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
                 ])
                 .padding(Dp::new(16.0))
                 .gap(Dp::new(12.0)),
-            ),
+            )
+            .icon(ZsIcon::Tool),
             ZsTabItem::new(
                 ZsTabId::new(3),
                 "About",
                 text("ZSUI v0.2 component gallery"),
-            ),
+            )
+            .icon(ZsIcon::Info),
         ],
         Some(state.tab),
     )
     .id(TABS)
-    .height(Dp::new(320.0))
     .on_tab_select(Msg::Tab);
 
     let page = column([
-        card("BreadcrumbBar", vec![breadcrumb]),
+        compact_card("BreadcrumbBar", vec![breadcrumb], Dp::new(32.0)),
         card("TabView", vec![tabs]),
         row([
             button("Open command palette").on_click(Msg::PaletteOpen(true)),
@@ -680,6 +709,11 @@ fn catalog_page() -> ViewNode<Msg> {
 
 fn view(state: &GalleryState) -> ViewNode<Msg> {
     let summary = zsui_component_catalog_summary();
+    let navigation_metrics =
+        ZsNavigationItemMetrics::for_platform(ZsBaseControlPlatformStyle::current());
+    let navigation_padding = Dp::new(16.0);
+    let navigation_item_width =
+        Dp::new(navigation_metrics.open_pane_width.0 - navigation_padding.0 * 2.0);
     let mut navigation = vec![
         text("ZSUI Gallery").height(Dp::new(32.0)),
         text(format!(
@@ -689,15 +723,10 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
         .height(Dp::new(28.0)),
     ];
     navigation.extend(GalleryPage::ALL.into_iter().map(|(page, label, id)| {
-        button(if page == state.page {
-            format!("• {label}")
-        } else {
-            label.to_string()
-        })
-        .id(id)
-        .width(Dp::new(184.0))
-        .height(Dp::new(40.0))
-        .on_click(Msg::Navigate(page))
+        navigation_item(label, page.icon(), page == state.page)
+            .id(id)
+            .width(navigation_item_width)
+            .on_click(Msg::Navigate(page))
     }));
     navigation.push(spacer());
     navigation.push(
@@ -711,9 +740,9 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
     navigation.push(text(&state.status).height(Dp::new(42.0)));
 
     let navigation = column(navigation)
-        .width(Dp::new(216.0))
-        .padding(Dp::new(16.0))
-        .gap(Dp::new(8.0))
+        .width(navigation_metrics.open_pane_width)
+        .padding(navigation_padding)
+        .gap(Dp::new(4.0))
         .bg(ThemeColorToken::SurfaceRaised);
     let page = match state.page {
         GalleryPage::Inputs => inputs_page(state),

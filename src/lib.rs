@@ -522,8 +522,6 @@ pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 pub use view::auto_suggest_box;
 #[cfg(feature = "breadcrumb")]
 pub use view::breadcrumb_bar;
-#[cfg(feature = "button")]
-pub use view::button;
 #[cfg(feature = "checkbox")]
 pub use view::checkbox;
 #[cfg(feature = "color-picker")]
@@ -582,6 +580,8 @@ pub use view::ViewTooltipTarget;
 pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]
 pub use view::ZsTimePickerState;
+#[cfg(feature = "button")]
+pub use view::{button, navigation_item, ZsButtonPresentation};
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
     LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,
@@ -666,6 +666,11 @@ pub use widget_render::{
     zs_info_bar_native_draw_plan, zs_info_bar_render_plan, ZsInfoBarMetrics,
     ZsInfoBarPlatformStyle, ZsInfoBarRenderPlan,
 };
+#[cfg(feature = "button")]
+pub use widget_render::{
+    zs_navigation_item_native_draw_plan, zs_navigation_item_render_plan, ZsNavigationItemMetrics,
+    ZsNavigationItemRenderPlan,
+};
 #[cfg(feature = "number-box")]
 pub use widget_render::{
     zs_number_box_native_draw_plan, zs_number_box_render_plan, ZsNumberBoxMetrics,
@@ -688,8 +693,9 @@ pub use widget_render::{
 };
 #[cfg(feature = "tabs")]
 pub use widget_render::{
-    zs_tab_view_native_draw_plan, zs_tab_view_render_plan, ZsTabHeaderRenderPlan,
-    ZsTabPlatformStyle, ZsTabViewMetrics, ZsTabViewRenderPlan,
+    zs_tab_view_native_draw_plan, zs_tab_view_native_draw_plan_for_tabs, zs_tab_view_render_plan,
+    zs_tab_view_render_plan_for_tabs, ZsTabHeaderRenderPlan, ZsTabPlatformStyle, ZsTabViewMetrics,
+    ZsTabViewRenderPlan,
 };
 #[cfg(feature = "table")]
 pub use widget_render::{

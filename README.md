@@ -7,7 +7,7 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.1-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.2-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -100,6 +100,8 @@ Windows 字体检测和 GDI 绘制已经接入真实运行路径。macOS 的 App
 ## 一句话创建原生窗口
 
 ```rust,no_run
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 fn main() -> zsui::ZsuiResult<()> {
     zsui::native_window("Example")
         .size(900, 620)
@@ -108,7 +110,10 @@ fn main() -> zsui::ZsuiResult<()> {
 }
 ```
 
-普通应用不需要接触 `HWND`、消息循环或 GDI 句柄。
+普通应用不需要接触 `HWND`、消息循环或 GDI 句柄。Windows 的 PE 子系统由最终
+应用 crate 决定；面向用户的发布版应保留上面的 crate 属性，使双击启动时不创建
+控制台窗口。debug 构建仍保留控制台，便于诊断。ZSUI 自带 GUI 示例和发布包通过
+`scripts/check-windows-gui-subsystem.ps1` 检查这条边界。
 
 输入控件继续沿用同一套强类型消息，例如按步长约束的 Slider：
 

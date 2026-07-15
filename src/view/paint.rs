@@ -73,12 +73,11 @@ impl<Msg: Clone> ViewNode<Msg> {
             ViewNodeKind::Tabs { tabs, selected, .. } => (tabs, *selected),
             _ => unreachable!("tab layout requires a tab view node"),
         };
-        let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
         let selected_index = selected
             .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-        let plan = crate::zs_tab_view_render_plan(
+        let plan = crate::zs_tab_view_render_plan_for_tabs(
             cx.bounds,
-            &labels,
+            tabs,
             selected_index,
             crate::ZsTabPlatformStyle::current(),
             cx.dpi,
@@ -1649,24 +1648,48 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 )));
             }
             #[cfg(feature = "button")]
-            ViewNodeKind::Button { label, .. } => {
-                let metrics = crate::ZsBaseControlMetrics::for_platform(
-                    crate::ZsBaseControlPlatformStyle::current(),
-                );
-                cx.draw(NativeDrawCommand::RoundRect {
-                    rect: bounds,
-                    fill: NativeDrawFill::Role(ColorRole::Control),
-                    stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
-                    radius: radius_px(self.style.radius.or(Some(metrics.button_radius)), cx.dpi),
-                });
-                let mut text_style = SemanticTextStyle::body();
-                text_style.role = TextRole::Button;
-                text_style.horizontal_align = crate::HorizontalAlign::Center;
-                cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-                    label,
-                    button_content_bounds(bounds, self.style.padding, cx.dpi),
-                    text_style,
-                )));
+            ViewNodeKind::Button {
+                label,
+                presentation,
+                ..
+            } => {
+                match presentation {
+                    ZsButtonPresentation::Standard => {
+                        let metrics = crate::ZsBaseControlMetrics::for_platform(
+                            crate::ZsBaseControlPlatformStyle::current(),
+                        );
+                        cx.draw(NativeDrawCommand::RoundRect {
+                            rect: bounds,
+                            fill: NativeDrawFill::Role(ColorRole::Control),
+                            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                            radius: radius_px(
+                                self.style.radius.or(Some(metrics.button_radius)),
+                                cx.dpi,
+                            ),
+                        });
+                        let mut text_style = SemanticTextStyle::body();
+                        text_style.role = TextRole::Button;
+                        text_style.horizontal_align = crate::HorizontalAlign::Center;
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            label,
+                            button_content_bounds(bounds, self.style.padding, cx.dpi),
+                            text_style,
+                        )));
+                    }
+                    ZsButtonPresentation::NavigationItem { icon, selected } => {
+                        let plan = crate::zs_navigation_item_render_plan(
+                            bounds,
+                            *selected,
+                            crate::ZsBaseControlPlatformStyle::current(),
+                            cx.dpi,
+                        );
+                        for command in
+                            crate::zs_navigation_item_native_draw_plan(&plan, label, *icon).commands
+                        {
+                            cx.draw(command);
+                        }
+                    }
+                }
             }
             #[cfg(feature = "toggle-button")]
             ViewNodeKind::ToggleButton { label, checked, .. } => {
@@ -2133,18 +2156,17 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "tabs")]
             ViewNodeKind::Tabs { tabs, selected, .. } => {
-                let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
                 let selected_index = selected.and_then(|selected| {
                     tabs.iter().position(|candidate| candidate.id == selected)
                 });
-                let plan = crate::zs_tab_view_render_plan(
+                let plan = crate::zs_tab_view_render_plan_for_tabs(
                     bounds,
-                    &labels,
+                    tabs,
                     selected_index,
                     crate::ZsTabPlatformStyle::current(),
                     cx.dpi,
                 );
-                for command in crate::zs_tab_view_native_draw_plan(&plan, &labels).commands {
+                for command in crate::zs_tab_view_native_draw_plan_for_tabs(&plan, tabs).commands {
                     cx.draw(command);
                 }
                 if let Some(child) = selected_index.and_then(|index| self.children.get(index)) {

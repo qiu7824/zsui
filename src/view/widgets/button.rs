@@ -15,10 +15,32 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
     let minimum_width = metrics.button_minimum_width_for_label(&label);
     ViewNode::new(ViewNodeKind::Button {
         label,
+        presentation: ZsButtonPresentation::Standard,
         on_click: None,
     })
     .min_width(minimum_width)
     .height(metrics.button_height)
+    .flex(0.0)
+}
+
+/// Creates a self-drawn navigation row with a semantic icon and explicit
+/// selected state. It uses the same typed activation path as a Button while
+/// retaining NavigationView item geometry instead of Button chrome.
+#[cfg(feature = "button")]
+pub fn navigation_item<Msg>(
+    label: impl Into<String>,
+    icon: crate::ZsIcon,
+    selected: bool,
+) -> ViewNode<Msg> {
+    let metrics = crate::ZsNavigationItemMetrics::for_platform(
+        crate::ZsBaseControlPlatformStyle::current(),
+    );
+    ViewNode::new(ViewNodeKind::Button {
+        label: label.into(),
+        presentation: ZsButtonPresentation::NavigationItem { icon, selected },
+        on_click: None,
+    })
+    .height(metrics.item_height)
     .flex(0.0)
 }
 

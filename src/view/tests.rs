@@ -147,6 +147,45 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(windows, feature = "button"))]
+    fn navigation_item_keeps_button_activation_with_navigation_chrome() {
+        let item_id = WidgetId::new(19);
+        let mut view: ViewNode<Msg> =
+            navigation_item("Navigation", crate::ZsIcon::Sidebar, true)
+            .id(item_id)
+            .width(Dp::new(184.0))
+            .on_click(Msg::SaveClicked);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 184,
+                height: 36,
+            },
+            Dpi::standard(),
+        );
+        let output = view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Click { widget: item_id });
+
+        assert_eq!(output.bounds, Rect { x: 0, y: 0, width: 184, height: 36 });
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                rect: Rect { width: 3, height: 16, .. },
+                ..
+            }
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Sidebar
+        )));
+        assert_eq!(events.into_messages(), vec![Msg::SaveClicked]);
+    }
+
+    #[test]
     #[cfg(all(windows, feature = "button", feature = "label"))]
     fn windows_button_uses_winui_metrics_and_does_not_stretch_by_default() {
         let button_id = WidgetId::new(2);
@@ -2723,7 +2762,8 @@ mod tests {
                     general,
                     "General",
                     text("General content").id(general_content),
-                ),
+                )
+                .icon(crate::ZsIcon::Settings),
                 ZsTabItem::new(
                     advanced,
                     "Advanced",
@@ -2795,6 +2835,10 @@ mod tests {
         assert!(paint.plan().commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::Text(text) if text.text == "Advanced content"
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Settings
         )));
         assert!(!paint.plan().commands.iter().any(|command| matches!(
             command,

@@ -503,6 +503,11 @@ impl<Msg> ZsTabItem<Msg> {
             content,
         }
     }
+
+    pub fn icon(mut self, icon: crate::ZsIcon) -> Self {
+        self.spec = self.spec.icon(icon);
+        self
+    }
 }
 
 #[cfg(feature = "tabs")]
@@ -524,6 +529,16 @@ pub(crate) struct ZsTabHeaderState {
     pub last: WidgetId,
 }
 
+#[cfg(feature = "button")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZsButtonPresentation {
+    Standard,
+    NavigationItem {
+        icon: crate::ZsIcon,
+        selected: bool,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub enum ViewNodeKind<Msg> {
     #[doc(hidden)]
@@ -535,6 +550,7 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "button")]
     Button {
         label: String,
+        presentation: ZsButtonPresentation,
         on_click: Option<Msg>,
     },
     #[cfg(feature = "breadcrumb")]

@@ -28,6 +28,12 @@ history remain authoritative for implementation status.
   WebKitGTK, Wry, Tauri or another browser-shell dependency. Keep the isolated
   Tauri benchmark under `comparisons/` out of the root package graph. Enforce
   this boundary with `scripts/check-native-boundary.ps1` in CI.
+- User-facing Windows release executables use the Windows GUI PE subsystem and
+  must not open a console window. The final binary crate owns Rust's crate-level
+  `windows_subsystem` attribute, so ZSUI examples declare it explicitly and CI
+  enforces the source rule with `scripts/check-windows-gui-subsystem.ps1`.
+  Debug builds and explicitly marked command-line/smoke drivers retain the
+  console for diagnostics; release packaging must also verify PE subsystem 2.
 
 ## Architecture preferences
 
@@ -172,7 +178,9 @@ history remain authoritative for implementation status.
 - Platform minimum widths are floors, not fixed label widths. Button,
   ToggleButton, CheckBox and RadioButton constructors estimate an intrinsic
   label width from the active desktop profile so longer labels remain visible;
-  applications can still request a larger explicit width. WinUI InfoBar keeps
+  Breadcrumb item widths include a renderer-measured guard so short and long
+  segments do not ellipsize while the bar still has space. Applications can
+  still request a larger explicit width. WinUI InfoBar keeps
   its 48 epx minimum but grows to fit title plus message content instead of
   clipping the second line.
 - The complete component acceptance surface is the optional
@@ -227,6 +235,16 @@ history remain authoritative for implementation status.
   adjacent page. GTK4 arrow keys plus Home/End move header focus, Space selects,
   and Ctrl+PageUp/Ctrl+PageDown changes page. Application code and the public
   API contain no platform `cfg`.
+- Windows TabView headers follow the WinUI row composition: an optional
+  16-DIP semantic icon and the header label share one 32-DIP item row below an
+  8-DIP strip inset. Static tabs keep their identity and selection semantics
+  but do not imply document-tab close, add, reorder or overflow behavior.
+- A Gallery sidebar item is not a centered outlined Button. Navigation rows use
+  semantic icons, left-aligned labels, a 36-DIP Windows row and a 3-by-16-DIP
+  accent selection indicator. The expanded Windows Gallery pane follows the
+  WinUI `OpenPaneLength` default of 320 DIPs. This is a bounded NavigationView
+  item surface; adaptive pane modes, top navigation and accessibility remain
+  explicit readiness gaps.
 - TimePicker uses validated `ZsTime` and `ZsMinuteIncrement` values. It is an
   independent `time-picker` Cargo feature, stays on the shared self-drawn path,
   and selects Windows, macOS or GTK metric profiles internally. The picker

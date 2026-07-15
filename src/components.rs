@@ -19,6 +19,8 @@ impl ZsTabId {
 pub struct ZsTabSpec {
     pub id: ZsTabId,
     pub label: String,
+    #[serde(default)]
+    pub icon: Option<crate::ZsIcon>,
 }
 
 #[cfg(feature = "tabs")]
@@ -27,7 +29,13 @@ impl ZsTabSpec {
         Self {
             id,
             label: label.into(),
+            icon: None,
         }
+    }
+
+    pub const fn icon(mut self, icon: crate::ZsIcon) -> Self {
+        self.icon = Some(icon);
+        self
     }
 }
 

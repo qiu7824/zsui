@@ -130,6 +130,12 @@ const VIRTUAL_LIST_GAPS: &[&str] = &[
     "non-Windows runtime smoke",
 ];
 const PLATFORM_GAPS: &[&str] = &["native platform binding", "target interaction smoke"];
+const NAVIGATION_GAPS: &[&str] = &[
+    "adaptive pane, compact mode, top mode and back-button behavior",
+    "hover, pressed and focus-visible navigation-item state polish",
+    "accessibility navigation and selected-item providers",
+    "AppKit and GTK4 target interaction smoke",
+];
 const TOOLTIP_GAPS: &[&str] = &[
     "accessibility relationship",
     "top-level overflow popup",
@@ -229,16 +235,19 @@ const COMBO_GAPS: &[&str] = &[
 ];
 const DATE_PICKER_GAPS: &[&str] = &[
     "localized date, month and weekday formatting",
+    "WinUI segmented month/day/year entry fields and field visibility",
     "accessibility value and calendar-grid providers",
     "AppKit and GTK4 platform-style metrics and target interaction smoke",
 ];
 const TIME_PICKER_GAPS: &[&str] = &[
     "system-locale clock selection and localized labels",
+    "WinUI hour/minute/period entry-field structure",
     "accessibility value and picker-column providers",
     "AppKit and GTK4 target interaction smoke",
 ];
 const COLOR_PICKER_GAPS: &[&str] = &[
     "editable RGB/HSV/hexadecimal text fields, saved swatches and eyedropper",
+    "flyout commit/cancel policy and complete WinUI field layout",
     "accessibility color-value and range-value providers",
     "HDR and color-space management plus AppKit and GTK4 target interaction smoke",
 ];
@@ -248,6 +257,7 @@ const GRID_GAPS: &[&str] = &[
     "AppKit and GTK4 target layout smoke",
 ];
 const TABS_GAPS: &[&str] = &[
+    "hover, pressed and focus-visible header state polish",
     "accessibility tab-list and tab-panel providers",
     "document-tab close, reorder and overflow behavior",
     "AppKit and GTK4 target interaction smoke",
@@ -346,7 +356,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         FirstPass,
         Some("shell"),
         "src/shell_layout.rs",
-        PLATFORM_GAPS
+        NAVIGATION_GAPS
     ),
     component!(
         "tabs",

@@ -1,3 +1,5 @@
+// ZSUI_WINDOWS_CONSOLE_TOOL: native smoke driver
+
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use serde_json::json;

@@ -29,6 +29,8 @@ jobs:
       - shell: pwsh
         run: ./scripts/check-native-boundary.ps1 -Locked
       - shell: pwsh
+        run: ./scripts/check-windows-gui-subsystem.ps1
+      - shell: pwsh
         run: ./scripts/check-desktop-proof.ps1
       - shell: pwsh
         run: ./scripts/check-feature-matrix.ps1 -Locked

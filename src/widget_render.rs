@@ -301,7 +301,8 @@ impl ZsBaseControlMetrics {
         Dp::new(self.button_minimum_width.0.max(
             self.estimated_text_width(label).0
                 + self.button_padding_left.0
-                + self.button_padding_right.0,
+                + self.button_padding_right.0
+                + 4.0,
         ))
     }
 
@@ -320,6 +321,186 @@ impl ZsBaseControlMetrics {
                 .max(self.radio_indicator_size.0 + 8.0 + self.estimated_text_width(label).0),
         )
     }
+}
+
+#[cfg(feature = "button")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsNavigationItemMetrics {
+    pub open_pane_width: Dp,
+    pub item_height: Dp,
+    pub icon_size: Dp,
+    pub icon_box_width: Dp,
+    pub text_leading_margin: Dp,
+    pub trailing_padding: Dp,
+    pub indicator_width: Dp,
+    pub indicator_height: Dp,
+    pub indicator_radius: Dp,
+    pub radius: Dp,
+}
+
+#[cfg(feature = "button")]
+impl ZsNavigationItemMetrics {
+    pub const fn for_platform(platform: ZsBaseControlPlatformStyle) -> Self {
+        match platform {
+            ZsBaseControlPlatformStyle::Windows => Self {
+                open_pane_width: Dp::new(320.0),
+                item_height: Dp::new(36.0),
+                icon_size: Dp::new(16.0),
+                icon_box_width: Dp::new(40.0),
+                text_leading_margin: Dp::new(4.0),
+                trailing_padding: Dp::new(8.0),
+                indicator_width: Dp::new(3.0),
+                indicator_height: Dp::new(16.0),
+                indicator_radius: Dp::new(2.0),
+                radius: Dp::new(4.0),
+            },
+            ZsBaseControlPlatformStyle::Macos => Self {
+                open_pane_width: Dp::new(240.0),
+                item_height: Dp::new(28.0),
+                icon_size: Dp::new(16.0),
+                icon_box_width: Dp::new(28.0),
+                text_leading_margin: Dp::new(4.0),
+                trailing_padding: Dp::new(8.0),
+                indicator_width: Dp::new(0.0),
+                indicator_height: Dp::new(0.0),
+                indicator_radius: Dp::new(0.0),
+                radius: Dp::new(6.0),
+            },
+            ZsBaseControlPlatformStyle::Gtk => Self {
+                open_pane_width: Dp::new(280.0),
+                item_height: Dp::new(34.0),
+                icon_size: Dp::new(16.0),
+                icon_box_width: Dp::new(32.0),
+                text_leading_margin: Dp::new(6.0),
+                trailing_padding: Dp::new(10.0),
+                indicator_width: Dp::new(3.0),
+                indicator_height: Dp::new(20.0),
+                indicator_radius: Dp::new(2.0),
+                radius: Dp::new(6.0),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "button")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsNavigationItemRenderPlan {
+    pub bounds: Rect,
+    pub icon_bounds: Rect,
+    pub text_bounds: Rect,
+    pub selection_indicator: Option<Rect>,
+    pub selected: bool,
+    pub indicator_radius: i32,
+    pub radius: i32,
+}
+
+#[cfg(feature = "button")]
+pub fn zs_navigation_item_render_plan(
+    bounds: Rect,
+    selected: bool,
+    platform: ZsBaseControlPlatformStyle,
+    dpi: Dpi,
+) -> ZsNavigationItemRenderPlan {
+    let metrics = ZsNavigationItemMetrics::for_platform(platform);
+    let icon_size = metrics
+        .icon_size
+        .to_px(dpi)
+        .round_i32()
+        .max(0)
+        .min(bounds.height.max(0));
+    let icon_box_width = metrics.icon_box_width.to_px(dpi).round_i32().max(icon_size);
+    let leading_margin = metrics.text_leading_margin.to_px(dpi).round_i32().max(0);
+    let trailing_padding = metrics.trailing_padding.to_px(dpi).round_i32().max(0);
+    let indicator_width = metrics.indicator_width.to_px(dpi).round_i32().max(0);
+    let indicator_height = metrics
+        .indicator_height
+        .to_px(dpi)
+        .round_i32()
+        .max(0)
+        .min(bounds.height.max(0));
+    let icon_bounds = Rect {
+        x: bounds
+            .x
+            .saturating_add(icon_box_width.saturating_sub(icon_size) / 2),
+        y: bounds
+            .y
+            .saturating_add(bounds.height.saturating_sub(icon_size) / 2),
+        width: icon_size,
+        height: icon_size,
+    };
+    let text_x = bounds
+        .x
+        .saturating_add(icon_box_width)
+        .saturating_add(leading_margin);
+    let text_right = bounds
+        .x
+        .saturating_add(bounds.width)
+        .saturating_sub(trailing_padding);
+    let selection_indicator =
+        (selected && indicator_width > 0 && indicator_height > 0).then_some(Rect {
+            x: bounds.x,
+            y: bounds
+                .y
+                .saturating_add(bounds.height.saturating_sub(indicator_height) / 2),
+            width: indicator_width.min(bounds.width.max(0)),
+            height: indicator_height,
+        });
+    ZsNavigationItemRenderPlan {
+        bounds,
+        icon_bounds,
+        text_bounds: Rect {
+            x: text_x,
+            y: bounds.y,
+            width: text_right.saturating_sub(text_x).max(0),
+            height: bounds.height,
+        },
+        selection_indicator,
+        selected,
+        indicator_radius: metrics.indicator_radius.to_px(dpi).round_i32().max(0),
+        radius: metrics.radius.to_px(dpi).round_i32().max(1),
+    }
+}
+
+#[cfg(feature = "button")]
+pub fn zs_navigation_item_native_draw_plan(
+    plan: &ZsNavigationItemRenderPlan,
+    label: &str,
+    icon: crate::ZsIcon,
+) -> NativeDrawPlan {
+    let mut commands = Vec::new();
+    if plan.selected {
+        commands.push(NativeDrawCommand::RoundRect {
+            rect: plan.bounds,
+            fill: NativeDrawFill::Role(ColorRole::Control),
+            stroke: None,
+            radius: plan.radius,
+        });
+    }
+    if let Some(indicator) = plan.selection_indicator {
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: indicator,
+            fill: NativeDrawFill::Role(ColorRole::Accent),
+            radius: plan.indicator_radius,
+        });
+    }
+    commands.push(NativeDrawCommand::Icon(
+        crate::NativeDrawIconCommand::new(
+            icon,
+            plan.icon_bounds,
+            crate::NativeIconColorMode::ThemeAware,
+        )
+        .with_color(if plan.selected {
+            ColorRole::PrimaryText
+        } else {
+            ColorRole::SecondaryText
+        }),
+    ));
+    commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+        label,
+        plan.text_bounds,
+        crate::SemanticTextStyle::body(),
+    )));
+    NativeDrawPlan::new(commands)
 }
 
 #[cfg(feature = "info-bar")]
@@ -1662,6 +1843,7 @@ pub struct ZsBreadcrumbMetrics {
     pub icon_size: Dp,
     pub radius: Dp,
     pub character_width: Dp,
+    pub label_measurement_guard: Dp,
     pub popup_row_height: Dp,
     pub popup_padding: Dp,
 }
@@ -1678,6 +1860,7 @@ impl ZsBreadcrumbMetrics {
                 icon_size: Dp::new(16.0),
                 radius: Dp::new(4.0),
                 character_width: Dp::new(7.2),
+                label_measurement_guard: Dp::new(10.0),
                 popup_row_height: Dp::new(32.0),
                 popup_padding: Dp::new(4.0),
             },
@@ -1689,6 +1872,7 @@ impl ZsBreadcrumbMetrics {
                 icon_size: Dp::new(13.0),
                 radius: Dp::new(5.0),
                 character_width: Dp::new(6.6),
+                label_measurement_guard: Dp::new(8.0),
                 popup_row_height: Dp::new(24.0),
                 popup_padding: Dp::new(4.0),
             },
@@ -1700,6 +1884,7 @@ impl ZsBreadcrumbMetrics {
                 icon_size: Dp::new(16.0),
                 radius: Dp::new(6.0),
                 character_width: Dp::new(7.0),
+                label_measurement_guard: Dp::new(8.0),
                 popup_row_height: Dp::new(34.0),
                 popup_padding: Dp::new(4.0),
             },
@@ -1755,6 +1940,11 @@ pub fn zs_breadcrumb_render_plan(
     let minimum_width = metrics.minimum_item_width.to_px(dpi).round_i32().max(1);
     let separator_width = metrics.separator_width.to_px(dpi).round_i32().max(1);
     let character_width = metrics.character_width.to_px(dpi).round_i32().max(1);
+    let label_measurement_guard = metrics
+        .label_measurement_guard
+        .to_px(dpi)
+        .round_i32()
+        .max(0);
     let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(1);
     let control_height = metrics
         .control_height
@@ -1770,6 +1960,7 @@ pub fn zs_breadcrumb_render_plan(
         .map(|item| {
             (item.label().chars().count() as i32)
                 .saturating_mul(character_width)
+                .saturating_add(label_measurement_guard)
                 .saturating_add(padding.saturating_mul(2))
                 .max(minimum_width)
         })
@@ -2947,9 +3138,13 @@ impl ZsTabPlatformStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ZsTabViewMetrics {
     pub strip_height: Dp,
+    pub header_top_padding: Dp,
+    pub item_height: Dp,
     pub outer_inset: Dp,
     pub item_gap: Dp,
     pub horizontal_padding: Dp,
+    pub icon_size: Dp,
+    pub icon_gap: Dp,
     pub minimum_item_width: Dp,
     pub maximum_item_width: Dp,
     pub radius: Dp,
@@ -2962,9 +3157,13 @@ impl ZsTabViewMetrics {
         match platform {
             ZsTabPlatformStyle::Windows => Self {
                 strip_height: Dp::new(40.0),
+                header_top_padding: Dp::new(8.0),
+                item_height: Dp::new(32.0),
                 outer_inset: Dp::new(0.0),
-                item_gap: Dp::new(2.0),
-                horizontal_padding: Dp::new(16.0),
+                item_gap: Dp::new(0.0),
+                horizontal_padding: Dp::new(8.0),
+                icon_size: Dp::new(16.0),
+                icon_gap: Dp::new(10.0),
                 minimum_item_width: Dp::new(100.0),
                 maximum_item_width: Dp::new(240.0),
                 radius: Dp::new(8.0),
@@ -2972,9 +3171,13 @@ impl ZsTabViewMetrics {
             },
             ZsTabPlatformStyle::Macos => Self {
                 strip_height: Dp::new(32.0),
+                header_top_padding: Dp::new(0.0),
+                item_height: Dp::new(32.0),
                 outer_inset: Dp::new(12.0),
                 item_gap: Dp::new(0.0),
                 horizontal_padding: Dp::new(14.0),
+                icon_size: Dp::new(14.0),
+                icon_gap: Dp::new(6.0),
                 minimum_item_width: Dp::new(72.0),
                 maximum_item_width: Dp::new(160.0),
                 radius: Dp::new(6.0),
@@ -2982,9 +3185,13 @@ impl ZsTabViewMetrics {
             },
             ZsTabPlatformStyle::Gtk => Self {
                 strip_height: Dp::new(38.0),
+                header_top_padding: Dp::new(0.0),
+                item_height: Dp::new(38.0),
                 outer_inset: Dp::new(0.0),
                 item_gap: Dp::new(0.0),
                 horizontal_padding: Dp::new(12.0),
+                icon_size: Dp::new(16.0),
+                icon_gap: Dp::new(8.0),
                 minimum_item_width: Dp::new(72.0),
                 maximum_item_width: Dp::new(220.0),
                 radius: Dp::new(6.0),
@@ -2998,9 +3205,11 @@ impl ZsTabViewMetrics {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsTabHeaderRenderPlan {
     pub bounds: Rect,
+    pub icon_bounds: Option<Rect>,
     pub text_bounds: Rect,
     pub selected: bool,
     pub selection_indicator: Option<Rect>,
+    pub separator: Option<Rect>,
 }
 
 #[cfg(feature = "tabs")]
@@ -3018,6 +3227,24 @@ pub struct ZsTabViewRenderPlan {
 pub fn zs_tab_view_render_plan(
     bounds: Rect,
     labels: &[String],
+    selected_index: Option<usize>,
+    platform: ZsTabPlatformStyle,
+    dpi: Dpi,
+) -> ZsTabViewRenderPlan {
+    let tabs = labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| {
+            crate::ZsTabSpec::new(crate::ZsTabId::new(index as u64 + 1), label.clone())
+        })
+        .collect::<Vec<_>>();
+    zs_tab_view_render_plan_for_tabs(bounds, &tabs, selected_index, platform, dpi)
+}
+
+#[cfg(feature = "tabs")]
+pub fn zs_tab_view_render_plan_for_tabs(
+    bounds: Rect,
+    tabs: &[crate::ZsTabSpec],
     selected_index: Option<usize>,
     platform: ZsTabPlatformStyle,
     dpi: Dpi,
@@ -3051,7 +3278,7 @@ pub fn zs_tab_view_render_plan(
         .width
         .saturating_sub(inset.saturating_mul(2))
         .max(0);
-    let gap_count = labels.len().saturating_sub(1) as i32;
+    let gap_count = tabs.len().saturating_sub(1) as i32;
     let gap = metrics
         .item_gap
         .to_px(dpi)
@@ -3063,6 +3290,8 @@ pub fn zs_tab_view_render_plan(
             0
         });
     let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
+    let icon_size = metrics.icon_size.to_px(dpi).round_i32().max(0);
+    let icon_gap = metrics.icon_gap.to_px(dpi).round_i32().max(0);
     let minimum_width = metrics.minimum_item_width.to_px(dpi).round_i32().max(1);
     let maximum_width = metrics
         .maximum_item_width
@@ -3070,14 +3299,19 @@ pub fn zs_tab_view_render_plan(
         .round_i32()
         .max(minimum_width);
     let available_width = interior_width
-        .saturating_sub(gap.saturating_mul(labels.len().saturating_sub(1) as i32))
+        .saturating_sub(gap.saturating_mul(tabs.len().saturating_sub(1) as i32))
         .max(0);
     let text_unit = Dp::new(7.5).to_px(dpi).round_i32().max(1);
-    let mut widths = labels
+    let mut widths = tabs
         .iter()
-        .map(|label| {
-            (label.chars().count() as i32)
+        .map(|tab| {
+            (tab.label.chars().count() as i32)
                 .saturating_mul(text_unit)
+                .saturating_add(if tab.icon.is_some() {
+                    icon_size.saturating_add(icon_gap)
+                } else {
+                    0
+                })
                 .saturating_add(horizontal_padding.saturating_mul(2))
                 .clamp(minimum_width, maximum_width)
         })
@@ -3107,19 +3341,51 @@ pub fn zs_tab_view_render_plan(
         .to_px(dpi)
         .round_i32()
         .max(0);
+    let header_top_padding = metrics
+        .header_top_padding
+        .to_px(dpi)
+        .round_i32()
+        .max(0)
+        .min(strip_bounds.height);
+    let item_height = metrics
+        .item_height
+        .to_px(dpi)
+        .round_i32()
+        .max(0)
+        .min(strip_bounds.height.saturating_sub(header_top_padding));
+    let separator_inset = Dp::new(8.0).to_px(dpi).round_i32().max(0);
     let headers = widths
         .into_iter()
         .enumerate()
         .map(|(index, width)| {
             let header = Rect {
                 x,
-                y: strip_bounds.y,
+                y: strip_bounds.y.saturating_add(header_top_padding),
                 width,
-                height: strip_bounds.height,
+                height: item_height,
             };
             x = x.saturating_add(width).saturating_add(gap);
             let selected = selected_index == Some(index);
             let header_padding = horizontal_padding.min(header.width / 2);
+            let content_left = header.x.saturating_add(header_padding);
+            let icon_bounds = tabs.get(index).and_then(|tab| tab.icon).map(|_| {
+                let size = icon_size.min(header.height).max(0);
+                Rect {
+                    x: content_left,
+                    y: header
+                        .y
+                        .saturating_add(header.height.saturating_sub(size) / 2),
+                    width: size,
+                    height: size,
+                }
+            });
+            let text_x = icon_bounds.map_or(content_left, |icon| {
+                icon.x.saturating_add(icon.width).saturating_add(icon_gap)
+            });
+            let content_right = header
+                .x
+                .saturating_add(header.width)
+                .saturating_sub(header_padding);
             let selection_indicator = (selected && indicator_height > 0 && header.width > 0)
                 .then_some(Rect {
                     x: header.x.saturating_add(header_padding / 2),
@@ -3129,19 +3395,31 @@ pub fn zs_tab_view_render_plan(
                     width: header.width.saturating_sub(header_padding).max(1),
                     height: indicator_height,
                 });
+            let separator = (platform == ZsTabPlatformStyle::Windows
+                && index + 1 < tabs.len()
+                && !selected
+                && selected_index != Some(index + 1)
+                && header.height > separator_inset.saturating_mul(2))
+            .then_some(Rect {
+                x: header.x.saturating_add(header.width.saturating_sub(1)),
+                y: header.y.saturating_add(separator_inset),
+                width: 1,
+                height: header
+                    .height
+                    .saturating_sub(separator_inset.saturating_mul(2)),
+            });
             ZsTabHeaderRenderPlan {
                 bounds: header,
+                icon_bounds,
                 text_bounds: Rect {
-                    x: header.x.saturating_add(header_padding),
+                    x: text_x,
                     y: header.y,
-                    width: header
-                        .width
-                        .saturating_sub(header_padding.saturating_mul(2))
-                        .max(0),
+                    width: content_right.saturating_sub(text_x).max(0),
                     height: header.height,
                 },
                 selected,
                 selection_indicator,
+                separator,
             }
         })
         .collect();
@@ -3160,10 +3438,39 @@ pub fn zs_tab_view_native_draw_plan(
     plan: &ZsTabViewRenderPlan,
     labels: &[String],
 ) -> NativeDrawPlan {
+    let tabs = labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| {
+            crate::ZsTabSpec::new(crate::ZsTabId::new(index as u64 + 1), label.clone())
+        })
+        .collect::<Vec<_>>();
+    zs_tab_view_native_draw_plan_for_tabs(plan, &tabs)
+}
+
+#[cfg(feature = "tabs")]
+pub fn zs_tab_view_native_draw_plan_for_tabs(
+    plan: &ZsTabViewRenderPlan,
+    tabs: &[crate::ZsTabSpec],
+) -> NativeDrawPlan {
     let mut commands = vec![NativeDrawCommand::FillRect {
         rect: plan.strip_bounds,
         fill: NativeDrawFill::Role(ColorRole::Surface),
     }];
+    if plan.platform == ZsTabPlatformStyle::Windows && plan.strip_bounds.height > 0 {
+        commands.push(NativeDrawCommand::FillRect {
+            rect: Rect {
+                x: plan.strip_bounds.x,
+                y: plan
+                    .strip_bounds
+                    .y
+                    .saturating_add(plan.strip_bounds.height.saturating_sub(1)),
+                width: plan.strip_bounds.width,
+                height: 1,
+            },
+            fill: NativeDrawFill::Role(ColorRole::Border),
+        });
+    }
     if plan.platform == ZsTabPlatformStyle::Macos && !plan.headers.is_empty() {
         let first = plan
             .headers
@@ -3187,12 +3494,12 @@ pub fn zs_tab_view_native_draw_plan(
             radius: plan.radius,
         });
     }
-    for (header, label) in plan.headers.iter().zip(labels) {
+    for (header, tab) in plan.headers.iter().zip(tabs) {
         let fill = match (plan.platform, header.selected) {
             (_, true) => NativeDrawFill::Role(ColorRole::SurfaceRaised),
             (ZsTabPlatformStyle::Windows, false) => NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::Control,
-                alpha: 112,
+                alpha: 1,
             },
             _ => NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::Control,
@@ -3210,6 +3517,12 @@ pub fn zs_tab_view_native_draw_plan(
             stroke,
             radius: plan.radius,
         });
+        if let Some(separator) = header.separator {
+            commands.push(NativeDrawCommand::FillRect {
+                rect: separator,
+                fill: NativeDrawFill::Role(ColorRole::Border),
+            });
+        }
         if let Some(indicator) = header.selection_indicator {
             commands.push(NativeDrawCommand::RoundFill {
                 rect: indicator,
@@ -3217,31 +3530,46 @@ pub fn zs_tab_view_native_draw_plan(
                 radius: indicator.height.max(1) / 2,
             });
         }
+        if let (Some(icon), Some(icon_bounds)) = (tab.icon, header.icon_bounds) {
+            commands.push(NativeDrawCommand::Icon(
+                crate::NativeDrawIconCommand::new(
+                    icon,
+                    icon_bounds,
+                    crate::NativeIconColorMode::ThemeAware,
+                )
+                .with_color(if header.selected {
+                    ColorRole::PrimaryText
+                } else {
+                    ColorRole::SecondaryText
+                }),
+            ));
+        }
         commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-            label,
+            &tab.label,
             header.text_bounds,
             SemanticTextStyle {
-                role: TextRole::Body,
+                role: if plan.platform == ZsTabPlatformStyle::Windows {
+                    TextRole::Caption
+                } else {
+                    TextRole::Body
+                },
                 color: if header.selected {
                     ColorRole::PrimaryText
                 } else {
                     ColorRole::SecondaryText
                 },
-                weight: if header.selected {
-                    TextWeight::Semibold
+                weight: TextWeight::Regular,
+                horizontal_align: if plan.platform == ZsTabPlatformStyle::Windows
+                    || tab.icon.is_some()
+                {
+                    HorizontalAlign::Start
                 } else {
-                    TextWeight::Regular
+                    HorizontalAlign::Center
                 },
-                horizontal_align: HorizontalAlign::Center,
                 ..SemanticTextStyle::body()
             },
         )));
     }
-    commands.push(NativeDrawCommand::StrokeRect {
-        rect: plan.content_bounds,
-        stroke: NativeDrawFill::Role(ColorRole::Border),
-        width: 1,
-    });
     NativeDrawPlan::new(commands)
 }
 
@@ -7593,6 +7921,81 @@ mod tests {
         assert_ne!(macos.text_input_radius, gtk.text_input_radius);
     }
 
+    #[cfg(feature = "button")]
+    #[test]
+    fn windows_navigation_item_uses_winui_row_and_indicator_geometry() {
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 184,
+            height: 36,
+        };
+        assert_eq!(
+            ZsNavigationItemMetrics::for_platform(ZsBaseControlPlatformStyle::Windows)
+                .open_pane_width,
+            Dp::new(320.0)
+        );
+        let plan = zs_navigation_item_render_plan(
+            bounds,
+            true,
+            ZsBaseControlPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+
+        assert_eq!(
+            plan.icon_bounds,
+            Rect {
+                x: 22,
+                y: 30,
+                width: 16,
+                height: 16
+            }
+        );
+        assert_eq!(
+            plan.text_bounds,
+            Rect {
+                x: 54,
+                y: 20,
+                width: 132,
+                height: 36
+            }
+        );
+        assert_eq!(
+            plan.selection_indicator,
+            Some(Rect {
+                x: 10,
+                y: 30,
+                width: 3,
+                height: 16
+            })
+        );
+        assert_eq!(plan.indicator_radius, 2);
+
+        let draw = zs_navigation_item_native_draw_plan(&plan, "Navigation", crate::ZsIcon::Sidebar);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill { rect, radius: 2, .. }
+                if Some(*rect) == plan.selection_indicator
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Sidebar
+        )));
+
+        let normal = zs_navigation_item_render_plan(
+            bounds,
+            false,
+            ZsBaseControlPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let normal_draw =
+            zs_navigation_item_native_draw_plan(&normal, "Navigation", crate::ZsIcon::Sidebar);
+        assert!(!normal_draw
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::RoundRect { .. })));
+    }
+
     #[cfg(feature = "tree")]
     #[test]
     fn tree_render_plan_preserves_platform_rows_depth_and_disclosure_geometry() {
@@ -8074,6 +8477,22 @@ mod tests {
             Dpi::standard(),
             Some(viewport),
         );
+        let wide = zs_breadcrumb_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 32,
+            },
+            &items[..2],
+            false,
+            ZsBreadcrumbPlatformStyle::Windows,
+            Dpi::standard(),
+            None,
+        );
+        assert!(wide.hidden_indices.is_empty());
+        assert!(wide.items[0].text_bounds.width >= 38);
+        assert!(wide.items[1].text_bounds.width >= 66);
         let macos = zs_breadcrumb_render_plan(
             bounds,
             &items,
@@ -8258,6 +8677,11 @@ mod tests {
         let gtk = ZsTabViewMetrics::for_platform(ZsTabPlatformStyle::Gtk);
 
         assert!(windows.strip_height.0 > macos.strip_height.0);
+        assert_eq!(windows.header_top_padding, Dp::new(8.0));
+        assert_eq!(windows.item_height, Dp::new(32.0));
+        assert_eq!(windows.horizontal_padding, Dp::new(8.0));
+        assert_eq!(windows.icon_size, Dp::new(16.0));
+        assert_eq!(windows.icon_gap, Dp::new(10.0));
         assert_eq!(windows.minimum_item_width, Dp::new(100.0));
         assert_eq!(windows.maximum_item_width, Dp::new(240.0));
         assert!(macos.outer_inset.0 > windows.outer_inset.0);
@@ -8299,6 +8723,10 @@ mod tests {
         assert!(windows.headers[1].selected);
         assert!(windows.headers[1].selection_indicator.is_some());
         assert_eq!(windows.content_bounds.y, bounds.y + 40);
+        assert!(windows
+            .headers
+            .iter()
+            .all(|header| header.bounds.y == bounds.y + 8 && header.bounds.height == 32));
         assert!(windows.headers.iter().all(|header| {
             header.bounds.x >= bounds.x
                 && header.bounds.x + header.bounds.width <= bounds.x + bounds.width
@@ -8337,6 +8765,40 @@ mod tests {
                 fill: NativeDrawFill::Role(ColorRole::Accent),
                 ..
             }
+        )));
+        assert!(!draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::StrokeRect { rect, .. } if *rect == windows.content_bounds
+        )));
+
+        let tabs = vec![
+            crate::ZsTabSpec::new(crate::ZsTabId::new(1), "General").icon(crate::ZsIcon::Settings),
+            crate::ZsTabSpec::new(crate::ZsTabId::new(2), "About").icon(crate::ZsIcon::Info),
+        ];
+        let icon_plan = zs_tab_view_render_plan_for_tabs(
+            bounds,
+            &tabs,
+            Some(0),
+            ZsTabPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        assert_eq!(icon_plan.headers[0].icon_bounds.unwrap().width, 16);
+        assert_eq!(
+            icon_plan.headers[0].text_bounds.x,
+            icon_plan.headers[0].icon_bounds.unwrap().x + 16 + 10
+        );
+        let icon_draw = zs_tab_view_native_draw_plan_for_tabs(&icon_plan, &tabs);
+        assert!(icon_draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Settings
+        )));
+        assert!(icon_draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.text == "General"
+                    && text.style.role == TextRole::Caption
+                    && text.style.horizontal_align == HorizontalAlign::Start
+                    && text.style.weight == TextWeight::Regular
         )));
     }
 

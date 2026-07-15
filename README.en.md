@@ -8,7 +8,7 @@ Compose with traits, route typed messages, and compile only the controls,
 services, and platform backends an application enables.
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.1-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.2-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -102,12 +102,22 @@ let runtime = app("Example")
 # Ok::<(), zsui::ZsuiError>(())
 ```
 
-Create a real native OS window with one line:
+Create a real native OS window with one entry point:
 
 ```rust,no_run
-zsui::native_window("Example").size(900, 620).run()?;
-# Ok::<(), zsui::ZsuiError>(())
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
+fn main() -> zsui::ZsuiResult<()> {
+    zsui::native_window("Example").size(900, 620).run()?;
+    Ok(())
+}
 ```
+
+The final application crate selects the Windows PE subsystem. User-facing
+release binaries should retain the crate attribute above so launching them does
+not create a console window. Debug builds keep their console for diagnostics.
+ZSUI's GUI examples and release artifacts enforce this boundary with
+`scripts/check-windows-gui-subsystem.ps1`.
 
 Input controls use the same strongly typed message path. For example, a Slider
 can constrain its value to an explicit range and step:

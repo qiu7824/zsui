@@ -1019,12 +1019,11 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(tab_view), Some(bounds), ViewNodeKind::Tabs { tabs, selected, .. }) =
             (self.id, self.bounds, &self.kind)
         {
-            let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let plan = crate::zs_tab_view_render_plan(
+            let plan = crate::zs_tab_view_render_plan_for_tabs(
                 bounds,
-                &labels,
+                tabs,
                 selected_index,
                 crate::ZsTabPlatformStyle::current(),
                 self.layout_dpi,
@@ -1315,10 +1314,9 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let labels = tabs.iter().map(|tab| tab.label.clone()).collect::<Vec<_>>();
-            let plan = crate::zs_tab_view_render_plan(
+            let plan = crate::zs_tab_view_render_plan_for_tabs(
                 bounds,
-                &labels,
+                tabs,
                 selected_index,
                 crate::ZsTabPlatformStyle::current(),
                 self.layout_dpi,
