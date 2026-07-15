@@ -91,7 +91,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let mut window_service = MacosAppKitWindowService::new()?;
     let mut ids = Vec::with_capacity(specs.len());
     for (index, spec) in specs.iter().enumerate() {
-        let id = window_service.create_window(spec)?;
+        let id = window_service.create_window(&spec.clone().visible(false))?;
         if let Some(plan) = draw_plans.get(index).and_then(Clone::clone) {
             window_service.set_window_view_content(
                 id,
@@ -129,7 +129,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         .map(|(window, host)| (Retained::as_ptr(window) as usize, host.clone()))
         .collect();
     let delegate = ZsuiAppKitRuntimeDelegate::new(mtm, ids.len(), close_handlers);
-    let application = &window_service._application;
+    let application = window_service._application.clone();
     let application_delegate: &ProtocolObject<dyn NSApplicationDelegate> =
         ProtocolObject::from_ref(&*delegate);
     let window_delegate: &ProtocolObject<dyn NSWindowDelegate> =
@@ -140,6 +140,11 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     }
     #[allow(deprecated)]
     application.activateIgnoringOtherApps(true);
+    for (id, spec) in ids.iter().copied().zip(specs) {
+        if spec.visible {
+            window_service.set_window_visible(id, true)?;
+        }
+    }
 
     let timer = auto_close_after_ms.map(|delay| unsafe {
         NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(

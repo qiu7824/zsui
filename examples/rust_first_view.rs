@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .native_view_click(Point { x: 260, y: 108 })
                 .native_view_text_input(" Native")
                 .native_view_click(Point { x: 260, y: 180 })
-                .native_view_click(Point { x: 260, y: 252 }),
+                .native_view_click(Point { x: 60, y: 252 }),
         )?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());

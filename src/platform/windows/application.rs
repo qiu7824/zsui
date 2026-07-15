@@ -245,7 +245,9 @@ pub fn create_owned_windows_for_specs_with_routes(
     let mut host = WindowsWin32MainWindowHost::new();
     let mut handles = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
-        let request = NativeMainWindowRequest::from_zsui_window_for_host(spec, &capabilities);
+        let mut request = NativeMainWindowRequest::from_zsui_window_for_host(spec, &capabilities);
+        let main_visible = request.main_visible;
+        request.main_visible = false;
         let icon_path = request.icon_path.clone();
         match host.create_main_windows(request) {
             NativeMainWindowPresentation::Created(created) => {
@@ -274,6 +276,12 @@ pub fn create_owned_windows_for_specs_with_routes(
                         created.main,
                         menu,
                     )?);
+                }
+                if main_visible {
+                    unsafe {
+                        ShowWindow(created.main, SW_SHOW);
+                        UpdateWindow(created.main);
+                    }
                 }
                 handles.push(owned);
             }

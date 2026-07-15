@@ -94,17 +94,33 @@ fn split_child_bounds<Msg>(
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => {
-            let widths =
-                allocate_axis_lengths(bounds.width, gap, children, |style| style.width, dpi);
+            let widths = allocate_axis_lengths(
+                bounds.width,
+                gap,
+                children,
+                |style| style.width,
+                |style| style.min_width,
+                dpi,
+            );
             let mut x = bounds.x;
             widths
                 .into_iter()
-                .map(|width| {
+                .zip(children)
+                .map(|(width, child)| {
+                    let height = cross_axis_length(
+                        bounds.height,
+                        child.style.height,
+                        child.style.min_height,
+                        child.style.flex,
+                        dpi,
+                    );
                     let rect = Rect {
                         x,
-                        y: bounds.y,
+                        y: bounds
+                            .y
+                            .saturating_add(bounds.height.saturating_sub(height) / 2),
                         width,
-                        height: bounds.height,
+                        height,
                     };
                     x += width + gap;
                     rect
@@ -342,15 +358,30 @@ fn split_column_child_bounds<Msg>(
     gap: i32,
     dpi: Dpi,
 ) -> Vec<Rect> {
-    let heights = allocate_axis_lengths(bounds.height, gap, children, |style| style.height, dpi);
+    let heights = allocate_axis_lengths(
+        bounds.height,
+        gap,
+        children,
+        |style| style.height,
+        |style| style.min_height,
+        dpi,
+    );
     let mut y = bounds.y;
     heights
         .into_iter()
-        .map(|height| {
+        .zip(children)
+        .map(|(height, child)| {
+            let width = cross_axis_length(
+                bounds.width,
+                child.style.width,
+                child.style.min_width,
+                child.style.flex,
+                dpi,
+            );
             let rect = Rect {
                 x: bounds.x,
                 y,
-                width: bounds.width,
+                width,
                 height,
             };
             y += height + gap;
@@ -364,6 +395,7 @@ fn allocate_axis_lengths<Msg>(
     gap: i32,
     children: &[ViewNode<Msg>],
     fixed: impl Fn(&ViewStyle) -> Option<Dp>,
+    minimum: impl Fn(&ViewStyle) -> Option<Dp>,
     dpi: Dpi,
 ) -> Vec<i32> {
     let total = total.max(0);
@@ -375,19 +407,31 @@ fn allocate_axis_lengths<Msg>(
         .iter()
         .map(|child| fixed(&child.style).map(|value| value.to_px(dpi).round_i32().max(0)))
         .collect::<Vec<_>>();
-    let fixed_total: i32 = requested.iter().flatten().copied().sum();
-    let mut lengths = vec![0; children.len()];
+    let minimums = children
+        .iter()
+        .map(|child| {
+            minimum(&child.style)
+                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .unwrap_or(0)
+        })
+        .collect::<Vec<_>>();
+    let mut lengths = requested
+        .iter()
+        .zip(&minimums)
+        .map(|(fixed, minimum)| fixed.unwrap_or(*minimum).max(*minimum))
+        .collect::<Vec<_>>();
+    let base_total: i32 = lengths.iter().copied().sum();
 
-    if fixed_total >= available && fixed_total > 0 {
-        let scale = available as f32 / fixed_total as f32;
-        let fixed_indices = requested
+    if base_total >= available && base_total > 0 {
+        let scale = available as f32 / base_total as f32;
+        let allocated_indices = lengths
             .iter()
             .enumerate()
-            .filter_map(|(index, value)| value.map(|value| (index, value)))
+            .filter_map(|(index, value)| (*value > 0).then_some((index, *value)))
             .collect::<Vec<_>>();
         let mut assigned = 0;
-        for (position, (index, value)) in fixed_indices.iter().enumerate() {
-            let length = if position + 1 == fixed_indices.len() {
+        for (position, (index, value)) in allocated_indices.iter().enumerate() {
+            let length = if position + 1 == allocated_indices.len() {
                 available - assigned
             } else {
                 ((*value as f32) * scale).floor() as i32
@@ -399,17 +443,13 @@ fn allocate_axis_lengths<Msg>(
         return lengths;
     }
 
-    for (index, value) in requested.iter().enumerate() {
-        if let Some(value) = value {
-            lengths[index] = *value;
-        }
-    }
-
-    let remaining = (available - fixed_total).max(0);
+    let remaining = (available - base_total).max(0);
     let flexible = requested
         .iter()
         .enumerate()
-        .filter(|(_, value)| value.is_none())
+        .filter(|(index, value)| {
+            value.is_none() && children[*index].style.flex > f32::EPSILON
+        })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if flexible.is_empty() {
@@ -420,29 +460,39 @@ fn allocate_axis_lengths<Msg>(
         .iter()
         .map(|index| children[*index].style.flex.max(0.0))
         .sum();
-    let equal_flex = flex_total <= f32::EPSILON;
-    let denominator = if equal_flex {
-        flexible.len() as f32
-    } else {
-        flex_total
-    };
+    let denominator = flex_total;
     let mut assigned = 0;
     for (position, index) in flexible.iter().enumerate() {
         let length = if position + 1 == flexible.len() {
             remaining - assigned
         } else {
-            let weight = if equal_flex {
-                1.0
-            } else {
-                children[*index].style.flex.max(0.0)
-            };
+            let weight = children[*index].style.flex.max(0.0);
             ((remaining as f32) * weight / denominator).floor() as i32
         }
         .max(0);
-        lengths[*index] = length;
+        lengths[*index] = lengths[*index].saturating_add(length);
         assigned += length;
     }
     lengths
+}
+
+fn cross_axis_length(
+    available: i32,
+    fixed: Option<Dp>,
+    minimum: Option<Dp>,
+    flex: f32,
+    dpi: Dpi,
+) -> i32 {
+    let available = available.max(0);
+    let minimum = minimum
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0)
+        .min(available);
+    fixed
+        .map(|value| value.to_px(dpi).round_i32().max(minimum))
+        .or_else(|| (flex <= f32::EPSILON && minimum > 0).then_some(minimum))
+        .unwrap_or(available)
+        .min(available)
 }
 
 #[cfg(feature = "date-picker")]
@@ -473,6 +523,47 @@ fn inset_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
 #[cfg(any(feature = "label", feature = "button", feature = "textbox"))]
 fn padded_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     inset_bounds(bounds, padding, dpi)
+}
+
+#[cfg(feature = "button")]
+fn button_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+    if padding.is_some() {
+        return padded_bounds(bounds, padding, dpi);
+    }
+
+    #[cfg(windows)]
+    {
+        let left = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_LEFT as f32)
+            .to_px(dpi)
+            .round_i32()
+            .max(0);
+        let top = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_TOP as f32)
+            .to_px(dpi)
+            .round_i32()
+            .max(0);
+        let right = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_RIGHT as f32)
+            .to_px(dpi)
+            .round_i32()
+            .max(0);
+        let bottom = Dp::new(crate::style::ZSUI_WINUI_BUTTON_PADDING_BOTTOM as f32)
+            .to_px(dpi)
+            .round_i32()
+            .max(0);
+        return Rect {
+            x: bounds.x.saturating_add(left),
+            y: bounds.y.saturating_add(top),
+            width: bounds.width.saturating_sub(left.saturating_add(right)).max(0),
+            height: bounds
+                .height
+                .saturating_sub(top.saturating_add(bottom))
+                .max(0),
+        };
+    }
+
+    #[cfg(not(windows))]
+    {
+        padded_bounds(bounds, Some(Dp::new(8.0)), dpi)
+    }
 }
 
 fn radius_px(radius: Option<Dp>, dpi: Dpi) -> i32 {

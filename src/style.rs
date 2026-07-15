@@ -11,6 +11,13 @@ pub const ZSUI_FLUENT_TOUCH_TARGET: i32 = 40;
 pub const ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT: i32 = 40;
 pub const ZSUI_FLUENT_SMALL_ICON_SIZE: i32 = 16;
 pub const ZSUI_FLUENT_STANDARD_ICON_SIZE: i32 = 20;
+/// Recommended minimum width for a short-label Windows command button.
+pub const ZSUI_WINUI_BUTTON_MIN_WIDTH: i32 = 120;
+/// WinUI `ButtonPadding` from the default Button theme resources.
+pub const ZSUI_WINUI_BUTTON_PADDING_LEFT: i32 = 11;
+pub const ZSUI_WINUI_BUTTON_PADDING_TOP: i32 = 5;
+pub const ZSUI_WINUI_BUTTON_PADDING_RIGHT: i32 = 11;
+pub const ZSUI_WINUI_BUTTON_PADDING_BOTTOM: i32 = 6;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsuiThemeMode {

@@ -775,6 +775,8 @@ pub struct ViewStyle {
     pub background: Option<ThemeColorToken>,
     pub width: Option<Dp>,
     pub height: Option<Dp>,
+    pub min_width: Option<Dp>,
+    pub min_height: Option<Dp>,
     pub flex: f32,
     pub gap: Option<Dp>,
     pub theme_mode: Option<ZsuiThemeMode>,
@@ -788,6 +790,8 @@ impl Default for ViewStyle {
             background: None,
             width: None,
             height: None,
+            min_width: None,
+            min_height: None,
             flex: 1.0,
             gap: None,
             theme_mode: None,
@@ -872,6 +876,16 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn height(mut self, height: Dp) -> Self {
         self.style.height = Some(height);
+        self
+    }
+
+    pub fn min_width(mut self, min_width: Dp) -> Self {
+        self.style.min_width = Some(min_width);
+        self
+    }
+
+    pub fn min_height(mut self, min_height: Dp) -> Self {
+        self.style.min_height = Some(min_height);
         self
     }
 

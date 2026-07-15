@@ -376,12 +376,16 @@ where
             revision: 0,
             animation_epoch: std::time::Instant::now(),
         };
-        driver.layout();
+        driver.layout_current_view();
         driver
     }
 
-    fn layout(&mut self) {
+    fn rebuild_and_layout(&mut self) {
         self.view = (self.view_fn)(&self.state);
+        self.layout_current_view();
+    }
+
+    fn layout_current_view(&mut self) {
         let mut cx = ViewLayoutCx::new(self.bounds, self.dpi);
         self.view.layout(&mut cx);
     }
@@ -392,7 +396,7 @@ where
         for message in messages {
             (self.update_fn)(&mut self.state, message, &mut app_cx);
         }
-        self.layout();
+        self.rebuild_and_layout();
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
             redraw: true,
@@ -421,13 +425,13 @@ where
         }
         self.bounds = bounds;
         self.dpi = dpi;
-        self.layout();
+        self.layout_current_view();
         self.revision = self.revision.saturating_add(1);
         true
     }
 
     fn refresh(&mut self) -> LiveViewUpdate {
-        self.layout();
+        self.rebuild_and_layout();
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
             redraw: true,

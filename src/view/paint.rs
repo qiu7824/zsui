@@ -1650,19 +1650,23 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "button")]
             ViewNodeKind::Button { label, .. } => {
+                #[cfg(windows)]
+                let default_radius = Dp::new(crate::style::ZSUI_FLUENT_CONTROL_RADIUS as f32);
+                #[cfg(not(windows))]
+                let default_radius = Dp::new(6.0);
                 cx.draw(NativeDrawCommand::RoundRect {
                     rect: bounds,
                     fill: NativeDrawFill::Role(ColorRole::Control),
-                    stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
-                    radius: radius_px(self.style.radius.or(Some(Dp::new(6.0))), cx.dpi),
+                    stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                    radius: radius_px(self.style.radius.or(Some(default_radius)), cx.dpi),
                 });
+                let mut text_style = SemanticTextStyle::body();
+                text_style.role = TextRole::Button;
+                text_style.horizontal_align = crate::HorizontalAlign::Center;
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                     label,
-                    padded_bounds(bounds, self.style.padding.or(Some(Dp::new(8.0))), cx.dpi),
-                    SemanticTextStyle {
-                        role: TextRole::Button,
-                        ..SemanticTextStyle::body()
-                    },
+                    button_content_bounds(bounds, self.style.padding, cx.dpi),
+                    text_style,
                 )));
             }
             #[cfg(feature = "toggle-button")]

@@ -147,6 +147,68 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(windows, feature = "button", feature = "label"))]
+    fn windows_button_uses_winui_metrics_and_does_not_stretch_by_default() {
+        let button_id = WidgetId::new(2);
+        let mut view: ViewNode<Msg> = column(vec![
+            text("Title"),
+            button("Copy")
+                .id(button_id)
+                .on_click(Msg::SaveClicked),
+        ]);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 80,
+            },
+            Dpi::standard(),
+        );
+
+        let output = view.layout(&mut layout);
+        let button_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == button_id.into())
+            .expect("button should expose layout bounds")
+            .bounds;
+        assert_eq!(
+            button_bounds,
+            Rect {
+                x: 0,
+                y: 48,
+                width: 120,
+                height: 32,
+            }
+        );
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                rect,
+                stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                radius: 4,
+                ..
+            } if *rect == button_bounds
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.text == "Copy"
+                    && text.bounds == Rect {
+                        x: 11,
+                        y: 53,
+                        width: 98,
+                        height: 21,
+                    }
+                    && text.style.horizontal_align == crate::HorizontalAlign::Center
+        )));
+    }
+
+    #[test]
     fn stack_layout_honors_fixed_size_flex_and_gap() {
         let navigation = WidgetId::new(70);
         let content = WidgetId::new(71);
@@ -432,7 +494,7 @@ mod tests {
 
         assert_eq!(plan.hit_target_count(), 1);
         assert_eq!(
-            plan.target_kind_at(Point { x: 150, y: 90 }),
+            plan.target_kind_at(Point { x: 60, y: 104 }),
             Some(ViewHitTargetKind::Button)
         );
         assert_eq!(
@@ -441,7 +503,7 @@ mod tests {
             Some(ViewHitTargetKind::Button)
         );
         assert_eq!(
-            plan.click_event_at(Point { x: 150, y: 90 }),
+            plan.click_event_at(Point { x: 60, y: 104 }),
             Some(ViewEvent::Click { widget: save_id })
         );
         assert_eq!(

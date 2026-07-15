@@ -147,6 +147,9 @@ history remain authoritative for implementation status.
   must not keep a separate popup-open flag or bypass application messages.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
+- Native desktop windows stay hidden until the initial draw plan, typed input
+  route, appearance, icon and menu are attached. Win32, AppKit and GTK4 must
+  not expose an empty host surface and repaint it as the first visible frame.
 - Treat antialiasing, DPI, IME, scrolling, margins and window services as
   reusable framework capabilities rather than example-local fixes.
 - Never promote a platform from declarations or cross-compilation alone.
@@ -160,6 +163,17 @@ history remain authoritative for implementation status.
   explanatory text and action regions—not a product-specific settings page.
 - Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
   GTK4 to present native platform character.
+- Windows Button defaults come from current WinUI resources and guidance:
+  32 epx standard control height, 120 epx minimum width for short labels,
+  `11,5,11,6` content padding, 4 epx control radius, centered content and a
+  semantic control border. A Button is content-sized in a row/column instead
+  of silently consuming an equal flex share; explicit width/height/flex still
+  override the defaults.
+- A stateful View is built once before the first frame. Client-size or DPI-only
+  changes relayout the existing tree; only state updates and explicit refresh
+  rebuild it. Application storage reconciliation, initial page I/O and retry
+  loops stay outside the first-frame path and return through typed completion
+  messages or existing bounded background workers.
 - High contrast is an accessibility appearance, not a dark-theme alias.
   System mode must override an application's light/dark preference when the OS
   requests high contrast. Win32 uses `SPI_GETHIGHCONTRAST` plus user-selected

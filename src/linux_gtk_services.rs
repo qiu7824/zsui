@@ -59,7 +59,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             let mut windows = LinuxGtkWindowService::from_application(application.clone());
             let mut ids = Vec::with_capacity(specs.len());
             for (index, spec) in specs.iter().enumerate() {
-                match windows.create_window(spec) {
+                match windows.create_window(&spec.clone().visible(false)) {
                     Ok(id) => {
                         if let Some(plan) = draw_plans.get(index).and_then(Clone::clone) {
                             if let Err(error) = windows.set_window_view_content(
@@ -105,6 +105,15 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             } else {
                 None
             };
+            for (id, spec) in ids.iter().copied().zip(specs.iter()) {
+                if spec.visible {
+                    if let Err(error) = windows.set_window_visible(id, true) {
+                        *startup_error.borrow_mut() = Some(error.to_string());
+                        application.quit();
+                        return;
+                    }
+                }
+            }
             *created_count.borrow_mut() = ids.len();
             *state.borrow_mut() = Some(LinuxGtkRuntimeState {
                 _windows: windows,

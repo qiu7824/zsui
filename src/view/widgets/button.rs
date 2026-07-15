@@ -5,10 +5,23 @@ pub fn text<Msg>(text: impl Into<String>) -> ViewNode<Msg> {
 
 #[cfg(feature = "button")]
 pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
-    ViewNode::new(ViewNodeKind::Button {
+    let button = ViewNode::new(ViewNodeKind::Button {
         label: label.into(),
         on_click: None,
-    })
+    });
+    #[cfg(windows)]
+    {
+        button
+            .min_width(Dp::new(crate::style::ZSUI_WINUI_BUTTON_MIN_WIDTH as f32))
+            .min_height(Dp::new(
+                crate::style::ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT as f32,
+            ))
+            .flex(0.0)
+    }
+    #[cfg(not(windows))]
+    {
+        button
+    }
 }
 
 #[cfg(feature = "toggle-button")]

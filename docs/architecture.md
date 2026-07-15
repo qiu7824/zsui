@@ -118,13 +118,26 @@ implementations.
 normal application loop: Win32 input emits typed messages, `update` mutates the
 application-owned state through `AppCx`, the framework rebuilds and lays out the
 View, replaces the native draw plan and invalidates the HWND. Resize and DPI
-surface changes rebuild the same live View. `AppCx::quit()` closes the native
+surface changes relayout the existing tree without invoking the application
+view function again. All three desktop hosts create the native window hidden,
+attach the initial draw plan, typed input route, appearance and menu, and only
+then make a requested-visible window visible. `AppCx::quit()` closes the native
 window. `AppCx::command(...)` values are handed to the explicitly composed
 `SharedAppCommandExecutor`, with success, failure and emitted-event evidence in
 native smoke reports. `NativeWindowRuntimeDriver` implements this executor
 contract. Product-owned `UiCommand` values use the parallel
 `SharedUiCommandExecutor`; `ProductAdapterUiCommandExecutor` delegates directly
 to `ProductAdapterHost` rather than hiding product behavior inside View state.
+
+Row and column layout distinguish fixed sizes, minimum sizes and flexible
+growth. `ViewNode::min_width(...)` and `min_height(...)` reserve typed `Dp`
+space without forcing the node to consume the remaining axis. On Windows the
+basic Button defaults follow the official
+[WinUI Button resources](https://github.com/microsoft/microsoft-ui-xaml/blob/main/controls/dev/CommonStyles/Button_themeresources.xaml)
+and [button guidance](https://learn.microsoft.com/windows/apps/develop/ui/controls/buttons):
+32 epx control height, 120 epx short-label minimum, `11,5,11,6` content padding
+and 4 epx `ControlCornerRadius`; explicit layout and style methods remain
+authoritative.
 
 The optional `dialog` feature adds `content_dialog(id, open, spec, page)` as a
 compositional modal layer, not a native child-control driver. Applications own

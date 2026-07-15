@@ -8596,6 +8596,11 @@ mod tests {
     #[cfg(all(feature = "label", feature = "button"))]
     #[test]
     fn native_window_builder_stateful_view_rebuilds_after_update() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
         #[derive(Clone)]
         enum Msg {
             Increment,
@@ -8605,9 +8610,12 @@ mod tests {
         }
 
         let button_id = crate::WidgetId::new(70);
+        let view_build_count = Arc::new(AtomicUsize::new(0));
+        let build_counter = Arc::clone(&view_build_count);
         let builder = native_window("Stateful View").size(360, 220).stateful_view(
             State { count: 0 },
             move |state| {
+                build_counter.fetch_add(1, Ordering::SeqCst);
                 crate::column([
                     crate::text(format!("Count: {}", state.count)),
                     crate::button("Increment")
@@ -8622,11 +8630,28 @@ mod tests {
         let runtime = builder
             .native_live_view_runtime()
             .expect("stateful view should keep a live runtime");
+        assert_eq!(view_build_count.load(Ordering::SeqCst), 1);
+
+        assert!(runtime.set_surface(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 340,
+                height: 200,
+            },
+            crate::Dpi::standard(),
+        ));
+        assert_eq!(
+            view_build_count.load(Ordering::SeqCst),
+            1,
+            "surface-only relayout must reuse the existing tree"
+        );
 
         let update = runtime.dispatch_event(&ViewEvent::Click { widget: button_id });
 
         assert!(update.redraw);
-        assert_eq!(update.revision, 1);
+        assert_eq!(update.revision, 2);
+        assert_eq!(view_build_count.load(Ordering::SeqCst), 2);
         assert!(runtime.draw_plan().commands.iter().any(|command| matches!(
             command,
             crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
@@ -8911,13 +8936,13 @@ mod tests {
             ]))
             .shared_ui_command_executor(executor.clone());
         let mut report = NativeWindowSmokeRunReport::empty(
-            NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 180, y: 170 }),
+            NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 60, y: 204 }),
         );
 
         record_native_view_input_smoke(
             &mut report,
             &mut builder.native_view_input_runtime(),
-            &NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 180, y: 170 }),
+            &NativeWindowSmokeRunOptions::quick().native_view_click(Point { x: 60, y: 204 }),
         );
 
         assert!(builder.native_view_has_ui_command_routing());
