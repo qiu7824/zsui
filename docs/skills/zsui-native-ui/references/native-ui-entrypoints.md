@@ -24,7 +24,7 @@ is enough.
 | Public API and exports | `src/lib.rs` |
 | Cargo feature graph | `Cargo.toml`, `src/feature_manifest.rs` |
 | Rust-first framework goals | `src/framework_goals.rs`, `docs/framework-goals.md` |
-| Rust-first view and live state runtime API | `src/view.rs`, `src/native.rs` |
+| Rust-first view and live state runtime API | `src/view/mod.rs`, `src/native.rs` |
 | WinUI-style navigation/card shell layout API | `src/shell_layout.rs` |
 | Conversation/task workbench API | `src/workbench.rs` |
 | Document editor shell API | `src/document_shell.rs` |
@@ -205,7 +205,7 @@ Already reusable at code level:
   popup-menu creation/cleanup evidence and `TrackPopupMenu` selection routing.
 - Win32 main/quick/transient window host style mapping, create-params,
   message-loop wrapper and `NativeMainWindowHost`/`NativeTransientWindowHost`
-  implementations in `src/windows_win32_host.rs`.
+  implementations in `src/platform/windows/mod.rs`.
 - Win32 native paint can attach `NativeDrawPlan` content to an `HWND` and render
   it through the no-flicker buffered GDI path.
 - Native host smoke manifest planning through `native_host_smoke_plan()` and

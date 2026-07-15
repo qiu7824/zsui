@@ -34,6 +34,13 @@ history remain authoritative for implementation status.
 - Prefer composition, traits, typed messages, explicit state, strong IDs,
   typed `Dp`/`Px`/`Dpi`, RAII, `Result` and safe public APIs.
 - Keep raw platform APIs and `unsafe` inside backend modules.
+- The public `crate::view` module is physically organized under `src/view/`:
+  node, layout, event, focus, paint, overlay and widget-family source units
+  share the existing module namespace so public paths and privacy stay stable.
+- The public `crate::windows_win32_host` backend is physically organized under
+  `src/platform/windows/`: application/window procedure, input, services, text,
+  popup, timer and DPI source units share one backend namespace. Raw Win32
+  handles and `unsafe` remain confined to that backend.
 - Do not introduce a control inheritance hierarchy, string event bus, global
   mutable widget registry or an unrelated reactive runtime.
 - Demos validate framework capability; they must not define the architecture.

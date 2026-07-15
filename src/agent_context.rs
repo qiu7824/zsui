@@ -233,7 +233,7 @@ pub fn zsui_framework_boundary_rules() -> Vec<ZsuiFrameworkBoundaryRule> {
             allowed_modules: vec![
                 "src/app.rs",
                 "src/window.rs",
-                "src/view.rs",
+                "src/view/mod.rs",
                 "src/tray.rs",
                 "src/menu.rs",
                 "src/hotkey.rs",
@@ -569,7 +569,7 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             "src/component_catalog.rs",
             "src/framework_goals.rs",
             "src/style.rs",
-            "src/view.rs",
+            "src/view/mod.rs",
             "src/widget_render.rs",
             "src/shell_layout.rs",
             "src/workbench.rs",
@@ -586,7 +586,7 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             "src/android_activity_host.rs",
             "src/harmony_ability_host.rs",
             "src/windows_gdi_renderer.rs",
-            "src/windows_win32_host.rs",
+            "src/platform/windows/mod.rs",
         ],
     }
 }

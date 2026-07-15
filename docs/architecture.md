@@ -302,7 +302,7 @@ Canvas or Harmony Canvas only when that backend needs it, without leaking
 product state into the drawing layer.
 Win32 main/quick window style mapping, transient-window host, create-params,
 message-loop wrapper and `NativeMainWindowHost` implementation live in
-`src/windows_win32_host.rs`. That direct host is available as
+`src/platform/windows/mod.rs`. That direct host is available as
 framework code and the one-line `native_window(...).run()` convenience path uses
 it on Windows. The Win32 paint path suppresses background erase and renders through buffered paint
 before presenting to the target HDC. It can now also attach a product-neutral
@@ -405,7 +405,7 @@ the one-line `zsui::native_window(...).run()?` path as the normal native-window
 entry point, use stable host/rendering behavior as the baseline, add
 Android/Harmony as explicit Activity/Ability hosts, and introduce wider
 platform API bindings only when a concrete backend needs them.
-The first implementation layer lives in `src/view.rs`, `src/style.rs` and
+The first implementation layer lives in `src/view/mod.rs`, `src/style.rs` and
 `src/geometry.rs`: typed `View<Msg>` trees, `WidgetId`, explicit app/event/paint
 contexts, `ViewInteractionPlan`, feature-gated scroll containers, typed list
 selection, `Px`/`Dp`/`Dpi`, `UiLength` and theme tokens.

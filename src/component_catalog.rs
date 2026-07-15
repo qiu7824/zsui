@@ -291,7 +291,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Layout,
         FirstPass,
         None,
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -300,7 +300,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Layout,
         FirstPass,
         Some("grid"),
-        "src/view.rs",
+        "src/view/mod.rs",
         GRID_GAPS
     ),
     component!(
@@ -309,7 +309,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Layout,
         FirstPass,
         None,
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -318,7 +318,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Layout,
         FirstPass,
         Some("scroll"),
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -354,7 +354,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Navigation,
         FirstPass,
         Some("tabs"),
-        "src/components.rs + src/view.rs + src/widget_render.rs",
+        "src/components.rs + src/view/mod.rs + src/widget_render.rs",
         TABS_GAPS
     ),
     component!(
@@ -363,7 +363,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Navigation,
         FirstPass,
         Some("breadcrumb"),
-        "src/breadcrumb.rs + src/view.rs + src/widget_render.rs",
+        "src/breadcrumb.rs + src/view/mod.rs + src/widget_render.rs",
         BREADCRUMB_GAPS
     ),
     component!(
@@ -381,7 +381,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("label"),
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -390,7 +390,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("button"),
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -399,7 +399,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("toggle-button"),
-        "src/view.rs + src/widget_render.rs + src/native_input_visuals.rs",
+        "src/view/mod.rs + src/widget_render.rs + src/native_input_visuals.rs",
         TOGGLE_BUTTON_GAPS
     ),
     component!(
@@ -408,7 +408,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("checkbox"),
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -426,7 +426,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("textbox"),
-        "src/view.rs + src/native_input_visuals.rs + three desktop input runtimes",
+        "src/view/mod.rs + src/native_input_visuals.rs + three desktop input runtimes",
         TEXT_INPUT_GAPS
     ),
     component!(
@@ -435,7 +435,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("password-box"),
-        "src/password_box.rs + src/view.rs + src/native_input_visuals.rs",
+        "src/password_box.rs + src/view/mod.rs + src/native_input_visuals.rs",
         PASSWORD_BOX_GAPS
     ),
     component!(
@@ -444,7 +444,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("combo"),
-        "src/view.rs",
+        "src/view/mod.rs",
         COMBO_GAPS
     ),
     component!(
@@ -453,7 +453,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("radio"),
-        "src/view.rs",
+        "src/view/mod.rs",
         RADIO_GAPS
     ),
     component!(
@@ -462,7 +462,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("slider"),
-        "src/view.rs",
+        "src/view/mod.rs",
         SLIDER_GAPS
     ),
     component!(
@@ -471,7 +471,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("number-box"),
-        "src/view.rs + src/widget_render.rs",
+        "src/view/mod.rs + src/widget_render.rs",
         NUMBER_BOX_GAPS
     ),
     component!(
@@ -480,7 +480,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("auto-suggest"),
-        "src/auto_suggest.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/auto_suggest.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         AUTO_SUGGEST_GAPS
     ),
     component!(
@@ -489,7 +489,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("date-picker"),
-        "src/date.rs + src/view.rs + src/widget_render.rs",
+        "src/date.rs + src/view/mod.rs + src/widget_render.rs",
         DATE_PICKER_GAPS
     ),
     component!(
@@ -498,7 +498,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("time-picker"),
-        "src/time.rs + src/view.rs + src/widget_render.rs",
+        "src/time.rs + src/view/mod.rs + src/widget_render.rs",
         TIME_PICKER_GAPS
     ),
     component!(
@@ -507,7 +507,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("color-picker"),
-        "src/color_picker.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/color_picker.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         COLOR_PICKER_GAPS
     ),
     component!(
@@ -516,7 +516,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Collection,
         FirstPass,
         Some("list"),
-        "src/view.rs",
+        "src/view/mod.rs",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -525,7 +525,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Collection,
         FirstPass,
         Some("grid-view"),
-        "src/grid_view.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/grid_view.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         GRID_VIEW_GAPS
     ),
     component!(
@@ -534,7 +534,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Collection,
         FirstPass,
         Some("tree"),
-        "src/tree.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/tree.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         TREE_GAPS
     ),
     component!(
@@ -543,7 +543,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Collection,
         FirstPass,
         Some("table"),
-        "src/table.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/table.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         TABLE_GAPS
     ),
     component!(
@@ -552,7 +552,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Collection,
         FirstPass,
         Some("virtual-list"),
-        "src/view.rs + src/paged_list.rs",
+        "src/view/mod.rs + src/paged_list.rs",
         VIRTUAL_LIST_GAPS
     ),
     component!(
@@ -579,7 +579,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Feedback,
         FirstPass,
         Some("progress-ring"),
-        "src/progress.rs + src/view.rs + three desktop renderers",
+        "src/progress.rs + src/view/mod.rs + three desktop renderers",
         PROGRESS_RING_GAPS
     ),
     component!(
@@ -588,7 +588,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Feedback,
         FirstPass,
         Some("toast"),
-        "src/toast.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/toast.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         TOAST_GAPS
     ),
     component!(
@@ -597,7 +597,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Feedback,
         FirstPass,
         Some("info-bar"),
-        "src/info_bar.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/info_bar.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         INFO_BAR_GAPS
     ),
     component!(
@@ -606,7 +606,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Feedback,
         FirstPass,
         Some("tooltip"),
-        "src/tooltip.rs + src/view.rs + src/native.rs",
+        "src/tooltip.rs + src/view/mod.rs + src/native.rs",
         TOOLTIP_GAPS
     ),
     component!(
@@ -615,7 +615,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Overlay,
         FirstPass,
         Some("dialog"),
-        "src/content_dialog.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/content_dialog.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         CONTENT_DIALOG_GAPS
     ),
     component!(
@@ -633,7 +633,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Overlay,
         FirstPass,
         Some("tray"),
-        "src/windows_win32_host.rs",
+        "src/platform/windows/mod.rs",
         PLATFORM_GAPS
     ),
     component!(
@@ -642,7 +642,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Overlay,
         FirstPass,
         Some("teaching-tip"),
-        "src/teaching_tip.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/teaching_tip.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         TEACHING_TIP_GAPS
     ),
     component!(
@@ -651,7 +651,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Overlay,
         FirstPass,
         Some("command-palette"),
-        "src/command_palette.rs + src/view.rs + src/widget_render.rs + three desktop input runtimes",
+        "src/command_palette.rs + src/view/mod.rs + src/widget_render.rs + three desktop input runtimes",
         COMMAND_PALETTE_GAPS
     ),
     component!(

@@ -64,7 +64,7 @@ menu paths, but their target-machine interaction proof is incomplete. The
 current Windows backend metadata points to the
 `win32_gdi` runtime. Win32 main/quick window style, transient-window host,
 create-params, message-loop and `NativeMainWindowHost` implementation live in
-`src/windows_win32_host.rs` and are wired into the default
+`src/platform/windows/mod.rs` and are wired into the default
 `native_window(...).run()` path on Windows.
 `src/native_host_actions.rs` defines the native host action/status/settings
 command contracts. `ProductUiProjection` now carries the main window, status item/tray menu
@@ -80,7 +80,7 @@ The self-drawn runtime uses a reusable command-plan shape (`FillRect`,
 `NativeDrawPlan`, `NativeDrawCommand` and `NativeDrawCommandSink`, and
 `src/windows_gdi_renderer.rs` contains the Windows GDI renderer, text-layout
 sink and buffered no-flicker paint pipeline.
-`src/windows_win32_host.rs` can attach a `NativeDrawPlan` to an `HWND`, then
+`src/platform/windows/mod.rs` can attach a `NativeDrawPlan` to an `HWND`, then
 paint it through the buffered Win32/GDI path. GDI brushes, pens, fonts,
 selected-object restoration, buffered-paint handles, window HDC acquisition,
 compatible memory DCs, smoke-screenshot HBITMAP ownership and owned Win32 main/
@@ -170,7 +170,7 @@ and Harmony as real Activity/Ability host targets, and add `windows-rs` or
 other broader platform bindings only for specific backend work. The source
 target records the preferred and avoided API shapes, such as `enum Msg` over
 string events and feature/crate based trimming over global widget registration.
-The first concrete Rust-first API pass now exists in `src/view.rs`,
+The first concrete Rust-first API pass now exists in `src/view/mod.rs`,
 `src/style.rs` and `src/geometry.rs`: `View<Msg>`, typed event messages,
 `WidgetId`, `AppCx`, `ViewEventCx`, `ViewPaintCx`, `ViewInteractionPlan`,
 typed list selection, a feature-gated `scroll` container with typed scroll
@@ -366,7 +366,7 @@ state cannot call `run`. The original one-line builder remains unchanged.
 - Public API: `src/lib.rs`
 - Rust-first goals: `src/framework_goals.rs`
 - Rust-first goal narrative: `docs/framework-goals.md`
-- Rust-first view API: `src/view.rs`
+- Rust-first view API: `src/view/mod.rs`
 - Reusable widget geometry: `src/widget_render.rs`
 - AppCx/UI command executor boundaries: `src/app_command.rs`,
   `src/command_protocol.rs`
@@ -392,7 +392,7 @@ state cannot call `run`. The original one-line builder remains unchanged.
 - Minimal real native window: `src/native.rs`
 - Windows self-draw sink: `src/windows_gdi_renderer.rs`
 - Windows Win32 main/transient window host:
-  `src/windows_win32_host.rs`
+  `src/platform/windows/mod.rs`
 - Host contracts: `src/host.rs`, `src/host_protocol.rs`, `src/native_hosts.rs`,
   `src/native_host_actions.rs`
 - Adapter discovery: `src/native_adapter_manifest.rs`

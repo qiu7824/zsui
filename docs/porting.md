@@ -153,7 +153,7 @@ It should also preserve the one-line `zsui::native_window(...).run()?` entry
 shape for ordinary apps, keep buffered no-flicker self-draw behavior as
 the Windows baseline, and add wider bindings such as `windows-rs` only when a
 specific backend surface needs them.
-The first-pass typed view layer is `src/view.rs`: hosts should treat
+The first-pass typed view layer is `src/view/mod.rs`: hosts should treat
 `View<Msg>`, `WidgetId`, `ViewEventCx`, `ViewInteractionPlan` and
 `ViewPaintCx` as the direction for future event and paint routing instead of
 introducing string event buses or global widget registries.
@@ -305,7 +305,7 @@ procedure, expose a small message-loop wrapper, and implement
 `NativeMainWindowHost` without product callbacks. Transient window hosts should
 follow the `WindowsWin32TransientWindowHost` shape: topmost,
 tool-window and no-activate presentation with product behavior outside the
-host. The Windows version lives in `src/windows_win32_host.rs`.
+host. The Windows version lives in `src/platform/windows/mod.rs`.
 When a backend has a self-drawn surface, attach or store `NativeDrawPlan`
 content beside the native window handle and render it through the backend sink;
 the Win32 host now does this with `set_windows_win32_window_draw_plan(...)` and

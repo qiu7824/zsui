@@ -679,13 +679,7 @@ impl ClipboardService for NativeClipboardService {
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
         #[cfg(all(feature = "clipboard", windows, feature = "windows-win32"))]
         {
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|error| ZsuiError::host("windows_read_clipboard", error.to_string()))?;
-            return match clipboard.get_text() {
-                Ok(text) => Ok(Some(ClipboardData::Text(text))),
-                Err(arboard::Error::ContentNotAvailable) => Ok(None),
-                Err(error) => Err(ZsuiError::host("windows_read_clipboard", error.to_string())),
-            };
+            return crate::windows_win32_host::windows_read_clipboard();
         }
         #[cfg(all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"))]
         {
@@ -721,27 +715,7 @@ impl ClipboardService for NativeClipboardService {
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
         #[cfg(all(feature = "clipboard", windows, feature = "windows-win32"))]
         {
-            let text = match data {
-                ClipboardData::Empty => String::new(),
-                ClipboardData::Text(text) => text.clone(),
-                ClipboardData::ImageRgba { .. } => {
-                    return Err(ZsuiError::unsupported(
-                        "clipboard_image",
-                        "the native image clipboard service is not connected",
-                    ));
-                }
-                ClipboardData::Files(_) => {
-                    return Err(ZsuiError::unsupported(
-                        "clipboard_files",
-                        "the native file clipboard service is not connected",
-                    ));
-                }
-            };
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|error| ZsuiError::host("windows_write_clipboard", error.to_string()))?;
-            return clipboard
-                .set_text(text)
-                .map_err(|error| ZsuiError::host("windows_write_clipboard", error.to_string()));
+            return crate::windows_win32_host::windows_write_clipboard(data);
         }
         #[cfg(all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"))]
         {

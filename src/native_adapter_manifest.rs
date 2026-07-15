@@ -118,7 +118,7 @@ pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
         toolkit: NativeUiToolkit::Win32Gdi,
         status: NativeUiBackendStatus::NativeHostFirstPass,
         adapter_boundary: "WindowsWin32GdiNativeWindowBoundary",
-        module_path: "src/windows_win32_host.rs",
+        module_path: "src/platform/windows/mod.rs",
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Macos,
@@ -392,12 +392,12 @@ fn native_ui_capability_readiness(
             ),
             MainWindow | TransientWindow => (
                 FirstPass,
-                "src/windows_win32_host.rs",
+                "src/platform/windows/mod.rs",
                 "the Win32 host has a working native implementation with remaining interaction gaps",
             ),
             PopupMenu | StatusItem => (
                 FirstPass,
-                "src/windows_win32_host.rs",
+                "src/platform/windows/mod.rs",
                 "window-menu commands and accelerators re-enter typed live-view state, and status-item menus are implemented; the general popup-menu surface is not complete",
             ),
             Clipboard => (
@@ -407,12 +407,12 @@ fn native_ui_capability_readiness(
             ),
             FileDialog => (
                 FirstPass,
-                "src/windows_win32_host.rs",
+                "src/platform/windows/mod.rs",
                 "safe Win32 common open/save dialogs bind hwndOwner to the active window; target interaction proof is pending",
             ),
             Ime => (
                 FirstPass,
-                "src/windows_win32_host.rs",
+                "src/platform/windows/mod.rs",
                 "IMM32 commit, WM_CHAR surrogate assembly and extended-grapheme-safe editing consume Uniscribe advances, bidi insertion geometry and shaped-caret candidate placement; visual-order bidi navigation and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (

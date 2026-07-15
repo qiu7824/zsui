@@ -138,8 +138,10 @@ pub mod windows_gdi_renderer;
 ))]
 mod windows_uia;
 #[cfg(all(windows, feature = "windows-win32"))]
+#[path = "platform/windows/mod.rs"]
 pub mod windows_win32_host;
 #[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]
+#[path = "platform/windows/text/edit_host.rs"]
 pub mod windows_win32_text_editor;
 #[cfg(feature = "workbench")]
 pub mod workbench;

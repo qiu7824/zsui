@@ -60,7 +60,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Use trait-based View/Component contracts and composition instead of inheritance trees.",
             "trait View<Msg> with composable builders such as button(\"Save\").padding(...).on_click(Msg::Save)",
             "Control base classes with Button/TextBox/ListView inheritance trees",
-            "src/component_protocol.rs, src/components.rs, src/view.rs",
+            "src/component_protocol.rs, src/components.rs, src/view/mod.rs",
             "connect View<Msg> trees to richer native host input and layout passes",
         ),
         ZsuiRustFirstGoal::new(
@@ -68,7 +68,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Prefer enum/typed messages over string event names.",
             "enum Msg variants returned by typed handlers such as on_click(Msg::SaveClicked)",
             "string event buses such as button.on(\"click\", callback)",
-            "src/command_protocol.rs, src/event_protocol.rs, src/view.rs",
+            "src/command_protocol.rs, src/event_protocol.rs, src/view/mod.rs",
             "expand typed message builders across list, menu, tray and text input surfaces",
         ),
         ZsuiRustFirstGoal::new(
@@ -76,7 +76,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Own native windows, fonts, bitmaps, tray icons and handles with RAII wrappers.",
             "owned Window/Icon/Tray/Font/Bitmap values and internal Drop-backed HWND/GDI/HDC/HBITMAP objects",
             "public APIs that require DestroyWindow, DeleteObject or Release calls from users",
-            "src/native.rs, src/windows_win32_host.rs, src/windows_gdi_renderer.rs",
+            "src/native.rs, src/platform/windows/mod.rs, src/windows_gdi_renderer.rs",
             "add required tray/menu popup interaction and cleanup target smoke proof while keeping raw HWNDs out of higher-level APIs",
         ),
         ZsuiRustFirstGoal::new(
@@ -84,7 +84,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Use proven native host and rendering behavior as the framework baseline while keeping product behavior outside ZSUI.",
             "NativeDrawPlan, buffered no-flicker Win32/GDI painting, reusable document/workbench/calculator shells, status/menu/settings contracts and owned native resources",
             "duplicating established host behavior or placing application storage and sync logic inside ZSUI",
-            "src/render_protocol.rs, src/native_host_actions.rs, src/windows_gdi_renderer.rs, src/windows_win32_host.rs",
+            "src/render_protocol.rs, src/native_host_actions.rs, src/windows_gdi_renderer.rs, src/platform/windows/mod.rs",
             "finish tray/menu/input host routes and keep buffered no-flicker self-draw as the Windows baseline",
         ),
         ZsuiRustFirstGoal::new(
@@ -108,7 +108,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Avoid global mutable app/theme/window/event registries; pass explicit context objects.",
             "update(&mut state, msg, &mut AppCx) and explicit Event/Layout/Paint contexts",
             "GlobalApp, GlobalTheme, GlobalWindowManager, GlobalEventBus or global widget registries",
-            "src/host.rs, src/product_adapter.rs, src/view.rs",
+            "src/host.rs, src/product_adapter.rs, src/view/mod.rs",
             "wire AppCx/EventCx/PaintCx into native runtime and product adapter examples",
         ),
         ZsuiRustFirstGoal::new(
@@ -116,7 +116,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Keep public APIs safe and isolate unsafe platform calls inside backend modules.",
             "safe builders such as zsui::native_window(...).run()? with unsafe limited to native backends",
             "raw HWND/HDC/HBITMAP/objc/GTK handles in declaration models or user-facing APIs",
-            "src/native.rs, src/windows_win32_host.rs, src/windows_gdi_renderer.rs",
+            "src/native.rs, src/platform/windows/mod.rs, src/windows_gdi_renderer.rs",
             "audit backend unsafe blocks and keep raw platform handles out of declaration models",
         ),
         ZsuiRustFirstGoal::new(
@@ -124,7 +124,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Keep control state in explicit application state and derive UI from that state.",
             "view(&AppState) -> impl View<Msg> plus update(msg, &mut AppCx)",
             "controls hiding product state or mutating invisible framework-owned application data",
-            "src/view.rs, src/native.rs, examples/rust_first_view.rs",
+            "src/view/mod.rs, src/native.rs, examples/rust_first_view.rs",
             "extend the live state and dual command-executor loop to AppKit and GTK, then connect asynchronous product events back into state updates",
         ),
         ZsuiRustFirstGoal::new(
@@ -140,7 +140,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Expose declarative Rust builders without XML, reflection or magic property names.",
             "Rust-analyzer friendly view builders such as column((text(...), list(...), button(...)))",
             "XML/XAML-style reflection, string bindings and magic property names",
-            "src/components.rs, src/view.rs",
+            "src/components.rs, src/view/mod.rs",
             "add tuple/array ergonomics and product adapter examples for declarative views",
         ),
         ZsuiRustFirstGoal::new(
@@ -196,7 +196,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Add platform API crates and bindings only when a concrete backend surface requires them.",
             "narrow feature-gated windows-sys/windows-rs/AppKit/GTK/Android/Harmony bindings inside backend modules",
             "pulling broad native dependency surfaces into core declarations or user-facing APIs before they are needed",
-            "Cargo.toml, src/windows_win32_host.rs, src/windows_gdi_renderer.rs",
+            "Cargo.toml, src/platform/windows/mod.rs, src/windows_gdi_renderer.rs",
             "use windows-rs or wider native APIs only for concrete Direct2D, composition, tray, input or renderer work",
         ),
         ZsuiRustFirstGoal::new(
@@ -204,7 +204,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Use strong typed IDs for widgets, windows, commands and resources instead of raw strings.",
             "WidgetId, WindowId, command IDs and typed window marker helpers",
             "raw strings such as focus(\"main_input\") or open_window(\"settings\")",
-            "src/core.rs, src/geometry.rs, src/command_protocol.rs, src/view.rs",
+            "src/core.rs, src/geometry.rs, src/command_protocol.rs, src/view/mod.rs",
             "add resource IDs and typed window-marker helpers where they reduce runtime lookup errors",
         ),
     ]

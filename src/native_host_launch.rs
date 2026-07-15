@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(plan.platform_name(), "windows");
         assert_eq!(plan.toolkit_name(), "win32_gdi");
         assert_eq!(plan.mode_name(), "real_native_host");
-        assert_eq!(plan.real_host_module_path, "src/windows_win32_host.rs");
+        assert_eq!(plan.real_host_module_path, "src/platform/windows/mod.rs");
         assert!(plan.enters_real_event_loop());
         assert!(plan.needs_target_os_verification());
     }

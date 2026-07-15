@@ -53,12 +53,14 @@
       "id": "view-widgets",
       "purpose": "Typed View, State/Msg/update and basic widget behavior",
       "required": [
-        "src/view.rs",
+        "src/view/mod.rs",
+        "src/view/node.rs",
         "src/components.rs",
         "src/widget_render.rs",
         "src/component_catalog.rs"
       ],
       "optional": [
+        "src/view",
         "src/native.rs",
         "examples/rust_first_view.rs",
         "examples/list_selection.rs",
@@ -79,7 +81,7 @@
       "optional": [
         "src/style.rs",
         "src/icon.rs",
-        "src/windows_win32_host.rs"
+        "src/platform/windows/mod.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -91,13 +93,13 @@
       "purpose": "Virtual rows, background pagination, prefetch and bounded page caching",
       "required": [
         "src/paged_list.rs",
-        "src/view.rs",
+        "src/view/layout.rs",
+        "src/view/widgets/data.rs",
         "examples/paged_virtual_list.rs",
         "docs/paged-virtual-list.md"
       ],
       "optional": [
         "src/native.rs",
-        "src/windows_win32_host.rs",
         "Cargo.toml"
       ],
       "verify": [
@@ -117,7 +119,7 @@
         "src/style.rs",
         "src/icon.rs",
         "src/component_catalog.rs",
-        "src/windows_win32_host.rs"
+        "src/platform/windows/mod.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -133,7 +135,7 @@
         "docs/notepad-demo.md"
       ],
       "optional": [
-        "src/windows_win32_text_editor.rs",
+        "src/platform/windows/text/edit_host.rs",
         "src/windows_gdi_renderer.rs",
         "src/icon.rs",
         "scripts/measure-notepad-comparison.ps1",
@@ -171,16 +173,17 @@
       "purpose": "Win32 host, GDI+ renderer, no-flicker paint, DPI and input",
       "required": [
         "src/windows_gdi_renderer.rs",
-        "src/windows_win32_host.rs",
+        "src/platform/windows/mod.rs",
+        "src/platform/windows/window.rs",
         "src/render_protocol.rs",
         "src/native.rs"
       ],
       "optional": [
-        "src/style.rs",
-        "src/icon.rs",
-        "src/native_smoke.rs",
-        "docs/native-host-smoke.md",
-        "scripts/check-windows-text-accessibility.ps1"
+        "src/platform/windows/application.rs",
+        "src/platform/windows/dpi.rs",
+        "src/platform/windows/input",
+        "src/platform/windows/services",
+        "src/platform/windows/text"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -219,7 +222,7 @@
         "docs/porting.md"
       ],
       "optional": [
-        "src/windows_win32_host.rs",
+        "src/platform/windows/mod.rs",
         "src/native_clipboard.rs",
         "src/native_menu.rs",
         "src/macos_appkit_menu.rs",

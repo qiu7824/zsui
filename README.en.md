@@ -360,7 +360,7 @@ control registry.
 The machine-readable target list is exposed through
 `zsui_rust_first_goals()` and `zsui_rust_first_goal_names()`; the longer
 target narrative is in `docs/framework-goals.md`.
-The first concrete layer is now in `src/view.rs`, `src/app_command.rs`,
+The first concrete layer is now in `src/view/mod.rs`, `src/app_command.rs`,
 `src/style.rs` and `src/geometry.rs`: `View<Msg>`, `WidgetId`, `AppCx`,
 `SharedAppCommandExecutor`, `ViewEventCx`,
 `ViewPaintCx`, `ViewInteractionPlan`, `Px`, `Dp`, `Dpi`, `ZsuiTheme` and
@@ -584,7 +584,7 @@ assert!(report.is_valid());
   user popup selection is still pending
 - Win32 main/quick/transient window style, create-params,
   message-loop and `NativeMainWindowHost`/`NativeTransientWindowHost`
-  implementations in `src/windows_win32_host.rs`
+  implementations in `src/platform/windows/mod.rs`
 - Win32 no-flicker paint can now consume product-neutral `NativeDrawPlan`
   content through `create_windows_win32_for_specs_with_draw_plans(...)` and
   `set_windows_win32_window_draw_plan(...)`
