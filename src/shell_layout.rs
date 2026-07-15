@@ -2320,11 +2320,20 @@ fn shell_role_to_color_role(role: ZsShellThemeRole) -> ColorRole {
         | ZsShellThemeRole::AccentHover
         | ZsShellThemeRole::AccentPressed
         | ZsShellThemeRole::ScrollbarThumbDragging => ColorRole::Accent,
-        ZsShellThemeRole::Surface | ZsShellThemeRole::White => ColorRole::Surface,
+        ZsShellThemeRole::Background | ZsShellThemeRole::ScrollbarTrack => ColorRole::Surface,
+        ZsShellThemeRole::Surface => ColorRole::SurfaceRaised,
+        ZsShellThemeRole::NavBackground => ColorRole::SurfaceRaised,
+        ZsShellThemeRole::NavSelectedFill
+        | ZsShellThemeRole::NavHoverFill
+        | ZsShellThemeRole::ButtonBg
+        | ZsShellThemeRole::ButtonHover
+        | ZsShellThemeRole::ButtonPressed => ColorRole::Control,
+        ZsShellThemeRole::ControlStroke | ZsShellThemeRole::Stroke => ColorRole::Border,
+        ZsShellThemeRole::ScrollbarThumb => ColorRole::SecondaryText,
         ZsShellThemeRole::Text => ColorRole::PrimaryText,
         ZsShellThemeRole::TextMuted => ColorRole::SecondaryText,
         ZsShellThemeRole::Danger => ColorRole::Danger,
-        _ => ColorRole::Control,
+        ZsShellThemeRole::White => ColorRole::AccentText,
     }
 }
 
@@ -2521,6 +2530,26 @@ mod tests {
                 && command.size == 12
                 && command.bold
         }));
+    }
+
+    #[test]
+    fn shell_theme_roles_keep_page_cards_and_strokes_visually_distinct() {
+        assert_eq!(
+            shell_role_to_color_role(ZsShellThemeRole::Background),
+            ColorRole::Surface
+        );
+        assert_eq!(
+            shell_role_to_color_role(ZsShellThemeRole::Surface),
+            ColorRole::SurfaceRaised
+        );
+        assert_eq!(
+            shell_role_to_color_role(ZsShellThemeRole::Stroke),
+            ColorRole::Border
+        );
+        assert_eq!(
+            shell_role_to_color_role(ZsShellThemeRole::White),
+            ColorRole::AccentText
+        );
     }
 
     #[test]

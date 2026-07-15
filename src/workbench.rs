@@ -11,7 +11,7 @@ use crate::{
 pub const ZS_WORKBENCH_BASE_SIDEBAR_WIDTH: i32 = 272;
 pub const ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH: i32 = 56;
 pub const ZS_WORKBENCH_TOP_BAR_HEIGHT: i32 = 64;
-pub const ZS_WORKBENCH_COMPOSER_HEIGHT: i32 = 136;
+pub const ZS_WORKBENCH_COMPOSER_HEIGHT: i32 = 120;
 pub const ZS_WORKBENCH_INSPECTOR_WIDTH: i32 = 336;
 pub const ZS_WORKBENCH_CONTENT_MAX_WIDTH: i32 = 760;
 pub const ZS_WORKBENCH_FLOATING_RADIUS: i32 = 12;
@@ -681,8 +681,8 @@ pub fn zs_workbench_layout(
         enabled: true,
     });
 
-    let gap = scale(22, dpi);
-    let top_padding = scale(24, dpi);
+    let gap = scale(16, dpi);
+    let top_padding = scale(20, dpi);
     let message_heights: Vec<_> = spec
         .messages
         .iter()
@@ -719,7 +719,7 @@ pub fn zs_workbench_layout(
         let horizontal_padding = if is_user {
             scale(14, dpi)
         } else {
-            scale(8, dpi)
+            scale(16, dpi)
         };
         let content_bounds = Rect {
             x: bounds.x + horizontal_padding,
@@ -968,7 +968,11 @@ fn layout_inspector_regions(
 
 fn message_height(message: &ZsWorkbenchMessageSpec, width: i32, dpi: Dpi) -> i32 {
     let is_user = message.role == ZsWorkbenchMessageRole::User;
-    let content_width = if is_user { width * 3 / 4 } else { width } - scale(28, dpi);
+    let content_width = if is_user {
+        width * 3 / 4 - scale(28, dpi)
+    } else {
+        width - scale(32, dpi)
+    };
     let blocks_height = message
         .blocks
         .iter()
@@ -1358,7 +1362,15 @@ fn paint_messages(
                 }),
                 scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
             )),
-            ZsWorkbenchMessageRole::Assistant => {}
+            ZsWorkbenchMessageRole::Assistant => commands.push(round_rect(
+                message_layout.bounds,
+                NativeDrawFill::role(ColorRole::SurfaceRaised),
+                Some(NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Border,
+                    alpha: 24,
+                }),
+                scale(ZS_WORKBENCH_FLOATING_RADIUS, dpi),
+            )),
         }
         for block_layout in &message_layout.blocks {
             let block = &message.blocks[block_layout.block_index];
@@ -1446,10 +1458,7 @@ fn paint_message_block(
         ZsWorkbenchContentBlock::Code { language, code } => {
             commands.push(round_rect(
                 bounds,
-                NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::SecondaryText,
-                    alpha: 12,
-                },
+                NativeDrawFill::role(ColorRole::Surface),
                 Some(NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::Border,
                     alpha: 26,
@@ -1495,7 +1504,7 @@ fn paint_message_block(
                 bounds,
                 dpi,
                 ZSUI_FLUENT_CARD_RADIUS,
-                NativeDrawFill::role(ColorRole::SurfaceRaised),
+                NativeDrawFill::role(ColorRole::Surface),
             );
             commands.push(icon_command(
                 if *status == ZsWorkbenchToolStatus::Succeeded {
@@ -1862,18 +1871,25 @@ fn paint_inspector(
             ));
         }
     }
+    let body_top = panel.y + scale(86, dpi);
+    let body_width = (panel.width - scale(20, dpi)).max(0);
+    let body_text_height = estimate_text_height(
+        &inspector.body,
+        (body_width - scale(24, dpi)).max(1),
+        scale(20, dpi),
+        dpi,
+    );
     let body_card = Rect {
         x: panel.x + scale(10, dpi),
-        y: panel.y + scale(86, dpi),
-        width: (panel.width - scale(20, dpi)).max(0),
-        height: (panel.height - scale(98, dpi)).max(0),
+        y: body_top,
+        width: body_width,
+        height: (body_text_height + scale(24, dpi))
+            .max(scale(112, dpi))
+            .min((panel.y + panel.height - scale(12, dpi) - body_top).max(0)),
     };
     commands.push(round_rect(
         body_card,
-        NativeDrawFill::RoleWithAlpha {
-            role: ColorRole::SecondaryText,
-            alpha: 7,
-        },
+        NativeDrawFill::role(ColorRole::Surface),
         Some(NativeDrawFill::RoleWithAlpha {
             role: ColorRole::Border,
             alpha: 22,
@@ -2269,7 +2285,7 @@ mod tests {
         assert_eq!(plan.dpi, Dpi::new(144.0));
         assert_eq!(plan.metrics.sidebar.width, 408);
         assert_eq!(plan.metrics.top_bar.height, 96);
-        assert_eq!(plan.metrics.composer_band.height, 204);
+        assert_eq!(plan.metrics.composer_band.height, 180);
         assert!(spec
             .native_draw_plan(plan.metrics.surface, plan.dpi)
             .commands

@@ -534,39 +534,12 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 平台能力必须经过代码、目标机 smoke 和系统集成三层证据。仅有声明或脚手架时，
 不会标记为完成。
 
-## 为 AI 节约上下文
-
-AI 不应该每次先读取整个仓库。ZSUI 提供了一个小型入口和按任务选择的上下文包：
-
-1. 首次只读 [`docs/ai-agent.md`](docs/ai-agent.md)。
-2. 查看可选任务包：
-
-   ```powershell
-   .\scripts\ai-context.ps1 -List
-   ```
-
-3. 选择当前任务，例如：
-
-   ```powershell
-   .\scripts\ai-context.ps1 -Pack calculator
-   .\scripts\ai-context.ps1 -Pack windows-renderer -IncludeOptional
-   ```
-
-4. 只读取脚本返回的 required 文件；遇到阻塞再读取 optional 文件。
-
-任务包清单位于 [`docs/ai/context-packs.json`](docs/ai/context-packs.json)。完整进度、
-平台与接口参考被放在按需文档中，不再塞进默认 AI 首读文件。这与控件 feature
-的思路一致：先加载最小核心，再按任务组合需要的上下文。
-
 ## 目录
 
 - `src/`：公共 API、运行时、布局、协议和平台后端
 - `examples/`：可运行的窗口、控件、工作台、记事本和计算器
 - `docs/`：架构、目标机验证、应用测量和 AI 文档
-- `docs/ai-agent.md`：AI 最小首读入口
-- `docs/ai/context-packs.json`：AI 按需上下文包
 - `scripts/check-feature-matrix.ps1`：全部公开 feature 检查
-- `scripts/ai-context.ps1`：按任务输出最小文件集合
 
 核心边界请阅读：
 
@@ -581,7 +554,6 @@ AI 不应该每次先读取整个仓库。ZSUI 提供了一个小型入口和按
 cargo fmt --check
 cargo test --no-default-features
 cargo test --features full
-.\scripts\ai-context.ps1 -Validate
 .\scripts\check-feature-matrix.ps1 -Locked
 ```
 

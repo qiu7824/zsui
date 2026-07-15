@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>发票工作台 · Tauri 2</title>
+    <link rel="stylesheet" href="invoice.css" />
+  </head>
+  <body>
+    <main class="invoice-shell">
+      <aside class="invoice-sidebar">
+        <div class="invoice-brand">票据工坊</div>
+        <div class="invoice-brand-subtitle">INVOICE WORKBENCH</div>
+        <nav class="invoice-nav">
+          <button><span>○</span>发票合并打印</button>
+          <button><span>○</span>发票信息提取</button>
+          <button class="selected"><span>●</span>发票重命名</button>
+          <button><span>○</span>发票划分文件夹</button>
+        </nav>
+        <div class="invoice-privacy">本地处理 · 文件不上传</div>
+      </aside>
+      <section class="invoice-content">
+        <header class="invoice-header">
+          <div><h1>发票重命名</h1><p>按发票字段批量生成清晰文件名</p></div>
+          <button id="invoice-add" class="invoice-button">＋ 添加发票</button>
+        </header>
+        <article class="invoice-card invoice-rule-card">
+          <div><div class="invoice-eyebrow">自定义重命名规则</div><h2>销售方名称_税额</h2><p>示例：永新行业协会_28.30.pdf</p></div>
+          <strong>● 已启用</strong>
+        </article>
+        <div class="invoice-section-title">
+          <h3>待处理发票 · <span id="invoice-count">2</span></h3><span>识别状态：完成</span>
+        </div>
+        <section id="invoice-files" class="invoice-files">
+          <article class="invoice-card invoice-file-card"><b>PDF</b><div><h2>永新行业协会_28.30.pdf</h2><p>原文件：20260714_001.pdf · 电子发票</p></div><button class="invoice-remove">移除</button></article>
+          <article class="invoice-card invoice-file-card"><b>PDF</b><div><h2>示例发票_16.80.pdf</h2><p>原文件：扫描件_0714.pdf · 已识别销售方和税额</p></div><button class="invoice-remove">移除</button></article>
+        </section>
+        <article class="invoice-card invoice-output-card">
+          <div><h3>输出设置</h3><p>原文件旁的“已重命名”目录 · 保留原始文件</p></div><button>选择文件夹</button>
+        </article>
+        <footer class="invoice-footer"><span id="invoice-status">字段识别完成，可以开始重命名</span><button id="invoice-rename" class="invoice-button invoice-primary">开始重命名</button></footer>
+      </section>
+    </main>
+    <script src="invoice.js"></script>
+  </body>
+</html>

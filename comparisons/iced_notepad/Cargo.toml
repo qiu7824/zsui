@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "iced-invoice-tool"
+path = "src/bin/invoice_tool.rs"
+
 [dependencies]
 iced = { version = "=0.14.0", default-features = false, features = ["image", "thread-pool", "tiny-skia"] }
 rfd = "=0.17.2"

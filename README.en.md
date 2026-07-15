@@ -618,31 +618,6 @@ scaffold for the current target that records declarations and bridges text
 clipboard access when the `clipboard` feature is enabled. Without that feature
 it falls back to in-memory clipboard storage.
 
-## AI Context On Demand
-
-An AI agent should not read the repository recursively before every task.
-ZSUI provides a small bootstrap document and task-specific context packs:
-
-1. Read only [`docs/ai-agent.md`](docs/ai-agent.md) first.
-2. List the available packs:
-
-   ```powershell
-   .\scripts\ai-context.ps1 -List
-   ```
-
-3. Select one pack and read only its required files:
-
-   ```powershell
-   .\scripts\ai-context.ps1 -Pack calculator
-   .\scripts\ai-context.ps1 -Pack windows-renderer -IncludeOptional
-   ```
-
-The machine-readable routing table is
-[`docs/ai/context-packs.json`](docs/ai/context-packs.json). Full progress and
-platform references remain available as optional material instead of entering
-the default prompt. This follows the same shape as feature-gated controls:
-start with a small core, then compose only the context needed for the task.
-
 ## Repository Shape
 
 - `src/`: public framework API and host contracts.
@@ -699,11 +674,6 @@ start with a small core, then compose only the context needed for the task.
 - `docs/porting.md`: host implementation contract for new platform backends.
 - `docs/native-host-smoke.md`: target artifact contract before platform
   completion claims.
-- `docs/ai-agent.md`: compact first-read router for AI agents.
-- `docs/ai/context-packs.json`: task-specific required and optional file sets.
-- `scripts/ai-context.ps1`: prints the smallest context set for one task.
-- `docs/skills/zsui-native-ui/`: skill-style AI handoff package for standalone
-  ZSUI development.
 
 ZSUI is designed so another Rust application can provide its own product
 adapter and choose a native host without placing storage, sync or business
@@ -713,7 +683,6 @@ Verify every public single feature and the supported widget/backend
 combinations with:
 
 ```powershell
-.\scripts\ai-context.ps1 -Validate
 .\scripts\check-feature-matrix.ps1 -Locked
 ```
 

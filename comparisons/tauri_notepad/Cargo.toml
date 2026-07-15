@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "tauri-invoice-tool"
+path = "src/bin/invoice_tool.rs"
+
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }
 

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "slint-invoice-tool"
+path = "src/bin/invoice_tool.rs"
+
 [dependencies]
 rfd = "=0.17.2"
 slint = { version = "=1.17.1", default-features = false, features = [
