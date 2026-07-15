@@ -312,18 +312,18 @@ Automation root requests from `WM_GETOBJECT` with an Edit provider and a
 read/write ValuePattern plus TextPattern for ordinary text. The text provider
 exposes document, selection and visible ranges; range cloning/comparison,
 movement, search, point hit testing, native shaped bounding rectangles and
-typed selection routing stay on the existing self-drawn input route. Protected
-text is masked and advertises neither pattern. AppKit exposes focused text role,
+typed selection/ScrollIntoView routing stay on the existing self-drawn input
+route. Protected text is masked and advertises neither pattern. AppKit exposes focused text role,
 value, selection, UTF-16 ranges, frame and protected-content selectors on the
 custom `NSView`. GTK4 keeps its TextBox semantic surface hidden until a text
 target is focused and updates native value/multiline/read-only properties. UIA
-rich attributes/ScrollIntoView and real AppKit/GTK screen-reader target
+rich attributes/embedded-object ranges and real AppKit/GTK screen-reader target
 artifacts are still pending.
 `scripts/check-windows-text-accessibility.ps1` is the real Windows gate: it
 launches the hidden native notepad HWND, focuses the self-drawn editor through
 Win32 messages, resolves the provider through UI Automation and verifies the
 ZSUI Edit identity plus readable ValuePattern/TextPattern, single selection,
-range movement and native shaped bounding rectangles. AppKit/GTK target
+range movement, ScrollIntoView routing and native shaped bounding rectangles. AppKit/GTK target
 assistive-technology proof is still pending.
 The feature-gated `combo_box(...)` owns explicit selected and expanded state,
 emits typed selection/expansion messages, and paints its popup in a final

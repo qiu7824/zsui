@@ -121,7 +121,7 @@ pub fn zsui_component_catalog_summary() -> ZsuiComponentCatalogSummary {
 
 const BASIC_CONTROL_GAPS: &[&str] = &["accessibility", "non-Windows target interaction proof"];
 const TEXT_INPUT_GAPS: &[&str] = &[
-    "complete UIA rich attributes/scroll-into-view and AppKit/GTK target assistive-technology proof",
+    "complete UIA rich attributes/embedded-object ranges and AppKit/GTK target assistive-technology proof",
     "macOS and Linux CJK target interaction proof",
 ];
 const VIRTUAL_LIST_GAPS: &[&str] = &[

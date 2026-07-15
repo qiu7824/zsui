@@ -591,7 +591,7 @@ Linux/macOS 桌面目标。
 ## 当前边界
 
 - Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；可选 `accessibility` 已接入 Win32 UIA Edit/Value/TextPattern（文档范围、选择、命中、成形矩形、查找和范围移动）、AppKit 文本范围选择器和 GTK4 文本框语义，Windows 已有真实 HWND/UI Automation CI 探针，但 UIA 富文本属性/滚动接口与 AppKit/GTK4 辅助技术目标机证据仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
+- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；可选 `accessibility` 已接入 Win32 UIA Edit/Value/TextPattern（文档范围、选择、命中、成形矩形、查找、范围移动和滚动入视口）、AppKit 文本范围选择器和 GTK4 文本框语义，Windows 已有真实 HWND/UI Automation CI 探针，但 UIA 富文本属性/嵌入对象范围与 AppKit/GTK4 辅助技术目标机证据仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
 - DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
 - macOS、Linux、Android 和 Harmony 需要真实目标机运行与截图证据
 - 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块

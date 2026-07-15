@@ -396,14 +396,15 @@ history remain authoritative for implementation status.
   activate only target-specific native bindings: Win32 UI Automation exposes a
   focused Edit/Value/Text provider through `WM_GETOBJECT`; TextPattern owns
   document/selection/visible ranges, grapheme-safe unit movement, range search, point hit
-  testing, native shaped bounding rectangles and typed selection routing.
+  testing, native shaped bounding rectangles, typed selection routing and
+  top/bottom aligned ScrollIntoView through the self-drawn text viewport.
   AppKit exposes focused text-field/text-area selectors on the custom `NSView`,
   and GTK4 exposes a hidden-until-focused TextBox/value semantic surface.
   Password snapshots stay masked; Win32 advertises neither ValuePattern nor
   TextPattern for protected text, and AppKit marks protected content with the
   secure-text subrole. This feature must not introduce a native child editor,
-  WebView or global widget registry. UIA rich attributes/ScrollIntoView plus
-  real AppKit/GTK assistive-technology target proof remain readiness work.
+  WebView or global widget registry. UIA rich attributes/embedded-object ranges
+  plus real AppKit/GTK assistive-technology target proof remain readiness work.
 - ToggleButton is an independent `toggle-button` Cargo feature and reuses the
   shared explicit Boolean `Toggled` message path rather than inheriting Button
   behavior or storing state in a backend. It remains self-drawn: Windows,

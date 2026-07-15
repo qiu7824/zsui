@@ -49,6 +49,7 @@ use crate::native_input_visuals::{
 };
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
 use crate::native_input_visuals::{
+    native_text_first_visible_row_for_index_alignment_with_backend,
     native_text_visible_range_with_backend, native_text_visual_geometry_in_viewport_with_backend,
 };
 #[cfg(feature = "textbox")]
@@ -2992,6 +2993,68 @@ impl WindowsWin32ViewInputRoute {
                     &mut report,
                 );
             }
+            self.rebuild_pending_draw_plan();
+        }
+        report
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    fn dispatch_accessibility_scroll_text_range(
+        &mut self,
+        widget: crate::WidgetId,
+        selection: crate::native_text_edit::NativeTextSelection,
+        align_to_top: bool,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let mut report = WindowsWin32ViewInputDispatchReport::default();
+        let Some(target) = self.focused_target() else {
+            return report;
+        };
+        if target.widget != widget || !target.kind.accepts_text_input() {
+            return report;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return report;
+        }
+        let value = self.widget_text_value(widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        let previous_row = state.first_visible_visual_row;
+        let previous_horizontal_scroll = state.horizontal_scroll_px;
+        let selection = selection.clamp(&value);
+        let (start, end) = selection.ordered();
+        let index = if align_to_top { start } else { end };
+        let visual_target = native_text_visual_target(target, &self.interaction_plan);
+        state.first_visible_visual_row =
+            native_text_first_visible_row_for_index_alignment_with_backend(
+                visual_target,
+                &value,
+                index,
+                align_to_top,
+                self.widget_text_wrap(widget),
+                self.dpi,
+                &self.text_shaping,
+            );
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
+            visual_target,
+            &value,
+            index,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        self.text_edit = Some(state);
+        report.handled = true;
+        report.events.push(format!(
+            "win32_view_accessibility_text_scroll:{}:{}:{}",
+            widget.0, state.first_visible_visual_row, state.horizontal_scroll_px
+        ));
+        if state.first_visible_visual_row != previous_row
+            || state.horizontal_scroll_px != previous_horizontal_scroll
+        {
             self.rebuild_pending_draw_plan();
         }
         report
@@ -7604,6 +7667,24 @@ pub(crate) fn set_windows_win32_window_accessible_text_selection(
     }
     dispatch_windows_win32_window_view_input(hwnd, |route| {
         route.dispatch_accessibility_set_text_selection(selection)
+    })
+    .is_some()
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+pub(crate) fn scroll_windows_win32_window_accessible_text_range(
+    hwnd: HWND,
+    widget: crate::WidgetId,
+    selection: crate::native_text_edit::NativeTextSelection,
+    align_to_top: bool,
+) -> bool {
+    if windows_win32_window_text_accessibility_snapshot(hwnd)
+        .is_none_or(|snapshot| snapshot.widget() != widget || snapshot.kind().is_protected())
+    {
+        return false;
+    }
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_scroll_text_range(widget, selection, align_to_top)
     })
     .is_some()
 }

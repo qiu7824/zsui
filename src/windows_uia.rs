@@ -772,9 +772,19 @@ impl ITextRangeProvider_Impl for WindowsTextRangeProvider_Impl {
         Err(invalid_operation())
     }
 
-    fn ScrollIntoView(&self, _align_to_top: BOOL) -> Result<()> {
-        self.snapshot()?;
-        Err(not_supported())
+    fn ScrollIntoView(&self, align_to_top: BOOL) -> Result<()> {
+        let state = self.range_state()?;
+        crate::windows_win32_host::scroll_windows_win32_window_accessible_text_range(
+            self.hwnd as _,
+            self.widget,
+            crate::native_text_edit::NativeTextSelection {
+                anchor: state.start,
+                caret: state.end,
+            },
+            bool::from(align_to_top),
+        )
+        .then_some(())
+        .ok_or_else(element_not_available)
     }
 
     fn GetChildren(&self) -> Result<*mut SAFEARRAY> {
@@ -981,6 +991,70 @@ mod tests {
                 .expect("focused route should keep an accessibility snapshot");
         assert_eq!(snapshot.exposed_text(), "native UIA");
         assert_eq!(snapshot.selection().caret, 10);
+
+        crate::windows_win32_host::clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[cfg(feature = "textbox")]
+    #[test]
+    fn text_range_scroll_into_view_routes_the_self_drawn_editor_viewport() {
+        let _guard = crate::windows_win32_host::windows_win32_view_input_route_test_lock();
+        let hwnd = 0x5a53isize as windows_sys::Win32::Foundation::HWND;
+        let widget = crate::WidgetId::new(0x5a53);
+        let value = "row0\nrow1\nrow2\nrow3\nrow4";
+        crate::windows_win32_host::clear_windows_win32_window_view_input_routes();
+        let route = crate::windows_win32_host::WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::TextEditor,
+            )]),
+            crate::text_editor::<crate::UiCommand>(value).id(widget),
+        );
+        assert!(crate::windows_win32_host::set_windows_win32_window_view_input_route(hwnd, route));
+        crate::windows_win32_host::dispatch_windows_win32_window_view_click(
+            hwnd,
+            crate::Point { x: 20, y: 20 },
+        )
+        .expect("registered editor route should accept focus");
+        let selection_before =
+            crate::windows_win32_host::windows_win32_window_text_accessibility_snapshot(hwnd)
+                .expect("focused editor accessibility snapshot")
+                .selection();
+
+        let text: ITextProvider = IRawElementProviderSimple::from(WindowsTextUiaProvider {
+            hwnd: hwnd as isize,
+        })
+        .cast()
+        .expect("Text pattern interface");
+        let document = unsafe { text.DocumentRange() }.expect("document range");
+        let row0 = unsafe { document.FindText(&BSTR::from("row0"), false, false) }
+            .expect("first row range");
+        unsafe { row0.ScrollIntoView(true) }.expect("align first row to top");
+        let (_, top_visible) =
+            crate::windows_win32_host::windows_win32_window_text_accessibility_visible_range(hwnd)
+                .expect("visible editor range after top alignment");
+        assert_eq!(top_visible.start, 0);
+
+        let row2 = unsafe { document.FindText(&BSTR::from("row2"), false, false) }
+            .expect("middle row range");
+        unsafe { row2.ScrollIntoView(false) }.expect("align middle row to bottom");
+        let (_, bottom_visible) =
+            crate::windows_win32_host::windows_win32_window_text_accessibility_visible_range(hwnd)
+                .expect("visible editor range after bottom alignment");
+        assert!(bottom_visible.start > 0);
+        assert!(bottom_visible.start <= 10 && bottom_visible.end >= 14);
+        assert_eq!(
+            crate::windows_win32_host::windows_win32_window_text_accessibility_snapshot(hwnd)
+                .expect("scroll should preserve accessibility snapshot")
+                .selection(),
+            selection_before
+        );
 
         crate::windows_win32_host::clear_windows_win32_window_view_input_route(hwnd);
     }

@@ -168,6 +168,7 @@ try {
     if ($moved -ne 1 -or [string]::IsNullOrEmpty($movedRange.GetText(4))) {
         throw "UI Automation TextPattern range movement did not preserve readable text"
     }
+    $movedRange.ScrollIntoView($true)
     if ($documentRange.GetBoundingRectangles().Length -lt 1) {
         throw "UI Automation TextPattern returned no native shaped text rectangles"
     }

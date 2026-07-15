@@ -1963,6 +1963,36 @@ pub(crate) fn native_text_visible_range_with_backend(
     start..end.max(start)
 }
 
+#[cfg(any(
+    test,
+    all(
+        target_os = "windows",
+        feature = "accessibility",
+        feature = "text-input-core"
+    )
+))]
+pub(crate) fn native_text_first_visible_row_for_index_alignment_with_backend(
+    target: ViewHitTarget,
+    value: &str,
+    index: usize,
+    align_to_top: bool,
+    wrap: crate::TextWrap,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> usize {
+    let (lines, visible_rows) =
+        native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
+    let maximum_first = lines.len().saturating_sub(visible_rows);
+    let row = text_position_x(value, index, &lines).0;
+    if align_to_top {
+        row.min(maximum_first)
+    } else {
+        row.saturating_add(1)
+            .saturating_sub(visible_rows)
+            .min(maximum_first)
+    }
+}
+
 fn visual_row_y(origin: i32, row: usize, first_visible_row: usize, line_height: i32) -> i32 {
     if row >= first_visible_row {
         origin.saturating_add(
@@ -3403,6 +3433,30 @@ mod tests {
                 &NativeTextShapingBackend::LogicalCells,
             ),
             10..19
+        );
+        assert_eq!(
+            native_text_first_visible_row_for_index_alignment_with_backend(
+                target,
+                value,
+                10,
+                true,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &NativeTextShapingBackend::LogicalCells,
+            ),
+            2
+        );
+        assert_eq!(
+            native_text_first_visible_row_for_index_alignment_with_backend(
+                target,
+                value,
+                10,
+                false,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &NativeTextShapingBackend::LogicalCells,
+            ),
+            1
         );
 
         let mut plan =
