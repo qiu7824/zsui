@@ -163,17 +163,7 @@ impl NativeDrawTextStyleResolver {
 
 impl NativeStyleResolver for NativeDrawTextStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
-        let size = match style.role {
-            TextRole::Body => 14.0,
-            TextRole::Caption => 12.0,
-            TextRole::BodyLarge => 18.0,
-            TextRole::Subtitle => 20.0,
-            TextRole::Title => 28.0,
-            TextRole::Display => 44.0,
-            TextRole::Button => 14.0,
-            TextRole::Icon => 16.0,
-            TextRole::Monospace => 13.0,
-        };
+        let size = style.role.size();
         let font_family = match style.role {
             TextRole::Monospace => self.monospace_font_family.clone(),
             TextRole::Icon => self.icon_font_family.clone(),
@@ -182,6 +172,7 @@ impl NativeStyleResolver for NativeDrawTextStyleResolver {
         TextStyle {
             font_family,
             size,
+            line_height: style.role.line_height(),
             weight: style.weight,
             color: self.palette.resolve(style.color),
             horizontal_align: style.horizontal_align,

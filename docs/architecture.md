@@ -292,6 +292,17 @@ Segoe Fluent Icons and uses a raster asset only when `Original` color mode is
 requested. This mirrors the IconElement/IconSource boundary without exposing a
 Windows font code point in component code.
 
+Text nodes carry `SemanticTextStyle` rather than raw widget-local sizes. The
+shared Fluent type ramp exposes caption 12/16, body 14/20, body-large 18/24,
+subtitle 20/28, title 28/36, title-large 40/52 and display 68/92 roles. Heading
+roles default to semibold 600. On Windows, the GDI sink selects the installed
+Segoe UI Variable Small, Text and Display optical families, falls back to
+Segoe UI when the variable family is unavailable, and converts the DIP font
+size with the current window DPI before creating an `HFONT`. AppKit keeps the
+system `NSFont` family and GTK4 keeps its Pango system family. Semantic icon
+fonts use grayscale antialiasing on Windows so small chevrons do not acquire
+ClearType color fringes.
+
 `src/component_catalog.rs` is the authoritative component readiness inventory.
 It distinguishes first-pass runtime surfaces from contract-only and not-started
 components, so a WinUI analogue name is never sufficient evidence by itself.

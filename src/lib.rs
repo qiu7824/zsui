@@ -558,8 +558,6 @@ pub use view::radio_button;
 pub use view::scroll;
 #[cfg(feature = "teaching-tip")]
 pub use view::teaching_tip;
-#[cfg(feature = "label")]
-pub use view::text;
 #[cfg(feature = "textbox")]
 pub use view::text_editor;
 #[cfg(feature = "textbox")]
@@ -590,6 +588,8 @@ pub use view::{
 };
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
+#[cfg(feature = "label")]
+pub use view::{styled_text, text};
 #[cfg(feature = "tabs")]
 pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 #[cfg(feature = "virtual-list")]

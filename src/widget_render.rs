@@ -65,6 +65,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode};
     feature = "combo",
     feature = "date-picker",
     feature = "info-bar",
+    feature = "number-box",
     feature = "teaching-tip",
     feature = "table",
     feature = "time-picker",
@@ -2802,6 +2803,7 @@ pub struct ZsNumberBoxRenderPlan {
     pub text_bounds: Rect,
     pub decrement_button: Rect,
     pub increment_button: Rect,
+    pub button_icon_size: i32,
     pub radius: i32,
     pub platform: ZsNumberBoxPlatformStyle,
 }
@@ -2876,6 +2878,14 @@ pub fn zs_number_box_render_plan(
         },
         decrement_button,
         increment_button,
+        button_icon_size: Dp::new(match platform {
+            ZsNumberBoxPlatformStyle::Windows => 12.0,
+            ZsNumberBoxPlatformStyle::Macos => 10.0,
+            ZsNumberBoxPlatformStyle::Gtk => 14.0,
+        })
+        .to_px(dpi)
+        .round_i32()
+        .max(1),
         radius: metrics.radius.to_px(dpi).round_i32().max(1),
         platform,
     }
@@ -2890,27 +2900,23 @@ pub fn zs_number_box_native_draw_plan(
     increment_enabled: bool,
 ) -> NativeDrawPlan {
     let stroke = if valid {
-        ColorRole::Control
+        ColorRole::Border
     } else {
         ColorRole::Danger
-    };
-    let (decrement_label, increment_label) = match plan.platform {
-        ZsNumberBoxPlatformStyle::Gtk => ("−", "+"),
-        ZsNumberBoxPlatformStyle::Windows | ZsNumberBoxPlatformStyle::Macos => ("▼", "▲"),
     };
     let mut decrement_style = SemanticTextStyle::body();
     decrement_style.color = if decrement_enabled {
         ColorRole::PrimaryText
     } else {
-        ColorRole::SecondaryText
+        ColorRole::DisabledText
     };
     let mut increment_style = SemanticTextStyle::body();
     increment_style.color = if increment_enabled {
         ColorRole::PrimaryText
     } else {
-        ColorRole::SecondaryText
+        ColorRole::DisabledText
     };
-    NativeDrawPlan::new([
+    let mut commands = vec![
         NativeDrawCommand::RoundRect {
             rect: plan.bounds,
             fill: NativeDrawFill::Role(ColorRole::Surface),
@@ -2930,17 +2936,51 @@ pub fn zs_number_box_native_draw_plan(
             plan.text_bounds,
             SemanticTextStyle::body(),
         )),
-        NativeDrawCommand::Text(NativeDrawTextCommand::new(
-            decrement_label,
-            plan.decrement_button,
-            decrement_style,
-        )),
-        NativeDrawCommand::Text(NativeDrawTextCommand::new(
-            increment_label,
-            plan.increment_button,
-            increment_style,
-        )),
-    ])
+    ];
+    match plan.platform {
+        ZsNumberBoxPlatformStyle::Windows | ZsNumberBoxPlatformStyle::Macos => {
+            let icon_size = plan.button_icon_size;
+            let centered_icon = |bounds: Rect| Rect {
+                x: bounds
+                    .x
+                    .saturating_add((bounds.width.saturating_sub(icon_size)) / 2),
+                y: bounds
+                    .y
+                    .saturating_add((bounds.height.saturating_sub(icon_size)) / 2),
+                width: icon_size.min(bounds.width.max(0)),
+                height: icon_size.min(bounds.height.max(0)),
+            };
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(
+                    ZsIcon::ChevronDown,
+                    centered_icon(plan.decrement_button),
+                    NativeIconColorMode::ThemeAware,
+                )
+                .with_color(decrement_style.color),
+            ));
+            commands.push(NativeDrawCommand::Icon(
+                NativeDrawIconCommand::new(
+                    ZsIcon::ChevronUp,
+                    centered_icon(plan.increment_button),
+                    NativeIconColorMode::ThemeAware,
+                )
+                .with_color(increment_style.color),
+            ));
+        }
+        ZsNumberBoxPlatformStyle::Gtk => {
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                "−",
+                plan.decrement_button,
+                decrement_style,
+            )));
+            commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                "+",
+                plan.increment_button,
+                increment_style,
+            )));
+        }
+    }
+    NativeDrawPlan::new(commands)
 }
 
 #[cfg(feature = "radio")]
@@ -8660,6 +8700,17 @@ mod tests {
             zs_number_box_native_draw_plan(&windows, "12.5", true, true, true).command_count(),
             6
         );
+        let windows_draw = zs_number_box_native_draw_plan(&windows, "12.5", true, true, true);
+        assert!(matches!(
+            &windows_draw.commands[4],
+            NativeDrawCommand::Icon(icon)
+                if icon.icon == ZsIcon::ChevronDown && icon.bounds.width == 12
+        ));
+        assert!(matches!(
+            &windows_draw.commands[5],
+            NativeDrawCommand::Icon(icon)
+                if icon.icon == ZsIcon::ChevronUp && icon.bounds.width == 12
+        ));
         assert!(matches!(
             zs_number_box_native_draw_plan(&windows, "-", false, false, true).commands[0],
             NativeDrawCommand::RoundRect {

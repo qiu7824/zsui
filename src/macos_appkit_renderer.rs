@@ -1197,6 +1197,11 @@ fn appkit_text_attributes(
         (TextWrap::NoWrap, true) => NSLineBreakMode::ByTruncatingTail,
         (TextWrap::NoWrap, false) => NSLineBreakMode::ByClipping,
     });
+    if style.line_height > 0.0 {
+        let line_height = f64::from(style.line_height.max(style.size));
+        paragraph.setMinimumLineHeight(line_height);
+        paragraph.setMaximumLineHeight(line_height);
+    }
     unsafe {
         attributes.setObject_forKey(font.as_ref(), ProtocolObject::from_ref(NSFontAttributeName));
         attributes.setObject_forKey(

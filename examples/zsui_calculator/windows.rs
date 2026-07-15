@@ -369,10 +369,10 @@ unsafe fn paint(state: &CalculatorState) {
         .native_draw_plan(surface, dpi, state.interaction);
     let palette = WindowsGdiPalette::from_theme(&ZsuiTheme::light());
     if let Some(buffer) = WindowsBufferedPaint::begin(target, &client) {
-        let mut sink = WindowsGdiDrawSink::with_palette(buffer.hdc(), palette);
+        let mut sink = WindowsGdiDrawSink::with_palette_and_dpi(buffer.hdc(), palette, dpi);
         sink.draw_native_plan(&plan);
     } else {
-        let mut sink = WindowsGdiDrawSink::with_palette(target, palette);
+        let mut sink = WindowsGdiDrawSink::with_palette_and_dpi(target, palette, dpi);
         sink.draw_native_plan(&plan);
     }
     EndPaint(state.hwnd, &paint);

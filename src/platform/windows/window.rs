@@ -541,7 +541,15 @@ unsafe fn paint_window_client_rect_to_dc(
             .map(|plan| plan.theme_mode)
             .unwrap_or(crate::ZsuiThemeMode::System),
     ) == crate::ZsuiThemeMode::HighContrast;
-    paint_win32_surface(target, rect, palette, high_contrast, draw_plan.as_ref());
+    let dpi = crate::Dpi::new(GetDpiForWindow(hwnd).max(96) as f32);
+    paint_win32_surface(
+        target,
+        rect,
+        palette,
+        high_contrast,
+        dpi,
+        draw_plan.as_ref(),
+    );
 }
 
 unsafe fn paint_win32_surface(
@@ -549,13 +557,19 @@ unsafe fn paint_win32_surface(
     rect: RECT,
     palette: WindowsGdiPalette,
     high_contrast: bool,
+    dpi: crate::Dpi,
     draw_plan: Option<&NativeDrawPlan>,
 ) {
     let mut renderer = WindowsGdiRenderer::new(dc);
     renderer.fill_rect(rect_from_win(rect), palette.surface);
     drop(renderer);
     if let Some(plan) = draw_plan {
-        let mut sink = WindowsGdiDrawSink::with_palette_and_contrast(dc, palette, high_contrast);
+        let mut sink = WindowsGdiDrawSink::with_palette_contrast_and_dpi(
+            dc,
+            palette,
+            high_contrast,
+            dpi,
+        );
         sink.draw_native_plan(plan);
     }
 }

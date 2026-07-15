@@ -3,8 +3,8 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
     Graphics::Gdi::{
-        CreateFontW, DeleteObject, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
-        FF_DONTCARE, FW_NORMAL, HFONT, OUT_DEFAULT_PRECIS,
+        CreateFontW, DeleteObject, GetDC, ReleaseDC, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
+        DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HFONT, OUT_DEFAULT_PRECIS,
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::{
@@ -184,8 +184,15 @@ impl WindowsWin32OwnedTextEditor {
 
     pub fn apply_dpi(&mut self, dpi: Dpi) -> ZsuiResult<()> {
         let dpi = dpi.0.round().max(96.0) as u32;
-        let font_name = wide_null("Segoe UI Variable Text");
-        let height = -((((17 * dpi) + 48) / 96) as i32);
+        let dc = unsafe { GetDC(self.handle) };
+        let font_family = crate::windows_gdi_renderer::windows_ui_text_font_family(dc);
+        if !dc.is_null() {
+            unsafe {
+                ReleaseDC(self.handle, dc);
+            }
+        }
+        let font_name = wide_null(font_family);
+        let height = -((((14 * dpi) + 48) / 96) as i32);
         let font = unsafe {
             CreateFontW(
                 height,

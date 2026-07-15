@@ -546,6 +546,7 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "label")]
     Text {
         text: String,
+        style: SemanticTextStyle,
     },
     #[cfg(feature = "button")]
     Button {

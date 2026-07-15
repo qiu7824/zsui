@@ -59,10 +59,49 @@ pub enum TextRole {
     BodyLarge,
     Subtitle,
     Title,
+    TitleLarge,
     Display,
     Button,
     Icon,
     Monospace,
+}
+
+impl TextRole {
+    /// Returns the platform-independent Fluent type-ramp size in device-independent pixels.
+    pub const fn size(self) -> f32 {
+        match self {
+            Self::Caption => 12.0,
+            Self::Body | Self::Button => 14.0,
+            Self::Icon => 16.0,
+            Self::Monospace => 13.0,
+            Self::BodyLarge => 18.0,
+            Self::Subtitle => 20.0,
+            Self::Title => 28.0,
+            Self::TitleLarge => 40.0,
+            Self::Display => 68.0,
+        }
+    }
+
+    /// Returns the Fluent type-ramp line box in device-independent pixels.
+    pub const fn line_height(self) -> f32 {
+        match self {
+            Self::Caption => 16.0,
+            Self::Body | Self::Button | Self::Icon => 20.0,
+            Self::Monospace => 18.0,
+            Self::BodyLarge => 24.0,
+            Self::Subtitle => 28.0,
+            Self::Title => 36.0,
+            Self::TitleLarge => 52.0,
+            Self::Display => 92.0,
+        }
+    }
+
+    pub const fn default_weight(self) -> TextWeight {
+        match self {
+            Self::Subtitle | Self::Title | Self::TitleLarge | Self::Display => TextWeight::Semibold,
+            _ => TextWeight::Regular,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,16 +132,20 @@ pub struct SemanticTextStyle {
 }
 
 impl SemanticTextStyle {
-    pub const fn body() -> Self {
+    pub const fn for_role(role: TextRole) -> Self {
         Self {
-            role: TextRole::Body,
+            role,
             color: ColorRole::PrimaryText,
-            weight: TextWeight::Regular,
+            weight: role.default_weight(),
             horizontal_align: HorizontalAlign::Start,
             vertical_align: VerticalAlign::Center,
             wrap: TextWrap::NoWrap,
             ellipsis: true,
         }
+    }
+
+    pub const fn body() -> Self {
+        Self::for_role(TextRole::Body)
     }
 }
 
@@ -110,6 +153,8 @@ impl SemanticTextStyle {
 pub struct TextStyle {
     pub font_family: String,
     pub size: f32,
+    #[serde(default)]
+    pub line_height: f32,
     pub weight: TextWeight,
     pub color: Color,
     pub horizontal_align: HorizontalAlign,
@@ -123,6 +168,7 @@ impl TextStyle {
         Self {
             font_family: font_family.into(),
             size,
+            line_height: 0.0,
             weight: TextWeight::Regular,
             color,
             horizontal_align: HorizontalAlign::Start,
@@ -589,6 +635,48 @@ mod draw_command_tests {
                 "push_clip",
                 "pop_clip",
             ]
+        );
+    }
+
+    #[test]
+    fn semantic_roles_follow_the_fluent_type_ramp() {
+        assert_eq!(
+            (TextRole::Caption.size(), TextRole::Caption.line_height()),
+            (12.0, 16.0)
+        );
+        assert_eq!(
+            (TextRole::Body.size(), TextRole::Body.line_height()),
+            (14.0, 20.0)
+        );
+        assert_eq!(
+            (
+                TextRole::BodyLarge.size(),
+                TextRole::BodyLarge.line_height()
+            ),
+            (18.0, 24.0)
+        );
+        assert_eq!(
+            (TextRole::Subtitle.size(), TextRole::Subtitle.line_height()),
+            (20.0, 28.0)
+        );
+        assert_eq!(
+            (TextRole::Title.size(), TextRole::Title.line_height()),
+            (28.0, 36.0)
+        );
+        assert_eq!(
+            (
+                TextRole::TitleLarge.size(),
+                TextRole::TitleLarge.line_height()
+            ),
+            (40.0, 52.0)
+        );
+        assert_eq!(
+            (TextRole::Display.size(), TextRole::Display.line_height()),
+            (68.0, 92.0)
+        );
+        assert_eq!(
+            SemanticTextStyle::for_role(TextRole::Title).weight,
+            TextWeight::Semibold
         );
     }
 }

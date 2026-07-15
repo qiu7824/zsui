@@ -169,6 +169,13 @@ history remain authoritative for implementation status.
   explanatory text and action regions—not a product-specific settings page.
 - Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
   GTK4 to present native platform character.
+- Text labels carry semantic roles through the View and renderer boundary.
+  Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
+  body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92
+  display), uses regular 400 or semibold 600, selects Segoe UI Variable
+  Small/Text/Display with a Segoe UI fallback, and scales `HFONT` height from
+  the active window DPI. Do not restore raw per-widget title sizes or use
+  ClearType color filtering for icon-font glyphs.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

@@ -51,6 +51,8 @@ pub enum TypographyToken {
     BodyLarge,
     Subtitle,
     Title,
+    TitleLarge,
+    Display,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +106,7 @@ pub struct ZsuiTypographyStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ZsuiTypographyTokens {
     pub caption: ZsuiTypographyStyle,
     pub body: ZsuiTypographyStyle,
@@ -111,6 +114,8 @@ pub struct ZsuiTypographyTokens {
     pub body_large: ZsuiTypographyStyle,
     pub subtitle: ZsuiTypographyStyle,
     pub title: ZsuiTypographyStyle,
+    pub title_large: ZsuiTypographyStyle,
+    pub display: ZsuiTypographyStyle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -260,6 +265,8 @@ impl ZsuiTheme {
             TypographyToken::BodyLarge => self.typography.body_large,
             TypographyToken::Subtitle => self.typography.subtitle,
             TypographyToken::Title => self.typography.title,
+            TypographyToken::TitleLarge => self.typography.title_large,
+            TypographyToken::Display => self.typography.display,
         }
     }
 
@@ -333,6 +340,8 @@ impl Default for ZsuiTypographyTokens {
             body_large: ZsuiTypographyStyle::new(18.0, 24.0, TextWeight::Regular),
             subtitle: ZsuiTypographyStyle::new(20.0, 28.0, TextWeight::Semibold),
             title: ZsuiTypographyStyle::new(28.0, 36.0, TextWeight::Semibold),
+            title_large: ZsuiTypographyStyle::new(40.0, 52.0, TextWeight::Semibold),
+            display: ZsuiTypographyStyle::new(68.0, 92.0, TextWeight::Semibold),
         }
     }
 }
@@ -374,6 +383,14 @@ mod tests {
         assert_eq!(
             theme.typography(TypographyToken::BodyStrong).weight,
             TextWeight::Semibold
+        );
+        assert_eq!(
+            theme.typography(TypographyToken::TitleLarge),
+            ZsuiTypographyStyle::new(40.0, 52.0, TextWeight::Semibold)
+        );
+        assert_eq!(
+            theme.typography(TypographyToken::Display),
+            ZsuiTypographyStyle::new(68.0, 92.0, TextWeight::Semibold)
         );
         assert_eq!(
             theme.control_metric(ControlMetricToken::StandardHeight),

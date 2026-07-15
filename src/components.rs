@@ -331,6 +331,7 @@ mod label_tests {
         TextStyle {
             font_family: "Test".to_string(),
             size: 14.0,
+            line_height: 20.0,
             weight: TextWeight::Regular,
             color: Color {
                 r: 0,

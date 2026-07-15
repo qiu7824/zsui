@@ -1640,11 +1640,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
 
         match &self.kind {
             #[cfg(feature = "label")]
-            ViewNodeKind::Text { text } => {
+            ViewNodeKind::Text { text, style } => {
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                     text,
                     padded_bounds(bounds, self.style.padding, cx.dpi),
-                    SemanticTextStyle::body(),
+                    *style,
                 )));
             }
             #[cfg(feature = "button")]

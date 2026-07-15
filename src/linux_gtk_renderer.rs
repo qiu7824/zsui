@@ -1175,6 +1175,15 @@ fn configure_pango_layout(
         TextWeight::Bold => gtk::pango::Weight::Bold,
     });
     layout.set_font_description(Some(&font));
+    if style.line_height > 0.0 {
+        let metrics = layout.context().metrics(Some(&font), None);
+        let natural_line_height = metrics.ascent().saturating_add(metrics.descent());
+        let target_line_height = (f64::from(style.line_height.max(style.size))
+            * f64::from(gtk::pango::SCALE))
+        .round()
+        .clamp(0.0, f64::from(i32::MAX)) as i32;
+        layout.set_spacing(target_line_height.saturating_sub(natural_line_height));
+    }
     layout.set_alignment(match style.horizontal_align {
         HorizontalAlign::Start => gtk::pango::Alignment::Left,
         HorizontalAlign::Center => gtk::pango::Alignment::Center,

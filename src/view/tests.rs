@@ -2,6 +2,21 @@
 mod tests {
     use super::*;
 
+    #[cfg(feature = "label")]
+    #[test]
+    fn styled_text_keeps_semantic_role_and_matching_line_box() {
+        let node: ViewNode<()> = styled_text(
+            "Section heading",
+            SemanticTextStyle::for_role(crate::TextRole::Subtitle),
+        );
+        assert_eq!(node.style.height, Some(Dp::new(28.0)));
+        let ViewNodeKind::Text { style, .. } = node.kind else {
+            panic!("styled_text should create a text node");
+        };
+        assert_eq!(style.role, crate::TextRole::Subtitle);
+        assert_eq!(style.weight, crate::TextWeight::Semibold);
+    }
+
     #[cfg(any(
         feature = "button",
         feature = "toggle-button",

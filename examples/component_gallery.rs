@@ -227,9 +227,25 @@ enum Msg {
     InfoBar(ZsInfoBarEvent),
 }
 
+fn role_text(value: impl Into<String>, role: TextRole) -> ViewNode<Msg> {
+    styled_text(value, SemanticTextStyle::for_role(role))
+}
+
+fn body_strong(value: impl Into<String>) -> ViewNode<Msg> {
+    let mut style = SemanticTextStyle::body();
+    style.weight = TextWeight::Semibold;
+    styled_text(value, style)
+}
+
+fn secondary_text(value: impl Into<String>, role: TextRole) -> ViewNode<Msg> {
+    let mut style = SemanticTextStyle::for_role(role);
+    style.color = ColorRole::SecondaryText;
+    styled_text(value, style)
+}
+
 fn card(title: impl Into<String>, children: Vec<ViewNode<Msg>>) -> ViewNode<Msg> {
     let mut nodes = Vec::with_capacity(children.len() + 1);
-    nodes.push(text(title.into()).height(Dp::new(24.0)));
+    nodes.push(body_strong(title));
     nodes.extend(children);
     column(nodes)
         .flex(1.0)
@@ -245,7 +261,7 @@ fn compact_card(
     content_height: Dp,
 ) -> ViewNode<Msg> {
     const VERTICAL_PADDING: f32 = 16.0 * 2.0;
-    const TITLE_HEIGHT: f32 = 24.0;
+    const TITLE_HEIGHT: f32 = 20.0;
     const TITLE_GAP: f32 = 10.0;
     card(title, children)
         .height(Dp::new(
@@ -715,12 +731,11 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
     let navigation_item_width =
         Dp::new(navigation_metrics.open_pane_width.0 - navigation_padding.0 * 2.0);
     let mut navigation = vec![
-        text("ZSUI Gallery").height(Dp::new(32.0)),
-        text(format!(
-            "{} runtime surfaces",
-            summary.runtime_surface_count
-        ))
-        .height(Dp::new(28.0)),
+        role_text("ZSUI Gallery", TextRole::Subtitle),
+        secondary_text(
+            format!("{} runtime surfaces", summary.runtime_surface_count),
+            TextRole::Caption,
+        ),
     ];
     navigation.extend(GalleryPage::ALL.into_iter().map(|(page, label, id)| {
         navigation_item(label, page.icon(), page == state.page)
@@ -737,7 +752,12 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
         ])
         .gap(Dp::new(8.0)),
     );
-    navigation.push(text(&state.status).height(Dp::new(42.0)));
+    let mut status_style = SemanticTextStyle::for_role(TextRole::Caption);
+    status_style.color = ColorRole::SecondaryText;
+    status_style.vertical_align = VerticalAlign::Start;
+    status_style.wrap = TextWrap::Word;
+    status_style.ellipsis = false;
+    navigation.push(styled_text(&state.status, status_style).height(Dp::new(42.0)));
 
     let navigation = column(navigation)
         .width(navigation_metrics.open_pane_width)
@@ -752,8 +772,8 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
         GalleryPage::Catalog => catalog_page(),
     };
     let content = column([
-        text(state.page.title()).height(Dp::new(30.0)),
-        text(state.page.description()).height(Dp::new(24.0)),
+        role_text(state.page.title(), TextRole::Subtitle),
+        secondary_text(state.page.description(), TextRole::Body),
         page,
     ])
     .flex(1.0)
