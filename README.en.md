@@ -18,9 +18,11 @@ services, and platform backends an application enables.
 &nbsp;&nbsp;·&nbsp;&nbsp;
 <a href="README.en.md"><strong>English</strong></a>
 
-<a href="https://github.com/qiu7824/zsui/stargazers">
-  <img src="docs/images/star-progress.svg" alt="ZSUI GitHub star progress" width="760">
-</a>
+<p>
+  <strong>Built with Codex × GPT-5.6</strong><br>
+  From repository analysis and Rust implementation to test verification, cross-platform review, and release engineering, Codex and GPT-5.6 support ZSUI across the development loop.<br>
+  Every change remains grounded in compiler results, automated tests, and target-platform evidence.
+</p>
 
 </div>
 
@@ -812,3 +814,9 @@ Rust-native UI infrastructure.
 This project is licensed under [MPL-2.0](LICENSE).
 Bundled Fluent System Icons fallback assets are licensed under MIT; see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+## Star History
+
+<a href="https://github.com/qiu7824/zsui/stargazers">
+  <img src="docs/images/star-history.svg" alt="ZSUI GitHub star history chart" width="760">
+</a>

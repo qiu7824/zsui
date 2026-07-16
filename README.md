@@ -17,9 +17,11 @@
 &nbsp;&nbsp;·&nbsp;&nbsp;
 <a href="README.en.md">English</a>
 
-<a href="https://github.com/qiu7824/zsui/stargazers">
-  <img src="docs/images/star-progress.svg" alt="ZSUI GitHub star progress" width="760">
-</a>
+<p>
+  <strong>由 Codex × GPT-5.6 协作构建</strong><br>
+  从代码库分析与 Rust 实现，到测试验证、跨平台审查和发布，Codex 与 GPT-5.6 贯穿 ZSUI 的工程闭环。<br>
+  每项变更仍以编译结果、自动化测试和目标平台证据为准。
+</p>
 
 </div>
 
@@ -531,3 +533,9 @@ Linux/macOS 桌面目标。
 本项目使用 [MPL-2.0](LICENSE) 许可证。
 内置的 Fluent System Icons SVG 回退资源使用 MIT 许可证，详见
 [第三方许可说明](THIRD_PARTY_NOTICES.md)。
+
+## 收藏量趋势图
+
+<a href="https://github.com/qiu7824/zsui/stargazers">
+  <img src="docs/images/star-history.svg" alt="ZSUI GitHub 收藏量趋势图" width="760">
+</a>
