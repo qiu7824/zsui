@@ -59,6 +59,15 @@ disabled, checked and accelerator state and return typed `Command` values as
 images and files remain explicitly unsupported until their native formats are
 implemented and tested.
 
+Stateful windows may opt into
+`NativeWindowResourcePolicy::ReleaseViewWhenHidden` through
+`release_view_when_hidden()`. A desktop host suspends the live View when the
+window is minimized, unmapped or explicitly hidden, and resumes it before the
+window becomes interactive again. Suspension drops the View tree, draw/hit
+plans, shaped-text cache and transient input state while retaining application
+state and command routing. Win32 maps `WM_SIZE`/`WM_SHOWWINDOW`, AppKit maps
+miniaturization plus `orderOut:`, and GTK maps window unmap/map transitions.
+
 For a menu that changes application state, use
 `stateful_view_with_app_commands(state, view, update, command_to_message)`.
 The final mapper converts a platform-neutral `Command` to the application's

@@ -12,6 +12,9 @@ pub struct LiveViewUpdate {
 
 trait LiveViewDriver: Send {
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
+    fn suspend(&mut self) -> bool;
+    fn resume(&mut self) -> LiveViewUpdate;
+    fn is_suspended(&self) -> bool;
     fn refresh(&mut self) -> LiveViewUpdate;
     fn background_poll_interval_ms(&self) -> Option<u64>;
     fn draw_plan(&self) -> NativeDrawPlan;
@@ -118,6 +121,21 @@ impl SharedLiveViewRuntime {
 
     pub fn draw_plan(&self) -> NativeDrawPlan {
         self.lock().draw_plan()
+    }
+
+    /// Drops the current View tree while retaining application state, update
+    /// functions and command routing for a later rebuild.
+    pub fn suspend(&self) -> bool {
+        self.lock().suspend()
+    }
+
+    /// Rebuilds a previously suspended View tree from the retained state.
+    pub fn resume(&self) -> LiveViewUpdate {
+        self.lock().resume()
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.lock().is_suspended()
     }
 
     pub fn refresh(&self) -> LiveViewUpdate {
@@ -348,6 +366,7 @@ where
     dpi: Dpi,
     revision: u64,
     animation_epoch: std::time::Instant,
+    suspended: bool,
 }
 
 impl<State, Msg, ViewFn, UpdateFn> TypedLiveViewDriver<State, Msg, ViewFn, UpdateFn>
@@ -375,12 +394,16 @@ where
             dpi,
             revision: 0,
             animation_epoch: std::time::Instant::now(),
+            suspended: false,
         };
         driver.layout_current_view();
         driver
     }
 
     fn rebuild_and_layout(&mut self) {
+        if self.suspended {
+            return;
+        }
         self.view = (self.view_fn)(&self.state);
         self.layout_current_view();
     }
@@ -399,7 +422,7 @@ where
         self.rebuild_and_layout();
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
-            redraw: true,
+            redraw: !self.suspended,
             message_count,
             commands: app_cx.commands().to_vec(),
             ui_commands: app_cx.ui_commands().to_vec(),
@@ -425,12 +448,52 @@ where
         }
         self.bounds = bounds;
         self.dpi = dpi;
-        self.layout_current_view();
+        if !self.suspended {
+            self.layout_current_view();
+        }
         self.revision = self.revision.saturating_add(1);
         true
     }
 
+    fn suspend(&mut self) -> bool {
+        if self.suspended {
+            return false;
+        }
+        self.view = ViewNode::new(ViewNodeKind::Spacer);
+        self.suspended = true;
+        self.revision = self.revision.saturating_add(1);
+        true
+    }
+
+    fn resume(&mut self) -> LiveViewUpdate {
+        if !self.suspended {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        }
+        self.suspended = false;
+        self.animation_epoch = std::time::Instant::now();
+        self.rebuild_and_layout();
+        self.revision = self.revision.saturating_add(1);
+        LiveViewUpdate {
+            redraw: true,
+            revision: self.revision,
+            ..LiveViewUpdate::default()
+        }
+    }
+
+    fn is_suspended(&self) -> bool {
+        self.suspended
+    }
+
     fn refresh(&mut self) -> LiveViewUpdate {
+        if self.suspended {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        }
         self.rebuild_and_layout();
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
@@ -441,20 +504,35 @@ where
     }
 
     fn background_poll_interval_ms(&self) -> Option<u64> {
-        self.view.background_poll_interval_ms()
+        (!self.suspended)
+            .then(|| self.view.background_poll_interval_ms())
+            .flatten()
     }
 
     fn draw_plan(&self) -> NativeDrawPlan {
+        if self.suspended {
+            return NativeDrawPlan::default();
+        }
         let mut cx = ViewPaintCx::with_animation_elapsed(self.dpi, self.animation_epoch.elapsed());
         self.view.paint(&mut cx);
         cx.into_plan()
     }
 
     fn interaction_plan(&self) -> ViewInteractionPlan {
-        self.view.interaction_plan()
+        if self.suspended {
+            ViewInteractionPlan::default()
+        } else {
+            self.view.interaction_plan()
+        }
     }
 
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate {
+        if self.suspended {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        }
         let mut event_cx = ViewEventCx::new();
         self.view.event(&mut event_cx, event);
         let messages = event_cx.into_messages();

@@ -1,11 +1,15 @@
 [package]
 name = "zsui"
-version = "0.2.0-preview.4"
+version = "0.2.0-preview.5"
 edition = "2021"
 license = "MPL-2.0"
 repository = "https://github.com/qiu7824/zsui"
 description = "Rust-first feature-gated native UI framework for Win32, AppKit, and GTK4."
 readme = "README.md"
+documentation = "https://docs.rs/zsui"
+keywords = ["gui", "native", "desktop", "win32", "gtk"]
+categories = ["gui"]
+exclude = ["/videos/**"]
 
 [dependencies]
 arboard = { version = "3.4", optional = true }
@@ -195,6 +199,11 @@ required-features = ["desktop-native", "window", "button", "label", "textbox", "
 name = "component_gallery"
 path = "examples/component_gallery.rs"
 required-features = ["component-gallery-demo"]
+
+[[example]]
+name = "codex_zsui"
+path = "examples/codex_zsui.rs"
+required-features = ["window", "workbench"]
 
 [[example]]
 name = "product_adapter_view"

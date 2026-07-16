@@ -206,6 +206,13 @@ history remain authoritative for implementation status.
   rebuild it. Application storage reconciliation, initial page I/O and retry
   loops stay outside the first-frame path and return through typed completion
   messages or existing bounded background workers.
+- Resident monitoring applications may opt into
+  `NativeWindowResourcePolicy::ReleaseViewWhenHidden`. A hidden or minimized
+  native window drops its stateful View tree, draw/hit plans, shaped-text cache
+  and transient input state through ordinary Rust ownership, while application
+  state, command routing and app-owned monitors remain alive. Showing the
+  window rebuilds the View from retained state; the default remains retain-view
+  for backward compatibility.
 - High contrast is an accessibility appearance, not a dark-theme alias.
   System mode must override an application's light/dark preference when the OS
   requests high contrast. Win32 uses `SPI_GETHIGHCONTRAST` plus user-selected

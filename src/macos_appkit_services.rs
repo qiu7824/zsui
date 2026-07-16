@@ -61,10 +61,28 @@ define_class!(
                 NSApplication::sharedApplication(self.mtm()).stop(None);
             }
         }
+
+        #[unsafe(method(windowDidMiniaturize:))]
+        fn window_did_miniaturize(&self, notification: &NSNotification) {
+            self.set_window_suspended(notification, true);
+        }
+
+        #[unsafe(method(windowDidDeminiaturize:))]
+        fn window_did_deminiaturize(&self, notification: &NSNotification) {
+            self.set_window_suspended(notification, false);
+        }
     }
 );
 
 impl ZsuiAppKitRuntimeDelegate {
+    fn set_window_suspended(&self, notification: &NSNotification, suspended: bool) {
+        let window = unsafe { notification.object() }
+            .map(|object| Retained::as_ptr(&object).cast::<NSWindow>() as usize);
+        if let Some(handler) = window.and_then(|window| self.ivars().close_handlers.get(&window)) {
+            handler.set_window_suspended(suspended);
+        }
+    }
+
     fn new(
         mtm: MainThreadMarker,
         open_windows: usize,
@@ -304,10 +322,17 @@ impl WindowService for MacosAppKitWindowService {
 
     fn set_window_visible(&mut self, window: WindowId, visible: bool) -> ZsuiResult<()> {
         appkit_main_thread_marker("macos_set_window_visible")?;
-        let window = self.window(window, "macos_set_window_visible")?;
+        let window_id = window;
+        let window = self.window(window_id, "macos_set_window_visible")?;
         if visible {
+            if let Some(host) = self.view_hosts.get(&window_id) {
+                host.set_window_suspended(false);
+            }
             window.makeKeyAndOrderFront(None);
         } else {
+            if let Some(host) = self.view_hosts.get(&window_id) {
+                host.set_window_suspended(true);
+            }
             window.orderOut(None);
         }
         Ok(())

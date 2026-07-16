@@ -211,6 +211,10 @@ impl LinuxGtkWindowService {
                 gtk::glib::Propagation::Stop
             }
         });
+        let map_host = view_host.clone();
+        native_window.connect_map(move |_| map_host.set_window_suspended(false));
+        let unmap_host = view_host.clone();
+        native_window.connect_unmap(move |_| unmap_host.set_window_suspended(true));
         self.close_handlers.insert(window, handler);
         self.view_hosts.insert(window, view_host);
         Ok(())
@@ -294,10 +298,17 @@ impl WindowService for LinuxGtkWindowService {
 
     fn set_window_visible(&mut self, window: WindowId, visible: bool) -> ZsuiResult<()> {
         ensure_gtk_main_thread("gtk_set_window_visible")?;
-        let window = self.window(window, "gtk_set_window_visible")?;
+        let window_id = window;
+        let window = self.window(window_id, "gtk_set_window_visible")?;
         if visible {
+            if let Some(host) = self.view_hosts.get(&window_id) {
+                host.set_window_suspended(false);
+            }
             window.present();
         } else {
+            if let Some(host) = self.view_hosts.get(&window_id) {
+                host.set_window_suspended(true);
+            }
             window.set_visible(false);
         }
         Ok(())

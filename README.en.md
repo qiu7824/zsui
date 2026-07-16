@@ -8,13 +8,19 @@ Compose with traits, route typed messages, and compile only the controls,
 services, and platform backends an application enables.
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.4-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.5-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
 ![Build](https://img.shields.io/badge/build-feature--gated-0f7b0f)
 
-[简体中文](README.md) | **English**
+<a href="README.md">简体中文</a>
+&nbsp;&nbsp;·&nbsp;&nbsp;
+<a href="README.en.md"><strong>English</strong></a>
+
+<a href="https://github.com/qiu7824/zsui/stargazers">
+  <img src="docs/images/star-progress.svg" alt="ZSUI GitHub star progress" width="760">
+</a>
 
 </div>
 
@@ -271,6 +277,26 @@ native_window("Counter")
 # Ok::<(), zsui::ZsuiError>(())
 ```
 
+Resident monitoring applications can opt into hidden-window resource release:
+
+```rust,no_run
+# use zsui::{native_window, spacer, AppCx, ViewNode};
+# #[derive(Clone)] enum Msg {}
+# struct State;
+# fn view(_: &State) -> ViewNode<Msg> { spacer() }
+# fn update(_: &mut State, msg: Msg, _: &mut AppCx) { match msg {} }
+native_window("Monitor")
+    .release_view_when_hidden()
+    .stateful_view(State, view, update)
+    .run()?;
+# Ok::<(), zsui::ZsuiError>(())
+```
+
+When the window is minimized or hidden, ZSUI drops its `View` tree, draw and
+hit plans, and transient input caches. Application state, command routing, and
+application-owned monitoring services remain alive; showing the window rebuilds
+the view from the retained state.
+
 For codebases that want compile-time content enforcement, use the opt-in
 typestate entry point. `build`, `run` and `run_smoke` do not exist until one of
 the content methods changes the builder to `NativeWindowContentReady`:
@@ -311,7 +337,7 @@ Use a small feature set when embedding ZSUI into another Rust app:
 
 ```toml
 [dependencies]
-zsui = { version = "0.1", default-features = false, features = [
+zsui = { version = "0.2.0-preview.5", default-features = false, features = [
     "window",
     "button",
     "toggle",

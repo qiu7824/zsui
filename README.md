@@ -7,13 +7,19 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.4-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.5-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
 ![Build](https://img.shields.io/badge/build-feature--gated-0f7b0f)
 
-**简体中文** | [English](README.en.md)
+<a href="README.md"><strong>简体中文</strong></a>
+&nbsp;&nbsp;·&nbsp;&nbsp;
+<a href="README.en.md">English</a>
+
+<a href="https://github.com/qiu7824/zsui/stargazers">
+  <img src="docs/images/star-progress.svg" alt="ZSUI GitHub star progress" width="760">
+</a>
 
 </div>
 
@@ -304,13 +310,30 @@ fn main() -> zsui::ZsuiResult<()> {
 
 状态所有权、消息来源和修改入口都可以被 Rust 与 rust-analyzer 检查。
 
+常驻监控型应用可以启用隐藏窗口资源回收：
+
+```rust,no_run
+# use zsui::{native_window, spacer, AppCx, ViewNode};
+# #[derive(Clone)] enum Msg {}
+# struct State;
+# fn view(_: &State) -> ViewNode<Msg> { spacer() }
+# fn update(_: &mut State, msg: Msg, _: &mut AppCx) { match msg {} }
+native_window("Monitor")
+    .release_view_when_hidden()
+    .stateful_view(State, view, update)
+    .run()?;
+# Ok::<(), zsui::ZsuiError>(())
+```
+
+窗口最小化或隐藏后，ZSUI 会释放 `View` 树、绘制/命中计划和临时输入缓存；应用状态、命令路由及应用持有的监控服务继续存活。窗口重新显示时，界面从保留的状态重新构建。
+
 ## 按需编译
 
-直接从 GitHub 使用：
+从 crates.io 使用：
 
 ```toml
 [dependencies]
-zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, features = [
+zsui = { version = "0.2.0-preview.5", default-features = false, features = [
     "window",
     "button",
     "label",
@@ -323,7 +346,7 @@ zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, feat
 高级能力独立开启：
 
 ```toml
-zsui = { git = "https://github.com/qiu7824/zsui", default-features = false, features = [
+zsui = { version = "0.2.0-preview.5", default-features = false, features = [
     "workbench",
     "document-shell",
     "calculator",
@@ -385,8 +408,8 @@ cargo run --release --example component_gallery --no-default-features --features
 
 Gallery 通过独立 profile 显式启用全部控件，包含输入、集合、导航、反馈、弹层、
 布局和组件目录五页，界面文案同屏提供中文与英文。普通应用仍按控件 feature 选择
-依赖；默认构建不打包完整组件集。Windows 截图验收可追加
-`-- --smoke --page inputs`，页面参数还支持
+依赖；默认构建不打包完整组件集。
+Windows 截图验收可追加 `-- --smoke --page inputs`，页面参数还支持
 `collections`、`navigation`、`feedback` 和 `catalog`。
 
 ### 十万行分页虚拟列表

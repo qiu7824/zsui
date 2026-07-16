@@ -112,6 +112,24 @@ pub fn run_native_window_smoke(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct NativeWindowRuntimeHandle(pub u64);
 
+/// Controls how much state a native window retains while it cannot be seen.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NativeWindowResourcePolicy {
+    /// Keeps the stateful View tree and its transient input resources alive.
+    #[default]
+    RetainView,
+    /// Drops the stateful View tree, draw/hit data and transient input caches
+    /// while the window is hidden or minimized, then rebuilds it from retained
+    /// application state when the window becomes visible again.
+    ReleaseViewWhenHidden,
+}
+
+impl NativeWindowResourcePolicy {
+    pub const fn releases_view_when_hidden(self) -> bool {
+        matches!(self, Self::ReleaseViewWhenHidden)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeWindowRuntimeDriverReport {
     pub capabilities: HostCapabilities,
@@ -1126,6 +1144,8 @@ pub(crate) struct NativeViewInputRuntime {
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
+    resource_policy: NativeWindowResourcePolicy,
+    view_suspended: bool,
     animation_epoch: Option<std::time::Instant>,
     focused_widget: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
@@ -1409,6 +1429,7 @@ impl NativeViewInputRuntime {
         interaction_plan: Option<ViewInteractionPlan>,
         ui_command_view: Option<ViewNode<UiCommand>>,
         live_view: Option<SharedLiveViewRuntime>,
+        resource_policy: NativeWindowResourcePolicy,
         window_close_request_command: Option<Command>,
         app_command_executor: Option<SharedAppCommandExecutor>,
         ui_command_executor: Option<SharedUiCommandExecutor>,
@@ -1423,6 +1444,8 @@ impl NativeViewInputRuntime {
             interaction_plan,
             ui_command_view,
             live_view,
+            resource_policy,
+            view_suspended: false,
             animation_epoch: Some(std::time::Instant::now()),
             focused_widget: None,
             #[cfg(feature = "tooltip")]
@@ -1493,6 +1516,93 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "toast")]
         runtime.sync_toast_runtime(now);
         runtime
+    }
+
+    pub(crate) fn suspend_view_when_hidden(&mut self) -> bool {
+        if self.view_suspended || !self.resource_policy.releases_view_when_hidden() {
+            return false;
+        }
+        let Some(runtime) = self.live_view.clone() else {
+            return false;
+        };
+        if !runtime.suspend() {
+            return false;
+        }
+        self.view_suspended = true;
+        self.interaction_plan = None;
+        self.animation_epoch = None;
+        self.focused_widget = None;
+        self.text_edit = None;
+        self.text_drag = None;
+        self.ime_preedit = None;
+        #[cfg(feature = "textbox")]
+        {
+            self.text_history = NativeTextHistory::default();
+            self.processing_text_edit_commands = false;
+        }
+        #[cfg(feature = "combo")]
+        self.combo_type_ahead.reset();
+        #[cfg(feature = "slider")]
+        {
+            self.slider_drag = None;
+        }
+        #[cfg(feature = "color-picker")]
+        {
+            self.color_picker_drag = None;
+        }
+        #[cfg(any(
+            feature = "auto-suggest",
+            feature = "button",
+            feature = "breadcrumb",
+            feature = "color-picker",
+            feature = "command-palette",
+            feature = "date-picker",
+            feature = "dialog",
+            feature = "grid-view",
+            feature = "info-bar",
+            feature = "teaching-tip",
+            feature = "password-box",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toast",
+            feature = "toggle-button",
+            feature = "table",
+            feature = "tree"
+        ))]
+        {
+            self.pointer_hover = None;
+            self.pointer_pressed = None;
+        }
+        #[cfg(feature = "password-box")]
+        {
+            self.password_peek = None;
+        }
+        #[cfg(feature = "tooltip")]
+        {
+            self.tooltip = crate::tooltip::ZsTooltipRuntime::default();
+        }
+        #[cfg(feature = "toast")]
+        {
+            self.toast = crate::toast::ZsToastRuntime::default();
+        }
+        self.text_shaping.release_idle_memory();
+        true
+    }
+
+    pub(crate) fn resume_view_when_visible(&mut self) -> Option<NativeDrawPlan> {
+        if !self.view_suspended {
+            return None;
+        }
+        let runtime = self.live_view.clone()?;
+        let update = runtime.resume();
+        self.view_suspended = false;
+        self.animation_epoch = Some(std::time::Instant::now());
+        self.interaction_plan = Some(runtime.interaction_plan());
+        #[cfg(feature = "toast")]
+        self.sync_toast_runtime(std::time::Instant::now());
+        update
+            .redraw
+            .then(|| self.compose_input_visuals(runtime.draw_plan()))
     }
 
     #[cfg(all(
@@ -1579,8 +1689,10 @@ impl NativeViewInputRuntime {
         report.handled = true;
         if let Some(runtime) = &self.live_view {
             runtime.set_surface(surface, dpi);
-            self.interaction_plan = Some(runtime.interaction_plan());
-            report.redraw_plan = Some(runtime.draw_plan());
+            if !self.view_suspended {
+                self.interaction_plan = Some(runtime.interaction_plan());
+                report.redraw_plan = Some(runtime.draw_plan());
+            }
         } else if let Some(view) = &mut self.ui_command_view {
             let mut layout_cx = ViewLayoutCx::new(surface, dpi);
             view.layout(&mut layout_cx);
@@ -4503,6 +4615,9 @@ impl NativeViewInputRuntime {
     }
 
     fn current_composed_draw_plan(&self) -> Option<NativeDrawPlan> {
+        if self.view_suspended {
+            return None;
+        }
         let plan = if let Some(runtime) = &self.live_view {
             runtime.draw_plan()
         } else {
@@ -6040,7 +6155,10 @@ impl NativeViewInputRuntime {
         let Some(runtime) = &self.live_view else {
             return;
         };
-        runtime.refresh();
+        let update = runtime.refresh();
+        if !update.redraw {
+            return;
+        }
         self.interaction_plan = Some(runtime.interaction_plan());
         report.hit_target_count = self.hit_target_count();
         report.redraw_plan = Some(runtime.draw_plan());
@@ -6056,6 +6174,7 @@ impl NativeViewInputRuntime {
                 self.ui_command_view.clone()?,
             )
         };
+        let route = route.resource_policy(self.resource_policy);
         let route = match &self.app_command_executor {
             Some(executor) => route.app_command_executor(executor.clone()),
             None => route,
@@ -6426,6 +6545,7 @@ pub struct NativeWindowBuilder {
     view_layout_node_count: usize,
     shell_runtime: Option<ZsShellRuntime>,
     live_view_runtime: Option<SharedLiveViewRuntime>,
+    resource_policy: NativeWindowResourcePolicy,
     window_close_request_command: Option<Command>,
     app_command_executor: Option<SharedAppCommandExecutor>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
@@ -6441,6 +6561,7 @@ impl PartialEq for NativeWindowBuilder {
             && self.view_layout_node_count == other.view_layout_node_count
             && self.shell_runtime == other.shell_runtime
             && self.live_view_runtime == other.live_view_runtime
+            && self.resource_policy == other.resource_policy
             && self.window_close_request_command == other.window_close_request_command
             && self.app_command_executor == other.app_command_executor
             && self.ui_command_executor == other.ui_command_executor
@@ -6459,6 +6580,7 @@ impl NativeWindowBuilder {
             view_layout_node_count: 0,
             shell_runtime: None,
             live_view_runtime: None,
+            resource_policy: NativeWindowResourcePolicy::default(),
             window_close_request_command: None,
             app_command_executor: None,
             ui_command_executor: None,
@@ -6508,6 +6630,18 @@ impl NativeWindowBuilder {
     pub fn visible(mut self, visible: bool) -> Self {
         self.window = self.window.visible(visible);
         self
+    }
+
+    pub fn resource_policy(mut self, policy: NativeWindowResourcePolicy) -> Self {
+        self.resource_policy = policy;
+        self
+    }
+
+    /// Releases a stateful View and transient UI caches while the native
+    /// window is hidden or minimized. Application state, command routing and
+    /// app-owned monitoring services stay alive.
+    pub fn release_view_when_hidden(self) -> Self {
+        self.resource_policy(NativeWindowResourcePolicy::ReleaseViewWhenHidden)
     }
 
     pub fn resizable(mut self, resizable: bool) -> Self {
@@ -6755,6 +6889,10 @@ impl NativeWindowBuilder {
         self.live_view_runtime.as_ref()
     }
 
+    pub const fn native_resource_policy(&self) -> NativeWindowResourcePolicy {
+        self.resource_policy
+    }
+
     pub fn native_window_close_request_command(&self) -> Option<&Command> {
         self.window_close_request_command.as_ref()
     }
@@ -6816,6 +6954,7 @@ impl NativeWindowBuilder {
             self.view_interaction_plan.clone(),
             self.view_ui_command_tree.clone(),
             self.live_view_runtime.clone(),
+            self.resource_policy,
             self.window_close_request_command.clone(),
             self.app_command_executor.clone(),
             self.ui_command_executor.clone(),
@@ -6868,6 +7007,16 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
 
     pub fn visible(mut self, visible: bool) -> Self {
         self.inner = self.inner.visible(visible);
+        self
+    }
+
+    pub fn resource_policy(mut self, policy: NativeWindowResourcePolicy) -> Self {
+        self.inner = self.inner.resource_policy(policy);
+        self
+    }
+
+    pub fn release_view_when_hidden(mut self) -> Self {
+        self.inner = self.inner.release_view_when_hidden();
         self
     }
 
@@ -7003,6 +7152,10 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
 
     pub fn native_window_close_request_command(&self) -> Option<&Command> {
         self.inner.native_window_close_request_command()
+    }
+
+    pub const fn native_resource_policy(&self) -> NativeWindowResourcePolicy {
+        self.inner.native_resource_policy()
     }
 }
 
@@ -8674,6 +8827,62 @@ mod tests {
             command,
             crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
         )));
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn hidden_window_resource_policy_releases_and_rebuilds_the_view() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        #[derive(Clone)]
+        enum Msg {
+            Increment,
+        }
+
+        let builds = Arc::new(AtomicUsize::new(0));
+        let build_counter = Arc::clone(&builds);
+        let builder = native_window("Hibernating View")
+            .release_view_when_hidden()
+            .stateful_view(
+                0_u32,
+                move |count| {
+                    build_counter.fetch_add(1, Ordering::SeqCst);
+                    crate::column([
+                        crate::text(format!("Count: {count}")),
+                        crate::button("Increment")
+                            .id(crate::WidgetId::new(801))
+                            .on_click(Msg::Increment),
+                    ])
+                },
+                |count, message, _cx| match message {
+                    Msg::Increment => *count += 1,
+                },
+            );
+        let live_view = builder.native_live_view_runtime().unwrap().clone();
+        let mut runtime = builder.native_view_input_runtime();
+
+        assert_eq!(
+            builder.native_resource_policy(),
+            NativeWindowResourcePolicy::ReleaseViewWhenHidden
+        );
+        assert_eq!(builds.load(Ordering::SeqCst), 1);
+        assert_eq!(runtime.hit_target_count(), 1);
+        assert!(runtime.suspend_view_when_hidden());
+        assert!(live_view.is_suspended());
+        assert_eq!(live_view.draw_plan().command_count(), 0);
+        assert_eq!(runtime.hit_target_count(), 0);
+        assert!(!runtime.suspend_view_when_hidden());
+
+        let plan = runtime
+            .resume_view_when_visible()
+            .expect("showing the window should rebuild the released view");
+        assert!(!live_view.is_suspended());
+        assert_eq!(builds.load(Ordering::SeqCst), 2);
+        assert_eq!(runtime.hit_target_count(), 1);
+        assert!(plan.command_count() > 0);
     }
 
     #[cfg(all(feature = "label", feature = "button"))]

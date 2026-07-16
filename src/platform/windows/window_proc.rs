@@ -1,4 +1,3 @@
-
 pub unsafe extern "system" fn zsui_win32_default_window_proc(
     hwnd: HWND,
     msg: u32,
@@ -66,9 +65,20 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_SIZE => {
-            let shell_handled = refresh_windows_win32_window_shell_surface(hwnd).is_some();
-            let live_view_handled = refresh_windows_win32_window_live_view_surface(hwnd);
-            if shell_handled || live_view_handled {
+            let minimized = wparam == SIZE_MINIMIZED as usize;
+            let lifecycle_handled = sync_windows_win32_window_view_visibility(hwnd, !minimized);
+            let shell_handled =
+                !minimized && refresh_windows_win32_window_shell_surface(hwnd).is_some();
+            let live_view_handled =
+                !minimized && refresh_windows_win32_window_live_view_surface(hwnd);
+            if lifecycle_handled || shell_handled || live_view_handled {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_SHOWWINDOW => {
+            if sync_windows_win32_window_view_visibility(hwnd, wparam != 0) {
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)

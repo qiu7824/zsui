@@ -4,6 +4,8 @@ pub struct WindowsWin32ViewInputRoute {
     text_shaping: crate::native_input_visuals::NativeTextShapingBackend,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
+    resource_policy: NativeWindowResourcePolicy,
+    view_suspended: bool,
     focused_widget: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
@@ -88,6 +90,8 @@ impl WindowsWin32ViewInputRoute {
             text_shaping: crate::native_input_visuals::NativeTextShapingBackend::windows_gdi(),
             ui_command_view: Some(ui_command_view),
             live_view: None,
+            resource_policy: NativeWindowResourcePolicy::default(),
+            view_suspended: false,
             focused_widget: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
@@ -171,6 +175,8 @@ impl WindowsWin32ViewInputRoute {
             text_shaping: crate::native_input_visuals::NativeTextShapingBackend::windows_gdi(),
             ui_command_view: None,
             live_view: Some(live_view),
+            resource_policy: NativeWindowResourcePolicy::default(),
+            view_suspended: false,
             focused_widget: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
@@ -250,6 +256,11 @@ impl WindowsWin32ViewInputRoute {
         self
     }
 
+    pub fn resource_policy(mut self, policy: NativeWindowResourcePolicy) -> Self {
+        self.resource_policy = policy;
+        self
+    }
+
     pub fn window_close_request_command(mut self, command: Option<Command>) -> Self {
         self.window_close_request_command = command;
         self
@@ -264,6 +275,90 @@ impl WindowsWin32ViewInputRoute {
         self.interaction_plan.hit_target_count()
     }
 
+    fn suspend_view_when_hidden(&mut self) -> bool {
+        if self.view_suspended || !self.resource_policy.releases_view_when_hidden() {
+            return false;
+        }
+        let Some(live_view) = self.live_view.clone() else {
+            return false;
+        };
+        if !live_view.suspend() {
+            return false;
+        }
+        self.view_suspended = true;
+        self.interaction_plan = ViewInteractionPlan::default();
+        self.focused_widget = None;
+        self.text_edit = None;
+        self.pending_utf16_high_surrogate = None;
+        self.text_drag = None;
+        self.pending_draw_plan = None;
+        #[cfg(feature = "textbox")]
+        {
+            self.text_history = NativeTextHistory::default();
+            self.processing_text_edit_commands = false;
+        }
+        #[cfg(feature = "combo")]
+        self.combo_type_ahead.reset();
+        #[cfg(feature = "slider")]
+        {
+            self.slider_drag = None;
+        }
+        #[cfg(feature = "color-picker")]
+        {
+            self.color_picker_drag = None;
+        }
+        #[cfg(any(
+            feature = "auto-suggest",
+            feature = "button",
+            feature = "breadcrumb",
+            feature = "color-picker",
+            feature = "date-picker",
+            feature = "dialog",
+            feature = "grid-view",
+            feature = "info-bar",
+            feature = "teaching-tip",
+            feature = "password-box",
+            feature = "tabs",
+            feature = "time-picker",
+            feature = "toast",
+            feature = "toggle-button",
+            feature = "table",
+            feature = "tree"
+        ))]
+        {
+            self.pointer_hover = None;
+            self.pointer_pressed = None;
+        }
+        #[cfg(feature = "password-box")]
+        {
+            self.password_peek = None;
+        }
+        #[cfg(feature = "tooltip")]
+        {
+            self.tooltip = crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing());
+        }
+        #[cfg(feature = "toast")]
+        {
+            self.toast = crate::toast::ZsToastRuntime::default();
+        }
+        self.text_shaping.release_idle_memory();
+        true
+    }
+
+    fn resume_view_when_visible(&mut self) -> bool {
+        if !self.view_suspended {
+            return false;
+        }
+        let Some(live_view) = self.live_view.clone() else {
+            return false;
+        };
+        let update = live_view.resume();
+        self.view_suspended = false;
+        self.interaction_plan = live_view.interaction_plan();
+        #[cfg(feature = "toast")]
+        self.sync_toast_runtime(std::time::Instant::now());
+        update.redraw && self.rebuild_pending_draw_plan()
+    }
 }
 
 impl WindowsWin32ViewInputRoute {
@@ -992,6 +1087,9 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn rebuild_pending_draw_plan(&mut self) -> bool {
+        if self.view_suspended {
+            return false;
+        }
         let mut plan = if let Some(live_view) = &self.live_view {
             live_view.draw_plan()
         } else if let Some(view) = &self.ui_command_view {
@@ -1059,8 +1157,10 @@ impl WindowsWin32ViewInputRoute {
     fn refresh_live_view_after_app_effect(&mut self) -> Option<u64> {
         let live_view = self.live_view.as_ref()?;
         let update = live_view.refresh();
-        self.interaction_plan = live_view.interaction_plan();
-        self.rebuild_pending_draw_plan();
+        if update.redraw {
+            self.interaction_plan = live_view.interaction_plan();
+            self.rebuild_pending_draw_plan();
+        }
         Some(update.revision)
     }
 
@@ -1203,14 +1303,16 @@ impl WindowsWin32ViewInputRoute {
         let mut redraw = false;
         if let Some(live_view) = &self.live_view {
             let update = live_view.refresh();
-            self.interaction_plan = live_view.interaction_plan();
-            report.background_refresh_count = 1;
+            if update.redraw {
+                self.interaction_plan = live_view.interaction_plan();
+                report.background_refresh_count = 1;
+            }
             report.live_view_revision = update.revision;
             report.events.push(format!(
                 "win32_live_view_background_refresh:{}",
                 update.revision
             ));
-            redraw = true;
+            redraw |= update.redraw;
         }
         #[cfg(feature = "tooltip")]
         if self.tooltip.refresh(now) {
@@ -1657,6 +1759,47 @@ pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
         }
     }
     true
+}
+
+pub fn sync_windows_win32_window_view_visibility(hwnd: HWND, visible: bool) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    let hwnd_value = hwnd as isize;
+    let (eligible, released, draw_plan, poll_interval_ms) = {
+        let mut routes = window_view_input_routes()
+            .lock()
+            .expect("window view input route registry should not be poisoned");
+        let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) else {
+            return false;
+        };
+        let eligible = record.route.live_view.is_some()
+            && record.route.resource_policy.releases_view_when_hidden();
+        if !eligible {
+            return false;
+        }
+        if visible {
+            record.route.resume_view_when_visible();
+        } else {
+            record.route.suspend_view_when_hidden();
+        }
+        (
+            true,
+            record.route.view_suspended,
+            record.route.take_pending_draw_plan(),
+            record.route.background_poll_interval_ms(),
+        )
+    };
+    if released {
+        clear_windows_win32_window_draw_plan(hwnd);
+    } else if let Some(draw_plan) = draw_plan {
+        set_windows_win32_window_draw_plan(hwnd, draw_plan);
+        unsafe {
+            InvalidateRect(hwnd, null(), 0);
+        }
+    }
+    sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
+    eligible
 }
 
 pub fn dispatch_windows_win32_window_view_click(

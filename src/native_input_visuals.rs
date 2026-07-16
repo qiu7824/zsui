@@ -23,6 +23,13 @@ pub(crate) struct NativeTextShapingCache {
 
 #[allow(dead_code)]
 impl NativeTextShapingCache {
+    fn release_idle_memory(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.clear();
+            entries.shrink_to_fit();
+        }
+    }
+
     fn shape(
         &self,
         text: &str,
@@ -106,6 +113,34 @@ impl std::fmt::Debug for NativeTextShapingBackend {
 }
 
 impl NativeTextShapingBackend {
+    pub(crate) fn release_idle_memory(&self) {
+        match self {
+            Self::LogicalCells => {}
+            #[cfg(all(
+                windows,
+                feature = "windows-gdi",
+                feature = "windows-win32",
+                feature = "text-input-core"
+            ))]
+            Self::WindowsGdi(cache) => cache.release_idle_memory(),
+            #[cfg(all(
+                target_os = "macos",
+                feature = "macos-appkit",
+                feature = "text-input-core"
+            ))]
+            Self::AppKit(cache) => cache.release_idle_memory(),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-gtk",
+                feature = "text-input-core"
+            ))]
+            Self::Gtk(_, cache) => cache.release_idle_memory(),
+            #[cfg(test)]
+            Self::Test(_) => {}
+        }
+    }
+
     #[cfg(all(windows, feature = "windows-gdi", feature = "windows-win32"))]
     pub(crate) fn windows_gdi() -> Self {
         #[cfg(feature = "text-input-core")]

@@ -373,6 +373,42 @@ mod tests {
 
     #[cfg(all(feature = "button", feature = "label"))]
     #[test]
+    fn window_live_view_route_releases_ui_while_hidden() {
+        let runtime = crate::live_view_runtime(
+            0_u32,
+            |count| {
+                crate::column([
+                    crate::text(format!("Count: {count}")),
+                    crate::button("Increment")
+                        .id(crate::WidgetId::new(502))
+                        .on_click(()),
+                ])
+            },
+            |_count, (), _cx| {},
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 120,
+            },
+            crate::Dpi::standard(),
+        );
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime.clone())
+            .resource_policy(crate::NativeWindowResourcePolicy::ReleaseViewWhenHidden);
+
+        assert_eq!(route.hit_target_count(), 1);
+        assert!(route.suspend_view_when_hidden());
+        assert!(runtime.is_suspended());
+        assert_eq!(route.hit_target_count(), 0);
+        assert!(route.pending_draw_plan.is_none());
+        assert!(route.resume_view_when_visible());
+        assert!(!runtime.is_suspended());
+        assert_eq!(route.hit_target_count(), 1);
+        assert!(route.take_pending_draw_plan().is_some());
+    }
+
+    #[cfg(all(feature = "button", feature = "label"))]
+    #[test]
     fn window_menu_command_updates_typed_live_view_and_repaints() {
         let _guard = view_input_route_test_lock();
         clear_windows_win32_window_draw_plans();
