@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="128" viewBox="0 0 760 128" role="img" aria-labelledby="title description">
-  <title id="title">qiu7824/zsui star journey: 14 of 100 stars</title>
+  <title id="title">qiu7824/zsui star journey: 15 of 100 stars</title>
   <desc id="description">A milestone progress line showing the repository's current GitHub star count.</desc>
   <style>
     .card { fill: #f6f8fa; stroke: #d0d7de; }
@@ -39,10 +39,10 @@
   <path d="m46 24.5 3.8 7.7 8.5 1.2-6.1 6 1.4 8.4-7.6-4-7.6 4 1.4-8.4-6.1-6 8.5-1.2z" fill="#fff"/>
   <text class="title" x="76" y="34">ZSUI STAR JOURNEY · 收藏进度</text>
   <text class="subtitle" x="76" y="53">NEXT MILESTONE · 下一目标</text>
-  <text class="count" x="716" y="44" text-anchor="end">14 / 100</text>
+  <text class="count" x="716" y="44" text-anchor="end">15 / 100</text>
   <rect class="track" x="40" y="76" width="680" height="12" rx="6"/>
-  <rect x="40" y="76" width="95.2" height="12" fill="url(#accent)" clip-path="url(#track-clip)"/>
-  <circle cx="135.2" cy="82" r="5" fill="#d2a8ff" filter="url(#glow)"/>
+  <rect x="40" y="76" width="102" height="12" fill="url(#accent)" clip-path="url(#track-clip)"/>
+  <circle cx="142" cy="82" r="5" fill="#d2a8ff" filter="url(#glow)"/>
   <g>
     <circle class="marker" cx="210" cy="82" r="5"/>
     <circle class="marker" cx="380" cy="82" r="5"/>
