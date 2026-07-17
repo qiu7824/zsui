@@ -471,8 +471,13 @@ pub(crate) fn install_linux_gtk_draw_plan(
         application.clone(),
         &runtime_timer,
     );
+    // Keep the paintable attached for the lifetime of the host. Creating it
+    // only when a proof capture is requested can race its first invalidation
+    // under a headless GSK renderer and yield an empty render node.
+    let paintable = gtk::WidgetPaintable::new(Some(&drawing_area));
     LinuxGtkDrawViewHost {
         area: drawing_area,
+        paintable,
         plan,
         runtime,
         ime,
@@ -484,6 +489,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
 #[derive(Clone)]
 pub(crate) struct LinuxGtkDrawViewHost {
     area: gtk::DrawingArea,
+    paintable: gtk::WidgetPaintable,
     plan: Rc<RefCell<NativeDrawPlan>>,
     runtime: Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: gtk::IMMulticontext,
@@ -592,8 +598,7 @@ impl LinuxGtkDrawViewHost {
         let scale_factor = self.area.scale_factor().max(1) as f32;
         let snapshot = gtk::Snapshot::new();
         snapshot.scale(scale_factor, scale_factor);
-        let paintable = gtk::WidgetPaintable::new(Some(&self.area));
-        paintable.snapshot(
+        self.paintable.snapshot(
             &snapshot,
             f64::from(logical_width),
             f64::from(logical_height),
