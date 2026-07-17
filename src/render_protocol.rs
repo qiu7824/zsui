@@ -767,6 +767,24 @@ pub fn required_native_draw_command_operation_names() -> Vec<&'static str> {
 pub struct NativeDrawPlan {
     pub commands: Vec<NativeDrawCommand>,
     pub theme_mode: ZsuiThemeMode,
+    /// Per-mille scale resolved from the target desktop's configured UI font.
+    ///
+    /// Integer storage keeps draw plans deterministic and comparable while
+    /// allowing AppKit and GTK to feed their runtime font setting into both
+    /// layout and final native text shaping.
+    #[serde(default = "default_typography_scale_per_mille")]
+    typography_scale_per_mille: u16,
+}
+
+pub(crate) const fn default_typography_scale_per_mille() -> u16 {
+    1_000
+}
+
+pub(crate) fn normalize_typography_scale_per_mille(scale: f32) -> u16 {
+    if !scale.is_finite() {
+        return default_typography_scale_per_mille();
+    }
+    (scale.clamp(0.75, 3.0) * 1_000.0).round() as u16
 }
 
 impl Default for NativeDrawPlan {
@@ -774,6 +792,7 @@ impl Default for NativeDrawPlan {
         Self {
             commands: Vec::new(),
             theme_mode: ZsuiThemeMode::System,
+            typography_scale_per_mille: default_typography_scale_per_mille(),
         }
     }
 }
@@ -783,12 +802,25 @@ impl NativeDrawPlan {
         Self {
             commands: commands.into_iter().collect(),
             theme_mode: ZsuiThemeMode::System,
+            typography_scale_per_mille: default_typography_scale_per_mille(),
         }
     }
 
     pub fn theme_mode(mut self, theme_mode: ZsuiThemeMode) -> Self {
         self.theme_mode = theme_mode;
         self
+    }
+
+    pub fn typography_scale(&self) -> f32 {
+        f32::from(if self.typography_scale_per_mille == 0 {
+            default_typography_scale_per_mille()
+        } else {
+            self.typography_scale_per_mille
+        }) / 1_000.0
+    }
+
+    pub(crate) fn set_typography_scale(&mut self, scale: f32) {
+        self.typography_scale_per_mille = normalize_typography_scale_per_mille(scale);
     }
 
     pub fn push(&mut self, command: NativeDrawCommand) {
@@ -1014,5 +1046,19 @@ mod draw_command_tests {
             (22.0, 26.0, TextWeight::Regular)
         );
         assert_eq!((gtk_caption.size, gtk_caption.line_height), (11.5, 16.0));
+    }
+
+    #[test]
+    fn native_draw_plan_typography_scale_is_deterministic_and_backward_compatible() {
+        let legacy: NativeDrawPlan =
+            serde_json::from_str(r#"{"commands":[],"theme_mode":"System"}"#).unwrap();
+        assert_eq!(legacy.typography_scale(), 1.0);
+
+        let mut plan = NativeDrawPlan::default();
+        plan.set_typography_scale(1.375);
+        assert_eq!(plan.typography_scale_per_mille, 1_375);
+        assert_eq!(plan.typography_scale(), 1.375);
+        plan.set_typography_scale(f32::NAN);
+        assert_eq!(plan.typography_scale(), 1.0);
     }
 }

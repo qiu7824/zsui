@@ -402,6 +402,11 @@ cargo run --example desktop_native_showcase --features full
 AppKit 与 GTK4 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
 完成绘制、输入、截图和目标机交互证据。
 
+应用层使用 `section`、`navigation_view(ZsNavigationViewSpec)`、
+`command_bar(ZsCommandBarSpec)` 和 `toolbar_button` 声明语义界面，不传平台枚举。
+平台专用组合、度量和图标来源在框架内部解析；应用仍可通过公共 spec、
+`ZsuiSpacingTokens::default()` 和 View 尺寸/间距修饰器统一修改参数，无需增加平台分支。
+
 ### 完整组件 Gallery
 
 ```powershell

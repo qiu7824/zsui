@@ -867,6 +867,7 @@ pub struct NativeViewCaptureEvidence {
     pub pixel_width: u32,
     pub pixel_height: u32,
     pub scale_factor: f64,
+    pub typography_scale: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1155,6 +1156,7 @@ impl NativeWindowSmokeRunReport {
 pub(crate) struct NativeViewInputRuntime {
     surface: Option<Rect>,
     dpi: Dpi,
+    typography_scale_per_mille: u16,
     text_shaping: crate::native_input_visuals::NativeTextShapingBackend,
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
@@ -1457,6 +1459,8 @@ impl NativeViewInputRuntime {
         let mut runtime = Self {
             surface: Some(surface),
             dpi: Dpi::standard(),
+            typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
+            ),
             text_shaping: crate::native_input_visuals::NativeTextShapingBackend::default(),
             interaction_plan,
             ui_command_view,
@@ -1741,6 +1745,43 @@ impl NativeViewInputRuntime {
         false
     }
 
+    fn typography_scale(&self) -> f32 {
+        f32::from(if self.typography_scale_per_mille == 0 {
+            crate::render_protocol::default_typography_scale_per_mille()
+        } else {
+            self.typography_scale_per_mille
+        }) / 1_000.0
+    }
+
+    pub(crate) fn set_typography_scale(&mut self, scale: f32) -> Option<NativeDrawPlan> {
+        let scale_per_mille = crate::render_protocol::normalize_typography_scale_per_mille(scale);
+        if self.typography_scale_per_mille == scale_per_mille {
+            return None;
+        }
+        self.typography_scale_per_mille = scale_per_mille;
+        self.text_shaping.release_idle_memory();
+        let scale = self.typography_scale();
+        let plan = if let Some(runtime) = &self.live_view {
+            runtime.set_typography_scale(scale);
+            if self.view_suspended {
+                return None;
+            }
+            self.interaction_plan = Some(runtime.interaction_plan());
+            runtime.draw_plan()
+        } else {
+            let surface = self.surface?;
+            let view = self.ui_command_view.as_mut()?;
+            let mut layout_cx = ViewLayoutCx::new(surface, self.dpi).with_typography_scale(scale);
+            view.layout(&mut layout_cx);
+            self.interaction_plan = Some(view.interaction_plan());
+            let mut paint_cx = ViewPaintCx::new(self.dpi);
+            paint_cx.set_typography_scale(scale);
+            view.paint(&mut paint_cx);
+            paint_cx.into_plan()
+        };
+        Some(self.compose_input_visuals(plan))
+    }
+
     pub(crate) fn set_surface(&mut self, surface: Rect, dpi: Dpi) -> NativeViewInputDispatchReport {
         let surface = Rect {
             x: surface.x,
@@ -1768,6 +1809,7 @@ impl NativeViewInputRuntime {
         self.dpi = dpi;
         report.surface_changed = true;
         report.handled = true;
+        let typography_scale = self.typography_scale();
         if let Some(runtime) = &self.live_view {
             runtime.set_surface(surface, dpi);
             if !self.view_suspended {
@@ -1775,12 +1817,14 @@ impl NativeViewInputRuntime {
                 report.redraw_plan = Some(runtime.draw_plan());
             }
         } else if let Some(view) = &mut self.ui_command_view {
-            let mut layout_cx = ViewLayoutCx::new(surface, dpi);
+            let mut layout_cx =
+                ViewLayoutCx::new(surface, dpi).with_typography_scale(typography_scale);
             view.layout(&mut layout_cx);
             let interaction_plan = view.interaction_plan();
             report.hit_target_count = interaction_plan.hit_target_count();
             self.interaction_plan = Some(interaction_plan);
             let mut paint_cx = ViewPaintCx::new(dpi);
+            paint_cx.set_typography_scale(typography_scale);
             view.paint(&mut paint_cx);
             report.redraw_plan = Some(paint_cx.into_plan());
         }
@@ -4709,6 +4753,7 @@ impl NativeViewInputRuntime {
                 .map(|epoch| epoch.elapsed())
                 .unwrap_or_default();
             let mut paint_cx = ViewPaintCx::with_animation_elapsed(self.dpi, elapsed);
+            paint_cx.set_typography_scale(self.typography_scale());
             view.paint(&mut paint_cx);
             paint_cx.into_plan()
         };
@@ -5896,16 +5941,19 @@ impl NativeViewInputRuntime {
             (update.commands, update.ui_commands, update.quit_requested)
         } else {
             let mut event_cx = ViewEventCx::new();
+            let typography_scale = self.typography_scale();
             if let Some(view) = &mut self.ui_command_view {
                 view.event(&mut event_cx, &event);
                 if let Some(surface) = self.surface {
-                    let mut layout_cx = ViewLayoutCx::new(surface, self.dpi);
+                    let mut layout_cx = ViewLayoutCx::new(surface, self.dpi)
+                        .with_typography_scale(typography_scale);
                     view.layout(&mut layout_cx);
                     let interaction_plan = view.interaction_plan();
                     report.hit_target_count = interaction_plan.hit_target_count();
                     self.interaction_plan = Some(interaction_plan);
                 }
                 let mut paint_cx = ViewPaintCx::new(self.dpi);
+                paint_cx.set_typography_scale(typography_scale);
                 view.paint(&mut paint_cx);
                 report.redraw_plan = Some(paint_cx.into_plan());
             }
@@ -12623,6 +12671,7 @@ mod tests {
             pixel_width: 1920,
             pixel_height: 1280,
             scale_factor: 2.0,
+            typography_scale: 1.0,
         };
 
         let json = serde_json::to_value(&evidence).expect("capture evidence should serialize");
@@ -12631,6 +12680,7 @@ mod tests {
         assert_eq!(json["logical_width"], 960);
         assert_eq!(json["pixel_width"], 1920);
         assert_eq!(json["scale_factor"], 2.0);
+        assert_eq!(json["typography_scale"], 1.0);
     }
 
     #[test]

@@ -361,7 +361,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Navigation,
         FirstPass,
         Some("shell"),
-        "src/shell_layout.rs",
+        "src/view/widgets/data.rs + src/view/widgets/button.rs + src/widget_render.rs",
         NAVIGATION_GAPS
     ),
     component!(
@@ -388,7 +388,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Navigation,
         FirstPass,
         Some("document-shell"),
-        "src/document_shell.rs",
+        "src/view/widgets/data.rs + src/view/widgets/button.rs + native menu services",
         DOCUMENT_SHELL_GAPS
     ),
     component!(

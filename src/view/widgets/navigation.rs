@@ -16,7 +16,7 @@ where
         on_select: None,
         on_expanded_change: None,
     })
-    .height(metrics.control_height)
+    .native_typography_height(metrics.control_height)
 }
 
 /// Wraps one page in a modal, self-drawn content-dialog layer.

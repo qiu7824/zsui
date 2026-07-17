@@ -55,11 +55,10 @@ framework architecture.
   explicit dirty state and transactional UTF-8 save/save-as.
 - `ZsDocumentShellCommand` converts to and from the public `Command` type, so
   the same typed commands drive buttons, native menus and accelerators.
-- `platform_document_command_bar_for_style` owns document-toolbar grouping and
-  platform action density. Every `toolbar_button` keeps a semantic icon and a
-  typed command message; AppKit and GTK use flat toolbar/header-bar actions and
-  keep secondary commands in their native menus, while Windows adds compact
-  icon actions without compressing bilingual labels.
+- `command_bar(ZsCommandBarSpec)` owns document-toolbar grouping without a
+  platform argument. Every declared `toolbar_button` remains visible and keeps
+  a semantic icon plus typed command message. Save As, Status and About stay in
+  the native menu instead of being conditionally inserted by the example.
 - The document surface is hosted by the framework `TabView`. Its file icon and
   document title share the actual tab header row; the editor is the selected
   tab content. The acceptance app currently proves one static document tab and

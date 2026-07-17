@@ -38,6 +38,10 @@ pub(crate) fn install_linux_gtk_draw_plan(
     drawing_area.set_hexpand(true);
     drawing_area.set_vexpand(true);
     drawing_area.set_focusable(true);
+    let mut plan = plan;
+    if let Some(updated) = runtime.set_typography_scale(linux_gtk_ui_font_scale()) {
+        plan = updated;
+    }
     let plan = Rc::new(RefCell::new(plan));
     #[cfg(feature = "text-input-core")]
     runtime.use_gtk_text_shaping(drawing_area.pango_context());
@@ -80,11 +84,26 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     .then(|| linux_gtk_semantic_high_contrast_palette(area))
                     .flatten(),
             );
-            let mut sink = LinuxGtkDrawSink::new(area, context, palette);
+            let mut sink = LinuxGtkDrawSink::new(area, context, palette, plan.typography_scale());
             sink.draw_plan(&plan);
         }
     });
     if let Some(settings) = gtk::Settings::default() {
+        let area = drawing_area.downgrade();
+        let runtime = Rc::clone(&runtime);
+        let plan = Rc::clone(&plan);
+        settings.connect_gtk_font_name_notify(move |_settings| {
+            if let Some(area) = area.upgrade() {
+                if let Some(updated) = runtime
+                    .borrow_mut()
+                    .set_typography_scale(linux_gtk_ui_font_scale())
+                {
+                    *plan.borrow_mut() = updated;
+                }
+                area.queue_resize();
+                area.queue_draw();
+            }
+        });
         let area = drawing_area.downgrade();
         settings.connect_gtk_theme_name_notify(move |_settings| {
             if let Some(area) = area.upgrade() {
@@ -631,6 +650,7 @@ impl LinuxGtkDrawViewHost {
             pixel_width: texture.width().max(1) as u32,
             pixel_height: texture.height().max(1) as u32,
             scale_factor: f64::from(scale_factor),
+            typography_scale: self.plan.borrow().typography_scale(),
         })
     }
 
@@ -1074,8 +1094,13 @@ pub(crate) fn shape_linux_gtk_text_line(
         return None;
     }
     let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Gtk);
-    let mut style = TextStyle::line(linux_gtk_ui_font_family(), body.size, Color::rgb(0, 0, 0));
-    style.line_height = body.line_height;
+    let typography_scale = linux_gtk_ui_font_scale();
+    let mut style = TextStyle::line(
+        linux_gtk_ui_font_family(),
+        body.size * typography_scale,
+        Color::rgb(0, 0, 0),
+    );
+    style.line_height = body.line_height * typography_scale;
     style.semantic_role = Some(crate::TextRole::Body);
     let layout = gtk::pango::Layout::new(context);
     configure_pango_layout(&layout, text, &style, None);
@@ -1138,6 +1163,7 @@ impl<'a> LinuxGtkDrawSink<'a> {
         area: &'a gtk::DrawingArea,
         context: &'a gtk::cairo::Context,
         palette: NativeDrawPalette,
+        typography_scale: f32,
     ) -> Self {
         let font_family = linux_gtk_ui_font_family();
         Self {
@@ -1150,7 +1176,8 @@ impl<'a> LinuxGtkDrawSink<'a> {
                 font_family,
                 crate::ZsTypographyPlatformStyle::Gtk,
                 palette,
-            ),
+            )
+            .with_typography_scale(typography_scale),
             text_layout: LinuxGtkTextLayout::new(area.pango_context()),
             clip_depth: 0,
         }
@@ -1471,6 +1498,28 @@ fn linux_gtk_ui_font_family() -> String {
         })
         .filter(|family| !family.trim().is_empty())
         .unwrap_or_else(|| "Adwaita Sans".to_string())
+}
+
+pub(crate) fn linux_gtk_ui_font_scale() -> f32 {
+    let Some(description) = gtk::Settings::default()
+        .and_then(|settings| settings.gtk_font_name())
+        .map(|name| gtk::pango::FontDescription::from_string(name.as_str()))
+    else {
+        return 1.0;
+    };
+    let configured_size = description.size();
+    if configured_size <= 0 {
+        return 1.0;
+    }
+    let logical_pixels = if description.is_size_absolute() {
+        configured_size as f32 / gtk::pango::SCALE as f32
+    } else {
+        configured_size as f32 / gtk::pango::SCALE as f32 * (96.0 / 72.0)
+    };
+    // The semantic GTK ramp uses a 14 logical-pixel body as its fallback.
+    // GtkSettings stores the user's configured size in Pango units; converting
+    // it here keeps layout and Pango rendering on the same scale.
+    (logical_pixels / 14.0).clamp(0.75, 3.0)
 }
 
 fn configure_pango_layout(

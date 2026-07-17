@@ -24,6 +24,21 @@ mod tests {
         assert_eq!(style.weight, crate::TextWeight::Automatic);
     }
 
+    #[cfg(feature = "label")]
+    #[test]
+    fn wrapped_text_uses_intrinsic_lines_without_freezing_to_one_line() {
+        let mut style = SemanticTextStyle::body();
+        style.wrap = crate::TextWrap::Word;
+        style.ellipsis = false;
+        let node: ViewNode<()> = styled_text("第一行\nSecond line", style);
+        let line_height = crate::TextRole::Body
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height;
+
+        assert_eq!(node.style.height, None);
+        assert_eq!(node.style.min_height, Some(Dp::new(line_height * 2.0)));
+    }
+
     #[cfg(any(
         feature = "button",
         feature = "toggle-button",
@@ -182,7 +197,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 width: 120,
-                height: 32,
+                height: 48,
             },
             Dpi::standard(),
         );
@@ -198,7 +213,7 @@ mod tests {
         assert!(paint.plan().commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::Text(command)
-                if command.text == "Save" && command.style.role == crate::TextRole::Body
+                if command.text == "Save" && command.style.role == crate::TextRole::Caption
         )));
         assert!(!paint
             .plan()
@@ -244,6 +259,32 @@ mod tests {
             NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Sidebar
         )));
         assert_eq!(events.into_messages(), vec![Msg::SaveClicked]);
+    }
+
+    #[test]
+    #[cfg(all(feature = "label", feature = "button"))]
+    fn runtime_typography_scale_expands_semantic_line_and_control_heights() {
+        let mut view = column([text::<()>("中文 Body"), button::<()>("保存 / Save")]);
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 200,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()).with_typography_scale(1.5));
+
+        let body = crate::TextRole::Body
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height;
+        let control = crate::ZsBaseControlMetrics::current().button_height.0;
+        assert_eq!(
+            view.children[0].bounds().unwrap().height,
+            (body * 1.5).round() as i32
+        );
+        assert_eq!(
+            view.children[1].bounds().unwrap().height,
+            (control * 1.5).round() as i32
+        );
     }
 
     #[test]
@@ -344,6 +385,42 @@ mod tests {
         assert_eq!(navigation_bounds.width, 240);
         assert_eq!(content_bounds.x, 252);
         assert_eq!(content_bounds.width, 708);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn overconstrained_row_preserves_control_text_minimum_widths() {
+        let first = WidgetId::new(701);
+        let second = WidgetId::new(702);
+        let mut view: ViewNode<()> = row([
+            button("保存设置").id(first),
+            button("Export settings").id(second),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 48,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("button should expose layout bounds")
+                .bounds
+        };
+        let metrics = crate::ZsBaseControlMetrics::for_platform(
+            crate::ZsBaseControlPlatformStyle::current(),
+        );
+
+        assert!(bounds_for(first).width >= metrics.button_minimum_width.0 as i32);
+        assert!(bounds_for(second).width >= metrics.button_minimum_width.0 as i32);
+        assert!(bounds_for(second).x >= bounds_for(first).x + bounds_for(first).width + 8);
     }
 
     #[test]

@@ -19,17 +19,76 @@ pub fn styled_text<Msg>(
 
 /// Deterministic semantic-label variant for framework platform compositions.
 #[cfg(feature = "label")]
-pub fn styled_text_for_platform<Msg>(
+pub(crate) fn styled_text_for_platform<Msg>(
     platform: crate::ZsTypographyPlatformStyle,
     text: impl Into<String>,
     style: crate::SemanticTextStyle,
 ) -> ViewNode<Msg> {
     let line_height = style.role.metrics_for(platform).line_height;
-    ViewNode::new(ViewNodeKind::Text {
-        text: text.into(),
+    let text = text.into();
+    let explicit_line_count = text.lines().count().max(1) as f32;
+    let node = ViewNode::new(ViewNodeKind::Text {
+        text,
         style,
-    })
-    .height(crate::Dp::new(line_height))
+    });
+    if style.wrap == crate::TextWrap::Word {
+        // A wrapping label must not be frozen to a one-line box. The native
+        // backend owns final shaping and wrapping; the shared tree only
+        // reserves the explicit lines and lets the label consume available
+        // vertical space.
+        node.native_typography_min_height(crate::Dp::new(line_height * explicit_line_count))
+    } else {
+        node.native_typography_height(crate::Dp::new(line_height))
+    }
+}
+
+#[cfg(feature = "button")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ZsToolbarMetrics {
+    pub bar_height: Dp,
+    pub button_height: Dp,
+    pub icon_size: Dp,
+    pub content_gap: Dp,
+    pub item_gap: Dp,
+    pub label_role: crate::TextRole,
+}
+
+#[cfg(feature = "button")]
+impl ZsToolbarMetrics {
+    pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
+        match platform {
+            crate::ZsBaseControlPlatformStyle::Windows => Self {
+                // WinUI CommandBar with labels on the right keeps the closed
+                // compact 48 epx height, 20 epx primary icon, 8 epx label gap
+                // and the AppBarButton 12 epx label style.
+                bar_height: Dp::new(48.0),
+                button_height: Dp::new(48.0),
+                icon_size: Dp::new(20.0),
+                content_gap: Dp::new(8.0),
+                item_gap: Dp::new(8.0),
+                label_role: crate::TextRole::Caption,
+            },
+            crate::ZsBaseControlPlatformStyle::Macos => Self {
+                bar_height: Dp::new(28.0),
+                button_height: Dp::new(28.0),
+                icon_size: Dp::new(16.0),
+                content_gap: Dp::new(6.0),
+                item_gap: Dp::new(6.0),
+                label_role: crate::TextRole::Button,
+            },
+            crate::ZsBaseControlPlatformStyle::Gtk => Self {
+                // Libadwaita's toolbar class specifies 6 px spacing and
+                // margins; control height and font remain GTK semantic
+                // fallbacks until the backend resolves the active theme.
+                bar_height: Dp::new(34.0),
+                button_height: Dp::new(34.0),
+                icon_size: Dp::new(16.0),
+                content_gap: Dp::new(6.0),
+                item_gap: Dp::new(6.0),
+                label_role: crate::TextRole::Button,
+            },
+        }
+    }
 }
 
 #[cfg(feature = "button")]
@@ -45,16 +104,16 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
         on_click: None,
     })
     .min_width(minimum_width)
-    .height(metrics.button_height)
+    .native_typography_height(metrics.button_height)
     .flex(0.0)
 }
 
 /// Creates an icon-and-label action for a platform toolbar or header bar.
 ///
 /// The framework keeps this presentation flat at rest and maps the semantic
-/// icon through WinUI, SF Symbols or the GTK symbolic icon theme. Use
-/// [`platform_document_command_bar_for_style`] to let the framework own
-/// platform action density and grouping.
+/// icon through WinUI, SF Symbols or the GTK symbolic icon theme. Use it in a
+/// [`ZsCommandBarSpec`](crate::ZsCommandBarSpec) so the framework owns platform
+/// action density and grouping.
 #[cfg(feature = "button")]
 pub fn toolbar_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
     toolbar_button_for_style(
@@ -66,32 +125,22 @@ pub fn toolbar_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> Vie
 
 /// Deterministic toolbar-button variant for target proof fixtures and tests.
 #[cfg(feature = "button")]
-pub fn toolbar_button_for_style<Msg>(
+pub(crate) fn toolbar_button_for_style<Msg>(
     platform: crate::ZsBaseControlPlatformStyle,
     label: impl Into<String>,
     icon: crate::ZsIcon,
 ) -> ViewNode<Msg> {
-    let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
+    let base = crate::ZsBaseControlMetrics::for_platform(platform);
+    let metrics = ZsToolbarMetrics::for_platform(platform);
     let label = label.into();
-    let icon_size = Dp::new(match platform {
-        // WinUI AppBarButton primary-command icons are 20×20 epx.
-        crate::ZsBaseControlPlatformStyle::Windows => 20.0,
-        crate::ZsBaseControlPlatformStyle::Macos
-        | crate::ZsBaseControlPlatformStyle::Gtk => 16.0,
-    });
-    let content_gap = Dp::new(match platform {
-        crate::ZsBaseControlPlatformStyle::Windows => 8.0,
-        crate::ZsBaseControlPlatformStyle::Macos
-        | crate::ZsBaseControlPlatformStyle::Gtk => 6.0,
-    });
     let minimum_width = Dp::new(
-        metrics
+        base
             .estimated_text_width_with_shaping_reserve(&label)
             .0
-            + metrics.button_padding_left.0
-            + icon_size.0
-            + content_gap.0
-            + metrics.button_padding_right.0,
+            + base.button_padding_left.0
+            + metrics.icon_size.0
+            + metrics.content_gap.0
+            + base.button_padding_right.0,
     );
     ViewNode::new(ViewNodeKind::Button {
         label,
@@ -103,7 +152,7 @@ pub fn toolbar_button_for_style<Msg>(
         on_click: None,
     })
     .min_width(minimum_width)
-    .height(metrics.button_height)
+    .native_typography_height(metrics.button_height)
     .flex(0.0)
 }
 
@@ -124,7 +173,7 @@ pub fn navigation_item<Msg>(
         presentation: ZsButtonPresentation::NavigationItem { icon, selected },
         on_click: None,
     })
-    .height(metrics.item_height)
+    .native_typography_height(metrics.item_height)
     .flex(0.0)
 }
 
@@ -144,7 +193,7 @@ pub fn toggle_button<Msg>(label: impl Into<String>, checked: bool) -> ViewNode<M
         on_toggle: None,
     })
     .min_width(minimum_width)
-    .height(metrics.minimum_height)
+    .native_typography_height(metrics.minimum_height)
     .flex(0.0)
 }
 
@@ -161,7 +210,7 @@ pub fn checkbox<Msg>(label: impl Into<String>, checked: bool) -> ViewNode<Msg> {
         on_toggle: None,
     })
     .min_width(minimum_width)
-    .height(metrics.check_height)
+    .native_typography_height(metrics.check_height)
     .flex(0.0)
 }
 
@@ -192,7 +241,7 @@ pub fn radio_button<Msg>(label: impl Into<String>, selected: bool) -> ViewNode<M
         on_choose: None,
     })
     .min_width(minimum_width)
-    .height(metrics.radio_height)
+    .native_typography_height(metrics.radio_height)
     .flex(0.0)
 }
 

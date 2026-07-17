@@ -11,7 +11,7 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         on_selection_change: None,
     })
     .min_width(metrics.text_input_minimum_width)
-    .height(metrics.text_input_height)
+    .native_typography_height(metrics.text_input_height)
 }
 
 #[cfg(feature = "textbox")]
@@ -39,7 +39,7 @@ pub fn password_box<Msg>(value: impl Into<crate::ZsPassword>) -> ViewNode<Msg> {
         on_change: None,
     })
     .min_width(base.text_input_minimum_width)
-    .height(metrics.minimum_height)
+    .native_typography_height(metrics.minimum_height)
 }
 
 #[cfg(feature = "slider")]
@@ -80,7 +80,7 @@ pub fn number_box<Msg>(
         on_change: None,
     })
     .min_width(metrics.button_minimum_width)
-    .height(metrics.text_input_height)
+    .native_typography_height(metrics.text_input_height)
 }
 
 #[cfg(feature = "auto-suggest")]
@@ -106,7 +106,7 @@ where
         on_query_submit: None,
         on_expanded_change: None,
     })
-    .height(metrics.control_height)
+    .native_typography_height(metrics.control_height)
 }
 
 #[cfg(feature = "date-picker")]
@@ -127,7 +127,7 @@ pub fn date_picker<Msg>(value: ZsDate) -> ViewNode<Msg> {
         on_expanded_change: None,
     })
     .min_width(metrics.selection_minimum_width)
-    .height(metrics.selection_height)
+    .native_typography_height(metrics.selection_height)
 }
 
 #[cfg(feature = "time-picker")]
@@ -144,7 +144,7 @@ pub fn time_picker<Msg>(value: ZsTime) -> ViewNode<Msg> {
         on_expanded_change: None,
     })
     .min_width(metrics.time_picker_minimum_width)
-    .height(metrics.selection_height)
+    .native_typography_height(metrics.selection_height)
 }
 
 #[cfg(feature = "color-picker")]
@@ -159,5 +159,5 @@ pub fn color_picker<Msg>(state: ZsColorPickerState) -> ViewNode<Msg> {
         on_channel_change: None,
     })
     .min_width(metrics.selection_minimum_width)
-    .height(metrics.selection_height)
+    .native_typography_height(metrics.selection_height)
 }

@@ -866,11 +866,27 @@ impl ViewHitTargetKind {
 pub struct ViewLayoutCx {
     pub bounds: Rect,
     pub dpi: Dpi,
+    pub(crate) typography_scale_per_mille: u16,
 }
 
 impl ViewLayoutCx {
     pub const fn new(bounds: Rect, dpi: Dpi) -> Self {
-        Self { bounds, dpi }
+        Self {
+            bounds,
+            dpi,
+            typography_scale_per_mille:
+                crate::render_protocol::default_typography_scale_per_mille(),
+        }
+    }
+
+    pub(crate) fn with_typography_scale(mut self, scale: f32) -> Self {
+        self.typography_scale_per_mille =
+            crate::render_protocol::normalize_typography_scale_per_mille(scale);
+        self
+    }
+
+    pub(crate) fn typography_scale(self) -> f32 {
+        f32::from(self.typography_scale_per_mille) / 1_000.0
     }
 }
 

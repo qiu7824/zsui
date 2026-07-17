@@ -222,6 +222,12 @@ pub struct ZsBaseControlMetrics {
 }
 
 impl ZsBaseControlMetrics {
+    /// Resolves the native control metrics for the current target without
+    /// exposing a platform branch to application code.
+    pub const fn current() -> Self {
+        Self::for_platform(ZsBaseControlPlatformStyle::current())
+    }
+
     pub const fn for_platform(platform: ZsBaseControlPlatformStyle) -> Self {
         match platform {
             ZsBaseControlPlatformStyle::Windows => Self {
@@ -361,7 +367,7 @@ impl ZsBaseControlMetrics {
 
     pub fn button_minimum_width_for_label(self, label: &str) -> Dp {
         Dp::new(self.button_minimum_width.0.max(
-            self.estimated_text_width(label).0
+            self.estimated_text_width_with_shaping_reserve(label).0
                 + self.button_padding_left.0
                 + self.button_padding_right.0
                 + 4.0,
@@ -3327,6 +3333,15 @@ impl ZsTabViewMetrics {
             },
         }
     }
+
+    pub const fn label_role(platform: ZsTabPlatformStyle) -> TextRole {
+        match platform {
+            // WinUI's TabViewItemHeaderFontSize theme resource is 12 epx.
+            ZsTabPlatformStyle::Windows => TextRole::Caption,
+            // AppKit and GTK render tab labels as ordinary control content.
+            ZsTabPlatformStyle::Macos | ZsTabPlatformStyle::Gtk => TextRole::Button,
+        }
+    }
 }
 
 #[cfg(feature = "tabs")]
@@ -3676,10 +3691,7 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
             &tab.label,
             header.text_bounds,
             SemanticTextStyle {
-                // Tab headers are control content on all three desktops.
-                // Caption made Windows bilingual labels use the 12 epx Small
-                // optical master and look visibly cramped.
-                role: TextRole::Body,
+                role: ZsTabViewMetrics::label_role(plan.platform),
                 color: if header.selected {
                     ColorRole::PrimaryText
                 } else {
@@ -8927,6 +8939,14 @@ mod tests {
         assert_eq!(windows.icon_gap, Dp::new(10.0));
         assert_eq!(windows.minimum_item_width, Dp::new(100.0));
         assert_eq!(windows.maximum_item_width, Dp::new(240.0));
+        assert_eq!(
+            ZsTabViewMetrics::label_role(ZsTabPlatformStyle::Windows),
+            TextRole::Caption
+        );
+        assert_eq!(
+            ZsTabViewMetrics::label_role(ZsTabPlatformStyle::Macos),
+            TextRole::Button
+        );
         assert!(macos.outer_inset.0 > windows.outer_inset.0);
         assert_eq!(gtk.selection_indicator_height, Dp::new(0.0));
         assert_eq!(gtk.header_top_padding, Dp::new(4.0));
@@ -9071,7 +9091,7 @@ mod tests {
             command,
             NativeDrawCommand::Text(text)
                 if text.text == "General"
-                    && text.style.role == TextRole::Body
+                    && text.style.role == TextRole::Caption
                     && text.style.horizontal_align == HorizontalAlign::Start
                     && text.style.weight == TextWeight::Regular
         )));

@@ -84,6 +84,9 @@ pub enum SpacingToken {
     Md,
     Lg,
     Xl,
+    ContentGap,
+    ContentPadding,
+    PagePadding,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -146,6 +149,9 @@ pub struct ZsuiSpacingTokens {
     pub md: Dp,
     pub lg: Dp,
     pub xl: Dp,
+    pub content_gap: Dp,
+    pub content_padding: Dp,
+    pub page_padding: Dp,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -301,6 +307,9 @@ impl ZsuiTheme {
             SpacingToken::Md => self.spacing.md,
             SpacingToken::Lg => self.spacing.lg,
             SpacingToken::Xl => self.spacing.xl,
+            SpacingToken::ContentGap => self.spacing.content_gap,
+            SpacingToken::ContentPadding => self.spacing.content_padding,
+            SpacingToken::PagePadding => self.spacing.page_padding,
         }
     }
 }
@@ -313,23 +322,77 @@ impl Default for ZsuiTheme {
 
 impl Default for ZsuiRadiusTokens {
     fn default() -> Self {
-        Self {
-            small: Dp::new(ZSUI_FLUENT_CONTROL_RADIUS as f32),
-            medium: Dp::new(ZSUI_FLUENT_CARD_RADIUS as f32),
-            large: Dp::new(12.0),
-            pill: Dp::new(999.0),
+        Self::for_platform(crate::ZsBaseControlPlatformStyle::current())
+    }
+}
+
+impl ZsuiRadiusTokens {
+    pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
+        match platform {
+            crate::ZsBaseControlPlatformStyle::Windows => Self {
+                small: Dp::new(ZSUI_FLUENT_CONTROL_RADIUS as f32),
+                medium: Dp::new(ZSUI_FLUENT_CARD_RADIUS as f32),
+                large: Dp::new(12.0),
+                pill: Dp::new(999.0),
+            },
+            crate::ZsBaseControlPlatformStyle::Macos => Self {
+                small: Dp::new(5.0),
+                medium: Dp::new(6.0),
+                large: Dp::new(10.0),
+                pill: Dp::new(999.0),
+            },
+            crate::ZsBaseControlPlatformStyle::Gtk => Self {
+                small: Dp::new(6.0),
+                medium: Dp::new(12.0),
+                large: Dp::new(18.0),
+                pill: Dp::new(999.0),
+            },
         }
     }
 }
 
 impl Default for ZsuiSpacingTokens {
     fn default() -> Self {
-        Self {
-            xs: Dp::new(ZSUI_FLUENT_GRID_UNIT as f32),
-            sm: Dp::new((ZSUI_FLUENT_GRID_UNIT * 2) as f32),
-            md: Dp::new((ZSUI_FLUENT_GRID_UNIT * 3) as f32),
-            lg: Dp::new((ZSUI_FLUENT_GRID_UNIT * 4) as f32),
-            xl: Dp::new((ZSUI_FLUENT_GRID_UNIT * 6) as f32),
+        Self::for_platform(crate::ZsBaseControlPlatformStyle::current())
+    }
+}
+
+impl ZsuiSpacingTokens {
+    /// Returns the native spacing scale and semantic content insets for one
+    /// desktop family. Normal applications use [`Default`] and never select a
+    /// platform; the explicit form exists for framework proofs.
+    pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
+        match platform {
+            crate::ZsBaseControlPlatformStyle::Windows => Self {
+                xs: Dp::new(ZSUI_FLUENT_GRID_UNIT as f32),
+                sm: Dp::new((ZSUI_FLUENT_GRID_UNIT * 2) as f32),
+                md: Dp::new((ZSUI_FLUENT_GRID_UNIT * 3) as f32),
+                lg: Dp::new((ZSUI_FLUENT_GRID_UNIT * 4) as f32),
+                xl: Dp::new((ZSUI_FLUENT_GRID_UNIT * 6) as f32),
+                content_gap: Dp::new(10.0),
+                content_padding: Dp::new(12.0),
+                page_padding: Dp::new(24.0),
+            },
+            crate::ZsBaseControlPlatformStyle::Macos => Self {
+                xs: Dp::new(2.0),
+                sm: Dp::new(6.0),
+                md: Dp::new(8.0),
+                lg: Dp::new(12.0),
+                xl: Dp::new(20.0),
+                content_gap: Dp::new(8.0),
+                content_padding: Dp::new(12.0),
+                page_padding: Dp::new(20.0),
+            },
+            crate::ZsBaseControlPlatformStyle::Gtk => Self {
+                xs: Dp::new(4.0),
+                sm: Dp::new(8.0),
+                md: Dp::new(12.0),
+                lg: Dp::new(16.0),
+                xl: Dp::new(24.0),
+                content_gap: Dp::new(12.0),
+                content_padding: Dp::new(16.0),
+                page_padding: Dp::new(24.0),
+            },
         }
     }
 }
@@ -377,13 +440,37 @@ impl ZsuiTypographyStyle {
 
 impl Default for ZsuiControlMetrics {
     fn default() -> Self {
-        Self {
-            compact_height: Dp::new(ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT as f32),
-            standard_height: Dp::new(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT as f32),
-            touch_target: Dp::new(ZSUI_FLUENT_TOUCH_TARGET as f32),
-            navigation_row_height: Dp::new(ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT as f32),
-            small_icon: Dp::new(ZSUI_FLUENT_SMALL_ICON_SIZE as f32),
-            standard_icon: Dp::new(ZSUI_FLUENT_STANDARD_ICON_SIZE as f32),
+        Self::for_platform(crate::ZsBaseControlPlatformStyle::current())
+    }
+}
+
+impl ZsuiControlMetrics {
+    pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
+        match platform {
+            crate::ZsBaseControlPlatformStyle::Windows => Self {
+                compact_height: Dp::new(ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT as f32),
+                standard_height: Dp::new(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT as f32),
+                touch_target: Dp::new(ZSUI_FLUENT_TOUCH_TARGET as f32),
+                navigation_row_height: Dp::new(36.0),
+                small_icon: Dp::new(ZSUI_FLUENT_SMALL_ICON_SIZE as f32),
+                standard_icon: Dp::new(ZSUI_FLUENT_STANDARD_ICON_SIZE as f32),
+            },
+            crate::ZsBaseControlPlatformStyle::Macos => Self {
+                compact_height: Dp::new(22.0),
+                standard_height: Dp::new(28.0),
+                touch_target: Dp::new(32.0),
+                navigation_row_height: Dp::new(28.0),
+                small_icon: Dp::new(16.0),
+                standard_icon: Dp::new(16.0),
+            },
+            crate::ZsBaseControlPlatformStyle::Gtk => Self {
+                compact_height: Dp::new(30.0),
+                standard_height: Dp::new(34.0),
+                touch_target: Dp::new(40.0),
+                navigation_row_height: Dp::new(34.0),
+                small_icon: Dp::new(16.0),
+                standard_icon: Dp::new(18.0),
+            },
         }
     }
 }
@@ -396,8 +483,14 @@ mod tests {
     fn theme_resolves_tokens_without_scattered_literals() {
         let theme = ZsuiTheme::light();
 
-        assert_eq!(theme.spacing(SpacingToken::Md), Dp::new(12.0));
-        assert_eq!(theme.radius(RadiusToken::Medium), Dp::new(8.0));
+        assert_eq!(
+            theme.spacing(SpacingToken::Md),
+            ZsuiSpacingTokens::default().md
+        );
+        assert_eq!(
+            theme.radius(RadiusToken::Medium),
+            ZsuiRadiusTokens::default().medium
+        );
         assert_eq!(theme.color(ThemeColorToken::Accent).a, 255);
         assert_eq!(
             theme.typography(TypographyToken::BodyStrong).weight,
@@ -413,7 +506,7 @@ mod tests {
         );
         assert_eq!(
             theme.control_metric(ControlMetricToken::StandardHeight),
-            Dp::new(32.0)
+            ZsuiControlMetrics::default().standard_height
         );
     }
 
@@ -438,6 +531,49 @@ mod tests {
         assert_eq!(
             gtk.caption,
             ZsuiTypographyStyle::new(11.5, 16.0, TextWeight::Regular)
+        );
+    }
+
+    #[test]
+    fn spacing_tokens_keep_platform_density_out_of_application_branches() {
+        let windows = ZsuiSpacingTokens::for_platform(crate::ZsBaseControlPlatformStyle::Windows);
+        let macos = ZsuiSpacingTokens::for_platform(crate::ZsBaseControlPlatformStyle::Macos);
+        let gtk = ZsuiSpacingTokens::for_platform(crate::ZsBaseControlPlatformStyle::Gtk);
+
+        assert_eq!(windows.content_gap, Dp::new(10.0));
+        assert_eq!(macos.content_gap, Dp::new(8.0));
+        assert_eq!(gtk.content_gap, Dp::new(12.0));
+        assert_eq!(windows.content_padding, Dp::new(12.0));
+        assert_eq!(macos.content_padding, Dp::new(12.0));
+        assert_eq!(gtk.content_padding, Dp::new(16.0));
+        assert_eq!(windows.page_padding, Dp::new(24.0));
+        assert_eq!(macos.page_padding, Dp::new(20.0));
+        assert_eq!(gtk.page_padding, Dp::new(24.0));
+    }
+
+    #[test]
+    fn radius_and_control_tokens_follow_the_same_platform_profiles_as_widgets() {
+        let windows = ZsuiControlMetrics::for_platform(crate::ZsBaseControlPlatformStyle::Windows);
+        let macos = ZsuiControlMetrics::for_platform(crate::ZsBaseControlPlatformStyle::Macos);
+        let gtk = ZsuiControlMetrics::for_platform(crate::ZsBaseControlPlatformStyle::Gtk);
+
+        assert_eq!(windows.standard_height, Dp::new(32.0));
+        assert_eq!(macos.standard_height, Dp::new(28.0));
+        assert_eq!(gtk.standard_height, Dp::new(34.0));
+        assert_eq!(windows.navigation_row_height, Dp::new(36.0));
+        assert_eq!(macos.navigation_row_height, Dp::new(28.0));
+        assert_eq!(gtk.navigation_row_height, Dp::new(34.0));
+        assert_eq!(
+            ZsuiRadiusTokens::for_platform(crate::ZsBaseControlPlatformStyle::Windows).medium,
+            Dp::new(8.0)
+        );
+        assert_eq!(
+            ZsuiRadiusTokens::for_platform(crate::ZsBaseControlPlatformStyle::Macos).medium,
+            Dp::new(6.0)
+        );
+        assert_eq!(
+            ZsuiRadiusTokens::for_platform(crate::ZsBaseControlPlatformStyle::Gtk).medium,
+            Dp::new(12.0)
         );
     }
 

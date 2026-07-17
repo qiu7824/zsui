@@ -12,6 +12,7 @@ pub struct LiveViewUpdate {
 
 trait LiveViewDriver: Send {
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
+    fn set_typography_scale(&mut self, scale: f32) -> bool;
     fn suspend(&mut self) -> bool;
     fn resume(&mut self) -> LiveViewUpdate;
     fn is_suspended(&self) -> bool;
@@ -117,6 +118,10 @@ pub struct SharedLiveViewRuntime {
 impl SharedLiveViewRuntime {
     pub fn set_surface(&self, bounds: Rect, dpi: Dpi) -> bool {
         self.lock().set_surface(bounds, dpi)
+    }
+
+    pub(crate) fn set_typography_scale(&self, scale: f32) -> bool {
+        self.lock().set_typography_scale(scale)
     }
 
     pub fn draw_plan(&self) -> NativeDrawPlan {
@@ -364,6 +369,7 @@ where
     view: ViewNode<Msg>,
     bounds: Rect,
     dpi: Dpi,
+    typography_scale_per_mille: u16,
     revision: u64,
     animation_epoch: std::time::Instant,
     suspended: bool,
@@ -392,6 +398,8 @@ where
             view,
             bounds,
             dpi,
+            typography_scale_per_mille:
+                crate::render_protocol::default_typography_scale_per_mille(),
             revision: 0,
             animation_epoch: std::time::Instant::now(),
             suspended: false,
@@ -409,8 +417,13 @@ where
     }
 
     fn layout_current_view(&mut self) {
-        let mut cx = ViewLayoutCx::new(self.bounds, self.dpi);
+        let mut cx = ViewLayoutCx::new(self.bounds, self.dpi)
+            .with_typography_scale(self.typography_scale());
         self.view.layout(&mut cx);
+    }
+
+    fn typography_scale(&self) -> f32 {
+        f32::from(self.typography_scale_per_mille) / 1_000.0
     }
 
     fn apply_messages(&mut self, messages: Vec<Msg>) -> LiveViewUpdate {
@@ -448,6 +461,19 @@ where
         }
         self.bounds = bounds;
         self.dpi = dpi;
+        if !self.suspended {
+            self.layout_current_view();
+        }
+        self.revision = self.revision.saturating_add(1);
+        true
+    }
+
+    fn set_typography_scale(&mut self, scale: f32) -> bool {
+        let scale = crate::render_protocol::normalize_typography_scale_per_mille(scale);
+        if self.typography_scale_per_mille == scale {
+            return false;
+        }
+        self.typography_scale_per_mille = scale;
         if !self.suspended {
             self.layout_current_view();
         }
@@ -514,6 +540,7 @@ where
             return NativeDrawPlan::default();
         }
         let mut cx = ViewPaintCx::with_animation_elapsed(self.dpi, self.animation_epoch.elapsed());
+        cx.set_typography_scale(self.typography_scale());
         self.view.paint(&mut cx);
         cx.into_plan()
     }

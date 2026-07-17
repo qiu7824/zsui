@@ -179,6 +179,7 @@ pub(crate) struct NativeDrawTextStyleResolver {
     monospace_font_family: String,
     icon_font_family: String,
     typography_platform: crate::ZsTypographyPlatformStyle,
+    typography_scale_per_mille: u16,
     palette: NativeDrawPalette,
 }
 
@@ -195,14 +196,23 @@ impl NativeDrawTextStyleResolver {
             monospace_font_family: monospace_font_family.into(),
             icon_font_family: icon_font_family.into(),
             typography_platform,
+            typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
+            ),
             palette,
         }
+    }
+
+    pub(crate) fn with_typography_scale(mut self, scale: f32) -> Self {
+        self.typography_scale_per_mille =
+            crate::render_protocol::normalize_typography_scale_per_mille(scale);
+        self
     }
 }
 
 impl NativeStyleResolver for NativeDrawTextStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
         let metrics = style.role.metrics_for(self.typography_platform);
+        let typography_scale = f32::from(self.typography_scale_per_mille) / 1_000.0;
         let font_family = match style.role {
             TextRole::Monospace => self.monospace_font_family.clone(),
             TextRole::Icon => self.icon_font_family.clone(),
@@ -215,8 +225,8 @@ impl NativeStyleResolver for NativeDrawTextStyleResolver {
         };
         TextStyle {
             font_family,
-            size: metrics.size,
-            line_height: metrics.line_height,
+            size: metrics.size * typography_scale,
+            line_height: metrics.line_height * typography_scale,
             semantic_role: Some(style.role),
             weight,
             color: self.palette.resolve(style.color),
@@ -385,5 +395,20 @@ mod tests {
         );
         let gtk_caption = gtk.resolve_text_style(SemanticTextStyle::for_role(TextRole::Caption));
         assert_eq!((gtk_caption.size, gtk_caption.line_height), (11.5, 16.0));
+    }
+
+    #[test]
+    fn text_style_resolver_scales_size_and_line_box_together() {
+        let style = NativeDrawTextStyleResolver::new(
+            "system",
+            "monospace",
+            "icons",
+            crate::ZsTypographyPlatformStyle::Gtk,
+            NativeDrawPalette::for_mode(ZsuiThemeMode::Light, false),
+        )
+        .with_typography_scale(1.25)
+        .resolve_text_style(SemanticTextStyle::body());
+
+        assert_eq!((style.size, style.line_height), (17.5, 25.0));
     }
 }

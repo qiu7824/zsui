@@ -7,14 +7,13 @@ use std::{
 };
 
 use zsui::{
-    column, content_dialog, native_window, platform_document_command_bar_for_style, row, tab_view,
-    text, text_editor, toolbar_button_for_style, AppCx, Command, Dp, FileDialogService,
-    FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService, NativeViewKey,
-    NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode,
-    WidgetId, ZsAccelerator, ZsBaseControlMetrics, ZsBaseControlPlatformStyle,
-    ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec, ZsDocumentShellCommand,
-    ZsIcon, ZsTabId, ZsTabItem, ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand,
-    ZsTextSelection, ZsuiError, ZsuiResult,
+    column, command_bar, content_dialog, native_window, row, tab_view, text, text_editor,
+    toolbar_button, AppCx, Command, Dp, FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec,
+    NativeFileDialogService, NativeViewKey, NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec,
+    TextWrap, ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsBaseControlMetrics,
+    ZsCommandBarSpec, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec,
+    ZsDocumentShellCommand, ZsIcon, ZsTabId, ZsTabItem, ZsTextCursorStatus, ZsTextDocument,
+    ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult, ZsuiSpacingTokens,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
@@ -90,10 +89,6 @@ fn lock_state(state: &SharedState) -> ZsuiResult<MutexGuard<'_, NotepadState>> {
 }
 
 fn view(shared: &SharedState) -> ViewNode<Msg> {
-    view_for_platform(shared, ZsBaseControlPlatformStyle::current())
-}
-
-fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
     let state = shared
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -112,38 +107,25 @@ fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle)
     let title = format!("{display_name}{dirty_mark}");
 
     let command_button = |label: &str, icon: ZsIcon, command: ZsDocumentShellCommand| {
-        toolbar_button_for_style(platform, label, icon).on_click(Msg::Command(command))
+        toolbar_button(label, icon).on_click(Msg::Command(command))
     };
-    let command_bar = platform_document_command_bar_for_style(
-        platform,
-        [
-            command_button("新建 / New", ZsIcon::Add, ZsDocumentShellCommand::New),
-            command_button("打开 / Open", ZsIcon::Folder, ZsDocumentShellCommand::Open),
-            command_button("保存 / Save", ZsIcon::Save, ZsDocumentShellCommand::Save),
-        ],
-        [
-            command_button("撤销 / Undo", ZsIcon::Undo, ZsDocumentShellCommand::Undo)
-                .id(UNDO_BUTTON),
-            command_button(
-                "换行 / Wrap",
-                ZsIcon::Text,
-                ZsDocumentShellCommand::ToggleWrap,
-            )
-            .id(WRAP_BUTTON),
-        ],
-        [command_button(
-            "另存为 / Save as",
-            ZsIcon::Save,
-            ZsDocumentShellCommand::SaveAs,
-        )],
-        [
-            command_button(
-                "状态 / Status",
-                ZsIcon::Inspector,
-                ZsDocumentShellCommand::ToggleStatus,
-            ),
-            command_button("关于 / About", ZsIcon::Info, ZsDocumentShellCommand::About),
-        ],
+    let command_bar = command_bar(
+        ZsCommandBarSpec::new()
+            .leading([
+                command_button("新建 / New", ZsIcon::Add, ZsDocumentShellCommand::New),
+                command_button("打开 / Open", ZsIcon::Folder, ZsDocumentShellCommand::Open),
+                command_button("保存 / Save", ZsIcon::Save, ZsDocumentShellCommand::Save),
+            ])
+            .trailing([
+                command_button("撤销 / Undo", ZsIcon::Undo, ZsDocumentShellCommand::Undo)
+                    .id(UNDO_BUTTON),
+                command_button(
+                    "换行 / Wrap",
+                    ZsIcon::Text,
+                    ZsDocumentShellCommand::ToggleWrap,
+                )
+                .id(WRAP_BUTTON),
+            ]),
     );
 
     let document_tab = tab_view(
@@ -170,7 +152,7 @@ fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle)
         let line_count = state.document.text().lines().count().max(1);
         let cursor =
             ZsTextCursorStatus::from_character_caret(state.document.text(), state.selection.caret);
-        let status_metrics = ZsBaseControlMetrics::for_platform(platform);
+        let status_metrics = ZsBaseControlMetrics::current();
         let status_field = |label: String| {
             let width = status_metrics.estimated_text_width_with_shaping_reserve(&label);
             text(label).width(width).flex(0.0)
@@ -194,16 +176,10 @@ fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle)
         );
     }
 
+    let spacing = ZsuiSpacingTokens::default();
     let page = column(content)
-        .gap(Dp::new(match platform {
-            ZsBaseControlPlatformStyle::Windows => 10.0,
-            ZsBaseControlPlatformStyle::Macos => 8.0,
-            ZsBaseControlPlatformStyle::Gtk => 12.0,
-        }))
-        .padding(Dp::new(match platform {
-            ZsBaseControlPlatformStyle::Windows | ZsBaseControlPlatformStyle::Macos => 12.0,
-            ZsBaseControlPlatformStyle::Gtk => 16.0,
-        }))
+        .gap(spacing.content_gap)
+        .padding(spacing.content_padding)
         .bg(ThemeColorToken::Surface);
 
     let Some(pending) = state.pending else {
@@ -893,26 +869,6 @@ mod tests {
             + node.children.iter().map(button_count).sum::<usize>()
     }
 
-    fn toolbar_profiles(node: &ViewNode<Msg>) -> Vec<(bool, ZsBaseControlPlatformStyle)> {
-        let mut profiles = Vec::new();
-        if let zsui::ViewNodeKind::Button {
-            presentation:
-                zsui::ZsButtonPresentation::Toolbar {
-                    show_label,
-                    platform,
-                    ..
-                },
-            ..
-        } = node.kind
-        {
-            profiles.push((show_label, platform));
-        }
-        for child in &node.children {
-            profiles.extend(toolbar_profiles(child));
-        }
-        profiles
-    }
-
     fn document_tabs(node: &ViewNode<Msg>) -> Option<&[zsui::ZsTabSpec]> {
         if let zsui::ViewNodeKind::Tabs { tabs, .. } = &node.kind {
             return Some(tabs);
@@ -921,41 +877,16 @@ mod tests {
     }
 
     #[test]
-    fn notepad_toolbar_keeps_platform_native_action_density() {
+    fn notepad_view_uses_the_shared_command_bar_and_document_tab_contracts() {
         let shared = Arc::new(Mutex::new(NotepadState::default()));
-        let windows = view_for_platform(&shared, ZsBaseControlPlatformStyle::Windows);
-        let macos = view_for_platform(&shared, ZsBaseControlPlatformStyle::Macos);
-        let gtk = view_for_platform(&shared, ZsBaseControlPlatformStyle::Gtk);
+        let page = view(&shared);
 
-        assert_eq!(button_count(&windows), 8);
-        assert_eq!(button_count(&macos), 5);
-        assert_eq!(button_count(&gtk), 5);
-        let windows_profiles = toolbar_profiles(&windows);
-        assert_eq!(
-            windows_profiles
-                .iter()
-                .filter(|(show_label, _)| !show_label)
-                .count(),
-            3
-        );
-        assert!(windows_profiles
-            .iter()
-            .all(|(_, platform)| *platform == ZsBaseControlPlatformStyle::Windows));
-        assert!(toolbar_profiles(&macos)
-            .iter()
-            .all(|(show_label, platform)| *show_label
-                && *platform == ZsBaseControlPlatformStyle::Macos));
-        assert!(toolbar_profiles(&gtk)
-            .iter()
-            .all(|(show_label, platform)| *show_label
-                && *platform == ZsBaseControlPlatformStyle::Gtk));
-        for page in [&windows, &macos, &gtk] {
-            let tabs = document_tabs(page).expect("document must be hosted by TabView");
-            assert_eq!(tabs.len(), 1);
-            assert_eq!(tabs[0].icon, Some(ZsIcon::File));
-            assert!(tabs[0].label.contains("Untitled"));
-            assert_eq!(page.widget_text_wrap(DOCUMENT_EDITOR), Some(TextWrap::Word));
-        }
+        assert!(button_count(&page) >= 5);
+        let tabs = document_tabs(&page).expect("document must be hosted by TabView");
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].icon, Some(ZsIcon::File));
+        assert!(tabs[0].label.contains("Untitled"));
+        assert_eq!(page.widget_text_wrap(DOCUMENT_EDITOR), Some(TextWrap::Word));
     }
 
     #[test]

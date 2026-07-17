@@ -209,29 +209,37 @@ history remain authoritative for implementation status.
   font metrics while retaining the WinUI component tree. Navigation selection,
   row grouping, toolbar/header-bar placement, tab treatment, dialog action
   order and popup composition are platform contracts. Framework primitives such
-  as `platform_section` own these composition choices; demos must consume them
-  and must not recreate platform branches as example-local architecture.
+  as `section`, `navigation_view(ZsNavigationViewSpec)` and
+  `command_bar(ZsCommandBarSpec)` own these composition choices; demos consume
+  those public semantic contracts and must not recreate platform branches as
+  example-local architecture.
+- Normal application-facing View construction never accepts a platform enum.
+  Deterministic `*_for_style` constructors are crate-private proof hooks.
+  Platform-native spacing, radius and control-density defaults resolve inside
+  the framework; applications can override public semantic spec fields or use
+  resolved spacing tokens with ordinary View modifiers without adding `cfg` or
+  matching a platform.
 - GTK/Adwaita boxed sections use padded rows with one-pixel separators, and
   the row's outer minimum height must include its interior padding. GTK sidebar
   selection stays neutral (not accent-filled), matching the
   `navigation-sidebar` style contract; accent remains available for actionable
   controls.
-- Document command bars use the framework-owned
-  `platform_document_command_bar_for_style` composition. `toolbar_button`
-  carries a semantic icon and label through the shared Button event path.
-  AppKit and GTK show the small cross-platform action set with flat toolbar/
-  header-bar chrome and leave secondary commands in the native menu; Windows
-  can add compact icon actions without shrinking bilingual labels. Windows
-  primary command icons use the WinUI 20-DIP metric, and a visible label to
-  the icon's right uses the 14-DIP Body role rather than Caption.
+- Command bars use `command_bar(ZsCommandBarSpec)` and `toolbar_button`.
+  Every declared bar action remains visible; overflow/menu projection is a
+  separate capability and must not be simulated by silently dropping actions.
+  Toolbar buttons carry semantic icons and typed messages through the shared
+  Button event path while the framework owns platform metrics and chrome.
+  Windows primary command icons use the WinUI 20-DIP metric, and a visible
+  label to the icon's right uses the AppBarButton 12-DIP label role.
 - The Notepad acceptance surface uses the real framework TabView for its
   document header. The semantic file icon and title occupy the same tab row and
   the editor is the selected tab content. This remains a one-static-tab proof;
   add, close, reorder and cross-window document-tab behavior are not implied.
-- Acceptance examples follow the same rule: Notepad may expose the complete
-  command bar on Windows, while AppKit and GTK keep only the small set of
-  primary actions in content and leave Save As, Status and About in the native
-  menu. Proof widgets such as Undo and Wrap remain stable on every platform.
+- Acceptance examples follow the same rule: Notepad declares one five-action
+  command bar on all targets. Save As, Status and About remain native-menu
+  commands and are not passed to the bar. Platform differences come from the
+  framework's toolbar metrics, icon source and rendering path, not example
+  branches.
 - Linux native proof must exercise the GTK runtime input route before capture
   and provide a real CJK system fallback font. Missing-glyph boxes, clipped
   bilingual labels or a screenshot produced without the scripted interaction
@@ -249,8 +257,12 @@ history remain authoritative for implementation status.
   title 1 and 26/32 large title), uses `NSFont` system faces and keeps Core
   Text shaping, NSString measurement, label intrinsic height, editor visual
   rows, selection and caret geometry on the same metrics. GTK selects the
-  configured `GtkSettings:gtk-font-name` family and maps libadwaita's relative
-  caption/body/title classes. Examples must not patch font sizes or line boxes.
+  configured `GtkSettings:gtk-font-name` family and size and maps libadwaita's
+  relative caption/body/title classes. The AppKit preferred body font and GTK
+  configured UI font produce one deterministic runtime scale stored in the
+  draw plan; semantic line/control heights, final text shaping, editor visual
+  rows, selections and carets consume that same value. Examples must not patch
+  font sizes or line boxes.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

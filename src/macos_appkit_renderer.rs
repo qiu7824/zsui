@@ -501,7 +501,7 @@ define_class!(
                     .then(appkit_semantic_high_contrast_palette)
                     .flatten(),
             );
-            let mut sink = MacosAppKitDrawSink::new(palette);
+            let mut sink = MacosAppKitDrawSink::new(palette, plan.typography_scale());
             sink.draw_plan(&plan);
         }
 
@@ -979,6 +979,7 @@ impl MacosAppKitDrawViewHost {
             pixel_width,
             pixel_height,
             scale_factor,
+            typography_scale: self.view.ivars().plan.borrow().typography_scale(),
         })
     }
 
@@ -1047,6 +1048,10 @@ pub(crate) fn install_macos_appkit_draw_plan(
 ) -> MacosAppKitDrawViewHost {
     #[cfg(feature = "text-input-core")]
     runtime.use_appkit_text_shaping();
+    let mut plan = plan;
+    if let Some(updated) = runtime.set_typography_scale(appkit_ui_font_scale()) {
+        plan = updated;
+    }
     let mtm = window.mtm();
     let frame = window
         .contentView()
@@ -1127,8 +1132,13 @@ pub(crate) fn shape_macos_appkit_text_line(
         return None;
     }
     let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Macos);
-    let mut style = TextStyle::line(".AppleSystemUIFont", body.size, Color::rgb(0, 0, 0));
-    style.line_height = body.line_height;
+    let typography_scale = appkit_ui_font_scale();
+    let mut style = TextStyle::line(
+        ".AppleSystemUIFont",
+        body.size * typography_scale,
+        Color::rgb(0, 0, 0),
+    );
+    style.line_height = body.line_height * typography_scale;
     style.semantic_role = Some(crate::TextRole::Body);
     let attributes = appkit_text_attributes(&style);
     let dictionary: &NSDictionary<NSAttributedStringKey, AnyObject> = &attributes;
@@ -1249,7 +1259,7 @@ struct MacosAppKitDrawSink {
 }
 
 impl MacosAppKitDrawSink {
-    fn new(palette: NativeDrawPalette) -> Self {
+    fn new(palette: NativeDrawPalette, typography_scale: f32) -> Self {
         Self {
             palette,
             style_resolver: NativeDrawTextStyleResolver::new(
@@ -1258,7 +1268,8 @@ impl MacosAppKitDrawSink {
                 ".AppleSystemUIFont",
                 crate::ZsTypographyPlatformStyle::Macos,
                 palette,
-            ),
+            )
+            .with_typography_scale(typography_scale),
             text_layout: MacosAppKitTextLayout,
             clip_depth: 0,
         }
@@ -1534,6 +1545,12 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
             NativeDrawCommand::PopClip => self.pop_clip(),
         }
     }
+}
+
+pub(crate) fn appkit_ui_font_scale() -> f32 {
+    let options = NSDictionary::<NSFontTextStyleOptionKey, AnyObject>::new();
+    let font = unsafe { NSFont::preferredFontForTextStyle_options(NSFontTextStyleBody, &options) };
+    (font.pointSize() as f32 / 13.0).clamp(0.75, 3.0)
 }
 
 fn appkit_text_attributes(

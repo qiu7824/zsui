@@ -38,6 +38,10 @@ impl ViewPaintCx {
         self.plan.theme_mode = theme_mode;
     }
 
+    pub(crate) fn set_typography_scale(&mut self, scale: f32) {
+        self.plan.set_typography_scale(scale);
+    }
+
     fn finish_node<Msg>(&mut self, _root: &ViewNode<Msg>) {
         self.paint_depth = self.paint_depth.saturating_sub(1);
         #[cfg(any(
@@ -96,6 +100,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             let mut child_cx = ViewLayoutCx {
                 bounds: plan.content_bounds,
                 dpi: cx.dpi,
+                typography_scale_per_mille: cx.typography_scale_per_mille,
             };
             children.extend(child.layout(&mut child_cx).children);
         }
@@ -180,6 +185,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                     height: row_height_px,
                 },
                 dpi: cx.dpi,
+                typography_scale_per_mille: cx.typography_scale_per_mille,
             };
             children.extend(child.layout(&mut child_cx).children);
         }
@@ -217,11 +223,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             &self.children,
             self.style.gap,
             cx.dpi,
+            cx.typography_scale(),
         );
         for (child, bounds) in self.children.iter_mut().zip(child_bounds) {
             let mut child_cx = ViewLayoutCx {
                 bounds,
                 dpi: cx.dpi,
+                typography_scale_per_mille: cx.typography_scale_per_mille,
             };
             children.extend(child.layout(&mut child_cx).children);
         }
@@ -1742,32 +1750,24 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         show_label,
                         platform,
                     } => {
-                        let metrics = crate::ZsBaseControlMetrics::for_platform(*platform);
-                        let icon_size = Dp::new(match platform {
-                            // Keep the Windows command surface on the WinUI
-                            // AppBarButton 20 epx icon metric. AppKit and GTK
-                            // keep their denser 16-point symbolic actions.
-                            crate::ZsBaseControlPlatformStyle::Windows => 20.0,
-                            crate::ZsBaseControlPlatformStyle::Macos
-                            | crate::ZsBaseControlPlatformStyle::Gtk => 16.0,
-                        })
+                        let base = crate::ZsBaseControlMetrics::for_platform(*platform);
+                        let metrics = ZsToolbarMetrics::for_platform(*platform);
+                        let icon_size = metrics
+                            .icon_size
                             .to_px(cx.dpi)
                             .round_i32()
                             .max(1)
                             .min(bounds.height.max(1));
-                        let padding = metrics
+                        let padding = base
                             .button_padding_left
                             .to_px(cx.dpi)
                             .round_i32()
                             .max(0);
-                        let content_gap = Dp::new(match platform {
-                            crate::ZsBaseControlPlatformStyle::Windows => 8.0,
-                            crate::ZsBaseControlPlatformStyle::Macos
-                            | crate::ZsBaseControlPlatformStyle::Gtk => 6.0,
-                        })
-                        .to_px(cx.dpi)
-                        .round_i32()
-                        .max(0);
+                        let content_gap = metrics
+                            .content_gap
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(0);
                         let icon_bounds = Rect {
                             x: if *show_label {
                                 bounds.x.saturating_add(padding)
@@ -1796,11 +1796,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 .saturating_add(icon_bounds.width)
                                 .saturating_add(content_gap);
                             let mut text_style = SemanticTextStyle::body();
-                            // A label placed to the right of a Windows command
-                            // icon is control content, not caption metadata.
-                            // Body selects Segoe UI Variable Text instead of
-                            // the smaller optical master used by Caption.
-                            text_style.role = TextRole::Body;
+                            text_style.role = metrics.label_role;
                             text_style.horizontal_align = crate::HorizontalAlign::Start;
                             cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                                 label,

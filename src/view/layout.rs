@@ -81,6 +81,7 @@ fn split_child_bounds<Msg>(
     children: &[ViewNode<Msg>],
     gap: Option<Dp>,
     dpi: Dpi,
+    typography_scale: f32,
 ) -> Vec<Rect> {
     let child_count = children.len();
     if child_count == 0 {
@@ -101,6 +102,8 @@ fn split_child_bounds<Msg>(
                 |style| style.width,
                 |style| style.min_width,
                 dpi,
+                false,
+                typography_scale,
             );
             let mut x = bounds.x;
             widths
@@ -113,6 +116,8 @@ fn split_child_bounds<Msg>(
                         child.style.min_height,
                         child.style.flex,
                         dpi,
+                        child.typography_scaled_height,
+                        typography_scale,
                     );
                     let rect = Rect {
                         x,
@@ -129,9 +134,11 @@ fn split_child_bounds<Msg>(
         }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Column,
-        } => split_column_child_bounds(bounds, children, gap, dpi),
+        } => split_column_child_bounds(bounds, children, gap, dpi, typography_scale),
         #[cfg(feature = "list")]
-        ViewNodeKind::List { .. } => split_column_child_bounds(bounds, children, gap, dpi),
+        ViewNodeKind::List { .. } => {
+            split_column_child_bounds(bounds, children, gap, dpi, typography_scale)
+        }
         #[cfg(feature = "scroll")]
         ViewNodeKind::Scroll {
             offset_y,
@@ -357,6 +364,7 @@ fn split_column_child_bounds<Msg>(
     children: &[ViewNode<Msg>],
     gap: i32,
     dpi: Dpi,
+    typography_scale: f32,
 ) -> Vec<Rect> {
     let heights = allocate_axis_lengths(
         bounds.height,
@@ -365,6 +373,8 @@ fn split_column_child_bounds<Msg>(
         |style| style.height,
         |style| style.min_height,
         dpi,
+        true,
+        typography_scale,
     );
     let mut y = bounds.y;
     heights
@@ -377,6 +387,8 @@ fn split_column_child_bounds<Msg>(
                 child.style.min_width,
                 child.style.flex,
                 dpi,
+                false,
+                typography_scale,
             );
             let rect = Rect {
                 x: bounds.x,
@@ -397,6 +409,8 @@ fn allocate_axis_lengths<Msg>(
     fixed: impl Fn(&ViewStyle) -> Option<Dp>,
     minimum: impl Fn(&ViewStyle) -> Option<Dp>,
     dpi: Dpi,
+    vertical: bool,
+    typography_scale: f32,
 ) -> Vec<i32> {
     let total = total.max(0);
     let total_gap = gap
@@ -405,13 +419,29 @@ fn allocate_axis_lengths<Msg>(
     let available = total - total_gap;
     let requested = children
         .iter()
-        .map(|child| fixed(&child.style).map(|value| value.to_px(dpi).round_i32().max(0)))
+        .map(|child| {
+            fixed(&child.style).map(|value| {
+                typography_aware_length_px(
+                    value,
+                    dpi,
+                    vertical && child.typography_scaled_height,
+                    typography_scale,
+                )
+            })
+        })
         .collect::<Vec<_>>();
     let minimums = children
         .iter()
         .map(|child| {
             minimum(&child.style)
-                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .map(|value| {
+                    typography_aware_length_px(
+                        value,
+                        dpi,
+                        vertical && child.typography_scaled_height,
+                        typography_scale,
+                    )
+                })
                 .unwrap_or(0)
         })
         .collect::<Vec<_>>();
@@ -422,24 +452,13 @@ fn allocate_axis_lengths<Msg>(
         .collect::<Vec<_>>();
     let base_total: i32 = lengths.iter().copied().sum();
 
-    if base_total >= available && base_total > 0 {
-        let scale = available as f32 / base_total as f32;
-        let allocated_indices = lengths
-            .iter()
-            .enumerate()
-            .filter_map(|(index, value)| (*value > 0).then_some((index, *value)))
-            .collect::<Vec<_>>();
-        let mut assigned = 0;
-        for (position, (index, value)) in allocated_indices.iter().enumerate() {
-            let length = if position + 1 == allocated_indices.len() {
-                available - assigned
-            } else {
-                ((*value as f32) * scale).floor() as i32
-            }
-            .max(0);
-            lengths[*index] = length;
-            assigned += length;
-        }
+    if base_total >= available {
+        // Explicit and minimum sizes are hard layout contracts. Scaling them
+        // down made buttons and line boxes narrower/shorter than their native
+        // text metrics, which produced accidental glyph clipping. An
+        // over-constrained stack now overflows its viewport; callers can use
+        // Scroll or an adaptive/overflow composition without corrupting the
+        // controls themselves.
         return lengths;
     }
 
@@ -482,17 +501,36 @@ fn cross_axis_length(
     minimum: Option<Dp>,
     flex: f32,
     dpi: Dpi,
+    typography_scaled: bool,
+    typography_scale: f32,
 ) -> i32 {
     let available = available.max(0);
     let minimum = minimum
-        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .map(|value| typography_aware_length_px(value, dpi, typography_scaled, typography_scale))
         .unwrap_or(0)
         .min(available);
     fixed
-        .map(|value| value.to_px(dpi).round_i32().max(minimum))
+        .map(|value| {
+            typography_aware_length_px(value, dpi, typography_scaled, typography_scale)
+                .max(minimum)
+        })
         .or_else(|| (flex <= f32::EPSILON && minimum > 0).then_some(minimum))
         .unwrap_or(available)
         .min(available)
+}
+
+fn typography_aware_length_px(
+    value: Dp,
+    dpi: Dpi,
+    typography_scaled: bool,
+    typography_scale: f32,
+) -> i32 {
+    let scale = if typography_scaled {
+        typography_scale.max(0.0)
+    } else {
+        1.0
+    };
+    Dp::new(value.0 * scale).to_px(dpi).round_i32().max(0)
 }
 
 #[cfg(feature = "date-picker")]

@@ -255,7 +255,7 @@ fn status_text(value: impl Into<String>) -> ViewNode<Msg> {
     style.vertical_align = VerticalAlign::Start;
     style.wrap = TextWrap::Word;
     style.ellipsis = false;
-    styled_text(value, style).height(Dp::new(42.0))
+    styled_text(value, style)
 }
 
 const fn category_label(category: ZsuiComponentCategory) -> &'static str {
@@ -326,36 +326,16 @@ fn component_label(name: &str) -> String {
     format!("{chinese} / {name}")
 }
 
-fn card(
-    platform: ZsBaseControlPlatformStyle,
-    title: impl Into<String>,
-    children: Vec<ViewNode<Msg>>,
-) -> ViewNode<Msg> {
-    platform_section_for_style(platform, title, children).flex(1.0)
+fn card(title: impl Into<String>, children: Vec<ViewNode<Msg>>) -> ViewNode<Msg> {
+    section(title, children).flex(1.0)
 }
 
-fn compact_card(
-    platform: ZsBaseControlPlatformStyle,
-    title: impl Into<String>,
-    children: Vec<ViewNode<Msg>>,
-    content_height: Dp,
-) -> ViewNode<Msg> {
-    const TITLE_HEIGHT: f32 = 20.0;
-    let (vertical_padding, title_gap) = match platform {
-        ZsBaseControlPlatformStyle::Windows => (32.0, 10.0),
-        ZsBaseControlPlatformStyle::Macos => (0.0, 8.0),
-        ZsBaseControlPlatformStyle::Gtk => (24.0, 8.0),
-    };
-    card(platform, title, children)
-        .height(Dp::new(
-            vertical_padding + TITLE_HEIGHT + title_gap + content_height.0,
-        ))
-        .flex(0.0)
+fn compact_card(title: impl Into<String>, children: Vec<ViewNode<Msg>>) -> ViewNode<Msg> {
+    section(title, children).flex(0.0)
 }
 
-fn inputs_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
+fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
     let actions = card(
-        platform,
         "按钮与选择 / Buttons and choices",
         vec![
             row([
@@ -403,7 +383,6 @@ fn inputs_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> Vi
     );
 
     let editors = card(
-        platform,
         "文本与选择 / Text and selection",
         vec![
             textbox(&state.text).id(TEXT_INPUT).on_change(Msg::Text),
@@ -459,7 +438,7 @@ fn inputs_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> Vi
     row([actions, editors]).flex(1.0).gap(Dp::new(16.0))
 }
 
-fn collections_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
+fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
     let tree = tree_view([ZsTreeNode::new(1, "工作区 / Workspace")
         .icon(ZsIcon::Folder)
         .children([
@@ -553,17 +532,16 @@ fn collections_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) 
 
     row([
         card(
-            platform,
             "列表与层级 / Lists and hierarchy",
             vec![tree, list, virtualized],
         ),
-        card(platform, "磁贴与数据 / Tiles and data", vec![tiles, table]),
+        card("磁贴与数据 / Tiles and data", vec![tiles, table]),
     ])
     .flex(1.0)
     .gap(Dp::new(16.0))
 }
 
-fn navigation_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
+fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
     let breadcrumb = breadcrumb_bar([
         ZsBreadcrumbItem::new(ZsBreadcrumbId::new(1), "首页"),
         ZsBreadcrumbItem::new(ZsBreadcrumbId::new(2), "组件"),
@@ -611,13 +589,8 @@ fn navigation_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -
     .on_tab_select(Msg::Tab);
 
     let page = column([
-        compact_card(
-            platform,
-            "面包屑 / BreadcrumbBar",
-            vec![breadcrumb],
-            Dp::new(32.0),
-        ),
-        card(platform, "标签页 / TabView", vec![tabs]),
+        compact_card("面包屑 / BreadcrumbBar", vec![breadcrumb]),
+        card("标签页 / TabView", vec![tabs]),
         row([
             button("打开命令面板 / Open palette").on_click(Msg::PaletteOpen(true)),
             text("键盘优先的 Ctrl+Shift+P 式界面 / Keyboard-first surface"),
@@ -650,7 +623,7 @@ fn navigation_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -
     .on_command_palette_open_change(Msg::PaletteOpen)
 }
 
-fn feedback_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
+fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
     let page = column([
         info_bar(
             INFO_BAR,
@@ -661,7 +634,6 @@ fn feedback_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> 
         )
         .on_info_bar_event(Msg::InfoBar),
         card(
-            platform,
             "浮层界面 / Overlay surfaces",
             vec![
                 row([
@@ -688,7 +660,6 @@ fn feedback_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> 
             ],
         ),
         card(
-            platform,
             "状态 / Status",
             vec![
                 text(&state.status),
@@ -742,7 +713,7 @@ fn feedback_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> 
     .on_dialog_result(Msg::DialogResult)
 }
 
-fn catalog_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
+fn catalog_page(state: &GalleryState) -> ViewNode<Msg> {
     let summary = zsui_component_catalog_summary();
     let contract_only = zsui_component_catalog()
         .iter()
@@ -829,12 +800,10 @@ fn catalog_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> V
         ),
         row([
             card(
-                platform,
                 "按特性启用的目录 / Feature-gated inventory",
                 vec![inventory],
             ),
             card(
-                platform,
                 "布局与契约 / Layout and contracts",
                 vec![
                     layout_sample,
@@ -857,32 +826,22 @@ fn catalog_page(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> V
 }
 
 fn view(state: &GalleryState) -> ViewNode<Msg> {
-    view_for_platform(state, ZsBaseControlPlatformStyle::current())
-}
-
-fn view_for_platform(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
     let summary = zsui_component_catalog_summary();
-    let mut navigation_items = Vec::new();
-    if platform != ZsBaseControlPlatformStyle::Windows {
-        navigation_items.push(secondary_text("组件 / Components", TextRole::Caption));
-    }
-    navigation_items.extend(GalleryPage::ALL.into_iter().map(|(page, id)| {
+    let navigation_items = GalleryPage::ALL.into_iter().map(|(page, id)| {
         navigation_item(page.title(), page.icon(), page == state.page)
             .id(id)
             .on_click(Msg::Navigate(page))
-    }));
-    let mut navigation = platform_navigation_for_style(
-        platform,
-        "ZSUI 组件库 / Gallery",
-        format!(
-            "{} 个运行界面 / {} runtime surfaces",
-            summary.runtime_surface_count, summary.runtime_surface_count
-        ),
-        navigation_items,
-    );
-    if platform == ZsBaseControlPlatformStyle::Windows {
-        navigation = navigation.child(spacer());
-        navigation = navigation.child(
+    });
+    let navigation = navigation_view(
+        ZsNavigationViewSpec::new(
+            "ZSUI 组件库 / Gallery",
+            format!(
+                "{} 个运行界面 / {} runtime surfaces",
+                summary.runtime_surface_count, summary.runtime_surface_count
+            ),
+        )
+        .items(navigation_items)
+        .footer_items([
             row([
                 text(if state.dark {
                     "深色 / Dark"
@@ -893,68 +852,27 @@ fn view_for_platform(state: &GalleryState, platform: ZsBaseControlPlatformStyle)
                 toggle(state.dark).on_toggle(Msg::Dark),
             ])
             .gap(Dp::new(8.0)),
-        );
-        navigation = navigation.child(status_text(&state.status));
-    }
-    let page = match state.page {
-        GalleryPage::Inputs => inputs_page(state, platform),
-        GalleryPage::Collections => collections_page(state, platform),
-        GalleryPage::Navigation => navigation_page(state, platform),
-        GalleryPage::Feedback => feedback_page(state, platform),
-        GalleryPage::Catalog => catalog_page(state, platform),
-    };
-    let mut content_nodes = if platform == ZsBaseControlPlatformStyle::Windows {
-        vec![
-            role_text(state.page.title(), TextRole::Subtitle),
-            secondary_text(state.page.description(), TextRole::Body),
-        ]
-    } else {
-        vec![
-            row([
-                role_text(state.page.title(), TextRole::Subtitle),
-                spacer(),
-                secondary_text(
-                    if state.dark {
-                        "深色 / Dark"
-                    } else {
-                        "浅色 / Light"
-                    },
-                    TextRole::Caption,
-                ),
-                toggle(state.dark).on_toggle(Msg::Dark),
-            ])
-            .gap(Dp::new(10.0)),
-            secondary_text(state.page.description(), TextRole::Body),
             status_text(&state.status),
-        ]
+        ]),
+    );
+    let page = match state.page {
+        GalleryPage::Inputs => inputs_page(state),
+        GalleryPage::Collections => collections_page(state),
+        GalleryPage::Navigation => navigation_page(state),
+        GalleryPage::Feedback => feedback_page(state),
+        GalleryPage::Catalog => catalog_page(state),
     };
-    content_nodes.push(page);
-    let content = column(content_nodes)
-        .flex(1.0)
-        .padding(Dp::new(match platform {
-            ZsBaseControlPlatformStyle::Windows => 24.0,
-            ZsBaseControlPlatformStyle::Macos => 20.0,
-            ZsBaseControlPlatformStyle::Gtk => 24.0,
-        }))
-        .gap(Dp::new(match platform {
-            ZsBaseControlPlatformStyle::Windows => 10.0,
-            ZsBaseControlPlatformStyle::Macos => 8.0,
-            ZsBaseControlPlatformStyle::Gtk => 12.0,
-        }));
+    let spacing = ZsuiSpacingTokens::default();
+    let content = column([
+        role_text(state.page.title(), TextRole::Subtitle),
+        secondary_text(state.page.description(), TextRole::Body),
+        page,
+    ])
+    .flex(1.0)
+    .padding(spacing.page_padding)
+    .gap(spacing.content_gap);
 
-    let shell = if platform == ZsBaseControlPlatformStyle::Windows {
-        row([navigation, content])
-    } else {
-        row([
-            navigation,
-            spacer()
-                .width(Dp::new(1.0))
-                .flex(0.0)
-                .bg(ThemeColorToken::Border),
-            content,
-        ])
-    };
-    shell
+    row([navigation, content])
         .gap(Dp::new(0.0))
         .bg(ThemeColorToken::Surface)
         .theme_mode(if state.dark {
@@ -1312,49 +1230,10 @@ mod tests {
             .iter()
             .find(|node| node.component == TEXT_INPUT.into())
             .expect("text input should be present");
-        let metrics = ZsBaseControlMetrics::for_platform(ZsBaseControlPlatformStyle::current());
+        let metrics = ZsBaseControlMetrics::current();
         assert_eq!(save.bounds.height, metrics.button_height.0 as i32);
         assert_eq!(text.bounds.height, metrics.text_input_height.0 as i32);
         assert!(save.bounds.width >= metrics.button_minimum_width.0 as i32);
         assert!(text.bounds.width > save.bounds.width);
-    }
-
-    fn count_background(node: &ViewNode<Msg>, token: ThemeColorToken) -> usize {
-        usize::from(node.style.background == Some(token))
-            + node
-                .children
-                .iter()
-                .map(|child| count_background(child, token))
-                .sum::<usize>()
-    }
-
-    fn count_radius(node: &ViewNode<Msg>, radius: Dp) -> usize {
-        usize::from(node.style.radius == Some(radius))
-            + node
-                .children
-                .iter()
-                .map(|child| count_radius(child, radius))
-                .sum::<usize>()
-    }
-
-    #[test]
-    fn gallery_shell_and_grouping_follow_each_desktop_platform() {
-        let state = GalleryState::default();
-        let windows = view_for_platform(&state, ZsBaseControlPlatformStyle::Windows);
-        let macos = view_for_platform(&state, ZsBaseControlPlatformStyle::Macos);
-        let gtk = view_for_platform(&state, ZsBaseControlPlatformStyle::Gtk);
-
-        assert_eq!(windows.children.len(), 2);
-        assert_eq!(macos.children.len(), 3);
-        assert_eq!(gtk.children.len(), 3);
-        assert_eq!(windows.children[0].style.width, Some(Dp::new(320.0)));
-        assert_eq!(macos.children[0].style.width, Some(Dp::new(240.0)));
-        assert_eq!(gtk.children[0].style.width, Some(Dp::new(280.0)));
-
-        // macOS keeps form groups as aligned stacks. Windows retains Fluent
-        // cards, while GTK puts group headings outside rounded boxed lists.
-        assert_eq!(count_background(&macos, ThemeColorToken::SurfaceRaised), 1);
-        assert!(count_radius(&windows, Dp::new(8.0)) >= 2);
-        assert!(count_radius(&gtk, Dp::new(12.0)) >= 2);
     }
 }

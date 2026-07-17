@@ -837,6 +837,7 @@ pub struct ViewNode<Msg> {
     tooltip: Option<crate::ZsTooltipSpec>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
+    pub(crate) typography_scaled_height: bool,
     #[cfg(feature = "combo")]
     combo_first_visible_option: Option<usize>,
     message: PhantomData<fn() -> Msg>,
@@ -853,6 +854,7 @@ impl<Msg> ViewNode<Msg> {
             tooltip: None,
             bounds: None,
             layout_dpi: Dpi::standard(),
+            typography_scaled_height: false,
             #[cfg(feature = "combo")]
             combo_first_visible_option: None,
             message: PhantomData,
@@ -914,6 +916,20 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn min_height(mut self, min_height: Dp) -> Self {
         self.style.min_height = Some(min_height);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn native_typography_height(mut self, height: Dp) -> Self {
+        self.style.height = Some(height);
+        self.typography_scaled_height = true;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn native_typography_min_height(mut self, min_height: Dp) -> Self {
+        self.style.min_height = Some(min_height);
+        self.typography_scaled_height = true;
         self
     }
 

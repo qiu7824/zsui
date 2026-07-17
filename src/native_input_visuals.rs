@@ -113,6 +113,25 @@ impl std::fmt::Debug for NativeTextShapingBackend {
 }
 
 impl NativeTextShapingBackend {
+    fn typography_scale(&self) -> f32 {
+        match self {
+            #[cfg(all(
+                target_os = "macos",
+                feature = "macos-appkit",
+                feature = "text-input-core"
+            ))]
+            Self::AppKit(_) => crate::macos_appkit_renderer::appkit_ui_font_scale(),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-gtk",
+                feature = "text-input-core"
+            ))]
+            Self::Gtk(_, _) => crate::linux_gtk_renderer::linux_gtk_ui_font_scale(),
+            _ => 1.0,
+        }
+    }
+
     pub(crate) fn release_idle_memory(&self) {
         match self {
             Self::LogicalCells => {}
@@ -460,7 +479,7 @@ pub(crate) fn native_text_visual_geometry_in_viewport_with_backend(
     backend: &NativeTextShapingBackend,
 ) -> NativeTextVisualGeometry {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let text_bounds = metrics.text_bounds;
     let line_height = metrics.line_height;
     let lines = text_lines_with_backend(
@@ -641,7 +660,7 @@ pub(crate) fn native_text_index_for_point_in_viewport_with_backend(
     backend: &NativeTextShapingBackend,
 ) -> usize {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
         multiline,
@@ -812,7 +831,7 @@ pub(crate) fn native_text_index_for_horizontal_move_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> usize {
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -955,7 +974,7 @@ fn native_text_index_for_vertical_row_delta_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> (usize, i32) {
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -1043,7 +1062,7 @@ pub(crate) fn native_text_horizontal_scroll_for_caret_with_backend(
     if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
         return 0;
     }
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
         true,
@@ -1145,7 +1164,7 @@ pub(crate) fn native_text_drag_viewport_for_point_with_backend(
             scrolled: false,
         };
     }
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let mut adjusted = point;
     let mut row = first_visible_row;
     let mut scroll = if wrap == crate::TextWrap::NoWrap {
@@ -1228,7 +1247,7 @@ fn native_text_scroll_horizontal_pixels(
     if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
         return 0;
     }
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
         true,
@@ -1397,7 +1416,7 @@ fn decorate_native_text_editor_viewport_with_backend(
         !matches!(command, NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds))
     });
 
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let (lines, visible_rows) =
         native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
     let maximum_first = lines.len().saturating_sub(visible_rows);
@@ -1938,7 +1957,16 @@ struct NativeTextVisualMetrics {
     line_height: i32,
 }
 
+#[cfg(test)]
 fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisualMetrics {
+    native_text_visual_metrics_with_scale(target, dpi, 1.0)
+}
+
+fn native_text_visual_metrics_with_scale(
+    target: ViewHitTarget,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> NativeTextVisualMetrics {
     let inset = Dp::new(8.0).to_px(dpi).round_i32().max(1);
     let body_typography =
         crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::current());
@@ -1961,8 +1989,11 @@ fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisu
             width: bounds.width.saturating_sub(inset.saturating_mul(2)).max(1),
             height: bounds.height.saturating_sub(inset.saturating_mul(2)).max(1),
         },
-        character_width: Dp::new(8.0).to_px(dpi).round_i32().max(1),
-        line_height: Dp::new(body_typography.line_height)
+        character_width: Dp::new(8.0 * typography_scale)
+            .to_px(dpi)
+            .round_i32()
+            .max(1),
+        line_height: Dp::new(body_typography.line_height * typography_scale)
             .to_px(dpi)
             .round_i32()
             .max(1),
@@ -1992,7 +2023,7 @@ fn native_text_viewport_lines_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> (Vec<NativeTextLine>, usize) {
-    let metrics = native_text_visual_metrics(target, dpi);
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,

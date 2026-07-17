@@ -20,7 +20,7 @@ where
         on_expanded_change: None,
     })
     .min_width(metrics.selection_minimum_width)
-    .height(metrics.selection_height)
+    .native_typography_height(metrics.selection_height)
 }
 
 #[cfg(feature = "tabs")]
