@@ -1271,11 +1271,17 @@ impl<'a> LinuxGtkDrawSink<'a> {
             }
             VerticalAlign::End => command.bounds.y + (command.bounds.height - text_height).max(0),
         };
+        if self.context.save().is_err() {
+            return;
+        }
+        self.add_rect(command.bounds);
+        self.context.clip();
         self.set_source(style.color);
         self.context.move_to(f64::from(x), f64::from(y));
         unsafe {
             pango_cairo_show_layout(self.context.to_raw_none(), layout.to_glib_none().0);
         }
+        let _ = self.context.restore();
     }
 
     fn draw_icon(&self, command: &NativeDrawIconCommand) {
