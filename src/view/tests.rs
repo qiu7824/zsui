@@ -181,11 +181,13 @@ mod tests {
 
         assert!(paint.plan().commands.iter().any(|command| matches!(
             command,
-            NativeDrawCommand::Icon(command) if command.icon == crate::ZsIcon::Save
+            NativeDrawCommand::Icon(command)
+                if command.icon == crate::ZsIcon::Save && command.bounds.width == 20
         )));
         assert!(paint.plan().commands.iter().any(|command| matches!(
             command,
-            NativeDrawCommand::Text(command) if command.text == "Save"
+            NativeDrawCommand::Text(command)
+                if command.text == "Save" && command.style.role == crate::TextRole::Body
         )));
         assert!(!paint
             .plan()

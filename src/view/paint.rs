@@ -1743,7 +1743,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         platform,
                     } => {
                         let metrics = crate::ZsBaseControlMetrics::for_platform(*platform);
-                        let icon_size = Dp::new(16.0)
+                        let icon_size = Dp::new(match platform {
+                            // Keep the Windows command surface on the WinUI
+                            // AppBarButton 20 epx icon metric. AppKit and GTK
+                            // keep their denser 16-point symbolic actions.
+                            crate::ZsBaseControlPlatformStyle::Windows => 20.0,
+                            crate::ZsBaseControlPlatformStyle::Macos
+                            | crate::ZsBaseControlPlatformStyle::Gtk => 16.0,
+                        })
                             .to_px(cx.dpi)
                             .round_i32()
                             .max(1)
@@ -1789,13 +1796,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 .saturating_add(icon_bounds.width)
                                 .saturating_add(content_gap);
                             let mut text_style = SemanticTextStyle::body();
-                            text_style.role = if *platform
-                                == crate::ZsBaseControlPlatformStyle::Windows
-                            {
-                                TextRole::Caption
-                            } else {
-                                TextRole::Body
-                            };
+                            // A label placed to the right of a Windows command
+                            // icon is control content, not caption metadata.
+                            // Body selects Segoe UI Variable Text instead of
+                            // the smaller optical master used by Caption.
+                            text_style.role = TextRole::Body;
                             text_style.horizontal_align = crate::HorizontalAlign::Start;
                             cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                                 label,

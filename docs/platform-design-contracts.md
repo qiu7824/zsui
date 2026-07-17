@@ -10,6 +10,8 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - [Content layout and spacing](https://learn.microsoft.com/en-us/windows/apps/design/basics/content-basics)
 - [NavigationView](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/navigationview)
 - [TabView](https://learn.microsoft.com/en-us/windows/apps/design/controls/tab-view)
+- [Command bar](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/command-bar)
+- [XAML type ramp](https://learn.microsoft.com/en-us/windows/apps/develop/platform/xaml/xaml-theme-resources)
 
 框架参数：
 
@@ -21,6 +23,8 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 导航组合 | `NavigationView` 左侧或顶部模式；左侧导航适用于约 5–10 个同等重要的顶级分类 |
 | 选中态 | `Control` 填充和左侧 3×16 epx 指示条；这是 Windows 分支的组合契约，不用于 macOS/GTK |
 | 文档标签 | `TabViewItem` 的语义图标和 Header 位于同一标签行，文字在图标右侧；内容属于所选标签 |
+| 命令栏 | Primary command 图标使用 20×20 epx；宽窗口可把 14 epx Body 标签放在图标右侧，紧凑态隐藏标签 |
+| 标签文字 | 标签 Header 是 14 epx Body 控件内容，不使用 12 epx Caption；Caption 只承担次级元数据 |
 
 ## macOS / AppKit
 
@@ -30,6 +34,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - [Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)
 - [NSControlSize](https://developer.apple.com/documentation/appkit/nscontrol/controlsize-swift.enum)
 - [NSBezelStyle](https://developer.apple.com/documentation/appkit/nsbezelstyle)
+- [NSTabView](https://developer.apple.com/documentation/appkit/nstabview)
 
 组合契约：
 
@@ -37,6 +42,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - 工具栏只保留少量上下文相关的主要动作，留出可拖动的空白区域；图标型工具栏按钮不绘制 WinUI 式外框。
 - 控件大小使用 AppKit 的 `regular`、`small`、`mini` 语义和系统字体配对。Apple HIG 不给出一组跨版本固定像素，因此框架不把 Windows 的 32 epx 高度冒充 AppKit 默认值。
 - 选中行使用 source-list 的轻量选中背景，不使用 Windows 左侧指示条；文本和图标保持 AppKit 的主/次级层级。
+- 内容标签使用 AppKit `NSTabView` 的成组等宽标签语法和系统文字，选中项属于分段表面；不绘制 WinUI accent 下划线，也不冒充 `NSWindow` 的跨窗口系统标签组。
 
 ## Linux / GTK4 + Libadwaita
 
@@ -46,6 +52,8 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - [Header bars](https://developer.gnome.org/hig/patterns/containers/header-bars.html)
 - [Libadwaita style classes](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/1.9/style-classes.html)
 - [Libadwaita adaptive layouts](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/adaptive-layouts.html)
+- [GNOME tabs](https://developer.gnome.org/hig/patterns/nav/tabs.html)
+- [AdwTabBar](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.TabBar.html)
 
 框架参数与组合：
 
@@ -55,6 +63,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 行结构 | 语义分组、行间 1 px 分隔线；一行通常只放一个控件，最多两个控件 |
 | 侧边栏选中态 | 使用 `navigation-sidebar` 的 neutral selected row，不使用 accent 填充；accent 留给可操作控件 |
 | header bar | 左/中/右三组对齐，只放少量主要动作；工具栏按钮尽可能 flat，并保留可拖动空白 |
+| 文档标签 | 使用 `AdwTabView`/`AdwTabBar` 的可变文档集合语义；选中项是 bar 内的圆角中性表面，不复用 WinUI accent 下划线 |
 | 颜色与高对比度 | 使用 Adwaita 的 accent、border、disabled 和 scheme 语义，不写死蓝色或透明度 |
 
 GTK 的 HIG 同样没有承诺所有主题都使用同一像素高度。ZSUI 只把有官方来源的边距、分隔线和组合规则写入共享框架；字体、DPI、主题控件高度由 GTK 后端和 `NativeDrawPalette` 解析。

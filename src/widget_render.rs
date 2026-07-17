@@ -3302,18 +3302,20 @@ impl ZsTabViewMetrics {
                 selection_indicator_height: Dp::new(0.0),
             },
             ZsTabPlatformStyle::Gtk => Self {
-                strip_height: Dp::new(38.0),
-                header_top_padding: Dp::new(0.0),
-                item_height: Dp::new(38.0),
-                outer_inset: Dp::new(0.0),
+                // AdwTabBar uses a raised bar with an inset rounded selected
+                // tab. It is not the Fluent underline treatment.
+                strip_height: Dp::new(42.0),
+                header_top_padding: Dp::new(4.0),
+                item_height: Dp::new(34.0),
+                outer_inset: Dp::new(6.0),
                 item_gap: Dp::new(0.0),
                 horizontal_padding: Dp::new(12.0),
                 icon_size: Dp::new(16.0),
                 icon_gap: Dp::new(8.0),
                 minimum_item_width: Dp::new(72.0),
                 maximum_item_width: Dp::new(220.0),
-                radius: Dp::new(6.0),
-                selection_indicator_height: Dp::new(3.0),
+                radius: Dp::new(8.0),
+                selection_indicator_height: Dp::new(0.0),
             },
         }
     }
@@ -3574,7 +3576,11 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
         rect: plan.strip_bounds,
         fill: NativeDrawFill::Role(ColorRole::Surface),
     }];
-    if plan.platform == ZsTabPlatformStyle::Windows && plan.strip_bounds.height > 0 {
+    if matches!(
+        plan.platform,
+        ZsTabPlatformStyle::Windows | ZsTabPlatformStyle::Gtk
+    ) && plan.strip_bounds.height > 0
+    {
         commands.push(NativeDrawCommand::FillRect {
             rect: Rect {
                 x: plan.strip_bounds.x,
@@ -3613,14 +3619,11 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
     }
     for (header, tab) in plan.headers.iter().zip(tabs) {
         let fill = match (plan.platform, header.selected) {
+            (ZsTabPlatformStyle::Gtk, true) => NativeDrawFill::Role(ColorRole::Control),
             (_, true) => NativeDrawFill::Role(ColorRole::SurfaceRaised),
-            (ZsTabPlatformStyle::Windows, false) => NativeDrawFill::RoleWithAlpha {
+            (_, false) => NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::Control,
-                alpha: 1,
-            },
-            _ => NativeDrawFill::RoleWithAlpha {
-                role: ColorRole::Control,
-                alpha: 1,
+                alpha: 0,
             },
         };
         let stroke = match (plan.platform, header.selected) {
@@ -3665,11 +3668,10 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
             &tab.label,
             header.text_bounds,
             SemanticTextStyle {
-                role: if plan.platform == ZsTabPlatformStyle::Windows {
-                    TextRole::Caption
-                } else {
-                    TextRole::Body
-                },
+                // Tab headers are control content on all three desktops.
+                // Caption made Windows bilingual labels use the 12 epx Small
+                // optical master and look visibly cramped.
+                role: TextRole::Body,
                 color: if header.selected {
                     ColorRole::PrimaryText
                 } else {
@@ -8918,7 +8920,10 @@ mod tests {
         assert_eq!(windows.minimum_item_width, Dp::new(100.0));
         assert_eq!(windows.maximum_item_width, Dp::new(240.0));
         assert!(macos.outer_inset.0 > windows.outer_inset.0);
-        assert!(gtk.selection_indicator_height.0 > windows.selection_indicator_height.0);
+        assert_eq!(gtk.selection_indicator_height, Dp::new(0.0));
+        assert_eq!(gtk.header_top_padding, Dp::new(4.0));
+        assert_eq!(gtk.item_height, Dp::new(34.0));
+        assert_eq!(gtk.outer_inset, Dp::new(6.0));
         assert!(!ZsTabPlatformStyle::Windows.arrow_selects());
         assert!(ZsTabPlatformStyle::Macos.arrow_selects());
         assert!(!ZsTabPlatformStyle::Gtk.arrow_selects());
@@ -8951,6 +8956,13 @@ mod tests {
             ZsTabPlatformStyle::Macos,
             Dpi::standard(),
         );
+        let gtk = zs_tab_view_render_plan(
+            bounds,
+            &labels,
+            Some(1),
+            ZsTabPlatformStyle::Gtk,
+            Dpi::standard(),
+        );
 
         assert_eq!(windows.headers.len(), 3);
         assert!(windows.headers[1].selected);
@@ -8969,6 +8981,11 @@ mod tests {
             .iter()
             .all(|header| { header.bounds.width == macos.headers[0].bounds.width }));
         assert!(macos.headers[0].bounds.x > bounds.x);
+        assert!(gtk
+            .headers
+            .iter()
+            .all(|header| header.bounds.y == bounds.y + 4 && header.bounds.height == 34));
+        assert!(gtk.headers[1].selection_indicator.is_none());
 
         let narrow = zs_tab_view_render_plan(
             Rect {
@@ -9003,6 +9020,23 @@ mod tests {
             command,
             NativeDrawCommand::StrokeRect { rect, .. } if *rect == windows.content_bounds
         )));
+        let gtk_draw = zs_tab_view_native_draw_plan(&gtk, &labels);
+        assert!(gtk_draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                rect,
+                fill: NativeDrawFill::Role(ColorRole::Control),
+                stroke: None,
+                ..
+            } if *rect == gtk.headers[1].bounds
+        )));
+        assert!(!gtk_draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+                ..
+            }
+        )));
 
         let tabs = vec![
             crate::ZsTabSpec::new(crate::ZsTabId::new(1), "General").icon(crate::ZsIcon::Settings),
@@ -9029,7 +9063,7 @@ mod tests {
             command,
             NativeDrawCommand::Text(text)
                 if text.text == "General"
-                    && text.style.role == TextRole::Caption
+                    && text.style.role == TextRole::Body
                     && text.style.horizontal_align == HorizontalAlign::Start
                     && text.style.weight == TextWeight::Regular
         )));

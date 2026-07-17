@@ -221,7 +221,9 @@ history remain authoritative for implementation status.
   carries a semantic icon and label through the shared Button event path.
   AppKit and GTK show the small cross-platform action set with flat toolbar/
   header-bar chrome and leave secondary commands in the native menu; Windows
-  can add compact icon actions without shrinking bilingual labels.
+  can add compact icon actions without shrinking bilingual labels. Windows
+  primary command icons use the WinUI 20-DIP metric, and a visible label to
+  the icon's right uses the 14-DIP Body role rather than Caption.
 - The Notepad acceptance surface uses the real framework TabView for its
   document header. The semantic file icon and title occupy the same tab row and
   the editor is the selected tab content. This remains a one-static-tab proof;
@@ -320,8 +322,11 @@ history remain authoritative for implementation status.
   API contain no platform `cfg`.
 - Windows TabView headers follow the WinUI row composition: an optional
   16-DIP semantic icon and the header label share one 32-DIP item row below an
-  8-DIP strip inset. Static tabs keep their identity and selection semantics
-  but do not imply document-tab close, add, reorder or overflow behavior.
+  8-DIP strip inset. Header labels use Body text; Caption is reserved for
+  secondary metadata. GTK TabView uses an AdwTabBar-style raised strip and a
+  neutral inset rounded selected tab, never the Windows accent underline.
+  Static tabs keep their identity and selection semantics but do not imply
+  document-tab close, add, reorder or overflow behavior.
 - A Gallery sidebar item is not a centered outlined Button. Navigation rows use
   semantic icons, left-aligned labels, a 36-DIP Windows row and a 3-by-16-DIP
   accent selection indicator. The expanded Windows Gallery pane follows the

@@ -58,7 +58,12 @@ pub fn toolbar_button_for_style<Msg>(
 ) -> ViewNode<Msg> {
     let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
     let label = label.into();
-    let icon_size = Dp::new(16.0);
+    let icon_size = Dp::new(match platform {
+        // WinUI AppBarButton primary-command icons are 20×20 epx.
+        crate::ZsBaseControlPlatformStyle::Windows => 20.0,
+        crate::ZsBaseControlPlatformStyle::Macos
+        | crate::ZsBaseControlPlatformStyle::Gtk => 16.0,
+    });
     let content_gap = Dp::new(match platform {
         crate::ZsBaseControlPlatformStyle::Windows => 8.0,
         crate::ZsBaseControlPlatformStyle::Macos
