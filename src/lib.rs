@@ -562,6 +562,8 @@ pub use view::list;
 pub use view::number_box;
 #[cfg(feature = "password-box")]
 pub use view::password_box;
+#[cfg(feature = "button")]
+pub use view::platform_document_command_bar_for_style;
 #[cfg(feature = "progress")]
 pub use view::progress_bar;
 #[cfg(feature = "progress-ring")]
@@ -593,7 +595,9 @@ pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]
 pub use view::ZsTimePickerState;
 #[cfg(feature = "button")]
-pub use view::{button, navigation_item, ZsButtonPresentation};
+pub use view::{
+    button, navigation_item, toolbar_button, toolbar_button_for_style, ZsButtonPresentation,
+};
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
     LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,

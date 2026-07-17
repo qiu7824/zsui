@@ -533,6 +533,11 @@ pub(crate) struct ZsTabHeaderState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZsButtonPresentation {
     Standard,
+    Toolbar {
+        icon: crate::ZsIcon,
+        show_label: bool,
+        platform: crate::ZsBaseControlPlatformStyle,
+    },
     NavigationItem {
         icon: crate::ZsIcon,
         selected: bool,

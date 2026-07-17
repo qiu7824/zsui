@@ -9,6 +9,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - [Alignment, margin, and padding](https://learn.microsoft.com/en-us/windows/apps/design/layout/alignment-margin-padding)
 - [Content layout and spacing](https://learn.microsoft.com/en-us/windows/apps/design/basics/content-basics)
 - [NavigationView](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/navigationview)
+- [TabView](https://learn.microsoft.com/en-us/windows/apps/design/controls/tab-view)
 
 框架参数：
 
@@ -19,6 +20,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 常用间距 | 控件与控件 8 epx，控件与标签/内容 12 epx，表面边缘与文字 16 epx |
 | 导航组合 | `NavigationView` 左侧或顶部模式；左侧导航适用于约 5–10 个同等重要的顶级分类 |
 | 选中态 | `Control` 填充和左侧 3×16 epx 指示条；这是 Windows 分支的组合契约，不用于 macOS/GTK |
+| 文档标签 | `TabViewItem` 的语义图标和 Header 位于同一标签行，文字在图标右侧；内容属于所选标签 |
 
 ## macOS / AppKit
 
@@ -66,3 +68,5 @@ GTK 的 HIG 同样没有承诺所有主题都使用同一像素高度。ZSUI 只
 3. 最终 AppKit/GTK/Win32 视图截图和结构化布局报告，而不是只保存共享 DrawPlan。
 
 如果官方规范没有给出跨版本固定像素，ZSUI 不得自行编造一个“系统默认值”；应使用语义枚举、主题查询或后端运行时度量。
+
+`toolbar_button` 和 `platform_document_command_bar_for_style` 是上述工具栏契约的共享实现入口。应用只提供语义动作和强类型消息，不在 Demo 内复制 AppKit、GTK 或 WinUI 的分组分支。

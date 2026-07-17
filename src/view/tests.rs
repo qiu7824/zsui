@@ -162,6 +162,39 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "button")]
+    fn toolbar_button_keeps_semantic_icon_and_flat_resting_chrome() {
+        let mut view: ViewNode<Msg> =
+            toolbar_button("Save", crate::ZsIcon::Save).on_click(Msg::SaveClicked);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 32,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(command) if command.icon == crate::ZsIcon::Save
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(command) if command.text == "Save"
+        )));
+        assert!(!paint
+            .plan()
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::RoundRect { .. })));
+    }
+
+    #[test]
     #[cfg(all(windows, feature = "button"))]
     fn navigation_item_keeps_button_activation_with_navigation_chrome() {
         let item_id = WidgetId::new(19);

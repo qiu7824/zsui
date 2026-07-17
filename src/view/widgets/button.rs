@@ -34,6 +34,59 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
     .flex(0.0)
 }
 
+/// Creates an icon-and-label action for a platform toolbar or header bar.
+///
+/// The framework keeps this presentation flat at rest and maps the semantic
+/// icon through WinUI, SF Symbols or the GTK symbolic icon theme. Use
+/// [`platform_document_command_bar_for_style`] to let the framework own
+/// platform action density and grouping.
+#[cfg(feature = "button")]
+pub fn toolbar_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
+    toolbar_button_for_style(
+        crate::ZsBaseControlPlatformStyle::current(),
+        label,
+        icon,
+    )
+}
+
+/// Deterministic toolbar-button variant for target proof fixtures and tests.
+#[cfg(feature = "button")]
+pub fn toolbar_button_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    label: impl Into<String>,
+    icon: crate::ZsIcon,
+) -> ViewNode<Msg> {
+    let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
+    let label = label.into();
+    let icon_size = Dp::new(16.0);
+    let content_gap = Dp::new(match platform {
+        crate::ZsBaseControlPlatformStyle::Windows => 8.0,
+        crate::ZsBaseControlPlatformStyle::Macos
+        | crate::ZsBaseControlPlatformStyle::Gtk => 6.0,
+    });
+    let minimum_width = Dp::new(
+        metrics
+            .estimated_text_width_with_shaping_reserve(&label)
+            .0
+            + metrics.button_padding_left.0
+            + icon_size.0
+            + content_gap.0
+            + metrics.button_padding_right.0,
+    );
+    ViewNode::new(ViewNodeKind::Button {
+        label,
+        presentation: ZsButtonPresentation::Toolbar {
+            icon,
+            show_label: true,
+            platform,
+        },
+        on_click: None,
+    })
+    .min_width(minimum_width)
+    .height(metrics.button_height)
+    .flex(0.0)
+}
+
 /// Creates a self-drawn navigation row with a semantic icon and explicit
 /// selected state. It uses the same typed activation path as a Button while
 /// retaining NavigationView item geometry instead of Button chrome.

@@ -216,6 +216,16 @@ history remain authoritative for implementation status.
   selection stays neutral (not accent-filled), matching the
   `navigation-sidebar` style contract; accent remains available for actionable
   controls.
+- Document command bars use the framework-owned
+  `platform_document_command_bar_for_style` composition. `toolbar_button`
+  carries a semantic icon and label through the shared Button event path.
+  AppKit and GTK show the small cross-platform action set with flat toolbar/
+  header-bar chrome and leave secondary commands in the native menu; Windows
+  can add compact icon actions without shrinking bilingual labels.
+- The Notepad acceptance surface uses the real framework TabView for its
+  document header. The semantic file icon and title occupy the same tab row and
+  the editor is the selected tab content. This remains a one-static-tab proof;
+  add, close, reorder and cross-window document-tab behavior are not implied.
 - Acceptance examples follow the same rule: Notepad may expose the complete
   command bar on Windows, while AppKit and GTK keep only the small set of
   primary actions in content and leave Save As, Status and About in the native

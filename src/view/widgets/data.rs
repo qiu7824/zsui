@@ -231,6 +231,67 @@ pub fn platform_navigation_for_style<Msg>(
     navigation.width(open_pane_width)
 }
 
+/// Builds a document command bar using the target desktop's action density.
+///
+/// `leading` and `trailing` are the small cross-platform action set.
+/// `expanded_leading` and `expanded_trailing` are compacted into icon actions
+/// on Windows and remain in the target-native menu on AppKit and GTK. The
+/// application supplies typed buttons; the framework owns grouping, spacing,
+/// compact presentation and platform visibility.
+#[cfg(feature = "button")]
+pub fn platform_document_command_bar_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    leading: impl IntoIterator<Item = ViewNode<Msg>>,
+    trailing: impl IntoIterator<Item = ViewNode<Msg>>,
+    expanded_leading: impl IntoIterator<Item = ViewNode<Msg>>,
+    expanded_trailing: impl IntoIterator<Item = ViewNode<Msg>>,
+) -> ViewNode<Msg> {
+    let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
+    let mut children = leading.into_iter().collect::<Vec<_>>();
+    if platform == crate::ZsBaseControlPlatformStyle::Windows {
+        children.extend(
+            expanded_leading
+                .into_iter()
+                .map(|item| compact_toolbar_item(item, metrics.button_height)),
+        );
+    }
+    children.push(spacer());
+    children.extend(trailing);
+    if platform == crate::ZsBaseControlPlatformStyle::Windows {
+        children.extend(
+            expanded_trailing
+                .into_iter()
+                .map(|item| compact_toolbar_item(item, metrics.button_height)),
+        );
+    }
+    row(children)
+        .height(metrics.button_height)
+        .gap(Dp::new(match platform {
+            crate::ZsBaseControlPlatformStyle::Windows => 8.0,
+            crate::ZsBaseControlPlatformStyle::Macos
+            | crate::ZsBaseControlPlatformStyle::Gtk => 6.0,
+        }))
+        .bg(crate::ThemeColorToken::Surface)
+}
+
+#[cfg(feature = "button")]
+fn compact_toolbar_item<Msg>(mut item: ViewNode<Msg>, square: Dp) -> ViewNode<Msg> {
+    if let ViewNodeKind::Button {
+        presentation:
+            crate::ZsButtonPresentation::Toolbar {
+                show_label,
+                ..
+            },
+        ..
+    } = &mut item.kind
+    {
+        *show_label = false;
+        item.style.width = Some(square);
+        item.style.min_width = Some(square);
+    }
+    item
+}
+
 #[cfg(feature = "grid")]
 /// Creates a two-dimensional Grid using shared DPI-aware layout geometry.
 ///

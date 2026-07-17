@@ -1737,6 +1737,83 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             text_style,
                         )));
                     }
+                    ZsButtonPresentation::Toolbar {
+                        icon,
+                        show_label,
+                        platform,
+                    } => {
+                        let metrics = crate::ZsBaseControlMetrics::for_platform(*platform);
+                        let icon_size = Dp::new(16.0)
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(1)
+                            .min(bounds.height.max(1));
+                        let padding = metrics
+                            .button_padding_left
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(0);
+                        let content_gap = Dp::new(match platform {
+                            crate::ZsBaseControlPlatformStyle::Windows => 8.0,
+                            crate::ZsBaseControlPlatformStyle::Macos
+                            | crate::ZsBaseControlPlatformStyle::Gtk => 6.0,
+                        })
+                        .to_px(cx.dpi)
+                        .round_i32()
+                        .max(0);
+                        let icon_bounds = Rect {
+                            x: if *show_label {
+                                bounds.x.saturating_add(padding)
+                            } else {
+                                bounds
+                                    .x
+                                    .saturating_add(bounds.width.saturating_sub(icon_size) / 2)
+                            },
+                            y: bounds
+                                .y
+                                .saturating_add(bounds.height.saturating_sub(icon_size) / 2),
+                            width: icon_size,
+                            height: icon_size,
+                        };
+                        cx.draw(NativeDrawCommand::Icon(
+                            crate::NativeDrawIconCommand::new(
+                                *icon,
+                                icon_bounds,
+                                crate::NativeIconColorMode::ThemeAware,
+                            )
+                            .with_color(ColorRole::PrimaryText),
+                        ));
+                        if *show_label {
+                            let text_x = icon_bounds
+                                .x
+                                .saturating_add(icon_bounds.width)
+                                .saturating_add(content_gap);
+                            let mut text_style = SemanticTextStyle::body();
+                            text_style.role = if *platform
+                                == crate::ZsBaseControlPlatformStyle::Windows
+                            {
+                                TextRole::Caption
+                            } else {
+                                TextRole::Body
+                            };
+                            text_style.horizontal_align = crate::HorizontalAlign::Start;
+                            cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                                label,
+                                Rect {
+                                    x: text_x,
+                                    y: bounds.y,
+                                    width: bounds
+                                        .x
+                                        .saturating_add(bounds.width)
+                                        .saturating_sub(padding)
+                                        .saturating_sub(text_x)
+                                        .max(0),
+                                    height: bounds.height,
+                                },
+                                text_style,
+                            )));
+                        }
+                    }
                     ZsButtonPresentation::NavigationItem { icon, selected } => {
                         let plan = crate::zs_navigation_item_render_plan(
                             bounds,

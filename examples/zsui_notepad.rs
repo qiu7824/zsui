@@ -7,19 +7,21 @@ use std::{
 };
 
 use zsui::{
-    button, column, content_dialog, native_window, row, spacer, text, text_editor, AppCx, Command,
-    Dp, FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
-    NativeViewKey, NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap,
-    ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsBaseControlMetrics,
-    ZsBaseControlPlatformStyle, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec,
-    ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand, ZsTextSelection,
-    ZsuiError, ZsuiResult,
+    column, content_dialog, native_window, platform_document_command_bar_for_style, row, tab_view,
+    text, text_editor, toolbar_button_for_style, AppCx, Command, Dp, FileDialogService,
+    FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService, NativeViewKey,
+    NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode,
+    WidgetId, ZsAccelerator, ZsBaseControlMetrics, ZsBaseControlPlatformStyle,
+    ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec, ZsDocumentShellCommand,
+    ZsIcon, ZsTabId, ZsTabItem, ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand,
+    ZsTextSelection, ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
 const UNDO_BUTTON: WidgetId = WidgetId::new(2);
 const WRAP_BUTTON: WidgetId = WidgetId::new(3);
 const PENDING_DIALOG: WidgetId = WidgetId::new(4);
+const DOCUMENT_TAB: ZsTabId = ZsTabId::new(1);
 const EFFECT_OPEN: &str = "notepad.effect.open";
 const EFFECT_SAVE: &str = "notepad.effect.save";
 const EFFECT_SAVE_AS: &str = "notepad.effect.save-as";
@@ -109,81 +111,60 @@ fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle)
     };
     let title = format!("{display_name}{dirty_mark}");
 
-    let document_header = row(vec![
-        text(title).flex(1.0),
-        text(match platform {
-            ZsBaseControlPlatformStyle::Windows => "自绘编辑器 · Win32 / Self-drawn · Win32",
-            ZsBaseControlPlatformStyle::Macos => "自绘编辑器 · AppKit / Self-drawn · AppKit",
-            ZsBaseControlPlatformStyle::Gtk => "自绘编辑器 · GTK4 / Self-drawn · GTK4",
-        }),
-    ])
-    .height(Dp::new(match platform {
-        ZsBaseControlPlatformStyle::Windows => 36.0,
-        ZsBaseControlPlatformStyle::Macos => 28.0,
-        ZsBaseControlPlatformStyle::Gtk => 32.0,
-    }))
-    .gap(Dp::new(12.0));
-
-    let command_bar = match platform {
-        ZsBaseControlPlatformStyle::Windows => row(vec![
-            command_button("新建 / New", ZsDocumentShellCommand::New),
-            command_button("打开 / Open", ZsDocumentShellCommand::Open),
-            command_button("保存 / Save", ZsDocumentShellCommand::Save),
-            command_button("另存为 / Save as", ZsDocumentShellCommand::SaveAs),
-            command_button("撤销 / Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
-            spacer(),
-            command_button("状态 / Status", ZsDocumentShellCommand::ToggleStatus),
-            command_button("换行 / Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
-            command_button("关于 / About", ZsDocumentShellCommand::About),
-        ])
-        .height(Dp::new(40.0))
-        .gap(Dp::new(8.0)),
-        // AppKit keeps the in-content toolbar restrained; Save As, Status and
-        // About remain available through the native NSMenu.
-        ZsBaseControlPlatformStyle::Macos => row(vec![
-            command_button("新建 / New", ZsDocumentShellCommand::New),
-            command_button("打开 / Open", ZsDocumentShellCommand::Open),
-            command_button("保存 / Save", ZsDocumentShellCommand::Save),
-            spacer(),
-            command_button("撤销 / Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
-            command_button("换行 / Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
-        ])
-        .height(Dp::new(32.0))
-        .gap(Dp::new(6.0)),
-        // GTK follows the same small-action rule as a GNOME header bar; the
-        // complete command set remains in the native GMenu.
-        ZsBaseControlPlatformStyle::Gtk => row(vec![
-            command_button("新建 / New", ZsDocumentShellCommand::New),
-            command_button("打开 / Open", ZsDocumentShellCommand::Open),
-            command_button("保存 / Save", ZsDocumentShellCommand::Save),
-            spacer(),
-            command_button("撤销 / Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
-            command_button("换行 / Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
-        ])
-        .height(Dp::new(40.0))
-        .gap(Dp::new(8.0)),
-    }
-    .bg(ThemeColorToken::Surface);
-
-    let mut content = match platform {
-        ZsBaseControlPlatformStyle::Windows => vec![document_header, command_bar],
-        ZsBaseControlPlatformStyle::Macos | ZsBaseControlPlatformStyle::Gtk => {
-            vec![command_bar, document_header]
-        }
+    let command_button = |label: &str, icon: ZsIcon, command: ZsDocumentShellCommand| {
+        toolbar_button_for_style(platform, label, icon).on_click(Msg::Command(command))
     };
-
-    content.push(
-        text_editor(state.document.text())
-            .id(DOCUMENT_EDITOR)
-            .text_wrap(if state.word_wrap {
-                TextWrap::Word
-            } else {
-                TextWrap::NoWrap
-            })
-            .flex(1.0)
-            .on_change(Msg::DocumentChanged)
-            .on_text_selection_change(Msg::SelectionChanged),
+    let command_bar = platform_document_command_bar_for_style(
+        platform,
+        [
+            command_button("新建 / New", ZsIcon::Add, ZsDocumentShellCommand::New),
+            command_button("打开 / Open", ZsIcon::Folder, ZsDocumentShellCommand::Open),
+            command_button("保存 / Save", ZsIcon::Save, ZsDocumentShellCommand::Save),
+        ],
+        [
+            command_button("撤销 / Undo", ZsIcon::Undo, ZsDocumentShellCommand::Undo)
+                .id(UNDO_BUTTON),
+            command_button(
+                "换行 / Wrap",
+                ZsIcon::Text,
+                ZsDocumentShellCommand::ToggleWrap,
+            )
+            .id(WRAP_BUTTON),
+        ],
+        [command_button(
+            "另存为 / Save as",
+            ZsIcon::Save,
+            ZsDocumentShellCommand::SaveAs,
+        )],
+        [
+            command_button(
+                "状态 / Status",
+                ZsIcon::Inspector,
+                ZsDocumentShellCommand::ToggleStatus,
+            ),
+            command_button("关于 / About", ZsIcon::Info, ZsDocumentShellCommand::About),
+        ],
     );
+
+    let document_tab = tab_view(
+        [ZsTabItem::new(
+            DOCUMENT_TAB,
+            title,
+            text_editor(state.document.text())
+                .id(DOCUMENT_EDITOR)
+                .text_wrap(if state.word_wrap {
+                    TextWrap::Word
+                } else {
+                    TextWrap::NoWrap
+                })
+                .flex(1.0)
+                .on_change(Msg::DocumentChanged)
+                .on_text_selection_change(Msg::SelectionChanged),
+        )
+        .icon(ZsIcon::File)],
+        Some(DOCUMENT_TAB),
+    );
+    let mut content = vec![command_bar, document_tab.flex(1.0)];
 
     if state.show_status {
         let line_count = state.document.text().lines().count().max(1);
@@ -239,10 +220,6 @@ fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle)
         page,
     )
     .on_dialog_result(Msg::PendingResult)
-}
-
-fn command_button(label: &str, command: ZsDocumentShellCommand) -> ViewNode<Msg> {
-    button(label).on_click(Msg::Command(command))
 }
 
 fn update(shared: &mut SharedState, message: Msg, cx: &mut AppCx) {
@@ -916,6 +893,33 @@ mod tests {
             + node.children.iter().map(button_count).sum::<usize>()
     }
 
+    fn toolbar_profiles(node: &ViewNode<Msg>) -> Vec<(bool, ZsBaseControlPlatformStyle)> {
+        let mut profiles = Vec::new();
+        if let zsui::ViewNodeKind::Button {
+            presentation:
+                zsui::ZsButtonPresentation::Toolbar {
+                    show_label,
+                    platform,
+                    ..
+                },
+            ..
+        } = node.kind
+        {
+            profiles.push((show_label, platform));
+        }
+        for child in &node.children {
+            profiles.extend(toolbar_profiles(child));
+        }
+        profiles
+    }
+
+    fn document_tabs(node: &ViewNode<Msg>) -> Option<&[zsui::ZsTabSpec]> {
+        if let zsui::ViewNodeKind::Tabs { tabs, .. } = &node.kind {
+            return Some(tabs);
+        }
+        node.children.iter().find_map(document_tabs)
+    }
+
     #[test]
     fn notepad_toolbar_keeps_platform_native_action_density() {
         let shared = Arc::new(Mutex::new(NotepadState::default()));
@@ -926,7 +930,30 @@ mod tests {
         assert_eq!(button_count(&windows), 8);
         assert_eq!(button_count(&macos), 5);
         assert_eq!(button_count(&gtk), 5);
+        let windows_profiles = toolbar_profiles(&windows);
+        assert_eq!(
+            windows_profiles
+                .iter()
+                .filter(|(show_label, _)| !show_label)
+                .count(),
+            3
+        );
+        assert!(windows_profiles
+            .iter()
+            .all(|(_, platform)| *platform == ZsBaseControlPlatformStyle::Windows));
+        assert!(toolbar_profiles(&macos)
+            .iter()
+            .all(|(show_label, platform)| *show_label
+                && *platform == ZsBaseControlPlatformStyle::Macos));
+        assert!(toolbar_profiles(&gtk)
+            .iter()
+            .all(|(show_label, platform)| *show_label
+                && *platform == ZsBaseControlPlatformStyle::Gtk));
         for page in [&windows, &macos, &gtk] {
+            let tabs = document_tabs(page).expect("document must be hosted by TabView");
+            assert_eq!(tabs.len(), 1);
+            assert_eq!(tabs[0].icon, Some(ZsIcon::File));
+            assert!(tabs[0].label.contains("Untitled"));
             assert_eq!(page.widget_text_wrap(DOCUMENT_EDITOR), Some(TextWrap::Word));
         }
     }

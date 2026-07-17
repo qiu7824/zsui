@@ -55,6 +55,15 @@ framework architecture.
   explicit dirty state and transactional UTF-8 save/save-as.
 - `ZsDocumentShellCommand` converts to and from the public `Command` type, so
   the same typed commands drive buttons, native menus and accelerators.
+- `platform_document_command_bar_for_style` owns document-toolbar grouping and
+  platform action density. Every `toolbar_button` keeps a semantic icon and a
+  typed command message; AppKit and GTK use flat toolbar/header-bar actions and
+  keep secondary commands in their native menus, while Windows adds compact
+  icon actions without compressing bilingual labels.
+- The document surface is hosted by the framework `TabView`. Its file icon and
+  document title share the actual tab header row; the editor is the selected
+  tab content. The acceptance app currently proves one static document tab and
+  does not claim add/close/reorder behavior.
 - `NativeFileDialogService` selects Win32 open/save dialogs, AppKit
   `NSOpenPanel`/`NSSavePanel`, or GTK4 `FileChooserNative` behind one safe API.
 - File dialogs and filesystem I/O execute after the live-view lock is released.
@@ -115,6 +124,7 @@ cross-compilation.
 | Caret-aware line/column, line count, character count and encoding status | implemented |
 | Undo/cut/copy/paste/select-all command API | implemented |
 | Runtime word-wrap toggle | implemented |
+| File icon and title in a real TabView header | implemented; one static tab |
 | Wrapped visual-row Up/Down, PageUp/PageDown and Shift selection | implemented |
 | Long-document vertical viewport and shaped no-wrap horizontal caret reveal | implemented |
 | Captured selection drag with row/column edge scrolling | implemented |
@@ -134,9 +144,9 @@ This avoids claiming behavior that exists only in one platform service.
 
 ## Optional feature boundary
 
-`notepad-demo` enables only `window`, `button`, `label`, `textbox`, `clipboard`
-and `document-shell`. Cargo then selects the dependency for the current desktop
-target. Editor vertical and no-wrap horizontal viewport state belongs to
+`notepad-demo` enables only `window`, `button`, `label`, `textbox`, `tabs`,
+`dialog`, `clipboard` and `document-shell`. Cargo then selects the dependency
+for the current desktop target. Editor vertical and no-wrap horizontal viewport state belongs to
 `textbox` and does not enable the general `scroll` container. Clipboard support
 is therefore omitted when applications do not select it. `textbox` enables the
 small internal `text-input-core` slice and its Unicode segmentation dependency;
