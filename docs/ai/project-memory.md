@@ -211,6 +211,11 @@ history remain authoritative for implementation status.
   order and popup composition are platform contracts. Framework primitives such
   as `platform_section` own these composition choices; demos must consume them
   and must not recreate platform branches as example-local architecture.
+- GTK/Adwaita boxed sections use padded rows with one-pixel separators, and
+  the row's outer minimum height must include its interior padding. GTK sidebar
+  selection stays neutral (not accent-filled), matching the
+  `navigation-sidebar` style contract; accent remains available for actionable
+  controls.
 - Acceptance examples follow the same rule: Notepad may expose the complete
   command bar on Windows, while AppKit and GTK keep only the small set of
   primary actions in content and leave Save As, Status and About in the native

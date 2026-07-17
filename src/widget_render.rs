@@ -534,10 +534,10 @@ pub fn zs_navigation_item_native_draw_plan(
                 role: ColorRole::Accent,
                 alpha: 30,
             },
-            ZsBaseControlPlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
-                role: ColorRole::Accent,
-                alpha: 36,
-            },
+            // Libadwaita's `.navigation-sidebar` deliberately uses a
+            // neutral selected row rather than an accent-filled row. Accent
+            // is reserved for the control that is active or actionable.
+            ZsBaseControlPlatformStyle::Gtk => NativeDrawFill::Role(ColorRole::Control),
         };
         commands.push(NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -560,7 +560,12 @@ pub fn zs_navigation_item_native_draw_plan(
             crate::NativeIconColorMode::ThemeAware,
         )
         .with_color(
-            if plan.selected && !matches!(plan.platform, ZsBaseControlPlatformStyle::Windows) {
+            if plan.selected
+                && !matches!(
+                    plan.platform,
+                    ZsBaseControlPlatformStyle::Windows | ZsBaseControlPlatformStyle::Gtk
+                )
+            {
                 ColorRole::Accent
             } else if plan.selected {
                 ColorRole::PrimaryText
@@ -570,7 +575,12 @@ pub fn zs_navigation_item_native_draw_plan(
         ),
     ));
     let mut text_style = crate::SemanticTextStyle::body();
-    if plan.selected && !matches!(plan.platform, ZsBaseControlPlatformStyle::Windows) {
+    if plan.selected
+        && !matches!(
+            plan.platform,
+            ZsBaseControlPlatformStyle::Windows | ZsBaseControlPlatformStyle::Gtk
+        )
+    {
         text_style.color = ColorRole::Accent;
     }
     commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
@@ -8133,21 +8143,19 @@ mod tests {
         ] {
             let plan = zs_navigation_item_render_plan(bounds, true, platform, Dpi::standard());
             assert!(plan.selection_indicator.is_none());
-            assert!(
-                zs_navigation_item_native_draw_plan(&plan, "Library", ZsIcon::Sidebar)
-                    .commands
-                    .iter()
-                    .any(|command| matches!(
-                        command,
-                        NativeDrawCommand::RoundRect {
-                            fill: NativeDrawFill::RoleWithAlpha {
-                                role: ColorRole::Accent,
-                                ..
-                            },
-                            ..
-                        }
-                    ))
-            );
+            let draw = zs_navigation_item_native_draw_plan(&plan, "Library", ZsIcon::Sidebar);
+            let expected_fill = if platform == ZsBaseControlPlatformStyle::Gtk {
+                NativeDrawFill::Role(ColorRole::Control)
+            } else {
+                NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Accent,
+                    alpha: 30,
+                }
+            };
+            assert!(draw.commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::RoundRect { fill, .. } if *fill == expected_fill
+            )));
         }
     }
 

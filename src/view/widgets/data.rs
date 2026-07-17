@@ -79,6 +79,11 @@ pub fn platform_section_for_style<Msg>(
             column([heading, column(children).gap(Dp::new(8.0))]).gap(Dp::new(8.0))
         }
         crate::ZsBaseControlPlatformStyle::Gtk => {
+            // GNOME's boxed-list pattern uses padded rows separated by thin
+            // dividers. Padding is part of the row's outer geometry; keeping
+            // it out of the minimum height makes the content box collapse
+            // and clips controls (especially switches and progress rings).
+            const ROW_PADDING: f32 = 12.0;
             let mut rows = Vec::with_capacity(children.len().saturating_mul(2));
             for (index, child) in children.into_iter().enumerate() {
                 if index > 0 {
@@ -89,7 +94,16 @@ pub fn platform_section_for_style<Msg>(
                             .bg(crate::ThemeColorToken::Border),
                     );
                 }
-                rows.push(child.padding(Dp::new(12.0)));
+                let intrinsic_height = child
+                    .style
+                    .height
+                    .or(child.style.min_height)
+                    .unwrap_or(Dp::new(crate::TextRole::Body.line_height()));
+                rows.push(
+                    child
+                        .padding(Dp::new(ROW_PADDING))
+                        .min_height(Dp::new(intrinsic_height.0 + ROW_PADDING * 2.0)),
+                );
             }
             column([
                 heading,
@@ -299,4 +313,23 @@ pub fn image_preview<Msg>(snapshot: &ZsImagePreviewSnapshot) -> ViewNode<Msg> {
 
 pub fn spacer<Msg>() -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Spacer)
+}
+
+#[cfg(all(test, feature = "label"))]
+mod data_tests {
+    use super::*;
+
+    #[test]
+    fn gtk_boxed_rows_reserve_their_outer_padding() {
+        let child = row([spacer::<()>().height(Dp::new(34.0))]);
+        let section = platform_section_for_style(
+            crate::ZsBaseControlPlatformStyle::Gtk,
+            "Settings",
+            [child],
+        );
+        let rows = &section.children[1];
+        let first_row = &rows.children[0];
+        assert_eq!(first_row.style.padding, Some(Dp::new(12.0)));
+        assert_eq!(first_row.style.min_height, Some(Dp::new(58.0)));
+    }
 }
