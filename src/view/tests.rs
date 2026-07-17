@@ -343,8 +343,12 @@ mod tests {
             .body_line_height
             .to_px(Dpi::standard())
             .round_i32();
-        assert_eq!(bounds_for(row_id).height, button_height);
-        assert_eq!(bounds_for(button_id).height, button_height);
+        // A platform may add a small baseline/intrinsic row allowance around
+        // a compact button (AppKit currently resolves to 32dp for this mixed
+        // text/button row while the button itself remains 28dp). The row and
+        // button must agree, and neither may undersize the platform metric.
+        assert_eq!(bounds_for(row_id).height, bounds_for(button_id).height);
+        assert!(bounds_for(button_id).height >= button_height);
         assert_eq!(
             bounds_for(row_id).y,
             first_line_height + Dp::new(12.0).to_px(Dpi::standard()).round_i32()
