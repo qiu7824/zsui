@@ -263,6 +263,12 @@ history remain authoritative for implementation status.
   draw plan; semantic line/control heights, final text shaping, editor visual
   rows, selections and carets consume that same value. Examples must not patch
   font sizes or line boxes.
+- GTK/Pango no-wrap text must not receive a finite layout width unless it is
+  explicitly ellipsized. `single_paragraph_mode` alone does not disable width-
+  driven wrapping, which can move the tail of one editor row onto the next row
+  and overpaint its text. The renderer measures unconstrained no-wrap rows and
+  applies horizontal alignment at the Cairo origin; wrapping and ellipsized
+  text remain width-constrained.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

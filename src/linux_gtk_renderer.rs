@@ -1250,7 +1250,20 @@ impl<'a> LinuxGtkDrawSink<'a> {
         let layout = self
             .text_layout
             .pango_layout(&command.text, &style, Some(command.bounds));
-        let (_, text_height) = layout.pixel_size();
+        let (text_width, text_height) = layout.pixel_size();
+        let x = if style.wrap == TextWrap::NoWrap && !style.ellipsis {
+            match style.horizontal_align {
+                HorizontalAlign::Start => command.bounds.x,
+                HorizontalAlign::Center => {
+                    command.bounds.x + (command.bounds.width - text_width).max(0) / 2
+                }
+                HorizontalAlign::End => {
+                    command.bounds.x + (command.bounds.width - text_width).max(0)
+                }
+            }
+        } else {
+            command.bounds.x
+        };
         let y = match style.vertical_align {
             VerticalAlign::Start => command.bounds.y,
             VerticalAlign::Center => {
@@ -1259,8 +1272,7 @@ impl<'a> LinuxGtkDrawSink<'a> {
             VerticalAlign::End => command.bounds.y + (command.bounds.height - text_height).max(0),
         };
         self.set_source(style.color);
-        self.context
-            .move_to(f64::from(command.bounds.x), f64::from(y));
+        self.context.move_to(f64::from(x), f64::from(y));
         unsafe {
             pango_cairo_show_layout(self.context.to_raw_none(), layout.to_glib_none().0);
         }
@@ -1555,7 +1567,11 @@ fn configure_pango_layout(
         HorizontalAlign::End => gtk::pango::Alignment::Right,
     });
     layout.set_wrap(gtk::pango::WrapMode::WordChar);
-    if let Some(bounds) = bounds {
+    // A finite Pango width enables wrapping even when single-paragraph mode is
+    // active. No-wrap editor rows and ordinary labels therefore remain
+    // unconstrained; the draw sink applies their horizontal alignment. Only
+    // wrapping or ellipsized text owns a finite line width.
+    if let Some(bounds) = bounds.filter(|_| pango_layout_constrains_width(style)) {
         layout.set_width(bounds.width.max(0).saturating_mul(gtk::pango::SCALE));
         if style.wrap == TextWrap::Word {
             layout.set_height(bounds.height.max(0).saturating_mul(gtk::pango::SCALE));
@@ -1567,4 +1583,27 @@ fn configure_pango_layout(
     } else {
         gtk::pango::EllipsizeMode::None
     });
+}
+
+fn pango_layout_constrains_width(style: &TextStyle) -> bool {
+    style.wrap == TextWrap::Word || style.ellipsis
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pango_no_wrap_text_is_not_given_a_wrapping_width() {
+        let mut style = TextStyle::line("Sans", 14.0, Color::rgb(0, 0, 0));
+        style.ellipsis = false;
+        assert!(!pango_layout_constrains_width(&style));
+
+        style.ellipsis = true;
+        assert!(pango_layout_constrains_width(&style));
+
+        style.ellipsis = false;
+        style.wrap = TextWrap::Word;
+        assert!(pango_layout_constrains_width(&style));
+    }
 }
