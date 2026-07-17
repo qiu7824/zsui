@@ -103,6 +103,120 @@ pub fn platform_section_for_style<Msg>(
     }
 }
 
+/// Builds the navigation surface for the target desktop family.
+///
+/// Navigation is a platform contract, not a colored `Column`: Windows uses a
+/// Fluent NavigationView pane, macOS uses an unboxed source list, and GTK
+/// uses a grouped Adwaita sidebar list. The caller supplies semantic rows;
+/// the framework owns their information architecture and chrome.
+#[cfg(feature = "label")]
+pub fn platform_navigation<Msg>(
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
+    items: impl IntoIterator<Item = ViewNode<Msg>>,
+) -> ViewNode<Msg> {
+    platform_navigation_for_style(
+        crate::ZsBaseControlPlatformStyle::current(),
+        title,
+        subtitle,
+        items,
+    )
+}
+
+/// Deterministic navigation composition used by platform proof fixtures.
+#[cfg(feature = "label")]
+pub fn platform_navigation_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
+    items: impl IntoIterator<Item = ViewNode<Msg>>,
+) -> ViewNode<Msg> {
+    let title_style = crate::SemanticTextStyle {
+        role: match platform {
+            crate::ZsBaseControlPlatformStyle::Windows => crate::TextRole::Subtitle,
+            crate::ZsBaseControlPlatformStyle::Macos
+            | crate::ZsBaseControlPlatformStyle::Gtk => crate::TextRole::Body,
+        },
+        color: crate::ColorRole::PrimaryText,
+        weight: crate::TextWeight::Semibold,
+        horizontal_align: crate::HorizontalAlign::Start,
+        vertical_align: crate::VerticalAlign::Center,
+        wrap: crate::TextWrap::NoWrap,
+        ellipsis: false,
+    };
+    let heading = styled_text(title, title_style);
+    let subtitle = styled_text(
+        subtitle,
+        crate::SemanticTextStyle {
+            role: crate::TextRole::Caption,
+            color: crate::ColorRole::SecondaryText,
+            weight: crate::TextWeight::Regular,
+            horizontal_align: crate::HorizontalAlign::Start,
+            vertical_align: crate::VerticalAlign::Center,
+            wrap: crate::TextWrap::NoWrap,
+            ellipsis: true,
+        },
+    );
+    let metrics = crate::ZsNavigationItemMetrics::for_platform(platform);
+    let item_width = Dp::new(
+        metrics.open_pane_width.0
+            - match platform {
+                crate::ZsBaseControlPlatformStyle::Windows => 32.0,
+                crate::ZsBaseControlPlatformStyle::Macos => 24.0,
+                crate::ZsBaseControlPlatformStyle::Gtk => 32.0,
+            },
+    );
+    let items = items
+        .into_iter()
+        .map(|item| item.width(item_width))
+        .collect::<Vec<_>>();
+    let navigation = match platform {
+        crate::ZsBaseControlPlatformStyle::Windows => column([
+            heading,
+            subtitle,
+            column(items).gap(Dp::new(4.0)),
+        ])
+        .padding(Dp::new(16.0))
+        .gap(Dp::new(8.0))
+        .bg(crate::ThemeColorToken::SurfaceRaised),
+        crate::ZsBaseControlPlatformStyle::Macos => column([
+            heading,
+            subtitle,
+            column(items).gap(Dp::new(2.0)),
+        ])
+        .padding(Dp::new(12.0))
+        .gap(Dp::new(6.0))
+        .bg(crate::ThemeColorToken::SurfaceRaised),
+        crate::ZsBaseControlPlatformStyle::Gtk => {
+            let mut rows = Vec::with_capacity(items.len().saturating_mul(2));
+            for (index, item) in items.into_iter().enumerate() {
+                if index > 0 {
+                    rows.push(
+                        spacer()
+                            .height(Dp::new(1.0))
+                            .flex(0.0)
+                            .bg(crate::ThemeColorToken::Border),
+                    );
+                }
+                rows.push(item);
+            }
+            column([
+                heading,
+                subtitle,
+                column(rows)
+                    .gap(Dp::new(0.0))
+                    .padding(Dp::new(4.0))
+                    .radius(Dp::new(12.0))
+                    .bg(crate::ThemeColorToken::SurfaceRaised),
+            ])
+            .padding(Dp::new(12.0))
+            .gap(Dp::new(8.0))
+            .bg(crate::ThemeColorToken::Surface)
+        }
+    };
+    navigation.width(metrics.open_pane_width)
+}
+
 #[cfg(feature = "grid")]
 /// Creates a two-dimensional Grid using shared DPI-aware layout geometry.
 ///

@@ -862,35 +862,27 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
 
 fn view_for_platform(state: &GalleryState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
     let summary = zsui_component_catalog_summary();
-    let navigation_metrics = ZsNavigationItemMetrics::for_platform(platform);
-    let navigation_padding = Dp::new(match platform {
-        ZsBaseControlPlatformStyle::Windows => 16.0,
-        ZsBaseControlPlatformStyle::Macos | ZsBaseControlPlatformStyle::Gtk => 12.0,
-    });
-    let navigation_item_width =
-        Dp::new(navigation_metrics.open_pane_width.0 - navigation_padding.0 * 2.0);
-    let mut navigation = vec![
-        role_text("ZSUI 组件库 / Gallery", TextRole::Subtitle),
-        secondary_text(
-            format!(
-                "{} 个运行界面 / {} runtime surfaces",
-                summary.runtime_surface_count, summary.runtime_surface_count
-            ),
-            TextRole::Caption,
-        ),
-    ];
+    let mut navigation_items = Vec::new();
     if platform != ZsBaseControlPlatformStyle::Windows {
-        navigation.push(secondary_text("组件 / Components", TextRole::Caption));
+        navigation_items.push(secondary_text("组件 / Components", TextRole::Caption));
     }
-    navigation.extend(GalleryPage::ALL.into_iter().map(|(page, id)| {
+    navigation_items.extend(GalleryPage::ALL.into_iter().map(|(page, id)| {
         navigation_item(page.title(), page.icon(), page == state.page)
             .id(id)
-            .width(navigation_item_width)
             .on_click(Msg::Navigate(page))
     }));
+    let mut navigation = platform_navigation_for_style(
+        platform,
+        "ZSUI 组件库 / Gallery",
+        format!(
+            "{} 个运行界面 / {} runtime surfaces",
+            summary.runtime_surface_count, summary.runtime_surface_count
+        ),
+        navigation_items,
+    );
     if platform == ZsBaseControlPlatformStyle::Windows {
-        navigation.push(spacer());
-        navigation.push(
+        navigation = navigation.child(spacer());
+        navigation = navigation.child(
             row([
                 text(if state.dark {
                     "深色 / Dark"
@@ -902,18 +894,8 @@ fn view_for_platform(state: &GalleryState, platform: ZsBaseControlPlatformStyle)
             ])
             .gap(Dp::new(8.0)),
         );
-        navigation.push(status_text(&state.status));
+        navigation = navigation.child(status_text(&state.status));
     }
-
-    let navigation = column(navigation)
-        .width(navigation_metrics.open_pane_width)
-        .padding(navigation_padding)
-        .gap(Dp::new(match platform {
-            ZsBaseControlPlatformStyle::Windows => 4.0,
-            ZsBaseControlPlatformStyle::Macos => 3.0,
-            ZsBaseControlPlatformStyle::Gtk => 6.0,
-        }))
-        .bg(ThemeColorToken::SurfaceRaised);
     let page = match state.page {
         GalleryPage::Inputs => inputs_page(state, platform),
         GalleryPage::Collections => collections_page(state, platform),

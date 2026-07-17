@@ -1699,13 +1699,30 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             } => {
                 match presentation {
                     ZsButtonPresentation::Standard => {
-                        let metrics = crate::ZsBaseControlMetrics::for_platform(
-                            crate::ZsBaseControlPlatformStyle::current(),
-                        );
+                        let platform = crate::ZsBaseControlPlatformStyle::current();
+                        let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
+                        // Standard buttons deliberately keep their platform
+                        // bezel grammar: WinUI uses a bordered control,
+                        // AppKit uses a clean bezel without an outline, and
+                        // Adwaita keeps a raised surface with a subtle edge.
+                        let (fill, stroke) = match platform {
+                            crate::ZsBaseControlPlatformStyle::Windows => (
+                                NativeDrawFill::Role(ColorRole::Control),
+                                Some(NativeDrawFill::Role(ColorRole::Border)),
+                            ),
+                            crate::ZsBaseControlPlatformStyle::Macos => (
+                                NativeDrawFill::Role(ColorRole::Control),
+                                None,
+                            ),
+                            crate::ZsBaseControlPlatformStyle::Gtk => (
+                                NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                                Some(NativeDrawFill::Role(ColorRole::Border)),
+                            ),
+                        };
                         cx.draw(NativeDrawCommand::RoundRect {
                             rect: bounds,
-                            fill: NativeDrawFill::Role(ColorRole::Control),
-                            stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
+                            fill,
+                            stroke,
                             radius: radius_px(
                                 self.style.radius.or(Some(metrics.button_radius)),
                                 cx.dpi,

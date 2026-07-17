@@ -7998,6 +7998,8 @@ fn scale(value: i32, dpi: Dpi) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "button")]
+    use crate::ZsIcon;
 
     #[test]
     fn unicode_text_width_units_keep_cjk_full_width_and_combining_marks_zero_width() {

@@ -601,7 +601,10 @@ pub use view::{
     ViewStackDirection, ViewStyle, WidgetId,
 };
 #[cfg(feature = "label")]
-pub use view::{platform_section, platform_section_for_style};
+pub use view::{
+    platform_navigation, platform_navigation_for_style, platform_section,
+    platform_section_for_style,
+};
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
 #[cfg(feature = "label")]
