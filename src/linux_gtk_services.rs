@@ -150,19 +150,25 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             });
 
             if let Some(delay) = auto_close_after_ms {
+                let proof_state = Rc::clone(&state);
+                let proof_inputs = Rc::clone(&proof_inputs);
+                let proof_input_reports = Rc::clone(&proof_input_reports);
+                gtk::glib::timeout_add_local_once(
+                    Duration::from_millis((delay / 2).max(1)),
+                    move || {
+                        *proof_input_reports.borrow_mut() = proof_state
+                            .borrow()
+                            .as_ref()
+                            .and_then(|runtime| runtime._windows.view_hosts.values().next())
+                            .map(|host| host.dispatch_proof_inputs(&proof_inputs))
+                            .unwrap_or_default();
+                    },
+                );
                 let application = application.clone();
                 let state = Rc::clone(&state);
                 let capture_path = Rc::clone(&capture_path);
                 let capture_result = Rc::clone(&capture_result);
-                let proof_inputs = Rc::clone(&proof_inputs);
-                let proof_input_reports = Rc::clone(&proof_input_reports);
                 gtk::glib::timeout_add_local_once(Duration::from_millis(delay.max(1)), move || {
-                    *proof_input_reports.borrow_mut() = state
-                        .borrow()
-                        .as_ref()
-                        .and_then(|runtime| runtime._windows.view_hosts.values().next())
-                        .map(|host| host.dispatch_proof_inputs(&proof_inputs))
-                        .unwrap_or_default();
                     if let Some(path) = capture_path.as_deref() {
                         let result = state
                             .borrow()
