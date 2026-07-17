@@ -26,7 +26,9 @@ jobs:
       - name: Render star history
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The built-in token cannot read the repository's stargazer timeline.
+          # STAR_HISTORY_TOKEN is a repository secret with read access to this repository.
+          GITHUB_TOKEN: ${{ secrets.STAR_HISTORY_TOKEN }}
         run: ./scripts/update-star-history.ps1
 
       - name: Commit changed chart
