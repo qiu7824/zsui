@@ -35,10 +35,16 @@ impl NativeDrawPalette {
         mode: ZsuiThemeMode,
         system_prefers_dark: bool,
         system_high_contrast: bool,
+        native_standard: Option<Self>,
         native_high_contrast: Option<Self>,
     ) -> Self {
         if system_high_contrast {
             native_high_contrast.unwrap_or_else(|| Self::high_contrast(system_prefers_dark))
+        } else if matches!(mode, ZsuiThemeMode::System)
+            || matches!(mode, ZsuiThemeMode::Dark) && system_prefers_dark
+            || matches!(mode, ZsuiThemeMode::Light) && !system_prefers_dark
+        {
+            native_standard.unwrap_or_else(|| Self::for_mode(mode, system_prefers_dark))
         } else {
             Self::for_mode(mode, system_prefers_dark)
         }
@@ -256,6 +262,7 @@ mod tests {
             ZsuiThemeMode::Light,
             false,
             true,
+            None,
             Some(native),
         );
         assert_eq!(system, native);
@@ -272,6 +279,34 @@ mod tests {
                 alpha: 14,
             }),
             Color::rgba(255, 255, 255, 64)
+        );
+    }
+
+    #[test]
+    fn matching_native_appearance_uses_platform_semantic_palette() {
+        let native = NativeDrawPalette {
+            surface: Color::rgb(11, 12, 13),
+            ..NativeDrawPalette::for_mode(ZsuiThemeMode::Light, false)
+        };
+        assert_eq!(
+            NativeDrawPalette::for_system_appearance(
+                ZsuiThemeMode::Light,
+                false,
+                false,
+                Some(native),
+                None,
+            ),
+            native
+        );
+        assert_eq!(
+            NativeDrawPalette::for_system_appearance(
+                ZsuiThemeMode::Dark,
+                false,
+                false,
+                Some(native),
+                None,
+            ),
+            NativeDrawPalette::for_mode(ZsuiThemeMode::Dark, false)
         );
     }
 

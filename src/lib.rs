@@ -600,6 +600,8 @@ pub use view::{
     ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewPaintCx,
     ViewStackDirection, ViewStyle, WidgetId,
 };
+#[cfg(feature = "label")]
+pub use view::{platform_section, platform_section_for_style};
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
 #[cfg(feature = "label")]

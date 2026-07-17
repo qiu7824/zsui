@@ -75,6 +75,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 plan.theme_mode,
                 system_prefers_dark,
                 system_high_contrast,
+                linux_gtk_semantic_palette(area),
                 system_high_contrast
                     .then(|| linux_gtk_semantic_high_contrast_palette(area))
                     .flatten(),
@@ -915,6 +916,67 @@ fn linux_gtk_semantic_high_contrast_palette(area: &gtk::DrawingArea) -> Option<N
         warning: primary_text,
         danger: primary_text,
         high_contrast: true,
+    })
+}
+
+#[allow(deprecated)]
+fn linux_gtk_semantic_palette(area: &gtk::DrawingArea) -> Option<NativeDrawPalette> {
+    let context = area.style_context();
+    let primary_text = linux_gtk_lookup_color(
+        &context,
+        &["window_fg_color", "theme_fg_color", "view_fg_color"],
+    )
+    .unwrap_or_else(|| linux_gtk_color(context.color()));
+    let surface = linux_gtk_lookup_color(
+        &context,
+        &["window_bg_color", "theme_bg_color", "view_bg_color"],
+    )?;
+    let surface_raised = linux_gtk_lookup_color(
+        &context,
+        &["card_bg_color", "view_bg_color", "theme_base_color"],
+    )
+    .unwrap_or(surface);
+    let control = linux_gtk_lookup_color(
+        &context,
+        &["view_bg_color", "card_bg_color", "theme_base_color"],
+    )
+    .unwrap_or(surface_raised);
+    Some(NativeDrawPalette {
+        primary_text,
+        secondary_text: linux_gtk_lookup_color(
+            &context,
+            &["dim_label_fg_color", "theme_unfocused_fg_color"],
+        )
+        .unwrap_or(primary_text),
+        disabled_text: linux_gtk_lookup_color(
+            &context,
+            &["insensitive_fg_color", "theme_unfocused_fg_color"],
+        )
+        .unwrap_or(primary_text),
+        accent: linux_gtk_lookup_color(&context, &["accent_bg_color", "theme_selected_bg_color"])?,
+        accent_text: linux_gtk_lookup_color(
+            &context,
+            &["accent_fg_color", "theme_selected_fg_color"],
+        )
+        .unwrap_or(surface_raised),
+        surface,
+        surface_raised,
+        control,
+        border: linux_gtk_lookup_color(
+            &context,
+            &["headerbar_border_color", "borders", "shade_color"],
+        )
+        .unwrap_or(primary_text),
+        success: linux_gtk_lookup_color(&context, &["success_bg_color", "success_color"])
+            .unwrap_or(Color::rgb(46, 160, 67)),
+        warning: linux_gtk_lookup_color(&context, &["warning_bg_color", "warning_color"])
+            .unwrap_or(Color::rgb(229, 165, 10)),
+        danger: linux_gtk_lookup_color(
+            &context,
+            &["destructive_bg_color", "error_bg_color", "error_color"],
+        )
+        .unwrap_or(Color::rgb(192, 28, 40)),
+        high_contrast: false,
     })
 }
 

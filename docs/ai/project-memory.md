@@ -205,6 +205,12 @@ history remain authoritative for implementation status.
   sidebar with aligned AppKit-style form stacks, and GTK uses sidebar
   navigation with headings outside Adwaita-style boxed groups. Shared state and
   typed messages do not require all three platforms to reuse a WinUI page tree.
+- A platform profile is not valid if it only changes colors, radii, spacing or
+  font metrics while retaining the WinUI component tree. Navigation selection,
+  row grouping, toolbar/header-bar placement, tab treatment, dialog action
+  order and popup composition are platform contracts. Framework primitives such
+  as `platform_section` own these composition choices; demos must consume them
+  and must not recreate platform branches as example-local architecture.
 - Acceptance examples follow the same rule: Notepad may expose the complete
   command bar on Windows, while AppKit and GTK keep only the small set of
   primary actions in content and leave Save As, Status and About in the native

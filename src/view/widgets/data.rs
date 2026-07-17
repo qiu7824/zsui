@@ -21,6 +21,88 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
     .children(children)
 }
 
+/// Groups related content using the target desktop's information architecture.
+///
+/// This is a semantic composition primitive, not a Windows card with a few
+/// spacing values changed: Windows gets a raised Fluent group, macOS gets an
+/// unboxed form section, and GTK gets an Adwaita-style boxed group with row
+/// separators. Applications keep one typed view tree while the framework owns
+/// the platform composition decision.
+#[cfg(feature = "label")]
+pub fn platform_section<Msg>(
+    title: impl Into<String>,
+    children: impl IntoIterator<Item = ViewNode<Msg>>,
+) -> ViewNode<Msg> {
+    platform_section_for_style(
+        crate::ZsBaseControlPlatformStyle::current(),
+        title,
+        children,
+    )
+}
+
+/// Deterministic variant used by proof fixtures and framework tests that need
+/// to inspect more than the host platform.
+#[cfg(feature = "label")]
+pub fn platform_section_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    title: impl Into<String>,
+    children: impl IntoIterator<Item = ViewNode<Msg>>,
+) -> ViewNode<Msg> {
+    let heading = styled_text(
+        title,
+        crate::SemanticTextStyle {
+            role: crate::TextRole::Body,
+            color: match platform {
+                crate::ZsBaseControlPlatformStyle::Macos => crate::ColorRole::SecondaryText,
+                crate::ZsBaseControlPlatformStyle::Windows
+                | crate::ZsBaseControlPlatformStyle::Gtk => crate::ColorRole::PrimaryText,
+            },
+            weight: crate::TextWeight::Semibold,
+            horizontal_align: crate::HorizontalAlign::Start,
+            vertical_align: crate::VerticalAlign::Center,
+            wrap: crate::TextWrap::NoWrap,
+            ellipsis: false,
+        },
+    );
+    let children = children.into_iter().collect::<Vec<_>>();
+    match platform {
+        crate::ZsBaseControlPlatformStyle::Windows => column([
+            heading,
+            column(children)
+                .padding(Dp::new(16.0))
+                .gap(Dp::new(10.0))
+                .radius(Dp::new(8.0))
+                .bg(crate::ThemeColorToken::SurfaceRaised),
+        ])
+        .gap(Dp::new(8.0)),
+        crate::ZsBaseControlPlatformStyle::Macos => {
+            column([heading, column(children).gap(Dp::new(8.0))]).gap(Dp::new(8.0))
+        }
+        crate::ZsBaseControlPlatformStyle::Gtk => {
+            let mut rows = Vec::with_capacity(children.len().saturating_mul(2));
+            for (index, child) in children.into_iter().enumerate() {
+                if index > 0 {
+                    rows.push(
+                        spacer()
+                            .height(Dp::new(1.0))
+                            .flex(0.0)
+                            .bg(crate::ThemeColorToken::Border),
+                    );
+                }
+                rows.push(child.padding(Dp::new(12.0)));
+            }
+            column([
+                heading,
+                column(rows)
+                    .gap(Dp::new(0.0))
+                    .radius(Dp::new(12.0))
+                    .bg(crate::ThemeColorToken::SurfaceRaised),
+            ])
+            .gap(Dp::new(8.0))
+        }
+    }
+}
+
 #[cfg(feature = "grid")]
 /// Creates a two-dimensional Grid using shared DPI-aware layout geometry.
 ///

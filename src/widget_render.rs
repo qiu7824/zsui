@@ -446,6 +446,7 @@ pub struct ZsNavigationItemRenderPlan {
     pub selected: bool,
     pub indicator_radius: i32,
     pub radius: i32,
+    pub platform: ZsBaseControlPlatformStyle,
 }
 
 #[cfg(feature = "button")]
@@ -490,8 +491,11 @@ pub fn zs_navigation_item_render_plan(
         .x
         .saturating_add(bounds.width)
         .saturating_sub(trailing_padding);
-    let selection_indicator =
-        (selected && indicator_width > 0 && indicator_height > 0).then_some(Rect {
+    let selection_indicator = (platform == ZsBaseControlPlatformStyle::Windows
+        && selected
+        && indicator_width > 0
+        && indicator_height > 0)
+        .then_some(Rect {
             x: bounds.x,
             y: bounds
                 .y
@@ -512,6 +516,7 @@ pub fn zs_navigation_item_render_plan(
         selected,
         indicator_radius: metrics.indicator_radius.to_px(dpi).round_i32().max(0),
         radius: metrics.radius.to_px(dpi).round_i32().max(1),
+        platform,
     }
 }
 
@@ -523,9 +528,20 @@ pub fn zs_navigation_item_native_draw_plan(
 ) -> NativeDrawPlan {
     let mut commands = Vec::new();
     if plan.selected {
+        let fill = match plan.platform {
+            ZsBaseControlPlatformStyle::Windows => NativeDrawFill::Role(ColorRole::Control),
+            ZsBaseControlPlatformStyle::Macos => NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 30,
+            },
+            ZsBaseControlPlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 36,
+            },
+        };
         commands.push(NativeDrawCommand::RoundRect {
             rect: plan.bounds,
-            fill: NativeDrawFill::Role(ColorRole::Control),
+            fill,
             stroke: None,
             radius: plan.radius,
         });
@@ -543,16 +559,24 @@ pub fn zs_navigation_item_native_draw_plan(
             plan.icon_bounds,
             crate::NativeIconColorMode::ThemeAware,
         )
-        .with_color(if plan.selected {
-            ColorRole::PrimaryText
-        } else {
-            ColorRole::SecondaryText
-        }),
+        .with_color(
+            if plan.selected && !matches!(plan.platform, ZsBaseControlPlatformStyle::Windows) {
+                ColorRole::Accent
+            } else if plan.selected {
+                ColorRole::PrimaryText
+            } else {
+                ColorRole::SecondaryText
+            },
+        ),
     ));
+    let mut text_style = crate::SemanticTextStyle::body();
+    if plan.selected && !matches!(plan.platform, ZsBaseControlPlatformStyle::Windows) {
+        text_style.color = ColorRole::Accent;
+    }
     commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
         label,
         plan.text_bounds,
-        crate::SemanticTextStyle::body(),
+        text_style,
     )));
     NativeDrawPlan::new(commands)
 }
@@ -8090,6 +8114,39 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::RoundRect { .. })));
+    }
+
+    #[cfg(feature = "button")]
+    #[test]
+    fn navigation_item_selection_uses_platform_native_patterns() {
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 220,
+            height: 36,
+        };
+        for platform in [
+            ZsBaseControlPlatformStyle::Macos,
+            ZsBaseControlPlatformStyle::Gtk,
+        ] {
+            let plan = zs_navigation_item_render_plan(bounds, true, platform, Dpi::standard());
+            assert!(plan.selection_indicator.is_none());
+            assert!(
+                zs_navigation_item_native_draw_plan(&plan, "Library", ZsIcon::Sidebar)
+                    .commands
+                    .iter()
+                    .any(|command| matches!(
+                        command,
+                        NativeDrawCommand::RoundRect {
+                            fill: NativeDrawFill::RoleWithAlpha {
+                                role: ColorRole::Accent,
+                                ..
+                            },
+                            ..
+                        }
+                    ))
+            );
+        }
     }
 
     #[cfg(feature = "tree")]

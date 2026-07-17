@@ -494,6 +494,7 @@ define_class!(
                 plan.theme_mode,
                 system_prefers_dark,
                 system_high_contrast,
+                appkit_semantic_palette(),
                 system_high_contrast
                     .then(appkit_semantic_high_contrast_palette)
                     .flatten(),
@@ -1659,6 +1660,24 @@ fn appkit_semantic_high_contrast_palette() -> Option<NativeDrawPalette> {
         warning: appkit_native_color(&NSColor::systemOrangeColor())?,
         danger: appkit_native_color(&NSColor::systemRedColor())?,
         high_contrast: true,
+    })
+}
+
+fn appkit_semantic_palette() -> Option<NativeDrawPalette> {
+    Some(NativeDrawPalette {
+        primary_text: appkit_native_color(&NSColor::labelColor())?,
+        secondary_text: appkit_native_color(&NSColor::secondaryLabelColor())?,
+        disabled_text: appkit_native_color(&NSColor::disabledControlTextColor())?,
+        accent: appkit_native_color(&NSColor::selectedContentBackgroundColor())?,
+        accent_text: appkit_native_color(&NSColor::selectedControlTextColor())?,
+        surface: appkit_native_color(&NSColor::windowBackgroundColor())?,
+        surface_raised: appkit_native_color(&NSColor::textBackgroundColor())?,
+        control: appkit_native_color(&NSColor::controlBackgroundColor())?,
+        border: appkit_native_color(&NSColor::separatorColor())?,
+        success: appkit_native_color(&NSColor::systemGreenColor())?,
+        warning: appkit_native_color(&NSColor::systemOrangeColor())?,
+        danger: appkit_native_color(&NSColor::systemRedColor())?,
+        high_contrast: false,
     })
 }
 

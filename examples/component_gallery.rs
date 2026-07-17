@@ -331,40 +331,7 @@ fn card(
     title: impl Into<String>,
     children: Vec<ViewNode<Msg>>,
 ) -> ViewNode<Msg> {
-    let title = title.into();
-    match platform {
-        ZsBaseControlPlatformStyle::Windows => {
-            let mut nodes = Vec::with_capacity(children.len() + 1);
-            nodes.push(body_strong(title));
-            nodes.extend(children);
-            column(nodes)
-                .flex(1.0)
-                .padding(Dp::new(16.0))
-                .gap(Dp::new(10.0))
-                .radius(Dp::new(8.0))
-                .bg(ThemeColorToken::SurfaceRaised)
-        }
-        // AppKit forms use aligned vertical stacks rather than Windows-style
-        // cards. Whitespace and the section heading carry the hierarchy.
-        ZsBaseControlPlatformStyle::Macos => {
-            let mut nodes = Vec::with_capacity(children.len() + 1);
-            nodes.push(body_strong(title));
-            nodes.extend(children);
-            column(nodes).flex(1.0).gap(Dp::new(8.0))
-        }
-        // GNOME groups place the heading outside an inset boxed list.
-        ZsBaseControlPlatformStyle::Gtk => column([
-            body_strong(title),
-            column(children)
-                .flex(1.0)
-                .padding(Dp::new(12.0))
-                .gap(Dp::new(8.0))
-                .radius(Dp::new(12.0))
-                .bg(ThemeColorToken::SurfaceRaised),
-        ])
-        .flex(1.0)
-        .gap(Dp::new(8.0)),
-    }
+    platform_section_for_style(platform, title, children).flex(1.0)
 }
 
 fn compact_card(
