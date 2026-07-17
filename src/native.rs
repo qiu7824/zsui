@@ -9119,6 +9119,14 @@ fn run_native_window_smoke_event_loop(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "textbox")]
+    fn editor_height_for_visible_rows(rows: u32) -> u32 {
+        let line_height = crate::TextRole::Body
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height;
+        16_u32.saturating_add((line_height * rows.max(1) as f32).round() as u32)
+    }
+
     #[test]
     fn native_window_builder_declares_single_window_app() {
         let app = native_window("Example")
@@ -10226,14 +10234,15 @@ mod tests {
     fn native_view_runtime_pages_editor_by_visible_rows_with_shift_selection() {
         let editor = crate::WidgetId::new(763);
         let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let editor_height = editor_height_for_visible_rows(3);
         let builder = native_window("Paged editor viewport")
-            .size(160, 70)
+            .size(160, editor_height)
             .ui_command_view(
                 crate::text_editor::<UiCommand>(value)
                     .id(editor)
                     .text_wrap(crate::TextWrap::NoWrap)
                     .width(crate::Dp::new(160.0))
-                    .height(crate::Dp::new(70.0))
+                    .height(crate::Dp::new(editor_height as f32))
                     .on_text_selection_change(|_| UiCommand::app(crate::CommandId("selection"))),
             );
         let target = builder
@@ -10333,12 +10342,14 @@ mod tests {
     fn native_view_runtime_scrolls_editor_viewport_during_edge_drag() {
         let editor = crate::WidgetId::new(764);
         let value = "a0\nb1\nc2\nd3\ne4\nf5\ng6";
+        let editor_height = editor_height_for_visible_rows(3);
         let builder = native_window("Editor edge drag")
-            .size(160, 70)
+            .size(160, editor_height)
             .ui_command_view(
                 crate::text_editor::<UiCommand>(value)
                     .id(editor)
                     .text_wrap(crate::TextWrap::NoWrap)
+                    .height(crate::Dp::new(editor_height as f32))
                     .on_text_selection_change(|_| UiCommand::app(crate::CommandId("selection"))),
             );
         let target = builder

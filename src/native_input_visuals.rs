@@ -2334,6 +2334,10 @@ mod tests {
         .max(1)
     }
 
+    fn editor_height_for_visible_rows(rows: i32) -> i32 {
+        16_i32.saturating_add(body_line_height().saturating_mul(rows.max(1)))
+    }
+
     fn proportional_test_shape(text: &str, _fallback_width: i32) -> Option<NativeShapedTextLine> {
         if text.is_empty() {
             return None;
@@ -3479,7 +3483,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 width: 48,
-                height: 52,
+                height: editor_height_for_visible_rows(2),
             },
             ViewHitTargetKind::TextEditor,
         );
@@ -3692,7 +3696,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 width: 160,
-                height: 70,
+                height: editor_height_for_visible_rows(3),
             },
             ViewHitTargetKind::TextEditor,
         );
@@ -3825,7 +3829,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 width: 160,
-                height: 70,
+                height: editor_height_for_visible_rows(3),
             },
             ViewHitTargetKind::TextEditor,
         );
@@ -3864,7 +3868,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 width: 48,
-                height: 52,
+                height: editor_height_for_visible_rows(2),
             },
             ViewHitTargetKind::TextEditor,
         );
