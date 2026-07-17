@@ -16,7 +16,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{
     NSArray, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
-    NSSize, NSString, NSTimer, NSURL,
+    NSSize, NSString, NSURL,
 };
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
@@ -77,29 +77,25 @@ define_class!(
             self.set_window_suspended(notification, false);
         }
     }
-
-    impl ZsuiAppKitRuntimeDelegate {
-        #[unsafe(method(zsuiCaptureAndStop:))]
-        fn zsui_capture_and_stop(&self, _timer: &NSTimer) {
-            if let Some(handler) = self.ivars().capture_handler.as_ref() {
-                *self.ivars().proof_input_reports.borrow_mut() =
-                    handler.dispatch_proof_inputs(&self.ivars().proof_inputs);
-            }
-            if let Some(path) = self.ivars().capture_path.as_deref() {
-                let result = self
-                    .ivars()
-                    .capture_handler
-                    .as_ref()
-                    .ok_or_else(|| "the AppKit proof window has no ZSUI NSView".to_string())
-                    .and_then(|handler| handler.capture_png(path));
-                *self.ivars().capture_result.borrow_mut() = Some(result);
-            }
-            NSApplication::sharedApplication(self.mtm()).stop(None);
-        }
-    }
 );
 
 impl ZsuiAppKitRuntimeDelegate {
+    fn run_proof_inputs_and_capture(&self) {
+        if let Some(handler) = self.ivars().capture_handler.as_ref() {
+            *self.ivars().proof_input_reports.borrow_mut() =
+                handler.dispatch_proof_inputs(&self.ivars().proof_inputs);
+        }
+        if let Some(path) = self.ivars().capture_path.as_deref() {
+            let result = self
+                .ivars()
+                .capture_handler
+                .as_ref()
+                .ok_or_else(|| "the AppKit proof window has no ZSUI NSView".to_string())
+                .and_then(|handler| handler.capture_png(path));
+            *self.ivars().capture_result.borrow_mut() = Some(result);
+        }
+    }
+
     fn set_window_suspended(&self, notification: &NSNotification, suspended: bool) {
         let window = notification
             .object()
@@ -226,18 +222,13 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let menu_command_routed =
         auto_close_after_ms.is_some() && menu_service.invoke_first_enabled_command_for_proof();
 
-    let timer = auto_close_after_ms.map(|delay| unsafe {
-        NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
-            delay.max(1) as f64 / 1_000.0,
-            delegate.as_ref(),
-            objc2::sel!(zsuiCaptureAndStop:),
-            None,
-            false,
-        )
-    });
-    application.run();
-    if let Some(timer) = timer {
-        timer.invalidate();
+    if let Some(delay) = auto_close_after_ms {
+        application.finishLaunching();
+        let deadline = NSDate::dateWithTimeIntervalSinceNow(delay.max(1) as f64 / 1_000.0);
+        NSRunLoop::mainRunLoop().runUntilDate(&deadline);
+        delegate.run_proof_inputs_and_capture();
+    } else {
+        application.run();
     }
     for window in window_service.windows.values() {
         window.setDelegate(None);
