@@ -64,6 +64,16 @@ jobs:
       - name: Install GTK4 development files
         if: matrix.backend == 'linux-gtk'
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
-      - run: cargo test --locked --features full
+      - name: Run full tests
+        id: full-tests
+        run: |
+          set -o pipefail
+          mkdir -p target
+          cargo test --locked --features full 2>&1 | tee target/full-test.log
+      - name: Summarize full test failure
+        if: failure() && steps.full-tests.outcome == 'failure'
+        run: |
+          summary="$(grep -E '^(test .* FAILED|failures:|assertion .* failed|left:|right:|thread .* panicked)' target/full-test.log | tail -30 | tr '\n' ' ' || true)"
+          echo "::error title=Full test failure::$summary"
       - run: cargo check --locked --no-default-features --features ${{ matrix.backend }}
       - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style
