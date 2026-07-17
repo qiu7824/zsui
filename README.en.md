@@ -743,6 +743,8 @@ it falls back to in-memory clipboard storage.
   `View<Msg>` messages flowing through `AppCx` into reusable UI commands.
 - `docs/architecture.md`: framework boundary and layering rules.
 - `docs/framework-goals.md`: long-range Rust-first API and trimming target.
+- `docs/v0.3-native-proof-ci.md`: the 0.3 three-platform native runtime and
+  visual-regression milestone, with AppKit as the first blocking target.
 - `docs/porting.md`: host implementation contract for new platform backends.
 - `docs/native-host-smoke.md`: target artifact contract before platform
   completion claims.

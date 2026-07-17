@@ -1,6 +1,8 @@
 use std::{
     cell::{Cell, RefCell},
     ffi::c_void,
+    path::Path,
+    ptr::NonNull,
 };
 
 use objc2::rc::Retained;
@@ -14,15 +16,16 @@ use objc2_app_kit::{
     NSAccessibilityTextFieldRole,
 };
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSCarriageReturnCharacter,
-    NSColor, NSColorSpace, NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey,
-    NSEnterCharacter, NSEvent, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold,
-    NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName,
-    NSGraphicsContext, NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode,
-    NSMutableParagraphStyle, NSPageDownFunctionKey, NSPageUpFunctionKey,
-    NSParagraphStyleAttributeName, NSRightArrowFunctionKey, NSStringDrawing,
-    NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment,
-    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
+    NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSBitmapImageFileType,
+    NSBitmapImageRepPropertyKey, NSCarriageReturnCharacter, NSColor, NSColorSpace,
+    NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey, NSEnterCharacter, NSEvent,
+    NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold, NSFontWeightMedium,
+    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGraphicsContext,
+    NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode, NSMutableParagraphStyle,
+    NSPageDownFunctionKey, NSPageUpFunctionKey, NSParagraphStyleAttributeName,
+    NSRightArrowFunctionKey, NSStringDrawing, NSStringDrawingOptions,
+    NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment, NSTextInputClient,
+    NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
@@ -713,7 +716,10 @@ define_class!(
 );
 
 impl ZsuiAppKitDrawView {
-    fn apply_input_report(&self, mut report: crate::native::NativeViewInputDispatchReport) {
+    fn apply_input_report(
+        &self,
+        mut report: crate::native::NativeViewInputDispatchReport,
+    ) -> crate::native::NativeViewInputDispatchReport {
         let (executor, commands) = self
             .ivars()
             .runtime
@@ -730,7 +736,7 @@ impl ZsuiAppKitDrawView {
                 .borrow_mut()
                 .refresh_live_view_after_app_effect(&mut report);
         }
-        if let Some(plan) = report.redraw_plan {
+        if let Some(plan) = report.redraw_plan.clone() {
             *self.ivars().plan.borrow_mut() = plan;
             self.setNeedsDisplay(true);
         }
@@ -747,6 +753,7 @@ impl ZsuiAppKitDrawView {
             }
         }
         self.schedule_runtime_tick();
+        report
     }
 
     fn schedule_runtime_tick(&self) {
@@ -819,6 +826,159 @@ impl std::fmt::Debug for MacosAppKitDrawViewHost {
 }
 
 impl MacosAppKitDrawViewHost {
+    pub(crate) fn dispatch_proof_inputs(
+        &self,
+        inputs: &[crate::NativeViewSmokeInput],
+    ) -> Vec<crate::native::NativeViewInputDispatchReport> {
+        let mut reports = Vec::new();
+        for input in inputs {
+            let dispatch = |report, reports: &mut Vec<_>| {
+                reports.push(self.view.apply_input_report(report));
+            };
+            match input {
+                crate::NativeViewSmokeInput::Move(point) => {
+                    let report = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_move(*point);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Click(point) => {
+                    let down = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_down(*point, false);
+                    dispatch(down, &mut reports);
+                    let up = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_up(*point);
+                    dispatch(up, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Drag { start, end } => {
+                    let down = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_down(*start, false);
+                    dispatch(down, &mut reports);
+                    let moved = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_move(*end);
+                    dispatch(moved, &mut reports);
+                    let up = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_up(*end);
+                    dispatch(up, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Text(text) => {
+                    let report = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_ime_commit(text);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::KeyDown(key) => {
+                    let report = self.view.ivars().runtime.borrow_mut().dispatch_key(*key);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Scroll { point, delta_y } => {
+                    let report = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_scroll(*point, crate::Dp::new(*delta_y as f32));
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::WindowCloseRequest => {
+                    let report = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_window_close_requested();
+                    dispatch(report, &mut reports);
+                }
+            }
+        }
+        reports
+    }
+
+    pub(crate) fn capture_png(
+        &self,
+        path: &Path,
+    ) -> Result<crate::NativeViewCaptureEvidence, String> {
+        let bounds = self.view.bounds();
+        if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+            return Err("the AppKit view has empty bounds".to_string());
+        }
+
+        self.view.layoutSubtreeIfNeeded();
+        self.view.setNeedsDisplay(true);
+        self.view.displayIfNeeded();
+        let bitmap = self
+            .view
+            .bitmapImageRepForCachingDisplayInRect(bounds)
+            .ok_or_else(|| "AppKit could not allocate an NSBitmapImageRep".to_string())?;
+        self.view
+            .cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
+        let properties = NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
+        let data = unsafe {
+            bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
+        }
+        .ok_or_else(|| "NSBitmapImageRep could not encode PNG data".to_string())?;
+
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("could not create AppKit capture directory: {error}"))?;
+        }
+        let byte_count = data.length();
+        let mut bytes = vec![0_u8; byte_count];
+        if let Some(buffer) = NonNull::new(bytes.as_mut_ptr().cast::<c_void>()) {
+            unsafe { data.getBytes_length(buffer, byte_count) };
+        }
+        std::fs::write(path, bytes)
+            .map_err(|error| format!("could not write AppKit PNG capture: {error}"))?;
+
+        let logical_width = bounds.size.width.round().max(1.0) as u32;
+        let logical_height = bounds.size.height.round().max(1.0) as u32;
+        let pixel_width = bitmap.pixelsWide().max(1) as u32;
+        let pixel_height = bitmap.pixelsHigh().max(1) as u32;
+        let scale_factor = self
+            .view
+            .window()
+            .map(|window| window.backingScaleFactor())
+            .unwrap_or_else(|| f64::from(pixel_width) / f64::from(logical_width));
+        Ok(crate::NativeViewCaptureEvidence {
+            platform: "macos",
+            backend: "appkit_nsview_bitmap_cache",
+            logical_width,
+            logical_height,
+            pixel_width,
+            pixel_height,
+            scale_factor,
+        })
+    }
+
     pub(crate) fn set_window_suspended(&self, suspended: bool) {
         if suspended {
             if !self
@@ -880,7 +1040,7 @@ impl MacosAppKitDrawViewHost {
 pub(crate) fn install_macos_appkit_draw_plan(
     window: &objc2_app_kit::NSWindow,
     plan: NativeDrawPlan,
-    mut runtime: crate::native::NativeViewInputRuntime,
+    #[allow(unused_mut)] mut runtime: crate::native::NativeViewInputRuntime,
 ) -> MacosAppKitDrawViewHost {
     #[cfg(feature = "text-input-core")]
     runtime.use_appkit_text_shaping();

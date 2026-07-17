@@ -142,6 +142,16 @@ history remain authoritative for implementation status.
 
 ## Native platform bar
 
+- ZSUI 0.3.0 is the Native Proof CI milestone. Its first blocking target is
+  real AppKit execution on GitHub's fixed `macos-15` standard ARM64 runner;
+  `macos-latest` is not a visual-baseline target. Proof must launch
+  `NSApplication`/`NSWindow`/the ZSUI `NSView`, execute deterministic Gallery
+  and Notepad scenarios, capture the final `NSView` through AppKit bitmap
+  caching APIs, and emit versioned layout/focus/event/lifecycle JSON. Shared
+  `DrawPlan` PNGs are not platform proof. CI baselines are read-only and change
+  only through explicit reviewed commits. Win32 and GTK4 must adopt the same
+  proof schema before the final 0.3.0 release; real Mac IME candidate-window
+  and VoiceOver experience remain separate release-time manual gates.
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their

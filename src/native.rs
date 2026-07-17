@@ -858,7 +858,18 @@ impl Default for NativeWindowSmokeRunOptions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NativeViewCaptureEvidence {
+    pub platform: &'static str,
+    pub backend: &'static str,
+    pub logical_width: u32,
+    pub logical_height: u32,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    pub scale_factor: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NativeWindowSmokeRunReport {
     pub requested_window_count: usize,
     pub created_window_count: usize,
@@ -876,6 +887,7 @@ pub struct NativeWindowSmokeRunReport {
     pub screenshot_file: Option<String>,
     pub screenshot_captured: bool,
     pub screenshot_error: Option<String>,
+    pub native_view_capture: Option<NativeViewCaptureEvidence>,
     pub draw_plan_requested: bool,
     pub draw_plan_window_count: usize,
     pub high_contrast_draw_plan_window_count: usize,
@@ -905,6 +917,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_focus_count: usize,
     pub native_view_focus_visual_count: usize,
     pub native_view_focus_traversal_count: usize,
+    pub native_view_focused_widget: Option<u64>,
     pub native_view_text_input_count: usize,
     pub native_view_text_navigation_count: usize,
     pub native_view_text_selection_change_count: usize,
@@ -1015,6 +1028,7 @@ impl NativeWindowSmokeRunReport {
             screenshot_file: options.screenshot_file,
             screenshot_captured: false,
             screenshot_error: None,
+            native_view_capture: None,
             draw_plan_requested: false,
             draw_plan_window_count: 0,
             high_contrast_draw_plan_window_count: 0,
@@ -1044,6 +1058,7 @@ impl NativeWindowSmokeRunReport {
             native_view_focus_count: 0,
             native_view_focus_visual_count: 0,
             native_view_focus_traversal_count: 0,
+            native_view_focused_widget: None,
             native_view_text_input_count: 0,
             native_view_text_navigation_count: 0,
             native_view_text_selection_change_count: 0,
@@ -6318,6 +6333,254 @@ fn record_native_view_input_smoke(
     }
 }
 
+#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+fn record_appkit_native_view_input_reports(
+    report: &mut NativeWindowSmokeRunReport,
+    inputs: &[NativeViewSmokeInput],
+    dispatches: &[NativeViewInputDispatchReport],
+) {
+    let mut dispatch_index: usize = 0;
+    for input in inputs {
+        let dispatch_count = match input {
+            NativeViewSmokeInput::Click(_) => 2,
+            NativeViewSmokeInput::Drag { .. } => 3,
+            _ => 1,
+        };
+        let end = dispatch_index
+            .saturating_add(dispatch_count)
+            .min(dispatches.len());
+        let input_dispatches = &dispatches[dispatch_index..end];
+        dispatch_index = end;
+        let handled = input_dispatches.iter().any(|dispatch| dispatch.handled);
+
+        match input {
+            NativeViewSmokeInput::Move(_) => report.native_view_pointer_move_count += 1,
+            NativeViewSmokeInput::Click(_) => {
+                report.native_view_click_count += 1;
+                report.native_view_pointer_down_count += 1;
+                report.native_view_pointer_up_count += 1;
+            }
+            NativeViewSmokeInput::Drag { .. } => {
+                report.native_view_pointer_down_count += 1;
+                report.native_view_pointer_move_count += 1;
+                report.native_view_pointer_up_count += 1;
+                if input_dispatches.iter().any(|dispatch| {
+                    dispatch.text_drag_active || dispatch.text_drag_scroll_count > 0
+                }) {
+                    report.native_view_text_drag_count += 1;
+                }
+            }
+            NativeViewSmokeInput::Text(_) => {
+                report.native_view_text_input_count += usize::from(handled);
+            }
+            NativeViewSmokeInput::KeyDown(key) => {
+                report.native_view_key_down_count += 1;
+                if handled {
+                    if matches!(
+                        key,
+                        NativeViewKey::Up
+                            | NativeViewKey::Down
+                            | NativeViewKey::Left
+                            | NativeViewKey::Right
+                            | NativeViewKey::Home
+                            | NativeViewKey::End
+                            | NativeViewKey::PageUp
+                            | NativeViewKey::PageDown
+                    ) {
+                        report.native_view_text_navigation_count += 1;
+                    }
+                    if matches!(key, NativeViewKey::Enter | NativeViewKey::Space) {
+                        report.native_view_keyboard_activation_count += 1;
+                    }
+                    if *key == NativeViewKey::Tab {
+                        report.native_view_focus_traversal_count += 1;
+                    }
+                } else {
+                    report.native_view_unhandled_key_count += 1;
+                }
+            }
+            NativeViewSmokeInput::Scroll { .. } => {
+                if handled {
+                    report.native_view_scroll_count += 1;
+                } else {
+                    report.native_view_unhandled_scroll_count += 1;
+                }
+            }
+            NativeViewSmokeInput::WindowCloseRequest => {}
+        }
+        report.events.push(format!(
+            "appkit_proof_input:{}:{}",
+            match input {
+                NativeViewSmokeInput::Move(_) => "move",
+                NativeViewSmokeInput::Click(_) => "click",
+                NativeViewSmokeInput::Drag { .. } => "drag",
+                NativeViewSmokeInput::Text(_) => "text",
+                NativeViewSmokeInput::KeyDown(_) => "key_down",
+                NativeViewSmokeInput::Scroll { .. } => "scroll",
+                NativeViewSmokeInput::WindowCloseRequest => "window_close_request",
+            },
+            if handled { "handled" } else { "unhandled" }
+        ));
+    }
+
+    for dispatch in dispatches {
+        report.native_view_event_count += usize::from(dispatch.handled);
+        report.native_view_message_count += dispatch.message_count;
+        report.native_view_app_command_count += dispatch.app_command_count;
+        report.native_view_ui_command_count += dispatch.ui_command_count;
+        report
+            .native_view_ui_command_ids
+            .extend(dispatch.ui_command_ids.iter().copied());
+        report.native_view_window_close_request_count += dispatch.window_close_request_count;
+        report.native_view_window_close_veto_count += dispatch.window_close_veto_count;
+        report.native_view_hit_target_count = report
+            .native_view_hit_target_count
+            .max(dispatch.hit_target_count);
+        report.native_view_focused_widget = dispatch.focused_widget;
+        report.native_view_focus_count += usize::from(dispatch.focus_visual_changed);
+        report.native_view_focus_visual_count += usize::from(dispatch.focus_visual_changed);
+        report.native_view_text_selection_change_count +=
+            usize::from(dispatch.text_selection_changed);
+        report.native_view_text_caret = dispatch.text_caret.or(report.native_view_text_caret);
+        report.native_view_text_drag_scroll_count += dispatch.text_drag_scroll_count;
+        report.native_view_quit_requested |= dispatch.quit_requested;
+        report
+            .native_view_app_command_errors
+            .extend(dispatch.errors.iter().cloned());
+        #[cfg(feature = "textbox")]
+        {
+            report.native_view_text_edit_command_count += dispatch.text_edit_command_count;
+            report.native_view_text_clipboard_read_count += dispatch.text_clipboard_read_count;
+            report.native_view_text_clipboard_write_count += dispatch.text_clipboard_write_count;
+            report.native_view_text_undo_count += dispatch.text_undo_count;
+        }
+        #[cfg(feature = "slider")]
+        {
+            report.native_view_slider_value_change_count +=
+                usize::from(dispatch.slider_value_changed);
+            report.native_view_slider_drag_count += usize::from(dispatch.slider_drag_active);
+        }
+        #[cfg(feature = "color-picker")]
+        {
+            report.native_view_color_picker_value_change_count +=
+                usize::from(dispatch.color_picker_value_changed);
+            report.native_view_color_picker_channel_change_count +=
+                usize::from(dispatch.color_picker_channel_changed);
+            report.native_view_color_picker_expanded_change_count +=
+                usize::from(dispatch.color_picker_expanded_changed);
+            report.native_view_color_picker_drag_count +=
+                usize::from(dispatch.color_picker_drag_active);
+        }
+        #[cfg(feature = "radio")]
+        {
+            report.native_view_radio_selection_count +=
+                usize::from(dispatch.radio_selection_changed);
+            report.native_view_radio_keyboard_selection_count +=
+                usize::from(dispatch.radio_keyboard_selection_changed);
+            report.native_view_radio_keyboard_focus_only_count +=
+                usize::from(dispatch.radio_keyboard_focus_only);
+        }
+        #[cfg(feature = "auto-suggest")]
+        {
+            report.native_view_auto_suggest_expanded_change_count +=
+                usize::from(dispatch.auto_suggest_expanded_changed);
+            report.native_view_auto_suggest_highlight_change_count +=
+                usize::from(dispatch.auto_suggest_highlight_changed);
+            report.native_view_auto_suggest_submit_count +=
+                usize::from(dispatch.auto_suggest_submitted);
+            report.native_view_auto_suggest_clear_count +=
+                usize::from(dispatch.auto_suggest_cleared);
+        }
+        #[cfg(feature = "tree")]
+        {
+            report.native_view_tree_expansion_change_count +=
+                usize::from(dispatch.tree_expansion_changed);
+            report.native_view_tree_selection_count += usize::from(dispatch.tree_selection_changed);
+            report.native_view_tree_invoke_count += usize::from(dispatch.tree_invoked);
+        }
+        #[cfg(feature = "grid-view")]
+        {
+            report.native_view_grid_view_selection_count +=
+                usize::from(dispatch.grid_view_selection_changed);
+            report.native_view_grid_view_invoke_count += usize::from(dispatch.grid_view_invoked);
+        }
+        #[cfg(feature = "table")]
+        {
+            report.native_view_table_sort_count += usize::from(dispatch.table_sort_changed);
+            report.native_view_table_selection_count +=
+                usize::from(dispatch.table_selection_changed);
+            report.native_view_table_invoke_count += usize::from(dispatch.table_invoked);
+        }
+        #[cfg(feature = "dialog")]
+        {
+            report.native_view_content_dialog_focus_count +=
+                usize::from(dispatch.content_dialog_focus_changed);
+            report.native_view_content_dialog_response_count +=
+                usize::from(dispatch.content_dialog_responded);
+        }
+        #[cfg(feature = "command-palette")]
+        {
+            report.native_view_command_palette_query_change_count +=
+                usize::from(dispatch.command_palette_query_changed);
+            report.native_view_command_palette_highlight_change_count +=
+                usize::from(dispatch.command_palette_highlight_changed);
+            report.native_view_command_palette_invoke_count +=
+                usize::from(dispatch.command_palette_invoked);
+            report.native_view_command_palette_open_change_count +=
+                usize::from(dispatch.command_palette_open_changed);
+            report.native_view_command_palette_clear_count +=
+                usize::from(dispatch.command_palette_cleared);
+        }
+        #[cfg(feature = "toast")]
+        {
+            report.native_view_toast_focus_count += usize::from(dispatch.toast_focus_changed);
+            report.native_view_toast_response_count += usize::from(dispatch.toast_responded);
+        }
+        #[cfg(feature = "info-bar")]
+        {
+            report.native_view_info_bar_focus_count += usize::from(dispatch.info_bar_focus_changed);
+            report.native_view_info_bar_event_count +=
+                usize::from(dispatch.info_bar_event.is_some());
+        }
+        #[cfg(feature = "teaching-tip")]
+        {
+            report.native_view_teaching_tip_focus_count +=
+                usize::from(dispatch.teaching_tip_focus_changed);
+            report.native_view_teaching_tip_response_count +=
+                usize::from(dispatch.teaching_tip_response.is_some());
+        }
+        #[cfg(feature = "breadcrumb")]
+        {
+            report.native_view_breadcrumb_focus_count +=
+                usize::from(dispatch.breadcrumb_focus_changed);
+            report.native_view_breadcrumb_expanded_change_count +=
+                usize::from(dispatch.breadcrumb_expanded_changed);
+            report.native_view_breadcrumb_selection_count +=
+                usize::from(dispatch.breadcrumb_selection.is_some());
+        }
+        #[cfg(feature = "combo")]
+        {
+            report.native_view_combo_expanded_change_count +=
+                usize::from(dispatch.combo_expanded_changed);
+            report.native_view_combo_selection_count +=
+                usize::from(dispatch.combo_selection_changed);
+            report.native_view_combo_keyboard_selection_count +=
+                usize::from(dispatch.combo_keyboard_selection_changed);
+            report.native_view_combo_type_ahead_match_count +=
+                usize::from(dispatch.combo_type_ahead_matched);
+            report.native_view_combo_scroll_count += usize::from(dispatch.combo_scrolled);
+        }
+        #[cfg(feature = "tabs")]
+        {
+            report.native_view_tab_selection_count += usize::from(dispatch.tab_selection_changed);
+            report.native_view_tab_keyboard_selection_count +=
+                usize::from(dispatch.tab_keyboard_selection_changed);
+            report.native_view_tab_keyboard_focus_only_count +=
+                usize::from(dispatch.tab_keyboard_focus_only);
+        }
+    }
+}
+
 #[cfg(all(windows, feature = "windows-win32"))]
 fn record_windows_win32_view_input_report(
     report: &mut NativeWindowSmokeRunReport,
@@ -6359,6 +6622,7 @@ fn record_windows_win32_view_input_report(
     report.native_view_focus_count += input.focus_count;
     report.native_view_focus_visual_count += input.focus_visual_count;
     report.native_view_focus_traversal_count += input.focus_traversal_count;
+    report.native_view_focused_widget = input.focused_widget.or(report.native_view_focused_widget);
     report.native_view_text_input_count += input.text_input_count;
     report.native_view_text_navigation_count += input.text_navigation_count;
     report.native_view_text_selection_change_count += input.text_selection_change_count;
@@ -7585,6 +7849,8 @@ fn run_native_window_event_loop(
         &draw_plans,
         &view_runtimes,
         None,
+        None,
+        &[],
     )
     .map(|_| ())
 }
@@ -8055,7 +8321,7 @@ fn run_native_window_smoke_event_loop(
 fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
-    mut view_runtime: NativeViewInputRuntime,
+    #[allow(unused_mut)] mut view_runtime: NativeViewInputRuntime,
     _shell_runtime: Option<ZsShellRuntime>,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
@@ -8077,15 +8343,20 @@ fn run_native_window_smoke_event_loop(
         ..NativeWindowSmokeRunReport::empty(options.clone())
     };
     record_draw_plan_smoke(&mut report, &draw_plans);
+    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
     record_native_view_input_smoke(&mut report, &mut view_runtime, &options);
 
     #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-    let created = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
+    let appkit_run = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
         &windows,
         &draw_plans,
         std::slice::from_ref(&view_runtime),
         Some(options.auto_close_after_ms),
+        options.screenshot_file.as_deref().map(std::path::Path::new),
+        &options.native_view_inputs,
     )?;
+    #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+    let created = appkit_run.created_window_count;
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
     let created = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
         &windows,
@@ -8106,10 +8377,46 @@ fn run_native_window_smoke_event_loop(
     );
     report.events.push("auto_close_elapsed".to_string());
 
-    if options.screenshot_file.is_some() {
-        report.screenshot_error = Some(
-            "native screenshot capture still requires target AppKit/GTK4 integration".to_string(),
+    #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+    {
+        record_appkit_native_view_input_reports(
+            &mut report,
+            &options.native_view_inputs,
+            &appkit_run.proof_input_reports,
         );
+        report.window_menu_command_routed = appkit_run.menu_command_routed;
+        if appkit_run.menu_command_routed {
+            report.events.push("window_menu_command_routed".to_string());
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+    match appkit_run.native_view_capture {
+        Some(Ok(capture)) => {
+            report.screenshot_captured = true;
+            report.native_view_capture = Some(capture);
+            if let Some(path) = &report.screenshot_file {
+                report.events.push(format!("screenshot_captured:{path}"));
+            }
+            report
+                .events
+                .push("screenshot_backend:appkit_nsview_bitmap_cache".to_string());
+        }
+        Some(Err(error)) => {
+            report.screenshot_error = Some(error);
+            report.events.push("screenshot_error".to_string());
+        }
+        None if options.screenshot_file.is_some() => {
+            report.screenshot_error =
+                Some("the AppKit event loop exited before the final NSView capture".to_string());
+            report.events.push("screenshot_error".to_string());
+        }
+        None => {}
+    }
+    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+    if options.screenshot_file.is_some() {
+        report.screenshot_error =
+            Some("native screenshot capture still requires target GTK4 integration".to_string());
         report.events.push("screenshot_error".to_string());
     }
     if options.status_item.is_some() {
@@ -8124,7 +8431,7 @@ fn run_native_window_smoke_event_loop(
             "no visible native window was created",
         ));
     }
-    if options.require_screenshot {
+    if options.require_screenshot && !report.screenshot_captured {
         return Err(ZsuiError::host(
             "native_window_smoke_screenshot",
             report
@@ -12056,6 +12363,8 @@ mod tests {
         assert_eq!(report.native_view_focus_count, 0);
         assert_eq!(report.native_view_focus_visual_count, 0);
         assert_eq!(report.native_view_focus_traversal_count, 0);
+        assert_eq!(report.native_view_focused_widget, None);
+        assert_eq!(report.native_view_capture, None);
         assert_eq!(report.native_view_text_input_count, 0);
         assert_eq!(report.native_view_text_navigation_count, 0);
         assert_eq!(report.native_view_text_selection_change_count, 0);
@@ -12080,6 +12389,26 @@ mod tests {
         assert_eq!(report.native_view_scroll_count, 0);
         assert_eq!(report.native_view_unhandled_scroll_count, 0);
         assert!(!report.visible_window_was_created());
+    }
+
+    #[test]
+    fn native_view_capture_evidence_serializes_native_geometry_and_scale() {
+        let evidence = NativeViewCaptureEvidence {
+            platform: "macos",
+            backend: "appkit_nsview_bitmap_cache",
+            logical_width: 960,
+            logical_height: 640,
+            pixel_width: 1920,
+            pixel_height: 1280,
+            scale_factor: 2.0,
+        };
+
+        let json = serde_json::to_value(&evidence).expect("capture evidence should serialize");
+        assert_eq!(json["platform"], "macos");
+        assert_eq!(json["backend"], "appkit_nsview_bitmap_cache");
+        assert_eq!(json["logical_width"], 960);
+        assert_eq!(json["pixel_width"], 1920);
+        assert_eq!(json["scale_factor"], 2.0);
     }
 
     #[test]

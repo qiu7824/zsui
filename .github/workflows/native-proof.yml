@@ -1,0 +1,122 @@
+name: Native UI Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "examples/**"
+      - "tests/native-baselines/**"
+      - "tools/native-proof/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/native-proof.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "examples/**"
+      - "tests/native-baselines/**"
+      - "tools/native-proof/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/native-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-appkit-proof:
+    name: AppKit Runtime Proof
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      TZ: UTC
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert runner identity
+        shell: bash
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "15"
+          test "$(uname -m)" = "arm64"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build AppKit proof applications
+        run: |
+          cargo build \
+            --release \
+            --locked \
+            --example component_gallery \
+            --no-default-features \
+            --features component-gallery-demo
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad \
+            --no-default-features \
+            --features notepad-demo
+
+      - name: Run real AppKit proof scenes
+        run: |
+          mkdir -p target/native-proof/macos-15-arm64
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page inputs \
+            --theme light \
+            --output target/native-proof/macos-15-arm64
+          ./target/release/examples/zsui_notepad \
+            --native-proof \
+            --output target/native-proof/macos-15-arm64
+
+      - name: Validate AppKit artifacts
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("target/native-proof/macos-15-arm64")
+          stems = ("gallery-inputs-light", "notepad-interaction")
+          for stem in stems:
+              png = root / f"{stem}.png"
+              report = root / f"{stem}.json"
+              if png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit(f"{png} is not a PNG")
+              proof = json.loads(report.read_text(encoding="utf-8"))
+              runtime = proof["runtime"]
+              capture = runtime.get("native_view_capture") or {}
+              assert proof["schema"] == "zsui.native-proof/v1"
+              assert proof["platform"] == "macos"
+              assert runtime["created_window_count"] == 1
+              assert runtime["screenshot_captured"] is True
+              assert not runtime["screenshot_error"]
+              assert capture["backend"] == "appkit_nsview_bitmap_cache"
+              assert capture["pixel_width"] > 0
+              assert capture["pixel_height"] > 0
+              assert capture["scale_factor"] > 0.0
+              assert abs(
+                  capture["pixel_width"]
+                  - capture["logical_width"] * capture["scale_factor"]
+              ) <= 1.0
+
+      - name: Upload AppKit proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zsui-appkit-native-proof
+          path: target/native-proof/macos-15-arm64
+          if-no-files-found: error
+          retention-days: 30

@@ -22,22 +22,40 @@ and Harmony remain first-class platform targets, but they need real
 Activity/Ability runtime hosts and device smoke proof before this same public
 shape can create mobile native surfaces.
 
+## v0.3 Core Milestone: Native Proof CI
+
+ZSUI 0.3.0 prioritizes repeatable native runtime evidence over adding more
+component declarations. Every UI-affecting change must eventually launch the
+real Win32, AppKit and GTK4 application paths on target runners, execute fixed
+interaction scenarios, capture the final platform view, emit structured
+layout/focus/event evidence and compare it against reviewed baselines.
+
+The first blocking target is AppKit on the fixed GitHub-hosted `macos-15`
+ARM64 runner. Shared `DrawPlan` images are not target evidence; the AppKit gate
+must capture the final `NSView`. Baselines are read-only in CI and can change
+only through an explicit reviewed commit. The complete milestone, phased
+delivery order and release gates are defined in
+[`v0.3-native-proof-ci.md`](v0.3-native-proof-ci.md).
+
 ## Delivery Order
 
 ZSUI is delivered through runnable vertical slices rather than contract count.
 The current priority order is:
 
-1. Complete one standalone Windows control gallery that uses only ZSUI and
-   exercises navigation, grouped cards, row accessories, action buttons,
-   scrolling, DPI changes and the buffered no-flicker renderer.
-2. Complete the reusable conversation/task workbench loop: navigation,
+1. Establish the AppKit Native Proof CI gate on `macos-15`: real
+   `NSApplication`/`NSWindow`/`NSView` execution, deterministic Gallery and
+   Notepad scenarios, final-view PNG capture, structured reports and reviewed
+   visual baselines.
+2. Move the existing Win32 proof and the GTK4 target runtime onto the same
+   versioned proof schema and regression tool so all three desktop paths block
+   regressions before the 0.3.0 release.
+3. Complete the reusable conversation/task workbench loop: navigation,
    timeline scrolling, composer input, tool/message actions and inspector state.
-3. Stabilize the Rust-first application loop so typed messages update explicit
+4. Stabilize the Rust-first application loop so typed messages update explicit
    state and repaint the live window, then cover IME, accessibility, focus,
    menus and dialogs required by native utility applications.
-4. Tighten Cargo feature boundaries and split crates only after the public
+5. Tighten Cargo feature boundaries and split crates only after the public
    widget/runtime boundaries are proven by real applications.
-5. Implement and verify real AppKit and GTK hosts.
 6. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
    and device smoke artifacts.
 

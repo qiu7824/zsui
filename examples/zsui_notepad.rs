@@ -538,7 +538,8 @@ fn main() -> ZsuiResult<()> {
         });
 
     let args = std::env::args().collect::<Vec<_>>();
-    if args.iter().any(|argument| argument == "--smoke") {
+    let native_proof = args.iter().any(|argument| argument == "--native-proof");
+    if native_proof || args.iter().any(|argument| argument == "--smoke") {
         let undo_bounds = builder
             .native_view_interaction_plan()
             .and_then(|plan| plan.hit_target_for_widget(UNDO_BUTTON))
@@ -561,14 +562,45 @@ fn main() -> ZsuiResult<()> {
             x: wrap_bounds.x + wrap_bounds.width / 2,
             y: wrap_bounds.y + wrap_bounds.height / 2,
         };
+        let output = args
+            .windows(2)
+            .find(|pair| pair[0] == "--output")
+            .map(|pair| PathBuf::from(&pair[1]));
         let screenshot = args
             .windows(2)
             .find(|pair| pair[0] == "--screenshot")
-            .map(|pair| pair[1].clone());
+            .map(|pair| pair[1].clone())
+            .or_else(|| {
+                native_proof.then(|| {
+                    output
+                        .clone()
+                        .unwrap_or_else(|| "target/native-proof".into())
+                        .join("notepad-interaction.png")
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            });
         let report_path = args
             .windows(2)
             .find(|pair| pair[0] == "--report")
-            .map(|pair| pair[1].clone());
+            .map(|pair| pair[1].clone())
+            .or_else(|| {
+                native_proof.then(|| {
+                    output
+                        .unwrap_or_else(|| "target/native-proof".into())
+                        .join("notepad-interaction.json")
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            });
+        if let Some(parent) = screenshot
+            .as_deref()
+            .map(std::path::Path::new)
+            .and_then(std::path::Path::parent)
+        {
+            fs::create_dir_all(parent)
+                .map_err(|error| ZsuiError::host("create_notepad_proof_dir", error.to_string()))?;
+        }
         let smoke_text = (1..=36)
             .map(|line| format!("第{line:02}行"))
             .collect::<Vec<_>>()
@@ -605,9 +637,30 @@ fn main() -> ZsuiResult<()> {
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
         }
+        let widgets = builder
+            .native_view_interaction_plan()
+            .map(|plan| plan.hit_targets.clone())
+            .unwrap_or_default();
         let report = builder.run_smoke(options)?;
         if let Some(path) = report_path {
-            let bytes = serde_json::to_vec_pretty(&report)
+            let document = if native_proof {
+                serde_json::json!({
+                    "schema": "zsui.native-proof/v1",
+                    "platform": std::env::consts::OS,
+                    "architecture": std::env::consts::ARCH,
+                    "application": "zsui_notepad",
+                    "scenario": "notepad-interaction",
+                    "theme": "system",
+                    "window": { "width": 960, "height": 680 },
+                    "widgets": widgets,
+                    "runtime": &report,
+                })
+            } else {
+                serde_json::to_value(&report).map_err(|error| {
+                    ZsuiError::host("serialize_notepad_report", error.to_string())
+                })?
+            };
+            let bytes = serde_json::to_vec_pretty(&document)
                 .map_err(|error| ZsuiError::host("serialize_notepad_report", error.to_string()))?;
             fs::write(path, bytes)
                 .map_err(|error| ZsuiError::host("write_notepad_report", error.to_string()))?;

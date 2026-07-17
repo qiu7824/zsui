@@ -343,11 +343,12 @@ pub use mobile_host::{
     MobileRuntimeLifecycleBinding, MobileRuntimePermission,
 };
 pub use native::{
-    native_window, run_native_window, run_native_window_smoke, typed_native_window, NativeViewKey,
-    NativeViewSmokeInput, NativeWindowBuilder, NativeWindowContentMissing,
-    NativeWindowContentReady, NativeWindowHost, NativeWindowResourcePolicy,
-    NativeWindowRuntimeDriver, NativeWindowRuntimeDriverReport, NativeWindowRuntimeHandle,
-    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, TypedNativeWindowBuilder,
+    native_window, run_native_window, run_native_window_smoke, typed_native_window,
+    NativeViewCaptureEvidence, NativeViewKey, NativeViewSmokeInput, NativeWindowBuilder,
+    NativeWindowContentMissing, NativeWindowContentReady, NativeWindowHost,
+    NativeWindowResourcePolicy, NativeWindowRuntimeDriver, NativeWindowRuntimeDriverReport,
+    NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
+    TypedNativeWindowBuilder,
 };
 pub use native_adapter_manifest::{
     native_ui_adapter_parity_report, native_ui_backend_capability_matrix,

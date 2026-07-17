@@ -147,9 +147,14 @@ These services do not complete either native host. The unified
 fallback transport. Shared View rendering, click/scroll, keyboard focus,
 activation, Unicode keyboard/pointer range editing and first-pass IME composition now reach all
 three native window surfaces, including shaped proportional/bidirectional text
-geometry and visual-order horizontal caret navigation. Target screenshots and
-CJK/bidirectional interaction evidence remain required; entering or painting a
-native event loop alone is not system-complete evidence.
+geometry and visual-order horizontal caret navigation. AppKit native proof now
+replays deterministic typed inputs inside the owned `NSView`, forces final
+layout/display and exports PNG through `NSBitmapImageRep` bitmap caching; the
+proof report records logical and pixel geometry plus the measured backing scale.
+The fixed `macos-15` target job remains the authority for accepting those
+artifacts. CJK/bidirectional interaction evidence and the complete baseline
+comparison suite remain required; entering or painting a native event loop
+alone is not system-complete evidence.
 The Rust-first target list is exposed by `zsui_rust_first_goals()` and expanded
 in `docs/framework-goals.md`. Backend work should specifically preserve safe
 public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error

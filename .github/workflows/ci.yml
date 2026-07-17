@@ -51,7 +51,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-15
             backend: macos-appkit
           - os: ubuntu-latest
             backend: linux-gtk

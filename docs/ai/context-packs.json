@@ -236,7 +236,7 @@
     },
     {
       "id": "desktop-hosts",
-      "purpose": "Windows, macOS and Linux host/capability boundaries",
+      "purpose": "Windows, macOS and Linux host/capability boundaries and native proof",
       "required": [
         "src/native_hosts.rs",
         "src/native_host_launch.rs",
@@ -259,6 +259,7 @@
         "src/render_protocol.rs",
         "Cargo.toml",
         "docs/native-host-smoke.md",
+        "docs/v0.3-native-proof-ci.md",
         "docs/v0.2-desktop-native.md",
         "examples/desktop_native_showcase.rs"
       ],

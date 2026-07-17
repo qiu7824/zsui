@@ -136,6 +136,31 @@ impl MacosAppKitMenuService {
             }
         }));
     }
+
+    pub(crate) fn invoke_first_enabled_command_for_proof(&self) -> bool {
+        self.menu
+            .as_deref()
+            .is_some_and(perform_first_enabled_appkit_menu_action)
+    }
+}
+
+fn perform_first_enabled_appkit_menu_action(menu: &NSMenu) -> bool {
+    for index in 0..menu.numberOfItems() {
+        let Some(item) = menu.itemAtIndex(index) else {
+            continue;
+        };
+        if let Some(submenu) = item.submenu() {
+            if perform_first_enabled_appkit_menu_action(&submenu) {
+                return true;
+            }
+            continue;
+        }
+        if item.isEnabled() && item.tag() > 0 {
+            menu.performActionForItemAtIndex(index);
+            return true;
+        }
+    }
+    false
 }
 
 impl MenuService for MacosAppKitMenuService {

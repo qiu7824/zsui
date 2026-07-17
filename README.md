@@ -499,6 +499,7 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 
 - [架构](docs/architecture.md)
 - [Rust-first 目标](docs/framework-goals.md)
+- [0.3 Native Proof CI](docs/v0.3-native-proof-ci.md)
 - [平台宿主约束](docs/porting.md)
 - [目标机验证](docs/native-host-smoke.md)
 

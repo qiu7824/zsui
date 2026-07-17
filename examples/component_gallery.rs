@@ -146,7 +146,7 @@ impl Default for GalleryState {
     fn default() -> Self {
         let mut image_preview = ZsImagePreviewState::default();
         if let Some(bytes) = ZsIcon::Image.png_24_bytes() {
-            image_preview.set_png(ZsImageFrameId::new(1), std::sync::Arc::from(bytes));
+            image_preview.set_png(ZsImageFrameId::new(1), std::sync::Arc::<[u8]>::from(bytes));
         }
         Self {
             page: GalleryPage::Inputs,
@@ -1066,17 +1066,38 @@ fn main() -> ZsuiResult<()> {
         .find(|pair| pair[0] == "--page")
         .and_then(|pair| GalleryPage::from_slug(&pair[1]))
         .unwrap_or(GalleryPage::Inputs);
+    let dark = args
+        .windows(2)
+        .find(|pair| pair[0] == "--theme")
+        .is_some_and(|pair| pair[1] == "dark");
     let mut state = GalleryState::default();
     state.page = initial_page;
-    let builder = native_window("ZSUI v0.2 组件库 / Component Gallery")
+    state.dark = dark;
+    let builder = native_window("ZSUI 组件库 / Component Gallery")
         .size(1180, 780)
         .min_size(980, 680)
         .stateful_view(state, view, update);
-    if args.iter().any(|argument| argument == "--smoke") {
+    let native_proof = args.iter().any(|argument| argument == "--native-proof");
+    if native_proof || args.iter().any(|argument| argument == "--smoke") {
+        let theme = if dark { "dark" } else { "light" };
+        let output = args
+            .windows(2)
+            .find(|pair| pair[0] == "--output")
+            .map(|pair| std::path::PathBuf::from(&pair[1]));
         let screenshot = args
             .windows(2)
             .find(|pair| pair[0] == "--screenshot")
             .map(|pair| pair[1].clone())
+            .or_else(|| {
+                native_proof.then(|| {
+                    output
+                        .clone()
+                        .unwrap_or_else(|| "target/native-proof".into())
+                        .join(format!("gallery-{}-{theme}.png", initial_page.slug()))
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            })
             .unwrap_or_else(|| {
                 format!("target/zsui-component-gallery/{}.png", initial_page.slug())
             });
@@ -1084,6 +1105,15 @@ fn main() -> ZsuiResult<()> {
             .windows(2)
             .find(|pair| pair[0] == "--report")
             .map(|pair| pair[1].clone())
+            .or_else(|| {
+                native_proof.then(|| {
+                    output
+                        .unwrap_or_else(|| "target/native-proof".into())
+                        .join(format!("gallery-{}-{theme}.json", initial_page.slug()))
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            })
             .unwrap_or_else(|| {
                 format!(
                     "target/zsui-component-gallery/{}-report.json",
@@ -1097,7 +1127,7 @@ fn main() -> ZsuiResult<()> {
         }
         let mut options = NativeWindowSmokeRunOptions::new(1_500)
             .screenshot_file(&screenshot)
-            .require_screenshot(cfg!(windows));
+            .require_screenshot(native_proof || cfg!(windows));
         if initial_page == GalleryPage::Inputs {
             let click_points = {
                 let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
@@ -1127,10 +1157,30 @@ fn main() -> ZsuiResult<()> {
                 options = options.native_view_click(point);
             }
         }
+        let widgets = builder
+            .native_view_interaction_plan()
+            .map(|plan| plan.hit_targets.clone())
+            .unwrap_or_default();
         let report = builder.run_smoke(options)?;
+        let document = if native_proof {
+            serde_json::json!({
+                "schema": "zsui.native-proof/v1",
+                "platform": env::consts::OS,
+                "architecture": env::consts::ARCH,
+                "application": "component_gallery",
+                "scenario": format!("gallery-{}-{theme}", initial_page.slug()),
+                "theme": theme,
+                "window": { "width": 1180, "height": 780 },
+                "widgets": widgets,
+                "runtime": &report,
+            })
+        } else {
+            serde_json::to_value(&report)
+                .map_err(|error| ZsuiError::host("serialize_gallery_report", error.to_string()))?
+        };
         fs::write(
             report_path,
-            serde_json::to_vec_pretty(&report)
+            serde_json::to_vec_pretty(&document)
                 .map_err(|error| ZsuiError::host("serialize_gallery_report", error.to_string()))?,
         )
         .map_err(|error| ZsuiError::host("write_gallery_report", error.to_string()))?;

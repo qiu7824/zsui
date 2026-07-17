@@ -40,6 +40,14 @@ pub fn zsui_rust_first_goal_names() -> Vec<&'static str> {
 pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
     vec![
         ZsuiRustFirstGoal::new(
+            "native_proof_ci",
+            "Require repeatable target-native runtime evidence to block UI regressions on every desktop platform.",
+            "fixed target runners, final platform-view screenshots, versioned semantic reports, calibrated image comparison and reviewed read-only baselines",
+            "treating cargo check or shared DrawPlan PNGs as platform proof, using moving runner labels, or automatically accepting changed baselines",
+            ".github/workflows/ci.yml, docs/v0.3-native-proof-ci.md, docs/native-host-smoke.md, examples/component_gallery.rs, examples/zsui_notepad.rs",
+            "implement deterministic AppKit Gallery and Notepad proof with final NSView capture on macos-15, then migrate Win32 and GTK4 to the same schema and comparison gate",
+        ),
+        ZsuiRustFirstGoal::new(
             "runnable_vertical_slices",
             "Measure progress by standalone input-state-paint loops on real hosts, not by declaration or contract count.",
             "a ZSUI-only control gallery with native interaction, repaint and target smoke proof",
@@ -218,7 +226,8 @@ mod tests {
     fn rust_first_goal_manifest_tracks_core_direction() {
         let names = zsui_rust_first_goal_names();
 
-        assert_eq!(names.len(), 21);
+        assert_eq!(names.len(), 22);
+        assert!(names.contains(&"native_proof_ci"));
         assert!(names.contains(&"runnable_vertical_slices"));
         assert!(names.contains(&"one_line_native_entrypoints"));
         assert!(names.contains(&"composition_and_traits"));

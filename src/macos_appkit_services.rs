@@ -1,5 +1,5 @@
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     path::{Path, PathBuf},
     rc::Rc,
@@ -32,6 +32,11 @@ use crate::{
 struct ZsuiAppKitRuntimeDelegateIvars {
     open_windows: Cell<usize>,
     close_handlers: HashMap<usize, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
+    capture_handler: Option<crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
+    capture_path: Option<PathBuf>,
+    capture_result: RefCell<Option<Result<crate::NativeViewCaptureEvidence, String>>>,
+    proof_inputs: Vec<crate::NativeViewSmokeInput>,
+    proof_input_reports: RefCell<Vec<crate::native::NativeViewInputDispatchReport>>,
 }
 
 define_class!(
@@ -72,11 +77,32 @@ define_class!(
             self.set_window_suspended(notification, false);
         }
     }
+
+    impl ZsuiAppKitRuntimeDelegate {
+        #[unsafe(method(zsuiCaptureAndStop:))]
+        fn zsui_capture_and_stop(&self, _timer: &NSTimer) {
+            if let Some(handler) = self.ivars().capture_handler.as_ref() {
+                *self.ivars().proof_input_reports.borrow_mut() =
+                    handler.dispatch_proof_inputs(&self.ivars().proof_inputs);
+            }
+            if let Some(path) = self.ivars().capture_path.as_deref() {
+                let result = self
+                    .ivars()
+                    .capture_handler
+                    .as_ref()
+                    .ok_or_else(|| "the AppKit proof window has no ZSUI NSView".to_string())
+                    .and_then(|handler| handler.capture_png(path));
+                *self.ivars().capture_result.borrow_mut() = Some(result);
+            }
+            NSApplication::sharedApplication(self.mtm()).stop(None);
+        }
+    }
 );
 
 impl ZsuiAppKitRuntimeDelegate {
     fn set_window_suspended(&self, notification: &NSNotification, suspended: bool) {
-        let window = unsafe { notification.object() }
+        let window = notification
+            .object()
             .map(|object| Retained::as_ptr(&object).cast::<NSWindow>() as usize);
         if let Some(handler) = window.and_then(|window| self.ivars().close_handlers.get(&window)) {
             handler.set_window_suspended(suspended);
@@ -87,13 +113,29 @@ impl ZsuiAppKitRuntimeDelegate {
         mtm: MainThreadMarker,
         open_windows: usize,
         close_handlers: HashMap<usize, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
+        capture_handler: Option<crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
+        capture_path: Option<PathBuf>,
+        proof_inputs: Vec<crate::NativeViewSmokeInput>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitRuntimeDelegateIvars {
             open_windows: Cell::new(open_windows),
             close_handlers,
+            capture_handler,
+            capture_path,
+            capture_result: RefCell::new(None),
+            proof_inputs,
+            proof_input_reports: RefCell::new(Vec::new()),
         });
         unsafe { msg_send![super(this), init] }
     }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MacosAppKitNativeWindowRunReport {
+    pub created_window_count: usize,
+    pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    pub menu_command_routed: bool,
 }
 
 pub(crate) fn run_macos_appkit_native_window_event_loop(
@@ -101,9 +143,16 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     draw_plans: &[Option<crate::NativeDrawPlan>],
     view_runtimes: &[crate::native::NativeViewInputRuntime],
     auto_close_after_ms: Option<u64>,
-) -> ZsuiResult<usize> {
+    capture_path: Option<&Path>,
+    proof_inputs: &[crate::NativeViewSmokeInput],
+) -> ZsuiResult<MacosAppKitNativeWindowRunReport> {
     if specs.is_empty() {
-        return Ok(0);
+        return Ok(MacosAppKitNativeWindowRunReport {
+            created_window_count: 0,
+            native_view_capture: None,
+            proof_input_reports: Vec::new(),
+            menu_command_routed: false,
+        });
     }
     let mtm = appkit_main_thread_marker("macos_native_event_loop")?;
     let mut window_service = MacosAppKitWindowService::new()?;
@@ -146,7 +195,18 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         })
         .map(|(window, host)| (Retained::as_ptr(window) as usize, host.clone()))
         .collect();
-    let delegate = ZsuiAppKitRuntimeDelegate::new(mtm, ids.len(), close_handlers);
+    let capture_handler = ids
+        .first()
+        .and_then(|id| window_service.view_hosts.get(id))
+        .cloned();
+    let delegate = ZsuiAppKitRuntimeDelegate::new(
+        mtm,
+        ids.len(),
+        close_handlers,
+        capture_handler,
+        capture_path.map(Path::to_path_buf),
+        proof_inputs.to_vec(),
+    );
     let application = window_service._application.clone();
     let application_delegate: &ProtocolObject<dyn NSApplicationDelegate> =
         ProtocolObject::from_ref(&*delegate);
@@ -163,12 +223,14 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
             window_service.set_window_visible(id, true)?;
         }
     }
+    let menu_command_routed =
+        auto_close_after_ms.is_some() && menu_service.invoke_first_enabled_command_for_proof();
 
     let timer = auto_close_after_ms.map(|delay| unsafe {
         NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
             delay.max(1) as f64 / 1_000.0,
-            application.as_ref(),
-            objc2::sel!(stop:),
+            delegate.as_ref(),
+            objc2::sel!(zsuiCaptureAndStop:),
             None,
             false,
         )
@@ -181,7 +243,15 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         window.setDelegate(None);
     }
     application.setDelegate(None);
-    Ok(ids.len())
+    let native_view_capture = delegate.ivars().capture_result.borrow_mut().take();
+    let proof_input_reports =
+        std::mem::take(&mut *delegate.ivars().proof_input_reports.borrow_mut());
+    Ok(MacosAppKitNativeWindowRunReport {
+        created_window_count: ids.len(),
+        native_view_capture,
+        proof_input_reports,
+        menu_command_routed,
+    })
 }
 
 #[derive(Debug)]
