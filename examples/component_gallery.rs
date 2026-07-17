@@ -1015,6 +1015,7 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
 
 fn main() -> ZsuiResult<()> {
     let args = env::args().collect::<Vec<_>>();
+    let native_proof = args.iter().any(|argument| argument == "--native-proof");
     if let Some(path) = args
         .windows(2)
         .find(|pair| pair[0] == "--catalog-json")
@@ -1046,11 +1047,18 @@ fn main() -> ZsuiResult<()> {
     let mut state = GalleryState::default();
     state.page = initial_page;
     state.dark = dark;
+    let default_size = (1180, 780);
+    let window_width = proof_dimension(&args, "--width", default_size.0);
+    let window_height = proof_dimension(&args, "--height", default_size.1);
+    let minimum_size = if native_proof {
+        (window_width.min(800), window_height.min(520))
+    } else {
+        (980, 680)
+    };
     let builder = native_window("ZSUI 组件库 / Component Gallery")
-        .size(1180, 780)
-        .min_size(980, 680)
+        .size(window_width, window_height)
+        .min_size(minimum_size.0, minimum_size.1)
         .stateful_view(state, view, update);
-    let native_proof = args.iter().any(|argument| argument == "--native-proof");
     if native_proof || args.iter().any(|argument| argument == "--smoke") {
         let theme = if dark { "dark" } else { "light" };
         let output = args
@@ -1143,7 +1151,7 @@ fn main() -> ZsuiResult<()> {
                 "application": "component_gallery",
                 "scenario": format!("gallery-{}-{theme}", initial_page.slug()),
                 "theme": theme,
-                "window": { "width": 1180, "height": 780 },
+                "window": { "width": window_width, "height": window_height },
                 "widgets": widgets,
                 "runtime": &report,
             })
@@ -1165,6 +1173,14 @@ fn main() -> ZsuiResult<()> {
     }
     builder.run()?;
     Ok(())
+}
+
+fn proof_dimension(args: &[String], flag: &str, default: u32) -> u32 {
+    args.windows(2)
+        .find(|pair| pair[0] == flag)
+        .and_then(|pair| pair[1].parse::<u32>().ok())
+        .filter(|value| (320..=4096).contains(value))
+        .unwrap_or(default)
 }
 
 #[cfg(test)]

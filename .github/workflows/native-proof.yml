@@ -41,7 +41,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Assert runner identity
         shell: bash
@@ -78,15 +78,21 @@ jobs:
               --native-proof \
               --page "$page" \
               --theme light \
+              --width 1024 \
+              --height 656 \
               --output target/native-proof/macos-15-arm64
           done
           ./target/release/examples/component_gallery \
             --native-proof \
             --page inputs \
             --theme dark \
+            --width 1024 \
+            --height 656 \
             --output target/native-proof/macos-15-arm64
           ./target/release/examples/zsui_notepad \
             --native-proof \
+            --width 960 \
+            --height 640 \
             --output target/native-proof/macos-15-arm64
 
       - name: Validate AppKit artifacts
@@ -123,6 +129,14 @@ jobs:
               assert capture["pixel_height"] > 0
               assert capture["scale_factor"] > 0.0
               assert 0.75 <= capture["typography_scale"] <= 3.0
+              expected = (
+                  {"width": 1024, "height": 656}
+                  if stem.startswith("gallery-")
+                  else {"width": 960, "height": 640}
+              )
+              assert proof["window"] == expected
+              assert capture["logical_width"] == expected["width"]
+              assert capture["logical_height"] == expected["height"]
               assert abs(
                   capture["pixel_width"]
                   - capture["logical_width"] * capture["scale_factor"]
@@ -130,7 +144,7 @@ jobs:
 
       - name: Upload AppKit proof
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zsui-appkit-native-proof
           path: target/native-proof/macos-15-arm64
@@ -150,7 +164,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install GTK4 proof runtime
         run: |
@@ -197,6 +211,8 @@ jobs:
                 --native-proof \
                 --page "$page" \
                 --theme light \
+                --width 1180 \
+                --height 780 \
                 --output target/native-proof/ubuntu-24.04-x86_64 \
               2>&1 | tee "target/native-proof/ubuntu-24.04-x86_64/gallery-$page-light.log"
           done
@@ -205,11 +221,15 @@ jobs:
               --native-proof \
               --page inputs \
               --theme dark \
+              --width 1180 \
+              --height 780 \
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/gallery-inputs-dark.log
           dbus-run-session -- xvfb-run -a \
             ./target/release/examples/zsui_notepad \
               --native-proof \
+              --width 960 \
+              --height 640 \
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
 
@@ -257,6 +277,14 @@ jobs:
               assert capture["pixel_height"] > 0
               assert capture["scale_factor"] > 0.0
               assert 0.75 <= capture["typography_scale"] <= 3.0
+              expected = (
+                  {"width": 1180, "height": 780}
+                  if stem.startswith("gallery-")
+                  else {"width": 960, "height": 640}
+              )
+              assert proof["window"] == expected
+              assert capture["logical_width"] == expected["width"]
+              assert capture["logical_height"] == expected["height"]
               assert abs(
                   capture["pixel_width"]
                   - capture["logical_width"] * capture["scale_factor"]
@@ -264,7 +292,7 @@ jobs:
 
       - name: Upload GTK4 proof
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zsui-gtk4-native-proof
           path: target/native-proof/ubuntu-24.04-x86_64

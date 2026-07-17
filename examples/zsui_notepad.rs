@@ -534,11 +534,16 @@ fn save_pending_document(
 }
 
 fn main() -> ZsuiResult<()> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let native_proof = args.iter().any(|argument| argument == "--native-proof");
+    let default_size = if native_proof { (960, 640) } else { (960, 680) };
+    let window_width = proof_dimension(&args, "--width", default_size.0);
+    let window_height = proof_dimension(&args, "--height", default_size.1);
     let shared = Arc::new(Mutex::new(NotepadState::default()));
     let executor_state = shared.clone();
     let builder = native_window("ZSUI Notepad")
-        .size(960, 680)
-        .min_size(640, 440)
+        .size(window_width, window_height)
+        .min_size(window_width.min(640), window_height.min(440))
         .menu(notepad_menu())
         .on_close_requested(ZsDocumentShellCommand::Close.to_command())
         .stateful_view_with_app_commands(shared.clone(), view, update, message_for_app_command)
@@ -553,8 +558,6 @@ fn main() -> ZsuiResult<()> {
             result.map(|_| Vec::new())
         });
 
-    let args = std::env::args().collect::<Vec<_>>();
-    let native_proof = args.iter().any(|argument| argument == "--native-proof");
     if native_proof || args.iter().any(|argument| argument == "--smoke") {
         let interaction_plan = builder
             .native_view_interaction_plan()
@@ -679,7 +682,7 @@ fn main() -> ZsuiResult<()> {
                     "application": "zsui_notepad",
                     "scenario": "notepad-interaction",
                     "theme": "system",
-                    "window": { "width": 960, "height": 680 },
+                    "window": { "width": window_width, "height": window_height },
                     "widgets": widgets,
                     "runtime": &report,
                 })
@@ -736,6 +739,14 @@ fn main() -> ZsuiResult<()> {
         builder.run()?;
     }
     Ok(())
+}
+
+fn proof_dimension(args: &[String], flag: &str, default: u32) -> u32 {
+    args.windows(2)
+        .find(|pair| pair[0] == flag)
+        .and_then(|pair| pair[1].parse::<u32>().ok())
+        .filter(|value| (320..=4096).contains(value))
+        .unwrap_or(default)
 }
 
 #[cfg(test)]

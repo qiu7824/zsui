@@ -550,8 +550,13 @@ pub fn zs_navigation_item_native_draw_plan(
             },
             // Libadwaita's `.navigation-sidebar` deliberately uses a
             // neutral selected row rather than an accent-filled row. Accent
-            // is reserved for the control that is active or actionable.
-            ZsBaseControlPlatformStyle::Gtk => NativeDrawFill::Role(ColorRole::Control),
+            // is reserved for the control that is active or actionable. Its
+            // official stylesheet defines `$selected_color` as 10% of the
+            // current foreground over a transparent background.
+            ZsBaseControlPlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 26,
+            },
         };
         commands.push(NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -8167,7 +8172,10 @@ mod tests {
             assert!(plan.selection_indicator.is_none());
             let draw = zs_navigation_item_native_draw_plan(&plan, "Library", ZsIcon::Sidebar);
             let expected_fill = if platform == ZsBaseControlPlatformStyle::Gtk {
-                NativeDrawFill::Role(ColorRole::Control)
+                NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 26,
+                }
             } else {
                 NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::Accent,
