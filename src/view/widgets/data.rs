@@ -157,15 +157,15 @@ pub fn platform_navigation_for_style<Msg>(
             ellipsis: true,
         },
     );
-    let metrics = crate::ZsNavigationItemMetrics::for_platform(platform);
-    let item_width = Dp::new(
-        metrics.open_pane_width.0
-            - match platform {
-                crate::ZsBaseControlPlatformStyle::Windows => 32.0,
-                crate::ZsBaseControlPlatformStyle::Macos => 24.0,
-                crate::ZsBaseControlPlatformStyle::Gtk => 32.0,
-            },
-    );
+    // Keep the navigation composition usable with `label` alone. The
+    // interactive navigation row renderer is optional (`button`), but the
+    // shell primitive still needs stable pane geometry for static views.
+    let (open_pane_width, horizontal_inset) = match platform {
+        crate::ZsBaseControlPlatformStyle::Windows => (Dp::new(320.0), 32.0),
+        crate::ZsBaseControlPlatformStyle::Macos => (Dp::new(240.0), 24.0),
+        crate::ZsBaseControlPlatformStyle::Gtk => (Dp::new(280.0), 32.0),
+    };
+    let item_width = Dp::new(open_pane_width.0 - horizontal_inset);
     let items = items
         .into_iter()
         .map(|item| item.width(item_width))
@@ -214,7 +214,7 @@ pub fn platform_navigation_for_style<Msg>(
             .bg(crate::ThemeColorToken::Surface)
         }
     };
-    navigation.width(metrics.open_pane_width)
+    navigation.width(open_pane_width)
 }
 
 #[cfg(feature = "grid")]
