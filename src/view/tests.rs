@@ -303,10 +303,11 @@ mod tests {
     #[test]
     #[cfg(all(feature = "button", feature = "label"))]
     fn row_uses_intrinsic_child_height_inside_a_column() {
+        let heading_id = WidgetId::new(710);
         let row_id = WidgetId::new(711);
         let button_id = WidgetId::new(712);
         let mut view: ViewNode<()> = column([
-            text("Heading"),
+            text("Heading").id(heading_id),
             row([text("Action"), button("Save").id(button_id)])
                 .id(row_id)
                 .gap(Dp::new(8.0)),
@@ -339,10 +340,6 @@ mod tests {
             .button_height
             .to_px(Dpi::standard())
             .round_i32();
-        let first_line_height = metrics
-            .body_line_height
-            .to_px(Dpi::standard())
-            .round_i32();
         // A platform may add a small baseline/intrinsic row allowance around
         // a compact button (AppKit currently resolves to 32dp for this mixed
         // text/button row while the button itself remains 28dp). The row and
@@ -351,7 +348,9 @@ mod tests {
         assert!(bounds_for(button_id).height >= button_height);
         assert_eq!(
             bounds_for(row_id).y,
-            first_line_height + Dp::new(12.0).to_px(Dpi::standard()).round_i32()
+            bounds_for(heading_id).y
+                + bounds_for(heading_id).height
+                + Dp::new(12.0).to_px(Dpi::standard()).round_i32()
         );
     }
 
