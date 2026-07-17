@@ -169,6 +169,14 @@ impl ZsBaseControlPlatformStyle {
             Self::Windows
         }
     }
+
+    pub const fn typography(self) -> crate::ZsTypographyPlatformStyle {
+        match self {
+            Self::Windows => crate::ZsTypographyPlatformStyle::Windows,
+            Self::Macos => crate::ZsTypographyPlatformStyle::Macos,
+            Self::Gtk => crate::ZsTypographyPlatformStyle::Gtk,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -257,7 +265,7 @@ impl ZsBaseControlMetrics {
                 time_picker_minimum_width: Dp::new(242.0),
             },
             ZsBaseControlPlatformStyle::Macos => Self {
-                body_line_height: Dp::new(18.0),
+                body_line_height: Dp::new(16.0),
                 average_character_width: Dp::new(6.8),
                 button_minimum_width: Dp::new(82.0),
                 button_height: Dp::new(28.0),

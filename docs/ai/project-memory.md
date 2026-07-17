@@ -243,6 +243,14 @@ history remain authoritative for implementation status.
   Small/Text/Display with a Segoe UI fallback, and scales `HFONT` height from
   the active window DPI. Do not restore raw per-widget title sizes or use
   ClearType color filtering for icon-font glyphs.
+- Semantic text roles resolve through a framework-owned desktop typography
+  profile before layout, shaping and paint. AppKit follows Apple's macOS text
+  styles (10/13 caption, 13/16 body, 15/20 title 3, 17/22 title 2, 22/26
+  title 1 and 26/32 large title), uses `NSFont` system faces and keeps Core
+  Text shaping, NSString measurement, label intrinsic height, editor visual
+  rows, selection and caret geometry on the same metrics. GTK selects the
+  configured `GtkSettings:gtk-font-name` family and maps libadwaita's relative
+  caption/body/title classes. Examples must not patch font sizes or line boxes.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

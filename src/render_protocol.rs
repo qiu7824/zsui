@@ -27,10 +27,36 @@ impl Color {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextWeight {
+    /// Resolve the role's native default weight in the active backend.
+    Automatic,
     Regular,
     Medium,
     Semibold,
     Bold,
+}
+
+/// Native desktop typography family used to resolve semantic text roles.
+///
+/// Applications keep using [`TextRole`]. The active backend selects this
+/// profile so a semantic body, caption or title does not inherit Windows
+/// Fluent point sizes on AppKit or GTK.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsTypographyPlatformStyle {
+    Windows,
+    Macos,
+    Gtk,
+}
+
+impl ZsTypographyPlatformStyle {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
+            Self::Gtk
+        } else {
+            Self::Windows
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,8 +93,28 @@ pub enum TextRole {
     Monospace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsTypographyMetrics {
+    pub size: f32,
+    pub line_height: f32,
+    pub default_weight: TextWeight,
+}
+
+impl ZsTypographyMetrics {
+    pub const fn new(size: f32, line_height: f32, default_weight: TextWeight) -> Self {
+        Self {
+            size,
+            line_height,
+            default_weight,
+        }
+    }
+}
+
 impl TextRole {
-    /// Returns the platform-independent Fluent type-ramp size in device-independent pixels.
+    /// Returns the Windows Fluent fallback size in device-independent pixels.
+    ///
+    /// Native framework layout and render code should use [`Self::metrics_for`]
+    /// so AppKit and GTK do not inherit this Windows type ramp.
     pub const fn size(self) -> f32 {
         match self {
             Self::Caption => 12.0,
@@ -83,7 +129,9 @@ impl TextRole {
         }
     }
 
-    /// Returns the Fluent type-ramp line box in device-independent pixels.
+    /// Returns the Windows Fluent fallback line box in device-independent pixels.
+    ///
+    /// Native framework layout and render code should use [`Self::metrics_for`].
     pub const fn line_height(self) -> f32 {
         match self {
             Self::Caption => 16.0,
@@ -101,6 +149,51 @@ impl TextRole {
         match self {
             Self::Subtitle | Self::Title | Self::TitleLarge | Self::Display => TextWeight::Semibold,
             _ => TextWeight::Regular,
+        }
+    }
+
+    /// Resolves one semantic role through the native desktop type system.
+    ///
+    /// The macOS values are the AppKit text-style sizes and line heights from
+    /// Apple's macOS typography table. GTK values follow the documented
+    /// libadwaita relative type classes over the standard 14-logical-pixel UI
+    /// base; the GTK renderer can still select the actual configured family.
+    pub const fn metrics_for(self, platform: ZsTypographyPlatformStyle) -> ZsTypographyMetrics {
+        match platform {
+            ZsTypographyPlatformStyle::Windows => {
+                ZsTypographyMetrics::new(self.size(), self.line_height(), self.default_weight())
+            }
+            ZsTypographyPlatformStyle::Macos => match self {
+                Self::Caption => ZsTypographyMetrics::new(10.0, 13.0, TextWeight::Regular),
+                Self::Body | Self::Button | Self::Monospace => {
+                    ZsTypographyMetrics::new(13.0, 16.0, TextWeight::Regular)
+                }
+                Self::BodyLarge => ZsTypographyMetrics::new(15.0, 20.0, TextWeight::Regular),
+                Self::Subtitle => ZsTypographyMetrics::new(17.0, 22.0, TextWeight::Regular),
+                Self::Title => ZsTypographyMetrics::new(22.0, 26.0, TextWeight::Regular),
+                Self::TitleLarge | Self::Display => {
+                    ZsTypographyMetrics::new(26.0, 32.0, TextWeight::Regular)
+                }
+                Self::Icon => ZsTypographyMetrics::new(16.0, 20.0, TextWeight::Regular),
+            },
+            ZsTypographyPlatformStyle::Gtk => match self {
+                // libadwaita caption is 82% of the configured UI font and
+                // uses 140% leading. These rounded logical metrics preserve
+                // that relationship for the standard 14 px UI base.
+                Self::Caption => ZsTypographyMetrics::new(11.5, 16.0, TextWeight::Regular),
+                Self::Body | Self::Button => {
+                    ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular)
+                }
+                Self::Monospace => ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular),
+                Self::BodyLarge => ZsTypographyMetrics::new(16.5, 22.0, TextWeight::Bold),
+                Self::Subtitle | Self::Title => {
+                    ZsTypographyMetrics::new(19.0, 24.0, TextWeight::Bold)
+                }
+                Self::TitleLarge | Self::Display => {
+                    ZsTypographyMetrics::new(25.5, 32.0, TextWeight::Bold)
+                }
+                Self::Icon => ZsTypographyMetrics::new(16.0, 20.0, TextWeight::Regular),
+            },
         }
     }
 }
@@ -137,7 +230,7 @@ impl SemanticTextStyle {
         Self {
             role,
             color: ColorRole::PrimaryText,
-            weight: role.default_weight(),
+            weight: TextWeight::Automatic,
             horizontal_align: HorizontalAlign::Start,
             vertical_align: VerticalAlign::Center,
             wrap: TextWrap::NoWrap,
@@ -156,6 +249,9 @@ pub struct TextStyle {
     pub size: f32,
     #[serde(default)]
     pub line_height: f32,
+    /// Original semantic role retained for native text-style APIs.
+    #[serde(default)]
+    pub semantic_role: Option<TextRole>,
     pub weight: TextWeight,
     pub color: Color,
     pub horizontal_align: HorizontalAlign,
@@ -170,6 +266,7 @@ impl TextStyle {
             font_family: font_family.into(),
             size,
             line_height: 0.0,
+            semantic_role: None,
             weight: TextWeight::Regular,
             color,
             horizontal_align: HorizontalAlign::Start,
@@ -883,7 +980,39 @@ mod draw_command_tests {
         );
         assert_eq!(
             SemanticTextStyle::for_role(TextRole::Title).weight,
-            TextWeight::Semibold
+            TextWeight::Automatic
         );
+    }
+
+    #[test]
+    fn semantic_roles_resolve_through_native_desktop_type_ramps() {
+        let windows = TextRole::Body.metrics_for(ZsTypographyPlatformStyle::Windows);
+        let macos_body = TextRole::Body.metrics_for(ZsTypographyPlatformStyle::Macos);
+        let macos_caption = TextRole::Caption.metrics_for(ZsTypographyPlatformStyle::Macos);
+        let macos_title = TextRole::Title.metrics_for(ZsTypographyPlatformStyle::Macos);
+        let gtk_caption = TextRole::Caption.metrics_for(ZsTypographyPlatformStyle::Gtk);
+
+        assert_eq!((windows.size, windows.line_height), (14.0, 20.0));
+        assert_eq!(
+            (
+                macos_body.size,
+                macos_body.line_height,
+                macos_body.default_weight
+            ),
+            (13.0, 16.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            (macos_caption.size, macos_caption.line_height),
+            (10.0, 13.0)
+        );
+        assert_eq!(
+            (
+                macos_title.size,
+                macos_title.line_height,
+                macos_title.default_weight
+            ),
+            (22.0, 26.0, TextWeight::Regular)
+        );
+        assert_eq!((gtk_caption.size, gtk_caption.line_height), (11.5, 16.0));
     }
 }

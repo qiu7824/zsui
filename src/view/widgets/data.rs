@@ -48,7 +48,8 @@ pub fn platform_section_for_style<Msg>(
     title: impl Into<String>,
     children: impl IntoIterator<Item = ViewNode<Msg>>,
 ) -> ViewNode<Msg> {
-    let heading = styled_text(
+    let heading = styled_text_for_platform(
+        platform.typography(),
         title,
         crate::SemanticTextStyle {
             role: crate::TextRole::Body,
@@ -98,7 +99,11 @@ pub fn platform_section_for_style<Msg>(
                     .style
                     .height
                     .or(child.style.min_height)
-                    .unwrap_or(Dp::new(crate::TextRole::Body.line_height()));
+                    .unwrap_or(Dp::new(
+                        crate::TextRole::Body
+                            .metrics_for(platform.typography())
+                            .line_height,
+                    ));
                 rows.push(
                     child
                         .padding(Dp::new(ROW_PADDING))
@@ -158,8 +163,9 @@ pub fn platform_navigation_for_style<Msg>(
         wrap: crate::TextWrap::NoWrap,
         ellipsis: false,
     };
-    let heading = styled_text(title, title_style);
-    let subtitle = styled_text(
+    let heading = styled_text_for_platform(platform.typography(), title, title_style);
+    let subtitle = styled_text_for_platform(
+        platform.typography(),
         subtitle,
         crate::SemanticTextStyle {
             role: crate::TextRole::Caption,

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{render_protocol::Color, Dp, TextWeight};
+use crate::{
+    render_protocol::{Color, TextRole, ZsTypographyPlatformStyle},
+    Dp, TextWeight,
+};
 
 pub const ZSUI_FLUENT_GRID_UNIT: i32 = 4;
 pub const ZSUI_FLUENT_CONTROL_RADIUS: i32 = 4;
@@ -333,15 +336,31 @@ impl Default for ZsuiSpacingTokens {
 
 impl Default for ZsuiTypographyTokens {
     fn default() -> Self {
+        Self::for_platform(ZsTypographyPlatformStyle::current())
+    }
+}
+
+impl ZsuiTypographyTokens {
+    pub fn for_platform(platform: ZsTypographyPlatformStyle) -> Self {
+        fn role_style(role: TextRole, platform: ZsTypographyPlatformStyle) -> ZsuiTypographyStyle {
+            let metrics = role.metrics_for(platform);
+            ZsuiTypographyStyle::new(metrics.size, metrics.line_height, metrics.default_weight)
+        }
+
+        let body = TextRole::Body.metrics_for(platform);
         Self {
-            caption: ZsuiTypographyStyle::new(12.0, 16.0, TextWeight::Regular),
-            body: ZsuiTypographyStyle::new(14.0, 20.0, TextWeight::Regular),
-            body_strong: ZsuiTypographyStyle::new(14.0, 20.0, TextWeight::Semibold),
-            body_large: ZsuiTypographyStyle::new(18.0, 24.0, TextWeight::Regular),
-            subtitle: ZsuiTypographyStyle::new(20.0, 28.0, TextWeight::Semibold),
-            title: ZsuiTypographyStyle::new(28.0, 36.0, TextWeight::Semibold),
-            title_large: ZsuiTypographyStyle::new(40.0, 52.0, TextWeight::Semibold),
-            display: ZsuiTypographyStyle::new(68.0, 92.0, TextWeight::Semibold),
+            caption: role_style(TextRole::Caption, platform),
+            body: role_style(TextRole::Body, platform),
+            body_strong: ZsuiTypographyStyle::new(
+                body.size,
+                body.line_height,
+                TextWeight::Semibold,
+            ),
+            body_large: role_style(TextRole::BodyLarge, platform),
+            subtitle: role_style(TextRole::Subtitle, platform),
+            title: role_style(TextRole::Title, platform),
+            title_large: role_style(TextRole::TitleLarge, platform),
+            display: role_style(TextRole::Display, platform),
         }
     }
 }
@@ -386,15 +405,39 @@ mod tests {
         );
         assert_eq!(
             theme.typography(TypographyToken::TitleLarge),
-            ZsuiTypographyStyle::new(40.0, 52.0, TextWeight::Semibold)
+            ZsuiTypographyTokens::for_platform(ZsTypographyPlatformStyle::current()).title_large
         );
         assert_eq!(
             theme.typography(TypographyToken::Display),
-            ZsuiTypographyStyle::new(68.0, 92.0, TextWeight::Semibold)
+            ZsuiTypographyTokens::for_platform(ZsTypographyPlatformStyle::current()).display
         );
         assert_eq!(
             theme.control_metric(ControlMetricToken::StandardHeight),
             Dp::new(32.0)
+        );
+    }
+
+    #[test]
+    fn typography_tokens_are_platform_profiles_not_fluent_globals() {
+        let windows = ZsuiTypographyTokens::for_platform(ZsTypographyPlatformStyle::Windows);
+        let macos = ZsuiTypographyTokens::for_platform(ZsTypographyPlatformStyle::Macos);
+        let gtk = ZsuiTypographyTokens::for_platform(ZsTypographyPlatformStyle::Gtk);
+
+        assert_eq!(
+            windows.body,
+            ZsuiTypographyStyle::new(14.0, 20.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            macos.body,
+            ZsuiTypographyStyle::new(13.0, 16.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            macos.title,
+            ZsuiTypographyStyle::new(22.0, 26.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            gtk.caption,
+            ZsuiTypographyStyle::new(11.5, 16.0, TextWeight::Regular)
         );
     }
 

@@ -35,6 +35,8 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - [NSControlSize](https://developer.apple.com/documentation/appkit/nscontrol/controlsize-swift.enum)
 - [NSBezelStyle](https://developer.apple.com/documentation/appkit/nsbezelstyle)
 - [NSTabView](https://developer.apple.com/documentation/appkit/nstabview)
+- [Typography](https://developer.apple.com/design/human-interface-guidelines/typography)
+- [NSFont](https://developer.apple.com/documentation/appkit/nsfont)
 
 组合契约：
 
@@ -44,6 +46,24 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - 选中行使用 source-list 的轻量选中背景，不使用 Windows 左侧指示条；文本和图标保持 AppKit 的主/次级层级。
 - 内容标签使用 AppKit `NSTabView` 的成组等宽标签语法和系统文字，选中项属于分段表面；不绘制 WinUI accent 下划线，也不冒充 `NSWindow` 的跨窗口系统标签组。
 
+AppKit 字体契约由框架统一解析，不由示例调整：
+
+| `TextRole` | macOS 系统文字样式 | 字号 / 行高 / 默认字重 |
+| --- | --- | --- |
+| `Caption` | Caption 1 | 10 / 13 pt / Regular |
+| `Body`、`Button`、`Monospace` | Body | 13 / 16 pt / Regular |
+| `BodyLarge` | Title 3 | 15 / 20 pt / Regular |
+| `Subtitle` | Title 2 | 17 / 22 pt / Regular |
+| `Title` | Title 1 | 22 / 26 pt / Regular |
+| `TitleLarge`、`Display` | Large Title | 26 / 32 pt / Regular |
+
+AppKit 后端使用 `NSFont` 系统字体而不是嵌入 SF Pro；Core Text 塑形、
+`NSString` 测量与最终绘制必须使用同一套字号和行高。标签固有高度、编辑器视觉行、
+选区、光标和命中测试同时读取 `ZsTypographyPlatformStyle::Macos`，禁止在组件或
+Demo 中另写 14/20 的 Windows 字体常量。`TextWeight::Automatic` 使用平台文字
+样式的默认字重；应用显式指定的 Regular、Medium、Semibold 或 Bold 不得被平台
+解析器覆盖。
+
 ## Linux / GTK4 + Libadwaita
 
 实现依据：
@@ -52,6 +72,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 - [Header bars](https://developer.gnome.org/hig/patterns/containers/header-bars.html)
 - [Libadwaita style classes](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/1.9/style-classes.html)
 - [Libadwaita adaptive layouts](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/adaptive-layouts.html)
+- [GNOME typography](https://developer.gnome.org/hig/guidelines/typography.html)
 - [GNOME tabs](https://developer.gnome.org/hig/patterns/nav/tabs.html)
 - [AdwTabBar](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.TabBar.html)
 
@@ -64,6 +85,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 侧边栏选中态 | 使用 `navigation-sidebar` 的 neutral selected row，不使用 accent 填充；accent 留给可操作控件 |
 | header bar | 左/中/右三组对齐，只放少量主要动作；工具栏按钮尽可能 flat，并保留可拖动空白 |
 | 文档标签 | 使用 `AdwTabView`/`AdwTabBar` 的可变文档集合语义；选中项是 bar 内的圆角中性表面，不复用 WinUI accent 下划线 |
+| 字体 | 运行时读取 `GtkSettings:gtk-font-name` 的系统字体族；Body 使用系统基准，Caption 使用 82% 字号和 140% 行高，标题按 libadwaita 标准相对级别解析 |
 | 颜色与高对比度 | 使用 Adwaita 的 accent、border、disabled 和 scheme 语义，不写死蓝色或透明度 |
 
 GTK 的 HIG 同样没有承诺所有主题都使用同一像素高度。ZSUI 只把有官方来源的边距、分隔线和组合规则写入共享框架；字体、DPI、主题控件高度由 GTK 后端和 `NativeDrawPalette` 解析。

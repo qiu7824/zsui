@@ -1068,7 +1068,10 @@ pub(crate) fn shape_linux_gtk_text_line(
     if text.is_empty() {
         return None;
     }
-    let style = TextStyle::line("Cantarell", 14.0, Color::rgb(0, 0, 0));
+    let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Gtk);
+    let mut style = TextStyle::line(linux_gtk_ui_font_family(), body.size, Color::rgb(0, 0, 0));
+    style.line_height = body.line_height;
+    style.semantic_role = Some(crate::TextRole::Body);
     let layout = gtk::pango::Layout::new(context);
     configure_pango_layout(&layout, text, &style, None);
     let boundaries = crate::native_text_edit::grapheme_boundaries(text);
@@ -1131,14 +1134,16 @@ impl<'a> LinuxGtkDrawSink<'a> {
         context: &'a gtk::cairo::Context,
         palette: NativeDrawPalette,
     ) -> Self {
+        let font_family = linux_gtk_ui_font_family();
         Self {
             area,
             context,
             palette,
             style_resolver: NativeDrawTextStyleResolver::new(
-                "Cantarell",
+                font_family.clone(),
                 "Monospace",
-                "Cantarell",
+                font_family,
+                crate::ZsTypographyPlatformStyle::Gtk,
                 palette,
             ),
             text_layout: LinuxGtkTextLayout::new(area.pango_context()),
@@ -1451,6 +1456,18 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
     }
 }
 
+fn linux_gtk_ui_font_family() -> String {
+    gtk::Settings::default()
+        .and_then(|settings| settings.gtk_font_name())
+        .and_then(|name| {
+            gtk::pango::FontDescription::from_string(name.as_str())
+                .family()
+                .map(|family| family.to_string())
+        })
+        .filter(|family| !family.trim().is_empty())
+        .unwrap_or_else(|| "Adwaita Sans".to_string())
+}
+
 fn configure_pango_layout(
     layout: &gtk::pango::Layout,
     text: &str,
@@ -1462,6 +1479,7 @@ fn configure_pango_layout(
     font.set_family(&style.font_family);
     font.set_absolute_size(f64::from(style.size) * f64::from(gtk::pango::SCALE));
     font.set_weight(match style.weight {
+        TextWeight::Automatic => gtk::pango::Weight::Normal,
         TextWeight::Regular => gtk::pango::Weight::Normal,
         TextWeight::Medium => gtk::pango::Weight::Medium,
         TextWeight::Semibold => gtk::pango::Weight::Semibold,

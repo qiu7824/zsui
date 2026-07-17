@@ -332,6 +332,7 @@ mod label_tests {
             font_family: "Test".to_string(),
             size: 14.0,
             line_height: 20.0,
+            semantic_role: Some(crate::TextRole::Body),
             weight: TextWeight::Regular,
             color: Color {
                 r: 0,

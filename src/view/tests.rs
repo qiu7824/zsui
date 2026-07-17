@@ -9,12 +9,19 @@ mod tests {
             "Section heading",
             SemanticTextStyle::for_role(crate::TextRole::Subtitle),
         );
-        assert_eq!(node.style.height, Some(Dp::new(28.0)));
+        assert_eq!(
+            node.style.height,
+            Some(Dp::new(
+                crate::TextRole::Subtitle
+                    .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                    .line_height
+            ))
+        );
         let ViewNodeKind::Text { style, .. } = node.kind else {
             panic!("styled_text should create a text node");
         };
         assert_eq!(style.role, crate::TextRole::Subtitle);
-        assert_eq!(style.weight, crate::TextWeight::Semibold);
+        assert_eq!(style.weight, crate::TextWeight::Automatic);
     }
 
     #[cfg(any(

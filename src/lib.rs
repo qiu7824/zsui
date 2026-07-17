@@ -478,7 +478,8 @@ pub use render_protocol::{
     NativeIconColorMode, NativeImageInterpolation, NativeStyleHostOperation, NativeStyleResolver,
     Renderer, RendererHostOperation, SemanticTextStyle, TextLayout, TextLayoutHostOperation,
     TextRole, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign, ZsImageFrame,
-    ZsImageFrameId, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS, REQUIRED_NATIVE_STYLE_HOST_OPERATIONS,
+    ZsImageFrameId, ZsTypographyMetrics, ZsTypographyPlatformStyle,
+    REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS, REQUIRED_NATIVE_STYLE_HOST_OPERATIONS,
     REQUIRED_RENDERER_HOST_OPERATIONS, REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};

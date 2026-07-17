@@ -1083,7 +1083,9 @@ impl Default for WindowsGdiStyleResolver {
 
 impl NativeStyleResolver for WindowsGdiStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
-        let size = style.role.size();
+        let metrics = style
+            .role
+            .metrics_for(crate::ZsTypographyPlatformStyle::Windows);
         TextStyle {
             font_family: match style.role {
                 crate::TextRole::Monospace => "Consolas".to_string(),
@@ -1095,9 +1097,14 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
                 | crate::TextRole::Display => self.display_font_family.clone(),
                 _ => self.font_family.clone(),
             },
-            size,
-            line_height: style.role.line_height(),
-            weight: style.weight,
+            size: metrics.size,
+            line_height: metrics.line_height,
+            semantic_role: Some(style.role),
+            weight: if style.weight == TextWeight::Automatic {
+                metrics.default_weight
+            } else {
+                style.weight
+            },
             color: self.palette.resolve(style.color),
             horizontal_align: style.horizontal_align,
             vertical_align: style.vertical_align,
@@ -1282,6 +1289,7 @@ impl WindowsGdiDrawSink {
             font_family: font_family.to_string(),
             size: size / self.renderer.dpi_scale.max(1.0),
             line_height: size / self.renderer.dpi_scale.max(1.0),
+            semantic_role: Some(crate::TextRole::Icon),
             weight: TextWeight::Regular,
             color: self.palette.resolve(command.color),
             horizontal_align: HorizontalAlign::Center,
@@ -1520,6 +1528,7 @@ fn font_pixel_height(size: f32, dpi_scale: f32) -> i32 {
 
 fn font_weight(weight: TextWeight) -> i32 {
     match weight {
+        TextWeight::Automatic => 400,
         TextWeight::Regular => 400,
         TextWeight::Medium => 500,
         TextWeight::Semibold => 600,

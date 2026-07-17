@@ -1254,7 +1254,11 @@ pub(crate) fn native_text_wheel_row_delta(delta_y: Dp) -> isize {
     if !delta_y.0.is_finite() || delta_y.0 == 0.0 {
         return 0;
     }
-    let rows = (delta_y.0.abs() / 18.0).round().max(1.0) as isize;
+    let line_height = crate::TextRole::Body
+        .metrics_for(crate::ZsTypographyPlatformStyle::current())
+        .line_height
+        .max(1.0);
+    let rows = (delta_y.0.abs() / line_height).round().max(1.0) as isize;
     if delta_y.0 > 0.0 {
         rows
     } else {
@@ -1936,6 +1940,8 @@ struct NativeTextVisualMetrics {
 
 fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisualMetrics {
     let inset = Dp::new(8.0).to_px(dpi).round_i32().max(1);
+    let body_typography =
+        crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::current());
     let bounds = target.bounds;
     #[cfg(feature = "number-box")]
     let bounds = if target.kind == ViewHitTargetKind::NumberBox {
@@ -1956,7 +1962,10 @@ fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisu
             height: bounds.height.saturating_sub(inset.saturating_mul(2)).max(1),
         },
         character_width: Dp::new(8.0).to_px(dpi).round_i32().max(1),
-        line_height: Dp::new(18.0).to_px(dpi).round_i32().max(1),
+        line_height: Dp::new(body_typography.line_height)
+            .to_px(dpi)
+            .round_i32()
+            .max(1),
     }
 }
 
@@ -2313,6 +2322,17 @@ pub(crate) fn rect_contains(outer: Rect, inner: Rect) -> bool {
 mod tests {
     use super::*;
     use crate::{ViewHitTarget, ViewHitTargetKind};
+
+    fn body_line_height() -> i32 {
+        Dp::new(
+            crate::TextRole::Body
+                .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                .line_height,
+        )
+        .to_px(Dpi::standard())
+        .round_i32()
+        .max(1)
+    }
 
     fn proportional_test_shape(text: &str, _fallback_width: i32) -> Option<NativeShapedTextLine> {
         if text.is_empty() {
@@ -3049,13 +3069,13 @@ mod tests {
                     x: 18,
                     y: 8,
                     width: 10,
-                    height: 18,
+                    height: body_line_height(),
                 },
                 Rect {
                     x: 38,
                     y: 8,
                     width: 10,
-                    height: 18,
+                    height: body_line_height(),
                 },
             ]
         );
@@ -3386,7 +3406,10 @@ mod tests {
             Dpi::standard(),
         );
 
-        assert_eq!((wrapped.caret.x, wrapped.caret.y), (8, 26));
+        assert_eq!(
+            (wrapped.caret.x, wrapped.caret.y),
+            (8, 8 + body_line_height())
+        );
         assert_eq!((unwrapped.caret.x, unwrapped.caret.y), (39, 8));
         assert_eq!(
             native_text_index_for_point(
@@ -3495,7 +3518,8 @@ mod tests {
             ),
             0
         );
-        assert_eq!(native_text_wheel_row_delta(Dp::new(48.0)), 3);
+        let expected_rows = (48.0 / body_line_height() as f32).round().max(1.0) as isize;
+        assert_eq!(native_text_wheel_row_delta(Dp::new(48.0)), expected_rows);
         assert_eq!(
             native_text_visible_range_with_backend(
                 target,
@@ -3563,7 +3587,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(visible_text, vec!["row2", "row3"]);
-        assert_eq!(geometry.caret.y, 26);
+        assert_eq!(geometry.caret.y, 8 + body_line_height());
         assert!(matches!(
             plan.commands.first(),
             Some(NativeDrawCommand::PushClip { .. })
@@ -3686,7 +3710,10 @@ mod tests {
         );
 
         assert!(dragged.scrolled);
-        assert_eq!((dragged.first_visible_row, dragged.point.y), (1, 44));
+        assert_eq!(
+            (dragged.first_visible_row, dragged.point.y),
+            (1, 8 + body_line_height() * 2)
+        );
         assert_eq!(
             native_text_index_for_point_in_viewport_with_backend(
                 target,

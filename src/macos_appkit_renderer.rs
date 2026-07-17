@@ -19,13 +19,15 @@ use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSBitmapImageFileType,
     NSBitmapImageRepPropertyKey, NSCarriageReturnCharacter, NSColor, NSColorSpace,
     NSDeleteCharacter, NSDownArrowFunctionKey, NSEndFunctionKey, NSEnterCharacter, NSEvent,
-    NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightBold, NSFontWeightMedium,
-    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGraphicsContext,
-    NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode, NSMutableParagraphStyle,
-    NSPageDownFunctionKey, NSPageUpFunctionKey, NSParagraphStyleAttributeName,
-    NSRightArrowFunctionKey, NSStringDrawing, NSStringDrawingOptions,
-    NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment, NSTextInputClient,
-    NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
+    NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontTextStyle, NSFontTextStyleBody,
+    NSFontTextStyleCaption1, NSFontTextStyleLargeTitle, NSFontTextStyleOptionKey,
+    NSFontTextStyleTitle1, NSFontTextStyleTitle2, NSFontTextStyleTitle3, NSFontWeightBold,
+    NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName,
+    NSGraphicsContext, NSHomeFunctionKey, NSImage, NSLeftArrowFunctionKey, NSLineBreakMode,
+    NSMutableParagraphStyle, NSPageDownFunctionKey, NSPageUpFunctionKey,
+    NSParagraphStyleAttributeName, NSRightArrowFunctionKey, NSStringDrawing,
+    NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment,
+    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
@@ -1124,7 +1126,10 @@ pub(crate) fn shape_macos_appkit_text_line(
     if text.is_empty() {
         return None;
     }
-    let style = TextStyle::line(".AppleSystemUIFont", 14.0, Color::rgb(0, 0, 0));
+    let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Macos);
+    let mut style = TextStyle::line(".AppleSystemUIFont", body.size, Color::rgb(0, 0, 0));
+    style.line_height = body.line_height;
+    style.semantic_role = Some(crate::TextRole::Body);
     let attributes = appkit_text_attributes(&style);
     let dictionary: &NSDictionary<NSAttributedStringKey, AnyObject> = &attributes;
     let string = NSString::from_str(text);
@@ -1251,6 +1256,7 @@ impl MacosAppKitDrawSink {
                 ".AppleSystemUIFont",
                 "Menlo",
                 ".AppleSystemUIFont",
+                crate::ZsTypographyPlatformStyle::Macos,
                 palette,
             ),
             text_layout: MacosAppKitTextLayout,
@@ -1536,14 +1542,36 @@ fn appkit_text_attributes(
     let attributes = NSMutableDictionary::<NSAttributedStringKey, AnyObject>::new();
     let weight = unsafe {
         match style.weight {
+            TextWeight::Automatic => NSFontWeightRegular,
             TextWeight::Regular => NSFontWeightRegular,
             TextWeight::Medium => NSFontWeightMedium,
             TextWeight::Semibold => NSFontWeightSemibold,
             TextWeight::Bold => NSFontWeightBold,
         }
     };
-    let font = if style.font_family == "Menlo" {
+    let font = if style.semantic_role == Some(crate::TextRole::Monospace)
+        || style.font_family == "Menlo"
+    {
         NSFont::monospacedSystemFontOfSize_weight(f64::from(style.size), weight)
+    } else if style.semantic_role == Some(crate::TextRole::Button)
+        && style.weight
+            == crate::TextRole::Button
+                .metrics_for(crate::ZsTypographyPlatformStyle::Macos)
+                .default_weight
+    {
+        NSFont::controlContentFontOfSize(f64::from(style.size))
+    } else if let Some(text_style) = style
+        .semantic_role
+        .filter(|role| {
+            style.weight
+                == role
+                    .metrics_for(crate::ZsTypographyPlatformStyle::Macos)
+                    .default_weight
+        })
+        .and_then(appkit_preferred_text_style)
+    {
+        let options = NSDictionary::<NSFontTextStyleOptionKey, AnyObject>::new();
+        unsafe { NSFont::preferredFontForTextStyle_options(text_style, &options) }
     } else {
         NSFont::systemFontOfSize_weight(f64::from(style.size), weight)
     };
@@ -1576,6 +1604,23 @@ fn appkit_text_attributes(
         );
     }
     attributes
+}
+
+fn appkit_preferred_text_style(role: crate::TextRole) -> Option<&'static NSFontTextStyle> {
+    // These AppKit text-style names are process-lifetime framework constants.
+    unsafe {
+        match role {
+            crate::TextRole::Caption => Some(NSFontTextStyleCaption1),
+            crate::TextRole::Body => Some(NSFontTextStyleBody),
+            crate::TextRole::BodyLarge => Some(NSFontTextStyleTitle3),
+            crate::TextRole::Subtitle => Some(NSFontTextStyleTitle2),
+            crate::TextRole::Title => Some(NSFontTextStyleTitle1),
+            crate::TextRole::TitleLarge | crate::TextRole::Display => {
+                Some(NSFontTextStyleLargeTitle)
+            }
+            crate::TextRole::Button | crate::TextRole::Icon | crate::TextRole::Monospace => None,
+        }
+    }
 }
 
 fn appkit_color(color: Color) -> Retained<NSColor> {

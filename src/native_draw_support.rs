@@ -1,6 +1,6 @@
 use crate::{
     Color, ColorRole, NativeDrawFill, NativeStyleResolver, SemanticTextStyle, TextRole, TextStyle,
-    ZsuiTheme, ZsuiThemeMode,
+    TextWeight, ZsuiTheme, ZsuiThemeMode,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +178,7 @@ pub(crate) struct NativeDrawTextStyleResolver {
     font_family: String,
     monospace_font_family: String,
     icon_font_family: String,
+    typography_platform: crate::ZsTypographyPlatformStyle,
     palette: NativeDrawPalette,
 }
 
@@ -186,12 +187,14 @@ impl NativeDrawTextStyleResolver {
         font_family: impl Into<String>,
         monospace_font_family: impl Into<String>,
         icon_font_family: impl Into<String>,
+        typography_platform: crate::ZsTypographyPlatformStyle,
         palette: NativeDrawPalette,
     ) -> Self {
         Self {
             font_family: font_family.into(),
             monospace_font_family: monospace_font_family.into(),
             icon_font_family: icon_font_family.into(),
+            typography_platform,
             palette,
         }
     }
@@ -199,17 +202,23 @@ impl NativeDrawTextStyleResolver {
 
 impl NativeStyleResolver for NativeDrawTextStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
-        let size = style.role.size();
+        let metrics = style.role.metrics_for(self.typography_platform);
         let font_family = match style.role {
             TextRole::Monospace => self.monospace_font_family.clone(),
             TextRole::Icon => self.icon_font_family.clone(),
             _ => self.font_family.clone(),
         };
+        let weight = if style.weight == TextWeight::Automatic {
+            metrics.default_weight
+        } else {
+            style.weight
+        };
         TextStyle {
             font_family,
-            size,
-            line_height: style.role.line_height(),
-            weight: style.weight,
+            size: metrics.size,
+            line_height: metrics.line_height,
+            semantic_role: Some(style.role),
+            weight,
             color: self.palette.resolve(style.color),
             horizontal_align: style.horizontal_align,
             vertical_align: style.vertical_align,
@@ -316,6 +325,7 @@ mod tests {
             "system",
             "monospace",
             "icons",
+            crate::ZsTypographyPlatformStyle::Windows,
             NativeDrawPalette::for_mode(ZsuiThemeMode::Light, false),
         );
         let style = resolver.resolve_text_style(SemanticTextStyle {
@@ -330,7 +340,50 @@ mod tests {
         assert_eq!(style.font_family, "system");
         assert_eq!(style.size, 28.0);
         assert_eq!(style.weight, TextWeight::Bold);
+        assert_eq!(style.semantic_role, Some(TextRole::Title));
         assert_eq!(style.horizontal_align, HorizontalAlign::End);
         assert_eq!(style.wrap, TextWrap::Word);
+    }
+
+    #[test]
+    fn text_style_resolver_uses_native_platform_type_ramps() {
+        let palette = NativeDrawPalette::for_mode(ZsuiThemeMode::Light, false);
+        let macos = NativeDrawTextStyleResolver::new(
+            ".AppleSystemUIFont",
+            "Menlo",
+            ".AppleSystemUIFont",
+            crate::ZsTypographyPlatformStyle::Macos,
+            palette,
+        );
+        let gtk = NativeDrawTextStyleResolver::new(
+            "Adwaita Sans",
+            "Adwaita Mono",
+            "Adwaita Sans",
+            crate::ZsTypographyPlatformStyle::Gtk,
+            palette,
+        );
+
+        let macos_body = macos.resolve_text_style(SemanticTextStyle::body());
+        assert_eq!(
+            (macos_body.size, macos_body.line_height, macos_body.weight),
+            (13.0, 16.0, TextWeight::Regular)
+        );
+        let macos_title = macos.resolve_text_style(SemanticTextStyle::for_role(TextRole::Title));
+        assert_eq!(
+            (
+                macos_title.size,
+                macos_title.line_height,
+                macos_title.weight
+            ),
+            (22.0, 26.0, TextWeight::Regular)
+        );
+        let mut emphasized_title = SemanticTextStyle::for_role(TextRole::Title);
+        emphasized_title.weight = TextWeight::Semibold;
+        assert_eq!(
+            macos.resolve_text_style(emphasized_title).weight,
+            TextWeight::Semibold
+        );
+        let gtk_caption = gtk.resolve_text_style(SemanticTextStyle::for_role(TextRole::Caption));
+        assert_eq!((gtk_caption.size, gtk_caption.line_height), (11.5, 16.0));
     }
 }

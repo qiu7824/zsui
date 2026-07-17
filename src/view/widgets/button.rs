@@ -4,17 +4,32 @@ pub fn text<Msg>(text: impl Into<String>) -> ViewNode<Msg> {
 }
 
 /// Creates a label using a semantic type-ramp role instead of a raw font size.
-/// The line box follows the role's platform-independent typography metric.
+/// The line box follows the active desktop's native typography metric.
 #[cfg(feature = "label")]
 pub fn styled_text<Msg>(
     text: impl Into<String>,
     style: crate::SemanticTextStyle,
 ) -> ViewNode<Msg> {
+    styled_text_for_platform(
+        crate::ZsTypographyPlatformStyle::current(),
+        text,
+        style,
+    )
+}
+
+/// Deterministic semantic-label variant for framework platform compositions.
+#[cfg(feature = "label")]
+pub fn styled_text_for_platform<Msg>(
+    platform: crate::ZsTypographyPlatformStyle,
+    text: impl Into<String>,
+    style: crate::SemanticTextStyle,
+) -> ViewNode<Msg> {
+    let line_height = style.role.metrics_for(platform).line_height;
     ViewNode::new(ViewNodeKind::Text {
         text: text.into(),
         style,
     })
-    .height(crate::Dp::new(style.role.line_height()))
+    .height(crate::Dp::new(line_height))
 }
 
 #[cfg(feature = "button")]

@@ -1889,7 +1889,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
                 let text_bounds = text_input_content_bounds(bounds, self.style.padding, cx.dpi);
                 if *multiline && *wrap == crate::TextWrap::NoWrap {
-                    let line_height = Dp::new(18.0).to_px(cx.dpi).round_i32().max(1);
+                    let line_height = Dp::new(
+                        crate::TextRole::Body
+                            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                            .line_height,
+                    )
+                    .to_px(cx.dpi)
+                    .round_i32()
+                    .max(1);
                     let bottom = text_bounds.y.saturating_add(text_bounds.height);
                     for (row, line) in value.split('\n').enumerate() {
                         let y = text_bounds.y.saturating_add(
