@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn loading_retains_the_last_complete_frame_until_the_atomic_swap() {
+    fn loading_snapshot_never_exposes_a_partial_frame_during_atomic_swap() {
         let mut preview = ZsImagePreviewState::default();
         preview.set_png(ZsImageFrameId::new(1), png(1, 1, &[255, 0, 0, 255]));
         assert!(preview.wait_for_idle(Duration::from_secs(1)));
@@ -406,9 +406,20 @@ mod tests {
         );
 
         preview.set_png(ZsImageFrameId::new(2), png(1, 1, &[0, 255, 0, 255]));
-        let loading = preview.snapshot();
-        assert!(loading.loading);
-        assert_eq!(loading.frame.unwrap().id(), ZsImageFrameId::new(1));
+        let transition = preview.snapshot();
+        // The decoder is intentionally asynchronous. A one-pixel PNG can
+        // finish before this thread reacquires the mutex, so scheduling is
+        // not part of the contract: while loading we retain frame 1, and if
+        // the atomic swap already completed we expose the complete frame 2.
+        assert_eq!(
+            transition.frame.unwrap().id(),
+            if transition.loading {
+                ZsImageFrameId::new(1)
+            } else {
+                ZsImageFrameId::new(2)
+            }
+        );
+        assert!(transition.last_error.is_none());
         assert!(preview.wait_for_idle(Duration::from_secs(1)));
         assert_eq!(
             preview.snapshot().frame.unwrap().id(),
