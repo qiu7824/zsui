@@ -79,7 +79,7 @@ jobs:
               --page "$page" \
               --theme light \
               --width 1024 \
-              --height 656 \
+              --height 640 \
               --output target/native-proof/macos-15-arm64
           done
           ./target/release/examples/component_gallery \
@@ -87,7 +87,7 @@ jobs:
             --page inputs \
             --theme dark \
             --width 1024 \
-            --height 656 \
+            --height 640 \
             --output target/native-proof/macos-15-arm64
           ./target/release/examples/zsui_notepad \
             --native-proof \
@@ -130,7 +130,7 @@ jobs:
               assert capture["scale_factor"] > 0.0
               assert 0.75 <= capture["typography_scale"] <= 3.0
               expected = (
-                  {"width": 1024, "height": 656}
+                  {"width": 1024, "height": 640}
                   if stem.startswith("gallery-")
                   else {"width": 960, "height": 640}
               )
