@@ -164,8 +164,12 @@ mod tests {
     #[test]
     #[cfg(feature = "button")]
     fn toolbar_button_keeps_semantic_icon_and_flat_resting_chrome() {
-        let mut view: ViewNode<Msg> =
-            toolbar_button("Save", crate::ZsIcon::Save).on_click(Msg::SaveClicked);
+        let mut view: ViewNode<Msg> = toolbar_button_for_style(
+            crate::ZsBaseControlPlatformStyle::Windows,
+            "Save",
+            crate::ZsIcon::Save,
+        )
+        .on_click(Msg::SaveClicked);
         let mut layout = ViewLayoutCx::new(
             Rect {
                 x: 0,
