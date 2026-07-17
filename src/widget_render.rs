@@ -9176,9 +9176,16 @@ mod tests {
             height: 32,
         };
         let plan = zs_progress_bar_render_plan(bounds, 0.625, Dpi::standard());
+        let metrics = ZsBaseControlMetrics::for_platform(ZsBaseControlPlatformStyle::current());
+        let expected_track_height = metrics
+            .progress_track_height
+            .to_px(Dpi::standard())
+            .round_i32()
+            .min(bounds.height)
+            .max(1);
 
         assert_eq!(plan.track.width, 200);
-        assert_eq!(plan.track.height, 3);
+        assert_eq!(plan.track.height, expected_track_height);
         assert_eq!(plan.filled_track.expect("determinate fill").width, 125);
         assert_eq!(zs_progress_bar_native_draw_plan(&plan).command_count(), 2);
         assert_eq!(

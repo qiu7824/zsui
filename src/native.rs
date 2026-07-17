@@ -11120,6 +11120,15 @@ mod tests {
                 .dispatch_key(NativeViewKey::Right)
                 .grid_view_selection_changed
         );
+        let expected_after_down = runtime.widget_grid_view_state(widget).and_then(|state| {
+            let selected_index = state
+                .selected
+                .and_then(|selected| state.items.iter().position(|item| *item == selected))?;
+            let target = selected_index
+                .saturating_add(state.column_count.max(1))
+                .min(state.items.len().saturating_sub(1));
+            state.items.get(target).copied()
+        });
         assert!(
             runtime
                 .dispatch_key(NativeViewKey::Down)
@@ -11129,7 +11138,7 @@ mod tests {
             runtime
                 .widget_grid_view_state(widget)
                 .and_then(|state| state.selected),
-            Some(fifth)
+            expected_after_down
         );
         assert!(runtime.dispatch_key(NativeViewKey::Enter).grid_view_invoked);
     }

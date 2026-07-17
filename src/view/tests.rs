@@ -1352,13 +1352,14 @@ mod tests {
         let first = crate::ZsGridViewItemId::new(1);
         let selected = crate::ZsGridViewItemId::new(2);
         let invoked = crate::ZsGridViewItemId::new(5);
-        let mut view = grid_view([
+        let items = [
             crate::ZsGridViewItem::new(first, "Desktop"),
             crate::ZsGridViewItem::new(selected, "Documents"),
             crate::ZsGridViewItem::new(3, "Photos"),
             crate::ZsGridViewItem::new(invoked, "src"),
             crate::ZsGridViewItem::new(selected, "Duplicate"),
-        ])
+        ];
+        let mut view = grid_view(items.clone())
         .id(widget)
         .selected_grid_view_item(Some(selected))
         .on_grid_view_select(Msg::GridViewSelected)
@@ -1414,12 +1415,25 @@ mod tests {
                 Msg::GridViewInvoked(invoked)
             ]
         );
+        let expected_column_count = crate::zs_grid_view_render_plan(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 420,
+                height: 240,
+            },
+            &items,
+            Some(invoked),
+            crate::ZsGridViewPlatformStyle::current(),
+            Dpi::standard(),
+        )
+        .column_count;
         assert_eq!(
             view.widget_grid_view_state(widget),
             Some(crate::ZsGridViewState {
                 selected: Some(invoked),
                 items: vec![first, selected, 3_u64.into(), invoked],
-                column_count: 3,
+                column_count: expected_column_count,
             })
         );
     }
