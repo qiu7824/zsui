@@ -40,10 +40,25 @@ if (Test-Path -LiteralPath $buildScript) {
 }
 
 $forbiddenApiPattern = 'ICoreWebView2|CreateCoreWebView2Environment|WKWebView|WebKitWebView|webview2::|webkit2gtk::|webkit6::|wry::|tauri::|cef::|chromiumoxide::|headless_chrome::'
-$matches = @(& rg -n -i --glob '*.rs' -- $forbiddenApiPattern @sourceRoots 2>$null)
-$rgExitCode = $LASTEXITCODE
-if ($rgExitCode -gt 1) {
-    throw "rg failed while checking browser-shell API usage"
+$rgCommand = Get-Command rg -ErrorAction SilentlyContinue
+if ($null -ne $rgCommand) {
+    $matches = @(& $rgCommand.Source -n -i --glob '*.rs' -- $forbiddenApiPattern @sourceRoots 2>$null)
+    $rgExitCode = $LASTEXITCODE
+    if ($rgExitCode -gt 1) {
+        throw "rg failed while checking browser-shell API usage"
+    }
+} else {
+    $sourceFiles = foreach ($root in $sourceRoots) {
+        if (Test-Path -LiteralPath $root -PathType Leaf) {
+            Get-Item -LiteralPath $root
+        } elseif (Test-Path -LiteralPath $root -PathType Container) {
+            Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.rs'
+        }
+    }
+    $matches = @(
+        Select-String -Path $sourceFiles.FullName -Pattern $forbiddenApiPattern |
+            ForEach-Object { "$($_.Path):$($_.LineNumber):$($_.Line.Trim())" }
+    )
 }
 if ($matches.Count -gt 0) {
     throw "browser-shell APIs are forbidden in ZSUI source:`n$($matches -join [Environment]::NewLine)"

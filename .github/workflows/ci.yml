@@ -15,6 +15,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Install GTK4 development files
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev
       - run: cargo fmt --check
       - run: cargo test --locked --no-default-features
       - run: cargo test --locked
