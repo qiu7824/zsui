@@ -344,6 +344,13 @@ impl ZsBaseControlMetrics {
         Dp::new(units * self.average_character_width.0)
     }
 
+    /// Reserves two average glyph cells beyond the shared width estimate so
+    /// native fallback shaping does not clip the final glyphs of mixed-script
+    /// labels before a platform renderer can measure them precisely.
+    pub fn estimated_text_width_with_shaping_reserve(self, text: &str) -> Dp {
+        Dp::new(self.estimated_text_width(text).0 + self.average_character_width.0 * 2.0)
+    }
+
     pub fn button_minimum_width_for_label(self, label: &str) -> Dp {
         Dp::new(self.button_minimum_width.0.max(
             self.estimated_text_width(label).0
@@ -354,19 +361,19 @@ impl ZsBaseControlMetrics {
     }
 
     pub fn check_minimum_width_for_label(self, label: &str) -> Dp {
-        Dp::new(
-            self.check_minimum_width
-                .0
-                .max(self.check_indicator_size.0 + 8.0 + self.estimated_text_width(label).0),
-        )
+        Dp::new(self.check_minimum_width.0.max(
+            self.check_indicator_size.0
+                + 8.0
+                + self.estimated_text_width_with_shaping_reserve(label).0,
+        ))
     }
 
     pub fn radio_minimum_width_for_label(self, label: &str) -> Dp {
-        Dp::new(
-            self.radio_minimum_width
-                .0
-                .max(self.radio_indicator_size.0 + 8.0 + self.estimated_text_width(label).0),
-        )
+        Dp::new(self.radio_minimum_width.0.max(
+            self.radio_indicator_size.0
+                + 8.0
+                + self.estimated_text_width_with_shaping_reserve(label).0,
+        ))
     }
 }
 
@@ -8000,6 +8007,10 @@ mod tests {
         assert!(
             windows.check_minimum_width_for_label("Automatic updates").0
                 > windows.check_minimum_width.0
+        );
+        assert_eq!(
+            gtk.estimated_text_width_with_shaping_reserve("UTF-8"),
+            Dp::new(gtk.estimated_text_width("UTF-8").0 + gtk.average_character_width.0 * 2.0)
         );
         assert!(macos.button_height.0 < windows.button_height.0);
         assert!(gtk.button_height.0 > windows.button_height.0);

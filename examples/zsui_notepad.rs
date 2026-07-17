@@ -191,8 +191,8 @@ fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle)
             ZsTextCursorStatus::from_character_caret(state.document.text(), state.selection.caret);
         let status_metrics = ZsBaseControlMetrics::for_platform(platform);
         let status_field = |label: String| {
-            let width = status_metrics.estimated_text_width(&label);
-            text(label).width(Dp::new(width.0 + 4.0)).flex(0.0)
+            let width = status_metrics.estimated_text_width_with_shaping_reserve(&label);
+            text(label).width(width).flex(0.0)
         };
         content.push(
             row(vec![
