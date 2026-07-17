@@ -171,18 +171,32 @@ jobs:
             --features notepad-demo
 
       - name: Run real GTK4 proof scenes
+        id: gtk-scenes
         run: |
+          set -o pipefail
           mkdir -p target/native-proof/ubuntu-24.04-x86_64
           dbus-run-session -- xvfb-run -a \
             ./target/release/examples/component_gallery \
               --native-proof \
               --page inputs \
               --theme light \
-              --output target/native-proof/ubuntu-24.04-x86_64
+              --output target/native-proof/ubuntu-24.04-x86_64 \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/gallery.log
           dbus-run-session -- xvfb-run -a \
             ./target/release/examples/zsui_notepad \
               --native-proof \
-              --output target/native-proof/ubuntu-24.04-x86_64
+              --output target/native-proof/ubuntu-24.04-x86_64 \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
+
+      - name: Summarize GTK4 proof failure
+        if: failure() && steps.gtk-scenes.outcome == 'failure'
+        run: |
+          root=target/native-proof/ubuntu-24.04-x86_64
+          summary="$(grep -Eai 'error|failed|panic|capture|display|xvfb|gtk' "$root"/*.log | tail -30 | tr '\n' ' ' || true)"
+          if test -z "$summary"; then
+            summary="$(tail -30 "$root"/*.log | tr '\n' ' ' || true)"
+          fi
+          echo "::error title=GTK4 proof scene failure::$summary"
 
       - name: Validate GTK4 artifacts
         shell: python
