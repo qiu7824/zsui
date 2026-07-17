@@ -8974,24 +8974,41 @@ mod tests {
     }
 
     #[test]
-    fn toggle_geometry_matches_standard_dpi_shape() {
-        let off = zs_toggle_render_plan(
-            Rect {
-                x: 0,
-                y: 0,
-                width: 48,
-                height: 32,
-            },
-            false,
-            false,
-            Dpi::standard(),
-        );
-        let on = zs_toggle_render_plan(off.bounds, false, true, Dpi::standard());
+    fn toggle_geometry_matches_each_platform_profile_at_standard_dpi() {
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 56,
+            height: 36,
+        };
+        for platform in [
+            ZsBaseControlPlatformStyle::Windows,
+            ZsBaseControlPlatformStyle::Macos,
+            ZsBaseControlPlatformStyle::Gtk,
+        ] {
+            let metrics = ZsBaseControlMetrics::for_platform(platform);
+            let off =
+                zs_toggle_render_plan_for_platform(bounds, false, false, platform, Dpi::standard());
+            let on =
+                zs_toggle_render_plan_for_platform(bounds, false, true, platform, Dpi::standard());
 
-        assert_eq!(off.track.width, 40);
-        assert_eq!(off.track.height, 20);
-        assert!(off.knob.x < on.knob.x);
-        assert_eq!(zs_toggle_native_draw_plan(&on).command_count(), 2);
+            assert_eq!(
+                off.track.width,
+                metrics
+                    .toggle_track_width
+                    .to_px(Dpi::standard())
+                    .round_i32()
+            );
+            assert_eq!(
+                off.track.height,
+                metrics
+                    .toggle_track_height
+                    .to_px(Dpi::standard())
+                    .round_i32()
+            );
+            assert!(off.knob.x < on.knob.x);
+            assert_eq!(zs_toggle_native_draw_plan(&on).command_count(), 2);
+        }
     }
 
     #[cfg(feature = "toggle-button")]
@@ -9049,65 +9066,93 @@ mod tests {
 
     #[cfg(feature = "slider")]
     #[test]
-    fn slider_geometry_maps_fraction_to_semantic_track_and_thumb() {
-        let plan = zs_slider_render_plan(
-            Rect {
-                x: 0,
-                y: 0,
-                width: 200,
-                height: 32,
-            },
-            0.25,
-            Dpi::standard(),
-        );
+    fn slider_geometry_maps_each_platform_fraction_to_semantic_track_and_thumb() {
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 36,
+        };
+        for platform in [
+            ZsBaseControlPlatformStyle::Windows,
+            ZsBaseControlPlatformStyle::Macos,
+            ZsBaseControlPlatformStyle::Gtk,
+        ] {
+            let metrics = ZsBaseControlMetrics::for_platform(platform);
+            let plan = zs_slider_render_plan_for_platform(bounds, 0.25, platform, Dpi::standard());
+            let thumb_size = metrics.slider_thumb_size.to_px(Dpi::standard()).round_i32();
+            let thumb_radius = thumb_size / 2;
+            let expected_track_width = bounds.width - thumb_radius * 2;
 
-        assert_eq!(plan.track.x, 9);
-        assert_eq!(plan.track.width, 182);
-        assert_eq!(plan.filled_track.width, 46);
-        assert_eq!(plan.thumb.x, 46);
-        assert!(matches!(
-            zs_slider_native_draw_plan(&plan).commands.as_slice(),
-            [
-                NativeDrawCommand::RoundFill {
-                    fill: NativeDrawFill::Role(ColorRole::Control),
-                    ..
-                },
-                NativeDrawCommand::RoundFill {
-                    fill: NativeDrawFill::Role(ColorRole::Accent),
-                    ..
-                },
-                NativeDrawCommand::RoundRect {
-                    fill: NativeDrawFill::Role(ColorRole::Surface),
-                    stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
-                    ..
-                }
-            ]
-        ));
+            assert_eq!(plan.track.x, bounds.x + thumb_radius);
+            assert_eq!(plan.track.width, expected_track_width);
+            assert_eq!(
+                plan.filled_track.width,
+                ((expected_track_width as f32) * 0.25).round() as i32
+            );
+            assert_eq!(plan.thumb.width, thumb_size);
+            assert!(matches!(
+                zs_slider_native_draw_plan(&plan).commands.as_slice(),
+                [
+                    NativeDrawCommand::RoundFill {
+                        fill: NativeDrawFill::Role(ColorRole::Control),
+                        ..
+                    },
+                    NativeDrawCommand::RoundFill {
+                        fill: NativeDrawFill::Role(ColorRole::Accent),
+                        ..
+                    },
+                    NativeDrawCommand::RoundRect {
+                        fill: NativeDrawFill::Role(ColorRole::Surface),
+                        stroke: Some(NativeDrawFill::Role(ColorRole::Accent)),
+                        ..
+                    }
+                ]
+            ));
+        }
     }
 
     #[cfg(feature = "radio")]
     #[test]
-    fn radio_geometry_uses_semantic_circle_and_selected_dot() {
-        let plan = zs_radio_render_plan(
-            Rect {
-                x: 4,
-                y: 8,
-                width: 180,
-                height: 32,
-            },
-            true,
-            Dpi::standard(),
-        );
+    fn radio_geometry_uses_each_platform_circle_and_selected_dot() {
+        let bounds = Rect {
+            x: 4,
+            y: 8,
+            width: 180,
+            height: 36,
+        };
+        for platform in [
+            ZsBaseControlPlatformStyle::Windows,
+            ZsBaseControlPlatformStyle::Macos,
+            ZsBaseControlPlatformStyle::Gtk,
+        ] {
+            let metrics = ZsBaseControlMetrics::for_platform(platform);
+            let plan = zs_radio_render_plan_for_platform(bounds, true, platform, Dpi::standard());
 
-        assert_eq!(plan.indicator.width, 20);
-        assert_eq!(plan.indicator.height, 20);
-        assert_eq!(plan.selected_dot.expect("selected radio dot").width, 8);
-        assert_eq!(zs_radio_native_draw_plan(&plan).command_count(), 2);
-        assert_eq!(
-            zs_radio_native_draw_plan(&zs_radio_render_plan(plan.bounds, false, Dpi::standard()))
+            assert_eq!(
+                plan.indicator.width,
+                metrics
+                    .radio_indicator_size
+                    .to_px(Dpi::standard())
+                    .round_i32()
+            );
+            assert_eq!(plan.indicator.height, plan.indicator.width);
+            assert_eq!(
+                plan.selected_dot.expect("selected radio dot").width,
+                metrics.radio_dot_size.to_px(Dpi::standard()).round_i32()
+            );
+            assert_eq!(zs_radio_native_draw_plan(&plan).command_count(), 2);
+            assert_eq!(
+                zs_radio_native_draw_plan(&zs_radio_render_plan_for_platform(
+                    bounds,
+                    false,
+                    platform,
+                    Dpi::standard(),
+                ))
                 .command_count(),
-            1
-        );
+                1
+            );
+        }
     }
 
     #[cfg(feature = "progress")]

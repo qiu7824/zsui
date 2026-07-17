@@ -7,16 +7,18 @@ use std::{
 };
 
 use zsui::{
-    button, column, native_window, row, spacer, text, text_editor, AppCx, Command, Dp,
-    FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
+    button, column, content_dialog, native_window, row, spacer, text, text_editor, AppCx, Command,
+    Dp, FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
     NativeViewKey, NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap,
-    ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsDocumentShellCommand, ZsTextCursorStatus,
+    ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsContentDialogButton,
+    ZsContentDialogResult, ZsContentDialogSpec, ZsDocumentShellCommand, ZsTextCursorStatus,
     ZsTextDocument, ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
 const UNDO_BUTTON: WidgetId = WidgetId::new(2);
 const WRAP_BUTTON: WidgetId = WidgetId::new(3);
+const PENDING_DIALOG: WidgetId = WidgetId::new(4);
 const EFFECT_OPEN: &str = "notepad.effect.open";
 const EFFECT_SAVE: &str = "notepad.effect.save";
 const EFFECT_SAVE_AS: &str = "notepad.effect.save-as";
@@ -71,9 +73,7 @@ enum Msg {
     DocumentChanged(String),
     SelectionChanged(ZsTextSelection),
     Command(ZsDocumentShellCommand),
-    SavePending,
-    DiscardPending,
-    CancelPending,
+    PendingResult(ZsContentDialogResult),
 }
 
 fn lock_state(state: &SharedState) -> ZsuiResult<MutexGuard<'_, NotepadState>> {
@@ -117,25 +117,6 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
     .bg(ThemeColorToken::Surface);
 
     let mut content = vec![document_header, command_bar];
-    if let Some(pending) = state.pending {
-        content.push(
-            column(vec![
-                text(format!("Save changes before {}?", pending.label())),
-                row(vec![
-                    button("Save").on_click(Msg::SavePending),
-                    button("Discard").on_click(Msg::DiscardPending),
-                    button("Cancel").on_click(Msg::CancelPending),
-                    spacer(),
-                ])
-                .height(Dp::new(36.0))
-                .gap(Dp::new(8.0)),
-            ])
-            .gap(Dp::new(6.0))
-            .padding(Dp::new(10.0))
-            .radius(Dp::new(8.0))
-            .bg(ThemeColorToken::SurfaceRaised),
-        );
-    }
 
     content.push(
         text_editor(state.document.text())
@@ -173,10 +154,28 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
         );
     }
 
-    column(content)
+    let page = column(content)
         .gap(Dp::new(10.0))
         .padding(Dp::new(12.0))
-        .bg(ThemeColorToken::Surface)
+        .bg(ThemeColorToken::Surface);
+
+    let Some(pending) = state.pending else {
+        return page;
+    };
+    content_dialog(
+        PENDING_DIALOG,
+        true,
+        ZsContentDialogSpec::new(
+            format!("Save changes before {}?", pending.label()),
+            "Cancel",
+        )
+        .title("Unsaved changes")
+        .primary_button("Save")
+        .secondary_button("Discard")
+        .default_button(ZsContentDialogButton::Primary),
+        page,
+    )
+    .on_dialog_result(Msg::PendingResult)
 }
 
 fn command_button(label: &str, command: ZsDocumentShellCommand) -> ViewNode<Msg> {
@@ -196,16 +195,18 @@ fn update(shared: &mut SharedState, message: Msg, cx: &mut AppCx) {
         }
         Msg::SelectionChanged(selection) => state.selection = selection,
         Msg::Command(command) => dispatch_document_command(&mut state, command, cx),
-        Msg::SavePending => cx.command(Command::custom(EFFECT_SAVE_PENDING)),
-        Msg::DiscardPending => {
-            if let Some(pending) = state.pending.take() {
-                continue_pending_action(&mut state, pending, cx);
+        Msg::PendingResult(result) => match result {
+            ZsContentDialogResult::Primary => cx.command(Command::custom(EFFECT_SAVE_PENDING)),
+            ZsContentDialogResult::Secondary => {
+                if let Some(pending) = state.pending.take() {
+                    continue_pending_action(&mut state, pending, cx);
+                }
             }
-        }
-        Msg::CancelPending => {
-            state.pending = None;
-            state.notice = "Action cancelled".to_string();
-        }
+            ZsContentDialogResult::Close => {
+                state.pending = None;
+                state.notice = "Action cancelled".to_string();
+            }
+        },
     }
 }
 

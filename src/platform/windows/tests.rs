@@ -2250,6 +2250,7 @@ mod tests {
             .expect("dialog scrim");
 
         let mut keyboard_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
+        assert_eq!(keyboard_route.focused_widget, Some(widget));
         let caught = keyboard_route.dispatch_click(crate::Point {
             x: scrim.bounds.x + 2,
             y: scrim.bounds.y + 2,
@@ -2282,6 +2283,85 @@ mod tests {
         });
         assert_eq!(pointer.content_dialog_response_count, 1);
         assert_eq!(pointer.ui_command_count, 1);
+    }
+
+    #[test]
+    #[cfg(all(feature = "dialog", feature = "textbox"))]
+    fn window_live_route_preserves_dialog_text_and_restores_editor_focus() {
+        #[derive(Clone)]
+        enum Msg {
+            Close,
+            Responded(crate::ZsContentDialogResult),
+        }
+        struct State {
+            open: bool,
+        }
+
+        let editor = crate::WidgetId::new(140);
+        let dialog = crate::WidgetId::new(141);
+        let close_command = Command::custom("document.close-dialog");
+        let bounds = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 400,
+        };
+        let runtime = crate::view::live_view_runtime_with_app_commands(
+            State { open: false },
+            move |state| {
+                crate::content_dialog(
+                    dialog,
+                    state.open,
+                    crate::ZsContentDialogSpec::new("Save before closing?", "Cancel")
+                        .title("Unsaved changes")
+                        .primary_button("Save")
+                        .secondary_button("Discard"),
+                    crate::text_editor::<Msg>("Document body").id(editor),
+                )
+                .on_dialog_result(Msg::Responded)
+            },
+            |state, message, _cx| match message {
+                Msg::Close => state.open = true,
+                Msg::Responded(_result) => state.open = false,
+            },
+            {
+                let close_command = close_command.clone();
+                move |command| (command == &close_command).then_some(Msg::Close)
+            },
+            bounds,
+            crate::Dpi::standard(),
+        );
+        let editor_target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(editor)
+            .expect("editor hit target");
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime)
+            .window_close_request_command(Some(close_command));
+        route.set_surface(bounds, crate::Dpi::standard());
+        let focused = route.dispatch_click(crate::Point {
+            x: editor_target.bounds.x + 12,
+            y: editor_target.bounds.y + 12,
+        });
+        assert_eq!(focused.focused_widget, Some(editor.0));
+
+        let opened = route.dispatch_window_close_requested();
+        assert_eq!(opened.focused_widget, Some(dialog.0));
+        let draw = route.take_pending_draw_plan().expect("dialog draw plan");
+        for expected in [
+            "Unsaved changes",
+            "Save before closing?",
+            "Save",
+            "Discard",
+            "Cancel",
+        ] {
+            assert!(draw.commands.iter().any(|command| {
+                matches!(command, crate::NativeDrawCommand::Text(text) if text.text == expected)
+            }), "missing dialog text: {expected}");
+        }
+
+        let closed = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);
+        assert_eq!(closed.content_dialog_response_count, 1);
+        assert_eq!(closed.focused_widget, Some(editor.0));
     }
 
     #[test]

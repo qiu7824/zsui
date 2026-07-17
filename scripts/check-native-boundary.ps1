@@ -50,3 +50,4 @@ if ($matches.Count -gt 0) {
 }
 
 Write-Host "native-only boundary passed: no WebView/browser-shell package or API"
+exit 0

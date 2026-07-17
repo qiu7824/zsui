@@ -563,6 +563,7 @@ impl WindowsWin32ViewInputRoute {
                 }
                 if update.redraw {
                     self.interaction_plan = live_view.interaction_plan();
+                    self.reconcile_modal_focus(&mut report);
                     self.rebuild_pending_draw_plan();
                     report.hit_target_count = self.hit_target_count();
                     report

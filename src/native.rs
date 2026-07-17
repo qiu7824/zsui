@@ -1163,6 +1163,8 @@ pub(crate) struct NativeViewInputRuntime {
     view_suspended: bool,
     animation_epoch: Option<std::time::Instant>,
     focused_widget: Option<crate::WidgetId>,
+    #[cfg(any(feature = "command-palette", feature = "dialog"))]
+    modal_restore_focus: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
     #[cfg(feature = "toast")]
@@ -1463,6 +1465,8 @@ impl NativeViewInputRuntime {
             view_suspended: false,
             animation_epoch: Some(std::time::Instant::now()),
             focused_widget: None,
+            #[cfg(any(feature = "command-palette", feature = "dialog"))]
+            modal_restore_focus: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::default(),
             #[cfg(feature = "toast")]
@@ -1528,6 +1532,7 @@ impl NativeViewInputRuntime {
             pending_app_commands: Vec::new(),
             ui_command_executor,
         };
+        runtime.reconcile_modal_focus(&mut NativeViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
         runtime.sync_toast_runtime(now);
         runtime
@@ -1547,6 +1552,10 @@ impl NativeViewInputRuntime {
         self.interaction_plan = None;
         self.animation_epoch = None;
         self.focused_widget = None;
+        #[cfg(any(feature = "command-palette", feature = "dialog"))]
+        {
+            self.modal_restore_focus = None;
+        }
         self.text_edit = None;
         self.text_drag = None;
         self.ime_preedit = None;
@@ -1613,6 +1622,7 @@ impl NativeViewInputRuntime {
         self.view_suspended = false;
         self.animation_epoch = Some(std::time::Instant::now());
         self.interaction_plan = Some(runtime.interaction_plan());
+        self.reconcile_modal_focus(&mut NativeViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(std::time::Instant::now());
         update
@@ -1651,6 +1661,62 @@ impl NativeViewInputRuntime {
             .as_ref()
             .map(SharedLiveViewRuntime::interaction_plan)
             .or_else(|| self.interaction_plan.clone())
+    }
+
+    fn reconcile_modal_focus(&mut self, report: &mut NativeViewInputDispatchReport) {
+        #[cfg(any(feature = "command-palette", feature = "dialog"))]
+        {
+            if let Some(modal) = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.modal_focus_target())
+            {
+                if self.focused_widget == Some(modal.widget) {
+                    return;
+                }
+                if self.modal_restore_focus.is_none() {
+                    self.modal_restore_focus = self.focused_widget.filter(|widget| {
+                        *widget != modal.widget
+                            && self
+                                .current_interaction_plan()
+                                .is_some_and(|plan| plan.hit_target_for_widget(*widget).is_some())
+                    });
+                }
+                self.focused_widget = Some(modal.widget);
+                self.ime_preedit = None;
+                self.text_drag = None;
+                #[cfg(feature = "combo")]
+                self.combo_type_ahead.reset();
+                #[cfg(feature = "slider")]
+                {
+                    self.slider_drag = None;
+                }
+                #[cfg(feature = "color-picker")]
+                {
+                    self.color_picker_drag = None;
+                }
+                #[cfg(feature = "password-box")]
+                {
+                    self.password_peek = None;
+                }
+                report.focus_visual_changed = true;
+                report.focused_widget = Some(modal.widget.0);
+                return;
+            }
+
+            let Some(previous) = self.modal_restore_focus.take() else {
+                return;
+            };
+            let restored = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(previous));
+            self.focused_widget = restored.map(|target| target.widget);
+            self.ime_preedit = None;
+            self.text_drag = None;
+            report.focus_visual_changed = true;
+            report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        }
+        #[cfg(not(any(feature = "command-palette", feature = "dialog")))]
+        let _ = report;
     }
 
     pub(crate) fn has_focused_text_input(&self) -> bool {
@@ -1719,6 +1785,7 @@ impl NativeViewInputRuntime {
             report.redraw_plan = Some(paint_cx.into_plan());
         }
 
+        self.reconcile_modal_focus(&mut report);
         if self.focused_widget.is_some_and(|widget| {
             self.current_interaction_plan()
                 .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
@@ -4074,7 +4141,7 @@ impl NativeViewInputRuntime {
         };
         let Some(target) = self
             .current_interaction_plan()
-            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .and_then(|plan| plan.focus_target_for_widget(widget))
         else {
             self.focused_widget = None;
             self.text_edit = None;
@@ -4625,7 +4692,7 @@ impl NativeViewInputRuntime {
     fn focused_text_input_target(&self) -> Option<crate::ViewHitTarget> {
         let widget = self.focused_widget?;
         self.current_interaction_plan()
-            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .and_then(|plan| plan.focus_target_for_widget(widget))
             .filter(|target| target.kind.accepts_text_input())
     }
 
@@ -5006,7 +5073,7 @@ impl NativeViewInputRuntime {
         };
         let Some(target) = self
             .current_interaction_plan()
-            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .and_then(|plan| plan.focus_target_for_widget(widget))
         else {
             self.text_edit = None;
             self.text_drag = None;
@@ -5876,6 +5943,7 @@ impl NativeViewInputRuntime {
         if app_effect_executed {
             self.refresh_live_view_after_app_effect(&mut report);
         }
+        self.reconcile_modal_focus(&mut report);
         if self.focused_widget.is_some_and(|widget| {
             self.current_interaction_plan()
                 .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
@@ -6107,6 +6175,7 @@ impl NativeViewInputRuntime {
             self.refresh_live_view_after_app_effect(&mut report);
         }
 
+        self.reconcile_modal_focus(&mut report);
         if self.focused_widget.is_some_and(|widget| {
             self.current_interaction_plan()
                 .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
@@ -9281,6 +9350,84 @@ mod tests {
         assert_eq!(clean_report.window_close_veto_count, 0);
     }
 
+    #[cfg(all(feature = "dialog", feature = "textbox"))]
+    #[test]
+    fn content_dialog_opened_by_close_request_preserves_overlay_text_and_restores_focus() {
+        #[derive(Clone)]
+        enum Msg {
+            Close,
+            Responded(crate::ZsContentDialogResult),
+        }
+        struct State {
+            pending: bool,
+        }
+
+        let editor = crate::WidgetId::new(970);
+        let dialog = crate::WidgetId::new(971);
+        let close_command = Command::custom("document.close-with-dialog");
+        let builder = native_window("Dialog Focus")
+            .size(640, 400)
+            .on_close_requested(close_command.clone())
+            .stateful_view_with_app_commands(
+                State { pending: false },
+                move |state| {
+                    crate::content_dialog(
+                        dialog,
+                        state.pending,
+                        crate::ZsContentDialogSpec::new(
+                            "Save the document before closing?",
+                            "Cancel",
+                        )
+                        .title("Unsaved changes")
+                        .primary_button("Save")
+                        .secondary_button("Discard")
+                        .default_button(crate::ZsContentDialogButton::Primary),
+                        crate::text_editor::<Msg>("Document body").id(editor),
+                    )
+                    .on_dialog_result(Msg::Responded)
+                },
+                |state, message, _cx| match message {
+                    Msg::Close => state.pending = true,
+                    Msg::Responded(_result) => state.pending = false,
+                },
+                move |command| (command == &close_command).then_some(Msg::Close),
+            );
+        let editor_target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(editor))
+            .expect("editor hit target");
+        let mut runtime = builder.native_view_input_runtime();
+        let focused = runtime.dispatch_pointer_click(Point {
+            x: editor_target.bounds.x + 12,
+            y: editor_target.bounds.y + 12,
+        });
+        assert_eq!(focused.focused_widget, Some(editor.0));
+
+        let opened = runtime.dispatch_window_close_requested();
+        assert!(opened.handled);
+        assert_eq!(opened.window_close_veto_count, 1);
+        assert_eq!(opened.focused_widget, Some(dialog.0));
+        let draw = opened.redraw_plan.expect("dialog redraw plan");
+        for expected in [
+            "Unsaved changes",
+            "Save the document before closing?",
+            "Save",
+            "Discard",
+            "Cancel",
+        ] {
+            assert!(
+                draw.commands.iter().any(|command| {
+                    matches!(command, crate::NativeDrawCommand::Text(text) if text.text == expected)
+                }),
+                "missing dialog text: {expected}"
+            );
+        }
+
+        let closed = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(closed.content_dialog_responded);
+        assert_eq!(closed.focused_widget, Some(editor.0));
+    }
+
     #[cfg(all(feature = "label", feature = "button"))]
     #[test]
     fn app_command_effect_refreshes_shared_state_after_executor_returns() {
@@ -11465,6 +11612,22 @@ mod tests {
         let home = keyboard_runtime.dispatch_key(NativeViewKey::Home);
         assert!(home.handled);
         assert!(home.breadcrumb_focus_changed);
+        for _ in 0..5 {
+            if keyboard_runtime
+                .widget_breadcrumb_state(widget)
+                .is_some_and(|state| {
+                    state.focused == Some(crate::ZsBreadcrumbFocusTarget::Overflow)
+                })
+            {
+                break;
+            }
+            assert!(keyboard_runtime.dispatch_key(NativeViewKey::Right).handled);
+        }
+        assert!(keyboard_runtime
+            .widget_breadcrumb_state(widget)
+            .is_some_and(|state| {
+                state.focused == Some(crate::ZsBreadcrumbFocusTarget::Overflow)
+            }));
         let open = keyboard_runtime.dispatch_key(NativeViewKey::Enter);
         assert!(open.handled);
         assert!(open.breadcrumb_expanded_changed);

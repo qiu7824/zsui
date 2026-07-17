@@ -332,9 +332,23 @@ mod tests {
                 .bounds
         };
 
-        assert_eq!(bounds_for(row_id).height, 32);
-        assert_eq!(bounds_for(button_id).height, 32);
-        assert_eq!(bounds_for(row_id).y, 32);
+        let metrics = crate::ZsBaseControlMetrics::for_platform(
+            crate::ZsBaseControlPlatformStyle::current(),
+        );
+        let button_height = metrics
+            .button_height
+            .to_px(Dpi::standard())
+            .round_i32();
+        let first_line_height = metrics
+            .body_line_height
+            .to_px(Dpi::standard())
+            .round_i32();
+        assert_eq!(bounds_for(row_id).height, button_height);
+        assert_eq!(bounds_for(button_id).height, button_height);
+        assert_eq!(
+            bounds_for(row_id).y,
+            first_line_height + Dp::new(12.0).to_px(Dpi::standard()).round_i32()
+        );
     }
 
     #[test]
@@ -1132,15 +1146,16 @@ mod tests {
     #[test]
     #[cfg(feature = "progress-ring")]
     fn progress_ring_animates_without_becoming_a_hit_target() {
-        let mut view =
-            progress_ring::<()>(crate::ZsProgressRingSpec::indeterminate()).id(WidgetId::new(81));
+        let spec = crate::ZsProgressRingSpec::indeterminate();
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 64,
+        };
+        let mut view = progress_ring::<()>(spec).id(WidgetId::new(81));
         view.layout(&mut ViewLayoutCx::new(
-            Rect {
-                x: 0,
-                y: 0,
-                width: 64,
-                height: 64,
-            },
+            bounds,
             Dpi::standard(),
         ));
         let mut first =
@@ -1154,20 +1169,15 @@ mod tests {
 
         assert_eq!(view.background_poll_interval_ms(), Some(16));
         assert_eq!(view.interaction_plan().hit_target_count(), 0);
-        assert!(matches!(
-            first.plan().commands.as_slice(),
-            [NativeDrawCommand::StrokeArc {
-                start_degrees: -90,
-                ..
-            }]
-        ));
-        assert!(matches!(
-            half.plan().commands.as_slice(),
-            [NativeDrawCommand::StrokeArc {
-                start_degrees: 90,
-                ..
-            }]
-        ));
+        let platform = crate::ZsProgressRingPlatformStyle::current();
+        let expected_first = crate::zs_progress_ring_native_draw_plan(
+            &crate::zs_progress_ring_render_plan(spec, bounds, platform, Dpi::standard(), 0),
+        );
+        let expected_half = crate::zs_progress_ring_native_draw_plan(
+            &crate::zs_progress_ring_render_plan(spec, bounds, platform, Dpi::standard(), 500),
+        );
+        assert_eq!(first.plan(), &expected_first);
+        assert_eq!(half.plan(), &expected_half);
     }
 
     #[test]
@@ -1527,6 +1537,13 @@ mod tests {
         let interaction = view.interaction_plan();
         assert_eq!(
             interaction.first_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::ContentDialog)
+        );
+        assert!(interaction.focus_target_for_widget(background).is_none());
+        assert_eq!(
+            interaction
+                .focus_target_for_widget(dialog)
+                .map(|target| target.kind),
             Some(ViewHitTargetKind::ContentDialog)
         );
         assert_eq!(
@@ -2920,14 +2937,19 @@ mod tests {
             .hit_targets
             .iter()
             .any(|target| target.kind == ViewHitTargetKind::ColorPickerPopup));
-        assert!(interaction
+        let metrics = crate::ZsColorPickerMetrics::for_platform(
+            crate::ZsColorPickerPlatformStyle::current(),
+        );
+        let has_spectrum = interaction
             .hit_targets
             .iter()
-            .any(|target| target.kind == ViewHitTargetKind::ColorPickerSpectrum));
-        assert!(interaction
+            .any(|target| target.kind == ViewHitTargetKind::ColorPickerSpectrum);
+        let has_hue = interaction
             .hit_targets
             .iter()
-            .any(|target| target.kind == ViewHitTargetKind::ColorPickerHue));
+            .any(|target| target.kind == ViewHitTargetKind::ColorPickerHue);
+        assert_eq!(has_spectrum, metrics.spectrum_height.0 > 0.0);
+        assert_eq!(has_hue, metrics.hue_track_height.0 > 0.0);
         assert_eq!(
             interaction
                 .hit_targets

@@ -1461,7 +1461,7 @@ pub(crate) fn decorate_native_focus_ring(
     dpi: Dpi,
 ) -> Option<Rect> {
     #[allow(unused_mut)]
-    let mut target = interaction_plan.hit_target_for_widget(focused_widget?)?;
+    let mut target = interaction_plan.focus_target_for_widget(focused_widget?)?;
     #[cfg(feature = "grid-view")]
     if target.kind == ViewHitTargetKind::GridView {
         target = interaction_plan

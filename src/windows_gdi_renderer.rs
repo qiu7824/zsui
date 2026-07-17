@@ -145,6 +145,14 @@ unsafe extern "system" {
     fn GdipSetSmoothingMode(graphics: *mut c_void, smoothing_mode: i32) -> i32;
     fn GdipCreateSolidFill(color: u32, brush: *mut *mut c_void) -> i32;
     fn GdipDeleteBrush(brush: *mut c_void) -> i32;
+    fn GdipFillRectangleI(
+        graphics: *mut c_void,
+        brush: *mut c_void,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> i32;
     fn GdipCreatePen1(color: u32, width: f32, unit: i32, pen: *mut *mut c_void) -> i32;
     fn GdipDeletePen(pen: *mut c_void) -> i32;
     fn GdipCreatePath(fill_mode: i32, path: *mut *mut c_void) -> i32;
@@ -360,6 +368,36 @@ unsafe fn draw_round_rect_antialiased(
     let _ = GdipDeletePath(path);
     let _ = GdipDeleteGraphics(graphics);
     ok
+}
+
+unsafe fn draw_rect_alpha(hdc: HDC, rect: RECT, color: Color) -> bool {
+    if ensure_gdiplus_startup().is_none()
+        || hdc.is_null()
+        || rect.right <= rect.left
+        || rect.bottom <= rect.top
+    {
+        return false;
+    }
+    let mut graphics = std::ptr::null_mut();
+    if GdipCreateFromHDC(hdc, &mut graphics) != 0 || graphics.is_null() {
+        return false;
+    }
+    let mut brush = std::ptr::null_mut();
+    let created = GdipCreateSolidFill(color_to_argb(color), &mut brush) == 0 && !brush.is_null();
+    let drawn = created
+        && GdipFillRectangleI(
+            graphics,
+            brush,
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+        ) == 0;
+    if !brush.is_null() {
+        let _ = GdipDeleteBrush(brush);
+    }
+    let _ = GdipDeleteGraphics(graphics);
+    drawn
 }
 
 unsafe fn draw_arc_antialiased(
@@ -918,6 +956,31 @@ impl WindowsGdiPalette {
             }
         }
     }
+
+    const fn resolve_source_fill_with_contrast(
+        self,
+        fill: NativeDrawFill,
+        high_contrast: bool,
+    ) -> Color {
+        match fill {
+            NativeDrawFill::Color(color) => color,
+            NativeDrawFill::Role(role) => self.resolve(role),
+            NativeDrawFill::RoleWithAlpha { role, alpha } => {
+                let alpha = if high_contrast {
+                    high_contrast_alpha(alpha)
+                } else {
+                    alpha
+                };
+                let color = self.resolve(role);
+                Color::rgba(
+                    color.r,
+                    color.g,
+                    color.b,
+                    ((color.a as u32 * alpha as u32 + 127) / 255) as u8,
+                )
+            }
+        }
+    }
 }
 
 const fn high_contrast_alpha(alpha: u8) -> u8 {
@@ -1125,6 +1188,24 @@ impl WindowsGdiDrawSink {
             return;
         }
         let rect = to_win_rect(rect);
+        let source_fill = self
+            .palette
+            .resolve_source_fill_with_contrast(fill, self.high_contrast);
+        let source_stroke = stroke.map(|stroke| {
+            self.palette
+                .resolve_source_fill_with_contrast(stroke, self.high_contrast)
+        });
+        if unsafe {
+            draw_round_rect_antialiased(
+                self.renderer.hdc(),
+                rect,
+                source_fill,
+                source_stroke,
+                radius,
+            )
+        } {
+            return;
+        }
         let fill = self
             .palette
             .resolve_fill_with_contrast(fill, self.high_contrast);
@@ -1132,11 +1213,6 @@ impl WindowsGdiDrawSink {
             self.palette
                 .resolve_fill_with_contrast(stroke, self.high_contrast)
         });
-        if unsafe {
-            draw_round_rect_antialiased(self.renderer.hdc(), rect, fill, stroke_color, radius)
-        } {
-            return;
-        }
         let Some(fill_brush) = WindowsGdiOwnedObject::solid_brush(fill) else {
             return;
         };
@@ -1330,11 +1406,18 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
         self.operation_log.push(command.operation());
         match command {
             NativeDrawCommand::FillRect { rect, fill } => {
-                self.renderer.fill_rect(
-                    *rect,
-                    self.palette
-                        .resolve_fill_with_contrast(*fill, self.high_contrast),
-                );
+                let source = self
+                    .palette
+                    .resolve_source_fill_with_contrast(*fill, self.high_contrast);
+                if source.a == 255
+                    || !unsafe { draw_rect_alpha(self.renderer.hdc(), to_win_rect(*rect), source) }
+                {
+                    self.renderer.fill_rect(
+                        *rect,
+                        self.palette
+                            .resolve_fill_with_contrast(*fill, self.high_contrast),
+                    );
+                }
             }
             NativeDrawCommand::StrokeRect {
                 rect,
@@ -1947,7 +2030,7 @@ mod tests {
     }
 
     #[test]
-    fn role_alpha_is_composited_before_gdi_drops_alpha() {
+    fn role_alpha_keeps_a_gdiplus_source_and_precomposes_a_gdi_fallback() {
         let palette = WindowsGdiPalette::default();
 
         assert_eq!(
@@ -1968,9 +2051,20 @@ mod tests {
             role: ColorRole::Accent,
             alpha: 32,
         });
+        let source = palette.resolve_source_fill_with_contrast(
+            NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 32,
+            },
+            false,
+        );
         assert!(subtle.r < palette.surface.r);
         assert!(subtle.b > palette.surface.b - 12);
         assert_eq!(subtle.a, 255);
+        assert_eq!(
+            source,
+            Color::rgba(palette.accent.r, palette.accent.g, palette.accent.b, 32)
+        );
 
         let high_contrast_hover = palette.resolve_fill_with_contrast(
             NativeDrawFill::RoleWithAlpha {

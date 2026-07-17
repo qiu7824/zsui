@@ -1,4 +1,63 @@
 impl WindowsWin32ViewInputRoute {
+    fn reconcile_modal_focus(&mut self, report: &mut WindowsWin32ViewInputDispatchReport) {
+        #[cfg(any(feature = "command-palette", feature = "dialog"))]
+        {
+            if let Some(modal) = self.interaction_plan.modal_focus_target() {
+                if self.focused_widget == Some(modal.widget) {
+                    return;
+                }
+                if self.modal_restore_focus.is_none() {
+                    self.modal_restore_focus = self.focused_widget.filter(|widget| {
+                        *widget != modal.widget
+                            && self.interaction_plan.hit_target_for_widget(*widget).is_some()
+                    });
+                }
+                self.focused_widget = Some(modal.widget);
+                self.pending_utf16_high_surrogate = None;
+                self.text_drag = None;
+                #[cfg(feature = "password-box")]
+                {
+                    self.password_peek = None;
+                }
+                #[cfg(feature = "combo")]
+                self.combo_type_ahead.reset();
+                #[cfg(feature = "slider")]
+                {
+                    self.slider_drag = None;
+                }
+                #[cfg(feature = "color-picker")]
+                {
+                    self.color_picker_drag = None;
+                }
+                report.focus_count = 1;
+                report.focus_visual_count = 1;
+                report.focused_widget = Some(modal.widget.0);
+                report
+                    .events
+                    .push(format!("win32_modal_focus:{}", modal.widget.0));
+                return;
+            }
+
+            let Some(previous) = self.modal_restore_focus.take() else {
+                return;
+            };
+            self.focused_widget = self
+                .interaction_plan
+                .focus_target_for_widget(previous)
+                .map(|target| target.widget);
+            self.pending_utf16_high_surrogate = None;
+            self.text_drag = None;
+            report.focus_count = 1;
+            report.focus_visual_count = 1;
+            report.focused_widget = self.focused_widget.map(|widget| widget.0);
+            report
+                .events
+                .push(format!("win32_modal_focus_restored:{}", previous.0));
+        }
+        #[cfg(not(any(feature = "command-palette", feature = "dialog")))]
+        let _ = report;
+    }
+
     fn dispatch_focus_traversal(
         &mut self,
         offset: isize,
@@ -156,7 +215,7 @@ impl WindowsWin32ViewInputRoute {
 
     fn focused_target(&self) -> Option<crate::ViewHitTarget> {
         self.focused_widget
-            .and_then(|widget| self.interaction_plan.hit_target_for_widget(widget))
+            .and_then(|widget| self.interaction_plan.focus_target_for_widget(widget))
     }
 
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]

@@ -152,6 +152,11 @@ history remain authoritative for implementation status.
   only through explicit reviewed commits. Win32 and GTK4 must adopt the same
   proof schema before the final 0.3.0 release; real Mac IME candidate-window
   and VoiceOver experience remain separate release-time manual gates.
+- The first `macos-15` Native Proof workflow is operational: GitHub-hosted
+  AppKit launches the real Gallery and Notepad windows, replays typed input,
+  captures the final `NSView` bitmap and uploads the PNG plus versioned JSON.
+  This is runtime evidence, not yet the complete baseline/diff gate or the full
+  fixed-scene suite required for the final 0.3.0 release.
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their
@@ -228,6 +233,10 @@ history remain authoritative for implementation status.
   requests high contrast. Win32 uses `SPI_GETHIGHCONTRAST` plus user-selected
   `GetSysColor` pairs; AppKit and GTK4 resolve their semantic appearance/theme
   colors. The deterministic shared palette is only a backend fallback.
+- Win32 translucent semantic fills use GDI+ source-over composition inside the
+  existing buffered paint path, so modal scrims, selections, hover fills and
+  shadows preserve already-painted content. Preblending against the surface is
+  only a fallback when the alpha-capable GDI+ operation is unavailable.
 - DatePicker resolves its today marker from the operating system's local time
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.
@@ -325,8 +334,10 @@ history remain authoritative for implementation status.
   Windows uses WinUI-like equal action widths, macOS puts intrinsic actions at
   the trailing edge with the default last, and GTK uses trailing AlertDialog-like
   actions. Escape activates Close; Tab and arrows cycle semantic actions; Enter
-  and Space activate the focused action. Accessibility dialog semantics, prior
-  focus restoration, arbitrary ViewNode content, validation/deferrals and
+  and Space activate the focused action. Opening a dialog immediately moves the
+  native input route into its modal focus scope, suppresses underlying text/IME
+  visuals and restores the prior valid focus target after close. Accessibility
+  dialog semantics, arbitrary ViewNode content, validation/deferrals and
   AppKit/GTK target interaction smoke remain readiness gaps.
 - Toast is an independent `toast` Cargo feature over `widgets-base`. It is a
   nonmodal in-window feedback layer, not an imitation of Windows or macOS

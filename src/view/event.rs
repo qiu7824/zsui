@@ -629,6 +629,41 @@ impl ViewInteractionPlan {
             .find(|target| target.accepts_focus() && self.accepts_focus_scope(*target))
     }
 
+    pub(crate) fn focus_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
+        self.hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.widget == widget
+                    && target.accepts_focus()
+                    && self.accepts_focus_scope(*target)
+            })
+    }
+
+    pub(crate) fn modal_focus_target(&self) -> Option<ViewHitTarget> {
+        #[cfg(feature = "command-palette")]
+        if let Some(target) = self
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == ViewHitTargetKind::CommandPalette)
+        {
+            return Some(target);
+        }
+        #[cfg(feature = "dialog")]
+        if let Some(target) = self
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == ViewHitTargetKind::ContentDialog)
+        {
+            return Some(target);
+        }
+        None
+    }
+
     pub fn next_focus_target(
         &self,
         current: Option<WidgetId>,
@@ -688,25 +723,8 @@ impl ViewInteractionPlan {
     }
 
     fn accepts_focus_scope(&self, _target: ViewHitTarget) -> bool {
-        #[cfg(feature = "command-palette")]
-        if let Some(palette) = self
-            .hit_targets
-            .iter()
-            .rev()
-            .find(|candidate| candidate.kind == ViewHitTargetKind::CommandPalette)
-        {
-            return _target.widget == palette.widget
-                && _target.kind == ViewHitTargetKind::CommandPalette;
-        }
-        #[cfg(feature = "dialog")]
-        if let Some(dialog) = self
-            .hit_targets
-            .iter()
-            .rev()
-            .find(|candidate| candidate.kind == ViewHitTargetKind::ContentDialog)
-        {
-            return _target.widget == dialog.widget
-                && _target.kind == ViewHitTargetKind::ContentDialog;
+        if let Some(modal) = self.modal_focus_target() {
+            return _target.widget == modal.widget && _target.kind == modal.kind;
         }
         true
     }

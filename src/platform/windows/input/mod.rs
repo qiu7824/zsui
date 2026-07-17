@@ -7,6 +7,8 @@ pub struct WindowsWin32ViewInputRoute {
     resource_policy: NativeWindowResourcePolicy,
     view_suspended: bool,
     focused_widget: Option<crate::WidgetId>,
+    #[cfg(any(feature = "command-palette", feature = "dialog"))]
+    modal_restore_focus: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
     #[cfg(feature = "toast")]
@@ -93,6 +95,8 @@ impl WindowsWin32ViewInputRoute {
             resource_policy: NativeWindowResourcePolicy::default(),
             view_suspended: false,
             focused_widget: None,
+            #[cfg(any(feature = "command-palette", feature = "dialog"))]
+            modal_restore_focus: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
             #[cfg(feature = "toast")]
@@ -161,6 +165,7 @@ impl WindowsWin32ViewInputRoute {
             ui_command_executor: None,
             pending_ui_commands: Vec::new(),
         };
+        route.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
         route.sync_toast_runtime(now);
         route
@@ -178,6 +183,8 @@ impl WindowsWin32ViewInputRoute {
             resource_policy: NativeWindowResourcePolicy::default(),
             view_suspended: false,
             focused_widget: None,
+            #[cfg(any(feature = "command-palette", feature = "dialog"))]
+            modal_restore_focus: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
             #[cfg(feature = "toast")]
@@ -246,6 +253,7 @@ impl WindowsWin32ViewInputRoute {
             ui_command_executor: None,
             pending_ui_commands: Vec::new(),
         };
+        route.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
         route.sync_toast_runtime(now);
         route
@@ -288,6 +296,10 @@ impl WindowsWin32ViewInputRoute {
         self.view_suspended = true;
         self.interaction_plan = ViewInteractionPlan::default();
         self.focused_widget = None;
+        #[cfg(any(feature = "command-palette", feature = "dialog"))]
+        {
+            self.modal_restore_focus = None;
+        }
         self.text_edit = None;
         self.pending_utf16_high_surrogate = None;
         self.text_drag = None;
@@ -355,6 +367,7 @@ impl WindowsWin32ViewInputRoute {
         let update = live_view.resume();
         self.view_suspended = false;
         self.interaction_plan = live_view.interaction_plan();
+        self.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(std::time::Instant::now());
         update.redraw && self.rebuild_pending_draw_plan()
@@ -398,6 +411,7 @@ impl WindowsWin32ViewInputRoute {
             }
             if update.redraw {
                 self.interaction_plan = live_view.interaction_plan();
+                self.reconcile_modal_focus(report);
                 self.rebuild_pending_draw_plan();
                 report.hit_target_count = self.hit_target_count();
                 report
@@ -435,6 +449,7 @@ impl WindowsWin32ViewInputRoute {
         if next_interaction_plan.hit_target_count() > 0 {
             self.interaction_plan = next_interaction_plan;
         }
+        self.reconcile_modal_focus(report);
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(std::time::Instant::now());
         self.rebuild_pending_draw_plan();
@@ -1159,6 +1174,7 @@ impl WindowsWin32ViewInputRoute {
         let update = live_view.refresh();
         if update.redraw {
             self.interaction_plan = live_view.interaction_plan();
+            self.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
             self.rebuild_pending_draw_plan();
         }
         Some(update.revision)
@@ -1306,6 +1322,7 @@ impl WindowsWin32ViewInputRoute {
             if update.redraw {
                 self.interaction_plan = live_view.interaction_plan();
                 report.background_refresh_count = 1;
+                self.reconcile_modal_focus(&mut report);
             }
             report.live_view_revision = update.revision;
             report.events.push(format!(
@@ -1366,6 +1383,7 @@ impl WindowsWin32ViewInputRoute {
             self.interaction_plan = view.interaction_plan();
             changed = true;
         }
+        self.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
         if changed {
             self.rebuild_pending_draw_plan();
         }
