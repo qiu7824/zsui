@@ -1,8 +1,10 @@
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 
-use gtk::gdk::prelude::GdkCairoContextExt;
+use gtk::gdk::prelude::{GdkCairoContextExt, PaintableExt, TextureExt};
 use gtk::glib::translate::ToGlibPtr;
+use gtk::gsk::prelude::GskRendererExt;
 use gtk::prelude::*;
 use gtk4 as gtk;
 
@@ -497,6 +499,62 @@ impl std::fmt::Debug for LinuxGtkDrawViewHost {
 }
 
 impl LinuxGtkDrawViewHost {
+    pub(crate) fn capture_png(
+        &self,
+        path: &Path,
+    ) -> Result<crate::NativeViewCaptureEvidence, String> {
+        let logical_width = self.area.width().max(0) as u32;
+        let logical_height = self.area.height().max(0) as u32;
+        if logical_width == 0 || logical_height == 0 {
+            return Err("the GTK DrawingArea has an empty allocation".to_string());
+        }
+        let native = self
+            .area
+            .native()
+            .ok_or_else(|| "the GTK DrawingArea is not attached to a native surface".to_string())?;
+        let renderer = native
+            .renderer()
+            .ok_or_else(|| "GTK did not provide a GSK renderer for the DrawingArea".to_string())?;
+        let scale_factor = self.area.scale_factor().max(1) as f32;
+        let snapshot = gtk::Snapshot::new();
+        snapshot.scale(scale_factor, scale_factor);
+        let paintable = gtk::WidgetPaintable::new(Some(&self.area));
+        paintable.snapshot(
+            &snapshot,
+            f64::from(logical_width),
+            f64::from(logical_height),
+        );
+        let node = snapshot
+            .to_node()
+            .ok_or_else(|| "GTK produced an empty render node for the DrawingArea".to_string())?;
+        let viewport = gtk::graphene::Rect::new(
+            0.0,
+            0.0,
+            logical_width as f32 * scale_factor,
+            logical_height as f32 * scale_factor,
+        );
+        let texture = renderer.render_texture(&node, Some(&viewport));
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("could not create GTK capture directory: {error}"))?;
+        }
+        texture
+            .save_to_png(path)
+            .map_err(|error| format!("could not write GTK PNG capture: {error}"))?;
+        Ok(crate::NativeViewCaptureEvidence {
+            platform: "linux",
+            backend: "gtk_widget_paintable_gsk_texture",
+            logical_width,
+            logical_height,
+            pixel_width: texture.width().max(1) as u32,
+            pixel_height: texture.height().max(1) as u32,
+            scale_factor: f64::from(scale_factor),
+        })
+    }
+
     pub(crate) fn set_window_suspended(&self, suspended: bool) {
         if suspended {
             if !self.runtime.borrow_mut().suspend_view_when_hidden() {
@@ -1171,7 +1229,7 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
     fn draw_command(&mut self, command: &NativeDrawCommand) {
         match command {
             NativeDrawCommand::FillRect { rect, fill } => {
-                self.set_source(self.palette.resolve_fill(*fill));
+                self.set_source(self.palette.resolve_source_fill(*fill));
                 self.add_rect(*rect);
                 let _ = self.context.fill();
             }
@@ -1180,7 +1238,7 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 stroke,
                 width,
             } => {
-                self.set_source(self.palette.resolve_fill(*stroke));
+                self.set_source(self.palette.resolve_source_fill(*stroke));
                 self.context.set_line_width(f64::from((*width).max(1)));
                 self.add_rect(*rect);
                 let _ = self.context.stroke();
@@ -1192,7 +1250,7 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 start_degrees,
                 sweep_degrees,
             } => {
-                self.set_source(self.palette.resolve_fill(*stroke));
+                self.set_source(self.palette.resolve_source_fill(*stroke));
                 self.context.set_line_width(f64::from((*width).max(1)));
                 let start = f64::from(*start_degrees).to_radians();
                 let end = f64::from(start_degrees.saturating_add(*sweep_degrees)).to_radians();
@@ -1206,7 +1264,7 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 let _ = self.context.stroke();
             }
             NativeDrawCommand::FillTriangle { points, fill } => {
-                self.set_source(self.palette.resolve_fill(*fill));
+                self.set_source(self.palette.resolve_source_fill(*fill));
                 self.context
                     .move_to(f64::from(points[0].x), f64::from(points[0].y));
                 for point in &points[1..] {
@@ -1222,21 +1280,21 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                 radius,
             } => {
                 self.add_round_rect(*rect, *radius);
-                self.set_source(self.palette.resolve_fill(*fill));
+                self.set_source(self.palette.resolve_source_fill(*fill));
                 if stroke.is_some() {
                     let _ = self.context.fill_preserve();
                 } else {
                     let _ = self.context.fill();
                 }
                 if let Some(stroke) = stroke {
-                    self.set_source(self.palette.resolve_fill(*stroke));
+                    self.set_source(self.palette.resolve_source_fill(*stroke));
                     self.context.set_line_width(1.0);
                     let _ = self.context.stroke();
                 }
             }
             NativeDrawCommand::RoundFill { rect, fill, radius } => {
                 self.add_round_rect(*rect, *radius);
-                self.set_source(self.palette.resolve_fill(*fill));
+                self.set_source(self.palette.resolve_source_fill(*fill));
                 let _ = self.context.fill();
             }
             NativeDrawCommand::Text(command) => self.draw_text(command),

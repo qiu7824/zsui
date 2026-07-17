@@ -120,3 +120,97 @@ jobs:
           path: target/native-proof/macos-15-arm64
           if-no-files-found: error
           retention-days: 30
+
+  linux-gtk-proof:
+    name: GTK4 Runtime Proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
+      GDK_BACKEND: x11
+      GSK_RENDERER: cairo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GTK4 proof runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libgtk-4-dev xvfb xauth dbus-x11
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build GTK4 proof applications
+        run: |
+          cargo build \
+            --release \
+            --locked \
+            --example component_gallery \
+            --no-default-features \
+            --features component-gallery-demo
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad \
+            --no-default-features \
+            --features notepad-demo
+
+      - name: Run real GTK4 proof scenes
+        run: |
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/component_gallery \
+              --native-proof \
+              --page inputs \
+              --theme light \
+              --output target/native-proof/ubuntu-24.04-x86_64
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/zsui_notepad \
+              --native-proof \
+              --output target/native-proof/ubuntu-24.04-x86_64
+
+      - name: Validate GTK4 artifacts
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("target/native-proof/ubuntu-24.04-x86_64")
+          stems = ("gallery-inputs-light", "notepad-interaction")
+          for stem in stems:
+              png = root / f"{stem}.png"
+              report = root / f"{stem}.json"
+              if png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit(f"{png} is not a PNG")
+              proof = json.loads(report.read_text(encoding="utf-8"))
+              runtime = proof["runtime"]
+              capture = runtime.get("native_view_capture") or {}
+              assert proof["schema"] == "zsui.native-proof/v1"
+              assert proof["platform"] == "linux"
+              assert runtime["created_window_count"] == 1
+              assert runtime["screenshot_captured"] is True
+              assert not runtime["screenshot_error"]
+              assert capture["backend"] == "gtk_widget_paintable_gsk_texture"
+              assert capture["pixel_width"] > 0
+              assert capture["pixel_height"] > 0
+              assert capture["scale_factor"] > 0.0
+              assert abs(
+                  capture["pixel_width"]
+                  - capture["logical_width"] * capture["scale_factor"]
+              ) <= 1.0
+
+      - name: Upload GTK4 proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zsui-gtk4-native-proof
+          path: target/native-proof/ubuntu-24.04-x86_64
+          if-no-files-found: error
+          retention-days: 30

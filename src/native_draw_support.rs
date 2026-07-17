@@ -98,6 +98,7 @@ impl NativeDrawPalette {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) const fn resolve_fill(self, fill: NativeDrawFill) -> Color {
         match fill {
             NativeDrawFill::Color(color) => color,
@@ -109,6 +110,26 @@ impl NativeDrawPalette {
                     alpha
                 };
                 blend_color(self.resolve(role), self.surface, alpha)
+            }
+        }
+    }
+
+    /// Resolves a draw source for backends that support source-over alpha.
+    ///
+    /// `resolve_fill` remains the opaque fallback for renderers that cannot
+    /// preserve semantic alpha. AppKit and Cairo must receive the unflattened
+    /// source color so overlays compose over the pixels already in the view.
+    pub(crate) const fn resolve_source_fill(self, fill: NativeDrawFill) -> Color {
+        match fill {
+            NativeDrawFill::Color(color) => color,
+            NativeDrawFill::Role(role) => self.resolve(role),
+            NativeDrawFill::RoleWithAlpha { role, alpha } => {
+                let alpha = if self.high_contrast {
+                    high_contrast_alpha(alpha)
+                } else {
+                    alpha
+                };
+                color_with_multiplied_alpha(self.resolve(role), alpha)
             }
         }
     }
@@ -134,6 +155,15 @@ const fn blend_color(foreground: Color, background: Color, alpha: u8) -> Color {
         g: channel(foreground.g, background.g, alpha),
         b: channel(foreground.b, background.b, alpha),
         a: 255,
+    }
+}
+
+const fn color_with_multiplied_alpha(color: Color, alpha: u8) -> Color {
+    Color {
+        r: color.r,
+        g: color.g,
+        b: color.b,
+        a: ((color.a as u32 * alpha as u32 + 127) / 255) as u8,
     }
 }
 
@@ -199,6 +229,16 @@ mod tests {
             }),
             palette.surface
         );
+        assert_eq!(
+            palette.resolve_source_fill(NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::Accent,
+                alpha: 64,
+            }),
+            Color {
+                a: 64,
+                ..palette.accent
+            }
+        );
     }
 
     #[test]
@@ -225,6 +265,13 @@ mod tests {
                 alpha: 14,
             }),
             Color::rgb(64, 64, 64)
+        );
+        assert_eq!(
+            explicit.resolve_source_fill(NativeDrawFill::RoleWithAlpha {
+                role: ColorRole::PrimaryText,
+                alpha: 14,
+            }),
+            Color::rgba(255, 255, 255, 64)
         );
     }
 

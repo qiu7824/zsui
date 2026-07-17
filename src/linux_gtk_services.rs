@@ -25,14 +25,26 @@ struct LinuxGtkRuntimeState {
     _menu: Option<crate::linux_gtk_menu::LinuxGtkMenuService>,
 }
 
+#[derive(Debug)]
+pub(crate) struct LinuxGtkNativeWindowRunReport {
+    pub created_window_count: usize,
+    pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub menu_command_routed: bool,
+}
+
 pub(crate) fn run_linux_gtk_native_window_event_loop(
     specs: &[WindowSpec],
     draw_plans: &[Option<crate::NativeDrawPlan>],
     view_runtimes: &[crate::native::NativeViewInputRuntime],
     auto_close_after_ms: Option<u64>,
-) -> ZsuiResult<usize> {
+    capture_path: Option<&std::path::Path>,
+) -> ZsuiResult<LinuxGtkNativeWindowRunReport> {
     if specs.is_empty() {
-        return Ok(0);
+        return Ok(LinuxGtkNativeWindowRunReport {
+            created_window_count: 0,
+            native_view_capture: None,
+            menu_command_routed: false,
+        });
     }
     let application = gtk::Application::builder()
         .application_id("io.github.qiu7824.zsui")
@@ -44,6 +56,9 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let state = Rc::new(RefCell::new(None::<LinuxGtkRuntimeState>));
     let startup_error = Rc::new(RefCell::new(None::<String>));
     let created_count = Rc::new(RefCell::new(0_usize));
+    let capture_path = Rc::new(capture_path.map(PathBuf::from));
+    let capture_result = Rc::new(RefCell::new(None));
+    let menu_command_routed = Rc::new(RefCell::new(false));
 
     application.connect_activate({
         let specs = Rc::clone(&specs);
@@ -52,6 +67,9 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         let state = Rc::clone(&state);
         let startup_error = Rc::clone(&startup_error);
         let created_count = Rc::clone(&created_count);
+        let capture_path = Rc::clone(&capture_path);
+        let capture_result = Rc::clone(&capture_result);
+        let menu_command_routed = Rc::clone(&menu_command_routed);
         move |application| {
             if state.borrow().is_some() {
                 return;
@@ -115,6 +133,10 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                 }
             }
             *created_count.borrow_mut() = ids.len();
+            *menu_command_routed.borrow_mut() = auto_close_after_ms.is_some()
+                && menu
+                    .as_ref()
+                    .is_some_and(|menu| menu.invoke_first_enabled_command_for_proof());
             *state.borrow_mut() = Some(LinuxGtkRuntimeState {
                 _windows: windows,
                 _menu: menu,
@@ -122,7 +144,21 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
 
             if let Some(delay) = auto_close_after_ms {
                 let application = application.clone();
+                let state = Rc::clone(&state);
+                let capture_path = Rc::clone(&capture_path);
+                let capture_result = Rc::clone(&capture_result);
                 gtk::glib::timeout_add_local_once(Duration::from_millis(delay.max(1)), move || {
+                    if let Some(path) = capture_path.as_deref() {
+                        let result = state
+                            .borrow()
+                            .as_ref()
+                            .and_then(|runtime| runtime._windows.view_hosts.values().next())
+                            .ok_or_else(|| {
+                                "the GTK event loop has no DrawingArea to capture".to_string()
+                            })
+                            .and_then(|host| host.capture_png(path));
+                        *capture_result.borrow_mut() = Some(result);
+                    }
                     application.quit()
                 });
             }
@@ -130,12 +166,18 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     });
 
     application.run();
+    let native_view_capture = capture_result.borrow_mut().take();
     state.borrow_mut().take();
     if let Some(error) = startup_error.borrow_mut().take() {
         return Err(ZsuiError::host("linux_gtk_event_loop", error));
     }
-    let created_count = *created_count.borrow();
-    Ok(created_count)
+    let created_window_count = *created_count.borrow();
+    let menu_command_routed = *menu_command_routed.borrow();
+    Ok(LinuxGtkNativeWindowRunReport {
+        created_window_count,
+        native_view_capture,
+        menu_command_routed,
+    })
 }
 
 #[derive(Debug)]

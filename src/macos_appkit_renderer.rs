@@ -1281,10 +1281,11 @@ impl MacosAppKitDrawSink {
                 f64::from(command.bounds.height.max(0)),
             ),
         );
-        let mut options = NSStringDrawingOptions::UsesFontLeading;
-        if style.wrap == TextWrap::Word {
-            options |= NSStringDrawingOptions::UsesLineFragmentOrigin;
-        }
+        // NSString treats the rect origin as a baseline unless line-fragment
+        // layout is requested. The shared draw protocol supplies a top-left
+        // line box, so use line-fragment layout for single-line text too.
+        let mut options = NSStringDrawingOptions::UsesFontLeading
+            | NSStringDrawingOptions::UsesLineFragmentOrigin;
         if style.ellipsis {
             options |= NSStringDrawingOptions::TruncatesLastVisibleLine;
         }
@@ -1429,7 +1430,7 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
     fn draw_command(&mut self, command: &NativeDrawCommand) {
         match command {
             NativeDrawCommand::FillRect { rect, fill } => {
-                appkit_color(self.palette.resolve_fill(*fill)).setFill();
+                appkit_color(self.palette.resolve_source_fill(*fill)).setFill();
                 NSBezierPath::fillRect(appkit_rect(*rect));
             }
             NativeDrawCommand::StrokeRect {
@@ -1437,7 +1438,7 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                 stroke,
                 width,
             } => {
-                appkit_color(self.palette.resolve_fill(*stroke)).setStroke();
+                appkit_color(self.palette.resolve_source_fill(*stroke)).setStroke();
                 let path = NSBezierPath::bezierPathWithRect(appkit_rect(*rect));
                 path.setLineWidth(f64::from((*width).max(1)));
                 path.stroke();
@@ -1462,7 +1463,7 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                     f64::from(start_degrees.saturating_add(*sweep_degrees)),
                     true,
                 );
-                appkit_color(self.palette.resolve_fill(*stroke)).setStroke();
+                appkit_color(self.palette.resolve_source_fill(*stroke)).setStroke();
                 path.setLineWidth(f64::from((*width).max(1)));
                 path.stroke();
             }
@@ -1473,7 +1474,7 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                     path.lineToPoint(NSPoint::new(f64::from(point.x), f64::from(point.y)));
                 }
                 path.closePath();
-                appkit_color(self.palette.resolve_fill(*fill)).setFill();
+                appkit_color(self.palette.resolve_source_fill(*fill)).setFill();
                 path.fill();
             }
             NativeDrawCommand::RoundRect {
@@ -1488,10 +1489,10 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                     radius,
                     radius,
                 );
-                appkit_color(self.palette.resolve_fill(*fill)).setFill();
+                appkit_color(self.palette.resolve_source_fill(*fill)).setFill();
                 path.fill();
                 if let Some(stroke) = stroke {
-                    appkit_color(self.palette.resolve_fill(*stroke)).setStroke();
+                    appkit_color(self.palette.resolve_source_fill(*stroke)).setStroke();
                     path.setLineWidth(1.0);
                     path.stroke();
                 }
@@ -1503,7 +1504,7 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                     radius,
                     radius,
                 );
-                appkit_color(self.palette.resolve_fill(*fill)).setFill();
+                appkit_color(self.palette.resolve_source_fill(*fill)).setFill();
                 path.fill();
             }
             NativeDrawCommand::Text(command) => self.draw_text(command),

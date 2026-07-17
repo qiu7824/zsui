@@ -93,6 +93,18 @@ impl LinuxGtkMenuService {
         }));
     }
 
+    pub(crate) fn invoke_first_enabled_command_for_proof(&self) -> bool {
+        self.action_names.iter().any(|action_name| {
+            self.application
+                .lookup_action(action_name)
+                .filter(|action| action.is_enabled())
+                .is_some_and(|action| {
+                    action.activate(None);
+                    true
+                })
+        })
+    }
+
     fn remove_owned_menu(&mut self) {
         if let Some(owned_menu) = self.menu.as_ref() {
             let owns_current_menu = self

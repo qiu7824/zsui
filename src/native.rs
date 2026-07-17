@@ -7943,6 +7943,7 @@ fn run_native_window_event_loop(
         &draw_plans,
         &view_runtimes,
         None,
+        None,
     )
     .map(|_| ())
 }
@@ -8427,12 +8428,15 @@ fn run_native_window_smoke_event_loop(
     #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
     let created = appkit_run.created_window_count;
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
-    let created = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
+    let gtk_run = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
         &windows,
         &draw_plans,
         std::slice::from_ref(&view_runtime),
         Some(options.auto_close_after_ms),
+        options.screenshot_file.as_deref().map(std::path::Path::new),
     )?;
+    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+    let created = gtk_run.created_window_count;
 
     report.created_window_count = created;
     report.window_menu_attached_count = report.window_menu_requested_count.min(created);
@@ -8483,10 +8487,34 @@ fn run_native_window_smoke_event_loop(
         None => {}
     }
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
-    if options.screenshot_file.is_some() {
-        report.screenshot_error =
-            Some("native screenshot capture still requires target GTK4 integration".to_string());
-        report.events.push("screenshot_error".to_string());
+    {
+        report.window_menu_command_routed = gtk_run.menu_command_routed;
+        if gtk_run.menu_command_routed {
+            report.events.push("window_menu_command_routed".to_string());
+        }
+        match gtk_run.native_view_capture {
+            Some(Ok(capture)) => {
+                report.screenshot_captured = true;
+                report.native_view_capture = Some(capture);
+                if let Some(path) = &report.screenshot_file {
+                    report.events.push(format!("screenshot_captured:{path}"));
+                }
+                report
+                    .events
+                    .push("screenshot_backend:gtk_widget_paintable_gsk_texture".to_string());
+            }
+            Some(Err(error)) => {
+                report.screenshot_error = Some(error);
+                report.events.push("screenshot_error".to_string());
+            }
+            None if options.screenshot_file.is_some() => {
+                report.screenshot_error = Some(
+                    "the GTK event loop exited before the final DrawingArea capture".to_string(),
+                );
+                report.events.push("screenshot_error".to_string());
+            }
+            None => {}
+        }
     }
     if options.status_item.is_some() {
         report.status_item_error = Some(

@@ -157,6 +157,11 @@ history remain authoritative for implementation status.
   captures the final `NSView` bitmap and uploads the PNG plus versioned JSON.
   This is runtime evidence, not yet the complete baseline/diff gate or the full
   fixed-scene suite required for the final 0.3.0 release.
+- GTK4 proof captures the realized ZSUI `DrawingArea` through
+  `GtkWidgetPaintable`, a GTK snapshot and the native GSK renderer texture.
+  A shared `DrawPlan` image or cross-compilation is not Linux target evidence;
+  the fixed Ubuntu/X11 proof job must upload the final texture PNG and matching
+  runtime JSON.
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their
@@ -166,6 +171,11 @@ history remain authoritative for implementation status.
 - Platform-native style does not imply embedding a second widget tree. Shared
   Rust code owns typed state, messages and layout, while the render backend
   maps platform style tokens into the existing buffered paint path.
+- AppKit and GTK render semantic alpha with their native source-over paths;
+  preblending `RoleWithAlpha` against the page surface is only an opaque
+  renderer fallback and cannot represent modal composition. AppKit NSString
+  drawing always uses line-fragment origins because shared text rectangles are
+  top-left line boxes, not baseline origins.
 - Popup controls use one shared, DPI-aware viewport placement result for both
   painting and hit testing. Window-edge flipping and horizontal clamping stay
   in the framework instead of being reimplemented by individual backends.
@@ -190,6 +200,11 @@ history remain authoritative for implementation status.
   explanatory text and action regions—not a product-specific settings page.
 - Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
   GTK4 to present native platform character.
+- Platform-native character includes composition, not only control sizes:
+  Windows may use Fluent navigation and card groups, macOS uses a source-list
+  sidebar with aligned AppKit-style form stacks, and GTK uses sidebar
+  navigation with headings outside Adwaita-style boxed groups. Shared state and
+  typed messages do not require all three platforms to reuse a WinUI page tree.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92
