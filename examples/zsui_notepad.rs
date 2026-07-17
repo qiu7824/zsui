@@ -10,9 +10,10 @@ use zsui::{
     button, column, content_dialog, native_window, row, spacer, text, text_editor, AppCx, Command,
     Dp, FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec, NativeFileDialogService,
     NativeViewKey, NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec, TextWrap,
-    ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsContentDialogButton,
-    ZsContentDialogResult, ZsContentDialogSpec, ZsDocumentShellCommand, ZsTextCursorStatus,
-    ZsTextDocument, ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult,
+    ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsBaseControlMetrics,
+    ZsBaseControlPlatformStyle, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec,
+    ZsDocumentShellCommand, ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand, ZsTextSelection,
+    ZsuiError, ZsuiResult,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
@@ -34,11 +35,15 @@ enum PendingAction {
 }
 
 impl PendingAction {
-    const fn label(self) -> &'static str {
+    const fn save_prompt(self) -> &'static str {
         match self {
-            Self::New => "creating a new document",
-            Self::Open => "opening another document",
-            Self::Close => "closing the application",
+            Self::New => "新建文档前是否保存更改？ / Save changes before creating a new document?",
+            Self::Open => {
+                "打开其他文档前是否保存更改？ / Save changes before opening another document?"
+            }
+            Self::Close => {
+                "关闭应用前是否保存更改？ / Save changes before closing the application?"
+            }
         }
     }
 }
@@ -63,7 +68,7 @@ impl Default for NotepadState {
             show_status: true,
             word_wrap: true,
             pending: None,
-            notice: "Ready".to_string(),
+            notice: "就绪 / Ready".to_string(),
         }
     }
 }
@@ -83,6 +88,10 @@ fn lock_state(state: &SharedState) -> ZsuiResult<MutexGuard<'_, NotepadState>> {
 }
 
 fn view(shared: &SharedState) -> ViewNode<Msg> {
+    view_for_platform(shared, ZsBaseControlPlatformStyle::current())
+}
+
+fn view_for_platform(shared: &SharedState, platform: ZsBaseControlPlatformStyle) -> ViewNode<Msg> {
     let state = shared
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -92,31 +101,76 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
     } else {
         ""
     };
-    let title = format!("{}{}", state.document.display_name(), dirty_mark);
+    let display_name = state.document.display_name();
+    let display_name = if display_name == "Untitled" {
+        "未命名 / Untitled".to_string()
+    } else {
+        display_name
+    };
+    let title = format!("{display_name}{dirty_mark}");
 
     let document_header = row(vec![
         text(title).flex(1.0),
-        text("Self-drawn editor · native desktop host"),
+        text(match platform {
+            ZsBaseControlPlatformStyle::Windows => "自绘编辑器 · Win32 / Self-drawn · Win32",
+            ZsBaseControlPlatformStyle::Macos => "自绘编辑器 · AppKit / Self-drawn · AppKit",
+            ZsBaseControlPlatformStyle::Gtk => "自绘编辑器 · GTK4 / Self-drawn · GTK4",
+        }),
     ])
-    .height(Dp::new(36.0))
+    .height(Dp::new(match platform {
+        ZsBaseControlPlatformStyle::Windows => 36.0,
+        ZsBaseControlPlatformStyle::Macos => 28.0,
+        ZsBaseControlPlatformStyle::Gtk => 32.0,
+    }))
     .gap(Dp::new(12.0));
 
-    let command_bar = row(vec![
-        command_button("New", ZsDocumentShellCommand::New),
-        command_button("Open", ZsDocumentShellCommand::Open),
-        command_button("Save", ZsDocumentShellCommand::Save),
-        command_button("Save as", ZsDocumentShellCommand::SaveAs),
-        command_button("Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
-        spacer(),
-        command_button("Status", ZsDocumentShellCommand::ToggleStatus),
-        command_button("Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
-        command_button("About", ZsDocumentShellCommand::About),
-    ])
-    .height(Dp::new(40.0))
-    .gap(Dp::new(8.0))
+    let command_bar = match platform {
+        ZsBaseControlPlatformStyle::Windows => row(vec![
+            command_button("新建 / New", ZsDocumentShellCommand::New),
+            command_button("打开 / Open", ZsDocumentShellCommand::Open),
+            command_button("保存 / Save", ZsDocumentShellCommand::Save),
+            command_button("另存为 / Save as", ZsDocumentShellCommand::SaveAs),
+            command_button("撤销 / Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
+            spacer(),
+            command_button("状态 / Status", ZsDocumentShellCommand::ToggleStatus),
+            command_button("换行 / Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
+            command_button("关于 / About", ZsDocumentShellCommand::About),
+        ])
+        .height(Dp::new(40.0))
+        .gap(Dp::new(8.0)),
+        // AppKit keeps the in-content toolbar restrained; Save As, Status and
+        // About remain available through the native NSMenu.
+        ZsBaseControlPlatformStyle::Macos => row(vec![
+            command_button("新建 / New", ZsDocumentShellCommand::New),
+            command_button("打开 / Open", ZsDocumentShellCommand::Open),
+            command_button("保存 / Save", ZsDocumentShellCommand::Save),
+            spacer(),
+            command_button("撤销 / Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
+            command_button("换行 / Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
+        ])
+        .height(Dp::new(32.0))
+        .gap(Dp::new(6.0)),
+        // GTK follows the same small-action rule as a GNOME header bar; the
+        // complete command set remains in the native GMenu.
+        ZsBaseControlPlatformStyle::Gtk => row(vec![
+            command_button("新建 / New", ZsDocumentShellCommand::New),
+            command_button("打开 / Open", ZsDocumentShellCommand::Open),
+            command_button("保存 / Save", ZsDocumentShellCommand::Save),
+            spacer(),
+            command_button("撤销 / Undo", ZsDocumentShellCommand::Undo).id(UNDO_BUTTON),
+            command_button("换行 / Wrap", ZsDocumentShellCommand::ToggleWrap).id(WRAP_BUTTON),
+        ])
+        .height(Dp::new(40.0))
+        .gap(Dp::new(8.0)),
+    }
     .bg(ThemeColorToken::Surface);
 
-    let mut content = vec![document_header, command_bar];
+    let mut content = match platform {
+        ZsBaseControlPlatformStyle::Windows => vec![document_header, command_bar],
+        ZsBaseControlPlatformStyle::Macos | ZsBaseControlPlatformStyle::Gtk => {
+            vec![command_bar, document_header]
+        }
+    };
 
     content.push(
         text_editor(state.document.text())
@@ -135,17 +189,22 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
         let line_count = state.document.text().lines().count().max(1);
         let cursor =
             ZsTextCursorStatus::from_character_caret(state.document.text(), state.selection.caret);
+        let status_metrics = ZsBaseControlMetrics::for_platform(platform);
+        let status_field = |label: String| {
+            let width = status_metrics.estimated_text_width(&label);
+            text(label).width(Dp::new(width.0 + 4.0)).flex(0.0)
+        };
         content.push(
             row(vec![
                 text(state.notice).flex(1.0),
-                text(format!("Ln {}, Col {}", cursor.line, cursor.column)),
-                text(format!("Lines {line_count}")),
-                text(format!("Characters {}", cursor.character_count)),
-                text(state.document.encoding().label()),
-                text(if state.word_wrap {
-                    "Wrap on"
+                status_field(format!("{}:{} / Ln:Col", cursor.line, cursor.column)),
+                status_field(format!("{line_count} 行 / lines")),
+                status_field(format!("{} 字符 / chars", cursor.character_count)),
+                status_field(state.document.encoding().label().to_string()),
+                status_field(if state.word_wrap {
+                    "换行 / Wrap".to_string()
                 } else {
-                    "Wrap off"
+                    "不换行 / No wrap".to_string()
                 }),
             ])
             .height(Dp::new(30.0))
@@ -155,8 +214,15 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
     }
 
     let page = column(content)
-        .gap(Dp::new(10.0))
-        .padding(Dp::new(12.0))
+        .gap(Dp::new(match platform {
+            ZsBaseControlPlatformStyle::Windows => 10.0,
+            ZsBaseControlPlatformStyle::Macos => 8.0,
+            ZsBaseControlPlatformStyle::Gtk => 12.0,
+        }))
+        .padding(Dp::new(match platform {
+            ZsBaseControlPlatformStyle::Windows | ZsBaseControlPlatformStyle::Macos => 12.0,
+            ZsBaseControlPlatformStyle::Gtk => 16.0,
+        }))
         .bg(ThemeColorToken::Surface);
 
     let Some(pending) = state.pending else {
@@ -165,23 +231,18 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
     content_dialog(
         PENDING_DIALOG,
         true,
-        ZsContentDialogSpec::new(
-            format!("Save changes before {}?", pending.label()),
-            "Cancel",
-        )
-        .title("Unsaved changes")
-        .primary_button("Save")
-        .secondary_button("Discard")
-        .default_button(ZsContentDialogButton::Primary),
+        ZsContentDialogSpec::new(pending.save_prompt(), "取消 / Cancel")
+            .title("未保存的更改 / Unsaved changes")
+            .primary_button("保存 / Save")
+            .secondary_button("放弃 / Discard")
+            .default_button(ZsContentDialogButton::Primary),
         page,
     )
     .on_dialog_result(Msg::PendingResult)
 }
 
 fn command_button(label: &str, command: ZsDocumentShellCommand) -> ViewNode<Msg> {
-    button(label)
-        .width(Dp::new(88.0))
-        .on_click(Msg::Command(command))
+    button(label).on_click(Msg::Command(command))
 }
 
 fn update(shared: &mut SharedState, message: Msg, cx: &mut AppCx) {
@@ -191,7 +252,7 @@ fn update(shared: &mut SharedState, message: Msg, cx: &mut AppCx) {
     match message {
         Msg::DocumentChanged(value) => {
             state.document.replace_text(value);
-            state.notice = "Modified".to_string();
+            state.notice = "已修改 / Modified".to_string();
         }
         Msg::SelectionChanged(selection) => state.selection = selection,
         Msg::Command(command) => dispatch_document_command(&mut state, command, cx),
@@ -204,7 +265,7 @@ fn update(shared: &mut SharedState, message: Msg, cx: &mut AppCx) {
             }
             ZsContentDialogResult::Close => {
                 state.pending = None;
-                state.notice = "Action cancelled".to_string();
+                state.notice = "操作已取消 / Action cancelled".to_string();
             }
         },
     }
@@ -229,8 +290,7 @@ fn dispatch_document_command(
         ZsDocumentShellCommand::SaveAs => cx.command(Command::custom(EFFECT_SAVE_AS)),
         ZsDocumentShellCommand::ToggleStatus => state.show_status = !state.show_status,
         ZsDocumentShellCommand::About => {
-            state.notice =
-                "ZSUI Notepad uses one Rust view/update path and no WebView.".to_string();
+            state.notice = "ZSUI 记事本使用统一 Rust view/update 路径，不含 WebView / One Rust view/update path, no WebView".to_string();
         }
         ZsDocumentShellCommand::Undo => {
             cx.text_edit_command_for(DOCUMENT_EDITOR, ZsTextEditCommand::Undo)
@@ -250,9 +310,9 @@ fn dispatch_document_command(
         ZsDocumentShellCommand::ToggleWrap => {
             state.word_wrap = !state.word_wrap;
             state.notice = if state.word_wrap {
-                "Word wrap enabled"
+                "已启用自动换行 / Word wrap enabled"
             } else {
-                "Word wrap disabled"
+                "已关闭自动换行 / Word wrap disabled"
             }
             .to_string();
         }
@@ -262,7 +322,7 @@ fn dispatch_document_command(
 fn request_pending_action(state: &mut NotepadState, action: PendingAction, cx: &mut AppCx) {
     if state.document.is_dirty() {
         state.pending = Some(action);
-        state.notice = "Unsaved changes".to_string();
+        state.notice = "未保存 / Unsaved".to_string();
     } else {
         continue_pending_action(state, action, cx);
     }
@@ -273,7 +333,7 @@ fn continue_pending_action(state: &mut NotepadState, action: PendingAction, cx: 
         PendingAction::New => {
             state.document = ZsTextDocument::default();
             state.selection = ZsTextSelection::default();
-            state.notice = "New document".to_string();
+            state.notice = "新建文档 / New document".to_string();
         }
         PendingAction::Open => cx.command(Command::custom(EFFECT_OPEN)),
         PendingAction::Close => cx.quit(),
@@ -299,86 +359,86 @@ fn menu_item(
 fn notepad_menu() -> MenuSpec {
     let mut file = MenuSpec::new();
     file.items.push(menu_item(
-        "New",
+        "新建 / New",
         ZsDocumentShellCommand::New,
         Some(ZsAccelerator::primary_character('N')),
     ));
     file.items.push(menu_item(
-        "Open…",
+        "打开… / Open…",
         ZsDocumentShellCommand::Open,
         Some(ZsAccelerator::primary_character('O')),
     ));
     file.items.push(menu_item(
-        "Save",
+        "保存 / Save",
         ZsDocumentShellCommand::Save,
         Some(ZsAccelerator::primary_character('S')),
     ));
     file.items.push(menu_item(
-        "Save as…",
+        "另存为… / Save as…",
         ZsDocumentShellCommand::SaveAs,
         Some(ZsAccelerator::primary_character('S').shifted()),
     ));
     file.items.push(MenuItemSpec::Separator);
     file.items.push(menu_item(
-        "Close",
+        "关闭 / Close",
         ZsDocumentShellCommand::Close,
         Some(ZsAccelerator::primary_character('W')),
     ));
 
     let mut edit = MenuSpec::new();
     edit.items.push(menu_item(
-        "Undo",
+        "撤销 / Undo",
         ZsDocumentShellCommand::Undo,
         Some(ZsAccelerator::primary_character('Z')),
     ));
     edit.items.push(MenuItemSpec::Separator);
     edit.items.push(menu_item(
-        "Cut",
+        "剪切 / Cut",
         ZsDocumentShellCommand::Cut,
         Some(ZsAccelerator::primary_character('X')),
     ));
     edit.items.push(menu_item(
-        "Copy",
+        "复制 / Copy",
         ZsDocumentShellCommand::Copy,
         Some(ZsAccelerator::primary_character('C')),
     ));
     edit.items.push(menu_item(
-        "Paste",
+        "粘贴 / Paste",
         ZsDocumentShellCommand::Paste,
         Some(ZsAccelerator::primary_character('V')),
     ));
     edit.items.push(MenuItemSpec::Separator);
     edit.items.push(menu_item(
-        "Select all",
+        "全选 / Select all",
         ZsDocumentShellCommand::SelectAll,
         Some(ZsAccelerator::primary_character('A')),
     ));
 
     let mut view_menu = MenuSpec::new();
     view_menu.items.push(menu_item(
-        "Word wrap",
+        "自动换行 / Word wrap",
         ZsDocumentShellCommand::ToggleWrap,
         None,
     ));
     view_menu.items.push(menu_item(
-        "Status bar",
+        "状态栏 / Status bar",
         ZsDocumentShellCommand::ToggleStatus,
         None,
     ));
 
     let mut help = MenuSpec::new();
     help.items.push(menu_item(
-        "About ZSUI Notepad",
+        "关于 ZSUI 记事本 / About ZSUI Notepad",
         ZsDocumentShellCommand::About,
         None,
     ));
 
     MenuSpec::new()
         .title("ZSUI Notepad")
-        .submenu("File", file)
-        .submenu("Edit", edit)
-        .submenu("View", view_menu)
-        .submenu("Help", help)
+        .submenu("文件 / File", file)
+        .submenu("编辑 / Edit", edit)
+        .submenu("视图 / View", view_menu)
+        .submenu("帮助 / Help", help)
 }
 
 fn execute_effect(
@@ -422,9 +482,9 @@ fn open_document(shared: &SharedState, dialogs: &mut impl FileDialogService) -> 
             .and_then(|path| path.parent())
             .map(PathBuf::from)
     };
-    let mut spec = FileDialogSpec::new("Open text document")
-        .filter("Text documents", ["*.txt", "*.md", "*.rs"])
-        .filter("All files", ["*.*"]);
+    let mut spec = FileDialogSpec::new("打开文本文档 / Open text document")
+        .filter("文本文档 / Text documents", ["*.txt", "*.md", "*.rs"])
+        .filter("所有文件 / All files", ["*.*"]);
     if let Some(directory) = current_directory {
         spec = spec.current_path(directory);
     }
@@ -432,7 +492,7 @@ fn open_document(shared: &SharedState, dialogs: &mut impl FileDialogService) -> 
         .open_file_dialog(&spec)?
         .and_then(|paths| paths.into_iter().next())
     else {
-        lock_state(shared)?.notice = "Open cancelled".to_string();
+        lock_state(shared)?.notice = "已取消打开 / Open cancelled".to_string();
         return Ok(false);
     };
 
@@ -442,7 +502,7 @@ fn open_document(shared: &SharedState, dialogs: &mut impl FileDialogService) -> 
     state.document = document;
     state.selection = ZsTextSelection::default();
     state.pending = None;
-    state.notice = format!("Opened {name}");
+    state.notice = format!("已打开 {name} / Opened {name}");
     Ok(true)
 }
 
@@ -458,7 +518,7 @@ fn save_document(
         let name = saved.display_name();
         let mut state = lock_state(shared)?;
         state.document = saved;
-        state.notice = format!("Saved {name}");
+        state.notice = format!("已保存 {name} / Saved {name}");
         return Ok(true);
     }
 
@@ -466,15 +526,15 @@ fn save_document(
         .path()
         .and_then(|path| path.parent())
         .map(PathBuf::from);
-    let mut spec = SaveFileDialogSpec::new("Save text document")
+    let mut spec = SaveFileDialogSpec::new("保存文本文档 / Save text document")
         .suggested_name(document.display_name())
-        .filter("Text documents", ["*.txt", "*.md"])
-        .filter("All files", ["*.*"]);
+        .filter("文本文档 / Text documents", ["*.txt", "*.md"])
+        .filter("所有文件 / All files", ["*.*"]);
     if let Some(directory) = current_directory {
         spec = spec.current_path(directory);
     }
     let Some(path) = dialogs.save_file_dialog(&spec)? else {
-        lock_state(shared)?.notice = "Save cancelled".to_string();
+        lock_state(shared)?.notice = "已取消保存 / Save cancelled".to_string();
         return Ok(false);
     };
 
@@ -483,7 +543,7 @@ fn save_document(
     let name = saved.display_name();
     let mut state = lock_state(shared)?;
     state.document = saved;
-    state.notice = format!("Saved {name}");
+    state.notice = format!("已保存 {name} / Saved {name}");
     Ok(true)
 }
 
@@ -505,13 +565,15 @@ fn save_pending_document(
             let mut state = lock_state(shared)?;
             state.document = ZsTextDocument::default();
             state.selection = ZsTextSelection::default();
-            state.notice = "Saved; new document created".to_string();
+            state.notice = "已保存并新建文档 / Saved; new document created".to_string();
         }
         Some(PendingAction::Open) => {
             open_document(shared, dialogs)?;
         }
         Some(PendingAction::Close) => {
-            lock_state(shared)?.notice = "Saved. Choose Close again to exit safely.".to_string();
+            lock_state(shared)?.notice =
+                "已保存，请再次关闭以安全退出 / Saved; choose Close again to exit safely"
+                    .to_string();
         }
         None => {}
     }
@@ -532,7 +594,7 @@ fn main() -> ZsuiResult<()> {
             let result = execute_effect(&executor_state, &command, &mut dialogs);
             if let Err(error) = &result {
                 if let Ok(mut state) = executor_state.lock() {
-                    state.notice = format!("Operation failed: {error}");
+                    state.notice = format!("操作失败 / Operation failed: {error}");
                 }
             }
             result.map(|_| Vec::new())
@@ -835,6 +897,26 @@ mod tests {
         assert!(commands.contains(&ZsDocumentShellCommand::Paste));
         assert!(commands.contains(&ZsDocumentShellCommand::SelectAll));
         assert!(commands.contains(&ZsDocumentShellCommand::ToggleWrap));
+    }
+
+    fn button_count(node: &ViewNode<Msg>) -> usize {
+        usize::from(matches!(node.kind, zsui::ViewNodeKind::Button { .. }))
+            + node.children.iter().map(button_count).sum::<usize>()
+    }
+
+    #[test]
+    fn notepad_toolbar_keeps_platform_native_action_density() {
+        let shared = Arc::new(Mutex::new(NotepadState::default()));
+        let windows = view_for_platform(&shared, ZsBaseControlPlatformStyle::Windows);
+        let macos = view_for_platform(&shared, ZsBaseControlPlatformStyle::Macos);
+        let gtk = view_for_platform(&shared, ZsBaseControlPlatformStyle::Gtk);
+
+        assert_eq!(button_count(&windows), 8);
+        assert_eq!(button_count(&macos), 5);
+        assert_eq!(button_count(&gtk), 5);
+        for page in [&windows, &macos, &gtk] {
+            assert_eq!(page.widget_text_wrap(DOCUMENT_EDITOR), Some(TextWrap::Word));
+        }
     }
 
     #[test]

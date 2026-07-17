@@ -165,7 +165,10 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         }
     });
 
-    application.run();
+    // The example has already consumed ZSUI-specific proof arguments. Passing
+    // the process argv to GApplication would make GTK reject flags such as
+    // `--native-proof` before the activate signal creates the native window.
+    application.run_with_args(&["zsui"]);
     let native_view_capture = capture_result.borrow_mut().take();
     state.borrow_mut().take();
     if let Some(error) = startup_error.borrow_mut().take() {

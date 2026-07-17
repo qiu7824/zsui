@@ -205,6 +205,10 @@ history remain authoritative for implementation status.
   sidebar with aligned AppKit-style form stacks, and GTK uses sidebar
   navigation with headings outside Adwaita-style boxed groups. Shared state and
   typed messages do not require all three platforms to reuse a WinUI page tree.
+- Acceptance examples follow the same rule: Notepad may expose the complete
+  command bar on Windows, while AppKit and GTK keep only the small set of
+  primary actions in content and leave Save As, Status and About in the native
+  menu. Proof widgets such as Undo and Wrap remain stable on every platform.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92
