@@ -209,6 +209,10 @@ history remain authoritative for implementation status.
   command bar on Windows, while AppKit and GTK keep only the small set of
   primary actions in content and leave Save As, Status and About in the native
   menu. Proof widgets such as Undo and Wrap remain stable on every platform.
+- Linux native proof must exercise the GTK runtime input route before capture
+  and provide a real CJK system fallback font. Missing-glyph boxes, clipped
+  bilingual labels or a screenshot produced without the scripted interaction
+  are proof failures rather than acceptable headless-runner differences.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92

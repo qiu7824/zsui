@@ -603,9 +603,11 @@ fn main() -> ZsuiResult<()> {
     let args = std::env::args().collect::<Vec<_>>();
     let native_proof = args.iter().any(|argument| argument == "--native-proof");
     if native_proof || args.iter().any(|argument| argument == "--smoke") {
-        let undo_bounds = builder
+        let interaction_plan = builder
             .native_view_interaction_plan()
-            .and_then(|plan| plan.hit_target_for_widget(UNDO_BUTTON))
+            .ok_or_else(|| ZsuiError::host("notepad_smoke", "interaction plan is missing"))?;
+        let undo_bounds = interaction_plan
+            .hit_target_for_widget(UNDO_BUTTON)
             .map(|target| target.bounds)
             .ok_or_else(|| {
                 ZsuiError::host("notepad_smoke", "Undo button has no interaction bounds")
@@ -614,9 +616,8 @@ fn main() -> ZsuiResult<()> {
             x: undo_bounds.x + undo_bounds.width / 2,
             y: undo_bounds.y + undo_bounds.height / 2,
         };
-        let wrap_bounds = builder
-            .native_view_interaction_plan()
-            .and_then(|plan| plan.hit_target_for_widget(WRAP_BUTTON))
+        let wrap_bounds = interaction_plan
+            .hit_target_for_widget(WRAP_BUTTON)
             .map(|target| target.bounds)
             .ok_or_else(|| {
                 ZsuiError::host("notepad_smoke", "Wrap button has no interaction bounds")
@@ -624,6 +625,20 @@ fn main() -> ZsuiResult<()> {
         let wrap_point = Point {
             x: wrap_bounds.x + wrap_bounds.width / 2,
             y: wrap_bounds.y + wrap_bounds.height / 2,
+        };
+        let editor_bounds = interaction_plan
+            .hit_target_for_widget(DOCUMENT_EDITOR)
+            .map(|target| target.bounds)
+            .ok_or_else(|| {
+                ZsuiError::host("notepad_smoke", "Text editor has no interaction bounds")
+            })?;
+        let editor_point = Point {
+            x: editor_bounds.x + editor_bounds.width / 3,
+            y: editor_bounds.y + editor_bounds.height / 3,
+        };
+        let editor_top_edge = Point {
+            x: editor_point.x,
+            y: editor_bounds.y + 1,
         };
         let output = args
             .windows(2)
@@ -674,16 +689,16 @@ fn main() -> ZsuiResult<()> {
         );
         let grapheme_smoke_text = "G-\u{65}\u{301}👩🏽‍💻";
         let mut options = NativeWindowSmokeRunOptions::new(2_000)
-            .native_view_click(Point { x: 360, y: 220 })
+            .native_view_click(editor_point)
             .native_view_text_input(smoke_text)
-            .native_view_drag(Point { x: 360, y: 220 }, Point { x: 360, y: 100 })
+            .native_view_drag(editor_point, editor_top_edge)
             .native_view_click(undo_point)
-            .native_view_click(Point { x: 360, y: 220 })
+            .native_view_click(editor_point)
             .native_view_key_down(NativeViewKey::Up)
             .native_view_key_down(NativeViewKey::PageDown)
-            .native_view_scroll(Point { x: 360, y: 220 }, -48)
+            .native_view_scroll(editor_point, -48)
             .native_view_click(wrap_point)
-            .native_view_click(Point { x: 360, y: 220 })
+            .native_view_click(editor_point)
             .native_view_text_input(grapheme_smoke_text)
             .native_view_key_down(NativeViewKey::Left)
             .native_view_text_input("\u{8}")
@@ -700,10 +715,7 @@ fn main() -> ZsuiResult<()> {
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
         }
-        let widgets = builder
-            .native_view_interaction_plan()
-            .map(|plan| plan.hit_targets.clone())
-            .unwrap_or_default();
+        let widgets = interaction_plan.hit_targets.clone();
         let report = builder.run_smoke(options)?;
         if let Some(path) = report_path {
             let document = if native_proof {

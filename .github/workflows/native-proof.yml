@@ -139,7 +139,15 @@ jobs:
       - name: Install GTK4 proof runtime
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libgtk-4-dev xvfb xauth dbus-x11
+          sudo apt-get install --yes \
+            libgtk-4-dev \
+            xvfb \
+            xauth \
+            dbus-x11 \
+            fonts-noto-cjk \
+            fonts-noto-color-emoji
+          fc-cache --force
+          fc-match 'sans-serif:lang=zh-cn'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

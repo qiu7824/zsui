@@ -29,6 +29,7 @@ struct LinuxGtkRuntimeState {
 pub(crate) struct LinuxGtkNativeWindowRunReport {
     pub created_window_count: usize,
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub menu_command_routed: bool,
 }
 
@@ -38,11 +39,13 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     view_runtimes: &[crate::native::NativeViewInputRuntime],
     auto_close_after_ms: Option<u64>,
     capture_path: Option<&std::path::Path>,
+    proof_inputs: &[crate::NativeViewSmokeInput],
 ) -> ZsuiResult<LinuxGtkNativeWindowRunReport> {
     if specs.is_empty() {
         return Ok(LinuxGtkNativeWindowRunReport {
             created_window_count: 0,
             native_view_capture: None,
+            proof_input_reports: Vec::new(),
             menu_command_routed: false,
         });
     }
@@ -58,6 +61,8 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let created_count = Rc::new(RefCell::new(0_usize));
     let capture_path = Rc::new(capture_path.map(PathBuf::from));
     let capture_result = Rc::new(RefCell::new(None));
+    let proof_inputs = Rc::new(proof_inputs.to_vec());
+    let proof_input_reports = Rc::new(RefCell::new(Vec::new()));
     let menu_command_routed = Rc::new(RefCell::new(false));
 
     application.connect_activate({
@@ -69,6 +74,8 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         let created_count = Rc::clone(&created_count);
         let capture_path = Rc::clone(&capture_path);
         let capture_result = Rc::clone(&capture_result);
+        let proof_inputs = Rc::clone(&proof_inputs);
+        let proof_input_reports = Rc::clone(&proof_input_reports);
         let menu_command_routed = Rc::clone(&menu_command_routed);
         move |application| {
             if state.borrow().is_some() {
@@ -147,7 +154,15 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                 let state = Rc::clone(&state);
                 let capture_path = Rc::clone(&capture_path);
                 let capture_result = Rc::clone(&capture_result);
+                let proof_inputs = Rc::clone(&proof_inputs);
+                let proof_input_reports = Rc::clone(&proof_input_reports);
                 gtk::glib::timeout_add_local_once(Duration::from_millis(delay.max(1)), move || {
+                    *proof_input_reports.borrow_mut() = state
+                        .borrow()
+                        .as_ref()
+                        .and_then(|runtime| runtime._windows.view_hosts.values().next())
+                        .map(|host| host.dispatch_proof_inputs(&proof_inputs))
+                        .unwrap_or_default();
                     if let Some(path) = capture_path.as_deref() {
                         let result = state
                             .borrow()
@@ -159,6 +174,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                             .and_then(|host| host.capture_png(path));
                         *capture_result.borrow_mut() = Some(result);
                     }
+                    state.borrow_mut().take();
                     application.quit()
                 });
             }
@@ -170,6 +186,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     // `--native-proof` before the activate signal creates the native window.
     application.run_with_args(&["zsui"]);
     let native_view_capture = capture_result.borrow_mut().take();
+    let proof_input_reports = std::mem::take(&mut *proof_input_reports.borrow_mut());
     state.borrow_mut().take();
     if let Some(error) = startup_error.borrow_mut().take() {
         return Err(ZsuiError::host("linux_gtk_event_loop", error));
@@ -179,6 +196,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     Ok(LinuxGtkNativeWindowRunReport {
         created_window_count,
         native_view_capture,
+        proof_input_reports,
         menu_command_routed,
     })
 }

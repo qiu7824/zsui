@@ -499,6 +499,79 @@ impl std::fmt::Debug for LinuxGtkDrawViewHost {
 }
 
 impl LinuxGtkDrawViewHost {
+    pub(crate) fn dispatch_proof_inputs(
+        &self,
+        inputs: &[crate::NativeViewSmokeInput],
+    ) -> Vec<crate::native::NativeViewInputDispatchReport> {
+        let mut reports = Vec::new();
+        for input in inputs {
+            let dispatch = |report, reports: &mut Vec<_>| {
+                reports.push(apply_linux_gtk_input_report(
+                    report,
+                    &self.area,
+                    &self.plan,
+                    &self.runtime,
+                    &self.ime,
+                    self.application.as_ref(),
+                ));
+            };
+            match input {
+                crate::NativeViewSmokeInput::Move(point) => {
+                    let report = self.runtime.borrow_mut().dispatch_pointer_move(*point);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Click(point) => {
+                    let down = self
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_down(*point, false);
+                    dispatch(down, &mut reports);
+                    let up = self.runtime.borrow_mut().dispatch_pointer_up(*point);
+                    dispatch(up, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Drag { start, end } => {
+                    let down = self
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_down(*start, false);
+                    dispatch(down, &mut reports);
+                    let moved = self.runtime.borrow_mut().dispatch_pointer_move(*end);
+                    dispatch(moved, &mut reports);
+                    let up = self.runtime.borrow_mut().dispatch_pointer_up(*end);
+                    dispatch(up, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Text(text) => {
+                    let report = self.runtime.borrow_mut().dispatch_ime_commit(text);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::KeyDown(key) => {
+                    let report = self.runtime.borrow_mut().dispatch_key(*key);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::Scroll { point, delta_y } => {
+                    let report = self
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_scroll(*point, crate::Dp::new(*delta_y as f32));
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::WindowCloseRequest => {
+                    let report = self.runtime.borrow_mut().dispatch_window_close_requested();
+                    dispatch(report, &mut reports);
+                }
+            }
+        }
+        schedule_linux_gtk_runtime_tick(
+            &self.area,
+            &self.plan,
+            &self.runtime,
+            &self.ime,
+            self.application.clone(),
+            &self.runtime_timer,
+        );
+        reports
+    }
+
     pub(crate) fn capture_png(
         &self,
         path: &Path,
@@ -680,7 +753,7 @@ fn apply_linux_gtk_input_report(
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: &gtk::IMMulticontext,
     application: Option<&gtk::Application>,
-) {
+) -> crate::native::NativeViewInputDispatchReport {
     let (executor, commands) = runtime.borrow_mut().take_pending_app_command_dispatch();
     let effect_executed =
         crate::native::dispatch_deferred_native_view_app_commands(&mut report, executor, commands);
@@ -689,7 +762,7 @@ fn apply_linux_gtk_input_report(
             .borrow_mut()
             .refresh_live_view_after_app_effect(&mut report);
     }
-    if let Some(updated) = report.redraw_plan {
+    if let Some(updated) = report.redraw_plan.take() {
         *plan.borrow_mut() = updated;
         area.queue_draw();
     }
@@ -701,6 +774,7 @@ fn apply_linux_gtk_input_report(
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
     sync_linux_gtk_text_accessibility(area, runtime);
     sync_linux_gtk_ime(area, runtime, ime);
+    report
 }
 
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]

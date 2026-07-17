@@ -6402,11 +6402,15 @@ fn record_native_view_input_smoke(
     }
 }
 
-#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-fn record_appkit_native_view_input_reports(
+#[cfg(any(
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+fn record_native_view_input_reports(
     report: &mut NativeWindowSmokeRunReport,
     inputs: &[NativeViewSmokeInput],
     dispatches: &[NativeViewInputDispatchReport],
+    backend: &str,
 ) {
     let mut dispatch_index: usize = 0;
     for input in inputs {
@@ -6478,7 +6482,7 @@ fn record_appkit_native_view_input_reports(
             NativeViewSmokeInput::WindowCloseRequest => {}
         }
         report.events.push(format!(
-            "appkit_proof_input:{}:{}",
+            "{backend}_proof_input:{}:{}",
             match input {
                 NativeViewSmokeInput::Move(_) => "move",
                 NativeViewSmokeInput::Click(_) => "click",
@@ -7944,6 +7948,7 @@ fn run_native_window_event_loop(
         &view_runtimes,
         None,
         None,
+        &[],
     )
     .map(|_| ())
 }
@@ -8413,8 +8418,6 @@ fn run_native_window_smoke_event_loop(
         ..NativeWindowSmokeRunReport::empty(options.clone())
     };
     record_draw_plan_smoke(&mut report, &draw_plans);
-    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
-    record_native_view_input_smoke(&mut report, &mut view_runtime, &options);
 
     #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
     let appkit_run = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
@@ -8434,6 +8437,7 @@ fn run_native_window_smoke_event_loop(
         std::slice::from_ref(&view_runtime),
         Some(options.auto_close_after_ms),
         options.screenshot_file.as_deref().map(std::path::Path::new),
+        &options.native_view_inputs,
     )?;
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
     let created = gtk_run.created_window_count;
@@ -8452,10 +8456,11 @@ fn run_native_window_smoke_event_loop(
 
     #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
     {
-        record_appkit_native_view_input_reports(
+        record_native_view_input_reports(
             &mut report,
             &options.native_view_inputs,
             &appkit_run.proof_input_reports,
+            "appkit",
         );
         report.window_menu_command_routed = appkit_run.menu_command_routed;
         if appkit_run.menu_command_routed {
@@ -8488,6 +8493,12 @@ fn run_native_window_smoke_event_loop(
     }
     #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
     {
+        record_native_view_input_reports(
+            &mut report,
+            &options.native_view_inputs,
+            &gtk_run.proof_input_reports,
+            "gtk",
+        );
         report.window_menu_command_routed = gtk_run.menu_command_routed;
         if gtk_run.menu_command_routed {
             report.events.push("window_menu_command_routed".to_string());
