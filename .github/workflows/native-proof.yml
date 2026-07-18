@@ -610,8 +610,10 @@ jobs:
           wait "$gallery_pid"
 
           ZSUI_NATIVE_PROOF_DURATION_MS=2500 \
+          ZSUI_NATIVE_PROOF_OPEN_MENU=1 \
             ./target/release/examples/zsui_notepad \
               --native-proof \
+              --menu-proof \
               --width 960 \
               --height 640 \
               --output "$root" \

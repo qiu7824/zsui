@@ -536,6 +536,7 @@ fn save_pending_document(
 fn main() -> ZsuiResult<()> {
     let args = std::env::args().collect::<Vec<_>>();
     let native_proof = args.iter().any(|argument| argument == "--native-proof");
+    let menu_proof = native_proof && args.iter().any(|argument| argument == "--menu-proof");
     let memory_report = args
         .windows(2)
         .find(|pair| pair[0] == "--memory-report")
@@ -725,34 +726,42 @@ fn main() -> ZsuiResult<()> {
             .native_view_key_down(NativeViewKey::Right)
             .native_view_key_down(NativeViewKey::Right)
             .native_view_key_down(NativeViewKey::Right)
-            .native_view_key_down(NativeViewKey::Right)
-            .native_window_close_request();
+            .native_view_key_down(NativeViewKey::Right);
+        if !menu_proof {
+            options = options.native_window_close_request();
+        }
         if let Some(path) = screenshot {
             options = options.screenshot_file(path).require_screenshot(true);
         }
         let widgets = interaction_plan.hit_targets.clone();
         let report = builder.run_smoke(options)?;
         if let Some(path) = report_path {
+            let mut messages = vec![
+                "EditorFocused",
+                "TextChanged",
+                "SelectionChanged",
+                "UndoInvoked",
+                "WrapChanged",
+            ];
+            if !menu_proof {
+                messages.extend(["CloseRequested", "CloseVetoed"]);
+            }
             let document = if native_proof {
                 serde_json::to_value(
                     NativeProofDocument::new(
                         "zsui_notepad",
-                        "notepad-interaction",
+                        if menu_proof {
+                            "notepad-menu"
+                        } else {
+                            "notepad-interaction"
+                        },
                         "system",
                         window_width,
                         window_height,
                         widgets,
                         report.clone(),
                     )
-                    .messages([
-                        "EditorFocused",
-                        "TextChanged",
-                        "SelectionChanged",
-                        "UndoInvoked",
-                        "WrapChanged",
-                        "CloseRequested",
-                        "CloseVetoed",
-                    ]),
+                    .messages(messages),
                 )
                 .map_err(|error| {
                     ZsuiError::host("serialize_notepad_native_proof", error.to_string())
@@ -777,13 +786,13 @@ fn main() -> ZsuiResult<()> {
             || report.native_view_scroll_count == 0
             || report.native_view_unhandled_scroll_count != 0
             || report.native_view_unhandled_key_count != 0
-            || report.native_view_window_close_request_count == 0
-            || report.native_view_window_close_veto_count == 0
+            || (!menu_proof && report.native_view_window_close_request_count == 0)
+            || (!menu_proof && report.native_view_window_close_veto_count == 0)
             || !report.window_menu_command_routed
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, text input/page navigation/edge-drag scrolling, typed undo or close veto was not verified",
+                "native window, menu routing, text input/page navigation/edge-drag scrolling, typed undo or requested close policy was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {
@@ -800,7 +809,7 @@ fn main() -> ZsuiResult<()> {
                 "extended grapheme navigation or deletion split a committed text cluster",
             ));
         }
-        if lock_state(&shared)?.pending != Some(PendingAction::Close) {
+        if !menu_proof && lock_state(&shared)?.pending != Some(PendingAction::Close) {
             return Err(ZsuiError::host(
                 "notepad_smoke",
                 "native title-bar close did not enter the shared unsaved-confirmation path",

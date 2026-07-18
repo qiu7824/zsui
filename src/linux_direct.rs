@@ -277,8 +277,12 @@ impl LinuxDirectApp {
             let reports = window.dispatch_proof_input(input, event_loop);
             self.proof_input_reports.extend(reports);
         }
-        if let Some(menu) = window.menu_surface.as_mut() {
-            menu.open_for_capture(&window.draw_pango_context);
+        let open_menu_for_capture = std::env::var("ZSUI_NATIVE_PROOF_OPEN_MENU")
+            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
+        if open_menu_for_capture {
+            if let Some(menu) = window.menu_surface.as_mut() {
+                menu.open_for_capture(&window.draw_pango_context);
+            }
         }
         window.window.request_redraw();
     }
