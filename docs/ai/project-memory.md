@@ -260,10 +260,13 @@ history remain authoritative for implementation status.
   commands and are not passed to the bar. Platform differences come from the
   framework's toolbar metrics, icon source and rendering path, not example
   branches.
-- Linux native proof must exercise the GTK runtime input route before capture
-  and provide a real CJK system fallback font. Missing-glyph boxes, clipped
-  bilingual labels or a screenshot produced without the scripted interaction
-  are proof failures rather than acceptable headless-runner differences.
+- Linux native proof must exercise the default `linux-direct` Winit input route
+  before capture and provide Ubuntu Sans, a real CJK system fallback font,
+  Adwaita theme icons and an SVG loader. Missing-glyph boxes, square fallback
+  icons, clipped bilingual labels or a screenshot produced without the
+  scripted interaction are proof failures rather than acceptable headless
+  runner differences. The Ubuntu 24.04 X11/Xvfb proof first passed on commit
+  `cbe7b24`; Wayland and AT-SPI target evidence remain separate gates.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92

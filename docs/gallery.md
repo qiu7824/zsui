@@ -71,10 +71,12 @@ Real input emits `Msg`, enters `update`, rebuilds the View and repaints.
 
 这个 Windows 截图来自三桌面共用的 `desktop_native_showcase`：左侧导航、命令栏、
 单行和多行输入、主题开关、列表与滚动都由同一套 Rust 状态和布局声明生成。
-macOS AppKit 与 Linux GTK4 截图只有通过 v0.2 目标机证据门禁后才会加入。
+macOS AppKit 与 Linux `linux-direct` 已在 Native Proof CI 生成最终平台视图截图；
+文档中的长期基准图只通过单独的人工审查提交更新。
 
 This Windows capture comes from the shared `desktop_native_showcase`. AppKit
-and GTK4 captures will be added only after their v0.2 target proof gates pass.
+and `linux-direct` now generate final-view captures in Native Proof CI. Reviewed
+long-lived documentation baselines are updated only by an explicit commit.
 
 ## Application Demos / 应用示例
 

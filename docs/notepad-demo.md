@@ -39,7 +39,7 @@ framework architecture.
   keyboard navigation and pointer drag selection. The shared runtime keeps
   those scalar indices on Unicode extended-grapheme boundaries, so combining
   sequences and joined emoji move, delete, wrap and hit-test as one unit.
-- Win32 Uniscribe, AppKit Core Text and GTK4 Pango shape each visual line. Their
+- Win32 Uniscribe, AppKit Core Text and Linux Pango shape each visual line. Their
   proportional advances, RTL cluster boxes and primary/secondary caret positions feed
   the shared selection, hit, wrap, horizontal/vertical navigation and viewport
   geometry. Left/Right follows primary caret x order without exposing bidi run
@@ -49,8 +49,9 @@ framework architecture.
   identified editor. The host owns a bounded undo history and returns edits
   through the existing `TextEdited`/selection message path.
 - Cut, copy and paste use the optional target-dispatched system clipboard:
-  Win32 through the Windows clipboard provider, AppKit through `NSPasteboard`
-  and GTK4 through `gdk::Clipboard`. Application code sees no platform object.
+  Win32 through the Windows clipboard provider, AppKit through `NSPasteboard`,
+  `linux-direct` through its Wayland/X11 system provider and `linux-gtk`
+  through `gdk::Clipboard`. Application code sees no platform object.
 - `ZsTextDocument` owns UTF-8/UTF-16 decoding, path and encoding metadata,
   explicit dirty state and transactional UTF-8 save/save-as.
 - `ZsDocumentShellCommand` converts to and from the public `Command` type, so
@@ -64,11 +65,12 @@ framework architecture.
   tab content. The acceptance app currently proves one static document tab and
   does not claim add/close/reorder behavior.
 - `NativeFileDialogService` selects Win32 open/save dialogs, AppKit
-  `NSOpenPanel`/`NSSavePanel`, or GTK4 `FileChooserNative` behind one safe API.
+  `NSOpenPanel`/`NSSavePanel`, Linux XDG desktop portal dialogs, or the optional
+  GTK4 `FileChooserNative` compatibility path behind one safe API.
 - File dialogs and filesystem I/O execute after the live-view lock is released.
   A successful external effect refreshes the shared view before native repaint.
 - `on_close_requested(ZsDocumentShellCommand::Close.to_command())` routes the
-  Win32, AppKit or GTK4 title-bar close affordance into the same typed update as
+  Win32, AppKit or Linux title-bar close affordance into the same typed update as
   the menu/button command. Dirty state vetoes the native close until the user
   chooses Save, Discard or Cancel; clean state approves it with `AppCx::quit()`.
 - The dirty-document decision is an in-view, self-drawn confirmation surface;

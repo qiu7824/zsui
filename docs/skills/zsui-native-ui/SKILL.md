@@ -1,6 +1,6 @@
 ---
 name: zsui-native-ui
-description: Work on ZSUI's standalone Rust UI contracts and native Windows Win32, macOS AppKit/SwiftUI, Linux GTK/libadwaita, Android Activity, and Harmony Ability hosts. Use this when modifying or verifying native UI framework surfaces such as windows, tray/status menus, settings pages, clipboard, dialogs, file pickers, host capabilities, launch plans, target smoke tests, or when an AI agent needs to understand how to build on ZSUI without copying product behavior.
+description: Work on ZSUI's standalone Rust UI contracts and native Windows Win32, macOS AppKit/SwiftUI, lightweight Linux Wayland/X11 plus optional GTK/libadwaita compatibility, Android Activity, and Harmony Ability hosts. Use this when modifying or verifying native UI framework surfaces such as windows, tray/status menus, settings pages, clipboard, dialogs, file pickers, host capabilities, launch plans, target smoke tests, or when an AI agent needs to understand how to build on ZSUI without copying product behavior.
 ---
 
 # ZSUI Native UI

@@ -142,7 +142,8 @@ Already reusable at code level:
   clipboard, popup/transient windows, IME, text caret, main/settings windows,
   search controls and runtime startup.
 - Native backend metadata for Windows through the `win32_gdi` runtime, macOS
-  through AppKit, Linux through GTK4, plus Android and Harmony adapter
+  through AppKit, Linux through the default `linux-direct` Wayland/X11 host
+  (with optional GTK4 compatibility), plus Android and Harmony adapter
   scaffolds. `winit_desktop` is retained only as an explicit fallback.
 - Android Activity and Harmony Ability scaffold manifests with bridge entry
   points, lifecycle bindings, permissions and capability mappings.

@@ -491,7 +491,7 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
 | macOS | 原生宿主首轮 | 统一入口进入 NSApplication/NSWindow；绘制、输入、截图和目标机证据仍待完成 |
-| Linux | 轻量原生宿主首轮 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口，直接呈现自绘表面并使用 Cairo/Pango、freedesktop 图标、原生 IME 事件和 XDG portal；GTK4 保留为可选兼容后端，真实 Wayland/X11 证据仍需 CI 验收 |
+| Linux | 轻量原生宿主首轮 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口，直接呈现自绘表面并使用 Cairo/Pango、freedesktop 图标、原生 IME 事件和 XDG portal；Ubuntu 24.04 X11 CI 已通过真实启动、交互和最终帧截图，Wayland 与 AT-SPI 目标证据仍待补齐；GTK4 保留为可选兼容后端 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 | Harmony | 宿主契约 | Ability/FFI 与真实设备运行仍待完成 |
 

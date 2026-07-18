@@ -66,28 +66,28 @@ cargo run --example native_smoke_run -- windows --menu
 
 On Windows this installs an owned `HMENU` plus `HACCEL`, preserves nested and
 disabled item state, and records typed window-menu command routing in
-`interaction.json`. The same `MenuSpec` uses `Primary+O`/`Primary+S`, which the
-AppKit and GTK4 menu services lower to their platform-native accelerator forms.
-Target interaction proof for those services still requires real macOS/Linux
-hosts.
+`interaction.json`. The same `MenuSpec` uses `Primary+O`/`Primary+S`. AppKit
+and the optional GTK4 compatibility service lower those accelerators to native
+menu forms. `linux-direct` routes the typed accelerator/command path, but its
+visible desktop-shell native menu surface remains unsupported and must not be
+claimed from command-routing proof alone.
 
 All three direct desktop hosts attach a typed Rust view draw plan to their
 native content surface. Win32 paints through its buffered GDI sink, AppKit
-through a custom `NSView`, and GTK4 through `DrawingArea`/Cairo/Pango. Windows
-posts native pointer messages during the smoke run. AppKit mouse down/drag/up and
-GTK4 gesture/motion controllers are connected to the same typed
-hit-test/message/executor path,
-while AppKit `scrollWheel:` and GTK4 `EventControllerScroll` emit the same
-typed `ScrollBy` path. Their focusable content views also route Tab/Shift+Tab,
-keyboard activation and direct UTF-8 edits. AppKit `NSTextInputClient` and GTK4
-`GtkIMMulticontext` now route provisional preedit, committed UTF-8 and candidate
-window anchors through the same shared runtime. Each renderer also feeds its
-actual content bounds back into shared layout before painting, so resize updates
-draw commands, hit targets and text-input geometry rather than stretching a
-startup snapshot. Pointer/Tab focus appends the same semantic accent focus ring
-on all three draw sinks, while native focus loss rebuilds the clean plan. The
-Windows interaction artifact records this as `native_view_focus_visual_count`.
-Both still require target-machine interaction artifacts:
+through a custom `NSView`, and `linux-direct` through a Winit Wayland/X11
+window, Softbuffer final surface and Cairo/Pango. Windows posts native pointer
+messages during the smoke run; AppKit mouse/scroll events and Winit
+pointer/wheel events enter the same typed hit-test/message/executor path. Their
+focusable content views also route Tab/Shift+Tab, keyboard activation and
+direct UTF-8 edits. AppKit `NSTextInputClient` and Winit IME events route
+provisional preedit, committed UTF-8 and candidate-window anchors through the
+shared runtime. Each renderer feeds actual content bounds back into layout
+before painting, so resize updates draw commands, hit targets and text-input
+geometry instead of stretching a startup snapshot. Pointer/Tab focus appends
+the same semantic accent focus ring on all three draw sinks, while native focus
+loss rebuilds the clean plan.
+
+The local Windows command for that shared view-input route is:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --view
@@ -623,9 +623,11 @@ Required target-smoke artifacts:
 - `capabilities.json`: observed host capability report.
 - `agent-context.json`: matching `zsui_agent_context_json()` output.
 
-Windows uses the `win32_gdi` runtime, macOS uses AppKit, and Linux uses GTK4.
-All three enter their target-native event loop and paint supplied draw plans;
-only Windows currently captures the required screenshot automatically.
+Windows uses the `win32_gdi` runtime, macOS uses AppKit, and Linux defaults to
+`linux-direct`. All three enter their target-native event loop and paint
+supplied draw plans. AppKit and `linux-direct` now capture their final platform
+view automatically in Native Proof CI; Ubuntu 24.04 X11/Xvfb proof is green,
+while a real Wayland compositor run remains pending.
 Android and Harmony are still scaffold/bridge-contract plans until real
 Activity/Ability runtime hosts exist. Their current device-smoke contract can
 be inspected with:
