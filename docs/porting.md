@@ -48,8 +48,11 @@ on target-specific dependencies to compile only the active platform backend.
 `linux-direct` uses Winit as the safe Wayland/X11 window/event adapter, but it
 is not the old blank `desktop-winit` fallback: the backend owns real
 presentation, Cairo/Pango rendering, IME routing, freedesktop icons, clipboard,
-portal dialogs, proof capture and live-view updates. Its controls remain
-platform-adapted ZSUI self-drawn controls rather than GTK widget instances.
+portal dialogs, proof capture, an in-window Linux desktop menu surface and
+live-view updates. Its controls remain platform-adapted ZSUI self-drawn controls
+rather than GTK widget instances. Enabling the optional `accessibility` feature
+also projects the shared interaction tree through AccessKit to the Linux
+AT-SPI bus.
 
 The AppKit and Linux backend features provide target-native desktop service
 slices through safe Rust contracts. AppKit maps `WindowSpec` to an owned
@@ -61,10 +64,12 @@ macOS maps open/save requests to
 `NSMenu`/`NSMenuItem` objects; UTF-8 clipboard text uses `NSPasteboard`.
 `linux-direct` maps dialogs to the XDG desktop portal, text to the system
 clipboard, icons to the freedesktop theme and input to native Wayland/X11
-events. It routes menu accelerators but does not yet expose a desktop-shell
-native menu surface. The optional `linux-gtk` compatibility backend retains
-`FileChooserNative`, `GMenu`/`SimpleAction` and `GdkClipboard`. Clipboard images
-and files remain explicitly unsupported.
+events. It renders a keyboard- and pointer-operable Linux desktop menu bar and
+popup inside the owned window, including checked state, separators, submenus
+and accelerator labels. This is a real application menu surface, not a claim
+of compositor-owned global-menu integration. The optional `linux-gtk`
+compatibility backend retains `FileChooserNative`, `GMenu`/`SimpleAction` and
+`GdkClipboard`. Clipboard images and files remain explicitly unsupported.
 
 Stateful windows may opt into
 `NativeWindowResourcePolicy::ReleaseViewWhenHidden` through
@@ -79,10 +84,10 @@ For a menu that changes application state, use
 `stateful_view_with_app_commands(state, view, update, command_to_message)`.
 The final mapper converts a platform-neutral `Command` to the application's
 typed `Msg`. Win32 routes `WM_COMMAND`/`HACCEL`, AppKit invokes the owned menu
-target, and Linux routes declared accelerators; all three then run the same
-update function, rebuild the shared draw plan and request repaint. Unmapped
-commands still use the ordinary application command executor, and `Quit`
-retains native host handling.
+target, and Linux routes both menu-surface selections and declared
+accelerators; all three then run the same update function, rebuild the shared
+draw plan and request repaint. Unmapped commands still use the ordinary
+application command executor, and `Quit` retains native host handling.
 
 Register operating-system title-bar close handling with
 `on_close_requested(command)`. Win32 routes `WM_CLOSE`, AppKit implements

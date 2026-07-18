@@ -62,7 +62,10 @@ impl ZsAcceleratorKey {
         }
     }
 
-    #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
+    #[cfg(any(
+        test,
+        all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    ))]
     pub(crate) fn gtk_key_name(self) -> String {
         match self {
             Self::Character(key) => key.to_ascii_uppercase().to_string(),
@@ -184,7 +187,10 @@ impl ZsAccelerator {
         self.key.validate()
     }
 
-    #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
+    #[cfg(any(
+        test,
+        all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    ))]
     pub(crate) fn gtk_accelerator(self) -> String {
         let mut value = String::new();
         if self.primary {

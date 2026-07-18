@@ -72,9 +72,11 @@ history remain authoritative for implementation status.
   and Linux accelerator details stay inside their native adapters.
 - Applications that need native window-menu actions in their typed update loop
   use `stateful_view_with_app_commands(...)`. Its `Command -> Option<Msg>`
-  mapping stays platform-neutral. Win32 and AppKit connect native menu
-  surfaces; the lightweight Linux host currently connects accelerator routing
-  but does not claim a desktop-shell native menu surface.
+  mapping stays platform-neutral. Win32 and AppKit connect their native menu
+  objects. `linux-direct` renders an owned Linux desktop menu bar and popup in
+  the application window and routes pointer, F10/arrow/Enter navigation and
+  accelerators through the same command mapping. It does not claim a
+  compositor-owned global menu.
 - Applications register title-bar close policy with
   `on_close_requested(Command)`. Win32 `WM_CLOSE`, AppKit
   `windowShouldClose:` and the Linux native close event route that command
@@ -177,7 +179,11 @@ history remain authoritative for implementation status.
   evidence of Ubuntu-native typography.
 - The default Linux backend is `linux-direct`: a real Wayland/X11 window,
   direct software presentation, Cairo/Pango text and geometry, freedesktop
-  icon themes, native IME events, system clipboard and XDG portal dialogs.
+  icon themes, native IME events, system clipboard, XDG portal dialogs and an
+  owned desktop menu surface. With the optional `accessibility` feature, the
+  shared hit-target tree is projected through AccessKit to AT-SPI with stable
+  author IDs, roles, bounds, labels, focus and supported actions. Accessibility
+  remains optional and does not increase the default lightweight build.
   Its controls are ZSUI self-drawn controls adapted to the Linux platform
   profile; they are not GTK widget instances. This is native-window/system
   integration, not a claim that the control tree is toolkit-native GTK.
@@ -266,7 +272,10 @@ history remain authoritative for implementation status.
   icons, clipped bilingual labels or a screenshot produced without the
   scripted interaction are proof failures rather than acceptable headless
   runner differences. The Ubuntu 24.04 X11/Xvfb proof first passed on commit
-  `cbe7b24`; Wayland and AT-SPI target evidence remain separate gates.
+  `cbe7b24`. Wayland proof must run with `DISPLAY` unset against a real Weston
+  socket, record `display_server=wayland` from Winit's raw display handle, and
+  use an external `pyatspi` client to enumerate and invoke the exported tree.
+  An internal tree dump alone is not AT-SPI target evidence.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92

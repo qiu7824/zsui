@@ -31,6 +31,11 @@ impl NativeDrawPalette {
         }
     }
 
+    #[cfg(any(
+        test,
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    ))]
     pub(crate) fn for_system_appearance(
         mode: ZsuiThemeMode,
         system_prefers_dark: bool,
