@@ -95,7 +95,10 @@ enum Message {
     SaveAs,
     ToggleWrap(bool),
     ToggleStatus(bool),
-    SampleMemory(PathBuf),
+    SampleMemory {
+        path: PathBuf,
+        close_after: Option<Duration>,
+    },
     Close,
 }
 
@@ -112,19 +115,24 @@ impl Notepad {
                 None,
             ),
         };
-        let mut tasks = Vec::new();
-        if let Some(duration) = launch.auto_close {
-            tasks.push(Task::perform(
-                async move { std::thread::sleep(duration) },
-                |_| Message::Close,
-            ));
-        }
-        if let Some(path) = launch.memory_report {
-            tasks.push(Task::perform(
+        let startup_task = if let Some(path) = launch.memory_report {
+            let close_after = launch
+                .auto_close
+                .map(|duration| duration.saturating_sub(launch.sample_after));
+            Task::perform(
                 async move { std::thread::sleep(launch.sample_after) },
-                move |_| Message::SampleMemory(path.clone()),
-            ));
-        }
+                move |_| Message::SampleMemory {
+                    path: path.clone(),
+                    close_after,
+                },
+            )
+        } else if let Some(duration) = launch.auto_close {
+            Task::perform(async move { std::thread::sleep(duration) }, |_| {
+                Message::Close
+            })
+        } else {
+            Task::none()
+        };
 
         (
             Self {
@@ -135,7 +143,7 @@ impl Notepad {
                 show_status: true,
                 error,
             },
-            Task::batch(tasks),
+            startup_task,
         )
     }
 
@@ -191,11 +199,16 @@ impl Notepad {
             Message::SaveAs => self.save(true),
             Message::ToggleWrap(value) => self.word_wrap = value,
             Message::ToggleStatus(value) => self.show_status = value,
-            Message::SampleMemory(path) => {
+            Message::SampleMemory { path, close_after } => {
                 if let Err(error) =
                     memory_probe::write_report(&path, "iced", "notepad", "first_frame_idle")
                 {
                     self.error = Some(format!("memory report failed: {error}"));
+                }
+                if let Some(duration) = close_after {
+                    return Task::perform(async move { std::thread::sleep(duration) }, |_| {
+                        Message::Close
+                    });
                 }
             }
             Message::Close => return iced::exit(),
