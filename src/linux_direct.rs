@@ -222,10 +222,6 @@ impl LinuxDirectApp {
         let Some(window) = self.windows.get_mut(&window_id) else {
             return;
         };
-        for input in &self.proof_inputs {
-            let reports = window.dispatch_proof_input(input, event_loop);
-            self.proof_input_reports.extend(reports);
-        }
         let proof_menu_command = (!self.proof_inputs.is_empty())
             .then(|| {
                 window
@@ -240,6 +236,14 @@ impl LinuxDirectApp {
             self.proof_input_reports
                 .push(window.apply_report(report, event_loop));
             self.menu_command_routed = true;
+        }
+        // Match the Win32, AppKit and GTK proof order: verify the menu route
+        // before the scripted interaction. Some applications intentionally
+        // leave their final state in the last input (for example a vetoed
+        // native close request that opens an unsaved-changes dialog).
+        for input in &self.proof_inputs {
+            let reports = window.dispatch_proof_input(input, event_loop);
+            self.proof_input_reports.extend(reports);
         }
         window.window.request_redraw();
     }
