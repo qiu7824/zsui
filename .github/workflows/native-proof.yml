@@ -190,6 +190,7 @@ jobs:
       TZ: UTC
       GDK_BACKEND: x11
       GSK_RENDERER: cairo
+      GTK_THEME: Yaru
       ZSUI_NATIVE_PROOF_OS_FAMILY: ubuntu-24.04
 
     steps:
@@ -204,9 +205,18 @@ jobs:
             xvfb \
             xauth \
             dbus-x11 \
+            fonts-ubuntu \
             fonts-noto-cjk \
-            fonts-noto-color-emoji
+            fonts-noto-color-emoji \
+            yaru-theme-gtk
+          install -d "$HOME/.config/gtk-4.0"
+          printf '%s\n' \
+            '[Settings]' \
+            'gtk-font-name=Ubuntu Sans 11' \
+            'gtk-theme-name=Yaru' \
+            > "$HOME/.config/gtk-4.0/settings.ini"
           fc-cache --force
+          fc-match 'Ubuntu Sans:style=Regular'
           fc-match 'sans-serif:lang=zh-cn'
 
       - name: Install Rust
@@ -310,8 +320,8 @@ jobs:
               typography = proof["typography"]
               assert typography["platform"] == "Gtk"
               assert typography["source"] == "gtk_settings_pango_context"
-              assert typography["ui_font_family"]
-              assert typography["configured_ui_font"]
+              assert typography["ui_font_family"] == "Ubuntu Sans"
+              assert typography["configured_ui_font"] == "Ubuntu Sans 11"
               assert typography["body_metrics"]["size"] > 0
               assert typography["body_metrics"]["ascent"] > 0
               assert typography == capture["typography"]

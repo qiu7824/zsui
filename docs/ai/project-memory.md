@@ -172,6 +172,9 @@ history remain authoritative for implementation status.
   families, role metrics, accessibility scale and rasterization identity.
   Native proof also records process resident and peak resident memory from the
   target OS; executable size or Runner-wide memory is not runtime evidence.
+- Ubuntu Native Proof must configure the Ubuntu 24.04 desktop font and theme
+  (`Ubuntu Sans 11`, Yaru). GTK's headless `Sans 10` fallback is not acceptable
+  evidence of Ubuntu-native typography.
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their
