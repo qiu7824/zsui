@@ -26,7 +26,7 @@ shape can create mobile native surfaces.
 
 ZSUI 0.3.0 prioritizes repeatable native runtime evidence over adding more
 component declarations. Every UI-affecting change must eventually launch the
-real Win32, AppKit and GTK4 application paths on target runners, execute fixed
+real Win32, AppKit and Linux application paths on target runners, execute fixed
 interaction scenarios, capture the final platform view, emit structured
 layout/focus/event evidence and compare it against reviewed baselines.
 
@@ -46,7 +46,7 @@ The current priority order is:
    `NSApplication`/`NSWindow`/`NSView` execution, deterministic Gallery and
    Notepad scenarios, final-view PNG capture, structured reports and reviewed
    visual baselines.
-2. Move the existing Win32 proof and the GTK4 target runtime onto the same
+2. Move the existing Win32 proof and the Linux target runtime onto the same
    versioned proof schema and regression tool so all three desktop paths block
    regressions before the 0.3.0 release.
 3. Complete the reusable conversation/task workbench loop: navigation,

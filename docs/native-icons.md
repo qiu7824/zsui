@@ -12,7 +12,7 @@ the backend.
 | Windows 11 | Segoe Fluent Icons installed by Windows | Segoe MDL2 Assets | MIT Fluent System Icons SVG |
 | Windows 10 | Segoe Fluent Icons when installed | Segoe MDL2 Assets installed by Windows | MIT Fluent System Icons SVG |
 | macOS | SF Symbols through AppKit | - | MIT Fluent System Icons SVG |
-| Linux | Current GTK icon theme symbolic icon | - | MIT Fluent System Icons SVG |
+| Linux | Current freedesktop icon theme symbolic icon | - | MIT Fluent System Icons SVG |
 
 No Microsoft or Apple icon font is distributed with ZSUI. Windows checks the
 font selected by GDI instead of assuming that a requested family exists. The
@@ -20,8 +20,9 @@ live Windows renderer uses Segoe Fluent Icons first and Segoe MDL2 Assets when
 the Fluent family is unavailable.
 
 On a macOS target, `macos-appkit` includes SF Symbol names plus the portable
-fallback catalog. On a Linux target, `linux-gtk` includes GTK symbolic names
-plus the same fallback catalog. The `fluent-icons` feature can enable the SVG
+fallback catalog. On a Linux target, `linux-direct` resolves freedesktop theme
+names and includes the same fallback catalog; `linux-gtk` retains GTK theme
+lookup for the compatibility backend. The `fluent-icons` feature can enable the SVG
 catalog explicitly on any target. This target-aware gating avoids putting the
 fallback assets into an ordinary Windows build.
 
@@ -66,8 +67,8 @@ selected MIT Fluent System Icons SVG fallbacks.
   renderer.
 - macOS: SF Symbol names and safe resolver contracts are complete; the AppKit
   `NSImage` lookup remains part of the unfinished AppKit host.
-- Linux: GTK symbolic names and safe resolver contracts are complete; the
-  `GtkIconTheme` lookup remains part of the unfinished GTK host.
+- Linux: freedesktop symbolic names and runtime theme-file lookup are connected
+  in `linux-direct`; target visual proof remains required.
 
 The capability report therefore marks Windows native icons as supported and
 macOS/Linux native icons as partial. A name catalog is not runtime proof.

@@ -50,6 +50,12 @@ pub mod icon;
 pub mod image_preview;
 #[cfg(feature = "info-bar")]
 pub mod info_bar;
+#[cfg(all(
+    target_os = "linux",
+    not(target_env = "ohos"),
+    feature = "linux-direct"
+))]
+mod linux_direct;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
@@ -79,7 +85,11 @@ mod native_clipboard;
 #[cfg(any(
     test,
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 mod native_draw_support;
 #[cfg(any(
@@ -417,7 +427,10 @@ pub use native_hosts::{
 #[cfg(any(
     feature = "fluent-icons",
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 pub use native_icons::{
     bundled_fluent_icon_svg, FLUENT_SYSTEM_ICONS_LICENSE, FLUENT_SYSTEM_ICONS_NOTICE,
@@ -964,7 +977,7 @@ mod tests {
         );
         assert_eq!(
             linux.menus.status,
-            if cfg!(feature = "linux-gtk") {
+            if cfg!(all(feature = "linux-gtk", not(feature = "linux-direct"))) {
                 CapabilityStatus::Partial
             } else {
                 CapabilityStatus::Unsupported
@@ -972,7 +985,10 @@ mod tests {
         );
         assert_eq!(
             linux.clipboard_text.status,
-            if cfg!(feature = "linux-gtk") {
+            if cfg!(any(
+                all(feature = "linux-direct", feature = "clipboard"),
+                feature = "linux-gtk"
+            )) {
                 CapabilityStatus::Partial
             } else {
                 CapabilityStatus::Unsupported
@@ -980,7 +996,7 @@ mod tests {
         );
         assert_eq!(
             linux.file_picker.status,
-            if cfg!(feature = "linux-gtk") {
+            if cfg!(any(feature = "linux-direct", feature = "linux-gtk")) {
                 CapabilityStatus::Partial
             } else {
                 CapabilityStatus::Unsupported

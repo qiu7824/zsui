@@ -890,6 +890,7 @@ pub struct NativeWindowSmokeRunReport {
     pub screenshot_captured: bool,
     pub screenshot_error: Option<String>,
     pub native_view_capture: Option<NativeViewCaptureEvidence>,
+    pub process_memory_during_runtime: Option<crate::NativeProofProcessMemoryEvidence>,
     pub draw_plan_requested: bool,
     pub draw_plan_window_count: usize,
     pub high_contrast_draw_plan_window_count: usize,
@@ -1031,6 +1032,7 @@ impl NativeWindowSmokeRunReport {
             screenshot_captured: false,
             screenshot_error: None,
             native_view_capture: None,
+            process_memory_during_runtime: None,
             draw_plan_requested: false,
             draw_plan_window_count: 0,
             high_contrast_draw_plan_window_count: 0,
@@ -1642,6 +1644,17 @@ impl NativeViewInputRuntime {
     ))]
     pub(crate) fn use_appkit_text_shaping(&mut self) {
         self.text_shaping = crate::native_input_visuals::NativeTextShapingBackend::appkit();
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-direct",
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn use_linux_direct_text_shaping(&mut self, context: pango::Context) {
+        self.text_shaping =
+            crate::native_input_visuals::NativeTextShapingBackend::linux_direct(context);
     }
 
     #[cfg(all(
@@ -6332,7 +6345,11 @@ impl NativeViewInputRuntime {
 #[cfg(any(
     test,
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 #[allow(dead_code)]
 pub(crate) fn dispatch_deferred_native_view_app_commands(
@@ -6462,7 +6479,11 @@ fn record_native_view_input_smoke(
 
 #[cfg(any(
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 fn record_native_view_input_reports(
     report: &mut NativeWindowSmokeRunReport,
@@ -7697,7 +7718,11 @@ fn menu_entry_count(menu: &MenuSpec) -> usize {
 #[cfg(any(
     all(windows, feature = "windows-win32"),
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 fn menu_command_count(menu: &MenuSpec) -> usize {
     menu.items
@@ -7827,7 +7852,28 @@ impl ZsuiHost for NativeWindowHost {
             );
         }
 
-        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-direct"
+        ))]
+        {
+            return crate::linux_direct::linux_direct_open_file_dialog(spec).map(|selection| {
+                selection.map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect()
+                })
+            });
+        }
+
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk",
+            not(feature = "linux-direct")
+        ))]
         {
             return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec).map(|selection| {
                 selection.map(|paths| {
@@ -7842,7 +7888,11 @@ impl ZsuiHost for NativeWindowHost {
         #[cfg(not(any(
             all(windows, feature = "windows-win32"),
             all(target_os = "macos", feature = "macos-appkit"),
-            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+            all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                any(feature = "linux-direct", feature = "linux-gtk")
+            )
         )))]
         {
             self.inner.open_file_picker(spec)
@@ -7902,7 +7952,21 @@ impl crate::FileDialogService for NativeWindowHost {
             return crate::macos_appkit_services::macos_appkit_save_file_dialog(spec);
         }
 
-        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-direct"
+        ))]
+        {
+            return crate::linux_direct::linux_direct_save_file_dialog(spec);
+        }
+
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk",
+            not(feature = "linux-direct")
+        ))]
         {
             return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
         }
@@ -7910,7 +7974,11 @@ impl crate::FileDialogService for NativeWindowHost {
         #[cfg(not(any(
             all(windows, feature = "windows-win32"),
             all(target_os = "macos", feature = "macos-appkit"),
-            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+            all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                any(feature = "linux-direct", feature = "linux-gtk")
+            )
         )))]
         {
             let _ = spec;
@@ -7986,7 +8054,41 @@ fn run_native_window_event_loop(
     .map(|_| ())
 }
 
-#[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+#[cfg(all(
+    target_os = "linux",
+    not(target_env = "ohos"),
+    feature = "linux-direct"
+))]
+fn run_native_window_event_loop(
+    windows: Vec<WindowSpec>,
+    trays: Vec<TraySpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
+    view_runtimes: Vec<NativeViewInputRuntime>,
+    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
+) -> ZsuiResult<()> {
+    if !trays.is_empty() {
+        return Err(ZsuiError::unsupported(
+            "native_window_status_item",
+            "the Linux direct status-item runtime is not connected to the unified event loop",
+        ));
+    }
+    crate::linux_direct::run_linux_direct_native_window_event_loop(
+        &windows,
+        &draw_plans,
+        &view_runtimes,
+        None,
+        None,
+        &[],
+    )
+    .map(|_| ())
+}
+
+#[cfg(all(
+    target_os = "linux",
+    not(target_env = "ohos"),
+    feature = "linux-gtk",
+    not(feature = "linux-direct")
+))]
 fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
     trays: Vec<TraySpec>,
@@ -8019,6 +8121,7 @@ fn run_native_window_event_loop(
     ),
     all(
         feature = "desktop-winit",
+        not(feature = "linux-direct"),
         not(feature = "linux-gtk"),
         target_os = "linux",
         not(target_env = "ohos")
@@ -8449,7 +8552,11 @@ fn run_native_window_smoke_event_loop(
 
 #[cfg(any(
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
@@ -8488,7 +8595,31 @@ fn run_native_window_smoke_event_loop(
     )?;
     #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
     let created = appkit_run.created_window_count;
-    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-direct"
+    ))]
+    let direct_run = crate::linux_direct::run_linux_direct_native_window_event_loop(
+        &windows,
+        &draw_plans,
+        std::slice::from_ref(&view_runtime),
+        Some(options.auto_close_after_ms),
+        options.screenshot_file.as_deref().map(std::path::Path::new),
+        &options.native_view_inputs,
+    )?;
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-direct"
+    ))]
+    let created = direct_run.created_window_count;
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-gtk",
+        not(feature = "linux-direct")
+    ))]
     let gtk_run = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
         &windows,
         &draw_plans,
@@ -8497,7 +8628,12 @@ fn run_native_window_smoke_event_loop(
         options.screenshot_file.as_deref().map(std::path::Path::new),
         &options.native_view_inputs,
     )?;
-    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-gtk",
+        not(feature = "linux-direct")
+    ))]
     let created = gtk_run.created_window_count;
 
     report.created_window_count = created;
@@ -8549,7 +8685,54 @@ fn run_native_window_smoke_event_loop(
         }
         None => {}
     }
-    #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-direct"
+    ))]
+    {
+        record_native_view_input_reports(
+            &mut report,
+            &options.native_view_inputs,
+            &direct_run.proof_input_reports,
+            "linux_direct",
+        );
+        report.window_menu_command_routed = direct_run.menu_command_routed;
+        report.process_memory_during_runtime = direct_run.process_memory;
+        if direct_run.menu_command_routed {
+            report.events.push("window_menu_command_routed".to_string());
+        }
+        match direct_run.native_view_capture {
+            Some(Ok(capture)) => {
+                report.screenshot_captured = true;
+                report.native_view_capture = Some(capture);
+                if let Some(path) = &report.screenshot_file {
+                    report.events.push(format!("screenshot_captured:{path}"));
+                }
+                report
+                    .events
+                    .push("screenshot_backend:winit_softbuffer_cairo_pango".to_string());
+            }
+            Some(Err(error)) => {
+                report.screenshot_error = Some(error);
+                report.events.push("screenshot_error".to_string());
+            }
+            None if options.screenshot_file.is_some() => {
+                report.screenshot_error = Some(
+                    "the Linux direct event loop exited before the final surface capture"
+                        .to_string(),
+                );
+                report.events.push("screenshot_error".to_string());
+            }
+            None => {}
+        }
+    }
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-gtk",
+        not(feature = "linux-direct")
+    ))]
     {
         record_native_view_input_reports(
             &mut report,
@@ -8587,7 +8770,7 @@ fn run_native_window_smoke_event_loop(
     }
     if options.status_item.is_some() {
         report.status_item_error = Some(
-            "status-item smoke is not connected to the AppKit/GTK4 unified event loop".to_string(),
+            "status-item smoke is not connected to the selected native event loop".to_string(),
         );
         report.events.push("status_item_unsupported".to_string());
     }
@@ -8626,6 +8809,7 @@ fn run_native_window_smoke_event_loop(
     ),
     all(
         feature = "desktop-winit",
+        not(feature = "linux-direct"),
         not(feature = "linux-gtk"),
         target_os = "linux",
         not(target_env = "ohos")
@@ -8837,6 +9021,7 @@ fn run_native_window_smoke_event_loop(
         all(
             target_os = "linux",
             not(target_env = "ohos"),
+            not(feature = "linux-direct"),
             not(feature = "linux-gtk")
         )
     )
@@ -9125,6 +9310,7 @@ fn write_rgba_png(
     all(
         target_os = "linux",
         not(target_env = "ohos"),
+        not(feature = "linux-direct"),
         not(feature = "linux-gtk"),
         not(feature = "desktop-winit")
     )
@@ -9156,6 +9342,7 @@ fn run_native_window_event_loop(
     all(
         target_os = "linux",
         not(target_env = "ohos"),
+        not(feature = "linux-direct"),
         not(feature = "linux-gtk"),
         not(feature = "desktop-winit")
     )

@@ -39,47 +39,54 @@ surface and input traces, so local contract JSON is not enough for a
 device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
-`windows-gdi`, `windows-win32`, `macos-appkit`, `linux-gtk`, `android` and
-`harmony` are platform/backend gates, while `clipboard` and `image` own their
-optional dependencies. The
-default `window` umbrella must keep the one-line desktop entry working and rely
+`windows-gdi`, `windows-win32`, `macos-appkit`, `linux-direct`, `linux-gtk`,
+`android` and `harmony` are platform/backend gates, while `clipboard` and
+`image` own their optional dependencies. The default `window` umbrella must
+keep the one-line desktop entry working and rely
 on target-specific dependencies to compile only the active platform backend.
 
-The AppKit and GTK4 backend features provide target-native desktop service
-slices through safe Rust contracts. Both now map `WindowSpec` through
-`WindowService` to owned `NSWindow` or `ApplicationWindow` instances with
-strong `WindowId` routing for title, visibility, redraw and close operations.
+`linux-direct` uses Winit as the safe Wayland/X11 window/event adapter, but it
+is not the old blank `desktop-winit` fallback: the backend owns real
+presentation, Cairo/Pango rendering, IME routing, freedesktop icons, clipboard,
+portal dialogs, proof capture and live-view updates. Its controls remain
+platform-adapted ZSUI self-drawn controls rather than GTK widget instances.
+
+The AppKit and Linux backend features provide target-native desktop service
+slices through safe Rust contracts. AppKit maps `WindowSpec` to an owned
+`NSWindow`. The default `linux-direct` backend creates a real Wayland/X11
+window and directly presents the ZSUI software surface. Both keep native
+objects behind strong `WindowId` routing.
 macOS maps open/save requests to
 `NSOpenPanel`/`NSSavePanel` and lowers `MenuSpec` into owned
-`NSMenu`/`NSMenuItem` objects; UTF-8 clipboard text uses `NSPasteboard`. Linux
-maps dialogs to GTK4 `FileChooserNative`, menus to `GMenu`/`SimpleAction`, and
-UTF-8 clipboard text to `GdkClipboard`. Both menu paths preserve nested,
-disabled, checked and accelerator state and return typed `Command` values as
-`DesktopEvent::MenuCommand`; native toolkit objects remain private. Clipboard
-images and files remain explicitly unsupported until their native formats are
-implemented and tested.
+`NSMenu`/`NSMenuItem` objects; UTF-8 clipboard text uses `NSPasteboard`.
+`linux-direct` maps dialogs to the XDG desktop portal, text to the system
+clipboard, icons to the freedesktop theme and input to native Wayland/X11
+events. It routes menu accelerators but does not yet expose a desktop-shell
+native menu surface. The optional `linux-gtk` compatibility backend retains
+`FileChooserNative`, `GMenu`/`SimpleAction` and `GdkClipboard`. Clipboard images
+and files remain explicitly unsupported.
 
 Stateful windows may opt into
 `NativeWindowResourcePolicy::ReleaseViewWhenHidden` through
 `release_view_when_hidden()`. A desktop host suspends the live View when the
-window is minimized, unmapped or explicitly hidden, and resumes it before the
+window is minimized, occluded or explicitly hidden, and resumes it before the
 window becomes interactive again. Suspension drops the View tree, draw/hit
 plans, shaped-text cache and transient input state while retaining application
 state and command routing. Win32 maps `WM_SIZE`/`WM_SHOWWINDOW`, AppKit maps
-miniaturization plus `orderOut:`, and GTK maps window unmap/map transitions.
+miniaturization plus `orderOut:`, and Linux maps native occlusion events.
 
 For a menu that changes application state, use
 `stateful_view_with_app_commands(state, view, update, command_to_message)`.
 The final mapper converts a platform-neutral `Command` to the application's
 typed `Msg`. Win32 routes `WM_COMMAND`/`HACCEL`, AppKit invokes the owned menu
-target, and GTK4 invokes the owned `SimpleAction`; all three then run the same
+target, and Linux routes declared accelerators; all three then run the same
 update function, rebuild the shared draw plan and request repaint. Unmapped
 commands still use the ordinary application command executor, and `Quit`
 retains native host handling.
 
 Register operating-system title-bar close handling with
 `on_close_requested(command)`. Win32 routes `WM_CLOSE`, AppKit implements
-`windowShouldClose:`, and GTK4 connects `close-request`; all three dispatch the
+`windowShouldClose:`, and Linux consumes the native close request; all three dispatch the
 registered `Command` through the same `Command -> Option<Msg>` mapper. If the
 command is unmapped, the host preserves normal toolkit close behavior. If it
 is mapped, the update must call `AppCx::quit()` to approve closing; otherwise
@@ -89,35 +96,35 @@ application code or keep a second dirty-state policy in a backend.
 
 Application code can use `NativeFileDialogService` with the same
 `FileDialogSpec`/`SaveFileDialogSpec` and owned `PathBuf` values on all three
-desktop targets. The facade selects Win32, AppKit or GTK4 internally and
+desktop targets. The facade selects Win32, AppKit or the XDG portal internally and
 returns `ZsuiError::Unsupported` when the corresponding backend feature is not
 enabled; applications do not import a native panel type or platform `cfg`.
-When an active native window exists, Win32 assigns it to `hwndOwner`, AppKit
-presents the panel as a window sheet and GTK4 assigns it as `transient-for`.
-Only ownerless calls use the toolkit's application-modal fallback.
+When an active native window exists, Win32 assigns it to `hwndOwner` and AppKit
+presents the panel as a window sheet. Linux delegates ownership and modality to
+the desktop portal.
 
 The unified native-window path also attaches backend-neutral `NativeDrawPlan`
 content to both platforms. AppKit uses a flipped custom `NSView`,
-`NSBezierPath`, semantic `NSString` attributes and SF Symbols. GTK4 uses a
-`DrawingArea`, Cairo, Pango and the current icon theme with the bundled Fluent
-SVG fallback. Both sinks implement fill, stroke, rounded geometry, text, icon
+`NSBezierPath`, semantic `NSString` attributes and SF Symbols. Linux uses a
+direct software surface, Cairo, Pango and the current freedesktop icon theme
+with the bundled Fluent SVG fallback. Both sinks implement fill, stroke, rounded geometry, text, icon
 and balanced clip commands. AppKit `mouseDown:`/`mouseDragged:`/`mouseUp:`/
-`scrollWheel:` and GTK4 `GestureClick`/`EventControllerMotion`/
-`EventControllerScroll` convert local coordinates into the
+`scrollWheel:` and Linux native pointer/wheel events convert local coordinates into the
 shared `ViewInteractionPlan`, dispatch typed static/live view messages, hand
 emitted commands to shared executors and replace the draw plan after stateful
 updates. The content views are focusable and also route Tab/Shift+Tab, Enter/Space,
 list Up/Down, direct UTF-8 character input, multiline return/deletion, Unicode
 Left/Right/Home/End caret navigation plus Shift and pointer-drag range selection.
-AppKit now implements `NSTextInputClient`; GTK4 owns a focused
-`GtkIMMulticontext`. Both keep marked text provisional in the shared input
+AppKit implements `NSTextInputClient`; Linux receives native IME preedit and
+commit events and supplies the caret rectangle to the window system. Both keep
+marked text provisional in the shared input
 runtime, render it without mutating application state, commit UTF-8 through
 the normal typed `TextChanged` path and anchor the native candidate window to
 the focused editor. Selection replacement is shared across direct input and IME;
-AppKit reports UTF-16 selected/marked ranges and GTK4 supplies surrounding UTF-8
-text. Pointer hit testing, caret/selection geometry, wrapping, horizontal reveal
+AppKit reports UTF-16 selected/marked ranges; Linux keeps shared UTF-8 state.
+Pointer hit testing, caret/selection geometry, wrapping, horizontal reveal
 and candidate anchoring consume target-native shaped text: Win32 uses Uniscribe,
-AppKit uses Core Text and GTK4 uses Pango. The shared layer retains logical
+AppKit uses Core Text and Linux uses Pango. The shared layer retains logical
 Unicode-scalar indices while visual clusters preserve proportional advances,
 RTL direction and primary/secondary insertion positions. Extended-grapheme boundaries
 keep combining sequences and joined emoji indivisible. Left/Right now traverses
@@ -127,7 +134,7 @@ interaction artifacts and accessibility remain separate gates. Each window owns
 a bounded 256-row shaping cache so
 unchanged document lines do not re-enter platform layout on every keystroke;
 this cache is explicit backend state, not a global registry. During native resize,
-actual `NSView` bounds and GTK4 `DrawingArea` allocations flow back through
+actual `NSView` bounds and Linux logical window sizes flow back through
 `NativeViewInputRuntime::set_surface(...)`, rebuilding the shared layout, draw
 plan, hit targets and candidate-window geometry before the current frame is
 painted. Target resize screenshots and explicit public `WindowResized` service
@@ -136,15 +143,14 @@ events remain incomplete evidence gates.
 Focus visuals are also backend-neutral. `NativeViewInputRuntime` and the Win32
 view-input route append the same inset, DPI-scaled `ColorRole::Accent` stroke
 to a fresh `NativeDrawPlan` whenever pointer or Tab focus changes. AppKit
-first-responder resignation, GTK4 focus leave and Win32 `WM_KILLFOCUS` rebuild
+first-responder resignation, Linux focus loss and Win32 `WM_KILLFOCUS` rebuild
 the undecorated plan, so inactive windows do not retain a stale focus ring.
 Backends must not substitute private colors or toolkit-specific focus state for
 this shared semantic visual.
 
 These services do not complete either native host. The unified
-`native_window(...).run()` path now enters `NSApplication` on macOS and
-`GtkApplication` on Linux, while the explicit `desktop-winit` feature remains a
-fallback transport. Shared View rendering, click/scroll, keyboard focus,
+`native_window(...).run()` path now enters `NSApplication` on macOS and the
+lightweight native Wayland/X11 host on Linux. Shared View rendering, click/scroll, keyboard focus,
 activation, Unicode keyboard/pointer range editing and first-pass IME composition now reach all
 three native window surfaces, including shaped proportional/bidirectional text
 geometry and visual-order horizontal caret navigation. AppKit native proof now

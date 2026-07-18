@@ -511,10 +511,111 @@ impl DesktopCapabilities {
             )
     }
 
+    pub fn linux_direct_current() -> Self {
+        let compiled = cfg!(feature = "linux-direct");
+        let support = |ready: &'static str, disabled: &'static str| {
+            if compiled {
+                CapabilitySupport::partial(ready)
+            } else {
+                CapabilitySupport::unsupported(disabled)
+            }
+        };
+        Self::all_unsupported(PlatformName::Linux)
+            .with_support(
+                DesktopCapability::NativeWindow,
+                support(
+                    "real Wayland/X11 windows, software presentation, shared draw-plan rendering and live resize are connected; target proof is required",
+                    "enable linux-direct to compile the lightweight Linux host",
+                ),
+            )
+            .with_support(
+                DesktopCapability::KeyboardFocus,
+                support(
+                    "native focus, keyboard events, Tab traversal and semantic focus visuals are connected through the shared runtime; target proof is required",
+                    "enable linux-direct to compile Linux keyboard and focus routing",
+                ),
+            )
+            .with_support(
+                DesktopCapability::PointerInput,
+                support(
+                    "native pointer motion, press, release and wheel events are routed into the shared runtime; richer gestures and target proof are pending",
+                    "enable linux-direct to compile Linux pointer routing",
+                ),
+            )
+            .with_support(
+                DesktopCapability::TextInput,
+                support(
+                    "Pango-shaped UTF-8 editing, selection geometry and shared text viewport behavior are connected; target proof is required",
+                    "enable linux-direct to compile Linux text shaping and input",
+                ),
+            )
+            .with_support(
+                DesktopCapability::InputMethod,
+                support(
+                    "the native Wayland/X11 IME event path, preedit, commit and caret rectangle are connected; candidate-window and CJK target proof are pending",
+                    "enable linux-direct to compile Linux IME routing",
+                ),
+            )
+            .with_support(
+                DesktopCapability::WindowResize,
+                support(
+                    "native resize and scale-factor events resize the software surface and relayout the shared view; Wayland/X11 proof is pending",
+                    "enable linux-direct to compile Linux resize routing",
+                ),
+            )
+            .with_support(
+                DesktopCapability::ClipboardText,
+                if compiled && cfg!(feature = "clipboard") {
+                    CapabilitySupport::partial(
+                        "the system text clipboard is connected without GTK; Wayland/X11 ownership proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-direct and clipboard to compile Linux clipboard support",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::OpenFileDialog,
+                support(
+                    "the XDG desktop portal open-file dialog is connected without GTK; target interaction proof is pending",
+                    "enable linux-direct to compile XDG portal file dialogs",
+                ),
+            )
+            .with_support(
+                DesktopCapability::SaveFileDialog,
+                support(
+                    "the XDG desktop portal save-file dialog is connected without GTK; target interaction proof is pending",
+                    "enable linux-direct to compile XDG portal file dialogs",
+                ),
+            )
+            .with_support(
+                DesktopCapability::SystemTheme,
+                support(
+                    "native light/dark notifications update the shared theme; desktop high-contrast integration is pending",
+                    "enable linux-direct to compile Linux system appearance support",
+                ),
+            )
+            .with_support(
+                DesktopCapability::NativeIcons,
+                support(
+                    "freedesktop icon-theme lookup with bundled semantic fallback is connected; target visual proof is pending",
+                    "enable linux-direct to compile freedesktop icon-theme support",
+                ),
+            )
+            .with_support(
+                DesktopCapability::NativeMenu,
+                CapabilitySupport::unsupported(
+                    "a desktop-shell native menu surface is not yet connected to the lightweight Linux host",
+                ),
+            )
+    }
+
     pub fn current_native_backend() -> Self {
         match PlatformName::current() {
             PlatformName::Windows => Self::windows_win32_current(),
             PlatformName::Macos => Self::macos_appkit_current(),
+            PlatformName::Linux if cfg!(feature = "linux-direct") => Self::linux_direct_current(),
             PlatformName::Linux => Self::linux_gtk_current(),
             platform => Self::all_unsupported(platform),
         }
@@ -690,7 +791,17 @@ impl ClipboardService for NativeClipboardService {
             feature = "clipboard",
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-gtk"
+            feature = "linux-direct"
+        ))]
+        {
+            return crate::linux_direct::linux_direct_read_clipboard();
+        }
+        #[cfg(all(
+            feature = "clipboard",
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk",
+            not(feature = "linux-direct")
         ))]
         {
             let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
@@ -703,7 +814,7 @@ impl ClipboardService for NativeClipboardService {
                 feature = "clipboard",
                 target_os = "linux",
                 not(target_env = "ohos"),
-                feature = "linux-gtk"
+                any(feature = "linux-direct", feature = "linux-gtk")
             )
         )))]
         Err(ZsuiError::unsupported(
@@ -726,7 +837,17 @@ impl ClipboardService for NativeClipboardService {
             feature = "clipboard",
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-gtk"
+            feature = "linux-direct"
+        ))]
+        {
+            return crate::linux_direct::linux_direct_write_clipboard(data);
+        }
+        #[cfg(all(
+            feature = "clipboard",
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk",
+            not(feature = "linux-direct")
         ))]
         {
             let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
@@ -739,7 +860,7 @@ impl ClipboardService for NativeClipboardService {
                 feature = "clipboard",
                 target_os = "linux",
                 not(target_env = "ohos"),
-                feature = "linux-gtk"
+                any(feature = "linux-direct", feature = "linux-gtk")
             )
         )))]
         {
@@ -778,14 +899,31 @@ impl FileDialogService for NativeFileDialogService {
         {
             return crate::macos_appkit_services::macos_appkit_open_file_dialog(spec);
         }
-        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-direct"
+        ))]
+        {
+            return crate::linux_direct::linux_direct_open_file_dialog(spec);
+        }
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk",
+            not(feature = "linux-direct")
+        ))]
         {
             return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec);
         }
         #[cfg(not(any(
             all(windows, feature = "windows-win32"),
             all(target_os = "macos", feature = "macos-appkit"),
-            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+            all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                any(feature = "linux-direct", feature = "linux-gtk")
+            )
         )))]
         {
             let _ = spec;
@@ -805,14 +943,31 @@ impl FileDialogService for NativeFileDialogService {
         {
             return crate::macos_appkit_services::macos_appkit_save_file_dialog(spec);
         }
-        #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-direct"
+        ))]
+        {
+            return crate::linux_direct::linux_direct_save_file_dialog(spec);
+        }
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-gtk",
+            not(feature = "linux-direct")
+        ))]
         {
             return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
         }
         #[cfg(not(any(
             all(windows, feature = "windows-win32"),
             all(target_os = "macos", feature = "macos-appkit"),
-            all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+            all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                any(feature = "linux-direct", feature = "linux-gtk")
+            )
         )))]
         {
             let _ = spec;
@@ -1083,7 +1238,11 @@ mod tests {
     #[cfg(not(any(
         all(windows, feature = "windows-win32"),
         all(target_os = "macos", feature = "macos-appkit"),
-        all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+        all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            any(feature = "linux-direct", feature = "linux-gtk")
+        )
     )))]
     #[test]
     fn native_file_dialog_facade_reports_a_missing_backend() {
@@ -1103,7 +1262,7 @@ mod tests {
     fn backend_capabilities_keep_unverified_work_incomplete() {
         let windows = DesktopCapabilities::windows_win32_current();
         let macos = DesktopCapabilities::macos_appkit_current();
-        let linux = DesktopCapabilities::linux_gtk_current();
+        let linux = DesktopCapabilities::linux_direct_current();
 
         assert!(windows.is_fully_supported(DesktopCapability::NativeWindow));
         assert!(windows.is_fully_supported(DesktopCapability::NativeMenu));
@@ -1124,11 +1283,13 @@ mod tests {
             linux
                 .support(DesktopCapability::ClipboardText)
                 .map(|support| support.status),
-            Some(if cfg!(feature = "linux-gtk") {
-                CapabilityStatus::Partial
-            } else {
-                CapabilityStatus::Unsupported
-            })
+            Some(
+                if cfg!(all(feature = "linux-direct", feature = "clipboard")) {
+                    CapabilityStatus::Partial
+                } else {
+                    CapabilityStatus::Unsupported
+                }
+            )
         );
         for capability in [
             DesktopCapability::KeyboardFocus,
@@ -1146,7 +1307,7 @@ mod tests {
             );
             assert_eq!(
                 linux.support(capability).map(|support| support.status),
-                Some(if cfg!(feature = "linux-gtk") {
+                Some(if cfg!(feature = "linux-direct") {
                     CapabilityStatus::Partial
                 } else {
                     CapabilityStatus::Unsupported

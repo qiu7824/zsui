@@ -74,6 +74,13 @@ pub(crate) enum NativeTextShapingBackend {
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
+        feature = "linux-direct",
+        feature = "text-input-core"
+    ))]
+    LinuxDirect(pango::Context, NativeTextShapingCache),
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
         feature = "linux-gtk",
         feature = "text-input-core"
     ))]
@@ -102,6 +109,13 @@ impl std::fmt::Debug for NativeTextShapingBackend {
             #[cfg(all(
                 target_os = "linux",
                 not(target_env = "ohos"),
+                feature = "linux-direct",
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirect(_, _) => formatter.write_str("LinuxDirect(PangoContext)"),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
                 feature = "linux-gtk",
                 feature = "text-input-core"
             ))]
@@ -121,6 +135,13 @@ impl NativeTextShapingBackend {
                 feature = "text-input-core"
             ))]
             Self::AppKit(_) => crate::macos_appkit_renderer::appkit_ui_font_scale(),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-direct",
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirect(_, _) => crate::linux_direct::linux_direct_ui_font_scale(),
             #[cfg(all(
                 target_os = "linux",
                 not(target_env = "ohos"),
@@ -148,6 +169,13 @@ impl NativeTextShapingBackend {
                 feature = "text-input-core"
             ))]
             Self::AppKit(cache) => cache.release_idle_memory(),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-direct",
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirect(_, cache) => cache.release_idle_memory(),
             #[cfg(all(
                 target_os = "linux",
                 not(target_env = "ohos"),
@@ -184,6 +212,16 @@ impl NativeTextShapingBackend {
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
+        feature = "linux-direct",
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn linux_direct(context: pango::Context) -> Self {
+        Self::LinuxDirect(context, NativeTextShapingCache::default())
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
         feature = "linux-gtk",
         feature = "text-input-core"
     ))]
@@ -210,6 +248,15 @@ impl NativeTextShapingBackend {
             ))]
             Self::AppKit(cache) => cache.shape(text, || {
                 crate::macos_appkit_renderer::shape_macos_appkit_text_line(text)
+            }),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-direct",
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirect(context, cache) => cache.shape(text, || {
+                crate::linux_direct::shape_linux_direct_text_line(context, text)
             }),
             #[cfg(all(
                 target_os = "linux",

@@ -32,7 +32,7 @@
     },
     {
       "id": "linux",
-      "backend": "linux-gtk",
+      "backend": "linux-direct",
       "status": "not_started"
     }
   ]

@@ -1,7 +1,7 @@
 # ZSUI Notepad Acceptance App
 
 `examples/zsui_notepad.rs` is a framework acceptance application written once
-for the target-native Win32, AppKit and GTK4 hosts. It contains no platform
+for the target-native Win32, AppKit and Linux hosts. It contains no platform
 `cfg`, raw handle, Objective-C object, GTK object, native event loop or WebView.
 
 The application is deliberately small in scope. It proves that a normal ZSUI

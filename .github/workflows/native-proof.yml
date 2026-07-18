@@ -180,41 +180,38 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  linux-gtk-proof:
-    name: GTK4 Runtime Proof
+  linux-direct-proof:
+    name: Lightweight Linux Runtime Proof
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
       TZ: UTC
-      GDK_BACKEND: x11
-      GSK_RENDERER: cairo
-      GTK_THEME: Yaru
+      WINIT_UNIX_BACKEND: x11
+      ZSUI_LINUX_UI_FONT: Ubuntu Sans 11
       ZSUI_NATIVE_PROOF_OS_FAMILY: ubuntu-24.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install GTK4 proof runtime
+      - name: Install Linux proof runtime
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
-            libgtk-4-dev \
+            libcairo2-dev \
+            libdbus-1-dev \
+            libgdk-pixbuf-2.0-dev \
+            libpango1.0-dev \
+            libx11-dev \
+            libxkbcommon-dev \
             xvfb \
             xauth \
             dbus-x11 \
             fonts-ubuntu \
             fonts-noto-cjk \
-            fonts-noto-color-emoji \
-            yaru-theme-gtk
-          install -d "$HOME/.config/gtk-4.0"
-          printf '%s\n' \
-            '[Settings]' \
-            'gtk-font-name=Ubuntu Sans 11' \
-            'gtk-theme-name=Yaru' \
-            > "$HOME/.config/gtk-4.0/settings.ini"
+            fonts-noto-color-emoji
           fc-cache --force
           fc-match 'Ubuntu Sans:style=Regular'
           fc-match 'sans-serif:lang=zh-cn'
@@ -225,7 +222,7 @@ jobs:
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build GTK4 proof applications
+      - name: Build lightweight Linux proof applications
         run: |
           cargo build \
             --release \
@@ -240,8 +237,8 @@ jobs:
             --no-default-features \
             --features notepad-demo
 
-      - name: Run real GTK4 proof scenes
-        id: gtk-scenes
+      - name: Run real Linux proof scenes
+        id: linux-scenes
         run: |
           set -o pipefail
           mkdir -p target/native-proof/ubuntu-24.04-x86_64
@@ -273,17 +270,17 @@ jobs:
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
 
-      - name: Summarize GTK4 proof failure
-        if: failure() && steps.gtk-scenes.outcome == 'failure'
+      - name: Summarize Linux proof failure
+        if: failure() && steps.linux-scenes.outcome == 'failure'
         run: |
           root=target/native-proof/ubuntu-24.04-x86_64
           summary="$(grep -Eai 'error|failed|panic|capture|display|xvfb|gtk' "$root"/*.log | tail -30 | tr '\n' ' ' || true)"
           if test -z "$summary"; then
             summary="$(tail -30 "$root"/*.log | tr '\n' ' ' || true)"
           fi
-          echo "::error title=GTK4 proof scene failure::$summary"
+          echo "::error title=Linux proof scene failure::$summary"
 
-      - name: Validate GTK4 artifacts
+      - name: Validate Linux artifacts
         shell: python
         run: |
           import json
@@ -310,8 +307,8 @@ jobs:
               assert proof["schema"] == "zsui.native-proof/v1"
               assert proof["schema_version"] == 1
               assert proof["platform"] == "linux"
-              assert proof["backend"] == "gtk4"
-              assert proof["capture_backend"] == "gtk_widget_paintable_gsk_texture"
+              assert proof["backend"] == "linux-direct"
+              assert proof["capture_backend"] == "winit_softbuffer_pango_cairo"
               assert proof["os_family"] == "ubuntu-24.04"
               assert proof["architecture"] == "x86_64"
               assert proof["errors"] == []
@@ -319,7 +316,7 @@ jobs:
               assert isinstance(proof["messages"], list)
               typography = proof["typography"]
               assert typography["platform"] == "Gtk"
-              assert typography["source"] == "gtk_settings_pango_context"
+              assert typography["source"] == "fontconfig_pango_context"
               assert typography["ui_font_family"] == "Ubuntu Sans"
               assert typography["configured_ui_font"] == "Ubuntu Sans 11"
               assert typography["body_metrics"]["size"] > 0
@@ -327,13 +324,13 @@ jobs:
               assert typography == capture["typography"]
               memory = proof["process_memory"]
               assert memory["source"] == "linux_procfs_status_smaps_rollup"
-              assert memory["sample_point"] == "proof_document_serialization"
+              assert memory["sample_point"] == "native_window_before_teardown"
               assert memory["resident_bytes"] > 0
               assert memory["peak_resident_bytes"] >= memory["resident_bytes"]
               assert runtime["created_window_count"] == 1
               assert runtime["screenshot_captured"] is True
               assert not runtime["screenshot_error"]
-              assert capture["backend"] == "gtk_widget_paintable_gsk_texture"
+              assert capture["backend"] == "winit_softbuffer_pango_cairo"
               assert capture["pixel_width"] > 0
               assert capture["pixel_height"] > 0
               assert capture["scale_factor"] > 0.0
@@ -358,11 +355,11 @@ jobs:
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
 
-      - name: Upload GTK4 proof
+      - name: Upload Linux proof
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: zsui-gtk4-native-proof
+          name: zsui-linux-direct-native-proof
           path: target/native-proof/ubuntu-24.04-x86_64
           if-no-files-found: error
           retention-days: 30

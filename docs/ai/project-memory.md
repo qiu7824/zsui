@@ -16,7 +16,7 @@ history remain authoritative for implementation status.
 
 ## Public application experience
 
-- Preserve one shared Rust application shape across Win32, AppKit and GTK4:
+- Preserve one shared Rust application shape across Win32, AppKit and Linux:
   `native_window(...).stateful_view(...).run()`.
 - Application code must not expose platform `cfg`, raw handles, Objective-C or
   GTK objects, drawing handles, or native event loops.
@@ -63,22 +63,22 @@ history remain authoritative for implementation status.
   `NativeFileDialogService` facade and owned `PathBuf` specs. Target selection
   stays inside ZSUI; missing backend features return `ZsuiError::Unsupported`.
   Dialogs bind to the active native window when available: Win32 sets
-  `hwndOwner`, AppKit presents an `NSOpenPanel`/`NSSavePanel` sheet, and GTK4
-  sets `transient-for`; targets fall back to application-modal presentation
-  only when no active owner exists.
+  `hwndOwner`, AppKit presents an `NSOpenPanel`/`NSSavePanel` sheet, and the
+  default lightweight Linux host uses the XDG desktop portal. The optional
+  `linux-gtk` compatibility backend retains `FileChooserNative`.
 - Menu accelerators use the strong `ZsAccelerator` / `ZsAcceleratorKey`
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent
-  and GTK action-accelerator details stay inside their native adapters.
+  and Linux accelerator details stay inside their native adapters.
 - Applications that need native window-menu actions in their typed update loop
   use `stateful_view_with_app_commands(...)`. Its `Command -> Option<Msg>`
-  mapping stays platform-neutral; Win32, AppKit and GTK4 dispatch through the
-  owned live-view host, rebuild the shared draw plan and request native repaint
-  without exposing a raw menu id, handle or event loop.
+  mapping stays platform-neutral. Win32 and AppKit connect native menu
+  surfaces; the lightweight Linux host currently connects accelerator routing
+  but does not claim a desktop-shell native menu surface.
 - Applications register title-bar close policy with
   `on_close_requested(Command)`. Win32 `WM_CLOSE`, AppKit
-  `windowShouldClose:` and GTK4 `close-request` route that command through the
-  same typed application update. An unmapped request keeps normal OS close
+  `windowShouldClose:` and the Linux native close event route that command
+  through the same typed application update. An unmapped request keeps normal OS close
   behavior; a mapped request is vetoed unless the update calls `AppCx::quit()`.
   Test-only auto-close may bypass the policy, but application close buttons and
   menus must use the same command so dirty-document policy has one path.
@@ -94,12 +94,12 @@ history remain authoritative for implementation status.
 - Shared TextBox/TextEditor selection uses `ZsTextSelection` with Unicode-scalar
   anchor/caret indices and `on_text_selection_change(...)`. Edits, keyboard
   movement and pointer drag selection route through the same typed View update
-  path on Win32, AppKit and GTK4; backends do not own application cursor state.
+  path on Win32, AppKit and Linux; backends do not own application cursor state.
   Scalar indices remain the public interchange format, but the shared input
   runtime normalizes endpoints to Unicode extended-grapheme boundaries. Left/
   Right, Backspace/Delete, pointer hits, wrapping and IME marked selections
   must not split combining sequences or joined emoji. Text geometry is shaped
-  by Uniscribe on Win32, Core Text on AppKit and Pango on GTK4; caret, selection,
+  by Uniscribe on Win32, Core Text on AppKit and Pango on Linux; caret, selection,
   pointer hit testing, wrapping and IME candidate anchoring consume the same
   per-grapheme advances and primary/secondary bidirectional insertion positions.
   Left/Right traversal sorts each shaped row by the platform primary-caret x
@@ -120,7 +120,7 @@ history remain authoritative for implementation status.
 - Shared multiline editors default to `TextWrap::Word` and accept runtime
   `ViewNode::text_wrap(...)` configuration; single-line TextBox remains
   `NoWrap`. Rendering, caret placement, selection rectangles and pointer hit
-  testing must consume the same wrap state on Win32, AppKit and GTK4. Up/Down
+  testing must consume the same wrap state on Win32, AppKit and Linux. Up/Down
   navigation follows these visual rows, while PageUp/PageDown moves by the
   current visible-row count and scrolls the transient viewport by the same page.
   Both preserve the desired shaped x position across shorter hard or soft lines;
@@ -149,7 +149,7 @@ history remain authoritative for implementation status.
   and Notepad scenarios, capture the final `NSView` through AppKit bitmap
   caching APIs, and emit versioned layout/focus/event/lifecycle JSON. Shared
   `DrawPlan` PNGs are not platform proof. CI baselines are read-only and change
-  only through explicit reviewed commits. Win32 and GTK4 must adopt the same
+  only through explicit reviewed commits. Win32 and Linux must adopt the same
   proof schema before the final 0.3.0 release; real Mac IME candidate-window
   and VoiceOver experience remain separate release-time manual gates.
 - The first `macos-15` Native Proof workflow is operational: GitHub-hosted
@@ -157,10 +157,10 @@ history remain authoritative for implementation status.
   captures the final `NSView` bitmap and uploads the PNG plus versioned JSON.
   This is runtime evidence, not yet the complete baseline/diff gate or the full
   fixed-scene suite required for the final 0.3.0 release.
-- GTK4 proof captures the realized ZSUI `DrawingArea` through
-  `GtkWidgetPaintable`, a GTK snapshot and the native GSK renderer texture.
+- Linux proof launches a real X11 or Wayland window, presents the Cairo/Pango
+  frame through the native surface and captures the final presented frame.
   A shared `DrawPlan` image or cross-compilation is not Linux target evidence;
-  the fixed Ubuntu/X11 proof job must upload the final texture PNG and matching
+  the fixed Ubuntu proof job must upload the final surface PNG and matching
   runtime JSON.
 - Native proof JSON uses the framework-owned `NativeProofDocument` envelope.
   Acceptance applications supply scenario metadata and typed message names;
@@ -172,11 +172,17 @@ history remain authoritative for implementation status.
   families, role metrics, accessibility scale and rasterization identity.
   Native proof also records process resident and peak resident memory from the
   target OS; executable size or Runner-wide memory is not runtime evidence.
-- Ubuntu Native Proof must configure the Ubuntu 24.04 desktop font and theme
-  (`Ubuntu Sans 11`, Yaru). GTK's headless `Sans 10` fallback is not acceptable
+- Ubuntu Native Proof must configure the Ubuntu 24.04 desktop font
+  (`Ubuntu Sans 11`). A generic headless `Sans` fallback is not acceptable
   evidence of Ubuntu-native typography.
-- Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
-  explicit fallback but is not evidence of AppKit or GTK4 completion.
+- The default Linux backend is `linux-direct`: a real Wayland/X11 window,
+  direct software presentation, Cairo/Pango text and geometry, freedesktop
+  icon themes, native IME events, system clipboard and XDG portal dialogs.
+  Its controls are ZSUI self-drawn controls adapted to the Linux platform
+  profile; they are not GTK widget instances. This is native-window/system
+  integration, not a claim that the control tree is toolkit-native GTK.
+  `linux-gtk` remains an explicit compatibility backend and is not pulled into
+  the default application. Winit is not evidence of AppKit completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their
   visual metrics and behavior to the target platform. On Windows, WinUI 3 and
   Fluent resources are the design reference; classic `comctl32` visuals must
@@ -184,7 +190,7 @@ history remain authoritative for implementation status.
 - Platform-native style does not imply embedding a second widget tree. Shared
   Rust code owns typed state, messages and layout, while the render backend
   maps platform style tokens into the existing buffered paint path.
-- AppKit and GTK render semantic alpha with their native source-over paths;
+- AppKit and Linux Cairo render semantic alpha with source-over paths;
   preblending `RoleWithAlpha` against the page surface is only an opaque
   renderer fallback and cannot represent modal composition. AppKit NSString
   drawing always uses line-fragment origins because shared text rectangles are
@@ -198,7 +204,8 @@ history remain authoritative for implementation status.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
 - Native desktop windows stay hidden until the initial draw plan, typed input
-  route, appearance, icon and menu are attached. Win32, AppKit and GTK4 must
+  route, appearance and icon are attached. Backends with native menu surfaces
+  also attach them before showing the window. Win32, AppKit and Linux must
   not expose an empty host surface and repaint it as the first visible frame.
 - Treat antialiasing, DPI, IME, scrolling, margins and window services as
   reusable framework capabilities rather than example-local fixes.
@@ -212,7 +219,7 @@ history remain authoritative for implementation status.
 - Reusable settings composition means navigation, grouped cards, setting rows,
   explanatory text and action regions—not a product-specific settings page.
 - Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
-  GTK4 to present native platform character.
+  the Linux platform profile to present native platform character.
 - Platform-native character includes composition, not only control sizes:
   Windows may use Fluent navigation and card groups, macOS uses a source-list
   sidebar with aligned AppKit-style form stacks, and GTK uses sidebar
@@ -316,7 +323,7 @@ history remain authoritative for implementation status.
 - High contrast is an accessibility appearance, not a dark-theme alias.
   System mode must override an application's light/dark preference when the OS
   requests high contrast. Win32 uses `SPI_GETHIGHCONTRAST` plus user-selected
-  `GetSysColor` pairs; AppKit and GTK4 resolve their semantic appearance/theme
+  `GetSysColor` pairs; AppKit and Linux resolve their semantic appearance/theme
   colors. The deterministic shared palette is only a backend fallback.
 - Win32 translucent semantic fills use GDI+ source-over composition inside the
   existing buffered paint path, so modal scrims, selections, hover fills and
@@ -327,7 +334,7 @@ history remain authoritative for implementation status.
   typed override for deterministic applications and tests.
 - DatePicker hover and pressed visuals are transient runtime state keyed by
   typed hit targets, not application state or backend-local widget flags.
-  Win32, AppKit and GTK4 route pointer motion, release/cancel and leave through
+  Win32, AppKit and Linux route pointer motion, release/cancel and leave through
   the shared semantic-token draw decoration; target proof is still required on
   each non-Windows desktop.
 - Direct RadioButton children of the same row or column form a local group

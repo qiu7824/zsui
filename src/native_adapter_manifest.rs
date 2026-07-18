@@ -26,6 +26,7 @@ pub enum NativeUiToolkit {
     WinitDesktop,
     Win32Gdi,
     AppKit,
+    LinuxDirect,
     Gtk4Libadwaita,
     AndroidActivity,
     HarmonyAbility,
@@ -37,6 +38,7 @@ impl NativeUiToolkit {
             Self::WinitDesktop => "winit_desktop",
             Self::Win32Gdi => "win32_gdi",
             Self::AppKit => "appkit",
+            Self::LinuxDirect => "linux_direct",
             Self::Gtk4Libadwaita => "gtk4_libadwaita",
             Self::AndroidActivity => "android_activity",
             Self::HarmonyAbility => "harmony_ability",
@@ -52,9 +54,10 @@ pub const SUPPORTED_NATIVE_UI_PLATFORMS: [NativeUiPlatform; 5] = [
     NativeUiPlatform::Harmony,
 ];
 
-pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 5] = [
+pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 6] = [
     NativeUiToolkit::Win32Gdi,
     NativeUiToolkit::AppKit,
+    NativeUiToolkit::LinuxDirect,
     NativeUiToolkit::Gtk4Libadwaita,
     NativeUiToolkit::AndroidActivity,
     NativeUiToolkit::HarmonyAbility,
@@ -129,10 +132,10 @@ pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Linux,
-        toolkit: NativeUiToolkit::Gtk4Libadwaita,
+        toolkit: NativeUiToolkit::LinuxDirect,
         status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "LinuxGtkWindowService",
-        module_path: "src/linux_gtk_services.rs",
+        adapter_boundary: "LinuxDirectWindowHost",
+        module_path: "src/linux_direct.rs",
     },
     NativeUiBackendDescriptor {
         platform: NativeUiPlatform::Android,
@@ -471,43 +474,38 @@ fn native_ui_capability_readiness(
         NativeUiPlatform::Linux => match capability {
             Renderer | TextLayout => (
                 FirstPass,
-                "src/linux_gtk_renderer.rs",
-                "NativeDrawPlan clipping, themed icons, Pango proportional/bidirectional geometry and high-contrast colors are connected to GTK4 DrawingArea/Cairo; Wayland/X11 visual proof remains pending",
+                "src/linux_direct.rs",
+                "NativeDrawPlan clipping, freedesktop themed icons and Pango/Cairo proportional text are connected to a directly presented software surface; Wayland/X11 visual proof remains pending",
             ),
             MainWindow => (
                 FirstPass,
-                "src/linux_gtk_services.rs",
-                "GtkApplication/ApplicationWindow creation, visibility, redraw, owned close, allocation-driven content relayout and typed pointer/keyboard routing are connected; richer input and Wayland/X11 proof are pending",
+                "src/linux_direct.rs",
+                "real Wayland/X11 window creation, visibility, redraw, owned close, resize-driven relayout and typed pointer/keyboard routing are connected; target proof remains pending",
             ),
             Clipboard => (
                 FirstPass,
-                "src/linux_gtk_services.rs",
-                "GdkClipboard UTF-8 text read/write is connected through the safe ClipboardService; files, images and Wayland/X11 proof remain incomplete",
+                "src/linux_direct.rs",
+                "system UTF-8 text clipboard access is connected without GTK through the safe ClipboardService; files, images and Wayland/X11 proof remain incomplete",
             ),
             FileDialog => (
                 FirstPass,
-                "src/linux_gtk_services.rs",
-                "GTK4 FileChooserNative open/save binds transient-for to the active application window through the safe FileDialogService; target interaction proof is pending",
-            ),
-            PopupMenu => (
-                FirstPass,
-                "src/linux_gtk_menu.rs",
-                "GMenu and SimpleAction preserve nested state and dispatch typed commands into the owned live-view host for state update and repaint; GTK interaction proof is pending",
+                "src/linux_direct.rs",
+                "XDG desktop portal open/save dialogs are connected through the safe FileDialogService; target interaction proof is pending",
             ),
             Ime => (
                 FirstPass,
-                "src/linux_gtk_renderer.rs",
-                "GtkIMMulticontext routes preedit, UTF-8 commit and surrounding text through shared state using Pango advances, bidi insertion geometry and shaped-caret anchoring; visual-order bidi navigation and CJK target proof are pending",
+                "src/linux_direct.rs",
+                "native Wayland/X11 IME preedit and commit events route through shared state using Pango advances and shaped-caret anchoring; surrounding-text depth, visual-order bidi navigation and CJK target proof are pending",
             ),
             MainExecutionPlanBridge => (
                 FirstPass,
-                "src/linux_gtk_renderer.rs",
-                "GTK4 allocation plus pressed/motion/released, scroll/key controllers and GtkIMContext callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
+                "src/linux_direct.rs",
+                "native resize, pointer, wheel, key and IME callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
             ),
             _ => (
                 ContractOnly,
                 "src/host_protocol.rs",
-                "the public contract exists but the GTK4 runtime binding is not connected",
+                "the public contract exists but the lightweight Linux runtime binding is not connected",
             ),
         },
         NativeUiPlatform::Android => (
@@ -796,7 +794,7 @@ mod tests {
         let linux = native_ui_backend_for_platform(NativeUiPlatform::Linux)
             .expect("Linux backend should be declared");
         assert_eq!(macos.toolkit, NativeUiToolkit::AppKit);
-        assert_eq!(linux.toolkit, NativeUiToolkit::Gtk4Libadwaita);
+        assert_eq!(linux.toolkit, NativeUiToolkit::LinuxDirect);
         let android = native_ui_backend_for_platform(NativeUiPlatform::Android)
             .expect("android backend should be declared");
         assert_eq!(android.toolkit, NativeUiToolkit::AndroidActivity);
@@ -814,7 +812,7 @@ mod tests {
         );
 
         assert_eq!(SUPPORTED_NATIVE_UI_PLATFORMS.len(), 5);
-        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 5);
+        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 6);
         assert_eq!(REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES.len(), 18);
     }
 
@@ -842,7 +840,7 @@ mod tests {
             NativeUiAdapterReusePackage::new(
                 NativeUiAdapterManifest::new(
                     NativeUiPlatform::Linux,
-                    NativeUiToolkit::Gtk4Libadwaita,
+                    NativeUiToolkit::LinuxDirect,
                     NativeUiBackendStatus::NativeHostFirstPass,
                     2,
                     1,
@@ -851,7 +849,7 @@ mod tests {
                 (),
                 NativeUiAdapterBindingPlan::new(
                     NativeUiPlatform::Linux,
-                    NativeUiToolkit::Gtk4Libadwaita,
+                    NativeUiToolkit::LinuxDirect,
                     NativeUiBackendStatus::NativeHostFirstPass,
                     "LinuxGtkAdapterBoundary",
                     vec!["main_window", "renderer"],
@@ -930,8 +928,8 @@ mod tests {
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
         assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 8);
-        assert_eq!(linux.contract_only_count, 10);
+        assert_eq!(linux.first_pass_count, 7);
+        assert_eq!(linux.contract_only_count, 11);
         assert_eq!(
             linux
                 .capabilities
@@ -939,6 +937,14 @@ mod tests {
                 .find(|entry| entry.capability == NativeUiAdapterCapability::TextLayout)
                 .map(|entry| entry.level),
             Some(NativeUiCapabilityReadinessLevel::FirstPass)
+        );
+        assert_eq!(
+            linux
+                .capabilities
+                .iter()
+                .find(|entry| entry.capability == NativeUiAdapterCapability::PopupMenu)
+                .map(|entry| entry.level),
+            Some(NativeUiCapabilityReadinessLevel::ContractOnly)
         );
         assert_eq!(
             linux
@@ -956,15 +962,6 @@ mod tests {
                 .map(|entry| entry.level),
             Some(NativeUiCapabilityReadinessLevel::FirstPass)
         );
-        assert_eq!(
-            linux
-                .capabilities
-                .iter()
-                .find(|entry| entry.capability == NativeUiAdapterCapability::PopupMenu)
-                .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
-        );
-
         let android = native_ui_platform_readiness(NativeUiPlatform::Android)
             .expect("Android readiness should be declared");
         assert_eq!(android.runtime_implementation_count(), 0);

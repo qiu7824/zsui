@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 SCHEMA = "zsui.ui-memory-comparison/v1"
-FRAMEWORKS = ("slint", "iced")
+BASE_FRAMEWORKS = ("slint", "iced")
 
 
 def median_value(reports, field):
@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--runner", required=True)
     parser.add_argument("--slint-binary", type=Path, required=True)
     parser.add_argument("--iced-binary", type=Path, required=True)
+    parser.add_argument("--zsui-binary", type=Path)
     parser.add_argument("--github-summary", type=Path)
     args = parser.parse_args()
 
@@ -31,6 +32,10 @@ def main():
         "slint": args.slint_binary,
         "iced": args.iced_binary,
     }
+    frameworks = list(BASE_FRAMEWORKS)
+    if args.zsui_binary:
+        binaries["zsui"] = args.zsui_binary
+        frameworks.insert(0, "zsui")
     result = {
         "schema": SCHEMA,
         "runner": args.runner,
@@ -38,7 +43,7 @@ def main():
         "sample_count": 5,
         "frameworks": {},
     }
-    if not args.slint_binary.is_file() or not args.iced_binary.is_file():
+    if any(not binary.is_file() for binary in binaries.values()):
         raise SystemExit("comparison release binaries are missing")
     markdown = [
         f"## {args.runner} UI memory comparison",
@@ -47,7 +52,7 @@ def main():
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
-    for framework in FRAMEWORKS:
+    for framework in frameworks:
         reports = []
         for path in sorted(args.input.glob(f"{framework}-notepad-run*.json")):
             report = json.loads(path.read_text(encoding="utf-8"))

@@ -67,7 +67,10 @@ impl NativeIconSource {
     #[cfg(any(
         feature = "fluent-icons",
         all(target_os = "macos", feature = "macos-appkit"),
-        all(target_os = "linux", feature = "linux-gtk")
+        all(
+            target_os = "linux",
+            any(feature = "linux-direct", feature = "linux-gtk")
+        )
     ))]
     pub fn bundled_fluent_svg(icon: ZsIcon) -> Self {
         Self {
@@ -116,7 +119,10 @@ pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<Nati
     #[cfg(any(
         feature = "fluent-icons",
         all(target_os = "macos", feature = "macos-appkit"),
-        all(target_os = "linux", feature = "linux-gtk")
+        all(
+            target_os = "linux",
+            any(feature = "linux-direct", feature = "linux-gtk")
+        )
     ))]
     {
         candidates
@@ -127,7 +133,10 @@ pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<Nati
     #[cfg(not(any(
         feature = "fluent-icons",
         all(target_os = "macos", feature = "macos-appkit"),
-        all(target_os = "linux", feature = "linux-gtk")
+        all(
+            target_os = "linux",
+            any(feature = "linux-direct", feature = "linux-gtk")
+        )
     )))]
     {
         candidates
@@ -156,7 +165,10 @@ pub fn resolve_native_icon(
 #[cfg(any(
     feature = "fluent-icons",
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 pub fn bundled_fluent_icon_svg(icon: ZsIcon) -> &'static [u8] {
     icon.fluent_svg_bytes()
@@ -165,7 +177,10 @@ pub fn bundled_fluent_icon_svg(icon: ZsIcon) -> &'static [u8] {
 #[cfg(any(
     feature = "fluent-icons",
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 pub const FLUENT_SYSTEM_ICONS_LICENSE: &str =
     include_str!("../third_party/fluentui-system-icons/LICENSE");
@@ -173,7 +188,10 @@ pub const FLUENT_SYSTEM_ICONS_LICENSE: &str =
 #[cfg(any(
     feature = "fluent-icons",
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        any(feature = "linux-direct", feature = "linux-gtk")
+    )
 ))]
 pub const FLUENT_SYSTEM_ICONS_NOTICE: &str =
     include_str!("../third_party/fluentui-system-icons/NOTICE");
@@ -215,7 +233,10 @@ mod tests {
     #[cfg(any(
         feature = "fluent-icons",
         all(target_os = "macos", feature = "macos-appkit"),
-        all(target_os = "linux", feature = "linux-gtk")
+        all(
+            target_os = "linux",
+            any(feature = "linux-direct", feature = "linux-gtk")
+        )
     ))]
     fn bundled_mit_svg_is_the_last_candidate_and_has_notices() {
         let candidates = native_icon_candidates(&PlatformName::Macos, ZsIcon::Settings);

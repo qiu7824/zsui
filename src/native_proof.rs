@@ -53,22 +53,33 @@ pub struct NativeProofProcessMemoryEvidence {
     pub peak_resident_bytes: u64,
     pub private_bytes: Option<u64>,
     pub peak_private_bytes: Option<u64>,
+    pub proportional_set_size_bytes: Option<u64>,
     pub virtual_bytes: Option<u64>,
 }
 
 impl NativeProofProcessMemoryEvidence {
     pub fn capture() -> Option<Self> {
+        Self::capture_at("proof_document_serialization")
+    }
+
+    pub(crate) fn capture_at(sample_point: &'static str) -> Option<Self> {
+        #[cfg(not(any(
+            all(target_os = "windows", feature = "windows-gdi"),
+            all(target_os = "macos", feature = "macos-appkit"),
+            all(target_os = "linux", not(target_env = "ohos"))
+        )))]
+        let _ = sample_point;
         #[cfg(all(target_os = "windows", feature = "windows-gdi"))]
         {
-            return capture_windows_process_memory();
+            return capture_windows_process_memory(sample_point);
         }
         #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
         {
-            return capture_macos_process_memory();
+            return capture_macos_process_memory(sample_point);
         }
         #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
         {
-            return capture_linux_process_memory();
+            return capture_linux_process_memory(sample_point);
         }
         #[allow(unreachable_code)]
         None
@@ -165,7 +176,10 @@ impl NativeProofDocument {
             scale_factor,
             typography_scale,
             typography,
-            process_memory: NativeProofProcessMemoryEvidence::capture(),
+            process_memory: runtime
+                .process_memory_during_runtime
+                .clone()
+                .or_else(NativeProofProcessMemoryEvidence::capture),
             window: NativeProofWindowEvidence {
                 width: logical_width,
                 height: logical_height,
@@ -261,6 +275,8 @@ fn native_proof_role(kind: ViewHitTargetKind) -> String {
 fn native_proof_backend(capture_backend: &str, platform: &str) -> &'static str {
     if capture_backend.starts_with("appkit_") {
         "appkit"
+    } else if capture_backend.starts_with("winit_softbuffer_") {
+        "linux-direct"
     } else if capture_backend.starts_with("gtk_") {
         "gtk4"
     } else if capture_backend.starts_with("win32_") || capture_backend.starts_with("windows_") {
@@ -268,6 +284,7 @@ fn native_proof_backend(capture_backend: &str, platform: &str) -> &'static str {
     } else {
         match platform {
             "macos" => "appkit",
+            "linux" if cfg!(feature = "linux-direct") => "linux-direct",
             "linux" => "gtk4",
             "windows" => "win32",
             _ => "unknown",
@@ -283,7 +300,9 @@ fn native_proof_architecture(architecture: &str) -> &str {
 }
 
 #[cfg(all(target_os = "windows", feature = "windows-gdi"))]
-fn capture_windows_process_memory() -> Option<NativeProofProcessMemoryEvidence> {
+fn capture_windows_process_memory(
+    sample_point: &'static str,
+) -> Option<NativeProofProcessMemoryEvidence> {
     use windows_sys::Win32::System::{
         ProcessStatus::{
             GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
@@ -302,18 +321,21 @@ fn capture_windows_process_memory() -> Option<NativeProofProcessMemoryEvidence> 
     };
     (captured != 0).then(|| NativeProofProcessMemoryEvidence {
         source: "win32_get_process_memory_info",
-        sample_point: "proof_document_serialization",
+        sample_point,
         resident_bytes: counters.WorkingSetSize as u64,
         peak_resident_bytes: counters.PeakWorkingSetSize as u64,
         private_bytes: Some(counters.PrivateUsage as u64),
         peak_private_bytes: Some(counters.PeakPagefileUsage as u64),
+        proportional_set_size_bytes: None,
         virtual_bytes: None,
     })
 }
 
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 #[allow(deprecated)]
-fn capture_macos_process_memory() -> Option<NativeProofProcessMemoryEvidence> {
+fn capture_macos_process_memory(
+    sample_point: &'static str,
+) -> Option<NativeProofProcessMemoryEvidence> {
     let mut info = unsafe { std::mem::zeroed::<libc::mach_task_basic_info>() };
     let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
     let captured = unsafe {
@@ -333,36 +355,42 @@ fn capture_macos_process_memory() -> Option<NativeProofProcessMemoryEvidence> {
     let virtual_bytes = unsafe { std::ptr::addr_of!(info.virtual_size).read_unaligned() };
     Some(NativeProofProcessMemoryEvidence {
         source: "macos_mach_task_basic_info",
-        sample_point: "proof_document_serialization",
+        sample_point,
         resident_bytes,
         peak_resident_bytes: peak_resident_bytes.max(resident_bytes),
         private_bytes: None,
         peak_private_bytes: None,
+        proportional_set_size_bytes: None,
         virtual_bytes: Some(virtual_bytes),
     })
 }
 
 #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-fn capture_linux_process_memory() -> Option<NativeProofProcessMemoryEvidence> {
+fn capture_linux_process_memory(
+    sample_point: &'static str,
+) -> Option<NativeProofProcessMemoryEvidence> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let resident_bytes = linux_proc_kib(&status, "VmRSS:")?;
     let peak_resident_bytes = linux_proc_kib(&status, "VmHWM:").unwrap_or(resident_bytes);
     let virtual_bytes = linux_proc_kib(&status, "VmSize:");
-    let private_bytes = std::fs::read_to_string("/proc/self/smaps_rollup")
-        .ok()
-        .map(|rollup| {
-            ["Private_Clean:", "Private_Dirty:", "Private_Hugetlb:"]
-                .into_iter()
-                .filter_map(|key| linux_proc_kib(&rollup, key))
-                .sum::<u64>()
-        });
+    let rollup = std::fs::read_to_string("/proc/self/smaps_rollup").ok();
+    let private_bytes = rollup.as_deref().map(|rollup| {
+        ["Private_Clean:", "Private_Dirty:", "Private_Hugetlb:"]
+            .into_iter()
+            .filter_map(|key| linux_proc_kib(&rollup, key))
+            .sum::<u64>()
+    });
+    let proportional_set_size_bytes = rollup
+        .as_deref()
+        .and_then(|rollup| linux_proc_kib(rollup, "Pss:"));
     Some(NativeProofProcessMemoryEvidence {
         source: "linux_procfs_status_smaps_rollup",
-        sample_point: "proof_document_serialization",
+        sample_point,
         resident_bytes,
         peak_resident_bytes: peak_resident_bytes.max(resident_bytes),
         private_bytes,
         peak_private_bytes: None,
+        proportional_set_size_bytes,
         virtual_bytes,
     })
 }

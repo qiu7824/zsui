@@ -251,6 +251,7 @@
         "src/macos_appkit_menu.rs",
         "src/macos_appkit_renderer.rs",
         "src/macos_appkit_services.rs",
+        "src/linux_direct.rs",
         "src/linux_gtk_menu.rs",
         "src/linux_gtk_renderer.rs",
         "src/linux_gtk_services.rs",

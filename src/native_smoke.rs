@@ -1398,6 +1398,7 @@ mod tests {
             screenshot_captured: false,
             screenshot_error: None,
             native_view_capture: None,
+            process_memory_during_runtime: None,
             draw_plan_requested: true,
             draw_plan_window_count: 1,
             high_contrast_draw_plan_window_count: 1,

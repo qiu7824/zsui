@@ -84,8 +84,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Shell,
             true,
             Vec::new(),
-            vec!["windows-win32", "macos-appkit", "linux-gtk"],
-            "window declarations and target-native Win32, AppKit or GTK4 desktop host paths",
+            vec!["windows-win32", "macos-appkit", "linux-direct"],
+            "window declarations and target-native Win32, AppKit or lightweight Wayland/X11 host paths",
         ),
         ZsuiCargoFeature::new(
             "button",
@@ -516,7 +516,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "clipboard",
                 "document-shell",
             ],
-            "shared self-drawn notepad acceptance example on target-native Win32, AppKit and GTK4 hosts",
+            "shared self-drawn notepad acceptance example on target-native Win32, AppKit and Linux hosts",
         ),
         ZsuiCargoFeature::new(
             "calculator-demo",
@@ -567,6 +567,23 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "macOS AppKit backend boundary with native window, clipboard, file-dialog and typed menu services",
         ),
         ZsuiCargoFeature::new(
+            "linux-direct",
+            Backend,
+            false,
+            vec![
+                "cairo-rs",
+                "freedesktop-icons",
+                "gdk-pixbuf",
+                "pango",
+                "pangocairo",
+                "rfd",
+                "softbuffer",
+                "winit",
+            ],
+            Vec::new(),
+            "lightweight Linux native-window backend with direct software presentation, Pango text, freedesktop icons and XDG portal dialogs",
+        ),
+        ZsuiCargoFeature::new(
             "linux-gtk",
             Backend,
             false,
@@ -579,7 +596,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Profile,
             false,
             Vec::new(),
-            vec!["windows-win32", "macos-appkit", "linux-gtk"],
+            vec!["windows-win32", "macos-appkit", "linux-direct"],
             "target-native desktop backend profile without exposing platform handles to applications",
         ),
         ZsuiCargoFeature::new(
@@ -678,7 +695,7 @@ mod tests {
             .expect("window feature should be listed");
         assert_eq!(
             window.enables,
-            vec!["windows-win32", "macos-appkit", "linux-gtk"]
+            vec!["windows-win32", "macos-appkit", "linux-direct"]
         );
     }
 
@@ -693,6 +710,7 @@ mod tests {
         assert!(names.contains(&"desktop-winit"));
         assert!(names.contains(&"windows-gdi"));
         assert!(names.contains(&"macos-appkit"));
+        assert!(names.contains(&"linux-direct"));
         assert!(names.contains(&"linux-gtk"));
         assert!(names.contains(&"password-box"));
         assert!(names.contains(&"text-input-core"));

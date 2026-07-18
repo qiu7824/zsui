@@ -243,7 +243,7 @@ fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
 }
 ```
 
-组合框获得键盘焦点后可直接输入选项前缀；Win32、AppKit 和 GTK4 共用一秒的
+组合框获得键盘焦点后可直接输入选项前缀；Win32、AppKit 和 Linux 共用一秒的
 大小写不敏感搜索缓冲，重复输入同一字符会从当前项继续循环，并仍通过
 `on_select` 的强类型消息更新应用状态。长选项弹层按 WinUI 默认最多显示
 15 项，并继续受当前窗口可用空间约束；初次展开会保证选中项可见，鼠标滚轮
@@ -398,8 +398,8 @@ cargo run --example desktop_native_showcase --features full
 
 同一个 `State`、`Msg`、`view` 和 `update` 包含左侧导航、命令栏、单行/多行
 输入、列表滚动、主题开关与原生菜单声明。统一入口现在分别进入 Win32、
-`NSApplication` 和 `GtkApplication` 原生事件循环。Windows 已有真实 smoke 截图；
-AppKit 与 GTK4 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
+`NSApplication` 和 Linux Wayland/X11 原生窗口事件循环。Windows 已有真实 smoke 截图；
+AppKit 与 Linux 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
 完成绘制、输入、截图和目标机交互证据。
 
 应用层使用 `section`、`navigation_view(ZsNavigationViewSpec)`、
@@ -461,7 +461,7 @@ cargo run --release --example invoice_workbench
 cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
-它用同一份 Rust `State / Msg / view / update` 代码运行在 Win32、AppKit 和 GTK4
+它用同一份 Rust `State / Msg / view / update` 代码运行在 Win32、AppKit 和 Linux
 原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，并把三平台标题栏关闭
 统一路由到强类型未保存确认。长文档视觉行/页导航、滚轮、边缘拖拽滚动、裁剪视口及
 关闭软换行后的横向插入点自动显现由编辑器内部共享视口模型处理，不要求应用维护滚
@@ -489,12 +489,16 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
 | macOS | 原生宿主首轮 | 统一入口进入 NSApplication/NSWindow；绘制、输入、截图和目标机证据仍待完成 |
-| Linux | 原生宿主首轮 | 统一入口进入 GtkApplication/ApplicationWindow；绘制、输入、Wayland/X11 截图和交互证据仍待完成 |
+| Linux | 轻量原生宿主首轮 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口，直接呈现自绘表面并使用 Cairo/Pango、freedesktop 图标、原生 IME 事件和 XDG portal；GTK4 保留为可选兼容后端，真实 Wayland/X11 证据仍需 CI 验收 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 | Harmony | 宿主契约 | Ability/FFI 与真实设备运行仍待完成 |
 
 平台能力必须经过代码、目标机 smoke 和系统集成三层证据。仅有声明或脚手架时，
 不会标记为完成。
+
+Linux 的“原生”指真实系统窗口、窗口管理器事件、系统字体/文字成形、输入法、
+剪贴板、图标主题和桌面 portal 集成；ZSUI 控件仍是针对 Linux 平台参数自绘的
+框架控件，不是 `GtkWidget`。因此它属于原生窗口上的自绘 UI，而不是 GTK 原生控件树。
 
 ## 目录
 

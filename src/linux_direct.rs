@@ -1,0 +1,1868 @@
+use std::collections::HashMap;
+use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+use cairo::{Context as CairoContext, Format, ImageSurface};
+use gdk_pixbuf::prelude::*;
+use pango::prelude::*;
+use softbuffer::{Context as SoftBufferContext, Surface as SoftBufferSurface};
+use winit::application::ApplicationHandler;
+use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
+use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::window::{
+    Theme as WinitTheme, Window as WinitWindow, WindowAttributes, WindowId as WinitWindowId,
+    WindowLevel,
+};
+
+use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
+use crate::{
+    Color, HorizontalAlign, MenuItemSpec, MenuSpec, NativeDrawCommand, NativeDrawCommandSink,
+    NativeDrawIconCommand, NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand,
+    NativeIconColorMode, NativeImageInterpolation, NativeStyleResolver, Point, Rect,
+    Size as ZsSize, TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
+    WindowSpec, ZsAccelerator, ZsAcceleratorKey, ZsIcon, ZsuiError, ZsuiResult,
+};
+
+type LinuxDisplayHandle = OwnedDisplayHandle;
+type LinuxSoftBufferContext = SoftBufferContext<LinuxDisplayHandle>;
+type LinuxSoftBufferSurface = SoftBufferSurface<LinuxDisplayHandle, Rc<WinitWindow>>;
+
+#[derive(Debug)]
+pub(crate) struct LinuxDirectNativeWindowRunReport {
+    pub created_window_count: usize,
+    pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    pub menu_command_routed: bool,
+    pub process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
+}
+
+pub(crate) fn run_linux_direct_native_window_event_loop(
+    specs: &[WindowSpec],
+    draw_plans: &[Option<NativeDrawPlan>],
+    view_runtimes: &[crate::native::NativeViewInputRuntime],
+    auto_close_after_ms: Option<u64>,
+    capture_path: Option<&Path>,
+    proof_inputs: &[crate::NativeViewSmokeInput],
+) -> ZsuiResult<LinuxDirectNativeWindowRunReport> {
+    if specs.is_empty() {
+        return Ok(LinuxDirectNativeWindowRunReport {
+            created_window_count: 0,
+            native_view_capture: None,
+            proof_input_reports: Vec::new(),
+            menu_command_routed: false,
+            process_memory: None,
+        });
+    }
+
+    let event_loop = EventLoop::new()
+        .map_err(|error| ZsuiError::host("linux_direct_event_loop", error.to_string()))?;
+    let mut app = LinuxDirectApp::new(
+        specs,
+        draw_plans,
+        view_runtimes,
+        auto_close_after_ms,
+        capture_path,
+        proof_inputs,
+    );
+    event_loop
+        .run_app(&mut app)
+        .map_err(|error| ZsuiError::host("linux_direct_event_loop", error.to_string()))?;
+
+    if let Some(error) = app.startup_error.take() {
+        return Err(ZsuiError::host("linux_direct_window", error));
+    }
+    Ok(LinuxDirectNativeWindowRunReport {
+        created_window_count: app.created_window_count,
+        native_view_capture: app.capture_result.take(),
+        proof_input_reports: std::mem::take(&mut app.proof_input_reports),
+        menu_command_routed: app.menu_command_routed,
+        process_memory: app.process_memory.take(),
+    })
+}
+
+struct LinuxDirectApp {
+    specs: Vec<WindowSpec>,
+    initial_plans: Vec<Option<NativeDrawPlan>>,
+    initial_runtimes: Vec<crate::native::NativeViewInputRuntime>,
+    windows: HashMap<WinitWindowId, LinuxDirectWindow>,
+    context: Option<LinuxSoftBufferContext>,
+    created_window_count: usize,
+    startup_error: Option<String>,
+    proof_at: Option<Instant>,
+    close_at: Option<Instant>,
+    proof_dispatched: bool,
+    proof_inputs: Vec<crate::NativeViewSmokeInput>,
+    proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    capture_path: Option<PathBuf>,
+    capture_result: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    menu_command_routed: bool,
+    process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
+}
+
+impl LinuxDirectApp {
+    fn new(
+        specs: &[WindowSpec],
+        draw_plans: &[Option<NativeDrawPlan>],
+        view_runtimes: &[crate::native::NativeViewInputRuntime],
+        auto_close_after_ms: Option<u64>,
+        capture_path: Option<&Path>,
+        proof_inputs: &[crate::NativeViewSmokeInput],
+    ) -> Self {
+        let started_at = Instant::now();
+        let close_after = auto_close_after_ms.map(|delay| Duration::from_millis(delay.max(1)));
+        Self {
+            specs: specs.to_vec(),
+            initial_plans: draw_plans.to_vec(),
+            initial_runtimes: view_runtimes.to_vec(),
+            windows: HashMap::new(),
+            context: None,
+            created_window_count: 0,
+            startup_error: None,
+            proof_at: (!proof_inputs.is_empty())
+                .then(|| close_after.map(|duration| started_at + duration / 2))
+                .flatten(),
+            close_at: close_after.map(|duration| started_at + duration),
+            proof_dispatched: false,
+            proof_inputs: proof_inputs.to_vec(),
+            proof_input_reports: Vec::new(),
+            capture_path: capture_path.map(PathBuf::from),
+            capture_result: None,
+            menu_command_routed: false,
+            process_memory: None,
+        }
+    }
+
+    fn fail(&mut self, event_loop: &ActiveEventLoop, operation: &str, error: impl ToString) {
+        self.startup_error = Some(format!("{operation}: {}", error.to_string()));
+        event_loop.exit();
+    }
+
+    fn create_windows(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
+        let context = SoftBufferContext::new(event_loop.owned_display_handle())
+            .map_err(|error| format!("could not initialize software presentation: {error}"))?;
+        self.context = Some(context);
+
+        for (index, spec) in self.specs.iter().enumerate() {
+            let mut attributes = WindowAttributes::default()
+                .with_title(spec.title.clone())
+                .with_inner_size(Size::Logical(LogicalSize::new(
+                    spec.width as f64,
+                    spec.height as f64,
+                )))
+                .with_visible(false)
+                .with_resizable(spec.resizable)
+                .with_decorations(spec.decorations)
+                .with_transparent(spec.transparent);
+            if let (Some(width), Some(height)) = (spec.min_width, spec.min_height) {
+                attributes = attributes.with_min_inner_size(Size::Logical(LogicalSize::new(
+                    width as f64,
+                    height as f64,
+                )));
+            }
+            if spec.always_on_top {
+                attributes = attributes.with_window_level(WindowLevel::AlwaysOnTop);
+            }
+
+            let window = Rc::new(
+                event_loop
+                    .create_window(attributes)
+                    .map_err(|error| format!("could not create `{}`: {error}", spec.title))?,
+            );
+            let surface = SoftBufferSurface::new(
+                self.context
+                    .as_ref()
+                    .ok_or_else(|| "software presentation context is missing".to_string())?,
+                Rc::clone(&window),
+            )
+            .map_err(|error| format!("could not create `{}` surface: {error}", spec.title))?;
+            let mut runtime = self
+                .initial_runtimes
+                .get(index)
+                .cloned()
+                .unwrap_or_default();
+            let pango_context = linux_direct_pango_context();
+            #[cfg(feature = "text-input-core")]
+            runtime.use_linux_direct_text_shaping(pango_context.clone());
+            runtime.defer_app_command_execution();
+            let mut direct = LinuxDirectWindow::new(
+                spec.clone(),
+                Rc::clone(&window),
+                surface,
+                self.initial_plans
+                    .get(index)
+                    .and_then(Clone::clone)
+                    .unwrap_or_default(),
+                runtime,
+                pango_context,
+                self.capture_path.is_some(),
+            );
+            direct.resize(window.inner_size());
+            direct.sync_text_input();
+            window.set_visible(spec.visible);
+            window.request_redraw();
+            self.windows.insert(window.id(), direct);
+            self.created_window_count += 1;
+        }
+        Ok(())
+    }
+
+    fn dispatch_proof_inputs(&mut self, event_loop: &ActiveEventLoop) {
+        if self.proof_dispatched {
+            return;
+        }
+        self.proof_dispatched = true;
+        let Some(window_id) = self.windows.keys().next().copied() else {
+            return;
+        };
+        let Some(window) = self.windows.get_mut(&window_id) else {
+            return;
+        };
+        for input in &self.proof_inputs {
+            let reports = window.dispatch_proof_input(input, event_loop);
+            self.proof_input_reports.extend(reports);
+        }
+        let proof_menu_command = (!self.proof_inputs.is_empty())
+            .then(|| {
+                window
+                    .spec
+                    .menu
+                    .as_ref()
+                    .and_then(first_enabled_menu_command)
+            })
+            .flatten();
+        if let Some(command) = proof_menu_command {
+            let report = window.runtime.dispatch_app_command(command);
+            self.proof_input_reports
+                .push(window.apply_report(report, event_loop));
+            self.menu_command_routed = true;
+        }
+        window.window.request_redraw();
+    }
+
+    fn capture_and_exit(&mut self, event_loop: &ActiveEventLoop) {
+        self.process_memory =
+            crate::NativeProofProcessMemoryEvidence::capture_at("native_window_before_teardown");
+        if self.capture_result.is_none() {
+            if let Some(path) = self.capture_path.as_deref() {
+                self.capture_result = Some(
+                    self.windows
+                        .values()
+                        .next()
+                        .ok_or_else(|| "the Linux direct host has no window to capture".to_string())
+                        .and_then(|window| window.capture_png(path)),
+                );
+            }
+        }
+        self.windows.clear();
+        event_loop.exit();
+    }
+
+    fn schedule_control_flow(&self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        let mut next = self.close_at;
+        if !self.proof_dispatched {
+            next = next.min_some(self.proof_at);
+        }
+        for window in self.windows.values() {
+            if let Some(candidate) = window.next_tick {
+                next = next.min_some(Some(candidate));
+            }
+        }
+        match next {
+            Some(deadline) if deadline <= now => event_loop.set_control_flow(ControlFlow::Poll),
+            Some(deadline) => event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
+    }
+}
+
+trait OptionInstantExt {
+    fn min_some(self, other: Option<Instant>) -> Option<Instant>;
+}
+
+impl OptionInstantExt for Option<Instant> {
+    fn min_some(self, other: Option<Instant>) -> Option<Instant> {
+        match (self, other) {
+            (Some(left), Some(right)) => Some(left.min(right)),
+            (Some(value), None) | (None, Some(value)) => Some(value),
+            (None, None) => None,
+        }
+    }
+}
+
+impl ApplicationHandler for LinuxDirectApp {
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {}
+
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if !self.windows.is_empty() || self.startup_error.is_some() {
+            return;
+        }
+        if let Err(error) = self.create_windows(event_loop) {
+            self.fail(event_loop, "create_windows", error);
+            return;
+        }
+        self.schedule_control_flow(event_loop);
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: WinitWindowId,
+        event: WindowEvent,
+    ) {
+        let mut remove_window = false;
+        let Some(window) = self.windows.get_mut(&window_id) else {
+            return;
+        };
+        match event {
+            WindowEvent::CloseRequested => {
+                let report = window.runtime.dispatch_window_close_requested();
+                let allow = !report.handled || report.quit_requested;
+                window.apply_report(report, event_loop);
+                remove_window = allow;
+            }
+            WindowEvent::Resized(size) => {
+                window.resize(size);
+                window.window.request_redraw();
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                window.scale_factor = scale_factor.max(0.1);
+                window.resize(window.window.inner_size());
+                window.window.request_redraw();
+            }
+            WindowEvent::ThemeChanged(theme) => {
+                window.theme = theme;
+                window.window.request_redraw();
+            }
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = window.redraw() {
+                    self.fail(event_loop, "redraw", error);
+                    return;
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let point = window.logical_point(position);
+                window.cursor = point;
+                let report = window.runtime.dispatch_pointer_move(point);
+                window.apply_report(report, event_loop);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                let report = window.runtime.dispatch_pointer_leave();
+                window.apply_report(report, event_loop);
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let report = if state == ElementState::Pressed {
+                    window.pointer_down = true;
+                    window
+                        .runtime
+                        .dispatch_pointer_down(window.cursor, window.modifiers.shift_key())
+                } else {
+                    window.pointer_down = false;
+                    window.runtime.dispatch_pointer_up(window.cursor)
+                };
+                window.apply_report(report, event_loop);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let logical_delta = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y * 48.0,
+                    MouseScrollDelta::PixelDelta(position) => {
+                        (position.y / window.scale_factor) as f32
+                    }
+                };
+                if logical_delta.abs() > f32::EPSILON {
+                    let report = window
+                        .runtime
+                        .dispatch_pointer_scroll(window.cursor, crate::Dp::new(logical_delta));
+                    window.apply_report(report, event_loop);
+                }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                window.modifiers = modifiers.state();
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                if let Some(command) = window.spec.menu.as_ref().and_then(|menu| {
+                    menu_command_for_key(menu, &event.logical_key, window.modifiers)
+                }) {
+                    let report = window.runtime.dispatch_app_command(command);
+                    window.apply_report(report, event_loop);
+                } else {
+                    let report =
+                        window.dispatch_key_event(&event.logical_key, event.text.as_deref());
+                    window.apply_report(report, event_loop);
+                }
+            }
+            WindowEvent::Ime(ime) => {
+                let report = match ime {
+                    Ime::Preedit(text, selection) => {
+                        let selection = selection.map(|(start, end)| {
+                            (
+                                byte_to_char_index(&text, start),
+                                byte_to_char_index(&text, end),
+                            )
+                        });
+                        window.runtime.dispatch_ime_preedit(&text, selection)
+                    }
+                    Ime::Commit(text) => window.runtime.dispatch_ime_commit(&text),
+                    Ime::Disabled => window.runtime.cancel_ime_preedit(),
+                    Ime::Enabled => crate::native::NativeViewInputDispatchReport::default(),
+                };
+                window.apply_report(report, event_loop);
+            }
+            WindowEvent::Focused(false) => {
+                let report = window.runtime.blur_focus();
+                window.apply_report(report, event_loop);
+            }
+            WindowEvent::Occluded(true) => {
+                if window.runtime.suspend_view_when_hidden() {
+                    window.plan = NativeDrawPlan::default();
+                    window.window.request_redraw();
+                }
+            }
+            WindowEvent::Occluded(false) => {
+                if let Some(plan) = window.runtime.resume_view_when_visible() {
+                    window.plan = plan;
+                    window.window.request_redraw();
+                }
+            }
+            _ => {}
+        }
+        if remove_window {
+            self.windows.remove(&window_id);
+            if self.windows.is_empty() {
+                event_loop.exit();
+            }
+        }
+        self.schedule_control_flow(event_loop);
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        if self.proof_at.is_some_and(|deadline| now >= deadline) {
+            self.dispatch_proof_inputs(event_loop);
+        }
+        for window in self.windows.values_mut() {
+            if window.next_tick.is_some_and(|deadline| now >= deadline) {
+                let report = window.runtime.refresh_transient_view();
+                window.apply_report(report, event_loop);
+            }
+        }
+        if self.close_at.is_some_and(|deadline| now >= deadline) {
+            self.capture_and_exit(event_loop);
+            return;
+        }
+        self.schedule_control_flow(event_loop);
+    }
+}
+
+struct LinuxDirectWindow {
+    spec: WindowSpec,
+    window: Rc<WinitWindow>,
+    surface: LinuxSoftBufferSurface,
+    plan: NativeDrawPlan,
+    runtime: crate::native::NativeViewInputRuntime,
+    pango_context: pango::Context,
+    draw_pango_context: pango::Context,
+    scale_factor: f64,
+    physical_size: PhysicalSize<u32>,
+    cursor: Point,
+    modifiers: ModifiersState,
+    pointer_down: bool,
+    theme: WinitTheme,
+    retain_frame: bool,
+    last_frame: Vec<u32>,
+    icon_cache: HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    next_tick: Option<Instant>,
+}
+
+impl LinuxDirectWindow {
+    fn new(
+        spec: WindowSpec,
+        window: Rc<WinitWindow>,
+        surface: LinuxSoftBufferSurface,
+        plan: NativeDrawPlan,
+        runtime: crate::native::NativeViewInputRuntime,
+        pango_context: pango::Context,
+        retain_frame: bool,
+    ) -> Self {
+        let scale_factor = window.scale_factor().max(0.1);
+        let theme = window.theme().unwrap_or(WinitTheme::Light);
+        Self {
+            spec,
+            window,
+            surface,
+            plan,
+            runtime,
+            pango_context,
+            draw_pango_context: linux_direct_pango_context(),
+            scale_factor,
+            physical_size: PhysicalSize::new(1, 1),
+            cursor: Point { x: 0, y: 0 },
+            modifiers: ModifiersState::default(),
+            pointer_down: false,
+            theme,
+            retain_frame,
+            last_frame: Vec::new(),
+            icon_cache: HashMap::new(),
+            next_tick: None,
+        }
+    }
+
+    fn resize(&mut self, physical_size: PhysicalSize<u32>) {
+        self.physical_size =
+            PhysicalSize::new(physical_size.width.max(1), physical_size.height.max(1));
+        let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        let report = self.runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+                height: logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+            },
+            crate::Dpi::standard(),
+        );
+        if let Some(plan) = report.redraw_plan {
+            self.plan = plan;
+        }
+        self.sync_text_input();
+        self.schedule_tick();
+    }
+
+    fn logical_point(&self, position: PhysicalPosition<f64>) -> Point {
+        let logical = position.to_logical::<f64>(self.scale_factor);
+        Point {
+            x: logical
+                .x
+                .round()
+                .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32,
+            y: logical
+                .y
+                .round()
+                .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32,
+        }
+    }
+
+    fn dispatch_key_event(
+        &mut self,
+        logical_key: &Key,
+        event_text: Option<&str>,
+    ) -> crate::native::NativeViewInputDispatchReport {
+        let shift = self.modifiers.shift_key();
+        let control = self.modifiers.control_key();
+        let command_modifier = control || self.modifiers.super_key() || self.modifiers.alt_key();
+        let named = match logical_key {
+            Key::Named(NamedKey::Tab) => Some(crate::NativeViewKey::Tab),
+            Key::Named(NamedKey::Enter) => Some(crate::NativeViewKey::Enter),
+            Key::Named(NamedKey::Space) => Some(crate::NativeViewKey::Space),
+            Key::Named(NamedKey::ArrowUp) => Some(crate::NativeViewKey::Up),
+            Key::Named(NamedKey::ArrowDown) => Some(crate::NativeViewKey::Down),
+            Key::Named(NamedKey::ArrowLeft) => Some(crate::NativeViewKey::Left),
+            Key::Named(NamedKey::ArrowRight) => Some(crate::NativeViewKey::Right),
+            Key::Named(NamedKey::Home) => Some(crate::NativeViewKey::Home),
+            Key::Named(NamedKey::End) => Some(crate::NativeViewKey::End),
+            Key::Named(NamedKey::PageUp) => Some(crate::NativeViewKey::PageUp),
+            Key::Named(NamedKey::PageDown) => Some(crate::NativeViewKey::PageDown),
+            Key::Named(NamedKey::Escape) => Some(crate::NativeViewKey::Escape),
+            _ => None,
+        };
+        if let Some(key) = named {
+            let report = self
+                .runtime
+                .dispatch_key_with_modifiers(key, shift, control);
+            if report.handled {
+                return report;
+            }
+            return match logical_key {
+                Key::Named(NamedKey::Enter) => self.runtime.dispatch_text_input("\r"),
+                Key::Named(NamedKey::Space) if !command_modifier => {
+                    self.runtime.dispatch_text_input(" ")
+                }
+                _ => report,
+            };
+        }
+        match logical_key {
+            Key::Named(NamedKey::Backspace) => self.runtime.dispatch_text_input("\u{8}"),
+            Key::Named(NamedKey::Delete) => self.runtime.dispatch_text_input("\u{7f}"),
+            _ if !command_modifier => event_text
+                .filter(|text| !text.is_empty() && !text.chars().all(char::is_control))
+                .map(|text| self.runtime.dispatch_text_input(text))
+                .unwrap_or_default(),
+            _ => crate::native::NativeViewInputDispatchReport::default(),
+        }
+    }
+
+    fn dispatch_proof_input(
+        &mut self,
+        input: &crate::NativeViewSmokeInput,
+        event_loop: &ActiveEventLoop,
+    ) -> Vec<crate::native::NativeViewInputDispatchReport> {
+        let mut reports = Vec::new();
+        match input {
+            crate::NativeViewSmokeInput::Move(point) => {
+                self.cursor = *point;
+                let report = self.runtime.dispatch_pointer_move(*point);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::Click(point) => {
+                self.cursor = *point;
+                let report = self.runtime.dispatch_pointer_down(*point, false);
+                reports.push(self.apply_report(report, event_loop));
+                let report = self.runtime.dispatch_pointer_up(*point);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::Drag { start, end } => {
+                self.cursor = *start;
+                let report = self.runtime.dispatch_pointer_down(*start, false);
+                reports.push(self.apply_report(report, event_loop));
+                self.cursor = *end;
+                let report = self.runtime.dispatch_pointer_move(*end);
+                reports.push(self.apply_report(report, event_loop));
+                let report = self.runtime.dispatch_pointer_up(*end);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::Text(text) => {
+                let report = self.runtime.dispatch_ime_commit(text);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::KeyDown(key) => {
+                let report = self.runtime.dispatch_key(*key);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::Scroll { point, delta_y } => {
+                let report = self
+                    .runtime
+                    .dispatch_pointer_scroll(*point, crate::Dp::new(*delta_y as f32));
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::WindowCloseRequest => {
+                let report = self.runtime.dispatch_window_close_requested();
+                reports.push(self.apply_report(report, event_loop));
+            }
+        }
+        reports
+    }
+
+    fn apply_report(
+        &mut self,
+        mut report: crate::native::NativeViewInputDispatchReport,
+        event_loop: &ActiveEventLoop,
+    ) -> crate::native::NativeViewInputDispatchReport {
+        let (executor, commands) = self.runtime.take_pending_app_command_dispatch();
+        let effect_executed = crate::native::dispatch_deferred_native_view_app_commands(
+            &mut report,
+            executor,
+            commands,
+        );
+        if effect_executed {
+            self.runtime.refresh_live_view_after_app_effect(&mut report);
+        }
+        if let Some(plan) = report.redraw_plan.take() {
+            self.plan = plan;
+            self.window.request_redraw();
+        }
+        if report.quit_requested {
+            event_loop.exit();
+        }
+        self.sync_text_input();
+        self.schedule_tick();
+        report
+    }
+
+    fn schedule_tick(&mut self) {
+        self.next_tick = self
+            .runtime
+            .transient_poll_interval_ms()
+            .map(|delay| Instant::now() + Duration::from_millis(delay.max(1)));
+    }
+
+    fn sync_text_input(&self) {
+        let accepts = self.runtime.accepts_committed_text_input();
+        self.window.set_ime_allowed(accepts);
+        if accepts {
+            if let Some(rect) = self.runtime.text_input_caret_rect() {
+                self.window.set_ime_cursor_area(
+                    Position::Logical(LogicalPosition::new(f64::from(rect.x), f64::from(rect.y))),
+                    Size::Logical(LogicalSize::new(
+                        f64::from(rect.width.max(1)),
+                        f64::from(rect.height.max(1)),
+                    )),
+                );
+            }
+        }
+    }
+
+    fn redraw(&mut self) -> Result<(), String> {
+        let width = NonZeroU32::new(self.physical_size.width.max(1))
+            .ok_or_else(|| "Linux direct surface width is zero".to_string())?;
+        let height = NonZeroU32::new(self.physical_size.height.max(1))
+            .ok_or_else(|| "Linux direct surface height is zero".to_string())?;
+        self.surface
+            .resize(width, height)
+            .map_err(|error| format!("could not resize software surface: {error}"))?;
+        let frame = render_linux_direct_frame(
+            &self.plan,
+            width.get(),
+            height.get(),
+            self.scale_factor,
+            self.theme,
+            &self.draw_pango_context,
+            &mut self.icon_cache,
+        )?;
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .map_err(|error| format!("could not acquire software buffer: {error}"))?;
+        if buffer.len() != frame.len() {
+            return Err(format!(
+                "software buffer length {} does not match rendered frame {}",
+                buffer.len(),
+                frame.len()
+            ));
+        }
+        buffer.copy_from_slice(&frame);
+        self.window.pre_present_notify();
+        buffer
+            .present()
+            .map_err(|error| format!("could not present software buffer: {error}"))?;
+        if self.retain_frame {
+            self.last_frame = frame;
+        }
+        Ok(())
+    }
+
+    fn capture_png(&self, path: &Path) -> Result<crate::NativeViewCaptureEvidence, String> {
+        if self.last_frame.is_empty() {
+            return Err("the Linux direct host has not presented a frame".to_string());
+        }
+        write_linux_direct_png(
+            path,
+            self.physical_size.width,
+            self.physical_size.height,
+            &self.last_frame,
+        )?;
+        let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        Ok(crate::NativeViewCaptureEvidence {
+            platform: "linux",
+            backend: "winit_softbuffer_pango_cairo",
+            logical_width: logical.width.round().max(1.0) as u32,
+            logical_height: logical.height.round().max(1.0) as u32,
+            pixel_width: self.physical_size.width.max(1),
+            pixel_height: self.physical_size.height.max(1),
+            scale_factor: self.scale_factor,
+            typography_scale: self.plan.typography_scale(),
+            typography: linux_direct_native_typography_profile(
+                self.plan.typography_scale(),
+                Some(&self.pango_context),
+            ),
+        })
+    }
+}
+
+fn byte_to_char_index(text: &str, byte: usize) -> usize {
+    text.char_indices()
+        .take_while(|(index, _)| *index < byte.min(text.len()))
+        .count()
+}
+
+fn first_enabled_menu_command(menu: &MenuSpec) -> Option<crate::Command> {
+    for item in &menu.items {
+        match item {
+            MenuItemSpec::Command {
+                command,
+                enabled: true,
+                ..
+            } => return Some(command.clone()),
+            MenuItemSpec::Submenu {
+                enabled: true,
+                menu,
+                ..
+            } => {
+                if let Some(command) = first_enabled_menu_command(menu) {
+                    return Some(command);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn menu_command_for_key(
+    menu: &MenuSpec,
+    key: &Key,
+    modifiers: ModifiersState,
+) -> Option<crate::Command> {
+    for item in &menu.items {
+        match item {
+            MenuItemSpec::Command {
+                command,
+                enabled: true,
+                accelerator: Some(accelerator),
+                ..
+            } if accelerator_matches(*accelerator, key, modifiers) => {
+                return Some(command.clone());
+            }
+            MenuItemSpec::Submenu {
+                enabled: true,
+                menu,
+                ..
+            } => {
+                if let Some(command) = menu_command_for_key(menu, key, modifiers) {
+                    return Some(command);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn accelerator_matches(accelerator: ZsAccelerator, key: &Key, modifiers: ModifiersState) -> bool {
+    if accelerator.uses_primary() != modifiers.control_key()
+        || accelerator.uses_shift() != modifiers.shift_key()
+        || accelerator.uses_alt() != modifiers.alt_key()
+        || accelerator.uses_super() != modifiers.super_key()
+    {
+        return false;
+    }
+    match (accelerator.key(), key) {
+        (ZsAcceleratorKey::Character(expected), Key::Character(actual)) => actual
+            .chars()
+            .next()
+            .is_some_and(|actual| actual.eq_ignore_ascii_case(&expected)),
+        (ZsAcceleratorKey::Enter, Key::Named(NamedKey::Enter))
+        | (ZsAcceleratorKey::Escape, Key::Named(NamedKey::Escape))
+        | (ZsAcceleratorKey::Tab, Key::Named(NamedKey::Tab))
+        | (ZsAcceleratorKey::Space, Key::Named(NamedKey::Space))
+        | (ZsAcceleratorKey::Backspace, Key::Named(NamedKey::Backspace))
+        | (ZsAcceleratorKey::Delete, Key::Named(NamedKey::Delete))
+        | (ZsAcceleratorKey::Up, Key::Named(NamedKey::ArrowUp))
+        | (ZsAcceleratorKey::Down, Key::Named(NamedKey::ArrowDown))
+        | (ZsAcceleratorKey::Left, Key::Named(NamedKey::ArrowLeft))
+        | (ZsAcceleratorKey::Right, Key::Named(NamedKey::ArrowRight))
+        | (ZsAcceleratorKey::Home, Key::Named(NamedKey::Home))
+        | (ZsAcceleratorKey::End, Key::Named(NamedKey::End))
+        | (ZsAcceleratorKey::PageUp, Key::Named(NamedKey::PageUp))
+        | (ZsAcceleratorKey::PageDown, Key::Named(NamedKey::PageDown)) => true,
+        _ => false,
+    }
+}
+
+#[derive(Clone)]
+struct LinuxIconRaster {
+    width: i32,
+    height: i32,
+    premultiplied_bgra: Vec<u8>,
+}
+
+fn render_linux_direct_frame(
+    plan: &NativeDrawPlan,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+    theme: WinitTheme,
+    pango_context: &pango::Context,
+    icon_cache: &mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+) -> Result<Vec<u32>, String> {
+    let width_i32 = i32::try_from(width).map_err(|_| "frame width exceeds i32".to_string())?;
+    let height_i32 = i32::try_from(height).map_err(|_| "frame height exceeds i32".to_string())?;
+    let mut image = ImageSurface::create(Format::ARgb32, width_i32, height_i32)
+        .map_err(|error| format!("could not create Cairo image surface: {error}"))?;
+    let context = CairoContext::new(&image)
+        .map_err(|error| format!("could not create Cairo drawing context: {error}"))?;
+    let palette = NativeDrawPalette::for_mode(plan.theme_mode, matches!(theme, WinitTheme::Dark));
+    set_cairo_source(&context, palette.surface);
+    context
+        .paint()
+        .map_err(|error| format!("could not clear Cairo image surface: {error}"))?;
+    context.scale(scale_factor, scale_factor);
+    let draw_context = pango_context.clone();
+    pangocairo::functions::update_context(&context, &draw_context);
+    let mut sink = LinuxDirectDrawSink::new(
+        &context,
+        draw_context,
+        palette,
+        plan.typography_scale(),
+        scale_factor,
+        icon_cache,
+    );
+    sink.draw_plan(plan);
+    drop(sink);
+    drop(context);
+    image.flush();
+
+    let stride = usize::try_from(image.stride())
+        .map_err(|_| "Cairo returned a negative image stride".to_string())?;
+    let data = image
+        .data()
+        .map_err(|error| format!("could not map Cairo image surface: {error}"))?;
+    let mut frame = Vec::with_capacity(width as usize * height as usize);
+    for row in 0..height as usize {
+        let start = row
+            .checked_mul(stride)
+            .ok_or_else(|| "Cairo row offset overflowed".to_string())?;
+        let end = start
+            .checked_add(width as usize * 4)
+            .ok_or_else(|| "Cairo row length overflowed".to_string())?;
+        let row_data = data
+            .get(start..end)
+            .ok_or_else(|| "Cairo image data is shorter than its declared stride".to_string())?;
+        for pixel in row_data.chunks_exact(4) {
+            #[cfg(target_endian = "little")]
+            let (blue, green, red) = (pixel[0], pixel[1], pixel[2]);
+            #[cfg(target_endian = "big")]
+            let (blue, green, red) = (pixel[3], pixel[2], pixel[1]);
+            frame.push((u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue));
+        }
+    }
+    Ok(frame)
+}
+
+struct LinuxDirectTextLayout {
+    context: pango::Context,
+}
+
+impl LinuxDirectTextLayout {
+    fn new(context: pango::Context) -> Self {
+        Self { context }
+    }
+
+    fn pango_layout(&self, text: &str, style: &TextStyle, bounds: Option<Rect>) -> pango::Layout {
+        let layout = pango::Layout::new(&self.context);
+        configure_linux_pango_layout(&layout, text, style, bounds);
+        layout
+    }
+}
+
+impl TextLayout for LinuxDirectTextLayout {
+    fn measure(&self, text: &str, style: &TextStyle, max_width: i32) -> ZsSize {
+        if text.is_empty() {
+            return ZsSize {
+                width: 0,
+                height: 0,
+            };
+        }
+        let bounds = (max_width > 0).then(|| Rect {
+            x: 0,
+            y: 0,
+            width: max_width,
+            height: i32::MAX / 4,
+        });
+        let layout = self.pango_layout(text, style, bounds);
+        let (width, height) = layout.pixel_size();
+        ZsSize {
+            width: width.max(0),
+            height: height.max(0),
+        }
+    }
+
+    fn layout_runs(&self, text: &str, _style: &TextStyle, bounds: Rect) -> Vec<TextRun> {
+        if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![TextRun {
+                text: text.to_string(),
+                bounds,
+            }]
+        }
+    }
+}
+
+struct LinuxDirectDrawSink<'a> {
+    context: &'a CairoContext,
+    palette: NativeDrawPalette,
+    style_resolver: NativeDrawTextStyleResolver,
+    text_layout: LinuxDirectTextLayout,
+    scale_factor: f64,
+    icon_cache: &'a mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    clip_depth: usize,
+}
+
+impl<'a> LinuxDirectDrawSink<'a> {
+    fn new(
+        context: &'a CairoContext,
+        pango_context: pango::Context,
+        palette: NativeDrawPalette,
+        typography_scale: f32,
+        scale_factor: f64,
+        icon_cache: &'a mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    ) -> Self {
+        Self {
+            context,
+            palette,
+            style_resolver: NativeDrawTextStyleResolver::from_profile(
+                linux_direct_native_typography_profile(typography_scale, Some(&pango_context)),
+                palette,
+            ),
+            text_layout: LinuxDirectTextLayout::new(pango_context),
+            scale_factor,
+            icon_cache,
+            clip_depth: 0,
+        }
+    }
+
+    fn set_source(&self, color: Color) {
+        set_cairo_source(self.context, color);
+    }
+
+    fn add_rect(&self, rect: Rect) {
+        self.context.rectangle(
+            f64::from(rect.x),
+            f64::from(rect.y),
+            f64::from(rect.width.max(0)),
+            f64::from(rect.height.max(0)),
+        );
+    }
+
+    fn add_round_rect(&self, rect: Rect, radius: i32) {
+        let x = f64::from(rect.x);
+        let y = f64::from(rect.y);
+        let width = f64::from(rect.width.max(0));
+        let height = f64::from(rect.height.max(0));
+        let radius = f64::from(radius.max(0)).min(width / 2.0).min(height / 2.0);
+        if radius <= 0.0 {
+            self.context.rectangle(x, y, width, height);
+            return;
+        }
+        let right = x + width;
+        let bottom = y + height;
+        self.context.new_sub_path();
+        self.context.arc(
+            right - radius,
+            y + radius,
+            radius,
+            -std::f64::consts::FRAC_PI_2,
+            0.0,
+        );
+        self.context.arc(
+            right - radius,
+            bottom - radius,
+            radius,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        );
+        self.context.arc(
+            x + radius,
+            bottom - radius,
+            radius,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+        );
+        self.context.arc(
+            x + radius,
+            y + radius,
+            radius,
+            std::f64::consts::PI,
+            std::f64::consts::PI * 1.5,
+        );
+        self.context.close_path();
+    }
+
+    fn draw_text(&self, command: &NativeDrawTextCommand) {
+        let style = self.style_resolver.resolve_text_style(command.style);
+        let layout = self
+            .text_layout
+            .pango_layout(&command.text, &style, Some(command.bounds));
+        let (text_width, text_height) = layout.pixel_size();
+        let x = if style.wrap == TextWrap::NoWrap && !style.ellipsis {
+            match style.horizontal_align {
+                HorizontalAlign::Start => command.bounds.x,
+                HorizontalAlign::Center => {
+                    command.bounds.x + (command.bounds.width - text_width).max(0) / 2
+                }
+                HorizontalAlign::End => {
+                    command.bounds.x + (command.bounds.width - text_width).max(0)
+                }
+            }
+        } else {
+            command.bounds.x
+        };
+        let y = match style.vertical_align {
+            VerticalAlign::Start => command.bounds.y,
+            VerticalAlign::Center => {
+                command.bounds.y + (command.bounds.height - text_height).max(0) / 2
+            }
+            VerticalAlign::End => command.bounds.y + (command.bounds.height - text_height).max(0),
+        };
+        if self.context.save().is_err() {
+            return;
+        }
+        self.add_rect(command.bounds);
+        self.context.clip();
+        self.set_source(style.color);
+        self.context.move_to(f64::from(x), f64::from(y));
+        pangocairo::functions::show_layout(self.context, &layout);
+        let _ = self.context.restore();
+    }
+
+    fn draw_icon(&mut self, command: &NativeDrawIconCommand) {
+        let logical_size = command.bounds.width.min(command.bounds.height).max(1) as u32;
+        let physical_size = (f64::from(logical_size) * self.scale_factor)
+            .ceil()
+            .clamp(1.0, f64::from(u16::MAX)) as u32;
+        let theme_aware = command.color_mode == NativeIconColorMode::ThemeAware;
+        let key = (command.icon, physical_size, theme_aware);
+        if !self.icon_cache.contains_key(&key) {
+            if let Some(raster) = load_linux_icon_raster(
+                command.icon,
+                physical_size,
+                theme_aware.then(|| self.palette.resolve(command.color)),
+            ) {
+                self.icon_cache.insert(key, raster);
+            }
+        }
+        let Some(raster) = self.icon_cache.get(&key) else {
+            draw_linux_icon_fallback(self.context, command, self.palette);
+            return;
+        };
+        let Ok(surface) = ImageSurface::create_for_data(
+            raster.premultiplied_bgra.clone(),
+            Format::ARgb32,
+            raster.width,
+            raster.height,
+            raster.width.saturating_mul(4),
+        ) else {
+            return;
+        };
+        if self.context.save().is_err() {
+            return;
+        }
+        self.add_rect(command.bounds);
+        self.context.clip();
+        self.context
+            .translate(f64::from(command.bounds.x), f64::from(command.bounds.y));
+        self.context.scale(
+            f64::from(command.bounds.width.max(1)) / f64::from(raster.width.max(1)),
+            f64::from(command.bounds.height.max(1)) / f64::from(raster.height.max(1)),
+        );
+        if self.context.set_source_surface(&surface, 0.0, 0.0).is_ok() {
+            let _ = self.context.paint();
+        }
+        let _ = self.context.restore();
+    }
+
+    fn draw_image(&self, command: &NativeDrawImageCommand) {
+        let Ok(width) = i32::try_from(command.frame.width()) else {
+            return;
+        };
+        let Ok(height) = i32::try_from(command.frame.height()) else {
+            return;
+        };
+        if width <= 0
+            || height <= 0
+            || command.source.width <= 0
+            || command.source.height <= 0
+            || command.bounds.width <= 0
+            || command.bounds.height <= 0
+        {
+            return;
+        }
+        let Ok(stride) = Format::ARgb32.stride_for_width(command.frame.width()) else {
+            return;
+        };
+        if usize::try_from(stride).ok().and_then(|stride| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| stride.checked_mul(height))
+        }) != Some(command.frame.decoded_bytes())
+        {
+            return;
+        }
+        let Ok(surface) = ImageSurface::create_for_data(
+            command.frame.premultiplied_bgra8().to_vec(),
+            Format::ARgb32,
+            width,
+            height,
+            stride,
+        ) else {
+            return;
+        };
+        if self.context.save().is_err() {
+            return;
+        }
+        self.add_rect(command.bounds);
+        self.context.clip();
+        self.context
+            .translate(f64::from(command.bounds.x), f64::from(command.bounds.y));
+        self.context.scale(
+            f64::from(command.bounds.width) / f64::from(command.source.width),
+            f64::from(command.bounds.height) / f64::from(command.source.height),
+        );
+        if self
+            .context
+            .set_source_surface(
+                &surface,
+                -f64::from(command.source.x),
+                -f64::from(command.source.y),
+            )
+            .is_ok()
+        {
+            self.context
+                .source()
+                .set_filter(match command.interpolation {
+                    NativeImageInterpolation::Nearest => cairo::Filter::Nearest,
+                    NativeImageInterpolation::Smooth => cairo::Filter::Good,
+                });
+            let _ = self.context.paint();
+        }
+        let _ = self.context.restore();
+    }
+
+    fn push_clip(&mut self, rect: Rect) {
+        if self.context.save().is_ok() {
+            self.add_rect(rect);
+            self.context.clip();
+            self.clip_depth += 1;
+        }
+    }
+
+    fn pop_clip(&mut self) {
+        if self.clip_depth > 0 {
+            let _ = self.context.restore();
+            self.clip_depth -= 1;
+        }
+    }
+}
+
+impl Drop for LinuxDirectDrawSink<'_> {
+    fn drop(&mut self) {
+        while self.clip_depth > 0 {
+            self.pop_clip();
+        }
+    }
+}
+
+impl NativeDrawCommandSink for LinuxDirectDrawSink<'_> {
+    fn draw_command(&mut self, command: &NativeDrawCommand) {
+        match command {
+            NativeDrawCommand::FillRect { rect, fill } => {
+                self.set_source(self.palette.resolve_source_fill(*fill));
+                self.add_rect(*rect);
+                let _ = self.context.fill();
+            }
+            NativeDrawCommand::StrokeRect {
+                rect,
+                stroke,
+                width,
+            } => {
+                self.set_source(self.palette.resolve_source_fill(*stroke));
+                self.context.set_line_width(f64::from((*width).max(1)));
+                self.add_rect(*rect);
+                let _ = self.context.stroke();
+            }
+            NativeDrawCommand::StrokeArc {
+                rect,
+                stroke,
+                width,
+                start_degrees,
+                sweep_degrees,
+            } => {
+                self.set_source(self.palette.resolve_source_fill(*stroke));
+                self.context.set_line_width(f64::from((*width).max(1)));
+                let start = f64::from(*start_degrees).to_radians();
+                let end = f64::from(start_degrees.saturating_add(*sweep_degrees)).to_radians();
+                self.context.arc(
+                    f64::from(rect.x) + f64::from(rect.width) / 2.0,
+                    f64::from(rect.y) + f64::from(rect.height) / 2.0,
+                    f64::from(rect.width.min(rect.height).max(0)) / 2.0,
+                    start,
+                    end,
+                );
+                let _ = self.context.stroke();
+            }
+            NativeDrawCommand::FillTriangle { points, fill } => {
+                self.set_source(self.palette.resolve_source_fill(*fill));
+                self.context
+                    .move_to(f64::from(points[0].x), f64::from(points[0].y));
+                for point in &points[1..] {
+                    self.context.line_to(f64::from(point.x), f64::from(point.y));
+                }
+                self.context.close_path();
+                let _ = self.context.fill();
+            }
+            NativeDrawCommand::RoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+            } => {
+                self.add_round_rect(*rect, *radius);
+                self.set_source(self.palette.resolve_source_fill(*fill));
+                if stroke.is_some() {
+                    let _ = self.context.fill_preserve();
+                } else {
+                    let _ = self.context.fill();
+                }
+                if let Some(stroke) = stroke {
+                    self.set_source(self.palette.resolve_source_fill(*stroke));
+                    self.context.set_line_width(1.0);
+                    let _ = self.context.stroke();
+                }
+            }
+            NativeDrawCommand::RoundFill { rect, fill, radius } => {
+                self.add_round_rect(*rect, *radius);
+                self.set_source(self.palette.resolve_source_fill(*fill));
+                let _ = self.context.fill();
+            }
+            NativeDrawCommand::Text(command) => self.draw_text(command),
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(command) => {
+                let rendered = command.rendered_text();
+                self.draw_text(&NativeDrawTextCommand::new(
+                    rendered.as_str(),
+                    command.bounds,
+                    command.style,
+                ));
+            }
+            NativeDrawCommand::Icon(command) => self.draw_icon(command),
+            NativeDrawCommand::Image(command) => self.draw_image(command),
+            NativeDrawCommand::PushClip { rect } => self.push_clip(*rect),
+            NativeDrawCommand::PopClip => self.pop_clip(),
+        }
+    }
+}
+
+fn set_cairo_source(context: &CairoContext, color: Color) {
+    context.set_source_rgba(
+        f64::from(color.r) / 255.0,
+        f64::from(color.g) / 255.0,
+        f64::from(color.b) / 255.0,
+        f64::from(color.a) / 255.0,
+    );
+}
+
+fn load_linux_icon_raster(
+    icon: ZsIcon,
+    physical_size: u32,
+    recolor: Option<Color>,
+) -> Option<LinuxIconRaster> {
+    let lookup_size = u16::try_from(physical_size.min(u32::from(u16::MAX))).ok()?;
+    let theme = linux_direct_icon_theme();
+    let path = freedesktop_icons::lookup(icon.gtk_symbolic_name())
+        .with_theme(theme)
+        .with_size(lookup_size)
+        .with_cache()
+        .find();
+    let pixbuf = path
+        .and_then(|path| {
+            gdk_pixbuf::Pixbuf::from_file_at_scale(
+                path,
+                physical_size as i32,
+                physical_size as i32,
+                true,
+            )
+            .ok()
+        })
+        .or_else(|| {
+            let loader = gdk_pixbuf::PixbufLoader::with_type("svg").ok()?;
+            loader.set_size(physical_size as i32, physical_size as i32);
+            loader.write(crate::bundled_fluent_icon_svg(icon)).ok()?;
+            loader.close().ok()?;
+            loader.pixbuf()
+        })?;
+    pixbuf_to_linux_icon_raster(&pixbuf, recolor)
+}
+
+fn pixbuf_to_linux_icon_raster(
+    pixbuf: &gdk_pixbuf::Pixbuf,
+    recolor: Option<Color>,
+) -> Option<LinuxIconRaster> {
+    let width = pixbuf.width();
+    let height = pixbuf.height();
+    let channels = pixbuf.n_channels();
+    let stride = usize::try_from(pixbuf.rowstride()).ok()?;
+    if width <= 0 || height <= 0 || !(channels == 3 || channels == 4) {
+        return None;
+    }
+    let bytes = pixbuf.read_pixel_bytes();
+    let source = bytes.as_ref();
+    let mut target = Vec::with_capacity(width as usize * height as usize * 4);
+    for row in 0..height as usize {
+        let start = row.checked_mul(stride)?;
+        let needed = width as usize * channels as usize;
+        let pixels = source.get(start..start.checked_add(needed)?)?;
+        for pixel in pixels.chunks_exact(channels as usize) {
+            let source_alpha = if channels == 4 { pixel[3] } else { 255 };
+            let (red, green, blue, alpha) = if let Some(color) = recolor {
+                let alpha = ((u16::from(source_alpha) * u16::from(color.a) + 127) / 255) as u8;
+                (color.r, color.g, color.b, alpha)
+            } else {
+                (pixel[0], pixel[1], pixel[2], source_alpha)
+            };
+            let premultiply =
+                |channel: u8| ((u16::from(channel) * u16::from(alpha) + 127) / 255) as u8;
+            target.extend_from_slice(&[
+                premultiply(blue),
+                premultiply(green),
+                premultiply(red),
+                alpha,
+            ]);
+        }
+    }
+    Some(LinuxIconRaster {
+        width,
+        height,
+        premultiplied_bgra: target,
+    })
+}
+
+fn draw_linux_icon_fallback(
+    context: &CairoContext,
+    command: &NativeDrawIconCommand,
+    palette: NativeDrawPalette,
+) {
+    let color = palette.resolve(command.color);
+    set_cairo_source(context, color);
+    context.set_line_width(1.5);
+    let rect = command.bounds;
+    match command.icon {
+        ZsIcon::Add => {
+            context.move_to(f64::from(rect.x + rect.width / 2), f64::from(rect.y + 3));
+            context.line_to(
+                f64::from(rect.x + rect.width / 2),
+                f64::from(rect.y + rect.height - 3),
+            );
+            context.move_to(f64::from(rect.x + 3), f64::from(rect.y + rect.height / 2));
+            context.line_to(
+                f64::from(rect.x + rect.width - 3),
+                f64::from(rect.y + rect.height / 2),
+            );
+        }
+        ZsIcon::Close => {
+            context.move_to(f64::from(rect.x + 3), f64::from(rect.y + 3));
+            context.line_to(
+                f64::from(rect.x + rect.width - 3),
+                f64::from(rect.y + rect.height - 3),
+            );
+            context.move_to(f64::from(rect.x + rect.width - 3), f64::from(rect.y + 3));
+            context.line_to(f64::from(rect.x + 3), f64::from(rect.y + rect.height - 3));
+        }
+        ZsIcon::ChevronDown | ZsIcon::ChevronUp | ZsIcon::ChevronLeft | ZsIcon::ChevronRight => {
+            let center_x = rect.x + rect.width / 2;
+            let center_y = rect.y + rect.height / 2;
+            let delta = rect.width.min(rect.height).max(4) / 4;
+            let points = match command.icon {
+                ZsIcon::ChevronDown => [
+                    (center_x - delta, center_y - delta / 2),
+                    (center_x, center_y + delta / 2),
+                    (center_x + delta, center_y - delta / 2),
+                ],
+                ZsIcon::ChevronUp => [
+                    (center_x - delta, center_y + delta / 2),
+                    (center_x, center_y - delta / 2),
+                    (center_x + delta, center_y + delta / 2),
+                ],
+                ZsIcon::ChevronLeft => [
+                    (center_x + delta / 2, center_y - delta),
+                    (center_x - delta / 2, center_y),
+                    (center_x + delta / 2, center_y + delta),
+                ],
+                _ => [
+                    (center_x - delta / 2, center_y - delta),
+                    (center_x + delta / 2, center_y),
+                    (center_x - delta / 2, center_y + delta),
+                ],
+            };
+            context.move_to(f64::from(points[0].0), f64::from(points[0].1));
+            context.line_to(f64::from(points[1].0), f64::from(points[1].1));
+            context.line_to(f64::from(points[2].0), f64::from(points[2].1));
+        }
+        _ => {
+            context.rectangle(
+                f64::from(rect.x + 2),
+                f64::from(rect.y + 2),
+                f64::from((rect.width - 4).max(1)),
+                f64::from((rect.height - 4).max(1)),
+            );
+        }
+    }
+    let _ = context.stroke();
+}
+
+fn linux_direct_icon_theme() -> &'static str {
+    static THEME: OnceLock<String> = OnceLock::new();
+    THEME
+        .get_or_init(|| {
+            std::env::var("ZSUI_LINUX_ICON_THEME")
+                .ok()
+                .filter(|theme| !theme.trim().is_empty())
+                .or_else(freedesktop_icons::default_theme_gtk)
+                .unwrap_or_else(|| "Adwaita".to_string())
+        })
+        .as_str()
+}
+
+fn linux_direct_configured_font_name() -> &'static str {
+    static FONT: OnceLock<String> = OnceLock::new();
+    FONT.get_or_init(|| {
+        std::env::var("ZSUI_LINUX_UI_FONT")
+            .ok()
+            .filter(|font| !font.trim().is_empty())
+            .or_else(|| {
+                std::process::Command::new("gsettings")
+                    .args(["get", "org.gnome.desktop.interface", "font-name"])
+                    .output()
+                    .ok()
+                    .filter(|output| output.status.success())
+                    .and_then(|output| String::from_utf8(output.stdout).ok())
+                    .map(|value| value.trim().trim_matches('\'').to_string())
+                    .filter(|font| !font.is_empty())
+            })
+            .unwrap_or_else(|| "Sans 10.5".to_string())
+    })
+}
+
+fn linux_direct_font_description() -> pango::FontDescription {
+    pango::FontDescription::from_string(linux_direct_configured_font_name())
+}
+
+fn linux_direct_ui_font_family() -> String {
+    linux_direct_font_description()
+        .family()
+        .map(|family| family.to_string())
+        .filter(|family| !family.trim().is_empty())
+        .unwrap_or_else(|| "Sans".to_string())
+}
+
+#[cfg(feature = "text-input-core")]
+pub(crate) fn linux_direct_ui_font_scale() -> f32 {
+    let description = linux_direct_font_description();
+    let size = description.size();
+    if size <= 0 {
+        return 1.0;
+    }
+    let logical_pixels = if description.is_size_absolute() {
+        size as f32 / pango::SCALE as f32
+    } else {
+        size as f32 / pango::SCALE as f32 * (96.0 / 72.0)
+    };
+    (logical_pixels / 14.0).clamp(0.75, 3.0)
+}
+
+fn linux_direct_pango_context() -> pango::Context {
+    pangocairo::FontMap::default().create_context()
+}
+
+fn linux_direct_native_typography_profile(
+    typography_scale: f32,
+    context: Option<&pango::Context>,
+) -> crate::NativeTypographyProfile {
+    let font_family = linux_direct_ui_font_family();
+    let mut profile = crate::NativeTypographyProfile::new(
+        crate::ZsTypographyPlatformStyle::Gtk,
+        "fontconfig_pango_context",
+        font_family.clone(),
+        "Monospace",
+        font_family,
+        typography_scale,
+        "pango_cairo_softbuffer",
+    )
+    .with_configured_ui_font(linux_direct_configured_font_name());
+    if let Some(context) = context {
+        let mut font = pango::FontDescription::new();
+        font.set_family(&profile.ui_font_family);
+        font.set_absolute_size(f64::from(profile.body_metrics.size) * f64::from(pango::SCALE));
+        let metrics = context.metrics(Some(&font), None);
+        let ascent = metrics.ascent() as f32 / pango::SCALE as f32;
+        let descent = metrics.descent() as f32 / pango::SCALE as f32;
+        let leading = (profile.body_metrics.line_height - ascent - descent).max(0.0);
+        profile = profile.with_body_vertical_metrics(ascent, descent, leading);
+    }
+    profile
+}
+
+#[cfg(feature = "text-input-core")]
+pub(crate) fn shape_linux_direct_text_line(
+    context: &pango::Context,
+    text: &str,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    use crate::native_input_visuals::{
+        NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
+    };
+
+    if text.is_empty() {
+        return None;
+    }
+    let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Gtk);
+    let typography_scale = linux_direct_ui_font_scale();
+    let mut style = TextStyle::line(
+        linux_direct_ui_font_family(),
+        body.size * typography_scale,
+        Color::rgb(0, 0, 0),
+    );
+    style.line_height = body.line_height * typography_scale;
+    style.semantic_role = Some(crate::TextRole::Body);
+    let layout = pango::Layout::new(context);
+    configure_linux_pango_layout(&layout, text, &style, None);
+    let boundaries = crate::native_text_edit::grapheme_boundaries(text);
+    let byte_offsets = boundaries
+        .iter()
+        .map(|index| i32::try_from(crate::native_text_edit::char_to_byte_index(text, *index)).ok())
+        .collect::<Option<Vec<_>>>()?;
+    let carets = boundaries
+        .iter()
+        .copied()
+        .zip(byte_offsets.iter().copied())
+        .map(|(index, byte)| {
+            let (strong, weak) = layout.cursor_pos(byte);
+            NativeShapedTextCaret {
+                index,
+                primary_x: linux_pango_coordinate(strong.x()),
+                secondary_x: linux_pango_coordinate(weak.x()),
+            }
+        })
+        .collect::<Vec<_>>();
+    let clusters = boundaries
+        .windows(2)
+        .zip(byte_offsets.iter().copied())
+        .map(|(scalar, byte)| {
+            let position = layout.index_to_pos(byte);
+            NativeShapedTextCluster {
+                start: scalar[0],
+                end: scalar[1],
+                start_x: linux_pango_coordinate(position.x()),
+                end_x: linux_pango_coordinate(position.x().saturating_add(position.width())),
+            }
+        })
+        .collect::<Vec<_>>();
+    let (width, _) = layout.pixel_size();
+    NativeShapedTextLine::new(width, clusters, carets)
+}
+
+#[cfg(feature = "text-input-core")]
+fn linux_pango_coordinate(value: i32) -> i32 {
+    if value >= 0 {
+        value.saturating_add(pango::SCALE / 2) / pango::SCALE
+    } else {
+        value.saturating_sub(pango::SCALE / 2) / pango::SCALE
+    }
+}
+
+fn configure_linux_pango_layout(
+    layout: &pango::Layout,
+    text: &str,
+    style: &TextStyle,
+    bounds: Option<Rect>,
+) {
+    layout.set_text(text);
+    let mut font = pango::FontDescription::new();
+    font.set_family(&style.font_family);
+    font.set_absolute_size(f64::from(style.size) * f64::from(pango::SCALE));
+    font.set_weight(match style.weight {
+        TextWeight::Automatic | TextWeight::Regular => pango::Weight::Normal,
+        TextWeight::Medium => pango::Weight::Medium,
+        TextWeight::Semibold => pango::Weight::Semibold,
+        TextWeight::Bold => pango::Weight::Bold,
+    });
+    layout.set_font_description(Some(&font));
+    if style.line_height > 0.0 {
+        let metrics = layout.context().metrics(Some(&font), None);
+        let natural_line_height = metrics.ascent().saturating_add(metrics.descent());
+        let target_line_height = (f64::from(style.line_height.max(style.size))
+            * f64::from(pango::SCALE))
+        .round()
+        .clamp(0.0, f64::from(i32::MAX)) as i32;
+        layout.set_spacing(target_line_height.saturating_sub(natural_line_height));
+    }
+    layout.set_alignment(match style.horizontal_align {
+        HorizontalAlign::Start => pango::Alignment::Left,
+        HorizontalAlign::Center => pango::Alignment::Center,
+        HorizontalAlign::End => pango::Alignment::Right,
+    });
+    layout.set_wrap(pango::WrapMode::WordChar);
+    if let Some(bounds) = bounds.filter(|_| style.wrap == TextWrap::Word || style.ellipsis) {
+        layout.set_width(bounds.width.max(0).saturating_mul(pango::SCALE));
+        if style.wrap == TextWrap::Word {
+            layout.set_height(bounds.height.max(0).saturating_mul(pango::SCALE));
+        }
+    }
+    layout.set_single_paragraph_mode(style.wrap == TextWrap::NoWrap);
+    layout.set_ellipsize(if style.ellipsis {
+        pango::EllipsizeMode::End
+    } else {
+        pango::EllipsizeMode::None
+    });
+}
+
+#[cfg(feature = "image")]
+fn write_linux_direct_png(
+    path: &Path,
+    width: u32,
+    height: u32,
+    frame: &[u32],
+) -> Result<(), String> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("could not create Linux capture directory: {error}"))?;
+    }
+    let file = std::fs::File::create(path)
+        .map_err(|error| format!("could not create Linux capture file: {error}"))?;
+    let writer = std::io::BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder
+        .write_header()
+        .map_err(|error| format!("could not write Linux capture header: {error}"))?;
+    let mut rgb = Vec::with_capacity(frame.len() * 3);
+    for pixel in frame {
+        rgb.extend_from_slice(&[
+            ((pixel >> 16) & 0xff) as u8,
+            ((pixel >> 8) & 0xff) as u8,
+            (pixel & 0xff) as u8,
+        ]);
+    }
+    writer
+        .write_image_data(&rgb)
+        .map_err(|error| format!("could not write Linux capture pixels: {error}"))
+}
+
+#[cfg(not(feature = "image"))]
+fn write_linux_direct_png(
+    _path: &Path,
+    _width: u32,
+    _height: u32,
+    _frame: &[u32],
+) -> Result<(), String> {
+    Err("enable the image feature to capture a Linux native PNG".to_string())
+}
+
+pub(crate) fn linux_direct_open_file_dialog(
+    spec: &crate::FileDialogSpec,
+) -> ZsuiResult<Option<Vec<PathBuf>>> {
+    let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
+    if let Some(path) = &spec.current_path {
+        dialog = dialog.set_directory(path);
+    }
+    for filter in &spec.filters {
+        let extensions = filter
+            .patterns
+            .iter()
+            .map(|pattern| pattern.trim_start_matches("*.").trim_start_matches('.'))
+            .filter(|extension| !extension.is_empty() && *extension != "*")
+            .collect::<Vec<_>>();
+        if !extensions.is_empty() {
+            dialog = dialog.add_filter(&filter.name, &extensions);
+        }
+    }
+    Ok(dialog.pick_files())
+}
+
+pub(crate) fn linux_direct_save_file_dialog(
+    spec: &crate::SaveFileDialogSpec,
+) -> ZsuiResult<Option<PathBuf>> {
+    let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
+    if let Some(path) = &spec.current_path {
+        dialog = dialog.set_directory(path);
+    }
+    if let Some(name) = &spec.suggested_name {
+        dialog = dialog.set_file_name(name);
+    }
+    for filter in &spec.filters {
+        let extensions = filter
+            .patterns
+            .iter()
+            .map(|pattern| pattern.trim_start_matches("*.").trim_start_matches('.'))
+            .filter(|extension| !extension.is_empty() && *extension != "*")
+            .collect::<Vec<_>>();
+        if !extensions.is_empty() {
+            dialog = dialog.add_filter(&filter.name, &extensions);
+        }
+    }
+    Ok(dialog.save_file())
+}
+
+#[cfg(feature = "clipboard")]
+pub(crate) fn linux_direct_read_clipboard() -> ZsuiResult<Option<crate::ClipboardData>> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| ZsuiError::host("linux_direct_read_clipboard", error.to_string()))?;
+    match clipboard.get_text() {
+        Ok(text) => Ok(Some(crate::ClipboardData::Text(text))),
+        Err(arboard::Error::ContentNotAvailable) => Ok(None),
+        Err(error) => Err(ZsuiError::host(
+            "linux_direct_read_clipboard",
+            error.to_string(),
+        )),
+    }
+}
+
+#[cfg(feature = "clipboard")]
+pub(crate) fn linux_direct_write_clipboard(data: &crate::ClipboardData) -> ZsuiResult<()> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| ZsuiError::host("linux_direct_write_clipboard", error.to_string()))?;
+    match data {
+        crate::ClipboardData::Text(text) => clipboard
+            .set_text(text.clone())
+            .map_err(|error| ZsuiError::host("linux_direct_write_clipboard", error.to_string())),
+        crate::ClipboardData::Empty => clipboard
+            .clear()
+            .map_err(|error| ZsuiError::host("linux_direct_write_clipboard", error.to_string())),
+        crate::ClipboardData::ImageRgba { .. } => Err(ZsuiError::unsupported(
+            "clipboard_image",
+            "the lightweight Linux backend currently exposes text clipboard data",
+        )),
+        crate::ClipboardData::Files(_) => Err(ZsuiError::unsupported(
+            "clipboard_files",
+            "the lightweight Linux backend currently exposes text clipboard data",
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accelerator_matching_uses_linux_primary_control_modifier() {
+        let accelerator = ZsAccelerator::primary_character('s');
+        let modifiers = ModifiersState::CONTROL;
+        assert!(accelerator_matches(
+            accelerator,
+            &Key::Character("s".into()),
+            modifiers,
+        ));
+    }
+
+    #[test]
+    fn direct_pango_no_wrap_does_not_constrain_width() {
+        let context = linux_direct_pango_context();
+        let mut style = TextStyle::line("Sans", 14.0, Color::rgb(0, 0, 0));
+        let layout = pango::Layout::new(&context);
+        configure_linux_pango_layout(
+            &layout,
+            "a long single line",
+            &style,
+            Some(Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 20,
+            }),
+        );
+        assert_eq!(layout.width(), -1);
+        style.ellipsis = true;
+        configure_linux_pango_layout(
+            &layout,
+            "a long single line",
+            &style,
+            Some(Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 20,
+            }),
+        );
+        assert_eq!(layout.width(), pango::SCALE);
+    }
+}

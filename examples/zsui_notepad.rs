@@ -536,7 +536,17 @@ fn save_pending_document(
 fn main() -> ZsuiResult<()> {
     let args = std::env::args().collect::<Vec<_>>();
     let native_proof = args.iter().any(|argument| argument == "--native-proof");
-    let default_size = if native_proof { (960, 640) } else { (960, 680) };
+    let memory_report = args
+        .windows(2)
+        .find(|pair| pair[0] == "--memory-report")
+        .map(|pair| PathBuf::from(&pair[1]));
+    let default_size = if memory_report.is_some() {
+        (900, 620)
+    } else if native_proof {
+        (960, 640)
+    } else {
+        (960, 680)
+    };
     let window_width = proof_dimension(&args, "--width", default_size.0);
     let window_height = proof_dimension(&args, "--height", default_size.1);
     let shared = Arc::new(Mutex::new(NotepadState::default()));
@@ -557,6 +567,50 @@ fn main() -> ZsuiResult<()> {
             }
             result.map(|_| Vec::new())
         });
+
+    if let Some(path) = memory_report {
+        let sample_after_ms = proof_u64(&args, "--sample-after-ms", 3_500).max(250);
+        let report = builder.run_smoke(NativeWindowSmokeRunOptions::new(sample_after_ms))?;
+        if !report.visible_window_was_created() {
+            return Err(ZsuiError::host(
+                "notepad_memory",
+                "the native notepad window was not created",
+            ));
+        }
+        let memory = report.process_memory_during_runtime.ok_or_else(|| {
+            ZsuiError::host(
+                "notepad_memory",
+                "process memory was not sampled while the native window was alive",
+            )
+        })?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| ZsuiError::host("create_notepad_memory_dir", error.to_string()))?;
+        }
+        let document = serde_json::json!({
+            "schema": "zsui.ui-memory-comparison/v1",
+            "framework": "zsui",
+            "scenario": "notepad",
+            "platform": std::env::consts::OS,
+            "architecture": std::env::consts::ARCH,
+            "sample_point": "first_frame_idle",
+            "source": memory.source,
+            "resident_bytes": memory.resident_bytes,
+            "peak_resident_bytes": memory.peak_resident_bytes,
+            "private_resident_bytes": memory.private_bytes,
+            "proportional_set_size_bytes": memory.proportional_set_size_bytes,
+            "physical_footprint_bytes": serde_json::Value::Null,
+            "peak_physical_footprint_bytes": serde_json::Value::Null,
+            "virtual_bytes": memory.virtual_bytes,
+        });
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&document)
+                .map_err(|error| ZsuiError::host("serialize_notepad_memory", error.to_string()))?,
+        )
+        .map_err(|error| ZsuiError::host("write_notepad_memory", error.to_string()))?;
+        return Ok(());
+    }
 
     if native_proof || args.iter().any(|argument| argument == "--smoke") {
         let interaction_plan = builder
@@ -758,6 +812,13 @@ fn proof_dimension(args: &[String], flag: &str, default: u32) -> u32 {
         .find(|pair| pair[0] == flag)
         .and_then(|pair| pair[1].parse::<u32>().ok())
         .filter(|value| (320..=4096).contains(value))
+        .unwrap_or(default)
+}
+
+fn proof_u64(args: &[String], flag: &str, default: u64) -> u64 {
+    args.windows(2)
+        .find(|pair| pair[0] == flag)
+        .and_then(|pair| pair[1].parse::<u64>().ok())
         .unwrap_or(default)
 }
 

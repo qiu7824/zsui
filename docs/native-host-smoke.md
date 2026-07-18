@@ -38,8 +38,8 @@ On Windows this opens the Win32/GDI native window path, closes it
 automatically, then rewrites `interaction.json` and `launch.log` with the
 observed window lifecycle. It also captures `window.png` into the artifact
 directory through the direct Win32 `HWND`. macOS now enters `NSApplication`
-with owned `NSWindow` objects, and Linux enters `GtkApplication` with owned
-`ApplicationWindow` objects. Both direct native smoke paths auto-close and
+with owned `NSWindow` objects, and Linux enters the lightweight Wayland/X11
+host with an owned native window and directly presented surface. Both direct native smoke paths auto-close and
 record lifecycle evidence, but still need target screenshot capture before
 target-smoke proof is complete.
 

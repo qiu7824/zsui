@@ -144,7 +144,7 @@ compositional modal layer, not a native child-control driver. Applications own
 the open flag and receive a typed `ZsContentDialogResult`; the framework owns
 the scrim, platform-specific action order and metrics, one trapped focus scope,
 pointer feedback, Escape/Tab/arrow/Enter/Space routing and overlay paint order.
-The same draw and interaction plans feed buffered Win32, AppKit and GTK4 hosts,
+The same draw and interaction plans feed buffered Win32, AppKit and Linux hosts,
 so no HWND, Objective-C object or GtkWidget enters the public view API.
 
 The optional `toast` feature adds `toast_presenter(id, toast, page)` for
@@ -369,16 +369,16 @@ zsui = { version = "0.1", default-features = false, features = [
 Optional dependencies must stay behind explicit feature gates: `clipboard`
 enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
 `desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
-`macos-appkit` enables optional `objc2` AppKit bindings, and `linux-gtk`
-enables optional GTK4 bindings. Platform-native window, clipboard, file-dialog
+`macos-appkit` enables optional `objc2` AppKit bindings, `linux-direct` enables
+the lightweight Wayland/X11, Cairo/Pango, icon-theme and portal stack, and
+`linux-gtk` enables optional GTK4 compatibility bindings. Platform-native window, clipboard, file-dialog
 and menu adapters therefore do not enter builds that omit their backend
-feature. Window adapters own `NSWindow`/`ApplicationWindow` instances behind
+feature. Window adapters own `NSWindow` or Wayland/X11 window instances behind
 strong `WindowId` values; clipboard adapters map `ClipboardData::Text`/`Empty`
-to `NSPasteboard` or `GdkClipboard`; menu adapters lower the shared `MenuSpec`
-into backend objects. Native toolkit objects and callback targets stay out of
-the public application API. The `window` umbrella selects Win32, AppKit or GTK4
-by target; `desktop-winit` remains an explicit fallback and is not completion
-evidence for either native toolkit.
+to the target system clipboard. Native toolkit objects and callback targets
+stay out of the public application API. The `window` umbrella selects Win32,
+AppKit or `linux-direct` by target; `desktop-winit` remains an explicit blank
+fallback and is not completion evidence for AppKit.
 Advanced controls should be gated by
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control

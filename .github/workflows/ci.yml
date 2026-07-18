@@ -15,8 +15,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Install GTK4 development files
-        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev
+      - name: Install Linux UI development files
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev libdbus-1-dev
       - run: cargo fmt --check
       - run: cargo test --locked --no-default-features
       - run: cargo test --locked
@@ -56,14 +56,14 @@ jobs:
           - os: macos-15
             backend: macos-appkit
           - os: ubuntu-latest
-            backend: linux-gtk
+            backend: linux-direct
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install GTK4 development files
-        if: matrix.backend == 'linux-gtk'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
+      - name: Install Linux UI development files
+        if: matrix.backend == 'linux-direct'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libdbus-1-dev
       - name: Run full tests
         id: full-tests
         run: |

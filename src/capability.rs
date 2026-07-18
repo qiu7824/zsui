@@ -407,7 +407,17 @@ impl HostCapabilities {
 
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
-        if cfg!(feature = "linux-gtk") {
+        if cfg!(feature = "linux-direct") {
+            capabilities.windows = CapabilitySupport::partial(
+                "real Wayland/X11 windows, directly presented software rendering, typed input and resize-driven relayout are connected; target proof is pending",
+            );
+            capabilities.window_resizing = CapabilitySupport::partial(
+                "native resize and scale-factor events rebuild shared layout, draw plans and input geometry; Wayland/X11 artifact proof is pending",
+            );
+            capabilities.window_decorations = CapabilitySupport::partial(
+                "server/client compositor decorations and undecorated declarations are connected; target proof is pending",
+            );
+        } else if cfg!(feature = "linux-gtk") {
             capabilities.windows = CapabilitySupport::partial(
                 "GtkApplication/ApplicationWindow lifecycle, draw-plan rendering, typed input, semantic focus rings and allocation relayout are connected; target proof is pending",
             );
@@ -418,31 +428,40 @@ impl HostCapabilities {
                 "GTK4 decorated and undecorated window declarations are connected; compositor proof is pending",
             );
         }
-        capabilities.clipboard_text = if cfg!(feature = "linux-gtk") {
+        capabilities.clipboard_text = if cfg!(all(feature = "linux-direct", feature = "clipboard"))
+        {
+            CapabilitySupport::partial(
+                "system UTF-8 text clipboard access is connected without GTK; Wayland/X11 ownership proof is pending",
+            )
+        } else if cfg!(feature = "linux-gtk") {
             CapabilitySupport::partial(
                 "GdkClipboard UTF-8 text read/write is connected; Wayland/X11 host proof is pending",
             )
         } else {
             CapabilitySupport::unsupported(
-                "enable linux-gtk to compile the native GTK4 clipboard service",
+                "enable linux-direct plus clipboard, or linux-gtk, to compile a Linux clipboard service",
             )
         };
-        capabilities.menus = if cfg!(feature = "linux-gtk") {
+        capabilities.menus = if cfg!(all(feature = "linux-gtk", not(feature = "linux-direct"))) {
             CapabilitySupport::partial(
                 "GMenu/SimpleAction installation and typed command polling are connected; GTK host integration proof is pending",
             )
         } else {
             CapabilitySupport::unsupported(
-                "enable linux-gtk to compile the native GTK4 menu service",
+                "the lightweight Linux host does not yet connect a desktop-shell native menu surface",
             )
         };
-        capabilities.file_picker = if cfg!(feature = "linux-gtk") {
+        capabilities.file_picker = if cfg!(feature = "linux-direct") {
+            CapabilitySupport::partial(
+                "XDG desktop portal open/save services are connected without GTK; target interaction proof is pending",
+            )
+        } else if cfg!(feature = "linux-gtk") {
             CapabilitySupport::partial(
                 "GTK4 FileChooserNative open/save services are connected; Wayland/X11 interaction proof is pending",
             )
         } else {
             CapabilitySupport::unsupported(
-                "enable linux-gtk to compile GTK4 FileChooserNative services",
+                "enable linux-direct or linux-gtk to compile Linux file dialog services",
             )
         };
         capabilities
