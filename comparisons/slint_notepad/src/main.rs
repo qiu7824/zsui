@@ -4,6 +4,9 @@ use std::{cell::RefCell, env, fs, path::PathBuf, rc::Rc, time::Duration};
 
 use slint::{ComponentHandle, SharedString, Timer};
 
+#[path = "../../common/memory_probe.rs"]
+mod memory_probe;
+
 slint::slint! {
     import { Button, CheckBox, TextEdit } from "std-widgets.slint";
 
@@ -111,6 +114,8 @@ slint::slint! {
 struct LaunchOptions {
     open_path: Option<PathBuf>,
     auto_close: Option<Duration>,
+    memory_report: Option<PathBuf>,
+    sample_after: Duration,
 }
 
 impl LaunchOptions {
@@ -131,10 +136,22 @@ impl LaunchOptions {
             .windows(2)
             .find(|pair| pair[0] == "--open")
             .map(|pair| PathBuf::from(&pair[1]));
+        let memory_report = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--memory-report")
+            .map(|pair| PathBuf::from(&pair[1]));
+        let sample_after = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--sample-after-ms")
+            .and_then(|pair| pair[1].parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| Duration::from_secs(3));
 
         Self {
             open_path,
             auto_close,
+            memory_report,
+            sample_after,
         }
     }
 }
@@ -183,9 +200,14 @@ impl DocumentState {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
-    let launch = LaunchOptions::from_env();
+    let LaunchOptions {
+        open_path,
+        auto_close,
+        memory_report,
+        sample_after,
+    } = LaunchOptions::from_env();
     let ui = NotepadWindow::new()?;
-    let state = Rc::new(RefCell::new(DocumentState::new(launch.open_path)));
+    let state = Rc::new(RefCell::new(DocumentState::new(open_path)));
     sync_ui(&ui, &state.borrow());
 
     ui.on_document_edited({
@@ -255,7 +277,17 @@ fn main() -> Result<(), slint::PlatformError> {
         move || save_document(&weak, &state, true)
     });
 
-    if let Some(duration) = launch.auto_close {
+    if let Some(path) = memory_report {
+        Timer::single_shot(sample_after, move || {
+            if let Err(error) =
+                memory_probe::write_report(&path, "slint", "notepad", "first_frame_idle")
+            {
+                eprintln!("memory report failed: {error}");
+            }
+        });
+    }
+
+    if let Some(duration) = auto_close {
         let weak = ui.as_weak();
         Timer::single_shot(duration, move || {
             if let Some(ui) = weak.upgrade() {

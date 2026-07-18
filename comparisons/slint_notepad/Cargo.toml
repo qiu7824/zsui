@@ -20,6 +20,9 @@ slint = { version = "=1.17.1", default-features = false, features = [
     "std",
 ] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "=0.2.186"
+
 [profile.release]
 opt-level = "z"
 lto = "thin"

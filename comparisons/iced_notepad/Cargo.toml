@@ -9,8 +9,11 @@ name = "iced-invoice-tool"
 path = "src/bin/invoice_tool.rs"
 
 [dependencies]
-iced = { version = "=0.14.0", default-features = false, features = ["image", "thread-pool", "tiny-skia"] }
+iced = { version = "=0.14.0", default-features = false, features = ["image", "thread-pool", "tiny-skia", "x11"] }
 rfd = "=0.17.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "=0.2.186"
 
 [profile.release]
 opt-level = "z"

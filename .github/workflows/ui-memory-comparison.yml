@@ -1,0 +1,182 @@
+name: UI Memory Comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "comparisons/common/**"
+      - "comparisons/scripts/summarize_memory.py"
+      - "comparisons/slint_notepad/**"
+      - "comparisons/iced_notepad/**"
+      - ".github/workflows/ui-memory-comparison.yml"
+  pull_request:
+    paths:
+      - "comparisons/common/**"
+      - "comparisons/scripts/summarize_memory.py"
+      - "comparisons/slint_notepad/**"
+      - "comparisons/iced_notepad/**"
+      - ".github/workflows/ui-memory-comparison.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-memory-comparison-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-memory:
+    name: macOS 15 Slint and Iced Memory
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      RUST_BACKTRACE: "1"
+      SLINT_BACKEND: winit-software
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            comparisons/slint_notepad -> target
+            comparisons/iced_notepad -> target
+
+      - name: Build release comparison applications
+        run: |
+          cargo build \
+            --release \
+            --locked \
+            --manifest-path comparisons/slint_notepad/Cargo.toml \
+            --bin slint-notepad-baseline
+          cargo build \
+            --release \
+            --locked \
+            --manifest-path comparisons/iced_notepad/Cargo.toml \
+            --bin iced-notepad-baseline
+
+      - name: Run real macOS windows and sample memory
+        run: |
+          root=target/ui-memory-comparison/macos-15-arm64
+          mkdir -p "$root"
+          for run in 1 2 3 4 5; do
+            comparisons/slint_notepad/target/release/slint-notepad-baseline \
+              --benchmark-seconds 6 \
+              --sample-after-ms 3500 \
+              --memory-report "$root/slint-notepad-run$run.json"
+            comparisons/iced_notepad/target/release/iced-notepad-baseline \
+              --benchmark-seconds 6 \
+              --sample-after-ms 3500 \
+              --memory-report "$root/iced-notepad-run$run.json"
+          done
+
+      - name: Summarize macOS memory
+        run: |
+          python3 comparisons/scripts/summarize_memory.py \
+            --input target/ui-memory-comparison/macos-15-arm64 \
+            --runner macos-15-arm64 \
+            --slint-binary comparisons/slint_notepad/target/release/slint-notepad-baseline \
+            --iced-binary comparisons/iced_notepad/target/release/iced-notepad-baseline \
+            --github-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload macOS measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-memory-comparison-macos-15-arm64
+          path: target/ui-memory-comparison/macos-15-arm64
+          retention-days: 30
+
+  ubuntu-memory:
+    name: Ubuntu 24.04 Slint and Iced Memory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
+      RUST_BACKTRACE: "1"
+      SLINT_BACKEND: winit-software
+      WINIT_UNIX_BACKEND: x11
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Linux window and font runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            dbus-x11 \
+            fonts-noto-cjk \
+            fonts-ubuntu \
+            libfontconfig1-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            xauth \
+            xvfb
+          fc-cache --force
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            comparisons/slint_notepad -> target
+            comparisons/iced_notepad -> target
+
+      - name: Build release comparison applications
+        run: |
+          cargo build \
+            --release \
+            --locked \
+            --manifest-path comparisons/slint_notepad/Cargo.toml \
+            --bin slint-notepad-baseline
+          cargo build \
+            --release \
+            --locked \
+            --manifest-path comparisons/iced_notepad/Cargo.toml \
+            --bin iced-notepad-baseline
+
+      - name: Run real X11 windows and sample memory
+        run: |
+          root=target/ui-memory-comparison/ubuntu-24.04-x86_64
+          mkdir -p "$root"
+          for run in 1 2 3 4 5; do
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+              comparisons/slint_notepad/target/release/slint-notepad-baseline \
+                --benchmark-seconds 6 \
+                --sample-after-ms 3500 \
+                --memory-report "$root/slint-notepad-run$run.json"
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+              comparisons/iced_notepad/target/release/iced-notepad-baseline \
+                --benchmark-seconds 6 \
+                --sample-after-ms 3500 \
+                --memory-report "$root/iced-notepad-run$run.json"
+          done
+
+      - name: Summarize Ubuntu memory
+        run: |
+          python3 comparisons/scripts/summarize_memory.py \
+            --input target/ui-memory-comparison/ubuntu-24.04-x86_64 \
+            --runner ubuntu-24.04-x86_64 \
+            --slint-binary comparisons/slint_notepad/target/release/slint-notepad-baseline \
+            --iced-binary comparisons/iced_notepad/target/release/iced-notepad-baseline \
+            --github-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Ubuntu measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-memory-comparison-ubuntu-24.04-x86_64
+          path: target/ui-memory-comparison/ubuntu-24.04-x86_64
+          retention-days: 30
