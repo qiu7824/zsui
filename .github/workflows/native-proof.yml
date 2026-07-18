@@ -207,6 +207,8 @@ jobs:
             libx11-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
+            adwaita-icon-theme \
+            librsvg2-common \
             xvfb \
             xauth \
             dbus-x11 \

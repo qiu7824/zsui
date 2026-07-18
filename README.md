@@ -96,13 +96,14 @@ GDI+ 抗锯齿圆角、DPI、语义图标、输入路由和应用外壳。macOS/
 
 应用和控件只使用 `ZsIcon` 语义值，不直接写字体私有码点。Windows 运行时先检测
 系统的 Segoe Fluent Icons，不存在时使用 Windows 10 自带的 Segoe MDL2 Assets；
-仓库不携带这两套字体。macOS 使用 SF Symbols 名称，Linux 使用当前 GTK 图标主题
-的 symbolic 名称。系统源找不到图标时，可使用 `fluent-icons` 提供的 MIT Fluent
-System Icons SVG 子集作为回退。
+仓库不携带这两套字体。macOS 使用 SF Symbols 名称，Linux `linux-direct` 从当前
+freedesktop 图标主题解析 symbolic 名称，`linux-gtk` 兼容后端使用 GTK 图标主题。
+系统源找不到图标时，可使用 `fluent-icons` 提供的 MIT Fluent System Icons SVG
+子集作为回退。
 
 Windows 字体检测和 GDI 绘制已经接入真实运行路径。macOS 的 AppKit `NSImage`
-查找和 Linux 的 `GtkIconTheme` 查找要随对应原生宿主完成，因此 capability 仍标记
-为 partial，不会因为已有名称映射就标记为完成。详见
+查找、Linux 的 freedesktop/GTK 主题查找及最终像素输出仍分别经过目标机证明，因此
+capability 保持 partial，不会因为只有名称映射就标记为完成。详见
 [平台原生图标](docs/native-icons.md)。
 
 ## 一句话创建原生窗口
@@ -362,9 +363,10 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
 `password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
 开启；原生文本无障碍桥接也只在显式开启 `accessibility` 时进入编译，Win32 使用
-UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，Linux 使用 GTK4 Accessibility，
-均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择时才会
-打包全部能力。
+UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，`linux-gtk`
+兼容后端使用 GTK4 Accessibility；轻量 `linux-direct` 的 AT-SPI 桥接仍是明确缺口。
+这些路径均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择
+时才会打包全部能力。
 
 多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
 ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；切换语言走普通的
