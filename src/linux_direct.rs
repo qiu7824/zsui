@@ -1677,6 +1677,11 @@ fn configure_linux_pango_layout(
         HorizontalAlign::Center => pango::Alignment::Center,
         HorizontalAlign::End => pango::Alignment::Right,
     });
+    // Pango layouts are reused across draw commands. Clear any width/height
+    // constraint left by a previous wrapped or ellipsized run before applying
+    // the current style.
+    layout.set_width(-1);
+    layout.set_height(-1);
     layout.set_wrap(pango::WrapMode::WordChar);
     if let Some(bounds) = bounds.filter(|_| style.wrap == TextWrap::Word || style.ellipsis) {
         layout.set_width(bounds.width.max(0).saturating_mul(pango::SCALE));
@@ -1838,6 +1843,7 @@ mod tests {
     fn direct_pango_no_wrap_does_not_constrain_width() {
         let context = linux_direct_pango_context();
         let mut style = TextStyle::line("Sans", 14.0, Color::rgb(0, 0, 0));
+        style.ellipsis = false;
         let layout = pango::Layout::new(&context);
         configure_linux_pango_layout(
             &layout,

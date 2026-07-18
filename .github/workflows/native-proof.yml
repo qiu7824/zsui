@@ -206,6 +206,7 @@ jobs:
             libpango1.0-dev \
             libx11-dev \
             libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             xvfb \
             xauth \
             dbus-x11 \
