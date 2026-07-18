@@ -283,6 +283,8 @@ impl LinuxDirectApp {
             if let Some(menu) = window.menu_surface.as_mut() {
                 menu.open_for_capture(&window.draw_pango_context);
             }
+            #[cfg(feature = "accessibility")]
+            window.sync_accessibility();
         }
         window.window.request_redraw();
     }
@@ -437,6 +439,8 @@ impl ApplicationHandler for LinuxDirectApp {
                 }
                 if menu_changed {
                     window.window.request_redraw();
+                    #[cfg(feature = "accessibility")]
+                    window.sync_accessibility();
                 }
                 if !menu_captures {
                     let report = window
@@ -486,6 +490,8 @@ impl ApplicationHandler for LinuxDirectApp {
                         }
                         crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
                             window.window.request_redraw();
+                            #[cfg(feature = "accessibility")]
+                            window.sync_accessibility();
                         }
                         crate::linux_direct_menu::LinuxMenuInputResult::Command(command) => {
                             window.menu_surface_command_count =
@@ -537,6 +543,8 @@ impl ApplicationHandler for LinuxDirectApp {
                     }
                     crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
                         window.window.request_redraw();
+                        #[cfg(feature = "accessibility")]
+                        window.sync_accessibility();
                     }
                     crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
                         if let Some(command) = window.spec.menu.as_ref().and_then(|menu| {
@@ -678,6 +686,9 @@ impl LinuxDirectWindow {
             menu_surface
                 .as_ref()
                 .map_or(0, |menu| menu.content_offset_y()),
+            menu_surface
+                .as_ref()
+                .map(|menu| menu.accessibility_snapshot()),
             &plan,
             runtime.current_interaction_plan(),
             runtime.focused_widget(),
@@ -913,6 +924,10 @@ impl LinuxDirectWindow {
     fn sync_accessibility(&mut self) {
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
         let content_offset_y = self.menu_content_offset_y();
+        let menu = self
+            .menu_surface
+            .as_ref()
+            .map(|menu| menu.accessibility_snapshot());
         self.accessibility.update(
             &self.spec.title,
             Rect {
@@ -923,6 +938,7 @@ impl LinuxDirectWindow {
             },
             self.scale_factor,
             content_offset_y,
+            menu,
             &self.plan,
             self.runtime.current_interaction_plan(),
             self.runtime.focused_widget(),
@@ -931,33 +947,76 @@ impl LinuxDirectWindow {
 
     #[cfg(feature = "accessibility")]
     fn dispatch_accessibility_actions(&mut self, event_loop: &ActiveEventLoop) {
+        use crate::linux_direct_accessibility::LinuxAccessibilityTarget;
+        use crate::linux_direct_menu::{LinuxMenuAccessibilityTarget, LinuxMenuInputResult};
         use accesskit::{Action, ActionData};
+        let pango_context = self.draw_pango_context.clone();
 
         for action in self.accessibility.take_actions() {
-            let reports = match (action.request.action, action.request.data.as_ref()) {
-                (Action::Focus, _) => vec![self
-                    .runtime
-                    .dispatch_accessibility_focus(action.target.widget)],
-                (Action::Click, _) => vec![self.runtime.dispatch_pointer_click(Point {
-                    x: action.target.bounds.x + action.target.bounds.width.max(1) / 2,
-                    y: action.target.bounds.y + action.target.bounds.height.max(1) / 2,
-                })],
-                #[cfg(feature = "text-input-core")]
-                (Action::SetValue, Some(ActionData::Value(value))) => vec![self
-                    .runtime
-                    .dispatch_accessibility_set_value(action.target.widget, value)],
-                #[cfg(feature = "text-input-core")]
-                (Action::ReplaceSelectedText, Some(ActionData::Value(value))) => {
-                    let focus = self
-                        .runtime
-                        .dispatch_accessibility_focus(action.target.widget);
-                    let replace = self.runtime.dispatch_text_input(value);
-                    vec![focus, replace]
+            match action.target {
+                LinuxAccessibilityTarget::View(target) => {
+                    let reports = match (action.request.action, action.request.data.as_ref()) {
+                        (Action::Focus, _) => {
+                            vec![self.runtime.dispatch_accessibility_focus(target.widget)]
+                        }
+                        (Action::Click, _) => {
+                            vec![self.runtime.dispatch_pointer_click(Point {
+                                x: target.bounds.x + target.bounds.width.max(1) / 2,
+                                y: target.bounds.y + target.bounds.height.max(1) / 2,
+                            })]
+                        }
+                        #[cfg(feature = "text-input-core")]
+                        (Action::SetValue, Some(ActionData::Value(value))) => vec![self
+                            .runtime
+                            .dispatch_accessibility_set_value(target.widget, value)],
+                        #[cfg(feature = "text-input-core")]
+                        (Action::ReplaceSelectedText, Some(ActionData::Value(value))) => {
+                            let focus = self.runtime.dispatch_accessibility_focus(target.widget);
+                            let replace = self.runtime.dispatch_text_input(value);
+                            vec![focus, replace]
+                        }
+                        _ => Vec::new(),
+                    };
+                    for report in reports {
+                        self.apply_report(report, event_loop);
+                    }
                 }
-                _ => Vec::new(),
-            };
-            for report in reports {
-                self.apply_report(report, event_loop);
+                LinuxAccessibilityTarget::Menu(target) => {
+                    let result = match (action.request.action, target) {
+                        (Action::Focus, LinuxMenuAccessibilityTarget::Root(root)) => self
+                            .menu_surface
+                            .as_mut()
+                            .is_some_and(|menu| menu.accessibility_focus_root(root, &pango_context))
+                            .then_some(LinuxMenuInputResult::Redraw),
+                        (Action::Focus, LinuxMenuAccessibilityTarget::Row(row)) => self
+                            .menu_surface
+                            .as_mut()
+                            .is_some_and(|menu| menu.accessibility_focus_row(row))
+                            .then_some(LinuxMenuInputResult::Redraw),
+                        (Action::Click, LinuxMenuAccessibilityTarget::Root(root)) => self
+                            .menu_surface
+                            .as_mut()
+                            .map(|menu| menu.accessibility_activate_root(root, &pango_context)),
+                        (Action::Click, LinuxMenuAccessibilityTarget::Row(row)) => self
+                            .menu_surface
+                            .as_mut()
+                            .map(|menu| menu.accessibility_activate_row(row, &pango_context)),
+                        _ => None,
+                    };
+                    match result {
+                        Some(LinuxMenuInputResult::Command(command)) => {
+                            self.menu_surface_command_count =
+                                self.menu_surface_command_count.saturating_add(1);
+                            let report = self.runtime.dispatch_app_command(command);
+                            self.apply_report(report, event_loop);
+                        }
+                        Some(LinuxMenuInputResult::Redraw) => {
+                            self.window.request_redraw();
+                        }
+                        Some(LinuxMenuInputResult::Ignored) | None => {}
+                    }
+                    self.sync_accessibility();
+                }
             }
         }
     }

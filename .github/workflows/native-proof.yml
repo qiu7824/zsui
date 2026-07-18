@@ -609,7 +609,7 @@ jobs:
           PY
           wait "$gallery_pid"
 
-          ZSUI_NATIVE_PROOF_DURATION_MS=2500 \
+          ZSUI_NATIVE_PROOF_DURATION_MS=6000 \
           ZSUI_NATIVE_PROOF_OPEN_MENU=1 \
             ./target/release/examples/zsui_notepad \
               --native-proof \
@@ -617,7 +617,98 @@ jobs:
               --width 960 \
               --height 640 \
               --output "$root" \
-              >"$root/notepad.log" 2>&1
+              >"$root/notepad.log" 2>&1 &
+          notepad_pid=$!
+
+          # AccessKit watches the AT-SPI status transition per process. Toggle
+          # the real session property again so the second proof application is
+          # exported even though the status service is already running.
+          sleep 0.5
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<false>' \
+            >>"$root/atspi-status.log"
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<true>' \
+            >>"$root/atspi-status.log"
+
+          /usr/bin/python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          import pyatspi
+
+          deadline = time.monotonic() + 5.0
+          application = None
+
+          def children(node):
+              for index in range(node.childCount):
+                  try:
+                      yield node.getChildAtIndex(index)
+                  except Exception:
+                      pass
+
+          def walk(root, limit=600):
+              queue = [root]
+              seen = 0
+              while queue and seen < limit:
+                  node = queue.pop(0)
+                  seen += 1
+                  yield node
+                  queue.extend(children(node))
+
+          while time.monotonic() < deadline and application is None:
+              desktop = pyatspi.Registry.getDesktop(0)
+              for candidate in children(desktop):
+                  try:
+                      nodes = list(walk(candidate))
+                      names = [node.name or "" for node in nodes]
+                  except Exception:
+                      continue
+                  if any("Notepad" in name for name in names):
+                      application = candidate
+                      break
+              if application is None:
+                  time.sleep(0.1)
+
+          if application is None:
+              raise SystemExit("AT-SPI did not expose ZSUI Notepad")
+          snapshot = []
+          for node in walk(application):
+              try:
+                  snapshot.append({"name": node.name or "", "role": node.getRoleName()})
+              except Exception:
+                  pass
+          roles = {item["role"] for item in snapshot}
+          if not ({"menu bar", "menubar"} & roles):
+              raise SystemExit(f"AT-SPI menu bar role missing: {sorted(roles)}")
+          if not ({"menu item", "menuitem"} & roles):
+              raise SystemExit(f"AT-SPI menu item role missing: {sorted(roles)}")
+          Path(
+              "target/native-proof/ubuntu-24.04-wayland-x86_64/notepad-atspi-proof.json"
+          ).write_text(
+              json.dumps(
+                  {
+                      "backend": "accesskit_atspi",
+                      "application": application.name,
+                      "node_count": len(snapshot),
+                      "roles": sorted(roles),
+                      "nodes": snapshot,
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          PY
+          wait "$notepad_pid"
           PROOF
 
       - name: Summarize Wayland proof failure
@@ -637,6 +728,7 @@ jobs:
           gallery = json.loads((root / "gallery-inputs-light.json").read_text("utf-8"))
           notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
           atspi = json.loads((root / "atspi-proof.json").read_text("utf-8"))
+          notepad_atspi = json.loads((root / "notepad-atspi-proof.json").read_text("utf-8"))
 
           for proof in (gallery, notepad):
               capture = proof["runtime"]["native_view_capture"]
@@ -654,6 +746,10 @@ jobs:
           assert atspi["backend"] == "accesskit_atspi"
           assert atspi["node_count"] >= 5
           assert atspi["action_invoked"] is True
+          assert notepad_atspi["backend"] == "accesskit_atspi"
+          assert notepad_atspi["node_count"] >= 5
+          assert "menu bar" in notepad_atspi["roles"] or "menubar" in notepad_atspi["roles"]
+          assert "menu item" in notepad_atspi["roles"] or "menuitem" in notepad_atspi["roles"]
 
           runtime = notepad["runtime"]
           assert runtime["window_menu_surface_created"] is True

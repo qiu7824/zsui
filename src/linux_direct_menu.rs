@@ -20,6 +20,41 @@ pub(crate) enum LinuxMenuInputResult {
     Command(Command),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinuxMenuAccessibilityTarget {
+    Root(usize),
+    Row(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinuxMenuAccessibilityRole {
+    Menu,
+    MenuItem,
+    CheckedMenuItem,
+    Separator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LinuxMenuAccessibilityItem {
+    pub target: Option<LinuxMenuAccessibilityTarget>,
+    pub author_id: String,
+    pub label: String,
+    pub bounds: Rect,
+    pub role: LinuxMenuAccessibilityRole,
+    pub enabled: bool,
+    pub expanded: Option<bool>,
+    pub checked: Option<bool>,
+    pub focused: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LinuxMenuAccessibilitySnapshot {
+    pub bar_bounds: Rect,
+    pub roots: Vec<LinuxMenuAccessibilityItem>,
+    pub rows: Vec<LinuxMenuAccessibilityItem>,
+    pub open_root: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 struct RootLayout {
     item_index: usize,
@@ -71,6 +106,144 @@ impl LinuxDirectMenuSurface {
 
     pub(crate) const fn is_open(&self) -> bool {
         self.open_root.is_some()
+    }
+
+    pub(crate) fn accessibility_snapshot(&self) -> LinuxMenuAccessibilitySnapshot {
+        let roots = self
+            .roots
+            .iter()
+            .enumerate()
+            .filter_map(|(root_index, root)| {
+                let item = self.menu.items.get(root.item_index)?;
+                let (label, enabled) = menu_item_label_and_enabled(item)?;
+                Some(LinuxMenuAccessibilityItem {
+                    target: Some(LinuxMenuAccessibilityTarget::Root(root_index)),
+                    author_id: menu_item_author_id(item, "root", root.item_index),
+                    label: label.to_string(),
+                    bounds: root.bounds,
+                    role: LinuxMenuAccessibilityRole::Menu,
+                    enabled,
+                    expanded: Some(self.open_root == Some(root_index)),
+                    checked: None,
+                    focused: self.open_root == Some(root_index) && self.keyboard_row.is_none(),
+                })
+            })
+            .collect();
+        let rows = self
+            .current_menu()
+            .map(|menu| {
+                self.popup_rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(row_index, row)| {
+                        let item = menu.items.get(row.item_index)?;
+                        let (label, enabled, role, checked, expanded) = match item {
+                            MenuItemSpec::Command {
+                                label,
+                                enabled,
+                                checked,
+                                ..
+                            } => (
+                                label.as_str(),
+                                *enabled,
+                                if *checked {
+                                    LinuxMenuAccessibilityRole::CheckedMenuItem
+                                } else {
+                                    LinuxMenuAccessibilityRole::MenuItem
+                                },
+                                (*checked).then_some(true),
+                                None,
+                            ),
+                            MenuItemSpec::Submenu { label, enabled, .. } => (
+                                label.as_str(),
+                                *enabled,
+                                LinuxMenuAccessibilityRole::Menu,
+                                None,
+                                Some(false),
+                            ),
+                            MenuItemSpec::Separator => {
+                                ("", false, LinuxMenuAccessibilityRole::Separator, None, None)
+                            }
+                        };
+                        Some(LinuxMenuAccessibilityItem {
+                            target: (!matches!(item, MenuItemSpec::Separator))
+                                .then_some(LinuxMenuAccessibilityTarget::Row(row_index)),
+                            author_id: menu_item_author_id(item, "row", row.item_index),
+                            label: label.to_string(),
+                            bounds: row.bounds,
+                            role,
+                            enabled,
+                            expanded,
+                            checked,
+                            focused: self.keyboard_row == Some(row_index),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        LinuxMenuAccessibilitySnapshot {
+            bar_bounds: Rect {
+                x: 0,
+                y: 0,
+                width: self.width,
+                height: LINUX_MENU_BAR_HEIGHT,
+            },
+            roots,
+            rows,
+            open_root: self.open_root,
+        }
+    }
+
+    pub(crate) fn accessibility_focus_root(
+        &mut self,
+        root_index: usize,
+        pango_context: &pango::Context,
+    ) -> bool {
+        if !self.roots.get(root_index).is_some_and(|root| root.enabled) {
+            return false;
+        }
+        self.open_root = Some(root_index);
+        self.submenu_path.clear();
+        self.keyboard_row = None;
+        self.layout_popup(pango_context);
+        true
+    }
+
+    pub(crate) fn accessibility_focus_row(&mut self, row_index: usize) -> bool {
+        let enabled = self
+            .popup_rows
+            .get(row_index)
+            .and_then(|row| self.current_menu()?.items.get(row.item_index))
+            .is_some_and(menu_item_enabled);
+        if !enabled {
+            return false;
+        }
+        self.keyboard_row = Some(row_index);
+        true
+    }
+
+    pub(crate) fn accessibility_activate_root(
+        &mut self,
+        root_index: usize,
+        pango_context: &pango::Context,
+    ) -> LinuxMenuInputResult {
+        if self.open_root == Some(root_index) {
+            self.close();
+            LinuxMenuInputResult::Redraw
+        } else if self.accessibility_focus_root(root_index, pango_context) {
+            self.keyboard_row = first_enabled_row(self.current_menu());
+            LinuxMenuInputResult::Redraw
+        } else {
+            LinuxMenuInputResult::Ignored
+        }
+    }
+
+    pub(crate) fn accessibility_activate_row(
+        &mut self,
+        row_index: usize,
+        pango_context: &pango::Context,
+    ) -> LinuxMenuInputResult {
+        self.activate_row(row_index, pango_context)
     }
 
     pub(crate) fn layout(&mut self, width: i32, pango_context: &pango::Context) {
@@ -636,6 +809,16 @@ fn menu_item_enabled(item: &MenuItemSpec) -> bool {
         MenuItemSpec::Command { enabled, .. } | MenuItemSpec::Submenu { enabled, .. } => *enabled,
         MenuItemSpec::Separator => false,
     }
+}
+
+fn menu_item_author_id(item: &MenuItemSpec, prefix: &str, index: usize) -> String {
+    let declared = match item {
+        MenuItemSpec::Command { id, .. } | MenuItemSpec::Submenu { id, .. } => id.as_deref(),
+        MenuItemSpec::Separator => None,
+    };
+    declared
+        .map(|id| format!("zsui-menu-{id}"))
+        .unwrap_or_else(|| format!("zsui-menu-{prefix}-{index}"))
 }
 
 fn first_enabled_row(menu: Option<&MenuSpec>) -> Option<usize> {

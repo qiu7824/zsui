@@ -6,13 +6,16 @@ use std::sync::{
 
 use accesskit::{
     Action, ActionHandler, ActionRequest, ActivationHandler, Affine, DeactivationHandler, Node,
-    NodeId, Rect as AccessRect, Role, Tree, TreeId, TreeUpdate,
+    NodeId, Rect as AccessRect, Role, Toggled, Tree, TreeId, TreeUpdate,
 };
 use accesskit_winit::Adapter;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
+use crate::linux_direct_menu::{
+    LinuxMenuAccessibilityRole, LinuxMenuAccessibilitySnapshot, LinuxMenuAccessibilityTarget,
+};
 use crate::{
     NativeDrawCommand, NativeDrawPlan, Rect, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan,
 };
@@ -22,7 +25,13 @@ const ROOT_NODE_ID: NodeId = NodeId(0);
 #[derive(Debug, Clone)]
 pub(crate) struct LinuxAccessibilityAction {
     pub request: ActionRequest,
-    pub target: ViewHitTarget,
+    pub target: LinuxAccessibilityTarget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinuxAccessibilityTarget {
+    View(ViewHitTarget),
+    Menu(LinuxMenuAccessibilityTarget),
 }
 
 struct TreeActivationHandler {
@@ -55,7 +64,7 @@ pub(crate) struct LinuxDirectAccessibility {
     adapter: Adapter,
     action_receiver: Receiver<ActionRequest>,
     tree: Arc<RwLock<TreeUpdate>>,
-    targets: HashMap<NodeId, ViewHitTarget>,
+    targets: HashMap<NodeId, LinuxAccessibilityTarget>,
     node_count: usize,
     action_count: usize,
 }
@@ -68,6 +77,7 @@ impl LinuxDirectAccessibility {
         logical_bounds: Rect,
         scale_factor: f64,
         content_offset_y: i32,
+        menu: Option<LinuxMenuAccessibilitySnapshot>,
         plan: &NativeDrawPlan,
         interaction: Option<ViewInteractionPlan>,
         focused_widget: Option<crate::WidgetId>,
@@ -77,6 +87,7 @@ impl LinuxDirectAccessibility {
             logical_bounds,
             scale_factor,
             content_offset_y,
+            menu,
             plan,
             interaction,
             focused_widget,
@@ -115,6 +126,7 @@ impl LinuxDirectAccessibility {
         logical_bounds: Rect,
         scale_factor: f64,
         content_offset_y: i32,
+        menu: Option<LinuxMenuAccessibilitySnapshot>,
         plan: &NativeDrawPlan,
         interaction: Option<ViewInteractionPlan>,
         focused_widget: Option<crate::WidgetId>,
@@ -124,6 +136,7 @@ impl LinuxDirectAccessibility {
             logical_bounds,
             scale_factor,
             content_offset_y,
+            menu,
             plan,
             interaction,
             focused_widget,
@@ -161,10 +174,11 @@ fn build_tree_update(
     logical_bounds: Rect,
     scale_factor: f64,
     content_offset_y: i32,
+    menu: Option<LinuxMenuAccessibilitySnapshot>,
     plan: &NativeDrawPlan,
     interaction: Option<ViewInteractionPlan>,
     focused_widget: Option<crate::WidgetId>,
-) -> (TreeUpdate, HashMap<NodeId, ViewHitTarget>) {
+) -> (TreeUpdate, HashMap<NodeId, LinuxAccessibilityTarget>) {
     let targets = interaction
         .map(|interaction| interaction.hit_targets)
         .unwrap_or_default();
@@ -194,8 +208,55 @@ fn build_tree_update(
             focused_node = node_id;
         }
         child_ids.push(node_id);
-        node_targets.insert(node_id, target);
+        node_targets.insert(node_id, LinuxAccessibilityTarget::View(target));
         nodes.push((node_id, node));
+    }
+
+    if let Some(menu) = menu {
+        let first_menu_node = nodes.len() as u64 + 1;
+        let menu_bar_id = NodeId(first_menu_node);
+        let root_ids = (0..menu.roots.len())
+            .map(|index| NodeId(first_menu_node + 1 + index as u64))
+            .collect::<Vec<_>>();
+        let first_row_node = first_menu_node + 1 + root_ids.len() as u64;
+        let row_ids = (0..menu.rows.len())
+            .map(|index| NodeId(first_row_node + index as u64))
+            .collect::<Vec<_>>();
+
+        let mut menu_bar = Node::new(Role::MenuBar);
+        menu_bar.set_author_id("zsui-menu-bar");
+        menu_bar.set_label("应用菜单 / Application menu");
+        menu_bar.set_bounds(accesskit_rect(menu.bar_bounds));
+        menu_bar.set_children(root_ids.clone());
+        child_ids.insert(0, menu_bar_id);
+        nodes.push((menu_bar_id, menu_bar));
+
+        for (root_index, (node_id, item)) in
+            root_ids.iter().copied().zip(menu.roots.iter()).enumerate()
+        {
+            let mut node = menu_accessibility_node(item);
+            if menu.open_root == Some(root_index) {
+                node.set_children(row_ids.clone());
+            }
+            if item.focused {
+                focused_node = node_id;
+            }
+            if let Some(target) = item.target {
+                node_targets.insert(node_id, LinuxAccessibilityTarget::Menu(target));
+            }
+            nodes.push((node_id, node));
+        }
+
+        for (node_id, item) in row_ids.iter().copied().zip(menu.rows.iter()) {
+            let node = menu_accessibility_node(item);
+            if item.focused {
+                focused_node = node_id;
+            }
+            if let Some(target) = item.target {
+                node_targets.insert(node_id, LinuxAccessibilityTarget::Menu(target));
+            }
+            nodes.push((node_id, node));
+        }
     }
 
     let mut root = Node::new(Role::Window);
@@ -214,6 +275,35 @@ fn build_tree_update(
         },
         node_targets,
     )
+}
+
+fn menu_accessibility_node(item: &crate::linux_direct_menu::LinuxMenuAccessibilityItem) -> Node {
+    let role = match item.role {
+        LinuxMenuAccessibilityRole::Menu => Role::Menu,
+        LinuxMenuAccessibilityRole::MenuItem => Role::MenuItem,
+        LinuxMenuAccessibilityRole::CheckedMenuItem => Role::MenuItemCheckBox,
+        LinuxMenuAccessibilityRole::Separator => Role::GenericContainer,
+    };
+    let mut node = Node::new(role);
+    node.set_author_id(item.author_id.clone());
+    if !item.label.is_empty() {
+        node.set_label(item.label.clone());
+    }
+    node.set_bounds(accesskit_rect(item.bounds));
+    if !item.enabled {
+        node.set_disabled();
+    }
+    if let Some(expanded) = item.expanded {
+        node.set_expanded(expanded);
+    }
+    if let Some(checked) = item.checked {
+        node.set_toggled(Toggled::from(checked));
+    }
+    if item.target.is_some() && item.enabled {
+        node.add_action(Action::Focus);
+        node.add_action(Action::Click);
+    }
+    node
 }
 
 fn accesskit_rect(rect: Rect) -> AccessRect {
