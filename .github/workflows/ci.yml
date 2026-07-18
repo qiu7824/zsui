@@ -74,6 +74,7 @@ jobs:
         if: failure() && steps.full-tests.outcome == 'failure'
         run: |
           summary="$(grep -E '^(test .* FAILED|failures:|assertion .* failed|left:|right:|thread .* panicked)' target/full-test.log | tail -30 | tr '\n' ' ' || true)"
-          echo "::error title=Full test failure::$summary"
+          compiler_errors="$(grep -E '^error(\[E[0-9]+\])?:|^error:' target/full-test.log | tail -20 | tr '\n' ' ' | cut -c 1-1200 || true)"
+          echo "::error title=Full test failure::${summary} ${compiler_errors}"
       - run: cargo check --locked --no-default-features --features ${{ matrix.backend }}
       - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style
