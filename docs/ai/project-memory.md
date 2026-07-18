@@ -164,6 +164,12 @@ history remain authoritative for implementation status.
   A shared `DrawPlan` image or cross-compilation is not Linux target evidence;
   the fixed Ubuntu proof job must upload the final surface PNG and matching
   runtime JSON.
+- Native UI Proof run `29660600122` on commit `00951e5` passed AppKit,
+  lightweight Linux and real Weston Wayland scenes. The Wayland artifact
+  records `display_server=wayland`, final presented PNGs, AccessKit/AT-SPI
+  gallery action evidence, Linux menu-surface geometry and command routing.
+  CI run `29660600124` also passed the Ubuntu `linux-direct` target checks,
+  macOS target checks, Windows tests, core tests and the locked feature matrix.
 - Native proof JSON uses the framework-owned `NativeProofDocument` envelope.
   Acceptance applications supply scenario metadata and typed message names;
   the framework projects backend identity, runner metadata, logical/pixel
