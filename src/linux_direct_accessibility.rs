@@ -491,7 +491,7 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Color, NativeDrawTextCommand, NativeTextStyle, TextRole, ThemeMode};
+    use crate::{NativeDrawTextCommand, SemanticTextStyle, ZsuiThemeMode};
 
     #[test]
     fn visible_text_names_the_accessible_control() {
@@ -506,16 +506,12 @@ mod tests {
             ViewHitTargetKind::Button,
         );
         let plan = NativeDrawPlan::new(
-            ThemeMode::Light,
+            ZsuiThemeMode::Light,
             false,
             [NativeDrawCommand::Text(NativeDrawTextCommand {
                 text: "保存 / Save".to_string(),
                 bounds: target.bounds,
-                style: NativeTextStyle {
-                    role: TextRole::Body,
-                    color: Color::BLACK,
-                    ..NativeTextStyle::default()
-                },
+                style: SemanticTextStyle::body(),
             })],
         );
         assert_eq!(accessible_label(&plan, target), "保存 / Save");
