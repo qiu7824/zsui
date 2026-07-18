@@ -1144,17 +1144,23 @@ fn main() -> ZsuiResult<()> {
             .unwrap_or_default();
         let report = builder.run_smoke(options)?;
         let document = if native_proof {
-            serde_json::json!({
-                "schema": "zsui.native-proof/v1",
-                "platform": env::consts::OS,
-                "architecture": env::consts::ARCH,
-                "application": "component_gallery",
-                "scenario": format!("gallery-{}-{theme}", initial_page.slug()),
-                "theme": theme,
-                "window": { "width": window_width, "height": window_height },
-                "widgets": widgets,
-                "runtime": &report,
-            })
+            let messages = (initial_page == GalleryPage::Inputs)
+                .then_some(["PrimaryAction", "CheckboxChanged", "ToggleChanged"])
+                .into_iter()
+                .flatten();
+            serde_json::to_value(
+                NativeProofDocument::new(
+                    "component_gallery",
+                    format!("gallery-{}-{theme}", initial_page.slug()),
+                    theme,
+                    window_width,
+                    window_height,
+                    widgets,
+                    report.clone(),
+                )
+                .messages(messages),
+            )
+            .map_err(|error| ZsuiError::host("serialize_gallery_native_proof", error.to_string()))?
         } else {
             serde_json::to_value(&report)
                 .map_err(|error| ZsuiError::host("serialize_gallery_report", error.to_string()))?

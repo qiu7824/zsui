@@ -38,6 +38,7 @@ jobs:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
       TZ: UTC
+      ZSUI_NATIVE_PROOF_OS_FAMILY: macos-15
 
     steps:
       - name: Checkout
@@ -120,7 +121,15 @@ jobs:
               runtime = proof["runtime"]
               capture = runtime.get("native_view_capture") or {}
               assert proof["schema"] == "zsui.native-proof/v1"
+              assert proof["schema_version"] == 1
               assert proof["platform"] == "macos"
+              assert proof["backend"] == "appkit"
+              assert proof["capture_backend"] == "appkit_nsview_bitmap_cache"
+              assert proof["os_family"] == "macos-15"
+              assert proof["architecture"] == "arm64"
+              assert proof["errors"] == []
+              assert proof["unhandled_commands"] == []
+              assert isinstance(proof["messages"], list)
               assert runtime["created_window_count"] == 1
               assert runtime["screenshot_captured"] is True
               assert not runtime["screenshot_error"]
@@ -134,7 +143,14 @@ jobs:
                   if stem.startswith("gallery-")
                   else {"width": 960, "height": 640}
               )
-              assert proof["window"] == expected
+              assert proof["window"]["width"] == expected["width"]
+              assert proof["window"]["height"] == expected["height"]
+              assert proof["window"]["logical_width"] == expected["width"]
+              assert proof["window"]["logical_height"] == expected["height"]
+              assert proof["window"]["pixel_width"] == capture["pixel_width"]
+              assert proof["window"]["pixel_height"] == capture["pixel_height"]
+              assert proof["scale_factor"] == capture["scale_factor"]
+              assert proof["typography_scale"] == capture["typography_scale"]
               assert capture["logical_width"] == expected["width"]
               assert capture["logical_height"] == expected["height"]
               assert abs(
@@ -161,6 +177,7 @@ jobs:
       TZ: UTC
       GDK_BACKEND: x11
       GSK_RENDERER: cairo
+      ZSUI_NATIVE_PROOF_OS_FAMILY: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -268,7 +285,15 @@ jobs:
               runtime = proof["runtime"]
               capture = runtime.get("native_view_capture") or {}
               assert proof["schema"] == "zsui.native-proof/v1"
+              assert proof["schema_version"] == 1
               assert proof["platform"] == "linux"
+              assert proof["backend"] == "gtk4"
+              assert proof["capture_backend"] == "gtk_widget_paintable_gsk_texture"
+              assert proof["os_family"] == "ubuntu-24.04"
+              assert proof["architecture"] == "x86_64"
+              assert proof["errors"] == []
+              assert proof["unhandled_commands"] == []
+              assert isinstance(proof["messages"], list)
               assert runtime["created_window_count"] == 1
               assert runtime["screenshot_captured"] is True
               assert not runtime["screenshot_error"]
@@ -282,7 +307,14 @@ jobs:
                   if stem.startswith("gallery-")
                   else {"width": 960, "height": 640}
               )
-              assert proof["window"] == expected
+              assert proof["window"]["width"] == expected["width"]
+              assert proof["window"]["height"] == expected["height"]
+              assert proof["window"]["logical_width"] == expected["width"]
+              assert proof["window"]["logical_height"] == expected["height"]
+              assert proof["window"]["pixel_width"] == capture["pixel_width"]
+              assert proof["window"]["pixel_height"] == capture["pixel_height"]
+              assert proof["scale_factor"] == capture["scale_factor"]
+              assert proof["typography_scale"] == capture["typography_scale"]
               assert capture["logical_width"] == expected["width"]
               assert capture["logical_height"] == expected["height"]
               assert abs(

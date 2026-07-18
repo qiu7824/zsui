@@ -101,6 +101,7 @@ mod native_input_visuals;
     all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
 ))]
 mod native_menu;
+pub mod native_proof;
 pub mod native_smoke;
 mod native_text_edit;
 #[cfg(feature = "paged-list")]
@@ -424,6 +425,10 @@ pub use native_icons::{
 pub use native_icons::{
     native_icon_candidates, resolve_native_icon, NativeIconLookup, NativeIconSource,
     NativeIconSourceKind, WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY,
+};
+pub use native_proof::{
+    NativeProofDocument, NativeProofRunnerEvidence, NativeProofWidgetEvidence,
+    NativeProofWindowEvidence, NATIVE_PROOF_SCHEMA, NATIVE_PROOF_SCHEMA_VERSION,
 };
 pub use native_smoke::{
     native_host_smoke_artifact_names, native_host_smoke_artifact_requirements,

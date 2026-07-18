@@ -9,11 +9,11 @@ use std::{
 use zsui::{
     column, command_bar, content_dialog, native_window, row, tab_view, text, text_editor,
     toolbar_button, AppCx, Command, Dp, FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec,
-    NativeFileDialogService, NativeViewKey, NativeWindowSmokeRunOptions, Point, SaveFileDialogSpec,
-    TextWrap, ThemeColorToken, ViewNode, WidgetId, ZsAccelerator, ZsBaseControlMetrics,
-    ZsCommandBarSpec, ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec,
-    ZsDocumentShellCommand, ZsIcon, ZsTabId, ZsTabItem, ZsTextCursorStatus, ZsTextDocument,
-    ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult, ZsuiSpacingTokens,
+    NativeFileDialogService, NativeProofDocument, NativeViewKey, NativeWindowSmokeRunOptions,
+    Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode, WidgetId, ZsAccelerator,
+    ZsBaseControlMetrics, ZsCommandBarSpec, ZsContentDialogButton, ZsContentDialogResult,
+    ZsContentDialogSpec, ZsDocumentShellCommand, ZsIcon, ZsTabId, ZsTabItem, ZsTextCursorStatus,
+    ZsTextDocument, ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult, ZsuiSpacingTokens,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
@@ -675,17 +675,29 @@ fn main() -> ZsuiResult<()> {
         let report = builder.run_smoke(options)?;
         if let Some(path) = report_path {
             let document = if native_proof {
-                serde_json::json!({
-                    "schema": "zsui.native-proof/v1",
-                    "platform": std::env::consts::OS,
-                    "architecture": std::env::consts::ARCH,
-                    "application": "zsui_notepad",
-                    "scenario": "notepad-interaction",
-                    "theme": "system",
-                    "window": { "width": window_width, "height": window_height },
-                    "widgets": widgets,
-                    "runtime": &report,
-                })
+                serde_json::to_value(
+                    NativeProofDocument::new(
+                        "zsui_notepad",
+                        "notepad-interaction",
+                        "system",
+                        window_width,
+                        window_height,
+                        widgets,
+                        report.clone(),
+                    )
+                    .messages([
+                        "EditorFocused",
+                        "TextChanged",
+                        "SelectionChanged",
+                        "UndoInvoked",
+                        "WrapChanged",
+                        "CloseRequested",
+                        "CloseVetoed",
+                    ]),
+                )
+                .map_err(|error| {
+                    ZsuiError::host("serialize_notepad_native_proof", error.to_string())
+                })?
             } else {
                 serde_json::to_value(&report).map_err(|error| {
                     ZsuiError::host("serialize_notepad_report", error.to_string())

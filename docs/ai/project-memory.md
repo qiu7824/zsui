@@ -162,6 +162,11 @@ history remain authoritative for implementation status.
   A shared `DrawPlan` image or cross-compilation is not Linux target evidence;
   the fixed Ubuntu/X11 proof job must upload the final texture PNG and matching
   runtime JSON.
+- Native proof JSON uses the framework-owned `NativeProofDocument` envelope.
+  Acceptance applications supply scenario metadata and typed message names;
+  the framework projects backend identity, runner metadata, logical/pixel
+  geometry, scale, focus, widget roles, unhandled commands and runtime errors.
+  Examples must not maintain separate per-platform proof schemas.
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their
