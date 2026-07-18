@@ -112,6 +112,8 @@ jobs:
       RUST_BACKTRACE: "1"
       SLINT_BACKEND: winit-software
       WINIT_UNIX_BACKEND: x11
+      ZSUI_LINUX_ICON_THEME: Adwaita
+      ZSUI_LINUX_UI_FONT: Ubuntu Sans 11
 
     steps:
       - name: Checkout
@@ -121,6 +123,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
+            adwaita-icon-theme \
             dbus-x11 \
             fonts-noto-cjk \
             fonts-ubuntu \
@@ -133,6 +136,7 @@ jobs:
             libx11-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
+            librsvg2-common \
             xauth \
             xvfb
           fc-cache --force
