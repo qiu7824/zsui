@@ -67,6 +67,7 @@ impl LinuxDirectAccessibility {
         title: &str,
         logical_bounds: Rect,
         scale_factor: f64,
+        content_offset_y: i32,
         plan: &NativeDrawPlan,
         interaction: Option<ViewInteractionPlan>,
         focused_widget: Option<crate::WidgetId>,
@@ -75,6 +76,7 @@ impl LinuxDirectAccessibility {
             title,
             logical_bounds,
             scale_factor,
+            content_offset_y,
             plan,
             interaction,
             focused_widget,
@@ -112,6 +114,7 @@ impl LinuxDirectAccessibility {
         title: &str,
         logical_bounds: Rect,
         scale_factor: f64,
+        content_offset_y: i32,
         plan: &NativeDrawPlan,
         interaction: Option<ViewInteractionPlan>,
         focused_widget: Option<crate::WidgetId>,
@@ -120,6 +123,7 @@ impl LinuxDirectAccessibility {
             title,
             logical_bounds,
             scale_factor,
+            content_offset_y,
             plan,
             interaction,
             focused_widget,
@@ -156,6 +160,7 @@ fn build_tree_update(
     title: &str,
     logical_bounds: Rect,
     scale_factor: f64,
+    content_offset_y: i32,
     plan: &NativeDrawPlan,
     interaction: Option<ViewInteractionPlan>,
     focused_widget: Option<crate::WidgetId>,
@@ -171,7 +176,10 @@ fn build_tree_update(
     for (index, target) in targets.into_iter().enumerate() {
         let node_id = NodeId(index as u64 + 1);
         let mut node = Node::new(accesskit_role(target.kind));
-        node.set_bounds(accesskit_rect(target.bounds));
+        node.set_bounds(accesskit_rect(Rect {
+            y: target.bounds.y.saturating_add(content_offset_y),
+            ..target.bounds
+        }));
         node.set_author_id(format!("zsui-widget-{}", target.widget.0));
         node.set_label(accessible_label(plan, target));
         if target.kind.accepts_text_input() {

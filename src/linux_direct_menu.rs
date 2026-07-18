@@ -1,5 +1,4 @@
 use cairo::Context;
-use pango::prelude::*;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::native_draw_support::NativeDrawPalette;

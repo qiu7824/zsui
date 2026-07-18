@@ -671,6 +671,9 @@ impl LinuxDirectWindow {
                 height: spec.height.max(1) as i32,
             },
             scale_factor,
+            menu_surface
+                .as_ref()
+                .map_or(0, |menu| menu.content_offset_y()),
             &plan,
             runtime.current_interaction_plan(),
             runtime.focused_widget(),
@@ -905,6 +908,7 @@ impl LinuxDirectWindow {
     #[cfg(feature = "accessibility")]
     fn sync_accessibility(&mut self) {
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        let content_offset_y = self.menu_content_offset_y();
         self.accessibility.update(
             &self.spec.title,
             Rect {
@@ -914,6 +918,7 @@ impl LinuxDirectWindow {
                 height: logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32,
             },
             self.scale_factor,
+            content_offset_y,
             &self.plan,
             self.runtime.current_interaction_plan(),
             self.runtime.focused_widget(),
@@ -1181,7 +1186,7 @@ fn render_linux_direct_frame(
     }
     let mut sink = LinuxDirectDrawSink::new(
         &context,
-        draw_context,
+        draw_context.clone(),
         palette,
         plan.typography_scale(),
         scale_factor,
