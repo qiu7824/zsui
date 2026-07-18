@@ -505,15 +505,12 @@ mod tests {
             },
             ViewHitTargetKind::Button,
         );
-        let plan = NativeDrawPlan::new(
-            ZsuiThemeMode::Light,
-            false,
-            [NativeDrawCommand::Text(NativeDrawTextCommand {
-                text: "保存 / Save".to_string(),
-                bounds: target.bounds,
-                style: SemanticTextStyle::body(),
-            })],
-        );
+        let plan = NativeDrawPlan::new([NativeDrawCommand::Text(NativeDrawTextCommand {
+            text: "保存 / Save".to_string(),
+            bounds: target.bounds,
+            style: SemanticTextStyle::body(),
+        })])
+        .theme_mode(ZsuiThemeMode::Light);
         assert_eq!(accessible_label(&plan, target), "保存 / Save");
         assert_eq!(accesskit_role(target.kind), Role::Button);
     }
