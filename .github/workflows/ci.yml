@@ -82,7 +82,7 @@ jobs:
       - name: Publish Linux test diagnostic token
         if: always() && matrix.backend == 'linux-direct' && steps.full-tests.outcome == 'failure'
         run: |
-          diagnostic="$(grep -A1 -E '^error(\[E[0-9]+\])?:|^error:' target/full-test.log | head -6 | tr '\n' ' ' | sed 's/[^A-Za-z0-9._-]/_/g' | cut -c 1-180)"
+          diagnostic="$(tail -40 target/full-test.log | tr '\n' ' ' | sed 's/[^A-Za-z0-9._-]/_/g' | cut -c 1-180)"
           diagnostic="${diagnostic:-unknown}"
           echo "CI_DIAGNOSTIC=$diagnostic" >> "$GITHUB_ENV"
           printf '%s\n' "$diagnostic" > target/linux-ci-diagnostic.txt
