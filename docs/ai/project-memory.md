@@ -356,8 +356,16 @@ history remain authoritative for implementation status.
 - A Gallery sidebar item is not a centered outlined Button. Navigation rows use
   semantic icons, left-aligned labels, a 36-DIP Windows row and a 3-by-16-DIP
   accent selection indicator. The expanded Windows Gallery pane follows the
-  WinUI `OpenPaneLength` default of 320 DIPs. This is a bounded NavigationView
-  item surface; adaptive pane modes, top navigation and accessibility remain
+  WinUI `OpenPaneLength` default of 320 DIPs. `navigation_view` can own the
+  content pane through one platform-neutral `.content(WidgetId, ViewNode)`
+  declaration: Windows Auto mode uses expanded/compact/minimal composition at
+  1008/640 effective-pixel boundaries with a 48-DIP compact rail and 52-DIP
+  minimal header; AppKit collapses its source-list sidebar when the declared
+  content constraint cannot fit; GTK uses a 25% sidebar clamped to 180–280
+  logical pixels and a `NavigationSplitView`-style breakpoint. The compact
+  toggle, overlay scrim, focus order, paint order and dismissal stay inside the
+  framework. Top navigation, accessibility semantics, and feeding AppKit's
+  runtime standard sidebar min/max thickness back into shared layout remain
   explicit readiness gaps.
 - TimePicker uses validated `ZsTime` and `ZsMinuteIncrement` values. It is an
   independent `time-picker` Cargo feature, stays on the shared self-drawn path,

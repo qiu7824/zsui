@@ -840,6 +840,62 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "label")]
+        if let (
+            Some(widget),
+            Some(bounds),
+            ViewNodeKind::NavigationView {
+                platform,
+                item_count,
+                footer_count,
+                pane_open,
+                pane_width,
+                minimum_content_width,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let layout = zs_navigation_view_layout(
+                bounds,
+                *platform,
+                *pane_width,
+                *minimum_content_width,
+                *pane_open,
+                self.layout_dpi,
+                1.0,
+            );
+            if let Some(scrim) = layout
+                .scrim_bounds
+                .and_then(|bounds| clipped_rect(bounds, clip))
+            {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    scrim,
+                    ViewHitTargetKind::NavigationViewScrim,
+                ));
+            }
+            if let Some(toggle) = layout
+                .toggle_bounds
+                .and_then(|bounds| clipped_rect(bounds, clip))
+            {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    toggle,
+                    ViewHitTargetKind::NavigationViewToggle,
+                ));
+            }
+            let content_index = item_count.saturating_add(*footer_count);
+            let children = if layout.overlay_open {
+                &self.children[..content_index.min(self.children.len())]
+            } else {
+                self.children.as_slice()
+            };
+            for child in children {
+                child.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
         #[cfg(feature = "breadcrumb")]
         if let (Some(widget), Some(bounds), ViewNodeKind::BreadcrumbBar { items, .. }) =
             (self.id, self.bounds, &self.kind)

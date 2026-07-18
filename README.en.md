@@ -707,8 +707,11 @@ it falls back to in-memory clipboard storage.
   `view` and `update` with navigation, command bar, text editor, scrolling,
   theme intent and a native menu. The AppKit and GTK4 completion gate is
   documented in [`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md).
-- `examples/navigation_shell_layout.rs`: product-neutral WinUI-style
-  navigation/card shell layout projected to a native draw plan.
+- `examples/navigation_shell_layout.rs`: product-neutral navigation/card shell
+  layout projected to a native draw plan. Application views can declare one
+  adaptive `navigation_view` with `.content(WidgetId, ViewNode)`; ZSUI owns the
+  WinUI Auto, AppKit constraint-collapse and Libadwaita split-view composition
+  without a platform enum or `cfg` in application code.
 - `examples/workbench_shell.rs`: reusable desktop conversation/task workbench
   with real Win32 screenshot and machine-readable manifest modes.
 - `examples/zsui_notepad.rs`: hybrid Fluent document shell and native Windows

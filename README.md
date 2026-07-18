@@ -406,6 +406,9 @@ AppKit 与 GTK4 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native
 `command_bar(ZsCommandBarSpec)` 和 `toolbar_button` 声明语义界面，不传平台枚举。
 平台专用组合、度量和图标来源在框架内部解析；应用仍可通过公共 spec、
 `ZsuiSpacingTokens::default()` 和 View 尺寸/间距修饰器统一修改参数，无需增加平台分支。
+`navigation_view` 通过 `.content(WidgetId, ViewNode)` 同时拥有侧边栏和内容，框架内部
+分别采用 WinUI Auto、AppKit 约束折叠和 Libadwaita split-view 规则；紧凑栏、最小模式、
+覆盖层、焦点和收起交互不需要应用编写平台枚举或 `cfg`。
 
 ### 完整组件 Gallery
 

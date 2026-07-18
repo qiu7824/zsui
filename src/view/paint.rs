@@ -196,8 +196,173 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 }
 
+#[cfg(feature = "label")]
+impl<Msg: Clone> ViewNode<Msg> {
+    fn layout_navigation_view(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        self.bounds = Some(cx.bounds);
+        self.layout_dpi = cx.dpi;
+        let (
+            platform,
+            item_count,
+            footer_count,
+            pane_open,
+            pane_width,
+            minimum_content_width,
+        ) = match &self.kind {
+            ViewNodeKind::NavigationView {
+                platform,
+                item_count,
+                footer_count,
+                pane_open,
+                pane_width,
+                minimum_content_width,
+                ..
+            } => (
+                *platform,
+                *item_count,
+                *footer_count,
+                *pane_open,
+                *pane_width,
+                *minimum_content_width,
+            ),
+            _ => unreachable!("navigation layout requires a navigation view node"),
+        };
+        let layout = zs_navigation_view_layout(
+            cx.bounds,
+            platform,
+            pane_width,
+            minimum_content_width,
+            pane_open,
+            cx.dpi,
+            cx.typography_scale(),
+        );
+        if layout.mode == ZsNavigationViewLayoutMode::Expanded {
+            if let ViewNodeKind::NavigationView { pane_open, .. } = &mut self.kind {
+                *pane_open = false;
+            }
+        }
+        for child in &mut self.children {
+            child.clear_layout_bounds();
+        }
+        let mut children = Vec::new();
+        if let Some(id) = self.id {
+            children.push(LayoutNode {
+                component: id.into(),
+                bounds: cx.bounds,
+            });
+        }
+
+        let content_index = item_count.saturating_add(footer_count);
+        let split_index = content_index.min(self.children.len());
+        let (navigation_children, content_children) = self.children.split_at_mut(split_index);
+        let Some(content) = content_children.first_mut() else {
+            return LayoutOutput {
+                bounds: cx.bounds,
+                children,
+            };
+        };
+        let mut content_cx = ViewLayoutCx {
+            bounds: layout.content_bounds,
+            dpi: cx.dpi,
+            typography_scale_per_mille: cx.typography_scale_per_mille,
+        };
+        children.extend(content.layout(&mut content_cx).children);
+
+        if layout.pane_bounds.is_some() {
+            let (items, footer_items) = navigation_children.split_at_mut(item_count);
+            let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
+            let item_gap = spacing.xs.to_px(cx.dpi).round_i32().max(0);
+            let footer_gap = spacing.xs.to_px(cx.dpi).round_i32().max(0);
+            let pane_padding = match platform {
+                crate::ZsBaseControlPlatformStyle::Gtk => spacing.md,
+                crate::ZsBaseControlPlatformStyle::Windows
+                | crate::ZsBaseControlPlatformStyle::Macos => spacing.lg,
+            }
+            .to_px(cx.dpi)
+            .round_i32()
+            .max(0);
+            let show_footer =
+                layout.mode == ZsNavigationViewLayoutMode::Expanded || layout.overlay_open;
+            let footer_heights = if show_footer {
+                footer_items
+                    .iter()
+                    .map(|child| {
+                        navigation_intrinsic_height_px(child, cx.dpi, cx.typography_scale())
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            let footer_total = footer_heights
+                .iter()
+                .copied()
+                .fold(0i32, i32::saturating_add)
+                .saturating_add(
+                    footer_gap.saturating_mul(footer_heights.len().saturating_sub(1) as i32),
+                );
+            let footer_top = layout
+                .footer_bounds
+                .y
+                .saturating_add(layout.footer_bounds.height)
+                .saturating_sub(footer_total);
+            let item_bottom = if footer_total > 0 {
+                footer_top.saturating_sub(pane_padding)
+            } else {
+                layout
+                    .item_bounds
+                    .y
+                    .saturating_add(layout.item_bounds.height)
+            };
+            let mut y = layout.item_bounds.y;
+            for item in items {
+                let height = navigation_intrinsic_height_px(item, cx.dpi, cx.typography_scale());
+                if y.saturating_add(height) > item_bottom {
+                    break;
+                }
+                let mut item_cx = ViewLayoutCx {
+                    bounds: Rect {
+                        x: layout.item_bounds.x,
+                        y,
+                        width: layout.item_bounds.width,
+                        height,
+                    },
+                    dpi: cx.dpi,
+                    typography_scale_per_mille: cx.typography_scale_per_mille,
+                };
+                children.extend(item.layout(&mut item_cx).children);
+                y = y.saturating_add(height).saturating_add(item_gap);
+            }
+            if show_footer {
+                let mut footer_y = footer_top;
+                for (item, height) in footer_items.iter_mut().zip(footer_heights) {
+                    let mut item_cx = ViewLayoutCx {
+                        bounds: Rect {
+                            x: layout.footer_bounds.x,
+                            y: footer_y,
+                            width: layout.footer_bounds.width,
+                            height,
+                        },
+                        dpi: cx.dpi,
+                        typography_scale_per_mille: cx.typography_scale_per_mille,
+                    };
+                    children.extend(item.layout(&mut item_cx).children);
+                    footer_y = footer_y.saturating_add(height).saturating_add(footer_gap);
+                }
+            }
+        }
+        LayoutOutput {
+            bounds: cx.bounds,
+            children,
+        }
+    }
+}
+
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        #[cfg(feature = "label")]
+        if matches!(self.kind, ViewNodeKind::NavigationView { .. }) {
+            return self.layout_navigation_view(cx);
+        }
         #[cfg(feature = "tabs")]
         if matches!(self.kind, ViewNodeKind::Tabs { .. }) {
             return self.layout_tabs(cx);
@@ -922,6 +1087,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 .bounds
                 .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
             match (&mut self.kind, event) {
+                #[cfg(feature = "label")]
+                (
+                    ViewNodeKind::NavigationView { pane_open, .. },
+                    ViewEvent::Click { .. },
+                ) => {
+                    *pane_open = !*pane_open;
+                }
                 #[cfg(feature = "button")]
                 (ViewNodeKind::Button { on_click, .. }, ViewEvent::Click { .. }) => {
                     if let Some(message) = on_click.clone() {
@@ -1647,6 +1819,172 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         match &self.kind {
+            #[cfg(feature = "label")]
+            ViewNodeKind::NavigationView {
+                platform,
+                title,
+                subtitle,
+                item_count,
+                footer_count,
+                pane_open,
+                pane_width,
+                minimum_content_width,
+            } => {
+                let layout = zs_navigation_view_layout(
+                    bounds,
+                    *platform,
+                    *pane_width,
+                    *minimum_content_width,
+                    *pane_open,
+                    cx.dpi,
+                    cx.plan.typography_scale(),
+                );
+                cx.draw(NativeDrawCommand::FillRect {
+                    rect: bounds,
+                    fill: NativeDrawFill::Role(ColorRole::Surface),
+                });
+                let content_index = item_count.saturating_add(*footer_count);
+                if let Some(content) = self.children.get(content_index) {
+                    content.paint(cx);
+                }
+                if let Some(header) = layout.header_bounds {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: header,
+                        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                    });
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: Rect {
+                            x: header.x,
+                            y: header.y.saturating_add(header.height).saturating_sub(1),
+                            width: header.width,
+                            height: 1,
+                        },
+                        fill: NativeDrawFill::Role(ColorRole::Border),
+                    });
+                }
+                if let Some(scrim) = layout.scrim_bounds {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: scrim,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::PrimaryText,
+                            alpha: match platform {
+                                crate::ZsBaseControlPlatformStyle::Windows => 42,
+                                crate::ZsBaseControlPlatformStyle::Macos => 32,
+                                crate::ZsBaseControlPlatformStyle::Gtk => 48,
+                            },
+                        },
+                    });
+                }
+                if let Some(pane) = layout.pane_bounds {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: pane,
+                        fill: NativeDrawFill::Role(match platform {
+                            crate::ZsBaseControlPlatformStyle::Gtk => ColorRole::Surface,
+                            crate::ZsBaseControlPlatformStyle::Windows
+                            | crate::ZsBaseControlPlatformStyle::Macos => {
+                                ColorRole::SurfaceRaised
+                            }
+                        }),
+                    });
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: Rect {
+                            x: pane.x.saturating_add(pane.width).saturating_sub(1),
+                            y: pane.y,
+                            width: 1,
+                            height: pane.height,
+                        },
+                        fill: NativeDrawFill::Role(ColorRole::Border),
+                    });
+                    if let Some(title_bounds) = layout.title_bounds {
+                        let mut style = SemanticTextStyle::body();
+                        style.role = match platform {
+                            crate::ZsBaseControlPlatformStyle::Windows => TextRole::Subtitle,
+                            crate::ZsBaseControlPlatformStyle::Macos
+                            | crate::ZsBaseControlPlatformStyle::Gtk => TextRole::Body,
+                        };
+                        style.weight = crate::TextWeight::Semibold;
+                        style.horizontal_align = crate::HorizontalAlign::Start;
+                        style.ellipsis = true;
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            title,
+                            title_bounds,
+                            style,
+                        )));
+                    }
+                    if let Some(subtitle_bounds) = layout.subtitle_bounds {
+                        let mut style = SemanticTextStyle::body();
+                        style.role = TextRole::Caption;
+                        style.color = ColorRole::SecondaryText;
+                        style.horizontal_align = crate::HorizontalAlign::Start;
+                        style.ellipsis = true;
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            subtitle,
+                            subtitle_bounds,
+                            style,
+                        )));
+                    }
+                    for child in self.children.iter().take(content_index) {
+                        child.paint(cx);
+                    }
+                }
+                if !layout.overlay_open {
+                    if let (Some(header), Some(toggle)) =
+                        (layout.header_bounds, layout.toggle_bounds)
+                    {
+                    let text_x = toggle.x.saturating_add(toggle.width).saturating_add(8);
+                    let mut style = SemanticTextStyle::body();
+                    style.role = TextRole::Body;
+                    style.weight = crate::TextWeight::Semibold;
+                    style.horizontal_align = crate::HorizontalAlign::Start;
+                    style.ellipsis = true;
+                    cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                        title,
+                        Rect {
+                            x: text_x,
+                            y: header.y,
+                            width: header
+                                .x
+                                .saturating_add(header.width)
+                                .saturating_sub(12)
+                                .saturating_sub(text_x)
+                                .max(0),
+                            height: header.height,
+                        },
+                        style,
+                    )));
+                    }
+                }
+                if let Some(toggle) = layout.toggle_bounds {
+                    let icon_size = Dp::new(match platform {
+                        crate::ZsBaseControlPlatformStyle::Windows => 20.0,
+                        crate::ZsBaseControlPlatformStyle::Macos
+                        | crate::ZsBaseControlPlatformStyle::Gtk => 16.0,
+                    })
+                    .to_px(cx.dpi)
+                    .round_i32()
+                    .max(1)
+                    .min(toggle.width.min(toggle.height).max(1));
+                    cx.draw(NativeDrawCommand::Icon(
+                        crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Sidebar,
+                            Rect {
+                                x: toggle
+                                    .x
+                                    .saturating_add(toggle.width.saturating_sub(icon_size) / 2),
+                                y: toggle
+                                    .y
+                                    .saturating_add(toggle.height.saturating_sub(icon_size) / 2),
+                                width: icon_size,
+                                height: icon_size,
+                            },
+                            crate::NativeIconColorMode::ThemeAware,
+                        )
+                        .with_color(ColorRole::PrimaryText),
+                    ));
+                }
+                cx.finish_node(self);
+                return;
+            }
             #[cfg(feature = "label")]
             ViewNodeKind::Text { text, style } => {
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(

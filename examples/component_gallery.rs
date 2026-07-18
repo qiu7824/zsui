@@ -9,6 +9,7 @@ const NAV_COLLECTIONS: WidgetId = WidgetId::new(11);
 const NAV_NAVIGATION: WidgetId = WidgetId::new(12);
 const NAV_FEEDBACK: WidgetId = WidgetId::new(13);
 const NAV_CATALOG: WidgetId = WidgetId::new(14);
+const NAVIGATION_VIEW: WidgetId = WidgetId::new(15);
 const PRIMARY_ACTION: WidgetId = WidgetId::new(100);
 const TEXT_INPUT: WidgetId = WidgetId::new(101);
 const PASSWORD_INPUT: WidgetId = WidgetId::new(102);
@@ -827,12 +828,28 @@ fn catalog_page(state: &GalleryState) -> ViewNode<Msg> {
 
 fn view(state: &GalleryState) -> ViewNode<Msg> {
     let summary = zsui_component_catalog_summary();
+    let page = match state.page {
+        GalleryPage::Inputs => inputs_page(state),
+        GalleryPage::Collections => collections_page(state),
+        GalleryPage::Navigation => navigation_page(state),
+        GalleryPage::Feedback => feedback_page(state),
+        GalleryPage::Catalog => catalog_page(state),
+    };
+    let spacing = ZsuiSpacingTokens::default();
+    let content = column([
+        role_text(state.page.title(), TextRole::Subtitle),
+        secondary_text(state.page.description(), TextRole::Body),
+        page,
+    ])
+    .flex(1.0)
+    .padding(spacing.page_padding)
+    .gap(spacing.content_gap);
     let navigation_items = GalleryPage::ALL.into_iter().map(|(page, id)| {
         navigation_item(page.title(), page.icon(), page == state.page)
             .id(id)
             .on_click(Msg::Navigate(page))
     });
-    let navigation = navigation_view(
+    navigation_view(
         ZsNavigationViewSpec::new(
             "ZSUI 组件库 / Gallery",
             format!(
@@ -853,33 +870,16 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
             ])
             .gap(Dp::new(8.0)),
             status_text(&state.status),
-        ]),
-    );
-    let page = match state.page {
-        GalleryPage::Inputs => inputs_page(state),
-        GalleryPage::Collections => collections_page(state),
-        GalleryPage::Navigation => navigation_page(state),
-        GalleryPage::Feedback => feedback_page(state),
-        GalleryPage::Catalog => catalog_page(state),
-    };
-    let spacing = ZsuiSpacingTokens::default();
-    let content = column([
-        role_text(state.page.title(), TextRole::Subtitle),
-        secondary_text(state.page.description(), TextRole::Body),
-        page,
-    ])
-    .flex(1.0)
-    .padding(spacing.page_padding)
-    .gap(spacing.content_gap);
-
-    row([navigation, content])
-        .gap(Dp::new(0.0))
-        .bg(ThemeColorToken::Surface)
-        .theme_mode(if state.dark {
-            ZsuiThemeMode::Dark
-        } else {
-            ZsuiThemeMode::Light
-        })
+        ])
+        .minimum_content_width(Dp::new(560.0))
+        .content(NAVIGATION_VIEW, content),
+    )
+    .bg(ThemeColorToken::Surface)
+    .theme_mode(if state.dark {
+        ZsuiThemeMode::Dark
+    } else {
+        ZsuiThemeMode::Light
+    })
 }
 
 fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
@@ -1251,5 +1251,54 @@ mod tests {
         assert_eq!(text.bounds.height, metrics.text_input_height.0 as i32);
         assert!(save.bounds.width >= metrics.button_minimum_width.0 as i32);
         assert!(text.bounds.width > save.bounds.width);
+    }
+
+    #[test]
+    fn gallery_consumes_the_framework_adaptive_navigation_shell() {
+        let mut narrow = view(&GalleryState::default());
+        View::layout(
+            &mut narrow,
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 620,
+                    height: 520,
+                },
+                Dpi::standard(),
+            ),
+        );
+        let narrow_interaction = narrow.interaction_plan();
+        assert_eq!(
+            narrow_interaction
+                .hit_target_for_widget(NAVIGATION_VIEW)
+                .map(|target| target.kind),
+            Some(ViewHitTargetKind::NavigationViewToggle)
+        );
+        assert!(narrow_interaction
+            .hit_target_for_widget(NAV_INPUTS)
+            .is_none());
+        assert!(narrow_interaction
+            .hit_target_for_widget(PRIMARY_ACTION)
+            .is_some());
+
+        let mut wide = view(&GalleryState::default());
+        View::layout(
+            &mut wide,
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1180,
+                    height: 780,
+                },
+                Dpi::standard(),
+            ),
+        );
+        let wide_interaction = wide.interaction_plan();
+        assert!(wide_interaction
+            .hit_target_for_widget(NAVIGATION_VIEW)
+            .is_none());
+        assert!(wide_interaction.hit_target_for_widget(NAV_INPUTS).is_some());
     }
 }

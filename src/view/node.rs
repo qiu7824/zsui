@@ -553,6 +553,18 @@ pub enum ViewNodeKind<Msg> {
         text: String,
         style: SemanticTextStyle,
     },
+    #[cfg(feature = "label")]
+    #[doc(hidden)]
+    NavigationView {
+        platform: crate::ZsBaseControlPlatformStyle,
+        title: String,
+        subtitle: String,
+        item_count: usize,
+        footer_count: usize,
+        pane_open: bool,
+        pane_width: Option<Dp>,
+        minimum_content_width: Dp,
+    },
     #[cfg(feature = "image-preview")]
     ImagePreview {
         snapshot: ZsImagePreviewSnapshot,
@@ -1008,7 +1020,7 @@ impl<Msg> ViewNode<Msg> {
             .min()
     }
 
-    #[cfg(any(feature = "tabs", feature = "virtual-list"))]
+    #[cfg(any(feature = "label", feature = "tabs", feature = "virtual-list"))]
     fn clear_layout_bounds(&mut self) {
         self.bounds = None;
         for child in &mut self.children {

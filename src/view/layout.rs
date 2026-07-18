@@ -402,6 +402,76 @@ fn split_column_child_bounds<Msg>(
         .collect()
 }
 
+#[cfg(feature = "label")]
+fn navigation_intrinsic_height_px<Msg>(
+    node: &ViewNode<Msg>,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    let explicit = node
+        .style
+        .height
+        .or(node.style.min_height)
+        .map(|height| {
+            typography_aware_length_px(
+                height,
+                dpi,
+                node.typography_scaled_height,
+                typography_scale,
+            )
+        });
+    if let Some(explicit) = explicit {
+        return explicit.max(1);
+    }
+    let gap = node
+        .style
+        .gap
+        .map(|gap| gap.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
+    let padding = node
+        .style
+        .padding
+        .map(|padding| padding.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0)
+        .saturating_mul(2);
+    let content = match &node.kind {
+        ViewNodeKind::Text { style, .. } => Dp::new(
+            style.role
+                .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                .line_height
+                * typography_scale,
+        )
+        .to_px(dpi)
+        .round_i32()
+        .max(1),
+        ViewNodeKind::Stack {
+            direction: ViewStackDirection::Row,
+        } => node
+            .children
+            .iter()
+            .map(|child| navigation_intrinsic_height_px(child, dpi, typography_scale))
+            .max()
+            .unwrap_or(0),
+        ViewNodeKind::Stack {
+            direction: ViewStackDirection::Column,
+        } => node
+            .children
+            .iter()
+            .map(|child| navigation_intrinsic_height_px(child, dpi, typography_scale))
+            .fold(0i32, i32::saturating_add)
+            .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
+        ViewNodeKind::Spacer => 0,
+        _ => crate::ZsBaseControlMetrics::for_platform(
+            crate::ZsBaseControlPlatformStyle::current(),
+        )
+        .button_height
+        .to_px(dpi)
+        .round_i32()
+        .max(1),
+    };
+    content.saturating_add(padding).max(1)
+}
+
 fn allocate_axis_lengths<Msg>(
     total: i32,
     gap: i32,

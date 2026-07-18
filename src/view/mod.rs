@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-#[cfg(feature = "button")]
+#[cfg(any(feature = "button", feature = "label"))]
 use crate::render_protocol::TextRole;
 #[cfg(any(
     feature = "label",

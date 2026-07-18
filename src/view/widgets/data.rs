@@ -169,22 +169,28 @@ pub(crate) fn section_for_style<Msg>(
 /// application parameter without exposing a platform enum or backend handle.
 #[cfg(feature = "label")]
 pub struct ZsNavigationViewSpec<Msg> {
+    id: Option<WidgetId>,
     title: String,
     subtitle: String,
     items: Vec<ViewNode<Msg>>,
     footer_items: Vec<ViewNode<Msg>>,
     pane_width: Option<Dp>,
+    minimum_content_width: Dp,
+    content: Option<Box<ViewNode<Msg>>>,
 }
 
 #[cfg(feature = "label")]
 impl<Msg> ZsNavigationViewSpec<Msg> {
     pub fn new(title: impl Into<String>, subtitle: impl Into<String>) -> Self {
         Self {
+            id: None,
             title: title.into(),
             subtitle: subtitle.into(),
             items: Vec::new(),
             footer_items: Vec::new(),
             pane_width: None,
+            minimum_content_width: Dp::new(0.0),
+            content: None,
         }
     }
 
@@ -212,6 +218,28 @@ impl<Msg> ZsNavigationViewSpec<Msg> {
         self.pane_width = Some(Dp::new(width.0.max(0.0)));
         self
     }
+
+    /// Declares the application's platform-neutral content width constraint.
+    ///
+    /// AppKit uses the same constraint-driven collapse rule as a split-view
+    /// sidebar. GTK combines it with its adaptive breakpoint. Windows keeps
+    /// the documented NavigationView Auto thresholds.
+    pub fn minimum_content_width(mut self, width: Dp) -> Self {
+        self.minimum_content_width = Dp::new(width.0.max(0.0));
+        self
+    }
+
+    /// Supplies the content pane and the stable identity used by the
+    /// framework-owned adaptive pane toggle.
+    ///
+    /// Requiring the identity here prevents an adaptive shell from rendering
+    /// an inert compact/minimal toggle. Static pane-only navigation does not
+    /// need an identity.
+    pub fn content(mut self, id: WidgetId, content: ViewNode<Msg>) -> Self {
+        self.id = Some(id);
+        self.content = Some(Box::new(content));
+        self
+    }
 }
 
 /// Builds the navigation surface for the target desktop family.
@@ -235,12 +263,37 @@ pub(crate) fn navigation_view_for_style<Msg>(
     spec: ZsNavigationViewSpec<Msg>,
 ) -> ViewNode<Msg> {
     let ZsNavigationViewSpec {
+        id,
         title,
         subtitle,
         items,
         footer_items,
         pane_width,
+        minimum_content_width,
+        content,
     } = spec;
+    if let Some(content) = content {
+        let item_count = items.len();
+        let footer_count = footer_items.len();
+        let children = items
+            .into_iter()
+            .chain(footer_items)
+            .chain([*content])
+            .collect::<Vec<_>>();
+        let mut navigation = ViewNode::new(ViewNodeKind::NavigationView {
+            platform,
+            title,
+            subtitle,
+            item_count,
+            footer_count,
+            pane_open: false,
+            pane_width,
+            minimum_content_width,
+        })
+        .children(children);
+        navigation.id = id;
+        return navigation;
+    }
     let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
     let radius = crate::ZsuiRadiusTokens::for_platform(platform);
     let title_style = crate::SemanticTextStyle {
@@ -350,6 +403,275 @@ pub(crate) fn navigation_view_for_style<Msg>(
         }
     };
     navigation.width(open_pane_width)
+}
+
+#[cfg(feature = "label")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ZsNavigationViewLayoutMode {
+    Expanded,
+    Compact,
+    Collapsed,
+}
+
+#[cfg(feature = "label")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ZsNavigationViewLayout {
+    pub mode: ZsNavigationViewLayoutMode,
+    pub pane_bounds: Option<Rect>,
+    pub content_bounds: Rect,
+    pub header_bounds: Option<Rect>,
+    pub toggle_bounds: Option<Rect>,
+    pub title_bounds: Option<Rect>,
+    pub subtitle_bounds: Option<Rect>,
+    pub item_bounds: Rect,
+    pub footer_bounds: Rect,
+    pub scrim_bounds: Option<Rect>,
+    pub overlay_open: bool,
+}
+
+#[cfg(feature = "label")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn zs_navigation_view_layout(
+    bounds: Rect,
+    platform: crate::ZsBaseControlPlatformStyle,
+    pane_width: Option<Dp>,
+    minimum_content_width: Dp,
+    pane_open: bool,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> ZsNavigationViewLayout {
+    let scale = dpi.scale_factor().max(f32::EPSILON);
+    let logical_width = bounds.width.max(0) as f32 / scale;
+    let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
+    let padding = match platform {
+        crate::ZsBaseControlPlatformStyle::Gtk => spacing.md,
+        crate::ZsBaseControlPlatformStyle::Windows
+        | crate::ZsBaseControlPlatformStyle::Macos => spacing.lg,
+    }
+    .to_px(dpi)
+    .round_i32()
+    .max(0);
+    let gap = spacing.sm.to_px(dpi).round_i32().max(0);
+    let title_line = Dp::new(
+        crate::TextRole::Subtitle
+            .metrics_for(platform.typography())
+            .line_height
+            * typography_scale,
+    )
+    .to_px(dpi)
+    .round_i32()
+    .max(1);
+    let subtitle_line = Dp::new(
+        crate::TextRole::Caption
+            .metrics_for(platform.typography())
+            .line_height
+            * typography_scale,
+    )
+    .to_px(dpi)
+    .round_i32()
+    .max(1);
+
+    let open_pane_dp = pane_width.map_or_else(
+        || match platform {
+            // NavigationView.OpenPaneLength defaults to 320 epx.
+            crate::ZsBaseControlPlatformStyle::Windows => 320.0,
+            // AppKit's standard sidebar initializer owns its min/max values;
+            // 240 remains ZSUI's preferred thickness until the backend can
+            // feed those runtime values into this profile.
+            crate::ZsBaseControlPlatformStyle::Macos => 240.0,
+            // AdwNavigationSplitView defaults to 25%, constrained to 180sp
+            // through 280sp.
+            crate::ZsBaseControlPlatformStyle::Gtk => {
+                (logical_width * 0.25).clamp(180.0, 280.0)
+            }
+        },
+        |width| width.0.max(0.0),
+    );
+    let open_pane_width = Dp::new(open_pane_dp)
+        .to_px(dpi)
+        .round_i32()
+        .clamp(0, bounds.width.max(0));
+    let minimum_content_dp = minimum_content_width.0.max(0.0);
+    let mode = match platform {
+        crate::ZsBaseControlPlatformStyle::Windows if logical_width >= 1008.0 => {
+            ZsNavigationViewLayoutMode::Expanded
+        }
+        crate::ZsBaseControlPlatformStyle::Windows if logical_width > 640.0 => {
+            ZsNavigationViewLayoutMode::Compact
+        }
+        crate::ZsBaseControlPlatformStyle::Windows => ZsNavigationViewLayoutMode::Collapsed,
+        crate::ZsBaseControlPlatformStyle::Macos
+            if minimum_content_dp > 0.0
+                && logical_width < open_pane_dp + minimum_content_dp =>
+        {
+            ZsNavigationViewLayoutMode::Collapsed
+        }
+        crate::ZsBaseControlPlatformStyle::Macos => ZsNavigationViewLayoutMode::Expanded,
+        crate::ZsBaseControlPlatformStyle::Gtk => {
+            let constraint_breakpoint = if minimum_content_dp > 0.0 {
+                180.0 + minimum_content_dp
+            } else {
+                0.0
+            };
+            if logical_width <= 400.0_f32.max(constraint_breakpoint) {
+                ZsNavigationViewLayoutMode::Collapsed
+            } else {
+                ZsNavigationViewLayoutMode::Expanded
+            }
+        }
+    };
+    let compact_width = Dp::new(48.0)
+        .to_px(dpi)
+        .round_i32()
+        .clamp(0, bounds.width.max(0));
+    let base_control = crate::ZsBaseControlMetrics::for_platform(platform);
+    let collapsed_header_height = match platform {
+        // The NavigationView content header is 52 epx in Minimal mode.
+        crate::ZsBaseControlPlatformStyle::Windows => Dp::new(52.0),
+        crate::ZsBaseControlPlatformStyle::Macos
+        | crate::ZsBaseControlPlatformStyle::Gtk => Dp::new(
+            base_control.button_height.0 + spacing.sm.0 * 2.0,
+        ),
+    }
+    .to_px(dpi)
+    .round_i32()
+    .max(1)
+    .min(bounds.height.max(0));
+    let overlay_open = mode != ZsNavigationViewLayoutMode::Expanded && pane_open;
+    let inline_pane_width = match mode {
+        ZsNavigationViewLayoutMode::Expanded => open_pane_width,
+        ZsNavigationViewLayoutMode::Compact => compact_width,
+        ZsNavigationViewLayoutMode::Collapsed => 0,
+    };
+    let pane_bounds = if overlay_open {
+        Some(Rect {
+            x: bounds.x,
+            y: bounds.y,
+            width: open_pane_width,
+            height: bounds.height,
+        })
+    } else if inline_pane_width > 0 {
+        Some(Rect {
+            x: bounds.x,
+            y: bounds.y,
+            width: inline_pane_width,
+            height: bounds.height,
+        })
+    } else {
+        None
+    };
+    let content_x = bounds.x.saturating_add(inline_pane_width);
+    let content_y = if mode == ZsNavigationViewLayoutMode::Collapsed {
+        bounds.y.saturating_add(collapsed_header_height)
+    } else {
+        bounds.y
+    };
+    let content_bounds = Rect {
+        x: content_x,
+        y: content_y,
+        width: bounds
+            .width
+            .saturating_sub(inline_pane_width)
+            .max(0),
+        height: bounds
+            .y
+            .saturating_add(bounds.height)
+            .saturating_sub(content_y)
+            .max(0),
+    };
+    let header_bounds = (mode == ZsNavigationViewLayoutMode::Collapsed).then_some(Rect {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: collapsed_header_height,
+    });
+    let toggle_size = match mode {
+        ZsNavigationViewLayoutMode::Expanded => 0,
+        ZsNavigationViewLayoutMode::Compact => compact_width.min(collapsed_header_height.max(1)),
+        ZsNavigationViewLayoutMode::Collapsed => collapsed_header_height,
+    };
+    let toggle_bounds = (toggle_size > 0).then_some(Rect {
+        x: bounds.x,
+        y: bounds.y,
+        width: toggle_size,
+        height: toggle_size,
+    });
+    let expanded_header_height = padding
+        .saturating_add(title_line)
+        .saturating_add(gap)
+        .saturating_add(subtitle_line)
+        .saturating_add(gap);
+    let pane = pane_bounds.unwrap_or(Rect {
+        x: bounds.x,
+        y: bounds.y,
+        width: 0,
+        height: bounds.height,
+    });
+    let shows_expanded_pane = mode == ZsNavigationViewLayoutMode::Expanded || overlay_open;
+    let title_x = if overlay_open {
+        pane.x.saturating_add(toggle_size).saturating_add(gap)
+    } else {
+        pane.x.saturating_add(padding)
+    };
+    let title_bounds = shows_expanded_pane.then_some(Rect {
+        x: title_x,
+        y: pane.y.saturating_add(padding),
+        width: pane
+            .x
+            .saturating_add(pane.width)
+            .saturating_sub(padding)
+            .saturating_sub(title_x)
+            .max(0),
+        height: title_line,
+    });
+    let subtitle_bounds = shows_expanded_pane.then_some(Rect {
+        x: pane.x.saturating_add(padding),
+        y: pane
+            .y
+            .saturating_add(padding)
+            .saturating_add(title_line)
+            .saturating_add(gap),
+        width: pane.width.saturating_sub(padding.saturating_mul(2)).max(0),
+        height: subtitle_line,
+    });
+    let item_top = if shows_expanded_pane {
+        pane.y.saturating_add(expanded_header_height)
+    } else {
+        pane.y.saturating_add(compact_width)
+    };
+    let item_inset = if shows_expanded_pane { padding } else { 0 };
+    let item_bounds = Rect {
+        x: pane.x.saturating_add(item_inset),
+        y: item_top,
+        width: pane.width.saturating_sub(item_inset.saturating_mul(2)).max(0),
+        height: pane
+            .y
+            .saturating_add(pane.height)
+            .saturating_sub(item_top)
+            .saturating_sub(padding)
+            .max(0),
+    };
+    let footer_bounds = item_bounds;
+    let scrim_bounds = overlay_open.then_some(Rect {
+        x: bounds.x.saturating_add(open_pane_width),
+        y: bounds.y,
+        width: bounds.width.saturating_sub(open_pane_width).max(0),
+        height: bounds.height,
+    });
+
+    ZsNavigationViewLayout {
+        mode,
+        pane_bounds,
+        content_bounds,
+        header_bounds,
+        toggle_bounds,
+        title_bounds,
+        subtitle_bounds,
+        item_bounds,
+        footer_bounds,
+        scrim_bounds,
+        overlay_open,
+    }
 }
 
 /// Platform-neutral declaration for a command bar.
@@ -587,6 +909,178 @@ mod data_tests {
             assert!(contains_widget(&navigation, item));
             assert!(contains_widget(&navigation, footer));
         }
+    }
+
+    #[test]
+    fn navigation_view_content_creates_one_framework_owned_adaptive_shell() {
+        let shell = crate::WidgetId::new(503);
+        let item = crate::WidgetId::new(504);
+        let content = crate::WidgetId::new(505);
+        let navigation = navigation_view_for_style(
+            crate::ZsBaseControlPlatformStyle::Macos,
+            ZsNavigationViewSpec::<()>::new("Library", "12 items")
+                .item(spacer().id(item))
+                .minimum_content_width(Dp::new(420.0))
+                .content(shell, spacer().id(content)),
+        );
+
+        assert_eq!(navigation.id, Some(shell));
+        assert!(contains_widget(&navigation, item));
+        assert!(contains_widget(&navigation, content));
+        assert!(matches!(
+            navigation.kind,
+            ViewNodeKind::NavigationView {
+                platform: crate::ZsBaseControlPlatformStyle::Macos,
+                item_count: 1,
+                footer_count: 0,
+                minimum_content_width: Dp(420.0),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn navigation_view_uses_platform_adaptive_width_contracts() {
+        let bounds = |width| Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: 640,
+        };
+        let layout = |width, platform, pane_width, minimum_content_width| {
+            zs_navigation_view_layout(
+                bounds(width),
+                platform,
+                pane_width,
+                minimum_content_width,
+                false,
+                Dpi::standard(),
+                1.0,
+            )
+        };
+
+        let windows_expanded = layout(
+            1008,
+            crate::ZsBaseControlPlatformStyle::Windows,
+            None,
+            Dp::new(560.0),
+        );
+        assert_eq!(
+            windows_expanded.mode,
+            ZsNavigationViewLayoutMode::Expanded
+        );
+        assert_eq!(windows_expanded.pane_bounds.unwrap().width, 320);
+        assert_eq!(windows_expanded.content_bounds.x, 320);
+
+        let windows_compact = layout(
+            1007,
+            crate::ZsBaseControlPlatformStyle::Windows,
+            None,
+            Dp::new(560.0),
+        );
+        assert_eq!(
+            windows_compact.mode,
+            ZsNavigationViewLayoutMode::Compact
+        );
+        assert_eq!(windows_compact.pane_bounds.unwrap().width, 48);
+        assert_eq!(windows_compact.content_bounds.x, 48);
+
+        let windows_minimal = layout(
+            640,
+            crate::ZsBaseControlPlatformStyle::Windows,
+            None,
+            Dp::new(560.0),
+        );
+        assert_eq!(
+            windows_minimal.mode,
+            ZsNavigationViewLayoutMode::Collapsed
+        );
+        assert_eq!(windows_minimal.pane_bounds, None);
+        assert_eq!(windows_minimal.header_bounds.unwrap().height, 52);
+        assert_eq!(windows_minimal.content_bounds.y, 52);
+
+        let macos_collapsed = layout(
+            799,
+            crate::ZsBaseControlPlatformStyle::Macos,
+            None,
+            Dp::new(560.0),
+        );
+        assert_eq!(
+            macos_collapsed.mode,
+            ZsNavigationViewLayoutMode::Collapsed
+        );
+        let macos_expanded = layout(
+            800,
+            crate::ZsBaseControlPlatformStyle::Macos,
+            None,
+            Dp::new(560.0),
+        );
+        assert_eq!(macos_expanded.mode, ZsNavigationViewLayoutMode::Expanded);
+        assert_eq!(macos_expanded.pane_bounds.unwrap().width, 240);
+
+        let gtk_collapsed = layout(
+            400,
+            crate::ZsBaseControlPlatformStyle::Gtk,
+            None,
+            Dp::new(0.0),
+        );
+        assert_eq!(gtk_collapsed.mode, ZsNavigationViewLayoutMode::Collapsed);
+        let gtk_narrow_expanded = layout(
+            401,
+            crate::ZsBaseControlPlatformStyle::Gtk,
+            None,
+            Dp::new(0.0),
+        );
+        assert_eq!(
+            gtk_narrow_expanded.mode,
+            ZsNavigationViewLayoutMode::Expanded
+        );
+        assert_eq!(gtk_narrow_expanded.pane_bounds.unwrap().width, 180);
+        let gtk_wide = layout(
+            1200,
+            crate::ZsBaseControlPlatformStyle::Gtk,
+            None,
+            Dp::new(0.0),
+        );
+        assert_eq!(gtk_wide.pane_bounds.unwrap().width, 280);
+    }
+
+    #[test]
+    fn navigation_view_overlay_keeps_text_line_boxes_inside_the_pane() {
+        let scale = 1.5;
+        let layout = zs_navigation_view_layout(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 620,
+                height: 480,
+            },
+            crate::ZsBaseControlPlatformStyle::Macos,
+            None,
+            Dp::new(560.0),
+            true,
+            Dpi::standard(),
+            scale,
+        );
+        let pane = layout.pane_bounds.expect("open overlay must own a pane");
+        let title = layout.title_bounds.expect("open overlay must show title");
+        let subtitle = layout
+            .subtitle_bounds
+            .expect("open overlay must show subtitle");
+
+        assert!(layout.overlay_open);
+        assert!(title.width > 0 && title.height > 0);
+        assert!(subtitle.width > 0 && subtitle.height > 0);
+        assert!(
+            title.x >= pane.x
+                && title.x.saturating_add(title.width) <= pane.x.saturating_add(pane.width)
+        );
+        assert!(
+            subtitle.x >= pane.x
+                && subtitle.x.saturating_add(subtitle.width) <= pane.x.saturating_add(pane.width)
+        );
+        assert!(title.y.saturating_add(title.height) <= subtitle.y);
+        assert!(subtitle.y.saturating_add(subtitle.height) <= layout.item_bounds.y);
     }
 
     #[test]

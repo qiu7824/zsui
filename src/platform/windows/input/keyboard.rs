@@ -1577,6 +1577,15 @@ impl WindowsWin32ViewInputRoute {
                 ZSUI_WIN32_VK_SPACE,
             )
         );
+        #[cfg(feature = "label")]
+        let activates = activates
+            || matches!(
+                (target.kind, virtual_key),
+                (
+                    crate::ViewHitTargetKind::NavigationViewToggle,
+                    ZSUI_WIN32_VK_RETURN | ZSUI_WIN32_VK_SPACE
+                )
+            );
         #[cfg(feature = "toggle-button")]
         let activates = activates
             || matches!(

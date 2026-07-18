@@ -372,6 +372,10 @@ impl ViewHitTarget {
 pub enum ViewHitTargetKind {
     Unknown,
     Button,
+    #[cfg(feature = "label")]
+    NavigationViewToggle,
+    #[cfg(feature = "label")]
+    NavigationViewScrim,
     #[cfg(feature = "toggle-button")]
     ToggleButton,
     Textbox,
@@ -732,6 +736,10 @@ impl ViewInteractionPlan {
 
 impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
+        #[cfg(feature = "label")]
+        if self.kind == ViewHitTargetKind::NavigationViewScrim {
+            return false;
+        }
         #[cfg(feature = "command-palette")]
         if matches!(
             self.kind,

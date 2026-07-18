@@ -4125,6 +4125,15 @@ impl NativeViewInputRuntime {
                 NativeViewKey::Space
             )
         );
+        #[cfg(feature = "label")]
+        let activates = activates
+            || matches!(
+                (target.kind, key),
+                (
+                    crate::ViewHitTargetKind::NavigationViewToggle,
+                    NativeViewKey::Enter | NativeViewKey::Space
+                )
+            );
         #[cfg(feature = "toggle-button")]
         let activates = activates
             || matches!(

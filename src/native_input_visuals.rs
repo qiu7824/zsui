@@ -1655,6 +1655,8 @@ pub(crate) type NativePointerVisualKey = (WidgetId, ViewHitTargetKind);
 ))]
 pub(crate) fn native_pointer_visual_key(target: ViewHitTarget) -> Option<NativePointerVisualKey> {
     let supported = false;
+    #[cfg(feature = "label")]
+    let supported = supported || target.kind == ViewHitTargetKind::NavigationViewToggle;
     #[cfg(feature = "button")]
     let supported = supported || target.kind == ViewHitTargetKind::Button;
     #[cfg(feature = "auto-suggest")]

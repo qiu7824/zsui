@@ -263,6 +263,111 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "label", feature = "button"))]
+    fn adaptive_navigation_shell_owns_layout_overlay_focus_and_dismissal() {
+        let shell = WidgetId::new(20);
+        let item = WidgetId::new(21);
+        let content_action = WidgetId::new(22);
+        let mut view = navigation_view_for_style(
+            crate::ZsBaseControlPlatformStyle::Windows,
+            ZsNavigationViewSpec::new("ZSUI Gallery", "Five pages")
+                .item(
+                    navigation_item("Inputs", crate::ZsIcon::Text, true)
+                        .id(item)
+                        .on_click(Msg::SaveClicked),
+                )
+                .minimum_content_width(Dp::new(420.0))
+                .content(
+                    shell,
+                    button("Content action")
+                        .id(content_action)
+                        .on_click(Msg::SaveClicked),
+                ),
+        );
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 620,
+            height: 420,
+        };
+
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+        assert_eq!(view.children[1].bounds().unwrap().y, 52);
+        let closed = view.interaction_plan();
+        assert_eq!(
+            closed.target_kind_at(Point { x: 12, y: 12 }),
+            Some(ViewHitTargetKind::NavigationViewToggle)
+        );
+        assert_eq!(
+            closed.first_focus_target().map(|target| target.widget),
+            Some(shell)
+        );
+        assert!(closed.focus_target_for_widget(content_action).is_some());
+        assert!(closed.focus_target_for_widget(item).is_none());
+
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Click { widget: shell });
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::NavigationView {
+                pane_open: true,
+                ..
+            }
+        ));
+
+        let open = view.interaction_plan();
+        assert_eq!(
+            open.target_kind_at(Point { x: 500, y: 160 }),
+            Some(ViewHitTargetKind::NavigationViewScrim)
+        );
+        assert!(open.focus_target_for_widget(content_action).is_none());
+        assert!(open.focus_target_for_widget(item).is_some());
+        assert_eq!(
+            open.first_focus_target().map(|target| target.widget),
+            Some(shell)
+        );
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        let scrim_index = paint
+            .plan()
+            .commands
+            .iter()
+            .position(|command| {
+                matches!(
+                    command,
+                    NativeDrawCommand::FillRect {
+                        rect: Rect { x: 320, width: 300, .. },
+                        fill: NativeDrawFill::RoleWithAlpha { .. },
+                    }
+                )
+            })
+            .expect("open navigation must paint a scrim outside its pane");
+        let content_text_index = paint
+            .plan()
+            .commands
+            .iter()
+            .position(|command| {
+                matches!(
+                    command,
+                    NativeDrawCommand::Text(command) if command.text == "Content action"
+                )
+            })
+            .expect("content must paint beneath the navigation overlay");
+        assert!(scrim_index > content_text_index);
+
+        view.event(&mut events, &ViewEvent::Click { widget: shell });
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::NavigationView {
+                pane_open: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(all(feature = "label", feature = "button"))]
     fn runtime_typography_scale_expands_semantic_line_and_control_heights() {
         let mut view = column([text::<()>("中文 Body"), button::<()>("保存 / Save")]);
         let bounds = Rect {
