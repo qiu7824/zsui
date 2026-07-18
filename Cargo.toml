@@ -29,6 +29,7 @@ winit = { version = "0.30", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = { version = "0.6", optional = true }
+libc = { version = "0.2", optional = true }
 objc2 = { version = "0.6", optional = true }
 objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSCell", "NSColor", "NSColorSpace", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3", optional = true }
@@ -37,7 +38,7 @@ objc2-foundation = { version = "0.3", optional = true }
 gtk4 = { version = "0.11", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Input_Ime", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Input_Ime", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 windows = { version = "0.62.2", optional = true, default-features = false, features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Accessibility"] }
 windows-core = { version = "0.62.2", optional = true }
 
@@ -107,7 +108,7 @@ component-gallery-demo = ["window", "all-widgets", "native-smoke", "style", "dar
 desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
-macos-appkit = ["dep:block2", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-gtk"]
 all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]

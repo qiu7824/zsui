@@ -651,6 +651,10 @@ impl LinuxGtkDrawViewHost {
             pixel_height: texture.height().max(1) as u32,
             scale_factor: f64::from(scale_factor),
             typography_scale: self.plan.borrow().typography_scale(),
+            typography: linux_gtk_native_typography_profile(
+                self.plan.borrow().typography_scale(),
+                Some(&self.area.pango_context()),
+            ),
         })
     }
 
@@ -1165,19 +1169,14 @@ impl<'a> LinuxGtkDrawSink<'a> {
         palette: NativeDrawPalette,
         typography_scale: f32,
     ) -> Self {
-        let font_family = linux_gtk_ui_font_family();
         Self {
             area,
             context,
             palette,
-            style_resolver: NativeDrawTextStyleResolver::new(
-                font_family.clone(),
-                "Monospace",
-                font_family,
-                crate::ZsTypographyPlatformStyle::Gtk,
+            style_resolver: NativeDrawTextStyleResolver::from_profile(
+                linux_gtk_native_typography_profile(typography_scale, Some(&area.pango_context())),
                 palette,
-            )
-            .with_typography_scale(typography_scale),
+            ),
             text_layout: LinuxGtkTextLayout::new(area.pango_context()),
             clip_depth: 0,
         }
@@ -1507,22 +1506,14 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
 }
 
 fn linux_gtk_ui_font_family() -> String {
-    gtk::Settings::default()
-        .and_then(|settings| settings.gtk_font_name())
-        .and_then(|name| {
-            gtk::pango::FontDescription::from_string(name.as_str())
-                .family()
-                .map(|family| family.to_string())
-        })
+    linux_gtk_configured_font_description()
+        .and_then(|(_, description)| description.family().map(|family| family.to_string()))
         .filter(|family| !family.trim().is_empty())
         .unwrap_or_else(|| "Adwaita Sans".to_string())
 }
 
 pub(crate) fn linux_gtk_ui_font_scale() -> f32 {
-    let Some(description) = gtk::Settings::default()
-        .and_then(|settings| settings.gtk_font_name())
-        .map(|name| gtk::pango::FontDescription::from_string(name.as_str()))
-    else {
+    let Some((_, description)) = linux_gtk_configured_font_description() else {
         return 1.0;
     };
     let configured_size = description.size();
@@ -1538,6 +1529,48 @@ pub(crate) fn linux_gtk_ui_font_scale() -> f32 {
     // GtkSettings stores the user's configured size in Pango units; converting
     // it here keeps layout and Pango rendering on the same scale.
     (logical_pixels / 14.0).clamp(0.75, 3.0)
+}
+
+fn linux_gtk_configured_font_description() -> Option<(String, gtk::pango::FontDescription)> {
+    let name = gtk::Settings::default()?.gtk_font_name()?.to_string();
+    let description = gtk::pango::FontDescription::from_string(&name);
+    Some((name, description))
+}
+
+fn linux_gtk_native_typography_profile(
+    typography_scale: f32,
+    context: Option<&gtk::pango::Context>,
+) -> crate::NativeTypographyProfile {
+    let configured = linux_gtk_configured_font_description();
+    let font_family = configured
+        .as_ref()
+        .and_then(|(_, description)| description.family())
+        .map(|family| family.to_string())
+        .filter(|family| !family.trim().is_empty())
+        .unwrap_or_else(|| "Adwaita Sans".to_string());
+    let mut profile = crate::NativeTypographyProfile::new(
+        crate::ZsTypographyPlatformStyle::Gtk,
+        "gtk_settings_pango_context",
+        font_family.clone(),
+        "Monospace",
+        font_family,
+        typography_scale,
+        "pango_cairo",
+    );
+    if let Some((name, _)) = configured {
+        profile = profile.with_configured_ui_font(name);
+    }
+    if let Some(context) = context {
+        let mut font = gtk::pango::FontDescription::new();
+        font.set_family(&profile.ui_font_family);
+        font.set_absolute_size(f64::from(profile.body_metrics.size) * f64::from(gtk::pango::SCALE));
+        let metrics = context.metrics(Some(&font), None);
+        let ascent = metrics.ascent() as f32 / gtk::pango::SCALE as f32;
+        let descent = metrics.descent() as f32 / gtk::pango::SCALE as f32;
+        let leading = (profile.body_metrics.line_height - ascent - descent).max(0.0);
+        profile = profile.with_body_vertical_metrics(ascent, descent, leading);
+    }
+    profile
 }
 
 fn configure_pango_layout(

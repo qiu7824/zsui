@@ -868,6 +868,7 @@ pub struct NativeViewCaptureEvidence {
     pub pixel_height: u32,
     pub scale_factor: f64,
     pub typography_scale: f32,
+    pub typography: crate::NativeTypographyProfile,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -12681,6 +12682,10 @@ mod tests {
             pixel_height: 1280,
             scale_factor: 2.0,
             typography_scale: 1.0,
+            typography: crate::NativeTypographyProfile::fallback(
+                crate::ZsTypographyPlatformStyle::Macos,
+                1.0,
+            ),
         };
 
         let json = serde_json::to_value(&evidence).expect("capture evidence should serialize");
@@ -12690,6 +12695,7 @@ mod tests {
         assert_eq!(json["pixel_width"], 1920);
         assert_eq!(json["scale_factor"], 2.0);
         assert_eq!(json["typography_scale"], 1.0);
+        assert_eq!(json["typography"]["platform"], "Macos");
     }
 
     #[test]

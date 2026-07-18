@@ -427,8 +427,9 @@ pub use native_icons::{
     NativeIconSourceKind, WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY,
 };
 pub use native_proof::{
-    NativeProofDocument, NativeProofRunnerEvidence, NativeProofWidgetEvidence,
-    NativeProofWindowEvidence, NATIVE_PROOF_SCHEMA, NATIVE_PROOF_SCHEMA_VERSION,
+    NativeProofDocument, NativeProofProcessMemoryEvidence, NativeProofRunnerEvidence,
+    NativeProofWidgetEvidence, NativeProofWindowEvidence, NATIVE_PROOF_SCHEMA,
+    NATIVE_PROOF_SCHEMA_VERSION,
 };
 pub use native_smoke::{
     native_host_smoke_artifact_names, native_host_smoke_artifact_requirements,
@@ -480,12 +481,13 @@ pub use render_protocol::{
     required_native_draw_command_operation_names, Color, ColorRole, HorizontalAlign,
     NativeDrawCommand, NativeDrawCommandOperation, NativeDrawCommandSink, NativeDrawFill,
     NativeDrawIconCommand, NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand,
-    NativeIconColorMode, NativeImageInterpolation, NativeStyleHostOperation, NativeStyleResolver,
-    Renderer, RendererHostOperation, SemanticTextStyle, TextLayout, TextLayoutHostOperation,
-    TextRole, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign, ZsImageFrame,
-    ZsImageFrameId, ZsTypographyMetrics, ZsTypographyPlatformStyle,
-    REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS, REQUIRED_NATIVE_STYLE_HOST_OPERATIONS,
-    REQUIRED_RENDERER_HOST_OPERATIONS, REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
+    NativeFontMetrics, NativeIconColorMode, NativeImageInterpolation, NativeStyleHostOperation,
+    NativeStyleResolver, NativeTypographyProfile, Renderer, RendererHostOperation,
+    SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole, TextRun, TextStyle,
+    TextWeight, TextWrap, VerticalAlign, ZsImageFrame, ZsImageFrameId, ZsTypographyMetrics,
+    ZsTypographyPlatformStyle, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
+    REQUIRED_NATIVE_STYLE_HOST_OPERATIONS, REQUIRED_RENDERER_HOST_OPERATIONS,
+    REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};
 pub use shell_layout::{

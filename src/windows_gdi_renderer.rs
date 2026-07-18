@@ -8,24 +8,22 @@ use crate::{
     NativeStyleResolver, Rect, Renderer, SemanticTextStyle, Size, TextLayout, TextRun, TextStyle,
     TextWeight, TextWrap, VerticalAlign, ZsIcon,
 };
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+use windows_sys::Win32::Globalization::{
+    ScriptStringAnalyse, ScriptStringCPtoX, ScriptStringFree, ScriptString_pSize, SSA_BREAK,
+    SSA_FALLBACK, SSA_GLYPHS, SSA_LINK,
+};
 use windows_sys::Win32::{
     Foundation::{POINT, RECT},
     Graphics::Gdi::{
-        CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, FillRect, FrameRect,
-        GetDeviceCaps, GetStockObject, GetTextFaceW, IntersectClipRect, Polygon, RestoreDC,
-        RoundRect, SaveDC, SelectObject, SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor,
-        StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
-        DEFAULT_PITCH, DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HDC, HGDIOBJ, LOGPIXELSY, NULL_PEN,
-        OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY,
+        CreateCompatibleDC, CreateFontW, CreatePen, CreateSolidBrush, DeleteDC, DeleteObject,
+        DrawTextW, FillRect, FrameRect, GetDeviceCaps, GetStockObject, GetTextFaceW,
+        GetTextMetricsW, IntersectClipRect, Polygon, RestoreDC, RoundRect, SaveDC, SelectObject,
+        SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor, StretchDIBits, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
+        DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HDC, HGDIOBJ, LOGPIXELSY, NULL_PEN,
+        OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY, TEXTMETRICW,
     },
-};
-#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
-use windows_sys::Win32::{
-    Globalization::{
-        ScriptStringAnalyse, ScriptStringCPtoX, ScriptStringFree, ScriptString_pSize, SSA_BREAK,
-        SSA_FALLBACK, SSA_GLYPHS, SSA_LINK,
-    },
-    Graphics::Gdi::{CreateCompatibleDC, DeleteDC},
 };
 
 #[allow(non_camel_case_types)]
@@ -1373,6 +1371,55 @@ fn detect_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
     };
     let _ = WINDOWS_UI_FONT_FAMILIES.set(selected);
     selected
+}
+
+pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProfile {
+    let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+    if dc.is_null() {
+        return crate::NativeTypographyProfile::fallback(
+            crate::ZsTypographyPlatformStyle::Windows,
+            1.0,
+        );
+    }
+    let ui_fonts = detect_windows_ui_font_families(dc);
+    let icon_font = detect_windows_system_icon_font(dc)
+        .font_family()
+        .unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY);
+    let mut profile = crate::NativeTypographyProfile::new(
+        crate::ZsTypographyPlatformStyle::Windows,
+        "win32_gdi_system_font_detection",
+        ui_fonts.text,
+        "Consolas",
+        icon_font,
+        1.0,
+        "gdi_cleartype",
+    )
+    .with_configured_ui_font(ui_fonts.text)
+    .with_role_families(ui_fonts.small, ui_fonts.display);
+    let style = TextStyle {
+        font_family: ui_fonts.text.to_string(),
+        size: profile.body_metrics.size,
+        line_height: profile.body_metrics.line_height,
+        semantic_role: Some(crate::TextRole::Body),
+        weight: TextWeight::Regular,
+        color: Color::rgb(0, 0, 0),
+        horizontal_align: HorizontalAlign::Start,
+        vertical_align: VerticalAlign::Start,
+        wrap: TextWrap::NoWrap,
+        ellipsis: false,
+    };
+    with_font(dc, &style, 1.0, |font_dc| {
+        let mut metrics = unsafe { std::mem::zeroed::<TEXTMETRICW>() };
+        if unsafe { GetTextMetricsW(font_dc, &mut metrics) } != 0 {
+            profile = profile.clone().with_body_vertical_metrics(
+                metrics.tmAscent as f32,
+                metrics.tmDescent as f32,
+                metrics.tmExternalLeading.max(0) as f32,
+            );
+        }
+    });
+    unsafe { DeleteDC(dc) };
+    profile
 }
 
 #[cfg(feature = "document-shell")]

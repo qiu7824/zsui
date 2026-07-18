@@ -130,6 +130,19 @@ jobs:
               assert proof["errors"] == []
               assert proof["unhandled_commands"] == []
               assert isinstance(proof["messages"], list)
+              typography = proof["typography"]
+              assert typography["platform"] == "Macos"
+              assert typography["source"] == "appkit_preferred_body_system_font"
+              assert typography["ui_font_family"]
+              assert typography["configured_ui_font"]
+              assert typography["body_metrics"]["size"] > 0
+              assert typography["body_metrics"]["ascent"] > 0
+              assert typography == capture["typography"]
+              memory = proof["process_memory"]
+              assert memory["source"] == "macos_mach_task_basic_info"
+              assert memory["sample_point"] == "proof_document_serialization"
+              assert memory["resident_bytes"] > 0
+              assert memory["peak_resident_bytes"] >= memory["resident_bytes"]
               assert runtime["created_window_count"] == 1
               assert runtime["screenshot_captured"] is True
               assert not runtime["screenshot_error"]
@@ -294,6 +307,19 @@ jobs:
               assert proof["errors"] == []
               assert proof["unhandled_commands"] == []
               assert isinstance(proof["messages"], list)
+              typography = proof["typography"]
+              assert typography["platform"] == "Gtk"
+              assert typography["source"] == "gtk_settings_pango_context"
+              assert typography["ui_font_family"]
+              assert typography["configured_ui_font"]
+              assert typography["body_metrics"]["size"] > 0
+              assert typography["body_metrics"]["ascent"] > 0
+              assert typography == capture["typography"]
+              memory = proof["process_memory"]
+              assert memory["source"] == "linux_procfs_status_smaps_rollup"
+              assert memory["sample_point"] == "proof_document_serialization"
+              assert memory["resident_bytes"] > 0
+              assert memory["peak_resident_bytes"] >= memory["resident_bytes"]
               assert runtime["created_window_count"] == 1
               assert runtime["screenshot_captured"] is True
               assert not runtime["screenshot_error"]

@@ -980,6 +980,9 @@ impl MacosAppKitDrawViewHost {
             pixel_height,
             scale_factor,
             typography_scale: self.view.ivars().plan.borrow().typography_scale(),
+            typography: appkit_native_typography_profile(
+                self.view.ivars().plan.borrow().typography_scale(),
+            ),
         })
     }
 
@@ -1262,14 +1265,10 @@ impl MacosAppKitDrawSink {
     fn new(palette: NativeDrawPalette, typography_scale: f32) -> Self {
         Self {
             palette,
-            style_resolver: NativeDrawTextStyleResolver::new(
-                ".AppleSystemUIFont",
-                "Menlo",
-                ".AppleSystemUIFont",
-                crate::ZsTypographyPlatformStyle::Macos,
+            style_resolver: NativeDrawTextStyleResolver::from_profile(
+                appkit_native_typography_profile(typography_scale),
                 palette,
-            )
-            .with_typography_scale(typography_scale),
+            ),
             text_layout: MacosAppKitTextLayout,
             clip_depth: 0,
         }
@@ -1553,6 +1552,33 @@ pub(crate) fn appkit_ui_font_scale() -> f32 {
     (font.pointSize() as f32 / 13.0).clamp(0.75, 3.0)
 }
 
+fn appkit_native_typography_profile(typography_scale: f32) -> crate::NativeTypographyProfile {
+    let body_metrics = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Macos);
+    let body_size = body_metrics.size * typography_scale;
+    let body_font =
+        NSFont::systemFontOfSize_weight(f64::from(body_size), unsafe { NSFontWeightRegular });
+    let family = body_font
+        .familyName()
+        .map(|family| family.to_string())
+        .filter(|family| !family.trim().is_empty())
+        .unwrap_or_else(|| ".AppleSystemUIFont".to_string());
+    crate::NativeTypographyProfile::new(
+        crate::ZsTypographyPlatformStyle::Macos,
+        "appkit_preferred_body_system_font",
+        family,
+        "Menlo",
+        ".AppleSystemUIFont",
+        typography_scale,
+        "appkit_nsstring_coretext",
+    )
+    .with_configured_ui_font(body_font.fontName().to_string())
+    .with_body_vertical_metrics(
+        body_font.ascender() as f32,
+        body_font.descender().abs() as f32,
+        body_font.leading().max(0.0) as f32,
+    )
+}
+
 fn appkit_text_attributes(
     style: &TextStyle,
 ) -> Retained<NSMutableDictionary<NSAttributedStringKey, AnyObject>> {
@@ -1588,7 +1614,12 @@ fn appkit_text_attributes(
         .and_then(appkit_preferred_text_style)
     {
         let options = NSDictionary::<NSFontTextStyleOptionKey, AnyObject>::new();
-        unsafe { NSFont::preferredFontForTextStyle_options(text_style, &options) }
+        let preferred = unsafe { NSFont::preferredFontForTextStyle_options(text_style, &options) };
+        if (preferred.pointSize() - f64::from(style.size)).abs() <= 0.01 {
+            preferred
+        } else {
+            NSFont::systemFontOfSize_weight(f64::from(style.size), weight)
+        }
     } else {
         NSFont::systemFontOfSize_weight(f64::from(style.size), weight)
     };

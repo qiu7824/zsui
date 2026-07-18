@@ -110,6 +110,193 @@ impl ZsTypographyMetrics {
     }
 }
 
+/// Resolved metrics for the platform UI font used by native proof and paint.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NativeFontMetrics {
+    pub size: f32,
+    pub line_height: f32,
+    pub ascent: Option<f32>,
+    pub descent: Option<f32>,
+    pub leading: Option<f32>,
+}
+
+impl NativeFontMetrics {
+    pub const fn from_typography(metrics: ZsTypographyMetrics) -> Self {
+        Self {
+            size: metrics.size,
+            line_height: metrics.line_height,
+            ascent: None,
+            descent: None,
+            leading: None,
+        }
+    }
+
+    pub const fn with_vertical_metrics(mut self, ascent: f32, descent: f32, leading: f32) -> Self {
+        self.ascent = Some(ascent);
+        self.descent = Some(descent);
+        self.leading = Some(leading);
+        self
+    }
+}
+
+/// Backend-resolved typography profile shared by native layout, paint and proof.
+///
+/// Applications keep declaring semantic [`TextRole`] values. Each backend owns
+/// the actual system families and text rasterizer recorded here, while the
+/// framework keeps the role ramp and the live accessibility scale consistent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NativeTypographyProfile {
+    pub platform: ZsTypographyPlatformStyle,
+    pub source: String,
+    pub configured_ui_font: Option<String>,
+    pub ui_font_family: String,
+    pub small_font_family: String,
+    pub display_font_family: String,
+    pub monospace_font_family: String,
+    pub icon_font_family: String,
+    pub typography_scale: f32,
+    pub body_metrics: NativeFontMetrics,
+    pub rasterization: String,
+}
+
+impl NativeTypographyProfile {
+    pub fn new(
+        platform: ZsTypographyPlatformStyle,
+        source: impl Into<String>,
+        ui_font_family: impl Into<String>,
+        monospace_font_family: impl Into<String>,
+        icon_font_family: impl Into<String>,
+        typography_scale: f32,
+        rasterization: impl Into<String>,
+    ) -> Self {
+        let ui_font_family = ui_font_family.into();
+        let typography_scale = normalized_typography_scale(typography_scale);
+        Self {
+            platform,
+            source: source.into(),
+            configured_ui_font: None,
+            small_font_family: ui_font_family.clone(),
+            display_font_family: ui_font_family.clone(),
+            ui_font_family,
+            monospace_font_family: monospace_font_family.into(),
+            icon_font_family: icon_font_family.into(),
+            typography_scale,
+            body_metrics: NativeFontMetrics::from_typography(scaled_typography_metrics(
+                TextRole::Body.metrics_for(platform),
+                typography_scale,
+            )),
+            rasterization: rasterization.into(),
+        }
+    }
+
+    pub fn fallback(platform: ZsTypographyPlatformStyle, typography_scale: f32) -> Self {
+        match platform {
+            ZsTypographyPlatformStyle::Windows => Self::new(
+                platform,
+                "windows_semantic_fallback",
+                "Segoe UI Variable Text",
+                "Consolas",
+                "Segoe Fluent Icons",
+                typography_scale,
+                "gdi_cleartype",
+            )
+            .with_role_families("Segoe UI Variable Small", "Segoe UI Variable Display"),
+            ZsTypographyPlatformStyle::Macos => Self::new(
+                platform,
+                "appkit_semantic_fallback",
+                ".AppleSystemUIFont",
+                "Menlo",
+                ".AppleSystemUIFont",
+                typography_scale,
+                "appkit_nsstring_coretext",
+            ),
+            ZsTypographyPlatformStyle::Gtk => Self::new(
+                platform,
+                "gtk_semantic_fallback",
+                "Adwaita Sans",
+                "Monospace",
+                "Adwaita Sans",
+                typography_scale,
+                "pango_cairo",
+            ),
+        }
+    }
+
+    pub fn with_configured_ui_font(mut self, configured_ui_font: impl Into<String>) -> Self {
+        self.configured_ui_font = Some(configured_ui_font.into());
+        self
+    }
+
+    pub fn with_role_families(
+        mut self,
+        small_font_family: impl Into<String>,
+        display_font_family: impl Into<String>,
+    ) -> Self {
+        self.small_font_family = small_font_family.into();
+        self.display_font_family = display_font_family.into();
+        self
+    }
+
+    pub fn with_typography_scale(mut self, typography_scale: f32) -> Self {
+        let typography_scale = normalized_typography_scale(typography_scale);
+        let previous_scale = self.typography_scale.max(0.001);
+        let vertical_scale = typography_scale / previous_scale;
+        self.typography_scale = typography_scale;
+        self.body_metrics = NativeFontMetrics {
+            size: TextRole::Body.metrics_for(self.platform).size * typography_scale,
+            line_height: TextRole::Body.metrics_for(self.platform).line_height * typography_scale,
+            ascent: self.body_metrics.ascent.map(|value| value * vertical_scale),
+            descent: self
+                .body_metrics
+                .descent
+                .map(|value| value * vertical_scale),
+            leading: self
+                .body_metrics
+                .leading
+                .map(|value| value * vertical_scale),
+        };
+        self
+    }
+
+    pub fn with_body_vertical_metrics(mut self, ascent: f32, descent: f32, leading: f32) -> Self {
+        self.body_metrics = self
+            .body_metrics
+            .with_vertical_metrics(ascent, descent, leading);
+        self
+    }
+
+    pub fn metrics_for(&self, role: TextRole) -> ZsTypographyMetrics {
+        scaled_typography_metrics(role.metrics_for(self.platform), self.typography_scale)
+    }
+
+    pub fn font_family_for(&self, role: TextRole) -> &str {
+        match role {
+            TextRole::Monospace => &self.monospace_font_family,
+            TextRole::Icon => &self.icon_font_family,
+            TextRole::Caption => &self.small_font_family,
+            TextRole::Subtitle | TextRole::Title | TextRole::TitleLarge | TextRole::Display => {
+                &self.display_font_family
+            }
+            _ => &self.ui_font_family,
+        }
+    }
+}
+
+fn normalized_typography_scale(scale: f32) -> f32 {
+    f32::from(normalize_typography_scale_per_mille(scale)) / 1_000.0
+}
+
+fn scaled_typography_metrics(
+    metrics: ZsTypographyMetrics,
+    typography_scale: f32,
+) -> ZsTypographyMetrics {
+    ZsTypographyMetrics::new(
+        metrics.size * typography_scale,
+        metrics.line_height * typography_scale,
+        metrics.default_weight,
+    )
+}
+
 impl TextRole {
     /// Returns the Windows Fluent fallback size in device-independent pixels.
     ///
@@ -1046,6 +1233,32 @@ mod draw_command_tests {
             (22.0, 26.0, TextWeight::Regular)
         );
         assert_eq!((gtk_caption.size, gtk_caption.line_height), (11.5, 16.0));
+    }
+
+    #[test]
+    fn native_typography_profile_owns_role_families_scale_and_vertical_metrics() {
+        let profile = NativeTypographyProfile::new(
+            ZsTypographyPlatformStyle::Macos,
+            "appkit",
+            ".AppleSystemUIFont",
+            "Menlo",
+            ".AppleSystemUIFont",
+            1.25,
+            "coretext",
+        )
+        .with_role_families("System Small", "System Display")
+        .with_body_vertical_metrics(12.0, 3.0, 1.0);
+
+        assert_eq!(profile.font_family_for(TextRole::Caption), "System Small");
+        assert_eq!(profile.font_family_for(TextRole::Title), "System Display");
+        assert_eq!(profile.font_family_for(TextRole::Monospace), "Menlo");
+        assert_eq!(profile.metrics_for(TextRole::Body).size, 16.25);
+        assert_eq!(profile.body_metrics.line_height, 20.0);
+        assert_eq!(profile.body_metrics.ascent, Some(12.0));
+
+        let scaled = profile.with_typography_scale(1.5);
+        assert_eq!(scaled.body_metrics.size, 19.5);
+        assert!((scaled.body_metrics.ascent.expect("ascent") - 14.4).abs() < 0.0001);
     }
 
     #[test]

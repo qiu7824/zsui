@@ -167,6 +167,11 @@ history remain authoritative for implementation status.
   the framework projects backend identity, runner metadata, logical/pixel
   geometry, scale, focus, widget roles, unhandled commands and runtime errors.
   Examples must not maintain separate per-platform proof schemas.
+- Native typography is a backend-resolved `NativeTypographyProfile`, not a
+  demo-owned type ramp. Native layout, paint and proof must share the resolved
+  families, role metrics, accessibility scale and rasterization identity.
+  Native proof also records process resident and peak resident memory from the
+  target OS; executable size or Runner-wide memory is not runtime evidence.
 - Desktop backends are real Win32, AppKit and GTK4 paths. Winit may remain an
   explicit fallback but is not evidence of AppKit or GTK4 completion.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their

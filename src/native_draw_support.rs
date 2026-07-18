@@ -1,5 +1,5 @@
 use crate::{
-    Color, ColorRole, NativeDrawFill, NativeStyleResolver, SemanticTextStyle, TextRole, TextStyle,
+    Color, ColorRole, NativeDrawFill, NativeStyleResolver, SemanticTextStyle, TextStyle,
     TextWeight, ZsuiTheme, ZsuiThemeMode,
 };
 
@@ -173,17 +173,14 @@ const fn color_with_multiplied_alpha(color: Color, alpha: u8) -> Color {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NativeDrawTextStyleResolver {
-    font_family: String,
-    monospace_font_family: String,
-    icon_font_family: String,
-    typography_platform: crate::ZsTypographyPlatformStyle,
-    typography_scale_per_mille: u16,
+    typography: crate::NativeTypographyProfile,
     palette: NativeDrawPalette,
 }
 
 impl NativeDrawTextStyleResolver {
+    #[cfg(test)]
     pub(crate) fn new(
         font_family: impl Into<String>,
         monospace_font_family: impl Into<String>,
@@ -192,32 +189,44 @@ impl NativeDrawTextStyleResolver {
         palette: NativeDrawPalette,
     ) -> Self {
         Self {
-            font_family: font_family.into(),
-            monospace_font_family: monospace_font_family.into(),
-            icon_font_family: icon_font_family.into(),
-            typography_platform,
-            typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
+            typography: crate::NativeTypographyProfile::new(
+                typography_platform,
+                "native_draw_text_style_resolver",
+                font_family,
+                monospace_font_family,
+                icon_font_family,
+                f32::from(crate::render_protocol::default_typography_scale_per_mille()) / 1_000.0,
+                "backend_native_text",
             ),
             palette,
         }
     }
 
+    #[cfg(any(
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
+    pub(crate) fn from_profile(
+        typography: crate::NativeTypographyProfile,
+        palette: NativeDrawPalette,
+    ) -> Self {
+        Self {
+            typography,
+            palette,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn with_typography_scale(mut self, scale: f32) -> Self {
-        self.typography_scale_per_mille =
-            crate::render_protocol::normalize_typography_scale_per_mille(scale);
+        self.typography = self.typography.with_typography_scale(scale);
         self
     }
 }
 
 impl NativeStyleResolver for NativeDrawTextStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
-        let metrics = style.role.metrics_for(self.typography_platform);
-        let typography_scale = f32::from(self.typography_scale_per_mille) / 1_000.0;
-        let font_family = match style.role {
-            TextRole::Monospace => self.monospace_font_family.clone(),
-            TextRole::Icon => self.icon_font_family.clone(),
-            _ => self.font_family.clone(),
-        };
+        let metrics = self.typography.metrics_for(style.role);
+        let font_family = self.typography.font_family_for(style.role).to_string();
         let weight = if style.weight == TextWeight::Automatic {
             metrics.default_weight
         } else {
@@ -225,8 +234,8 @@ impl NativeStyleResolver for NativeDrawTextStyleResolver {
         };
         TextStyle {
             font_family,
-            size: metrics.size * typography_scale,
-            line_height: metrics.line_height * typography_scale,
+            size: metrics.size,
+            line_height: metrics.line_height,
             semantic_role: Some(style.role),
             weight,
             color: self.palette.resolve(style.color),
@@ -241,6 +250,7 @@ impl NativeStyleResolver for NativeDrawTextStyleResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TextRole;
     use crate::{HorizontalAlign, TextWeight, TextWrap, VerticalAlign};
 
     #[test]
