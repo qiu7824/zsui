@@ -620,30 +620,25 @@ jobs:
               >"$root/notepad.log" 2>&1 &
           notepad_pid=$!
 
-          # AccessKit watches the AT-SPI status transition per process. Toggle
-          # the real session property repeatedly while the second process is
-          # starting; a headless session has no desktop settings daemon to do
-          # this for us and process startup time varies across hosted runners.
-          (
-            for attempt in $(seq 1 12); do
-              gdbus call \
-                --session \
-                --dest org.a11y.Bus \
-                --object-path /org/a11y/bus \
-                --method org.freedesktop.DBus.Properties.Set \
-                org.a11y.Status IsEnabled '<false>' \
-                >>"$root/atspi-status.log" 2>&1 || true
-              gdbus call \
-                --session \
-                --dest org.a11y.Bus \
-                --object-path /org/a11y/bus \
-                --method org.freedesktop.DBus.Properties.Set \
-                org.a11y.Status IsEnabled '<true>' \
-                >>"$root/atspi-status.log" 2>&1 || true
-              sleep 0.5
-            done
-          ) &
-          atspi_toggle_pid=$!
+          # AccessKit watches the AT-SPI status transition per process. Give
+          # the second process time to create its native window, then drive the
+          # real session property once. This avoids racing adapter activation
+          # with repeated status changes in a headless session.
+          sleep 1.5
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<false>' \
+            >>"$root/atspi-status.log" 2>&1
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<true>' \
+            >>"$root/atspi-status.log" 2>&1
 
           /usr/bin/python3 - <<'PY'
           import json
@@ -678,7 +673,16 @@ jobs:
                       names = [node.name or "" for node in nodes]
                   except Exception:
                       continue
-                  if any("Notepad" in name for name in names):
+                  roles = []
+                  for node in nodes:
+                      try:
+                          roles.append(node.getRoleName())
+                      except Exception:
+                          pass
+                  if any("notepad" in name.lower() for name in names) or (
+                      any(role in {"menu bar", "menubar"} for role in roles)
+                      and any("file" in name.lower() for name in names)
+                  ):
                       application = candidate
                       break
               if application is None:
@@ -714,8 +718,6 @@ jobs:
               encoding="utf-8",
           )
           PY
-          kill "$atspi_toggle_pid" 2>/dev/null || true
-          wait "$atspi_toggle_pid" 2>/dev/null || true
           wait "$notepad_pid"
           PROOF
 
