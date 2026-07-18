@@ -79,5 +79,20 @@ jobs:
           grep -E '^error(\[E[0-9]+\])?:|^error:' target/full-test.log | tail -8 | while IFS= read -r line; do
             echo "::error file=src/lib.rs,line=1::${line}"
           done
+      - name: Publish Linux test diagnostic token
+        if: always() && matrix.backend == 'linux-direct' && steps.full-tests.outcome == 'failure'
+        run: |
+          diagnostic="$(grep -A1 -E '^error(\[E[0-9]+\])?:|^error:' target/full-test.log | head -6 | tr '\n' ' ' | sed 's/[^A-Za-z0-9._-]/_/g' | cut -c 1-180)"
+          diagnostic="${diagnostic:-unknown}"
+          echo "CI_DIAGNOSTIC=$diagnostic" >> "$GITHUB_ENV"
+          printf '%s\n' "$diagnostic" > target/linux-ci-diagnostic.txt
+      - name: Upload Linux test diagnostic
+        if: always() && matrix.backend == 'linux-direct' && steps.full-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-linux-ci-diagnostic-${{ env.CI_DIAGNOSTIC || 'unknown' }}
+          path: target/linux-ci-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 7
       - run: cargo check --locked --no-default-features --features ${{ matrix.backend }}
       - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style
