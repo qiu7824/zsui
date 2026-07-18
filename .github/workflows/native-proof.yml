@@ -312,6 +312,7 @@ jobs:
               assert proof["platform"] == "linux"
               assert proof["backend"] == "linux-direct"
               assert proof["capture_backend"] == "winit_softbuffer_pango_cairo"
+              assert proof["display_server"] == "x11"
               assert proof["os_family"] == "ubuntu-24.04"
               assert proof["architecture"] == "x86_64"
               assert proof["errors"] == []
@@ -334,6 +335,7 @@ jobs:
               assert runtime["screenshot_captured"] is True
               assert not runtime["screenshot_error"]
               assert capture["backend"] == "winit_softbuffer_pango_cairo"
+              assert capture["display_server"] == "x11"
               assert capture["pixel_width"] > 0
               assert capture["pixel_height"] > 0
               assert capture["scale_factor"] > 0.0
@@ -364,5 +366,273 @@ jobs:
         with:
           name: zsui-linux-direct-native-proof
           path: target/native-proof/ubuntu-24.04-x86_64
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-wayland-atspi-proof:
+    name: Wayland Runtime, AT-SPI and Menu Proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
+      WINIT_UNIX_BACKEND: wayland
+      ZSUI_LINUX_UI_FONT: Ubuntu Sans 11
+      ZSUI_NATIVE_PROOF_OS_FAMILY: ubuntu-24.04
+      ZSUI_NATIVE_PROOF_DURATION_MS: 8000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Wayland and AT-SPI proof runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            at-spi2-core \
+            dbus-x11 \
+            libcairo2-dev \
+            libdbus-1-dev \
+            libgdk-pixbuf-2.0-dev \
+            libpango1.0-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            adwaita-icon-theme \
+            librsvg2-common \
+            fonts-ubuntu \
+            fonts-noto-cjk \
+            fonts-noto-color-emoji \
+            python3-pyatspi \
+            weston
+          fc-cache --force
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Wayland proof applications with accessibility
+        run: |
+          cargo build \
+            --release \
+            --locked \
+            --example component_gallery \
+            --no-default-features \
+            --features component-gallery-demo,accessibility
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad \
+            --no-default-features \
+            --features notepad-demo,accessibility
+
+      - name: Run real Wayland, AT-SPI and menu scenes
+        id: wayland-scenes
+        run: |
+          set -o pipefail
+          root=target/native-proof/ubuntu-24.04-wayland-x86_64
+          mkdir -p "$root"
+          dbus-run-session -- bash -euxo pipefail <<'PROOF'
+          root=target/native-proof/ubuntu-24.04-wayland-x86_64
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/zsui-wayland-runtime"
+          export WAYLAND_DISPLAY=wayland-zsui
+          export WINIT_UNIX_BACKEND=wayland
+          export NO_AT_BRIDGE=0
+          export GTK_A11Y=always
+          unset DISPLAY
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          weston_help="$(weston --help 2>&1 || true)"
+          weston_args=(
+            "--socket=$WAYLAND_DISPLAY"
+            "--idle-time=0"
+            "--width=1280"
+            "--height=800"
+            "--log=$PWD/$root/weston.log"
+          )
+          if grep -q -- '--renderer' <<<"$weston_help"; then
+            weston_args+=("--renderer=pixman")
+          else
+            weston_args+=("--use-pixman")
+          fi
+          if grep -q -- '-B,' <<<"$weston_help" || grep -q -- '-B ' <<<"$weston_help"; then
+            weston_args+=("-B" "headless")
+          else
+            weston_args+=("--backend=headless-backend.so")
+          fi
+          weston "${weston_args[@]}" &
+          weston_pid=$!
+          trap 'kill "$weston_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 100); do
+            test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" && break
+            kill -0 "$weston_pid"
+            sleep 0.1
+          done
+          test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page inputs \
+            --theme light \
+            --width 1180 \
+            --height 780 \
+            --output "$root" \
+            >"$root/gallery-inputs-light.log" 2>&1 &
+          gallery_pid=$!
+
+          /usr/bin/python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          import pyatspi
+
+          deadline = time.monotonic() + 7.0
+          application = None
+          snapshot = []
+
+          def children(node):
+              for index in range(node.childCount):
+                  try:
+                      yield node.getChildAtIndex(index)
+                  except Exception:
+                      pass
+
+          def walk(root, limit=1500):
+              queue = [root]
+              seen = 0
+              while queue and seen < limit:
+                  node = queue.pop(0)
+                  seen += 1
+                  yield node
+                  queue.extend(children(node))
+
+          while time.monotonic() < deadline and application is None:
+              desktop = pyatspi.Registry.getDesktop(0)
+              for candidate in children(desktop):
+                  try:
+                      nodes = list(walk(candidate))
+                      names = [node.name or "" for node in nodes]
+                  except Exception:
+                      continue
+                  if any("Component Gallery" in name for name in names):
+                      application = candidate
+                      break
+              if application is None:
+                  time.sleep(0.1)
+
+          if application is None:
+              raise SystemExit("AT-SPI did not expose the ZSUI Component Gallery")
+
+          action_invoked = False
+          for node in walk(application):
+              try:
+                  role = node.getRoleName()
+                  name = node.name or ""
+              except Exception:
+                  continue
+              snapshot.append({"name": name, "role": role})
+              if not action_invoked and role in {"push button", "button"}:
+                  try:
+                      actions = node.queryAction()
+                      for index in range(actions.nActions):
+                          if actions.getName(index) in {"click", "press", "activate"}:
+                              action_invoked = bool(actions.doAction(index))
+                              break
+                  except Exception:
+                      pass
+
+          roles = {item["role"] for item in snapshot}
+          if len(snapshot) < 5:
+              raise SystemExit(f"AT-SPI tree is too small: {len(snapshot)} nodes")
+          if not ({"push button", "button"} & roles):
+              raise SystemExit(f"AT-SPI tree has no button role: {sorted(roles)}")
+          if not action_invoked:
+              raise SystemExit("AT-SPI did not invoke an exposed button action")
+
+          Path(
+              "target/native-proof/ubuntu-24.04-wayland-x86_64/atspi-proof.json"
+          ).write_text(
+              json.dumps(
+                  {
+                      "backend": "accesskit_atspi",
+                      "application": application.name,
+                      "node_count": len(snapshot),
+                      "roles": sorted(roles),
+                      "action_invoked": action_invoked,
+                      "nodes": snapshot,
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          PY
+          wait "$gallery_pid"
+
+          ZSUI_NATIVE_PROOF_DURATION_MS=2500 \
+            ./target/release/examples/zsui_notepad \
+              --native-proof \
+              --width 960 \
+              --height 640 \
+              --output "$root" \
+              >"$root/notepad.log" 2>&1
+          PROOF
+
+      - name: Summarize Wayland proof failure
+        if: failure() && steps.wayland-scenes.outcome == 'failure'
+        run: |
+          root=target/native-proof/ubuntu-24.04-wayland-x86_64
+          tail -80 "$root"/*.log 2>/dev/null || true
+          echo "::error title=Wayland proof scene failure::See the uploaded Weston and application logs"
+
+      - name: Validate Wayland, AT-SPI and menu artifacts
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("target/native-proof/ubuntu-24.04-wayland-x86_64")
+          gallery = json.loads((root / "gallery-inputs-light.json").read_text("utf-8"))
+          notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
+          atspi = json.loads((root / "atspi-proof.json").read_text("utf-8"))
+
+          for proof in (gallery, notepad):
+              capture = proof["runtime"]["native_view_capture"]
+              assert proof["schema"] == "zsui.native-proof/v1"
+              assert proof["platform"] == "linux"
+              assert proof["backend"] == "linux-direct"
+              assert proof["display_server"] == "wayland"
+              assert capture["display_server"] == "wayland"
+              assert proof["errors"] == []
+              assert proof["unhandled_commands"] == []
+              assert proof["runtime"]["native_accessibility_backend"] == "accesskit_atspi"
+              assert proof["runtime"]["native_accessibility_node_count"] >= 5
+
+          assert gallery["runtime"]["native_accessibility_action_count"] >= 1
+          assert atspi["backend"] == "accesskit_atspi"
+          assert atspi["node_count"] >= 5
+          assert atspi["action_invoked"] is True
+
+          runtime = notepad["runtime"]
+          assert runtime["window_menu_surface_created"] is True
+          assert runtime["window_menu_surface_height"] == 36
+          assert runtime["window_menu_surface_open_at_capture"] is True
+          assert runtime["window_menu_command_routed"] is True
+          assert (
+              root / "gallery-inputs-light.png"
+          ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+          assert (
+              root / "notepad-interaction.png"
+          ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+      - name: Upload Wayland, AT-SPI and menu proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-wayland-atspi-menu-proof
+          path: target/native-proof/ubuntu-24.04-wayland-x86_64
           if-no-files-found: error
           retention-days: 30

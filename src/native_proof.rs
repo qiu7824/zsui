@@ -87,12 +87,16 @@ impl NativeProofProcessMemoryEvidence {
 }
 
 impl NativeProofWidgetEvidence {
-    fn from_hit_target(target: ViewHitTarget, focused_widget: Option<u64>) -> Self {
+    fn from_hit_target(
+        target: ViewHitTarget,
+        focused_widget: Option<u64>,
+        content_offset_y: i32,
+    ) -> Self {
         Self {
             id: native_proof_widget_id(target.widget.0),
             role: native_proof_role(target.kind),
             x: target.bounds.x,
-            y: target.bounds.y,
+            y: target.bounds.y.saturating_add(content_offset_y),
             width: target.bounds.width,
             height: target.bounds.height,
             enabled: true,
@@ -111,6 +115,7 @@ pub struct NativeProofDocument {
     pub platform: String,
     pub backend: String,
     pub capture_backend: String,
+    pub display_server: Option<String>,
     pub os_family: String,
     pub architecture: String,
     pub runner: NativeProofRunnerEvidence,
@@ -158,6 +163,7 @@ impl NativeProofDocument {
             .unwrap_or(1.0);
         let typography = native_proof_typography(capture, &platform, typography_scale);
         let focused_widget = runtime.native_view_focused_widget;
+        let content_offset_y = runtime.window_menu_surface_height.min(i32::MAX as u32) as i32;
         let errors = native_proof_errors(&runtime);
         let unhandled_commands = native_proof_unhandled_commands(&runtime);
 
@@ -169,6 +175,9 @@ impl NativeProofDocument {
             theme: theme.into(),
             backend: native_proof_backend(&capture_backend, &platform).to_string(),
             capture_backend,
+            display_server: capture
+                .and_then(|capture| capture.display_server)
+                .map(str::to_string),
             os_family: std::env::var("ZSUI_NATIVE_PROOF_OS_FAMILY")
                 .unwrap_or_else(|_| platform.clone()),
             architecture: native_proof_architecture(std::env::consts::ARCH).to_string(),
@@ -195,7 +204,13 @@ impl NativeProofDocument {
             focused_widget: focused_widget.map(native_proof_widget_id),
             widgets: widgets
                 .into_iter()
-                .map(|target| NativeProofWidgetEvidence::from_hit_target(target, focused_widget))
+                .map(|target| {
+                    NativeProofWidgetEvidence::from_hit_target(
+                        target,
+                        focused_widget,
+                        content_offset_y,
+                    )
+                })
                 .collect(),
             messages: Vec::new(),
             unhandled_commands,
@@ -486,6 +501,7 @@ mod tests {
         runtime.native_view_capture = Some(NativeViewCaptureEvidence {
             platform: "macos",
             backend: "appkit_nsview_bitmap_cache",
+            display_server: None,
             logical_width: 960,
             logical_height: 640,
             pixel_width: 1920,

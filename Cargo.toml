@@ -35,6 +35,8 @@ objc2-app-kit = { version = "0.3", optional = true, default-features = false, fe
 objc2-foundation = { version = "0.3", optional = true }
 
 [target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
+accesskit = { version = "0.24.1", optional = true }
+accesskit_winit = { version = "0.33.1", default-features = false, features = ["accesskit_unix", "async-io", "rwh_06"], optional = true }
 cairo-rs = { version = "0.22", optional = true }
 freedesktop-icons = { version = "0.4", optional = true }
 gdk-pixbuf = { version = "0.22", optional = true }
@@ -51,7 +53,7 @@ windows-core = { version = "0.62.2", optional = true }
 
 [features]
 default = ["window", "button", "label"]
-accessibility = ["dep:windows", "dep:windows-core", "gtk4?/v4_10", "objc2-app-kit?/NSAccessibility", "objc2-app-kit?/NSAccessibilityConstants"]
+accessibility = ["dep:accesskit", "dep:accesskit_winit", "dep:windows", "dep:windows-core", "gtk4?/v4_10", "objc2-app-kit?/NSAccessibility", "objc2-app-kit?/NSAccessibilityConstants"]
 window = ["windows-win32", "macos-appkit", "linux-direct"]
 button = ["widgets-base"]
 breadcrumb = ["widgets-base"]

@@ -1106,7 +1106,12 @@ fn main() -> ZsuiResult<()> {
                 ZsuiError::host("create_gallery_artifact_dir", error.to_string())
             })?;
         }
-        let mut options = NativeWindowSmokeRunOptions::new(1_500)
+        let proof_duration_ms = std::env::var("ZSUI_NATIVE_PROOF_DURATION_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(1_500)
+            .max(250);
+        let mut options = NativeWindowSmokeRunOptions::new(proof_duration_ms)
             .screenshot_file(&screenshot)
             .require_screenshot(native_proof || cfg!(windows));
         if initial_page == GalleryPage::Inputs {

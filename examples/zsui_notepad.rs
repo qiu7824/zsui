@@ -698,7 +698,12 @@ fn main() -> ZsuiResult<()> {
             "viewport-fill-".repeat(8)
         );
         let grapheme_smoke_text = "G-\u{65}\u{301}👩🏽‍💻";
-        let mut options = NativeWindowSmokeRunOptions::new(2_000)
+        let proof_duration_ms = std::env::var("ZSUI_NATIVE_PROOF_DURATION_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(2_000)
+            .max(250);
+        let mut options = NativeWindowSmokeRunOptions::new(proof_duration_ms)
             .native_view_click(editor_point)
             .native_view_text_input(smoke_text)
             .native_view_drag(editor_point, editor_top_edge)

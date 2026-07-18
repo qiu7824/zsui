@@ -14,6 +14,7 @@ use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, P
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
 use winit::window::{
     Theme as WinitTheme, Window as WinitWindow, WindowAttributes, WindowId as WinitWindowId,
     WindowLevel,
@@ -38,6 +39,12 @@ pub(crate) struct LinuxDirectNativeWindowRunReport {
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub menu_command_routed: bool,
+    pub menu_surface_created: bool,
+    pub menu_surface_height: u32,
+    pub menu_surface_open_at_capture: bool,
+    pub accessibility_bridge_created: bool,
+    pub accessibility_node_count: usize,
+    pub accessibility_action_count: usize,
     pub process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
 }
 
@@ -55,6 +62,12 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
             native_view_capture: None,
             proof_input_reports: Vec::new(),
             menu_command_routed: false,
+            menu_surface_created: false,
+            menu_surface_height: 0,
+            menu_surface_open_at_capture: false,
+            accessibility_bridge_created: false,
+            accessibility_node_count: 0,
+            accessibility_action_count: 0,
             process_memory: None,
         });
     }
@@ -81,6 +94,12 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
         native_view_capture: app.capture_result.take(),
         proof_input_reports: std::mem::take(&mut app.proof_input_reports),
         menu_command_routed: app.menu_command_routed,
+        menu_surface_created: app.menu_surface_created,
+        menu_surface_height: app.menu_surface_height,
+        menu_surface_open_at_capture: app.menu_surface_open_at_capture,
+        accessibility_bridge_created: app.accessibility_bridge_created,
+        accessibility_node_count: app.accessibility_node_count,
+        accessibility_action_count: app.accessibility_action_count,
         process_memory: app.process_memory.take(),
     })
 }
@@ -101,6 +120,12 @@ struct LinuxDirectApp {
     capture_path: Option<PathBuf>,
     capture_result: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     menu_command_routed: bool,
+    menu_surface_created: bool,
+    menu_surface_height: u32,
+    menu_surface_open_at_capture: bool,
+    accessibility_bridge_created: bool,
+    accessibility_node_count: usize,
+    accessibility_action_count: usize,
     process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
 }
 
@@ -133,6 +158,12 @@ impl LinuxDirectApp {
             capture_path: capture_path.map(PathBuf::from),
             capture_result: None,
             menu_command_routed: false,
+            menu_surface_created: false,
+            menu_surface_height: 0,
+            menu_surface_open_at_capture: false,
+            accessibility_bridge_created: false,
+            accessibility_node_count: 0,
+            accessibility_action_count: 0,
             process_memory: None,
         }
     }
@@ -190,6 +221,7 @@ impl LinuxDirectApp {
             runtime.use_linux_direct_text_shaping(pango_context.clone());
             runtime.defer_app_command_execution();
             let mut direct = LinuxDirectWindow::new(
+                event_loop,
                 spec.clone(),
                 Rc::clone(&window),
                 surface,
@@ -225,16 +257,16 @@ impl LinuxDirectApp {
         let proof_menu_command = (!self.proof_inputs.is_empty())
             .then(|| {
                 window
-                    .spec
-                    .menu
-                    .as_ref()
-                    .and_then(first_enabled_menu_command)
+                    .menu_surface
+                    .as_mut()
+                    .and_then(|menu| menu.proof_command(&window.draw_pango_context))
             })
             .flatten();
         if let Some(command) = proof_menu_command {
             let report = window.runtime.dispatch_app_command(command);
             self.proof_input_reports
                 .push(window.apply_report(report, event_loop));
+            window.menu_surface_command_count = window.menu_surface_command_count.saturating_add(1);
             self.menu_command_routed = true;
         }
         // Match the Win32, AppKit and GTK proof order: verify the menu route
@@ -245,12 +277,47 @@ impl LinuxDirectApp {
             let reports = window.dispatch_proof_input(input, event_loop);
             self.proof_input_reports.extend(reports);
         }
+        if let Some(menu) = window.menu_surface.as_mut() {
+            menu.open_for_capture(&window.draw_pango_context);
+        }
         window.window.request_redraw();
     }
 
     fn capture_and_exit(&mut self, event_loop: &ActiveEventLoop) {
         self.process_memory =
             crate::NativeProofProcessMemoryEvidence::capture_at("native_window_before_teardown");
+        #[cfg(feature = "accessibility")]
+        {
+            self.accessibility_bridge_created = !self.windows.is_empty();
+            self.accessibility_node_count = self
+                .windows
+                .values()
+                .map(LinuxDirectWindow::accessibility_node_count)
+                .sum();
+            self.accessibility_action_count = self
+                .windows
+                .values()
+                .map(LinuxDirectWindow::accessibility_action_count)
+                .sum();
+        }
+        self.menu_surface_created = self
+            .windows
+            .values()
+            .any(LinuxDirectWindow::has_menu_surface);
+        self.menu_surface_height = self
+            .windows
+            .values()
+            .map(LinuxDirectWindow::menu_content_offset_y)
+            .max()
+            .unwrap_or(0) as u32;
+        self.menu_surface_open_at_capture = self
+            .windows
+            .values()
+            .any(LinuxDirectWindow::menu_surface_is_open);
+        self.menu_command_routed |= self
+            .windows
+            .values()
+            .any(|window| window.menu_surface_command_count > 0);
         if self.capture_result.is_none() {
             if let Some(path) = self.capture_path.as_deref() {
                 self.capture_result = Some(
@@ -276,6 +343,10 @@ impl LinuxDirectApp {
             if let Some(candidate) = window.next_tick {
                 next = next.min_some(Some(candidate));
             }
+        }
+        #[cfg(feature = "accessibility")]
+        if !self.windows.is_empty() {
+            next = next.min_some(Some(now + Duration::from_millis(50)));
         }
         match next {
             Some(deadline) if deadline <= now => event_loop.set_control_flow(ControlFlow::Poll),
@@ -323,6 +394,8 @@ impl ApplicationHandler for LinuxDirectApp {
         let Some(window) = self.windows.get_mut(&window_id) else {
             return;
         };
+        #[cfg(feature = "accessibility")]
+        window.process_accessibility_event(&event);
         match event {
             WindowEvent::CloseRequested => {
                 let report = window.runtime.dispatch_window_close_requested();
@@ -352,8 +425,21 @@ impl ApplicationHandler for LinuxDirectApp {
             WindowEvent::CursorMoved { position, .. } => {
                 let point = window.logical_point(position);
                 window.cursor = point;
-                let report = window.runtime.dispatch_pointer_move(point);
-                window.apply_report(report, event_loop);
+                let mut menu_changed = false;
+                let mut menu_captures = false;
+                if let Some(menu) = window.menu_surface.as_mut() {
+                    menu_changed = menu.pointer_move(point, &window.draw_pango_context);
+                    menu_captures = menu.captures_pointer(point);
+                }
+                if menu_changed {
+                    window.window.request_redraw();
+                }
+                if !menu_captures {
+                    let report = window
+                        .runtime
+                        .dispatch_pointer_move(window.content_point(point));
+                    window.apply_report(report, event_loop);
+                }
             }
             WindowEvent::CursorLeft { .. } => {
                 let report = window.runtime.dispatch_pointer_leave();
@@ -364,16 +450,48 @@ impl ApplicationHandler for LinuxDirectApp {
                 button: MouseButton::Left,
                 ..
             } => {
-                let report = if state == ElementState::Pressed {
-                    window.pointer_down = true;
-                    window
-                        .runtime
-                        .dispatch_pointer_down(window.cursor, window.modifiers.shift_key())
+                let cursor = window.cursor;
+                if state == ElementState::Pressed {
+                    let menu_consumed = window
+                        .menu_surface
+                        .as_mut()
+                        .is_some_and(|menu| menu.pointer_down(cursor));
+                    if menu_consumed {
+                        window.window.request_redraw();
+                    } else {
+                        window.pointer_down = true;
+                        let report = window.runtime.dispatch_pointer_down(
+                            window.content_point(cursor),
+                            window.modifiers.shift_key(),
+                        );
+                        window.apply_report(report, event_loop);
+                    }
                 } else {
                     window.pointer_down = false;
-                    window.runtime.dispatch_pointer_up(window.cursor)
-                };
-                window.apply_report(report, event_loop);
+                    let menu_result = window
+                        .menu_surface
+                        .as_mut()
+                        .map(|menu| menu.pointer_up(cursor, &window.draw_pango_context))
+                        .unwrap_or(crate::linux_direct_menu::LinuxMenuInputResult::Ignored);
+                    match menu_result {
+                        crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
+                            let report = window
+                                .runtime
+                                .dispatch_pointer_up(window.content_point(cursor));
+                            window.apply_report(report, event_loop);
+                        }
+                        crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
+                            window.window.request_redraw();
+                        }
+                        crate::linux_direct_menu::LinuxMenuInputResult::Command(command) => {
+                            window.menu_surface_command_count =
+                                window.menu_surface_command_count.saturating_add(1);
+                            let report = window.runtime.dispatch_app_command(command);
+                            window.apply_report(report, event_loop);
+                            window.window.request_redraw();
+                        }
+                    }
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let logical_delta = match delta {
@@ -383,25 +501,51 @@ impl ApplicationHandler for LinuxDirectApp {
                     }
                 };
                 if logical_delta.abs() > f32::EPSILON {
-                    let report = window
-                        .runtime
-                        .dispatch_pointer_scroll(window.cursor, crate::Dp::new(logical_delta));
-                    window.apply_report(report, event_loop);
+                    let menu_captures = window
+                        .menu_surface
+                        .as_ref()
+                        .is_some_and(|menu| menu.captures_pointer(window.cursor));
+                    if !menu_captures {
+                        let report = window.runtime.dispatch_pointer_scroll(
+                            window.content_point(window.cursor),
+                            crate::Dp::new(logical_delta),
+                        );
+                        window.apply_report(report, event_loop);
+                    }
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 window.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                if let Some(command) = window.spec.menu.as_ref().and_then(|menu| {
-                    menu_command_for_key(menu, &event.logical_key, window.modifiers)
-                }) {
-                    let report = window.runtime.dispatch_app_command(command);
-                    window.apply_report(report, event_loop);
-                } else {
-                    let report =
-                        window.dispatch_key_event(&event.logical_key, event.text.as_deref());
-                    window.apply_report(report, event_loop);
+                let menu_result = window
+                    .menu_surface
+                    .as_mut()
+                    .map(|menu| menu.key(&event.logical_key, &window.draw_pango_context))
+                    .unwrap_or(crate::linux_direct_menu::LinuxMenuInputResult::Ignored);
+                match menu_result {
+                    crate::linux_direct_menu::LinuxMenuInputResult::Command(command) => {
+                        window.menu_surface_command_count =
+                            window.menu_surface_command_count.saturating_add(1);
+                        let report = window.runtime.dispatch_app_command(command);
+                        window.apply_report(report, event_loop);
+                        window.window.request_redraw();
+                    }
+                    crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
+                        window.window.request_redraw();
+                    }
+                    crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
+                        if let Some(command) = window.spec.menu.as_ref().and_then(|menu| {
+                            menu_command_for_key(menu, &event.logical_key, window.modifiers)
+                        }) {
+                            let report = window.runtime.dispatch_app_command(command);
+                            window.apply_report(report, event_loop);
+                        } else {
+                            let report = window
+                                .dispatch_key_event(&event.logical_key, event.text.as_deref());
+                            window.apply_report(report, event_loop);
+                        }
+                    }
                 }
             }
             WindowEvent::Ime(ime) => {
@@ -454,6 +598,8 @@ impl ApplicationHandler for LinuxDirectApp {
             self.dispatch_proof_inputs(event_loop);
         }
         for window in self.windows.values_mut() {
+            #[cfg(feature = "accessibility")]
+            window.dispatch_accessibility_actions(event_loop);
             if window.next_tick.is_some_and(|deadline| now >= deadline) {
                 let report = window.runtime.refresh_transient_view();
                 window.apply_report(report, event_loop);
@@ -475,6 +621,7 @@ struct LinuxDirectWindow {
     runtime: crate::native::NativeViewInputRuntime,
     pango_context: pango::Context,
     draw_pango_context: pango::Context,
+    display_server: &'static str,
     scale_factor: f64,
     physical_size: PhysicalSize<u32>,
     cursor: Point,
@@ -485,10 +632,15 @@ struct LinuxDirectWindow {
     last_frame: Vec<u32>,
     icon_cache: HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
     next_tick: Option<Instant>,
+    menu_surface: Option<crate::linux_direct_menu::LinuxDirectMenuSurface>,
+    menu_surface_command_count: usize,
+    #[cfg(feature = "accessibility")]
+    accessibility: crate::linux_direct_accessibility::LinuxDirectAccessibility,
 }
 
 impl LinuxDirectWindow {
     fn new(
+        event_loop: &ActiveEventLoop,
         spec: WindowSpec,
         window: Rc<WinitWindow>,
         surface: LinuxSoftBufferSurface,
@@ -499,6 +651,30 @@ impl LinuxDirectWindow {
     ) -> Self {
         let scale_factor = window.scale_factor().max(0.1);
         let theme = window.theme().unwrap_or(WinitTheme::Light);
+        let display_server = linux_direct_display_server(&window);
+        let mut menu_surface = spec
+            .menu
+            .clone()
+            .map(crate::linux_direct_menu::LinuxDirectMenuSurface::new);
+        if let Some(menu) = menu_surface.as_mut() {
+            menu.layout(spec.width.max(1) as i32, &pango_context);
+        }
+        #[cfg(feature = "accessibility")]
+        let accessibility = crate::linux_direct_accessibility::LinuxDirectAccessibility::new(
+            event_loop,
+            &window,
+            &spec.title,
+            Rect {
+                x: 0,
+                y: 0,
+                width: spec.width.max(1) as i32,
+                height: spec.height.max(1) as i32,
+            },
+            scale_factor,
+            &plan,
+            runtime.current_interaction_plan(),
+            runtime.focused_widget(),
+        );
         Self {
             spec,
             window,
@@ -507,6 +683,7 @@ impl LinuxDirectWindow {
             runtime,
             pango_context,
             draw_pango_context: linux_direct_pango_context(),
+            display_server,
             scale_factor,
             physical_size: PhysicalSize::new(1, 1),
             cursor: Point { x: 0, y: 0 },
@@ -517,6 +694,10 @@ impl LinuxDirectWindow {
             last_frame: Vec::new(),
             icon_cache: HashMap::new(),
             next_tick: None,
+            menu_surface,
+            menu_surface_command_count: 0,
+            #[cfg(feature = "accessibility")]
+            accessibility,
         }
     }
 
@@ -524,12 +705,20 @@ impl LinuxDirectWindow {
         self.physical_size =
             PhysicalSize::new(physical_size.width.max(1), physical_size.height.max(1));
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        if let Some(menu) = self.menu_surface.as_mut() {
+            menu.layout(
+                logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+                &self.draw_pango_context,
+            );
+        }
+        let content_height = logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32
+            - self.menu_content_offset_y();
         let report = self.runtime.set_surface(
             Rect {
                 x: 0,
                 y: 0,
                 width: logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
-                height: logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+                height: content_height.max(1),
             },
             crate::Dpi::standard(),
         );
@@ -537,6 +726,8 @@ impl LinuxDirectWindow {
             self.plan = plan;
         }
         self.sync_text_input();
+        #[cfg(feature = "accessibility")]
+        self.sync_accessibility();
         self.schedule_tick();
     }
 
@@ -552,6 +743,30 @@ impl LinuxDirectWindow {
                 .round()
                 .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32,
         }
+    }
+
+    fn content_point(&self, point: Point) -> Point {
+        Point {
+            x: point.x,
+            y: point.y.saturating_sub(self.menu_content_offset_y()),
+        }
+    }
+
+    fn menu_content_offset_y(&self) -> i32 {
+        self.menu_surface
+            .as_ref()
+            .map(|menu| menu.content_offset_y())
+            .unwrap_or(0)
+    }
+
+    fn has_menu_surface(&self) -> bool {
+        self.menu_surface.is_some()
+    }
+
+    fn menu_surface_is_open(&self) -> bool {
+        self.menu_surface
+            .as_ref()
+            .is_some_and(|menu| menu.is_open())
     }
 
     fn dispatch_key_event(
@@ -676,8 +891,76 @@ impl LinuxDirectWindow {
             event_loop.exit();
         }
         self.sync_text_input();
+        #[cfg(feature = "accessibility")]
+        self.sync_accessibility();
         self.schedule_tick();
         report
+    }
+
+    #[cfg(feature = "accessibility")]
+    fn process_accessibility_event(&mut self, event: &WindowEvent) {
+        self.accessibility.process_event(&self.window, event);
+    }
+
+    #[cfg(feature = "accessibility")]
+    fn sync_accessibility(&mut self) {
+        let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        self.accessibility.update(
+            &self.spec.title,
+            Rect {
+                x: 0,
+                y: 0,
+                width: logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+                height: logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+            },
+            self.scale_factor,
+            &self.plan,
+            self.runtime.current_interaction_plan(),
+            self.runtime.focused_widget(),
+        );
+    }
+
+    #[cfg(feature = "accessibility")]
+    fn dispatch_accessibility_actions(&mut self, event_loop: &ActiveEventLoop) {
+        use accesskit::{Action, ActionData};
+
+        for action in self.accessibility.take_actions() {
+            let reports = match (action.request.action, action.request.data.as_ref()) {
+                (Action::Focus, _) => vec![self
+                    .runtime
+                    .dispatch_accessibility_focus(action.target.widget)],
+                (Action::Click, _) => vec![self.runtime.dispatch_pointer_click(Point {
+                    x: action.target.bounds.x + action.target.bounds.width.max(1) / 2,
+                    y: action.target.bounds.y + action.target.bounds.height.max(1) / 2,
+                })],
+                #[cfg(feature = "text-input-core")]
+                (Action::SetValue, Some(ActionData::Value(value))) => vec![self
+                    .runtime
+                    .dispatch_accessibility_set_value(action.target.widget, value)],
+                #[cfg(feature = "text-input-core")]
+                (Action::ReplaceSelectedText, Some(ActionData::Value(value))) => {
+                    let focus = self
+                        .runtime
+                        .dispatch_accessibility_focus(action.target.widget);
+                    let replace = self.runtime.dispatch_text_input(value);
+                    vec![focus, replace]
+                }
+                _ => Vec::new(),
+            };
+            for report in reports {
+                self.apply_report(report, event_loop);
+            }
+        }
+    }
+
+    #[cfg(feature = "accessibility")]
+    const fn accessibility_node_count(&self) -> usize {
+        self.accessibility.node_count()
+    }
+
+    #[cfg(feature = "accessibility")]
+    const fn accessibility_action_count(&self) -> usize {
+        self.accessibility.action_count()
     }
 
     fn schedule_tick(&mut self) {
@@ -693,7 +976,10 @@ impl LinuxDirectWindow {
         if accepts {
             if let Some(rect) = self.runtime.text_input_caret_rect() {
                 self.window.set_ime_cursor_area(
-                    Position::Logical(LogicalPosition::new(f64::from(rect.x), f64::from(rect.y))),
+                    Position::Logical(LogicalPosition::new(
+                        f64::from(rect.x),
+                        f64::from(rect.y.saturating_add(self.menu_content_offset_y())),
+                    )),
                     Size::Logical(LogicalSize::new(
                         f64::from(rect.width.max(1)),
                         f64::from(rect.height.max(1)),
@@ -713,6 +999,7 @@ impl LinuxDirectWindow {
             .map_err(|error| format!("could not resize software surface: {error}"))?;
         let frame = render_linux_direct_frame(
             &self.plan,
+            self.menu_surface.as_ref(),
             width.get(),
             height.get(),
             self.scale_factor,
@@ -756,6 +1043,7 @@ impl LinuxDirectWindow {
         Ok(crate::NativeViewCaptureEvidence {
             platform: "linux",
             backend: "winit_softbuffer_pango_cairo",
+            display_server: Some(self.display_server),
             logical_width: logical.width.round().max(1.0) as u32,
             logical_height: logical.height.round().max(1.0) as u32,
             pixel_width: self.physical_size.width.max(1),
@@ -770,33 +1058,18 @@ impl LinuxDirectWindow {
     }
 }
 
+fn linux_direct_display_server(window: &WinitWindow) -> &'static str {
+    match window.display_handle().map(|handle| handle.as_raw()) {
+        Ok(RawDisplayHandle::Wayland(_)) => "wayland",
+        Ok(RawDisplayHandle::Xlib(_) | RawDisplayHandle::Xcb(_)) => "x11",
+        Ok(_) | Err(_) => "unknown",
+    }
+}
+
 fn byte_to_char_index(text: &str, byte: usize) -> usize {
     text.char_indices()
         .take_while(|(index, _)| *index < byte.min(text.len()))
         .count()
-}
-
-fn first_enabled_menu_command(menu: &MenuSpec) -> Option<crate::Command> {
-    for item in &menu.items {
-        match item {
-            MenuItemSpec::Command {
-                command,
-                enabled: true,
-                ..
-            } => return Some(command.clone()),
-            MenuItemSpec::Submenu {
-                enabled: true,
-                menu,
-                ..
-            } => {
-                if let Some(command) = first_enabled_menu_command(menu) {
-                    return Some(command);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 fn menu_command_for_key(
@@ -869,6 +1142,7 @@ struct LinuxIconRaster {
 
 fn render_linux_direct_frame(
     plan: &NativeDrawPlan,
+    menu_surface: Option<&crate::linux_direct_menu::LinuxDirectMenuSurface>,
     width: u32,
     height: u32,
     scale_factor: f64,
@@ -890,6 +1164,21 @@ fn render_linux_direct_frame(
     context.scale(scale_factor, scale_factor);
     let draw_context = pango_context.clone();
     pangocairo::functions::update_context(&context, &draw_context);
+    if let Some(menu) = menu_surface {
+        context
+            .save()
+            .map_err(|error| format!("could not save Cairo menu state: {error}"))?;
+        let content_offset = menu.content_offset_y();
+        context.rectangle(
+            0.0,
+            f64::from(content_offset),
+            f64::from(width) / scale_factor,
+            (f64::from(height) / scale_factor - f64::from(content_offset)).max(1.0),
+        );
+        context.clip();
+        context.translate(0.0, f64::from(content_offset));
+        pangocairo::functions::update_context(&context, &draw_context);
+    }
     let mut sink = LinuxDirectDrawSink::new(
         &context,
         draw_context,
@@ -900,6 +1189,15 @@ fn render_linux_direct_frame(
     );
     sink.draw_plan(plan);
     drop(sink);
+    if menu_surface.is_some() {
+        context
+            .restore()
+            .map_err(|error| format!("could not restore Cairo menu state: {error}"))?;
+    }
+    if let Some(menu) = menu_surface {
+        pangocairo::functions::update_context(&context, &draw_context);
+        menu.draw(&context, &draw_context, palette);
+    }
     drop(context);
     image.flush();
 

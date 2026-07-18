@@ -645,6 +645,7 @@ impl LinuxGtkDrawViewHost {
         Ok(crate::NativeViewCaptureEvidence {
             platform: "linux",
             backend: "gtk_widget_paintable_gsk_texture",
+            display_server: None,
             logical_width,
             logical_height,
             pixel_width: texture.width().max(1) as u32,

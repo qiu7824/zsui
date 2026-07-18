@@ -56,6 +56,19 @@ pub mod info_bar;
     feature = "linux-direct"
 ))]
 mod linux_direct;
+#[cfg(all(
+    target_os = "linux",
+    not(target_env = "ohos"),
+    feature = "linux-direct",
+    feature = "accessibility"
+))]
+mod linux_direct_accessibility;
+#[cfg(all(
+    target_os = "linux",
+    not(target_env = "ohos"),
+    feature = "linux-direct"
+))]
+mod linux_direct_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 pub mod linux_gtk_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]

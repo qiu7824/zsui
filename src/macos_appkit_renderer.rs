@@ -974,6 +974,7 @@ impl MacosAppKitDrawViewHost {
         Ok(crate::NativeViewCaptureEvidence {
             platform: "macos",
             backend: "appkit_nsview_bitmap_cache",
+            display_server: None,
             logical_width,
             logical_height,
             pixel_width,

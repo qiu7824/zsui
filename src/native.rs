@@ -862,6 +862,7 @@ impl Default for NativeWindowSmokeRunOptions {
 pub struct NativeViewCaptureEvidence {
     pub platform: &'static str,
     pub backend: &'static str,
+    pub display_server: Option<&'static str>,
     pub logical_width: u32,
     pub logical_height: u32,
     pub pixel_width: u32,
@@ -880,6 +881,9 @@ pub struct NativeWindowSmokeRunReport {
     pub window_menu_native_command_count: usize,
     pub window_menu_command_routed: bool,
     pub window_menu_command_error: Option<String>,
+    pub window_menu_surface_created: bool,
+    pub window_menu_surface_height: u32,
+    pub window_menu_surface_open_at_capture: bool,
     pub close_requested_count: usize,
     pub native_view_window_close_request_count: usize,
     pub native_view_window_close_veto_count: usize,
@@ -891,6 +895,9 @@ pub struct NativeWindowSmokeRunReport {
     pub screenshot_error: Option<String>,
     pub native_view_capture: Option<NativeViewCaptureEvidence>,
     pub process_memory_during_runtime: Option<crate::NativeProofProcessMemoryEvidence>,
+    pub native_accessibility_backend: Option<&'static str>,
+    pub native_accessibility_node_count: usize,
+    pub native_accessibility_action_count: usize,
     pub draw_plan_requested: bool,
     pub draw_plan_window_count: usize,
     pub high_contrast_draw_plan_window_count: usize,
@@ -1022,6 +1029,9 @@ impl NativeWindowSmokeRunReport {
             window_menu_native_command_count: 0,
             window_menu_command_routed: false,
             window_menu_command_error: None,
+            window_menu_surface_created: false,
+            window_menu_surface_height: 0,
+            window_menu_surface_open_at_capture: false,
             close_requested_count: 0,
             native_view_window_close_request_count: 0,
             native_view_window_close_veto_count: 0,
@@ -1033,6 +1043,9 @@ impl NativeWindowSmokeRunReport {
             screenshot_error: None,
             native_view_capture: None,
             process_memory_during_runtime: None,
+            native_accessibility_backend: None,
+            native_accessibility_node_count: 0,
+            native_accessibility_action_count: 0,
             draw_plan_requested: false,
             draw_plan_window_count: 0,
             high_contrast_draw_plan_window_count: 0,
@@ -1674,11 +1687,54 @@ impl NativeViewInputRuntime {
             .unwrap_or(0)
     }
 
-    fn current_interaction_plan(&self) -> Option<ViewInteractionPlan> {
+    pub(crate) fn current_interaction_plan(&self) -> Option<ViewInteractionPlan> {
         self.live_view
             .as_ref()
             .map(SharedLiveViewRuntime::interaction_plan)
             .or_else(|| self.interaction_plan.clone())
+    }
+
+    pub(crate) const fn focused_widget(&self) -> Option<crate::WidgetId> {
+        self.focused_widget
+    }
+
+    pub(crate) fn dispatch_accessibility_focus(
+        &mut self,
+        widget: crate::WidgetId,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport::default();
+        let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.focus_target_for_widget(widget))
+        else {
+            return report;
+        };
+        report.handled = true;
+        self.focus_target(target, &mut report);
+        report
+    }
+
+    #[cfg(feature = "text-input-core")]
+    pub(crate) fn dispatch_accessibility_set_value(
+        &mut self,
+        widget: crate::WidgetId,
+        value: &str,
+    ) -> NativeViewInputDispatchReport {
+        let _ = self.dispatch_accessibility_focus(widget);
+        let Some(target) = self.focused_text_input_target() else {
+            return NativeViewInputDispatchReport::default();
+        };
+        let current = self.widget_text_value(widget).unwrap_or_default();
+        let mut state = NativeTextEditState::at_end(widget, &current);
+        state.selection = NativeTextSelection {
+            anchor: 0,
+            caret: current.chars().count(),
+        };
+        self.text_edit = Some(state);
+        let mut report = self.dispatch_text_input(value);
+        report.handled = true;
+        report.focused_widget = Some(target.widget.0);
+        report
     }
 
     fn reconcile_modal_focus(&mut self, report: &mut NativeViewInputDispatchReport) {
@@ -8698,7 +8754,21 @@ fn run_native_window_smoke_event_loop(
             "linux_direct",
         );
         report.window_menu_command_routed = direct_run.menu_command_routed;
+        report.window_menu_surface_created = direct_run.menu_surface_created;
+        report.window_menu_surface_height = direct_run.menu_surface_height;
+        report.window_menu_surface_open_at_capture = direct_run.menu_surface_open_at_capture;
         report.process_memory_during_runtime = direct_run.process_memory;
+        report.native_accessibility_backend = direct_run
+            .accessibility_bridge_created
+            .then_some("accesskit_atspi");
+        report.native_accessibility_node_count = direct_run.accessibility_node_count;
+        report.native_accessibility_action_count = direct_run.accessibility_action_count;
+        if direct_run.accessibility_bridge_created {
+            report.events.push(format!(
+                "native_accessibility_bridge:accesskit_atspi:nodes={}",
+                direct_run.accessibility_node_count
+            ));
+        }
         if direct_run.menu_command_routed {
             report.events.push("window_menu_command_routed".to_string());
         }
@@ -12863,6 +12933,7 @@ mod tests {
         let evidence = NativeViewCaptureEvidence {
             platform: "macos",
             backend: "appkit_nsview_bitmap_cache",
+            display_server: None,
             logical_width: 960,
             logical_height: 640,
             pixel_width: 1920,
