@@ -325,6 +325,12 @@ history remain authoritative for implementation status.
   boundary. A new desktop backend adds one adapter implementation instead of
   adding target branches to the shared host, desktop services or application
   API.
+- `NativeViewInputRuntime` exposes a platform-neutral backend attachment made
+  from either a static typed View or a shared live View plus resource policy,
+  close command and command executors. Target adapters lower that attachment
+  into any backend-specific route they require; `native.rs` must not construct
+  or return a Win32/AppKit/Linux route type. Adding another backend therefore
+  does not add a target method or `cfg` branch to the shared input runtime.
 - Public `ViewNodeKind` and `ZsButtonPresentation` payloads remain semantic and
   must not store a platform selector. Toolbar and adaptive-navigation layout,
   construction, paint and hit testing resolve the framework experience

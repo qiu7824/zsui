@@ -1249,6 +1249,26 @@ pub(crate) struct NativeViewInputRuntime {
     ui_command_executor: Option<SharedUiCommandExecutor>,
 }
 
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) enum NativeViewInputBackendSource {
+    Live(SharedLiveViewRuntime),
+    Static {
+        interaction_plan: ViewInteractionPlan,
+        ui_command_view: ViewNode<UiCommand>,
+    },
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct NativeViewInputBackendAttachment {
+    pub(crate) source: NativeViewInputBackendSource,
+    pub(crate) resource_policy: NativeWindowResourcePolicy,
+    pub(crate) window_close_request_command: Option<Command>,
+    pub(crate) app_command_executor: Option<SharedAppCommandExecutor>,
+    pub(crate) ui_command_executor: Option<SharedUiCommandExecutor>,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 struct NativeViewImePreedit {
     widget: crate::WidgetId,
@@ -6351,27 +6371,21 @@ impl NativeViewInputRuntime {
         report.redraw_plan = Some(runtime.draw_plan());
     }
 
-    #[cfg(all(windows, feature = "windows-win32"))]
-    pub(crate) fn windows_win32_route(
-        &self,
-    ) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
-        let route = if let Some(runtime) = &self.live_view {
-            crate::windows_win32_host::WindowsWin32ViewInputRoute::from_live_view(runtime.clone())
+    pub(crate) fn backend_attachment(&self) -> Option<NativeViewInputBackendAttachment> {
+        let source = if let Some(runtime) = &self.live_view {
+            NativeViewInputBackendSource::Live(runtime.clone())
         } else {
-            crate::windows_win32_host::WindowsWin32ViewInputRoute::new(
-                self.interaction_plan.clone()?,
-                self.ui_command_view.clone()?,
-            )
+            NativeViewInputBackendSource::Static {
+                interaction_plan: self.interaction_plan.clone()?,
+                ui_command_view: self.ui_command_view.clone()?,
+            }
         };
-        let route = route.resource_policy(self.resource_policy);
-        let route = match &self.app_command_executor {
-            Some(executor) => route.app_command_executor(executor.clone()),
-            None => route,
-        };
-        let route = route.window_close_request_command(self.window_close_request_command.clone());
-        Some(match &self.ui_command_executor {
-            Some(executor) => route.ui_command_executor(executor.clone()),
-            None => route,
+        Some(NativeViewInputBackendAttachment {
+            source,
+            resource_policy: self.resource_policy,
+            window_close_request_command: self.window_close_request_command.clone(),
+            app_command_executor: self.app_command_executor.clone(),
+            ui_command_executor: self.ui_command_executor.clone(),
         })
     }
 }
@@ -7696,6 +7710,63 @@ mod tests {
         assert_eq!(interaction_plan.hit_target_count(), 1);
         assert!(draw_plan.command_count() >= 3);
         assert!(draw_plan.text_count() >= 2);
+    }
+
+    #[cfg(all(feature = "label", feature = "button"))]
+    #[test]
+    fn native_view_backend_attachment_is_platform_neutral() {
+        #[derive(Clone)]
+        enum Msg {
+            Save,
+        }
+
+        let static_builder = native_window("Static Backend Attachment")
+            .release_view_when_hidden()
+            .ui_command_view(crate::button("Save").id(crate::WidgetId::new(41)));
+        let static_attachment = static_builder
+            .native_view_input_runtime()
+            .backend_attachment()
+            .expect("static typed View should expose a backend attachment");
+        assert_eq!(
+            static_attachment.resource_policy,
+            NativeWindowResourcePolicy::ReleaseViewWhenHidden
+        );
+        match static_attachment.source {
+            NativeViewInputBackendSource::Static {
+                interaction_plan,
+                ui_command_view,
+            } => {
+                assert_eq!(interaction_plan.hit_target_count(), 1);
+                assert_eq!(ui_command_view.interaction_plan().hit_target_count(), 1);
+            }
+            NativeViewInputBackendSource::Live(_) => {
+                panic!("static typed View must not be lowered as a live source")
+            }
+        }
+
+        let live_builder = native_window("Live Backend Attachment").stateful_view(
+            false,
+            |saved| {
+                crate::button(if *saved { "Saved" } else { "Save" })
+                    .id(crate::WidgetId::new(42))
+                    .on_click(Msg::Save)
+            },
+            |saved, message, _cx| match message {
+                Msg::Save => *saved = true,
+            },
+        );
+        let live_attachment = live_builder
+            .native_view_input_runtime()
+            .backend_attachment()
+            .expect("stateful View should expose a backend attachment");
+        match live_attachment.source {
+            NativeViewInputBackendSource::Live(runtime) => {
+                assert_eq!(runtime.interaction_plan().hit_target_count(), 1)
+            }
+            NativeViewInputBackendSource::Static { .. } => {
+                panic!("stateful View must remain a live backend source")
+            }
+        }
     }
 
     #[cfg(all(feature = "label", feature = "button"))]

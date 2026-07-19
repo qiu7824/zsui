@@ -78,6 +78,31 @@ pub struct WindowsWin32ViewInputRoute {
     pending_ui_commands: Vec<UiCommand>,
 }
 
+pub(crate) fn windows_win32_view_input_route(
+    runtime: &crate::native::NativeViewInputRuntime,
+) -> Option<WindowsWin32ViewInputRoute> {
+    let attachment = runtime.backend_attachment()?;
+    let route = match attachment.source {
+        crate::native::NativeViewInputBackendSource::Live(runtime) => {
+            WindowsWin32ViewInputRoute::from_live_view(runtime)
+        }
+        crate::native::NativeViewInputBackendSource::Static {
+            interaction_plan,
+            ui_command_view,
+        } => WindowsWin32ViewInputRoute::new(interaction_plan, ui_command_view),
+    }
+    .resource_policy(attachment.resource_policy)
+    .window_close_request_command(attachment.window_close_request_command);
+    let route = match attachment.app_command_executor {
+        Some(executor) => route.app_command_executor(executor),
+        None => route,
+    };
+    Some(match attachment.ui_command_executor {
+        Some(executor) => route.ui_command_executor(executor),
+        None => route,
+    })
+}
+
 impl WindowsWin32ViewInputRoute {
     pub fn new(
         interaction_plan: ViewInteractionPlan,

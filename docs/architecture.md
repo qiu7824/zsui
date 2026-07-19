@@ -520,6 +520,15 @@ backend therefore adds one adapter implementation without changing application
 authoring, desktop-service dispatch or the shared host loop. Public View
 builders do not accept the internal experience or the low-level render-proof
 `PlatformStyle` enums.
+
+The shared input runtime exports one `NativeViewInputBackendAttachment`: a
+static typed View or shared live View together with resource policy, close
+command and command executors. A selected target adapter may lower this into a
+backend-owned route, as Win32 does, but `native.rs` neither names nor returns
+that route type. A new desktop backend consumes the same attachment or the
+shared runtime directly without adding a target-specific constructor to the
+input core.
+
 Regression tests scan the
 Gallery, Notepad and desktop showcase authoring slices so target `cfg`, platform
 enums and raw native handles cannot silently return to ordinary `view`/`update`

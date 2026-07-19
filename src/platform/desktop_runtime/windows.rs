@@ -17,7 +17,7 @@ impl DesktopRuntimeBackend for Backend {
         let input_routes = request
             .view_runtimes
             .iter()
-            .map(crate::native::NativeViewInputRuntime::windows_win32_route)
+            .map(crate::windows_win32_host::windows_win32_view_input_route)
             .collect::<Vec<_>>();
         let shell_routes = request
             .shell_runtimes

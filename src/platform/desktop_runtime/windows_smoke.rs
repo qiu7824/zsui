@@ -266,10 +266,11 @@ fn run_native_window_smoke_event_loop(
     };
     record_draw_plan_smoke(&mut report, &draw_plans);
     report.native_view_hit_target_count = view_runtime.hit_target_count();
-    let input_routes = match view_runtime.windows_win32_route() {
-        Some(route) => vec![Some(route)],
-        None => Vec::new(),
-    };
+    let input_routes =
+        match crate::windows_win32_host::windows_win32_view_input_route(&view_runtime) {
+            Some(route) => vec![Some(route)],
+            None => Vec::new(),
+        };
     let shell_routes = match shell_runtime {
         Some(runtime) => vec![Some(
             crate::windows_win32_host::WindowsWin32ShellInputRoute::new(runtime),

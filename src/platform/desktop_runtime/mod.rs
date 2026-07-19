@@ -359,6 +359,9 @@ mod tests {
         assert!(!source.contains("capture_win32_hwnd_png"));
         assert!(!source.contains("post_windows_native_view_input"));
         assert!(!source.contains("WindowsWin32MessageLoop"));
+        assert!(!source.contains("WindowsWin32ViewInputRoute"));
+        assert!(!source.contains("windows_win32_route"));
+        assert!(!source.contains("windows_win32_host"));
         assert!(!source.contains("run_macos_appkit_native_window_event_loop"));
         assert!(!source.contains("run_linux_direct_native_window_event_loop"));
         assert!(!source.contains("run_linux_gtk_native_window_event_loop"));
