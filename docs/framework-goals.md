@@ -134,9 +134,11 @@ hybrid route with a native text service and the target-dispatched
 interaction proof and a reusable rich-text engine remain incomplete.
 
 `calculator` provides a complete standard-mode vertical slice at the framework
-level: typed decimal operations, memory, history, a DPI-aware Fluent keypad,
-semantic icons and stable hit regions. Its Windows example proves the real
-input-state-paint loop and records a local system comparison. This composite
+level: typed decimal operations, memory, history, a platform-adaptive View
+keypad, semantic icons and stable namespaced actions. One unchanged acceptance
+source now enters Win32, AppKit or Linux through the normal stateful View
+builder. Windows proves its real input-state-paint loop; calculator-specific
+AppKit/Linux target screenshots remain separate evidence gates. This composite
 does not increase the component-catalog count or imply scientific, programmer,
 graphing, conversion, localization or accessibility parity.
 

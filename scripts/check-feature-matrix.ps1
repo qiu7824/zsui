@@ -100,7 +100,7 @@ $featureSets = @(
     "document-shell,windows-win32",
     "notepad-demo,style",
     "notepad-demo-lite,style",
-    "calculator,windows-gdi",
+    "calculator,window",
     "component-gallery-demo",
     "desktop-native,all-widgets,style,dark-mode"
 )

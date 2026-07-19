@@ -1106,8 +1106,15 @@ impl<Msg> ViewNode<Msg> {
             return;
         }
 
-        #[cfg(any(feature = "progress", feature = "progress-ring"))]
+        #[allow(unused_mut)]
         let mut accepts_input = true;
+        #[cfg(feature = "button")]
+        {
+            accepts_input &= !matches!(
+                self.kind,
+                ViewNodeKind::Button { enabled: false, .. }
+            );
+        }
         #[cfg(feature = "progress")]
         {
             accepts_input &= !matches!(self.kind, ViewNodeKind::ProgressBar { .. });
@@ -1116,8 +1123,6 @@ impl<Msg> ViewNode<Msg> {
         {
             accepts_input &= !matches!(self.kind, ViewNodeKind::ProgressRing { .. });
         }
-        #[cfg(not(any(feature = "progress", feature = "progress-ring")))]
-        let accepts_input = true;
         if accepts_input {
             if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
                 if let Some(bounds) = clipped_rect(bounds, clip) {

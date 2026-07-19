@@ -179,7 +179,7 @@
       "required": [
         "src/calculator.rs",
         "examples/zsui_calculator.rs",
-        "examples/zsui_calculator/windows.rs",
+        "src/view/widgets/calculator.rs",
         "docs/calculator-demo.md"
       ],
       "optional": [

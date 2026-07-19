@@ -396,8 +396,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Shell,
             false,
             vec!["rust_decimal"],
-            vec!["style"],
-            "decimal calculator engine, Fluent shell layout, semantic draw plan and typed actions",
+            vec!["style", "button", "label", "grid"],
+            "decimal calculator engine and platform-adaptive typed View shell",
         ),
         ZsuiCargoFeature::new(
             "tray",
@@ -543,8 +543,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Tooling,
             false,
             Vec::new(),
-            vec!["windows-gdi", "calculator"],
-            "interactive Windows calculator example and local comparison target",
+            vec!["window", "calculator", "native-smoke"],
+            "shared calculator acceptance example on target-native Win32, AppKit and Linux hosts",
         ),
         ZsuiCargoFeature::new(
             "component-gallery-demo",

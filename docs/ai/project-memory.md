@@ -93,6 +93,10 @@ history remain authoritative for implementation status.
   and target-dispatched file dialogs. `WindowsWin32OwnedTextEditor` remains an
   optional Windows service for native EDIT integration; it is not the demo
   architecture and is not evidence for AppKit or GTK editor completion.
+- The calculator acceptance application also uses one platform-neutral
+  `State/Msg/view/update` source and the normal `native_window(...).stateful_view(...)`
+  entry. Its reusable `calculator_view` owns adaptive composition and stable
+  action IDs; examples must not restore a target-specific event loop.
 - Shared TextBox/TextEditor selection uses `ZsTextSelection` with Unicode-scalar
   anchor/caret indices and `on_text_selection_change(...)`. Edits, keyboard
   movement and pointer drag selection route through the same typed View update

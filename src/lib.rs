@@ -646,7 +646,11 @@ pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]
 pub use view::ZsTimePickerState;
 #[cfg(feature = "button")]
-pub use view::{button, navigation_item, toolbar_button, ZsButtonPresentation};
+pub use view::{
+    button, icon_button, navigation_item, primary_button, toolbar_button, ZsButtonPresentation,
+};
+#[cfg(feature = "calculator")]
+pub use view::{calculator_view, ZsCalculatorViewIds};
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
     LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,

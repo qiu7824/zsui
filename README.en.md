@@ -583,18 +583,20 @@ ZSUI has the smallest measured native-service output and idle footprint, while
 the reusable service gaps still make its application source longer.
 
 The optional `calculator` feature adds a typed decimal engine and reusable
-standard-calculator shell with a Fluent keypad, memory row, history panel,
-semantic icons and stable hit regions. The interactive Windows example uses
-the same buffered no-flicker renderer and includes mouse, keyboard, DPI and app
-icon handling:
+standard-calculator View with a platform-adaptive keypad, memory row, history
+panel, semantic icons and stable namespaced actions. The unchanged
+`State / Msg / view / update` source enters Win32, AppKit or Linux through the
+normal `window` backend selection and contains no target `cfg`, raw handle or
+native event loop:
 
 ```text
 cargo run --example zsui_calculator --no-default-features --features calculator-demo
 ```
 
-`docs/calculator-demo.md` records a reproducible comparison with the local
-Windows Calculator, including separate process-group and component memory
-counters when `ApplicationFrameHost` owns the visible system window.
+`docs/calculator-demo.md` records the shared entry, real Windows smoke and a
+reproducible local Windows Calculator comparison, including separate
+process-group and component memory counters when `ApplicationFrameHost` owns
+the visible system window.
 
 Built-in workbench visuals consume the shared Fluent token layer rather than
 embedding product colors or icon code points. The Windows renderer uses Segoe
@@ -803,8 +805,8 @@ it falls back to in-memory clipboard storage.
   with real Win32 screenshot and machine-readable manifest modes.
 - `examples/zsui_notepad.rs`: hybrid Fluent document shell and native Windows
   text service with a release-size and runtime-memory comparison script.
-- `examples/zsui_calculator.rs`: modern standard calculator using the reusable
-  decimal engine/shell and a measured local Windows Calculator comparison.
+- `examples/zsui_calculator.rs`: one shared desktop calculator using the
+  reusable decimal engine/View shell and target-selected native backend.
 - `examples/native_smoke_manifest.rs`: JSON manifest for target native host
   smoke artifacts.
 - `examples/native_smoke_record.rs`: writes contract-level target smoke

@@ -779,7 +779,7 @@ impl ZsCalculatorShellSpec {
     }
 }
 
-const MEMORY_ACTIONS: [ZsCalculatorAction; 5] = [
+pub(crate) const MEMORY_ACTIONS: [ZsCalculatorAction; 5] = [
     ZsCalculatorAction::MemoryClear,
     ZsCalculatorAction::MemoryRecall,
     ZsCalculatorAction::MemoryAdd,
@@ -787,7 +787,7 @@ const MEMORY_ACTIONS: [ZsCalculatorAction; 5] = [
     ZsCalculatorAction::MemoryStore,
 ];
 
-const KEYPAD_ACTIONS: [[ZsCalculatorAction; 4]; 6] = [
+pub(crate) const KEYPAD_ACTIONS: [[ZsCalculatorAction; 4]; 6] = [
     [
         ZsCalculatorAction::Percent,
         ZsCalculatorAction::ClearEntry,

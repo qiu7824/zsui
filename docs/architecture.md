@@ -277,11 +277,14 @@ handles; those remain host/application services.
 
 `src/calculator.rs` defines a feature-gated standard-calculator slice.
 `ZsCalculatorEngine` owns decimal values, pending operations, repeated equals,
-memory and history through typed actions. `ZsCalculatorShellSpec` owns the
-DPI-aware header, display, memory row, keypad, history panel, semantic draw
-plan and hit regions. The reusable layer has no raw HWND ownership; the Windows
-example currently supplies the mouse, keyboard and lifecycle loop. Scientific,
-programmer, graphing and conversion modes remain separate future surfaces.
+memory and history through typed actions. `ZsCalculatorShellSpec` projects that
+state, while `calculator_view` composes the display, memory row, keypad and
+history from shared View primitives. `ZsCalculatorViewIds` supplies a stable
+per-instance action namespace. The unchanged acceptance source uses
+`native_window(...).stateful_view(...)` on Win32, AppKit and Linux; target
+selection, native lifecycle, text shaping and presentation remain in the
+desktop backends. Scientific, programmer, graphing and conversion modes remain
+separate future surfaces.
 
 The workbench does not own private glyph strings or an independent visual
 palette. `src/style.rs` defines the shared Fluent grid, control/card radii,

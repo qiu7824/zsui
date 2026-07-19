@@ -533,6 +533,10 @@ pub(crate) struct ZsTabHeaderState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZsButtonPresentation {
     Standard,
+    Primary,
+    Icon {
+        icon: crate::ZsIcon,
+    },
     Toolbar {
         icon: crate::ZsIcon,
         show_label: bool,
@@ -573,6 +577,7 @@ pub enum ViewNodeKind<Msg> {
     Button {
         label: String,
         presentation: ZsButtonPresentation,
+        enabled: bool,
         on_click: Option<Msg>,
     },
     #[cfg(feature = "breadcrumb")]
@@ -1054,6 +1059,19 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_click(mut self, message: Msg) -> Self {
         if let ViewNodeKind::Button { on_click, .. } = &mut self.kind {
             *on_click = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "button")]
+    /// Controls whether a button participates in focus, hit testing and activation.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        if let ViewNodeKind::Button {
+            enabled: button_enabled,
+            ..
+        } = &mut self.kind
+        {
+            *button_enabled = enabled;
         }
         self
     }

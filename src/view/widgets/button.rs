@@ -101,6 +101,7 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Button {
         label,
         presentation: ZsButtonPresentation::Standard,
+        enabled: true,
         on_click: None,
     })
     .min_width(minimum_width)
@@ -117,6 +118,43 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
 #[cfg(feature = "button")]
 pub fn toolbar_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
     toolbar_button_impl(crate::ZsBaseControlPlatformStyle::current(), label, icon)
+}
+
+/// Creates the platform's emphasized/default action button.
+#[cfg(feature = "button")]
+pub fn primary_button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
+    let metrics = crate::ZsBaseControlMetrics::for_platform(
+        crate::ZsBaseControlPlatformStyle::current(),
+    );
+    let label = label.into();
+    let minimum_width = metrics.button_minimum_width_for_label(&label);
+    ViewNode::new(ViewNodeKind::Button {
+        label,
+        presentation: ZsButtonPresentation::Primary,
+        enabled: true,
+        on_click: None,
+    })
+    .min_width(minimum_width)
+    .native_typography_height(metrics.button_height)
+    .flex(0.0)
+}
+
+/// Creates a square button painted from a semantic icon while retaining an
+/// accessible text label in the View tree.
+#[cfg(feature = "button")]
+pub fn icon_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
+    let metrics = crate::ZsBaseControlMetrics::for_platform(
+        crate::ZsBaseControlPlatformStyle::current(),
+    );
+    ViewNode::new(ViewNodeKind::Button {
+        label: label.into(),
+        presentation: ZsButtonPresentation::Icon { icon },
+        enabled: true,
+        on_click: None,
+    })
+    .width(metrics.button_height)
+    .native_typography_height(metrics.button_height)
+    .flex(0.0)
 }
 
 /// Deterministic toolbar-button variant for target proof fixtures and tests.
@@ -153,6 +191,7 @@ fn toolbar_button_impl<Msg>(
             icon,
             show_label: true,
         },
+        enabled: true,
         on_click: None,
     })
     .min_width(minimum_width)
@@ -175,6 +214,7 @@ pub fn navigation_item<Msg>(
     ViewNode::new(ViewNodeKind::Button {
         label: label.into(),
         presentation: ZsButtonPresentation::NavigationItem { icon, selected },
+        enabled: true,
         on_click: None,
     })
     .native_typography_height(metrics.item_height)

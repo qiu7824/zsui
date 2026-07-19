@@ -120,9 +120,10 @@ Already reusable at code level:
 - Optional `document-shell` composite through `ZsDocumentShellSpec`, with a
   document tab, command bar, editor content inset, status surface, semantic
   icons, compact layout and stable command hit regions.
-- Optional `calculator` slice through `ZsCalculatorEngine` and
-  `ZsCalculatorShellSpec`, with decimal arithmetic, typed operations, memory,
-  history, Fluent keypad drawing and stable action hit regions.
+- Optional `calculator` slice through `ZsCalculatorEngine`,
+  `ZsCalculatorShellSpec` and `calculator_view`, with decimal arithmetic,
+  typed operations, memory, history, platform-adaptive composition and stable
+  namespaced action widgets.
 - Machine-readable 48-family component coverage through
   `zsui_component_catalog()` and `zsui_component_catalog_summary()`.
 - `NativeWindowBuilder::view(...)` projection from typed `ViewNode<Msg>` into

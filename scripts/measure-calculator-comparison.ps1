@@ -285,8 +285,7 @@ function Get-PackageCount {
 $zsui = Measure-ZsuiCalculator
 $windows = Measure-WindowsCalculator
 $appSource = Get-SourceStats -Paths @(
-    (Join-Path $workspace "examples\zsui_calculator.rs"),
-    (Join-Path $workspace "examples\zsui_calculator\windows.rs")
+    (Join-Path $workspace "examples\zsui_calculator.rs")
 )
 $frameworkSource = Get-SourceStats -Paths @((Join-Path $workspace "src\calculator.rs"))
 $package = Get-AppxPackage Microsoft.WindowsCalculator

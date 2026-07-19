@@ -1093,9 +1093,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *pane_open = !*pane_open;
                 }
                 #[cfg(feature = "button")]
-                (ViewNodeKind::Button { on_click, .. }, ViewEvent::Click { .. }) => {
-                    if let Some(message) = on_click.clone() {
-                        cx.emit(message);
+                (
+                    ViewNodeKind::Button {
+                        enabled, on_click, ..
+                    },
+                    ViewEvent::Click { .. },
+                ) => {
+                    if *enabled {
+                        if let Some(message) = on_click.clone() {
+                            cx.emit(message);
+                        }
                     }
                 }
                 #[cfg(feature = "toggle-button")]
@@ -2039,10 +2046,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Button {
                 label,
                 presentation,
+                enabled,
                 ..
             } => {
                 match presentation {
-                    ZsButtonPresentation::Standard => {
+                    ZsButtonPresentation::Standard | ZsButtonPresentation::Icon { .. } => {
                         let platform = crate::ZsBaseControlPlatformStyle::current();
                         let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
                         // Standard buttons deliberately keep their platform
@@ -2072,8 +2080,76 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 cx.dpi,
                             ),
                         });
+                        match presentation {
+                            ZsButtonPresentation::Standard => {
+                                let mut text_style = SemanticTextStyle::body();
+                                text_style.role = TextRole::Button;
+                                text_style.color = if *enabled {
+                                    ColorRole::PrimaryText
+                                } else {
+                                    ColorRole::DisabledText
+                                };
+                                text_style.horizontal_align = crate::HorizontalAlign::Center;
+                                cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                                    label,
+                                    button_content_bounds(bounds, self.style.padding, cx.dpi),
+                                    text_style,
+                                )));
+                            }
+                            ZsButtonPresentation::Icon { icon } => {
+                                let icon_size = ZsToolbarMetrics::for_platform(platform)
+                                    .icon_size
+                                    .to_px(cx.dpi)
+                                    .round_i32()
+                                    .max(1)
+                                    .min(bounds.width.min(bounds.height).max(1));
+                                cx.draw(NativeDrawCommand::Icon(
+                                    crate::NativeDrawIconCommand::new(
+                                        *icon,
+                                        Rect {
+                                            x: bounds.x
+                                                + bounds.width.saturating_sub(icon_size) / 2,
+                                            y: bounds.y
+                                                + bounds.height.saturating_sub(icon_size) / 2,
+                                            width: icon_size,
+                                            height: icon_size,
+                                        },
+                                        crate::NativeIconColorMode::ThemeAware,
+                                    )
+                                    .with_color(if *enabled {
+                                        ColorRole::PrimaryText
+                                    } else {
+                                        ColorRole::DisabledText
+                                    }),
+                                ));
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    ZsButtonPresentation::Primary => {
+                        let metrics = crate::ZsBaseControlMetrics::for_platform(
+                            crate::ZsBaseControlPlatformStyle::current(),
+                        );
+                        cx.draw(NativeDrawCommand::RoundRect {
+                            rect: bounds,
+                            fill: NativeDrawFill::Role(if *enabled {
+                                ColorRole::Accent
+                            } else {
+                                ColorRole::Control
+                            }),
+                            stroke: (!*enabled).then_some(NativeDrawFill::Role(ColorRole::Border)),
+                            radius: radius_px(
+                                self.style.radius.or(Some(metrics.button_radius)),
+                                cx.dpi,
+                            ),
+                        });
                         let mut text_style = SemanticTextStyle::body();
                         text_style.role = TextRole::Button;
+                        text_style.color = if *enabled {
+                            ColorRole::AccentText
+                        } else {
+                            ColorRole::DisabledText
+                        };
                         text_style.horizontal_align = crate::HorizontalAlign::Center;
                         cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                             label,
@@ -2121,7 +2197,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 icon_bounds,
                                 crate::NativeIconColorMode::ThemeAware,
                             )
-                            .with_color(ColorRole::PrimaryText),
+                            .with_color(if *enabled {
+                                ColorRole::PrimaryText
+                            } else {
+                                ColorRole::DisabledText
+                            }),
                         ));
                         if *show_label {
                             let text_x = icon_bounds
@@ -2130,6 +2210,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 .saturating_add(content_gap);
                             let mut text_style = SemanticTextStyle::body();
                             text_style.role = metrics.label_role;
+                            text_style.color = if *enabled {
+                                ColorRole::PrimaryText
+                            } else {
+                                ColorRole::DisabledText
+                            };
                             text_style.horizontal_align = crate::HorizontalAlign::Start;
                             cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                                 label,

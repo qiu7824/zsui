@@ -221,6 +221,10 @@ mod tests {
                 "zsui_notepad",
                 include_str!("../../examples/zsui_notepad.rs"),
             ),
+            (
+                "zsui_calculator",
+                include_str!("../../examples/zsui_calculator.rs"),
+            ),
         ];
         let forbidden = [
             "cfg!(",
@@ -263,6 +267,7 @@ mod tests {
             include_str!("../view/widgets/selection.rs"),
             include_str!("../view/widgets/navigation.rs"),
             include_str!("../view/widgets/data.rs"),
+            include_str!("../view/widgets/calculator.rs"),
         ];
 
         for source in view_sources {

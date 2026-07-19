@@ -160,6 +160,55 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "button")]
+    fn disabled_button_is_not_focusable_or_activatable() {
+        let id = WidgetId::new(9);
+        let mut view = button("Unavailable")
+            .id(id)
+            .enabled(false)
+            .on_click(Msg::SaveClicked);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 160,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Click { widget: id });
+
+        assert!(events.into_messages().is_empty());
+        assert!(view.interaction_plan().hit_target_for_widget(id).is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn primary_and_icon_buttons_keep_semantic_presentations() {
+        let primary: ViewNode<Msg> = primary_button("Continue");
+        let icon: ViewNode<Msg> = icon_button("History", crate::ZsIcon::History);
+
+        assert!(matches!(
+            primary.kind,
+            ViewNodeKind::Button {
+                presentation: ZsButtonPresentation::Primary,
+                ..
+            }
+        ));
+        assert!(matches!(
+            icon.kind,
+            ViewNodeKind::Button {
+                label,
+                presentation: ZsButtonPresentation::Icon {
+                    icon: crate::ZsIcon::History
+                },
+                ..
+            } if label == "History"
+        ));
+    }
+
+    #[test]
     #[cfg(all(feature = "button", feature = "label"))]
     fn view_node_layout_and_paint_emit_native_draw_plan() {
         let mut view: ViewNode<Msg> =
