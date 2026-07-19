@@ -221,7 +221,7 @@ impl LinuxDirectApp {
             let initial_height = spec.height;
             let mut runtime = initial_runtimes
                 .get(index)
-                .map(std::mem::take)
+                .map(|runtime| std::mem::take(runtime))
                 .unwrap_or_default();
             let pango_context = linux_direct_pango_context();
             #[cfg(feature = "text-input-core")]
@@ -678,6 +678,8 @@ impl LinuxDirectWindow {
         pango_context: pango::Context,
         retain_frame: bool,
     ) -> Self {
+        #[cfg(not(feature = "accessibility"))]
+        let _ = (event_loop, initial_height);
         let scale_factor = window.scale_factor().max(0.1);
         let theme = window.theme().unwrap_or(WinitTheme::Light);
         let display_server = linux_direct_display_server(&window);
