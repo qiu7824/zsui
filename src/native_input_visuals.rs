@@ -81,6 +81,17 @@ pub(crate) enum NativeTextShapingBackend {
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
+        feature = "linux-direct-lite",
+        not(feature = "linux-direct"),
+        feature = "text-input-core"
+    ))]
+    LinuxDirectLite(
+        crate::linux_direct_lite::LinuxLiteTextSystem,
+        NativeTextShapingCache,
+    ),
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
         feature = "linux-gtk",
         feature = "text-input-core"
     ))]
@@ -116,6 +127,14 @@ impl std::fmt::Debug for NativeTextShapingBackend {
             #[cfg(all(
                 target_os = "linux",
                 not(target_env = "ohos"),
+                feature = "linux-direct-lite",
+                not(feature = "linux-direct"),
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirectLite(_, _) => formatter.write_str("LinuxDirectLite(CosmicText)"),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
                 feature = "linux-gtk",
                 feature = "text-input-core"
             ))]
@@ -142,6 +161,14 @@ impl NativeTextShapingBackend {
                 feature = "text-input-core"
             ))]
             Self::LinuxDirect(_, _) => crate::linux_direct::linux_direct_ui_font_scale(),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-direct-lite",
+                not(feature = "linux-direct"),
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirectLite(context, _) => context.ui_scale(),
             #[cfg(all(
                 target_os = "linux",
                 not(target_env = "ohos"),
@@ -176,6 +203,14 @@ impl NativeTextShapingBackend {
                 feature = "text-input-core"
             ))]
             Self::LinuxDirect(_, cache) => cache.release_idle_memory(),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-direct-lite",
+                not(feature = "linux-direct"),
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirectLite(_, cache) => cache.release_idle_memory(),
             #[cfg(all(
                 target_os = "linux",
                 not(target_env = "ohos"),
@@ -222,6 +257,19 @@ impl NativeTextShapingBackend {
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
+        feature = "linux-direct-lite",
+        not(feature = "linux-direct"),
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn linux_direct_lite(
+        context: crate::linux_direct_lite::LinuxLiteTextSystem,
+    ) -> Self {
+        Self::LinuxDirectLite(context, NativeTextShapingCache::default())
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
         feature = "linux-gtk",
         feature = "text-input-core"
     ))]
@@ -257,6 +305,16 @@ impl NativeTextShapingBackend {
             ))]
             Self::LinuxDirect(context, cache) => cache.shape(text, || {
                 crate::linux_direct::shape_linux_direct_text_line(context, text)
+            }),
+            #[cfg(all(
+                target_os = "linux",
+                not(target_env = "ohos"),
+                feature = "linux-direct-lite",
+                not(feature = "linux-direct"),
+                feature = "text-input-core"
+            ))]
+            Self::LinuxDirectLite(context, cache) => cache.shape(text, || {
+                crate::linux_direct_lite::shape_linux_lite_text_line(context, text)
             }),
             #[cfg(all(
                 target_os = "linux",

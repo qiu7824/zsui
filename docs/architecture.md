@@ -371,7 +371,11 @@ enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
 `desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
 `macos-appkit` enables optional `objc2` AppKit bindings, `linux-direct` enables
 the lightweight Wayland/X11, Cairo/Pango, built-in symbolic-vector and portal
-stack, `linux-system-icons` optionally adds freedesktop theme lookup plus
+stack, while `linux-direct-lite` selects the same host with the optional
+pure-Rust cosmic-text/swash and tiny-skia renderer. The two renderer features
+are additive in Cargo, so `linux-direct` remains authoritative when both are
+enabled; a lite-only build must omit `linux-direct`. `linux-system-icons`
+optionally adds freedesktop theme lookup plus
 GdkPixbuf decoding, and `linux-gtk` enables optional GTK4 compatibility
 bindings. Platform-native window, clipboard, file-dialog
 and menu adapters therefore do not enter builds that omit their backend

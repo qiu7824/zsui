@@ -39,7 +39,8 @@ surface and input traces, so local contract JSON is not enough for a
 device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
-`windows-gdi`, `windows-win32`, `macos-appkit`, `linux-direct`, `linux-gtk`,
+`windows-gdi`, `windows-win32`, `macos-appkit`, `linux-direct`,
+`linux-direct-lite`, `linux-gtk`,
 `android` and `harmony` are platform/backend gates, while `clipboard` and
 `image` own their optional dependencies. The default `window` umbrella must
 keep the one-line desktop entry working and rely
@@ -53,6 +54,13 @@ live-view updates. Its controls remain platform-adapted ZSUI self-drawn controls
 rather than GTK widget instances. Enabling the optional `accessibility` feature
 also projects the shared interaction tree through AccessKit to the Linux
 AT-SPI bus.
+
+`linux-direct-lite` is an opt-in renderer profile over the same window, input,
+IME, menu, portal and AccessKit host. It replaces Cairo/Pango with tiny-skia
+and cosmic-text/swash, draws directly into the Softbuffer frame, and keeps the
+application source unchanged. The default remains `linux-direct`; the pure-Rust
+profile is experimental until its target proof covers CJK, bidirectional text,
+IME, accessibility and both Wayland/X11 at the same level as the default.
 
 The AppKit and Linux backend features provide target-native desktop service
 slices through safe Rust contracts. AppKit maps `WindowSpec` to an owned

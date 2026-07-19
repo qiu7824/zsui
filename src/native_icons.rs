@@ -69,7 +69,7 @@ impl NativeIconSource {
         all(target_os = "macos", feature = "macos-appkit"),
         all(
             target_os = "linux",
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     ))]
     pub fn bundled_fluent_svg(icon: ZsIcon) -> Self {
@@ -121,7 +121,7 @@ pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<Nati
         all(target_os = "macos", feature = "macos-appkit"),
         all(
             target_os = "linux",
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     ))]
     {
@@ -135,7 +135,7 @@ pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<Nati
         all(target_os = "macos", feature = "macos-appkit"),
         all(
             target_os = "linux",
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     )))]
     {
@@ -167,7 +167,7 @@ pub fn resolve_native_icon(
     all(target_os = "macos", feature = "macos-appkit"),
     all(
         target_os = "linux",
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 pub fn bundled_fluent_icon_svg(icon: ZsIcon) -> &'static [u8] {
@@ -179,7 +179,7 @@ pub fn bundled_fluent_icon_svg(icon: ZsIcon) -> &'static [u8] {
     all(target_os = "macos", feature = "macos-appkit"),
     all(
         target_os = "linux",
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 pub const FLUENT_SYSTEM_ICONS_LICENSE: &str =
@@ -190,7 +190,7 @@ pub const FLUENT_SYSTEM_ICONS_LICENSE: &str =
     all(target_os = "macos", feature = "macos-appkit"),
     all(
         target_os = "linux",
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 pub const FLUENT_SYSTEM_ICONS_NOTICE: &str =
@@ -235,7 +235,7 @@ mod tests {
         all(target_os = "macos", feature = "macos-appkit"),
         all(
             target_os = "linux",
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     ))]
     fn bundled_mit_svg_is_the_last_candidate_and_has_notices() {

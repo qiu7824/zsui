@@ -5,9 +5,11 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "linux-direct")]
 use cairo::{Context as CairoContext, Format, ImageSurface};
 #[cfg(feature = "linux-system-icons")]
 use gdk_pixbuf::prelude::*;
+#[cfg(feature = "linux-direct")]
 use pango::prelude::*;
 use softbuffer::{Context as SoftBufferContext, Surface as SoftBufferSurface};
 use winit::application::ApplicationHandler;
@@ -21,20 +23,29 @@ use winit::window::{
     WindowLevel,
 };
 
+#[cfg(feature = "linux-direct")]
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
 #[cfg(feature = "linux-system-icons")]
 use crate::NativeIconColorMode;
+#[cfg(feature = "linux-direct")]
 use crate::{
-    Color, HorizontalAlign, MenuItemSpec, MenuSpec, NativeDrawCommand, NativeDrawCommandSink,
-    NativeDrawIconCommand, NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand,
-    NativeImageInterpolation, NativeStyleResolver, Point, Rect, Size as ZsSize, TextLayout,
-    TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign, WindowSpec, ZsAccelerator,
+    Color, HorizontalAlign, NativeDrawCommand, NativeDrawCommandSink, NativeDrawIconCommand,
+    NativeDrawImageCommand, NativeDrawTextCommand, NativeImageInterpolation, NativeStyleResolver,
+    Size as ZsSize, TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
+};
+use crate::{
+    MenuItemSpec, MenuSpec, NativeDrawPlan, Point, Rect, WindowSpec, ZsAccelerator,
     ZsAcceleratorKey, ZsIcon, ZsuiError, ZsuiResult,
 };
 
 type LinuxDisplayHandle = OwnedDisplayHandle;
 type LinuxSoftBufferContext = SoftBufferContext<LinuxDisplayHandle>;
 type LinuxSoftBufferSurface = SoftBufferSurface<LinuxDisplayHandle, Rc<WinitWindow>>;
+
+#[cfg(feature = "linux-direct")]
+type LinuxDirectTextContext = pango::Context;
+#[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
+type LinuxDirectTextContext = crate::linux_direct_lite::LinuxLiteTextSystem;
 
 #[derive(Debug)]
 pub(crate) struct LinuxDirectNativeWindowRunReport {
@@ -226,9 +237,15 @@ impl LinuxDirectApp {
                 .get_mut(index)
                 .map(|runtime| std::mem::take(runtime))
                 .unwrap_or_default();
-            let pango_context = linux_direct_pango_context();
-            #[cfg(feature = "text-input-core")]
-            runtime.use_linux_direct_text_shaping(pango_context.clone());
+            let text_context = linux_direct_text_context();
+            #[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+            runtime.use_linux_direct_text_shaping(text_context.clone());
+            #[cfg(all(
+                feature = "text-input-core",
+                feature = "linux-direct-lite",
+                not(feature = "linux-direct")
+            ))]
+            runtime.use_linux_direct_lite_text_shaping(text_context.clone());
             runtime.defer_app_command_execution();
             let mut direct = LinuxDirectWindow::new(
                 event_loop,
@@ -243,7 +260,7 @@ impl LinuxDirectApp {
                     .and_then(Option::take)
                     .unwrap_or_default(),
                 runtime,
-                pango_context,
+                text_context,
                 self.capture_path.is_some(),
             );
             direct.resize(window.inner_size());
@@ -272,7 +289,7 @@ impl LinuxDirectApp {
                 window
                     .menu_surface
                     .as_mut()
-                    .and_then(|menu| menu.proof_command(&window.draw_pango_context))
+                    .and_then(|menu| menu.proof_command(&window.draw_text_context))
             })
             .flatten();
         if let Some(command) = proof_menu_command {
@@ -294,7 +311,7 @@ impl LinuxDirectApp {
             .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
         if open_menu_for_capture {
             if let Some(menu) = window.menu_surface.as_mut() {
-                menu.open_for_capture(&window.draw_pango_context);
+                menu.open_for_capture(&window.draw_text_context);
             }
             #[cfg(feature = "accessibility")]
             window.sync_accessibility();
@@ -447,7 +464,7 @@ impl ApplicationHandler for LinuxDirectApp {
                 let mut menu_changed = false;
                 let mut menu_captures = false;
                 if let Some(menu) = window.menu_surface.as_mut() {
-                    menu_changed = menu.pointer_move(point, &window.draw_pango_context);
+                    menu_changed = menu.pointer_move(point, &window.draw_text_context);
                     menu_captures = menu.captures_pointer(point);
                 }
                 if menu_changed {
@@ -492,7 +509,7 @@ impl ApplicationHandler for LinuxDirectApp {
                     let menu_result = window
                         .menu_surface
                         .as_mut()
-                        .map(|menu| menu.pointer_up(cursor, &window.draw_pango_context))
+                        .map(|menu| menu.pointer_up(cursor, &window.draw_text_context))
                         .unwrap_or(crate::linux_direct_menu::LinuxMenuInputResult::Ignored);
                     match menu_result {
                         crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
@@ -544,7 +561,7 @@ impl ApplicationHandler for LinuxDirectApp {
                 let menu_result = window
                     .menu_surface
                     .as_mut()
-                    .map(|menu| menu.key(&event.logical_key, &window.draw_pango_context))
+                    .map(|menu| menu.key(&event.logical_key, &window.draw_text_context))
                     .unwrap_or(crate::linux_direct_menu::LinuxMenuInputResult::Ignored);
                 match menu_result {
                     crate::linux_direct_menu::LinuxMenuInputResult::Command(command) => {
@@ -643,13 +660,14 @@ impl ApplicationHandler for LinuxDirectApp {
 }
 
 struct LinuxDirectWindow {
+    #[allow(dead_code)]
     title: String,
     window: Rc<WinitWindow>,
     surface: LinuxSoftBufferSurface,
     plan: NativeDrawPlan,
     runtime: crate::native::NativeViewInputRuntime,
-    pango_context: pango::Context,
-    draw_pango_context: pango::Context,
+    text_context: LinuxDirectTextContext,
+    draw_text_context: LinuxDirectTextContext,
     display_server: &'static str,
     scale_factor: f64,
     physical_size: PhysicalSize<u32>,
@@ -678,7 +696,7 @@ impl LinuxDirectWindow {
         surface: LinuxSoftBufferSurface,
         plan: NativeDrawPlan,
         runtime: crate::native::NativeViewInputRuntime,
-        pango_context: pango::Context,
+        text_context: LinuxDirectTextContext,
         retain_frame: bool,
     ) -> Self {
         #[cfg(not(feature = "accessibility"))]
@@ -688,7 +706,7 @@ impl LinuxDirectWindow {
         let display_server = linux_direct_display_server(&window);
         let mut menu_surface = menu.map(crate::linux_direct_menu::LinuxDirectMenuSurface::new);
         if let Some(menu) = menu_surface.as_mut() {
-            menu.layout(initial_width.max(1) as i32, &pango_context);
+            menu.layout(initial_width.max(1) as i32, &text_context);
         }
         #[cfg(feature = "accessibility")]
         let accessibility = crate::linux_direct_accessibility::LinuxDirectAccessibility::new(
@@ -712,15 +730,15 @@ impl LinuxDirectWindow {
             runtime.current_interaction_plan(),
             runtime.focused_widget(),
         );
-        let draw_pango_context = pango_context.clone();
+        let draw_text_context = text_context.clone();
         Self {
             title,
             window,
             surface,
             plan,
             runtime,
-            pango_context,
-            draw_pango_context,
+            text_context,
+            draw_text_context,
             display_server,
             scale_factor,
             physical_size: PhysicalSize::new(1, 1),
@@ -746,7 +764,7 @@ impl LinuxDirectWindow {
         if let Some(menu) = self.menu_surface.as_mut() {
             menu.layout(
                 logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
-                &self.draw_pango_context,
+                &self.draw_text_context,
             );
         }
         let content_height = logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32
@@ -970,7 +988,7 @@ impl LinuxDirectWindow {
         use crate::linux_direct_accessibility::LinuxAccessibilityTarget;
         use crate::linux_direct_menu::{LinuxMenuAccessibilityTarget, LinuxMenuInputResult};
         use accesskit::{Action, ActionData};
-        let pango_context = self.draw_pango_context.clone();
+        let text_context = self.draw_text_context.clone();
 
         for action in self.accessibility.take_actions() {
             match action.target {
@@ -1006,7 +1024,7 @@ impl LinuxDirectWindow {
                         (Action::Focus, LinuxMenuAccessibilityTarget::Root(root)) => self
                             .menu_surface
                             .as_mut()
-                            .is_some_and(|menu| menu.accessibility_focus_root(root, &pango_context))
+                            .is_some_and(|menu| menu.accessibility_focus_root(root, &text_context))
                             .then_some(LinuxMenuInputResult::Redraw),
                         (Action::Focus, LinuxMenuAccessibilityTarget::Row(row)) => self
                             .menu_surface
@@ -1016,11 +1034,11 @@ impl LinuxDirectWindow {
                         (Action::Click, LinuxMenuAccessibilityTarget::Root(root)) => self
                             .menu_surface
                             .as_mut()
-                            .map(|menu| menu.accessibility_activate_root(root, &pango_context)),
+                            .map(|menu| menu.accessibility_activate_root(root, &text_context)),
                         (Action::Click, LinuxMenuAccessibilityTarget::Row(row)) => self
                             .menu_surface
                             .as_mut()
-                            .map(|menu| menu.accessibility_activate_row(row, &pango_context)),
+                            .map(|menu| menu.accessibility_activate_row(row, &text_context)),
                         _ => None,
                     };
                     match result {
@@ -1106,7 +1124,7 @@ impl LinuxDirectWindow {
             height.get(),
             self.scale_factor,
             self.theme,
-            &self.draw_pango_context,
+            &self.draw_text_context,
             &mut self.icon_cache,
         )?;
         if self.retain_frame {
@@ -1131,9 +1149,23 @@ impl LinuxDirectWindow {
             &self.last_frame,
         )?;
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        #[cfg(feature = "linux-direct")]
+        let backend = "winit_softbuffer_pango_cairo";
+        #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
+        let backend = "winit_softbuffer_cosmic_text_tiny_skia";
+        #[cfg(feature = "linux-direct")]
+        let typography = linux_direct_native_typography_profile(
+            self.plan.typography_scale(),
+            Some(&self.text_context),
+        );
+        #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
+        let typography = crate::linux_direct_lite::linux_lite_typography_profile(
+            self.plan.typography_scale(),
+            &self.text_context,
+        );
         Ok(crate::NativeViewCaptureEvidence {
             platform: "linux",
-            backend: "winit_softbuffer_pango_cairo",
+            backend,
             display_server: Some(self.display_server),
             logical_width: logical.width.round().max(1.0) as u32,
             logical_height: logical.height.round().max(1.0) as u32,
@@ -1141,10 +1173,7 @@ impl LinuxDirectWindow {
             pixel_height: self.physical_size.height.max(1),
             scale_factor: self.scale_factor,
             typography_scale: self.plan.typography_scale(),
-            typography: linux_direct_native_typography_profile(
-                self.plan.typography_scale(),
-                Some(&self.pango_context),
-            ),
+            typography,
         })
     }
 }
@@ -1225,12 +1254,38 @@ fn accelerator_matches(accelerator: ZsAccelerator, key: &Key, modifiers: Modifie
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct LinuxIconRaster {
     width: i32,
     height: i32,
     premultiplied_bgra: Vec<u8>,
 }
 
+#[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
+fn render_linux_direct_frame(
+    frame: &mut [u32],
+    plan: &NativeDrawPlan,
+    menu_surface: Option<&crate::linux_direct_menu::LinuxDirectMenuSurface>,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+    theme: WinitTheme,
+    text_context: &LinuxDirectTextContext,
+    _icon_cache: &mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+) -> Result<(), String> {
+    crate::linux_direct_lite::render_linux_direct_lite_frame(
+        frame,
+        plan,
+        menu_surface,
+        width,
+        height,
+        scale_factor,
+        matches!(theme, WinitTheme::Dark),
+        text_context,
+    )
+}
+
+#[cfg(feature = "linux-direct")]
 fn render_linux_direct_frame(
     frame: &mut [u32],
     plan: &NativeDrawPlan,
@@ -1317,7 +1372,9 @@ fn render_linux_direct_frame(
     }
     if let Some(menu) = menu_surface {
         pangocairo::functions::update_context(&context, &draw_context);
-        menu.draw(&context, &draw_context, palette);
+        let mut canvas =
+            crate::linux_direct_menu::LinuxCairoMenuCanvas::new(&context, &draw_context);
+        menu.draw(&mut canvas, palette);
     }
     drop(context);
     image.flush();
@@ -1325,10 +1382,12 @@ fn render_linux_direct_frame(
     Ok(())
 }
 
+#[cfg(feature = "linux-direct")]
 struct LinuxDirectTextLayout {
     context: pango::Context,
 }
 
+#[cfg(feature = "linux-direct")]
 impl LinuxDirectTextLayout {
     fn new(context: pango::Context) -> Self {
         Self { context }
@@ -1341,6 +1400,7 @@ impl LinuxDirectTextLayout {
     }
 }
 
+#[cfg(feature = "linux-direct")]
 impl TextLayout for LinuxDirectTextLayout {
     fn measure(&self, text: &str, style: &TextStyle, max_width: i32) -> ZsSize {
         if text.is_empty() {
@@ -1375,6 +1435,7 @@ impl TextLayout for LinuxDirectTextLayout {
     }
 }
 
+#[cfg(feature = "linux-direct")]
 struct LinuxDirectDrawSink<'a> {
     context: &'a CairoContext,
     palette: NativeDrawPalette,
@@ -1385,6 +1446,7 @@ struct LinuxDirectDrawSink<'a> {
     clip_depth: usize,
 }
 
+#[cfg(feature = "linux-direct")]
 impl<'a> LinuxDirectDrawSink<'a> {
     fn new(
         context: &'a CairoContext,
@@ -1639,6 +1701,7 @@ impl<'a> LinuxDirectDrawSink<'a> {
     }
 }
 
+#[cfg(feature = "linux-direct")]
 impl Drop for LinuxDirectDrawSink<'_> {
     fn drop(&mut self) {
         while self.clip_depth > 0 {
@@ -1647,6 +1710,7 @@ impl Drop for LinuxDirectDrawSink<'_> {
     }
 }
 
+#[cfg(feature = "linux-direct")]
 impl NativeDrawCommandSink for LinuxDirectDrawSink<'_> {
     fn draw_command(&mut self, command: &NativeDrawCommand) {
         match command {
@@ -1737,6 +1801,7 @@ impl NativeDrawCommandSink for LinuxDirectDrawSink<'_> {
     }
 }
 
+#[cfg(feature = "linux-direct")]
 fn set_cairo_source(context: &CairoContext, color: Color) {
     context.set_source_rgba(
         f64::from(color.r) / 255.0,
@@ -1837,7 +1902,7 @@ fn linux_direct_icon_theme() -> &'static str {
         .as_str()
 }
 
-fn linux_direct_configured_font_name() -> &'static str {
+pub(crate) fn linux_direct_configured_font_name() -> &'static str {
     static FONT: OnceLock<String> = OnceLock::new();
     FONT.get_or_init(|| {
         std::env::var("ZSUI_LINUX_UI_FONT")
@@ -1857,10 +1922,12 @@ fn linux_direct_configured_font_name() -> &'static str {
     })
 }
 
+#[cfg(feature = "linux-direct")]
 fn linux_direct_font_description() -> pango::FontDescription {
     pango::FontDescription::from_string(linux_direct_configured_font_name())
 }
 
+#[cfg(feature = "linux-direct")]
 fn linux_direct_ui_font_family() -> String {
     linux_direct_font_description()
         .family()
@@ -1869,7 +1936,7 @@ fn linux_direct_ui_font_family() -> String {
         .unwrap_or_else(|| "Sans".to_string())
 }
 
-#[cfg(feature = "text-input-core")]
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
 pub(crate) fn linux_direct_ui_font_scale() -> f32 {
     let description = linux_direct_font_description();
     let size = description.size();
@@ -1884,10 +1951,17 @@ pub(crate) fn linux_direct_ui_font_scale() -> f32 {
     (logical_pixels / 14.0).clamp(0.75, 3.0)
 }
 
-fn linux_direct_pango_context() -> pango::Context {
+#[cfg(feature = "linux-direct")]
+fn linux_direct_text_context() -> LinuxDirectTextContext {
     pangocairo::FontMap::default().create_context()
 }
 
+#[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
+fn linux_direct_text_context() -> LinuxDirectTextContext {
+    crate::linux_direct_lite::LinuxLiteTextSystem::new(linux_direct_configured_font_name())
+}
+
+#[cfg(feature = "linux-direct")]
 fn linux_direct_native_typography_profile(
     typography_scale: f32,
     context: Option<&pango::Context>,
@@ -1916,7 +1990,7 @@ fn linux_direct_native_typography_profile(
     profile
 }
 
-#[cfg(feature = "text-input-core")]
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
 pub(crate) fn shape_linux_direct_text_line(
     context: &pango::Context,
     text: &str,
@@ -1974,7 +2048,7 @@ pub(crate) fn shape_linux_direct_text_line(
     NativeShapedTextLine::new(width, clusters, carets)
 }
 
-#[cfg(feature = "text-input-core")]
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
 fn linux_pango_coordinate(value: i32) -> i32 {
     if value >= 0 {
         value.saturating_add(pango::SCALE / 2) / pango::SCALE
@@ -1983,6 +2057,7 @@ fn linux_pango_coordinate(value: i32) -> i32 {
     }
 }
 
+#[cfg(feature = "linux-direct")]
 fn configure_linux_pango_layout(
     layout: &pango::Layout,
     text: &str,
@@ -2176,9 +2251,10 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "linux-direct")]
     #[test]
     fn direct_pango_no_wrap_does_not_constrain_width() {
-        let context = linux_direct_pango_context();
+        let context = linux_direct_text_context();
         let mut style = TextStyle::line("Sans", 14.0, Color::rgb(0, 0, 0));
         style.ellipsis = false;
         let layout = pango::Layout::new(&context);

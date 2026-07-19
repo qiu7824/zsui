@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--slint-binary", type=Path, required=True)
     parser.add_argument("--iced-binary", type=Path, required=True)
     parser.add_argument("--zsui-binary", type=Path)
+    parser.add_argument("--zsui-lite-binary", type=Path)
     parser.add_argument("--github-summary", type=Path)
     args = parser.parse_args()
 
@@ -36,6 +37,9 @@ def main():
     if args.zsui_binary:
         binaries["zsui"] = args.zsui_binary
         frameworks.insert(0, "zsui")
+    if args.zsui_lite_binary:
+        binaries["zsui-lite"] = args.zsui_lite_binary
+        frameworks.insert(1 if args.zsui_binary else 0, "zsui-lite")
     result = {
         "schema": SCHEMA,
         "runner": args.runner,
@@ -58,7 +62,8 @@ def main():
             report = json.loads(path.read_text(encoding="utf-8"))
             if report.get("schema") != SCHEMA:
                 raise SystemExit(f"unexpected schema in {path}")
-            if report.get("framework") != framework:
+            expected_framework = "zsui" if framework == "zsui-lite" else framework
+            if report.get("framework") != expected_framework:
                 raise SystemExit(f"unexpected framework in {path}")
             if report.get("scenario") != "notepad":
                 raise SystemExit(f"unexpected scenario in {path}")

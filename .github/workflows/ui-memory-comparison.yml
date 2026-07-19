@@ -163,6 +163,12 @@ jobs:
           cargo build \
             --release \
             --locked \
+            --example zsui_notepad_lite \
+            --no-default-features \
+            --features notepad-demo-lite
+          cargo build \
+            --release \
+            --locked \
             --manifest-path comparisons/slint_notepad/Cargo.toml \
             --bin slint-notepad-baseline
           cargo build \
@@ -170,6 +176,14 @@ jobs:
             --locked \
             --manifest-path comparisons/iced_notepad/Cargo.toml \
             --bin iced-notepad-baseline
+
+      - name: Verify lite renderer linkage
+        run: |
+          if ldd target/release/examples/zsui_notepad_lite | grep -Eiq 'cairo|pango'; then
+            ldd target/release/examples/zsui_notepad_lite
+            echo "linux-direct-lite unexpectedly links Cairo/Pango" >&2
+            exit 1
+          fi
 
       - name: Run real X11 windows and sample memory
         run: |
@@ -182,6 +196,12 @@ jobs:
                 --height 620 \
                 --sample-after-ms 3500 \
                 --memory-report "$root/zsui-notepad-run$run.json"
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+              target/release/examples/zsui_notepad_lite \
+                --width 900 \
+                --height 620 \
+                --sample-after-ms 3500 \
+                --memory-report "$root/zsui-lite-notepad-run$run.json"
             dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
               comparisons/slint_notepad/target/release/slint-notepad-baseline \
                 --benchmark-seconds 6 \
@@ -228,6 +248,43 @@ jobs:
               )
           PY
 
+      - name: Capture ZSUI pure-Rust Linux resident mappings
+        run: |
+          root=target/ui-memory-comparison/ubuntu-24.04-x86_64
+          export root
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            bash -euxo pipefail -c '
+              target/release/examples/zsui_notepad_lite \
+                --width 900 \
+                --height 620 \
+                --sample-after-ms 6500 \
+                --memory-report "$root/zsui-lite-notepad-diagnostic.json" &
+              app_pid=$!
+              sleep 3.5
+              python3 comparisons/scripts/capture_linux_smaps.py \
+                --pid "$app_pid" \
+                --output "$root/zsui-lite-notepad-smaps.json"
+              wait "$app_pid"
+            '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path(
+              "target/ui-memory-comparison/ubuntu-24.04-x86_64/zsui-lite-notepad-smaps.json"
+          ).read_text(encoding="utf-8"))
+          loaded = {mapping["path"] for mapping in report["largest_mappings"]}
+          offenders = sorted(
+              path for path in loaded
+              if any(name in path for name in ("/libcairo.so", "/libpango-", "/libpangocairo-"))
+          )
+          if offenders:
+              raise SystemExit(
+                  "linux-direct-lite unexpectedly loaded Cairo/Pango: "
+                  + ", ".join(offenders)
+              )
+          PY
+
       - name: Capture comparison Linux resident mappings
         run: |
           root=target/ui-memory-comparison/ubuntu-24.04-x86_64
@@ -265,6 +322,7 @@ jobs:
             --input target/ui-memory-comparison/ubuntu-24.04-x86_64 \
             --runner ubuntu-24.04-x86_64 \
             --zsui-binary target/release/examples/zsui_notepad \
+            --zsui-lite-binary target/release/examples/zsui_notepad_lite \
             --slint-binary comparisons/slint_notepad/target/release/slint-notepad-baseline \
             --iced-binary comparisons/iced_notepad/target/release/iced-notepad-baseline \
             --github-summary "$GITHUB_STEP_SUMMARY"
@@ -273,11 +331,11 @@ jobs:
           from pathlib import Path
 
           root = Path("target/ui-memory-comparison/ubuntu-24.04-x86_64")
-          for framework in ("zsui", "slint", "iced"):
+          for framework in ("zsui", "zsui-lite", "slint", "iced"):
               report = json.loads(
                   (root / f"{framework}-notepad-smaps.json").read_text(encoding="utf-8")
               )
-              print(f"\n### {framework.capitalize()} Linux resident mapping diagnosis\n")
+              print(f"\n### {framework.title()} Linux resident mapping diagnosis\n")
               print("| Category | RSS MiB | PSS MiB | Private MiB |")
               print("| --- | ---: | ---: | ---: |")
               for row in report["categories"]:

@@ -239,12 +239,28 @@ jobs:
             --example zsui_notepad \
             --no-default-features \
             --features notepad-demo
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad_lite \
+            --no-default-features \
+            --features notepad-demo-lite
+
+      - name: Verify lite renderer linkage
+        run: |
+          if ldd target/release/examples/zsui_notepad_lite | grep -Eiq 'cairo|pango'; then
+            ldd target/release/examples/zsui_notepad_lite
+            echo "linux-direct-lite unexpectedly links Cairo/Pango" >&2
+            exit 1
+          fi
 
       - name: Run real Linux proof scenes
         id: linux-scenes
         run: |
           set -o pipefail
-          mkdir -p target/native-proof/ubuntu-24.04-x86_64
+          mkdir -p \
+            target/native-proof/ubuntu-24.04-x86_64 \
+            target/native-proof/ubuntu-24.04-x86_64-lite
           for page in inputs collections navigation feedback catalog; do
             dbus-run-session -- xvfb-run -a \
               ./target/release/examples/component_gallery \
@@ -272,6 +288,13 @@ jobs:
               --height 640 \
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/zsui_notepad_lite \
+              --native-proof \
+              --width 960 \
+              --height 640 \
+              --output target/native-proof/ubuntu-24.04-x86_64-lite \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-lite/notepad.log
 
       - name: Summarize Linux proof failure
         if: failure() && steps.linux-scenes.outcome == 'failure'
@@ -360,12 +383,48 @@ jobs:
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
 
+          lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
+          lite_png = lite_root / "notepad-interaction.png"
+          lite_report = lite_root / "notepad-interaction.json"
+          if lite_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+              raise SystemExit(f"{lite_png} is not a PNG")
+          proof = json.loads(lite_report.read_text(encoding="utf-8"))
+          runtime = proof["runtime"]
+          capture = runtime.get("native_view_capture") or {}
+          assert proof["schema"] == "zsui.native-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["backend"] == "linux-direct"
+          assert proof["capture_backend"] == "winit_softbuffer_cosmic_text_tiny_skia"
+          assert proof["errors"] == []
+          assert proof["unhandled_commands"] == []
+          assert proof["typography"]["source"] == "fontdb_cosmic_text"
+          assert proof["typography"]["configured_ui_font"] == "Ubuntu Sans 11"
+          assert proof["typography"]["body_metrics"]["ascent"] > 0
+          assert proof["typography"] == capture["typography"]
+          assert capture["backend"] == "winit_softbuffer_cosmic_text_tiny_skia"
+          assert capture["display_server"] == "x11"
+          assert runtime["created_window_count"] == 1
+          assert runtime["screenshot_captured"] is True
+          assert not runtime["screenshot_error"]
+          assert proof["process_memory"]["resident_bytes"] > 0
+          assert proof["window"]["width"] == 960
+          assert proof["window"]["height"] == 640
+
       - name: Upload Linux proof
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: zsui-linux-direct-native-proof
           path: target/native-proof/ubuntu-24.04-x86_64
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload pure-Rust Linux proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-linux-direct-lite-native-proof
+          path: target/native-proof/ubuntu-24.04-x86_64-lite
           if-no-files-found: error
           retention-days: 30
 

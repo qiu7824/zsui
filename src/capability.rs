@@ -407,7 +407,7 @@ impl HostCapabilities {
 
     pub fn linux_native_window_host() -> Self {
         let mut capabilities = Self::linux_scaffold();
-        if cfg!(feature = "linux-direct") {
+        if cfg!(feature = "linux-direct-host") {
             capabilities.windows = CapabilitySupport::partial(
                 "real Wayland/X11 windows, directly presented software rendering, typed input and resize-driven relayout are connected; target proof is pending",
             );
@@ -428,8 +428,10 @@ impl HostCapabilities {
                 "GTK4 decorated and undecorated window declarations are connected; compositor proof is pending",
             );
         }
-        capabilities.clipboard_text = if cfg!(all(feature = "linux-direct", feature = "clipboard"))
-        {
+        capabilities.clipboard_text = if cfg!(all(
+            feature = "linux-direct-host",
+            feature = "clipboard"
+        )) {
             CapabilitySupport::partial(
                 "system UTF-8 text clipboard access is connected without GTK; Wayland/X11 ownership proof is pending",
             )
@@ -442,7 +444,10 @@ impl HostCapabilities {
                 "enable linux-direct plus clipboard, or linux-gtk, to compile a Linux clipboard service",
             )
         };
-        capabilities.menus = if cfg!(all(feature = "linux-gtk", not(feature = "linux-direct"))) {
+        capabilities.menus = if cfg!(all(
+            feature = "linux-gtk",
+            not(feature = "linux-direct-host")
+        )) {
             CapabilitySupport::partial(
                 "GMenu/SimpleAction installation and typed command polling are connected; GTK host integration proof is pending",
             )
@@ -451,7 +456,7 @@ impl HostCapabilities {
                 "the lightweight Linux host does not yet connect a desktop-shell native menu surface",
             )
         };
-        capabilities.file_picker = if cfg!(feature = "linux-direct") {
+        capabilities.file_picker = if cfg!(feature = "linux-direct-host") {
             CapabilitySupport::partial(
                 "XDG desktop portal open/save services are connected without GTK; target interaction proof is pending",
             )

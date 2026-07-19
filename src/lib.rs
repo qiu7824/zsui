@@ -53,26 +53,33 @@ pub mod info_bar;
 #[cfg(all(
     target_os = "linux",
     not(target_env = "ohos"),
-    feature = "linux-direct"
+    feature = "linux-direct-host"
 ))]
 mod linux_direct;
 #[cfg(all(
     target_os = "linux",
     not(target_env = "ohos"),
-    feature = "linux-direct",
+    feature = "linux-direct-host",
     feature = "accessibility"
 ))]
 mod linux_direct_accessibility;
 #[cfg(all(
     target_os = "linux",
     not(target_env = "ohos"),
-    feature = "linux-direct"
+    feature = "linux-direct-host"
 ))]
 mod linux_direct_icons;
 #[cfg(all(
     target_os = "linux",
     not(target_env = "ohos"),
-    feature = "linux-direct"
+    feature = "linux-direct-lite",
+    not(feature = "linux-direct")
+))]
+mod linux_direct_lite;
+#[cfg(all(
+    target_os = "linux",
+    not(target_env = "ohos"),
+    feature = "linux-direct-host"
 ))]
 mod linux_direct_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
@@ -107,7 +114,7 @@ mod native_clipboard;
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 mod native_draw_support;
@@ -448,7 +455,7 @@ pub use native_hosts::{
     all(target_os = "macos", feature = "macos-appkit"),
     all(
         target_os = "linux",
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 pub use native_icons::{
@@ -996,7 +1003,10 @@ mod tests {
         );
         assert_eq!(
             linux.menus.status,
-            if cfg!(all(feature = "linux-gtk", not(feature = "linux-direct"))) {
+            if cfg!(all(
+                feature = "linux-gtk",
+                not(feature = "linux-direct-host")
+            )) {
                 CapabilityStatus::Partial
             } else {
                 CapabilityStatus::Unsupported
@@ -1005,7 +1015,7 @@ mod tests {
         assert_eq!(
             linux.clipboard_text.status,
             if cfg!(any(
-                all(feature = "linux-direct", feature = "clipboard"),
+                all(feature = "linux-direct-host", feature = "clipboard"),
                 feature = "linux-gtk"
             )) {
                 CapabilityStatus::Partial
@@ -1015,7 +1025,7 @@ mod tests {
         );
         assert_eq!(
             linux.file_picker.status,
-            if cfg!(any(feature = "linux-direct", feature = "linux-gtk")) {
+            if cfg!(any(feature = "linux-direct-host", feature = "linux-gtk")) {
                 CapabilityStatus::Partial
             } else {
                 CapabilityStatus::Unsupported

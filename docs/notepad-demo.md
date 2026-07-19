@@ -88,6 +88,13 @@ Run the application with only its required feature slice:
 cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
+On Linux, the identical source can be built against the opt-in pure-Rust
+renderer without Cairo/Pango:
+
+```powershell
+cargo run --example zsui_notepad_lite --no-default-features --features notepad-demo-lite
+```
+
 Run the auto-closing native smoke path:
 
 ```powershell
@@ -154,6 +161,9 @@ small internal `text-input-core` slice and its Unicode segmentation dependency;
 non-text input controls do not. The Windows-only
 `WindowsWin32OwnedTextEditor` remains an optional framework service, but the
 acceptance application does not depend on it.
+`notepad-demo-lite` retains that application feature slice but replaces the
+`window` umbrella with `linux-direct-lite`. It is an acceptance profile, not a
+second Linux application implementation.
 
 ## Code-volume and runtime comparison
 

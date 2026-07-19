@@ -1673,6 +1673,21 @@ impl NativeViewInputRuntime {
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
+        feature = "linux-direct-lite",
+        not(feature = "linux-direct"),
+        feature = "text-input-core"
+    ))]
+    pub(crate) fn use_linux_direct_lite_text_shaping(
+        &mut self,
+        context: crate::linux_direct_lite::LinuxLiteTextSystem,
+    ) {
+        self.text_shaping =
+            crate::native_input_visuals::NativeTextShapingBackend::linux_direct_lite(context);
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        not(target_env = "ohos"),
         feature = "linux-gtk",
         feature = "text-input-core"
     ))]
@@ -6404,7 +6419,7 @@ impl NativeViewInputRuntime {
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 #[allow(dead_code)]
@@ -6538,7 +6553,7 @@ fn record_native_view_input_smoke(
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 fn record_native_view_input_reports(
@@ -7777,7 +7792,7 @@ fn menu_entry_count(menu: &MenuSpec) -> usize {
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 fn menu_command_count(menu: &MenuSpec) -> usize {
@@ -7911,7 +7926,7 @@ impl ZsuiHost for NativeWindowHost {
         #[cfg(all(
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-direct"
+            feature = "linux-direct-host"
         ))]
         {
             return crate::linux_direct::linux_direct_open_file_dialog(spec).map(|selection| {
@@ -7928,7 +7943,7 @@ impl ZsuiHost for NativeWindowHost {
             target_os = "linux",
             not(target_env = "ohos"),
             feature = "linux-gtk",
-            not(feature = "linux-direct")
+            not(feature = "linux-direct-host")
         ))]
         {
             return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec).map(|selection| {
@@ -7947,7 +7962,7 @@ impl ZsuiHost for NativeWindowHost {
             all(
                 target_os = "linux",
                 not(target_env = "ohos"),
-                any(feature = "linux-direct", feature = "linux-gtk")
+                any(feature = "linux-direct-host", feature = "linux-gtk")
             )
         )))]
         {
@@ -8011,7 +8026,7 @@ impl crate::FileDialogService for NativeWindowHost {
         #[cfg(all(
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-direct"
+            feature = "linux-direct-host"
         ))]
         {
             return crate::linux_direct::linux_direct_save_file_dialog(spec);
@@ -8021,7 +8036,7 @@ impl crate::FileDialogService for NativeWindowHost {
             target_os = "linux",
             not(target_env = "ohos"),
             feature = "linux-gtk",
-            not(feature = "linux-direct")
+            not(feature = "linux-direct-host")
         ))]
         {
             return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
@@ -8033,7 +8048,7 @@ impl crate::FileDialogService for NativeWindowHost {
             all(
                 target_os = "linux",
                 not(target_env = "ohos"),
-                any(feature = "linux-direct", feature = "linux-gtk")
+                any(feature = "linux-direct-host", feature = "linux-gtk")
             )
         )))]
         {
@@ -8113,7 +8128,7 @@ fn run_native_window_event_loop(
 #[cfg(all(
     target_os = "linux",
     not(target_env = "ohos"),
-    feature = "linux-direct"
+    feature = "linux-direct-host"
 ))]
 fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
@@ -8143,7 +8158,7 @@ fn run_native_window_event_loop(
     target_os = "linux",
     not(target_env = "ohos"),
     feature = "linux-gtk",
-    not(feature = "linux-direct")
+    not(feature = "linux-direct-host")
 ))]
 fn run_native_window_event_loop(
     windows: Vec<WindowSpec>,
@@ -8177,7 +8192,7 @@ fn run_native_window_event_loop(
     ),
     all(
         feature = "desktop-winit",
-        not(feature = "linux-direct"),
+        not(feature = "linux-direct-host"),
         not(feature = "linux-gtk"),
         target_os = "linux",
         not(target_env = "ohos")
@@ -8611,7 +8626,7 @@ fn run_native_window_smoke_event_loop(
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        any(feature = "linux-direct", feature = "linux-gtk")
+        any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
 fn run_native_window_smoke_event_loop(
@@ -8654,7 +8669,7 @@ fn run_native_window_smoke_event_loop(
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
-        feature = "linux-direct"
+        feature = "linux-direct-host"
     ))]
     let direct_run = crate::linux_direct::run_linux_direct_native_window_event_loop(
         &windows,
@@ -8667,14 +8682,14 @@ fn run_native_window_smoke_event_loop(
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
-        feature = "linux-direct"
+        feature = "linux-direct-host"
     ))]
     let created = direct_run.created_window_count;
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
         feature = "linux-gtk",
-        not(feature = "linux-direct")
+        not(feature = "linux-direct-host")
     ))]
     let gtk_run = crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
         &windows,
@@ -8688,7 +8703,7 @@ fn run_native_window_smoke_event_loop(
         target_os = "linux",
         not(target_env = "ohos"),
         feature = "linux-gtk",
-        not(feature = "linux-direct")
+        not(feature = "linux-direct-host")
     ))]
     let created = gtk_run.created_window_count;
 
@@ -8744,7 +8759,7 @@ fn run_native_window_smoke_event_loop(
     #[cfg(all(
         target_os = "linux",
         not(target_env = "ohos"),
-        feature = "linux-direct"
+        feature = "linux-direct-host"
     ))]
     {
         record_native_view_input_reports(
@@ -8779,9 +8794,14 @@ fn run_native_window_smoke_event_loop(
                 if let Some(path) = &report.screenshot_file {
                     report.events.push(format!("screenshot_captured:{path}"));
                 }
-                report
-                    .events
-                    .push("screenshot_backend:winit_softbuffer_cairo_pango".to_string());
+                report.events.push(
+                    if cfg!(feature = "linux-direct") {
+                        "screenshot_backend:winit_softbuffer_cairo_pango"
+                    } else {
+                        "screenshot_backend:winit_softbuffer_cosmic_text_tiny_skia"
+                    }
+                    .to_string(),
+                );
             }
             Some(Err(error)) => {
                 report.screenshot_error = Some(error);
@@ -8801,7 +8821,7 @@ fn run_native_window_smoke_event_loop(
         target_os = "linux",
         not(target_env = "ohos"),
         feature = "linux-gtk",
-        not(feature = "linux-direct")
+        not(feature = "linux-direct-host")
     ))]
     {
         record_native_view_input_reports(
@@ -8879,7 +8899,7 @@ fn run_native_window_smoke_event_loop(
     ),
     all(
         feature = "desktop-winit",
-        not(feature = "linux-direct"),
+        not(feature = "linux-direct-host"),
         not(feature = "linux-gtk"),
         target_os = "linux",
         not(target_env = "ohos")
@@ -9091,7 +9111,7 @@ fn run_native_window_smoke_event_loop(
         all(
             target_os = "linux",
             not(target_env = "ohos"),
-            not(feature = "linux-direct"),
+            not(feature = "linux-direct-host"),
             not(feature = "linux-gtk")
         )
     )
@@ -9380,7 +9400,7 @@ fn write_rgba_png(
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        not(feature = "linux-direct"),
+        not(feature = "linux-direct-host"),
         not(feature = "linux-gtk"),
         not(feature = "desktop-winit")
     )
@@ -9412,7 +9432,7 @@ fn run_native_window_event_loop(
     all(
         target_os = "linux",
         not(target_env = "ohos"),
-        not(feature = "linux-direct"),
+        not(feature = "linux-direct-host"),
         not(feature = "linux-gtk"),
         not(feature = "desktop-winit")
     )

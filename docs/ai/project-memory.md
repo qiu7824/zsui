@@ -222,6 +222,13 @@ history remain authoritative for implementation status.
   integration, not a claim that the control tree is toolkit-native GTK.
   `linux-gtk` remains an explicit compatibility backend and is not pulled into
   the default application. Winit is not evidence of AppKit completion.
+- `linux-direct-lite` is the opt-in pure-Rust renderer experiment over the same
+  `linux-direct-host` lifecycle, Wayland/X11, IME, menu, portal and AccessKit
+  paths. It uses cosmic-text/swash plus tiny-skia and binds directly to the
+  Softbuffer frame. It must be built without `linux-direct`; if both Cargo
+  features are enabled, the established Cairo/Pango renderer wins. Do not make
+  lite the default or call it complete until target CI proves CJK, bidi, IME,
+  accessibility and both display servers and records a repeatable RSS/PSS win.
 - Built-in controls follow ZSUI's self-drawn rendering path and adapt their
   visual metrics and behavior to the target platform. On Windows, WinUI 3 and
   Fluent resources are the design reference; classic `comctl32` visuals must

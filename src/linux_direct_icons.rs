@@ -1,7 +1,24 @@
+#[cfg(feature = "linux-direct")]
 use cairo::{Context as CairoContext, LineCap, LineJoin};
 
-use crate::{Color, NativeDrawIconCommand, ZsIcon};
+use crate::ZsIcon;
+#[cfg(feature = "linux-direct")]
+use crate::{Color, NativeDrawIconCommand};
 
+pub(crate) trait LinuxIconCanvas {
+    fn new_sub_path(&mut self);
+    fn move_to(&mut self, x: f64, y: f64);
+    fn line_to(&mut self, x: f64, y: f64);
+    fn curve_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64);
+    fn arc(&mut self, x: f64, y: f64, radius: f64, start: f64, end: f64);
+    fn rectangle(&mut self, x: f64, y: f64, width: f64, height: f64);
+    fn set_line_width(&mut self, width: f64);
+    fn close_path(&mut self);
+    fn stroke(&mut self);
+    fn fill(&mut self);
+}
+
+#[cfg(feature = "linux-direct")]
 pub(crate) fn draw_symbolic_icon(
     context: &CairoContext,
     command: &NativeDrawIconCommand,
@@ -31,11 +48,12 @@ pub(crate) fn draw_symbolic_icon(
     context.set_line_cap(LineCap::Round);
     context.set_line_join(LineJoin::Round);
 
-    draw_normalized_icon(context, command.icon);
+    let mut canvas = CairoIconCanvas(context);
+    draw_normalized_icon(&mut canvas, command.icon);
     let _ = context.restore();
 }
 
-fn draw_normalized_icon(context: &CairoContext, icon: ZsIcon) {
+pub(crate) fn draw_normalized_icon(context: &mut impl LinuxIconCanvas, icon: ZsIcon) {
     match icon {
         ZsIcon::App => {
             for (x, y) in [(2.0, 2.0), (9.0, 2.0), (2.0, 9.0), (9.0, 9.0)] {
@@ -386,12 +404,12 @@ fn draw_normalized_icon(context: &CairoContext, icon: ZsIcon) {
     }
 }
 
-fn draw_check(context: &CairoContext, left: f64, middle: f64, right: f64) {
+fn draw_check(context: &mut impl LinuxIconCanvas, left: f64, middle: f64, right: f64) {
     path(context, &[(left, 8.0), (middle, 11.0), (right, 4.5)]);
     stroke(context);
 }
 
-fn draw_file(context: &CairoContext) {
+fn draw_file(context: &mut impl LinuxIconCanvas) {
     path(
         context,
         &[
@@ -408,18 +426,18 @@ fn draw_file(context: &CairoContext) {
     stroke(context);
 }
 
-fn circle_outline(context: &CairoContext) {
+fn circle_outline(context: &mut impl LinuxIconCanvas) {
     context.arc(8.0, 8.0, 6.0, 0.0, std::f64::consts::TAU);
     stroke(context);
 }
 
-fn draw_chevron(context: &CairoContext, points: &[(f64, f64)]) {
+fn draw_chevron(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
     context.set_line_width(1.7);
     path(context, points);
     stroke(context);
 }
 
-fn path(context: &CairoContext, points: &[(f64, f64)]) {
+fn path(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
     if let Some((first, rest)) = points.split_first() {
         context.move_to(first.0, first.1);
         for point in rest {
@@ -428,12 +446,12 @@ fn path(context: &CairoContext, points: &[(f64, f64)]) {
     }
 }
 
-fn polygon(context: &CairoContext, points: &[(f64, f64)]) {
+fn polygon(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
     path(context, points);
     context.close_path();
 }
 
-fn rounded_rect(context: &CairoContext, rect: RectF, radius: f64) {
+fn rounded_rect(context: &mut impl LinuxIconCanvas, rect: RectF, radius: f64) {
     let radius = radius.min(rect.width / 2.0).min(rect.height / 2.0);
     context.new_sub_path();
     context.arc(
@@ -467,12 +485,58 @@ fn rounded_rect(context: &CairoContext, rect: RectF, radius: f64) {
     context.close_path();
 }
 
-fn stroke(context: &CairoContext) {
-    let _ = context.stroke();
+fn stroke(context: &mut impl LinuxIconCanvas) {
+    context.stroke();
 }
 
-fn fill(context: &CairoContext) {
-    let _ = context.fill();
+fn fill(context: &mut impl LinuxIconCanvas) {
+    context.fill();
+}
+
+#[cfg(feature = "linux-direct")]
+struct CairoIconCanvas<'a>(&'a CairoContext);
+
+#[cfg(feature = "linux-direct")]
+impl LinuxIconCanvas for CairoIconCanvas<'_> {
+    fn new_sub_path(&mut self) {
+        self.0.new_sub_path();
+    }
+
+    fn move_to(&mut self, x: f64, y: f64) {
+        self.0.move_to(x, y);
+    }
+
+    fn line_to(&mut self, x: f64, y: f64) {
+        self.0.line_to(x, y);
+    }
+
+    fn curve_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64) {
+        self.0.curve_to(x1, y1, x2, y2, x, y);
+    }
+
+    fn arc(&mut self, x: f64, y: f64, radius: f64, start: f64, end: f64) {
+        self.0.arc(x, y, radius, start, end);
+    }
+
+    fn rectangle(&mut self, x: f64, y: f64, width: f64, height: f64) {
+        self.0.rectangle(x, y, width, height);
+    }
+
+    fn set_line_width(&mut self, width: f64) {
+        self.0.set_line_width(width);
+    }
+
+    fn close_path(&mut self) {
+        self.0.close_path();
+    }
+
+    fn stroke(&mut self) {
+        let _ = self.0.stroke();
+    }
+
+    fn fill(&mut self) {
+        let _ = self.0.fill();
+    }
 }
 
 #[derive(Clone, Copy)]

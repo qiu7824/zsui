@@ -14,12 +14,14 @@ exclude = ["/videos/**"]
 [dependencies]
 arboard = { version = "3.4", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+cosmic-text = { version = "0.15.0", default-features = false, features = ["std", "swash", "fontconfig", "shape-run-cache"], optional = true }
 fluent-bundle = { version = "0.16", optional = true }
 png = { version = "0.18", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rust_decimal = { version = "1.42.1", default-features = false, features = ["maths", "std"], optional = true }
 sys-locale = { version = "0.3.2", optional = true }
+tiny-skia = { version = "0.11.4", optional = true }
 unic-langid = { version = "0.9.6", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
 zeroize = { version = "1.8", features = ["alloc"], optional = true }
@@ -112,6 +114,7 @@ image-preview = ["image", "widgets-base"]
 native-smoke = ["image"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
+notepad-demo-lite = ["linux-direct-lite", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell", "native-smoke"]
 calculator-demo = ["windows-gdi", "calculator"]
 component-gallery-demo = ["window", "all-widgets", "native-smoke", "style", "dark-mode"]
 desktop-winit = ["dep:winit"]
@@ -119,7 +122,9 @@ windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
-linux-direct = ["dep:cairo-rs", "dep:pango", "dep:pangocairo", "dep:rfd", "dep:softbuffer", "dep:winit"]
+linux-direct-host = ["dep:rfd", "dep:softbuffer", "dep:winit"]
+linux-direct = ["linux-direct-host", "dep:cairo-rs", "dep:pango", "dep:pangocairo"]
+linux-direct-lite = ["linux-direct-host", "dep:cosmic-text", "dep:tiny-skia"]
 linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-direct"]
 all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
@@ -178,6 +183,11 @@ required-features = ["workbench", "window"]
 name = "zsui_notepad"
 path = "examples/zsui_notepad.rs"
 required-features = ["notepad-demo"]
+
+[[example]]
+name = "zsui_notepad_lite"
+path = "examples/zsui_notepad.rs"
+required-features = ["notepad-demo-lite"]
 
 [[example]]
 name = "zsui_calculator"

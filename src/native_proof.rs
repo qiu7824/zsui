@@ -299,7 +299,7 @@ fn native_proof_backend(capture_backend: &str, platform: &str) -> &'static str {
     } else {
         match platform {
             "macos" => "appkit",
-            "linux" if cfg!(feature = "linux-direct") => "linux-direct",
+            "linux" if cfg!(feature = "linux-direct-host") => "linux-direct",
             "linux" => "gtk4",
             "windows" => "win32",
             _ => "unknown",

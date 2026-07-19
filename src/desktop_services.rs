@@ -512,7 +512,7 @@ impl DesktopCapabilities {
     }
 
     pub fn linux_direct_current() -> Self {
-        let compiled = cfg!(feature = "linux-direct");
+        let compiled = cfg!(feature = "linux-direct-host");
         let support = |ready: &'static str, disabled: &'static str| {
             if compiled {
                 CapabilitySupport::partial(ready)
@@ -615,7 +615,9 @@ impl DesktopCapabilities {
         match PlatformName::current() {
             PlatformName::Windows => Self::windows_win32_current(),
             PlatformName::Macos => Self::macos_appkit_current(),
-            PlatformName::Linux if cfg!(feature = "linux-direct") => Self::linux_direct_current(),
+            PlatformName::Linux if cfg!(feature = "linux-direct-host") => {
+                Self::linux_direct_current()
+            }
             PlatformName::Linux => Self::linux_gtk_current(),
             platform => Self::all_unsupported(platform),
         }
@@ -791,7 +793,7 @@ impl ClipboardService for NativeClipboardService {
             feature = "clipboard",
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-direct"
+            feature = "linux-direct-host"
         ))]
         {
             return crate::linux_direct::linux_direct_read_clipboard();
@@ -801,7 +803,7 @@ impl ClipboardService for NativeClipboardService {
             target_os = "linux",
             not(target_env = "ohos"),
             feature = "linux-gtk",
-            not(feature = "linux-direct")
+            not(feature = "linux-direct-host")
         ))]
         {
             let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
@@ -814,7 +816,7 @@ impl ClipboardService for NativeClipboardService {
                 feature = "clipboard",
                 target_os = "linux",
                 not(target_env = "ohos"),
-                any(feature = "linux-direct", feature = "linux-gtk")
+                any(feature = "linux-direct-host", feature = "linux-gtk")
             )
         )))]
         Err(ZsuiError::unsupported(
@@ -837,7 +839,7 @@ impl ClipboardService for NativeClipboardService {
             feature = "clipboard",
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-direct"
+            feature = "linux-direct-host"
         ))]
         {
             return crate::linux_direct::linux_direct_write_clipboard(data);
@@ -847,7 +849,7 @@ impl ClipboardService for NativeClipboardService {
             target_os = "linux",
             not(target_env = "ohos"),
             feature = "linux-gtk",
-            not(feature = "linux-direct")
+            not(feature = "linux-direct-host")
         ))]
         {
             let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
@@ -860,7 +862,7 @@ impl ClipboardService for NativeClipboardService {
                 feature = "clipboard",
                 target_os = "linux",
                 not(target_env = "ohos"),
-                any(feature = "linux-direct", feature = "linux-gtk")
+                any(feature = "linux-direct-host", feature = "linux-gtk")
             )
         )))]
         {
@@ -902,7 +904,7 @@ impl FileDialogService for NativeFileDialogService {
         #[cfg(all(
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-direct"
+            feature = "linux-direct-host"
         ))]
         {
             return crate::linux_direct::linux_direct_open_file_dialog(spec);
@@ -911,7 +913,7 @@ impl FileDialogService for NativeFileDialogService {
             target_os = "linux",
             not(target_env = "ohos"),
             feature = "linux-gtk",
-            not(feature = "linux-direct")
+            not(feature = "linux-direct-host")
         ))]
         {
             return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec);
@@ -922,7 +924,7 @@ impl FileDialogService for NativeFileDialogService {
             all(
                 target_os = "linux",
                 not(target_env = "ohos"),
-                any(feature = "linux-direct", feature = "linux-gtk")
+                any(feature = "linux-direct-host", feature = "linux-gtk")
             )
         )))]
         {
@@ -946,7 +948,7 @@ impl FileDialogService for NativeFileDialogService {
         #[cfg(all(
             target_os = "linux",
             not(target_env = "ohos"),
-            feature = "linux-direct"
+            feature = "linux-direct-host"
         ))]
         {
             return crate::linux_direct::linux_direct_save_file_dialog(spec);
@@ -955,7 +957,7 @@ impl FileDialogService for NativeFileDialogService {
             target_os = "linux",
             not(target_env = "ohos"),
             feature = "linux-gtk",
-            not(feature = "linux-direct")
+            not(feature = "linux-direct-host")
         ))]
         {
             return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
@@ -966,7 +968,7 @@ impl FileDialogService for NativeFileDialogService {
             all(
                 target_os = "linux",
                 not(target_env = "ohos"),
-                any(feature = "linux-direct", feature = "linux-gtk")
+                any(feature = "linux-direct-host", feature = "linux-gtk")
             )
         )))]
         {
@@ -1241,7 +1243,7 @@ mod tests {
         all(
             target_os = "linux",
             not(target_env = "ohos"),
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     )))]
     #[test]
@@ -1284,7 +1286,7 @@ mod tests {
                 .support(DesktopCapability::ClipboardText)
                 .map(|support| support.status),
             Some(
-                if cfg!(all(feature = "linux-direct", feature = "clipboard")) {
+                if cfg!(all(feature = "linux-direct-host", feature = "clipboard")) {
                     CapabilityStatus::Partial
                 } else {
                     CapabilityStatus::Unsupported
@@ -1307,7 +1309,7 @@ mod tests {
             );
             assert_eq!(
                 linux.support(capability).map(|support| support.status),
-                Some(if cfg!(feature = "linux-direct") {
+                Some(if cfg!(feature = "linux-direct-host") {
                     CapabilityStatus::Partial
                 } else {
                     CapabilityStatus::Unsupported

@@ -1,3 +1,4 @@
+#[cfg(feature = "linux-direct")]
 use cairo::Context;
 use winit::keyboard::{Key, NamedKey};
 
@@ -13,6 +14,30 @@ const POPUP_ROW_HEIGHT: i32 = 34;
 const POPUP_SEPARATOR_HEIGHT: i32 = 9;
 const POPUP_RADIUS: f64 = 8.0;
 
+pub(crate) trait LinuxMenuTextMetrics {
+    fn measure_menu_text(&self, text: &str) -> (i32, i32);
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum LinuxMenuTextPlacement {
+    Start,
+    Center,
+    End,
+}
+
+pub(crate) trait LinuxMenuCanvas {
+    fn fill_rect(&mut self, rect: Rect, color: Color);
+    fn fill_round_rect(&mut self, rect: Rect, radius: f64, color: Color);
+    fn stroke_round_rect(&mut self, rect: Rect, radius: f64, color: Color, width: f32);
+    fn draw_text(
+        &mut self,
+        text: &str,
+        bounds: Rect,
+        color: Color,
+        placement: LinuxMenuTextPlacement,
+    );
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LinuxMenuInputResult {
     Ignored,
@@ -21,12 +46,14 @@ pub(crate) enum LinuxMenuInputResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "accessibility")]
 pub(crate) enum LinuxMenuAccessibilityTarget {
     Root(usize),
     Row(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "accessibility")]
 pub(crate) enum LinuxMenuAccessibilityRole {
     Menu,
     MenuItem,
@@ -35,6 +62,7 @@ pub(crate) enum LinuxMenuAccessibilityRole {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(feature = "accessibility")]
 pub(crate) struct LinuxMenuAccessibilityItem {
     pub target: Option<LinuxMenuAccessibilityTarget>,
     pub author_id: String,
@@ -48,6 +76,7 @@ pub(crate) struct LinuxMenuAccessibilityItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(feature = "accessibility")]
 pub(crate) struct LinuxMenuAccessibilitySnapshot {
     pub bar_bounds: Rect,
     pub roots: Vec<LinuxMenuAccessibilityItem>,
@@ -112,6 +141,7 @@ impl LinuxDirectMenuSurface {
         &self.menu
     }
 
+    #[cfg(feature = "accessibility")]
     pub(crate) fn accessibility_snapshot(&self) -> LinuxMenuAccessibilitySnapshot {
         let roots = self
             .roots
@@ -198,10 +228,11 @@ impl LinuxDirectMenuSurface {
         }
     }
 
+    #[cfg(feature = "accessibility")]
     pub(crate) fn accessibility_focus_root(
         &mut self,
         root_index: usize,
-        pango_context: &pango::Context,
+        text_metrics: &dyn LinuxMenuTextMetrics,
     ) -> bool {
         if !self.roots.get(root_index).is_some_and(|root| root.enabled) {
             return false;
@@ -209,10 +240,11 @@ impl LinuxDirectMenuSurface {
         self.open_root = Some(root_index);
         self.submenu_path.clear();
         self.keyboard_row = None;
-        self.layout_popup(pango_context);
+        self.layout_popup(text_metrics);
         true
     }
 
+    #[cfg(feature = "accessibility")]
     pub(crate) fn accessibility_focus_row(&mut self, row_index: usize) -> bool {
         let enabled = self
             .popup_rows
@@ -226,15 +258,16 @@ impl LinuxDirectMenuSurface {
         true
     }
 
+    #[cfg(feature = "accessibility")]
     pub(crate) fn accessibility_activate_root(
         &mut self,
         root_index: usize,
-        pango_context: &pango::Context,
+        text_metrics: &dyn LinuxMenuTextMetrics,
     ) -> LinuxMenuInputResult {
         if self.open_root == Some(root_index) {
             self.close();
             LinuxMenuInputResult::Redraw
-        } else if self.accessibility_focus_root(root_index, pango_context) {
+        } else if self.accessibility_focus_root(root_index, text_metrics) {
             self.keyboard_row = first_enabled_row(self.current_menu());
             LinuxMenuInputResult::Redraw
         } else {
@@ -242,15 +275,16 @@ impl LinuxDirectMenuSurface {
         }
     }
 
+    #[cfg(feature = "accessibility")]
     pub(crate) fn accessibility_activate_row(
         &mut self,
         row_index: usize,
-        pango_context: &pango::Context,
+        text_metrics: &dyn LinuxMenuTextMetrics,
     ) -> LinuxMenuInputResult {
-        self.activate_row(row_index, pango_context)
+        self.activate_row(row_index, text_metrics)
     }
 
-    pub(crate) fn layout(&mut self, width: i32, pango_context: &pango::Context) {
+    pub(crate) fn layout(&mut self, width: i32, text_metrics: &dyn LinuxMenuTextMetrics) {
         self.width = width.max(1);
         self.roots.clear();
         let mut x = 6;
@@ -258,7 +292,7 @@ impl LinuxDirectMenuSurface {
             let Some((label, enabled)) = menu_item_label_and_enabled(item) else {
                 continue;
             };
-            let label_width = measure_text(pango_context, label).0;
+            let label_width = text_metrics.measure_menu_text(label).0;
             let root_width = label_width
                 .saturating_add(ROOT_HORIZONTAL_PADDING.saturating_mul(2))
                 .max(44);
@@ -274,7 +308,7 @@ impl LinuxDirectMenuSurface {
             });
             x = x.saturating_add(root_width).saturating_add(ROOT_GAP);
         }
-        self.layout_popup(pango_context);
+        self.layout_popup(text_metrics);
     }
 
     pub(crate) fn captures_pointer(&self, point: Point) -> bool {
@@ -285,7 +319,11 @@ impl LinuxDirectMenuSurface {
             || self.is_open()
     }
 
-    pub(crate) fn pointer_move(&mut self, point: Point, pango_context: &pango::Context) -> bool {
+    pub(crate) fn pointer_move(
+        &mut self,
+        point: Point,
+        text_metrics: &dyn LinuxMenuTextMetrics,
+    ) -> bool {
         let hovered_root = self
             .roots
             .iter()
@@ -305,7 +343,7 @@ impl LinuxDirectMenuSurface {
                     self.open_root = Some(root);
                     self.submenu_path.clear();
                     self.keyboard_row = None;
-                    self.layout_popup(pango_context);
+                    self.layout_popup(text_metrics);
                     return true;
                 }
             }
@@ -325,7 +363,7 @@ impl LinuxDirectMenuSurface {
     pub(crate) fn pointer_up(
         &mut self,
         point: Point,
-        pango_context: &pango::Context,
+        text_metrics: &dyn LinuxMenuTextMetrics,
     ) -> LinuxMenuInputResult {
         let consumed = self.pressed_in_surface || self.is_open();
         self.pressed_in_surface = false;
@@ -341,7 +379,7 @@ impl LinuxDirectMenuSurface {
                 self.open_root = Some(root_index);
                 self.submenu_path.clear();
                 self.keyboard_row = first_enabled_row(self.current_menu());
-                self.layout_popup(pango_context);
+                self.layout_popup(text_metrics);
             }
             return LinuxMenuInputResult::Redraw;
         }
@@ -351,7 +389,7 @@ impl LinuxDirectMenuSurface {
             .iter()
             .position(|row| row.bounds.contains(point))
         {
-            return self.activate_row(row_index, pango_context);
+            return self.activate_row(row_index, text_metrics);
         }
 
         if self.is_open() {
@@ -368,7 +406,7 @@ impl LinuxDirectMenuSurface {
     pub(crate) fn key(
         &mut self,
         key: &Key,
-        pango_context: &pango::Context,
+        text_metrics: &dyn LinuxMenuTextMetrics,
     ) -> LinuxMenuInputResult {
         if matches!(key, Key::Named(NamedKey::F10)) {
             if self.is_open() {
@@ -377,7 +415,7 @@ impl LinuxDirectMenuSurface {
                 self.open_root = Some(root);
                 self.submenu_path.clear();
                 self.keyboard_row = first_enabled_row(self.current_menu());
-                self.layout_popup(pango_context);
+                self.layout_popup(text_metrics);
             }
             return LinuxMenuInputResult::Redraw;
         }
@@ -390,16 +428,16 @@ impl LinuxDirectMenuSurface {
                     self.close();
                 } else {
                     self.keyboard_row = first_enabled_row(self.current_menu());
-                    self.layout_popup(pango_context);
+                    self.layout_popup(text_metrics);
                 }
                 LinuxMenuInputResult::Redraw
             }
             Key::Named(NamedKey::ArrowLeft) => {
-                self.move_root(-1, pango_context);
+                self.move_root(-1, text_metrics);
                 LinuxMenuInputResult::Redraw
             }
             Key::Named(NamedKey::ArrowRight) => {
-                self.move_root(1, pango_context);
+                self.move_root(1, text_metrics);
                 LinuxMenuInputResult::Redraw
             }
             Key::Named(NamedKey::ArrowUp) => {
@@ -412,78 +450,75 @@ impl LinuxDirectMenuSurface {
             }
             Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Space) => self
                 .keyboard_row
-                .map(|row| self.activate_row(row, pango_context))
+                .map(|row| self.activate_row(row, text_metrics))
                 .unwrap_or(LinuxMenuInputResult::Redraw),
             _ => LinuxMenuInputResult::Redraw,
         }
     }
 
-    pub(crate) fn proof_command(&mut self, pango_context: &pango::Context) -> Option<Command> {
+    pub(crate) fn proof_command(
+        &mut self,
+        text_metrics: &dyn LinuxMenuTextMetrics,
+    ) -> Option<Command> {
         let root = self.roots.iter().position(|root| root.enabled)?;
         self.open_root = Some(root);
         self.submenu_path.clear();
-        self.layout_popup(pango_context);
+        self.layout_popup(text_metrics);
         let row = first_enabled_row(self.current_menu())?;
-        let result = self.activate_row(row, pango_context);
+        let result = self.activate_row(row, text_metrics);
         match result {
             LinuxMenuInputResult::Command(command) => Some(command),
             _ => None,
         }
     }
 
-    pub(crate) fn open_for_capture(&mut self, pango_context: &pango::Context) -> bool {
+    pub(crate) fn open_for_capture(&mut self, text_metrics: &dyn LinuxMenuTextMetrics) -> bool {
         let Some(root) = self.roots.iter().position(|root| root.enabled) else {
             return false;
         };
         self.open_root = Some(root);
         self.submenu_path.clear();
         self.keyboard_row = first_enabled_row(self.current_menu());
-        self.layout_popup(pango_context);
+        self.layout_popup(text_metrics);
         true
     }
 
-    pub(crate) fn draw(
-        &self,
-        context: &Context,
-        pango_context: &pango::Context,
-        palette: NativeDrawPalette,
-    ) {
-        set_source(context, palette.surface_raised);
-        context.rectangle(
-            0.0,
-            0.0,
-            f64::from(self.width),
-            f64::from(LINUX_MENU_BAR_HEIGHT),
+    pub(crate) fn draw(&self, canvas: &mut dyn LinuxMenuCanvas, palette: NativeDrawPalette) {
+        canvas.fill_rect(
+            Rect {
+                x: 0,
+                y: 0,
+                width: self.width,
+                height: LINUX_MENU_BAR_HEIGHT,
+            },
+            palette.surface_raised,
         );
-        let _ = context.fill();
-        set_source(context, palette.border);
-        context.rectangle(
-            0.0,
-            f64::from(LINUX_MENU_BAR_HEIGHT - 1),
-            f64::from(self.width),
-            1.0,
+        canvas.fill_rect(
+            Rect {
+                x: 0,
+                y: LINUX_MENU_BAR_HEIGHT - 1,
+                width: self.width,
+                height: 1,
+            },
+            palette.border,
         );
-        let _ = context.fill();
 
         for (root_index, root) in self.roots.iter().enumerate() {
             if self.open_root == Some(root_index) || self.hovered_root == Some(root_index) {
-                draw_round_rect(context, root.bounds, 6.0);
-                set_source(
-                    context,
+                canvas.fill_round_rect(
+                    root.bounds,
+                    6.0,
                     if self.open_root == Some(root_index) {
                         palette.control
                     } else {
                         palette.surface
                     },
                 );
-                let _ = context.fill();
             }
             let label = menu_item_label_and_enabled(&self.menu.items[root.item_index])
                 .map(|(label, _)| label)
                 .unwrap_or_default();
-            draw_text(
-                context,
-                pango_context,
+            canvas.draw_text(
                 label,
                 root.bounds,
                 if root.enabled {
@@ -491,7 +526,7 @@ impl LinuxDirectMenuSurface {
                 } else {
                     palette.disabled_text
                 },
-                TextPlacement::Center,
+                LinuxMenuTextPlacement::Center,
             );
         }
 
@@ -504,29 +539,24 @@ impl LinuxDirectMenuSurface {
             width: popup.width,
             height: popup.height,
         };
-        draw_round_rect(context, shadow, POPUP_RADIUS);
-        context.set_source_rgba(0.0, 0.0, 0.0, 0.22);
-        let _ = context.fill();
-        draw_round_rect(context, popup, POPUP_RADIUS);
-        set_source(context, palette.surface_raised);
-        let _ = context.fill_preserve();
-        set_source(context, palette.border);
-        context.set_line_width(1.0);
-        let _ = context.stroke();
+        canvas.fill_round_rect(shadow, POPUP_RADIUS, Color::rgba(0, 0, 0, 56));
+        canvas.fill_round_rect(popup, POPUP_RADIUS, palette.surface_raised);
+        canvas.stroke_round_rect(popup, POPUP_RADIUS, palette.border, 1.0);
 
         for (row_index, row) in self.popup_rows.iter().enumerate() {
             let Some(item) = menu.items.get(row.item_index) else {
                 continue;
             };
             if matches!(item, MenuItemSpec::Separator) {
-                set_source(context, palette.border);
-                context.rectangle(
-                    f64::from(row.bounds.x + 10),
-                    f64::from(row.bounds.y + row.bounds.height / 2),
-                    f64::from((row.bounds.width - 20).max(1)),
-                    1.0,
+                canvas.fill_rect(
+                    Rect {
+                        x: row.bounds.x + 10,
+                        y: row.bounds.y + row.bounds.height / 2,
+                        width: (row.bounds.width - 20).max(1),
+                        height: 1,
+                    },
+                    palette.border,
                 );
-                let _ = context.fill();
                 continue;
             }
             let selected =
@@ -538,9 +568,7 @@ impl LinuxDirectMenuSurface {
                     width: row.bounds.width - 8,
                     height: row.bounds.height - 4,
                 };
-                draw_round_rect(context, highlight, 6.0);
-                set_source(context, palette.control);
-                let _ = context.fill();
+                canvas.fill_round_rect(highlight, 6.0, palette.control);
             }
             let Some((label, enabled)) = menu_item_label_and_enabled(item) else {
                 continue;
@@ -556,13 +584,11 @@ impl LinuxDirectMenuSurface {
                 width: row.bounds.width - POPUP_HORIZONTAL_PADDING * 2 - 60,
                 height: row.bounds.height,
             };
-            draw_text(
-                context,
-                pango_context,
+            canvas.draw_text(
                 label,
                 label_bounds,
                 text_color,
-                TextPlacement::Start,
+                LinuxMenuTextPlacement::Start,
             );
             match item {
                 MenuItemSpec::Command {
@@ -571,9 +597,7 @@ impl LinuxDirectMenuSurface {
                     ..
                 } => {
                     if *checked {
-                        draw_text(
-                            context,
-                            pango_context,
+                        canvas.draw_text(
                             "✓",
                             Rect {
                                 x: row.bounds.x + 8,
@@ -582,13 +606,11 @@ impl LinuxDirectMenuSurface {
                                 height: row.bounds.height,
                             },
                             text_color,
-                            TextPlacement::Center,
+                            LinuxMenuTextPlacement::Center,
                         );
                     }
                     if let Some(accelerator) = accelerator {
-                        draw_text(
-                            context,
-                            pango_context,
+                        canvas.draw_text(
                             &linux_accelerator_label(*accelerator),
                             Rect {
                                 x: row.bounds.x + row.bounds.width - 112,
@@ -601,14 +623,12 @@ impl LinuxDirectMenuSurface {
                             } else {
                                 palette.disabled_text
                             },
-                            TextPlacement::End,
+                            LinuxMenuTextPlacement::End,
                         );
                     }
                 }
                 MenuItemSpec::Submenu { .. } => {
-                    draw_text(
-                        context,
-                        pango_context,
+                    canvas.draw_text(
                         "›",
                         Rect {
                             x: row.bounds.x + row.bounds.width - 28,
@@ -617,7 +637,7 @@ impl LinuxDirectMenuSurface {
                             height: row.bounds.height,
                         },
                         text_color,
-                        TextPlacement::Center,
+                        LinuxMenuTextPlacement::Center,
                     );
                 }
                 MenuItemSpec::Separator => {}
@@ -649,7 +669,7 @@ impl LinuxDirectMenuSurface {
         Some(menu)
     }
 
-    fn layout_popup(&mut self, pango_context: &pango::Context) {
+    fn layout_popup(&mut self, text_metrics: &dyn LinuxMenuTextMetrics) {
         self.popup_rows.clear();
         self.popup_bounds = None;
         let Some(root_index) = self.open_root else {
@@ -671,12 +691,16 @@ impl LinuxDirectMenuSurface {
             };
             popup_height = popup_height.saturating_add(row_height);
             if let Some((label, _)) = menu_item_label_and_enabled(item) {
-                let label_width = measure_text(pango_context, label).0;
+                let label_width = text_metrics.measure_menu_text(label).0;
                 let accelerator_width = match item {
                     MenuItemSpec::Command {
                         accelerator: Some(accelerator),
                         ..
-                    } => measure_text(pango_context, &linux_accelerator_label(*accelerator)).0,
+                    } => {
+                        text_metrics
+                            .measure_menu_text(&linux_accelerator_label(*accelerator))
+                            .0
+                    }
                     MenuItemSpec::Submenu { .. } => 16,
                     _ => 0,
                 };
@@ -719,7 +743,7 @@ impl LinuxDirectMenuSurface {
     fn activate_row(
         &mut self,
         row_index: usize,
-        pango_context: &pango::Context,
+        text_metrics: &dyn LinuxMenuTextMetrics,
     ) -> LinuxMenuInputResult {
         let Some(row) = self.popup_rows.get(row_index) else {
             return LinuxMenuInputResult::Redraw;
@@ -744,14 +768,14 @@ impl LinuxDirectMenuSurface {
             MenuItemSpec::Submenu { enabled: true, .. } => {
                 self.submenu_path.push(item_index);
                 self.keyboard_row = first_enabled_row(self.current_menu());
-                self.layout_popup(pango_context);
+                self.layout_popup(text_metrics);
                 LinuxMenuInputResult::Redraw
             }
             _ => LinuxMenuInputResult::Redraw,
         }
     }
 
-    fn move_root(&mut self, offset: isize, pango_context: &pango::Context) {
+    fn move_root(&mut self, offset: isize, text_metrics: &dyn LinuxMenuTextMetrics) {
         let enabled = self
             .roots
             .iter()
@@ -769,7 +793,7 @@ impl LinuxDirectMenuSurface {
         self.open_root = Some(enabled[next]);
         self.submenu_path.clear();
         self.keyboard_row = first_enabled_row(self.current_menu());
-        self.layout_popup(pango_context);
+        self.layout_popup(text_metrics);
     }
 
     fn move_row(&mut self, offset: isize) {
@@ -815,6 +839,7 @@ fn menu_item_enabled(item: &MenuItemSpec) -> bool {
     }
 }
 
+#[cfg(feature = "accessibility")]
 fn menu_item_author_id(item: &MenuItemSpec, prefix: &str, index: usize) -> String {
     let declared = match item {
         MenuItemSpec::Command { id, .. } | MenuItemSpec::Submenu { id, .. } => id.as_deref(),
@@ -836,43 +861,7 @@ fn linux_accelerator_label(accelerator: crate::ZsAccelerator) -> String {
         .replace("Super+", "Super+")
 }
 
-fn measure_text(context: &pango::Context, text: &str) -> (i32, i32) {
-    let layout = pango::Layout::new(context);
-    layout.set_font_description(Some(&menu_font_description()));
-    layout.set_text(text);
-    layout.pixel_size()
-}
-
-#[derive(Clone, Copy)]
-enum TextPlacement {
-    Start,
-    Center,
-    End,
-}
-
-fn draw_text(
-    context: &Context,
-    pango_context: &pango::Context,
-    text: &str,
-    bounds: Rect,
-    color: Color,
-    placement: TextPlacement,
-) {
-    let layout = pango::Layout::new(pango_context);
-    layout.set_font_description(Some(&menu_font_description()));
-    layout.set_text(text);
-    let (width, height) = layout.pixel_size();
-    let x = match placement {
-        TextPlacement::Start => bounds.x,
-        TextPlacement::Center => bounds.x + (bounds.width - width).max(0) / 2,
-        TextPlacement::End => bounds.x + (bounds.width - width).max(0),
-    };
-    let y = bounds.y + (bounds.height - height).max(0) / 2;
-    set_source(context, color);
-    context.move_to(f64::from(x), f64::from(y));
-    pangocairo::functions::show_layout(context, &layout);
-}
-
+#[cfg(feature = "linux-direct")]
 fn menu_font_description() -> pango::FontDescription {
     let configured = std::env::var("ZSUI_LINUX_UI_FONT")
         .ok()
@@ -881,6 +870,84 @@ fn menu_font_description() -> pango::FontDescription {
     pango::FontDescription::from_string(&configured)
 }
 
+#[cfg(feature = "linux-direct")]
+impl LinuxMenuTextMetrics for pango::Context {
+    fn measure_menu_text(&self, text: &str) -> (i32, i32) {
+        use pango::prelude::*;
+        let layout = pango::Layout::new(self);
+        layout.set_font_description(Some(&menu_font_description()));
+        layout.set_text(text);
+        layout.pixel_size()
+    }
+}
+
+#[cfg(feature = "linux-direct")]
+pub(crate) struct LinuxCairoMenuCanvas<'a> {
+    context: &'a Context,
+    pango_context: &'a pango::Context,
+}
+
+#[cfg(feature = "linux-direct")]
+impl<'a> LinuxCairoMenuCanvas<'a> {
+    pub(crate) const fn new(context: &'a Context, pango_context: &'a pango::Context) -> Self {
+        Self {
+            context,
+            pango_context,
+        }
+    }
+}
+
+#[cfg(feature = "linux-direct")]
+impl LinuxMenuCanvas for LinuxCairoMenuCanvas<'_> {
+    fn fill_rect(&mut self, rect: Rect, color: Color) {
+        set_source(self.context, color);
+        self.context.rectangle(
+            f64::from(rect.x),
+            f64::from(rect.y),
+            f64::from(rect.width.max(0)),
+            f64::from(rect.height.max(0)),
+        );
+        let _ = self.context.fill();
+    }
+
+    fn fill_round_rect(&mut self, rect: Rect, radius: f64, color: Color) {
+        draw_round_rect(self.context, rect, radius);
+        set_source(self.context, color);
+        let _ = self.context.fill();
+    }
+
+    fn stroke_round_rect(&mut self, rect: Rect, radius: f64, color: Color, width: f32) {
+        draw_round_rect(self.context, rect, radius);
+        set_source(self.context, color);
+        self.context.set_line_width(f64::from(width.max(0.5)));
+        let _ = self.context.stroke();
+    }
+
+    fn draw_text(
+        &mut self,
+        text: &str,
+        bounds: Rect,
+        color: Color,
+        placement: LinuxMenuTextPlacement,
+    ) {
+        use pango::prelude::*;
+        let layout = pango::Layout::new(self.pango_context);
+        layout.set_font_description(Some(&menu_font_description()));
+        layout.set_text(text);
+        let (width, height) = layout.pixel_size();
+        let x = match placement {
+            LinuxMenuTextPlacement::Start => bounds.x,
+            LinuxMenuTextPlacement::Center => bounds.x + (bounds.width - width).max(0) / 2,
+            LinuxMenuTextPlacement::End => bounds.x + (bounds.width - width).max(0),
+        };
+        let y = bounds.y + (bounds.height - height).max(0) / 2;
+        set_source(self.context, color);
+        self.context.move_to(f64::from(x), f64::from(y));
+        pangocairo::functions::show_layout(self.context, &layout);
+    }
+}
+
+#[cfg(feature = "linux-direct")]
 fn draw_round_rect(context: &Context, rect: Rect, radius: f64) {
     let x = f64::from(rect.x);
     let y = f64::from(rect.y);
@@ -919,6 +986,7 @@ fn draw_round_rect(context: &Context, rect: Rect, radius: f64) {
     context.close_path();
 }
 
+#[cfg(feature = "linux-direct")]
 fn set_source(context: &Context, color: Color) {
     context.set_source_rgba(
         f64::from(color.r) / 255.0,

@@ -252,6 +252,7 @@
         "src/macos_appkit_renderer.rs",
         "src/macos_appkit_services.rs",
         "src/linux_direct.rs",
+        "src/linux_direct_lite.rs",
         "src/linux_direct_accessibility.rs",
         "src/linux_direct_menu.rs",
         "src/linux_gtk_menu.rs",

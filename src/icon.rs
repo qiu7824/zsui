@@ -303,7 +303,7 @@ impl ZsIcon {
         all(target_os = "macos", feature = "macos-appkit"),
         all(
             target_os = "linux",
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     ))]
     pub const fn fluent_svg_bytes(self) -> &'static [u8] {
@@ -539,7 +539,7 @@ mod tests {
         all(target_os = "macos", feature = "macos-appkit"),
         all(
             target_os = "linux",
-            any(feature = "linux-direct", feature = "linux-gtk")
+            any(feature = "linux-direct-host", feature = "linux-gtk")
         )
     ))]
     fn bundled_fluent_svg_fallback_covers_every_semantic_icon() {
