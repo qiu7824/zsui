@@ -536,7 +536,6 @@ pub enum ZsButtonPresentation {
     Toolbar {
         icon: crate::ZsIcon,
         show_label: bool,
-        platform: crate::ZsBaseControlPlatformStyle,
     },
     NavigationItem {
         icon: crate::ZsIcon,
@@ -556,7 +555,6 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "label")]
     #[doc(hidden)]
     NavigationView {
-        platform: crate::ZsBaseControlPlatformStyle,
         title: String,
         subtitle: String,
         item_count: usize,
@@ -849,6 +847,8 @@ pub struct ViewNode<Msg> {
     tooltip: Option<crate::ZsTooltipSpec>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
+    #[cfg(all(test, any(feature = "button", feature = "label")))]
+    platform_style_override: Option<crate::ZsBaseControlPlatformStyle>,
     pub(crate) typography_scaled_height: bool,
     #[cfg(feature = "combo")]
     combo_first_visible_option: Option<usize>,
@@ -866,6 +866,8 @@ impl<Msg> ViewNode<Msg> {
             tooltip: None,
             bounds: None,
             layout_dpi: Dpi::standard(),
+            #[cfg(all(test, any(feature = "button", feature = "label")))]
+            platform_style_override: None,
             typography_scaled_height: false,
             #[cfg(feature = "combo")]
             combo_first_visible_option: None,
@@ -876,6 +878,24 @@ impl<Msg> ViewNode<Msg> {
     pub fn id(mut self, id: WidgetId) -> Self {
         self.id = Some(id);
         self
+    }
+
+    #[cfg(all(test, any(feature = "button", feature = "label")))]
+    pub(crate) fn with_platform_style_override(
+        mut self,
+        platform: crate::ZsBaseControlPlatformStyle,
+    ) -> Self {
+        self.platform_style_override = Some(platform);
+        self
+    }
+
+    #[cfg(any(feature = "button", feature = "label"))]
+    pub(crate) fn resolved_platform_style(&self) -> crate::ZsBaseControlPlatformStyle {
+        #[cfg(test)]
+        if let Some(platform) = self.platform_style_override {
+            return platform;
+        }
+        crate::ZsBaseControlPlatformStyle::current()
     }
 
     #[cfg(feature = "tooltip")]

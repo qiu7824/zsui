@@ -512,6 +512,13 @@ builders do not accept the internal experience or the low-level render-proof
 showcase authoring slices so target `cfg`, platform enums and raw native handles
 cannot silently return to ordinary `view`/`update` code.
 
+The retained public View payload is semantic as well: toolbar buttons and
+adaptive navigation nodes store icons, labels, item counts and state, but no
+platform selector. Framework construction plus adaptive layout, paint and hit
+testing resolve the framework-owned experience. Deterministic cross-platform
+proof may attach a crate-private style override to `ViewNode`; that override is
+not an application parameter and is absent from normal public builder output.
+
 Layout, paint, hit testing, caret/selection geometry and accessibility must
 consume the same backend text-layout result. Typography, clipping and density
 corrections therefore belong in reusable framework text/style contracts rather

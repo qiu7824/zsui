@@ -845,7 +845,6 @@ impl<Msg> ViewNode<Msg> {
             Some(widget),
             Some(bounds),
             ViewNodeKind::NavigationView {
-                platform,
                 item_count,
                 footer_count,
                 pane_open,
@@ -855,9 +854,10 @@ impl<Msg> ViewNode<Msg> {
             },
         ) = (self.id, self.bounds, &self.kind)
         {
+            let platform = self.resolved_platform_style();
             let layout = zs_navigation_view_layout(
                 bounds,
-                *platform,
+                platform,
                 *pane_width,
                 *minimum_content_width,
                 *pane_open,

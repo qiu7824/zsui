@@ -283,6 +283,23 @@ mod tests {
     }
 
     #[test]
+    fn public_view_ast_payloads_do_not_store_platform_selection() {
+        let source = include_str!("../view/node.rs");
+        let start = source
+            .find("pub enum ZsButtonPresentation")
+            .expect("button presentation should remain part of the View AST");
+        let end = source[start..]
+            .find("pub struct ViewStyle")
+            .map(|offset| start + offset)
+            .expect("ViewStyle should follow the public View payload enums");
+        let public_payloads = &source[start..end];
+
+        assert!(!public_payloads.contains("PlatformStyle"));
+        assert!(!public_payloads.contains("NativeUiPlatform"));
+        assert!(!public_payloads.contains("platform:"));
+    }
+
+    #[test]
     fn built_in_style_defaults_use_the_shared_experience_selector() {
         let style_sources = [
             include_str!("../password_box.rs"),

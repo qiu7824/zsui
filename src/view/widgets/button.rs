@@ -116,16 +116,21 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
 /// action density and grouping.
 #[cfg(feature = "button")]
 pub fn toolbar_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
-    toolbar_button_for_style(
-        crate::ZsBaseControlPlatformStyle::current(),
-        label,
-        icon,
-    )
+    toolbar_button_impl(crate::ZsBaseControlPlatformStyle::current(), label, icon)
 }
 
 /// Deterministic toolbar-button variant for target proof fixtures and tests.
-#[cfg(feature = "button")]
+#[cfg(all(test, feature = "button"))]
 pub(crate) fn toolbar_button_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    label: impl Into<String>,
+    icon: crate::ZsIcon,
+) -> ViewNode<Msg> {
+    toolbar_button_impl(platform, label, icon).with_platform_style_override(platform)
+}
+
+#[cfg(feature = "button")]
+fn toolbar_button_impl<Msg>(
     platform: crate::ZsBaseControlPlatformStyle,
     label: impl Into<String>,
     icon: crate::ZsIcon,
@@ -147,7 +152,6 @@ pub(crate) fn toolbar_button_for_style<Msg>(
         presentation: ZsButtonPresentation::Toolbar {
             icon,
             show_label: true,
-            platform,
         },
         on_click: None,
     })

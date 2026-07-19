@@ -223,6 +223,60 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "button")]
+    fn public_toolbar_button_keeps_platform_selection_out_of_its_payload() {
+        let view: ViewNode<Msg> = toolbar_button("Save", crate::ZsIcon::Save);
+        assert_eq!(view.platform_style_override, None);
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::Button {
+                presentation: ZsButtonPresentation::Toolbar { .. },
+                ..
+            }
+        ));
+
+        let proof: ViewNode<Msg> = toolbar_button_for_style(
+            crate::ZsBaseControlPlatformStyle::Macos,
+            "Save",
+            crate::ZsIcon::Save,
+        );
+        assert_eq!(
+            proof.platform_style_override,
+            Some(crate::ZsBaseControlPlatformStyle::Macos)
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn private_toolbar_style_override_reaches_paint_without_entering_payload() {
+        let mut view: ViewNode<Msg> = toolbar_button_for_style(
+            crate::ZsBaseControlPlatformStyle::Macos,
+            "Save",
+            crate::ZsIcon::Save,
+        );
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 28,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(command) if command.bounds.width == 16
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(command) if command.style.role == crate::TextRole::Button
+        )));
+    }
+
+    #[test]
     #[cfg(all(windows, feature = "button"))]
     fn navigation_item_keeps_button_activation_with_navigation_chrome() {
         let item_id = WidgetId::new(19);

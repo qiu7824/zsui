@@ -250,15 +250,20 @@ impl<Msg> ZsNavigationViewSpec<Msg> {
 /// the framework owns their information architecture and chrome.
 #[cfg(feature = "label")]
 pub fn navigation_view<Msg>(spec: ZsNavigationViewSpec<Msg>) -> ViewNode<Msg> {
-    navigation_view_for_style(
-        crate::ZsBaseControlPlatformStyle::current(),
-        spec,
-    )
+    navigation_view_impl(crate::ZsBaseControlPlatformStyle::current(), spec)
 }
 
 /// Deterministic navigation composition used by platform proof fixtures.
-#[cfg(feature = "label")]
+#[cfg(all(test, feature = "label"))]
 pub(crate) fn navigation_view_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    spec: ZsNavigationViewSpec<Msg>,
+) -> ViewNode<Msg> {
+    navigation_view_impl(platform, spec).with_platform_style_override(platform)
+}
+
+#[cfg(feature = "label")]
+fn navigation_view_impl<Msg>(
     platform: crate::ZsBaseControlPlatformStyle,
     spec: ZsNavigationViewSpec<Msg>,
 ) -> ViewNode<Msg> {
@@ -281,7 +286,6 @@ pub(crate) fn navigation_view_for_style<Msg>(
             .chain([*content])
             .collect::<Vec<_>>();
         let mut navigation = ViewNode::new(ViewNodeKind::NavigationView {
-            platform,
             title,
             subtitle,
             item_count,
@@ -916,7 +920,7 @@ mod data_tests {
         let shell = crate::WidgetId::new(503);
         let item = crate::WidgetId::new(504);
         let content = crate::WidgetId::new(505);
-        let navigation = navigation_view_for_style(
+        let mut navigation = navigation_view_for_style(
             crate::ZsBaseControlPlatformStyle::Macos,
             ZsNavigationViewSpec::<()>::new("Library", "12 items")
                 .item(spacer().id(item))
@@ -928,14 +932,48 @@ mod data_tests {
         assert!(contains_widget(&navigation, item));
         assert!(contains_widget(&navigation, content));
         assert!(matches!(
-            navigation.kind,
+            &navigation.kind,
             ViewNodeKind::NavigationView {
-                platform: crate::ZsBaseControlPlatformStyle::Macos,
                 item_count: 1,
                 footer_count: 0,
                 minimum_content_width: Dp(420.0),
                 ..
             }
+        ));
+        assert_eq!(
+            navigation.resolved_platform_style(),
+            crate::ZsBaseControlPlatformStyle::Macos
+        );
+        navigation.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 640,
+            },
+            Dpi::standard(),
+        ));
+        assert_eq!(
+            navigation.children[1]
+                .bounds()
+                .expect("content should receive AppKit split-view bounds")
+                .x,
+            240
+        );
+    }
+
+    #[test]
+    fn public_navigation_view_keeps_platform_selection_out_of_its_payload() {
+        let shell = crate::WidgetId::new(506);
+        let navigation = navigation_view(
+            ZsNavigationViewSpec::<()>::new("Library", "12 items")
+                .content(shell, spacer()),
+        );
+
+        assert_eq!(navigation.platform_style_override, None);
+        assert!(matches!(
+            navigation.kind,
+            ViewNodeKind::NavigationView { .. }
         ));
     }
 

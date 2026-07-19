@@ -315,6 +315,11 @@ history remain authoritative for implementation status.
   Presenter and Services choices separate. These modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take
   a platform style, platform enum or raw native handle.
+- Public `ViewNodeKind` and `ZsButtonPresentation` payloads remain semantic and
+  must not store a platform selector. Toolbar and adaptive-navigation layout,
+  construction, paint and hit testing resolve the framework experience
+  internally. A private `ViewNode` style override exists only for deterministic
+  framework proof; the ordinary public builders leave it unset.
 - Typography, clipping or composition corrections found in Gallery, Notepad or
   another acceptance application must be implemented as reusable framework
   rules before the example consumes them. Measure, paint, hit testing,

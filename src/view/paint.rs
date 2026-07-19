@@ -201,8 +201,8 @@ impl<Msg: Clone> ViewNode<Msg> {
     fn layout_navigation_view(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
+        let platform = self.resolved_platform_style();
         let (
-            platform,
             item_count,
             footer_count,
             pane_open,
@@ -210,7 +210,6 @@ impl<Msg: Clone> ViewNode<Msg> {
             minimum_content_width,
         ) = match &self.kind {
             ViewNodeKind::NavigationView {
-                platform,
                 item_count,
                 footer_count,
                 pane_open,
@@ -218,7 +217,6 @@ impl<Msg: Clone> ViewNode<Msg> {
                 minimum_content_width,
                 ..
             } => (
-                *platform,
                 *item_count,
                 *footer_count,
                 *pane_open,
@@ -1821,7 +1819,6 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         match &self.kind {
             #[cfg(feature = "label")]
             ViewNodeKind::NavigationView {
-                platform,
                 title,
                 subtitle,
                 item_count,
@@ -1830,9 +1827,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 pane_width,
                 minimum_content_width,
             } => {
+                let platform = self.resolved_platform_style();
                 let layout = zs_navigation_view_layout(
                     bounds,
-                    *platform,
+                    platform,
                     *pane_width,
                     *minimum_content_width,
                     *pane_open,
@@ -2083,13 +2081,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             text_style,
                         )));
                     }
-                    ZsButtonPresentation::Toolbar {
-                        icon,
-                        show_label,
-                        platform,
-                    } => {
-                        let base = crate::ZsBaseControlMetrics::for_platform(*platform);
-                        let metrics = ZsToolbarMetrics::for_platform(*platform);
+                    ZsButtonPresentation::Toolbar { icon, show_label } => {
+                        let platform = self.resolved_platform_style();
+                        let base = crate::ZsBaseControlMetrics::for_platform(platform);
+                        let metrics = ZsToolbarMetrics::for_platform(platform);
                         let icon_size = metrics
                             .icon_size
                             .to_px(cx.dpi)
