@@ -1082,21 +1082,7 @@ impl LinuxDirectWindow {
         self.surface
             .resize(width, height)
             .map_err(|error| format!("could not resize software surface: {error}"))?;
-        let mut buffer = self
-            .surface
-            .buffer_mut()
-            .map_err(|error| format!("could not acquire software buffer: {error}"))?;
-        let expected_len = (width.get() as usize)
-            .checked_mul(height.get() as usize)
-            .ok_or_else(|| "software buffer dimensions overflow usize".to_string())?;
-        if buffer.len() != expected_len {
-            return Err(format!(
-                "software buffer length {} does not match frame size {expected_len}",
-                buffer.len()
-            ));
-        }
-        render_linux_direct_frame(
-            &mut buffer,
+        let frame = render_linux_direct_frame(
             &self.plan,
             self.menu_surface.as_ref(),
             width.get(),
@@ -1106,9 +1092,20 @@ impl LinuxDirectWindow {
             &self.draw_pango_context,
             &mut self.icon_cache,
         )?;
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .map_err(|error| format!("could not acquire software buffer: {error}"))?;
+        if buffer.len() != frame.len() {
+            return Err(format!(
+                "software buffer length {} does not match rendered frame {}",
+                buffer.len(),
+                frame.len()
+            ));
+        }
+        buffer.copy_from_slice(&frame);
         if self.retain_frame {
-            self.last_frame.clear();
-            self.last_frame.extend_from_slice(&buffer);
+            self.last_frame = frame;
         }
         self.window.pre_present_notify();
         buffer
@@ -1229,7 +1226,6 @@ struct LinuxIconRaster {
 }
 
 fn render_linux_direct_frame(
-    frame: &mut [u32],
     plan: &NativeDrawPlan,
     menu_surface: Option<&crate::linux_direct_menu::LinuxDirectMenuSurface>,
     width: u32,
@@ -1238,40 +1234,11 @@ fn render_linux_direct_frame(
     theme: WinitTheme,
     pango_context: &pango::Context,
     icon_cache: &mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
-) -> Result<(), String> {
+) -> Result<Vec<u32>, String> {
     let width_i32 = i32::try_from(width).map_err(|_| "frame width exceeds i32".to_string())?;
     let height_i32 = i32::try_from(height).map_err(|_| "frame height exceeds i32".to_string())?;
-    let expected_len = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or_else(|| "software frame dimensions overflow usize".to_string())?;
-    if frame.len() != expected_len {
-        return Err(format!(
-            "software frame length {} does not match {width}x{height}",
-            frame.len()
-        ));
-    }
-    let stride = Format::Rgb24
-        .stride_for_width(width)
-        .map_err(|error| format!("could not compute Cairo image stride: {error}"))?;
-    if usize::try_from(stride).ok() != Some(width as usize * std::mem::size_of::<u32>()) {
-        return Err(format!(
-            "Cairo RGB24 stride {stride} does not match the software buffer width {width}"
-        ));
-    }
-    // SAFETY: `frame` owns `width * height` native-endian RGB24 pixels and
-    // remains borrowed for the complete lifetime of `image`. Cairo state and
-    // the image surface are dropped before this function returns, so no Cairo
-    // reference can outlive the softbuffer guard that supplied the slice.
-    let image = unsafe {
-        ImageSurface::create_for_data_unsafe(
-            frame.as_mut_ptr().cast::<u8>(),
-            Format::Rgb24,
-            width_i32,
-            height_i32,
-            stride,
-        )
-    }
-    .map_err(|error| format!("could not bind Cairo to the software buffer: {error}"))?;
+    let mut image = ImageSurface::create(Format::ARgb32, width_i32, height_i32)
+        .map_err(|error| format!("could not create Cairo image surface: {error}"))?;
     let context = CairoContext::new(&image)
         .map_err(|error| format!("could not create Cairo drawing context: {error}"))?;
     let palette = NativeDrawPalette::for_mode(plan.theme_mode, matches!(theme, WinitTheme::Dark));
@@ -1318,8 +1285,32 @@ fn render_linux_direct_frame(
     }
     drop(context);
     image.flush();
-    drop(image);
-    Ok(())
+
+    let stride = usize::try_from(image.stride())
+        .map_err(|_| "Cairo returned a negative image stride".to_string())?;
+    let data = image
+        .data()
+        .map_err(|error| format!("could not map Cairo image surface: {error}"))?;
+    let mut frame = Vec::with_capacity(width as usize * height as usize);
+    for row in 0..height as usize {
+        let start = row
+            .checked_mul(stride)
+            .ok_or_else(|| "Cairo row offset overflowed".to_string())?;
+        let end = start
+            .checked_add(width as usize * 4)
+            .ok_or_else(|| "Cairo row length overflowed".to_string())?;
+        let row_data = data
+            .get(start..end)
+            .ok_or_else(|| "Cairo image data is shorter than its declared stride".to_string())?;
+        for pixel in row_data.chunks_exact(4) {
+            #[cfg(target_endian = "little")]
+            let (blue, green, red) = (pixel[0], pixel[1], pixel[2]);
+            #[cfg(target_endian = "big")]
+            let (blue, green, red) = (pixel[3], pixel[2], pixel[1]);
+            frame.push((u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue));
+        }
+    }
+    Ok(frame)
 }
 
 struct LinuxDirectTextLayout {
