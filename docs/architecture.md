@@ -533,6 +533,14 @@ Linux procfs parsing live under `src/platform/desktop_runtime/`; adding another
 target does not add target `cfg`, native APIs or backend-name inference to
 `native_proof.rs`.
 
+Every successful final-surface capture returns `NativeViewCaptureEvidence`.
+Win32 captures the actual client surface through `WM_PRINTCLIENT` into a GDI
+DIB before PNG encoding, then records client pixel geometry, `GetDpiForWindow`
+scale, derived logical geometry, the draw-plan typography scale and detected
+Windows system typography. AppKit and Linux return the same contract from their
+final `NSView`, Softbuffer or GTK texture. Process memory is sampled before the
+native window is torn down rather than inferred later by an acceptance example.
+
 The selected desktop backend owns a cloned `NativeViewInputRuntime` containing
 the static typed View or shared live View, semantic pointer/keyboard/text/IME
 state, resource policy, close command and command executors. Raw host routes do

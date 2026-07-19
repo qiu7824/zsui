@@ -448,6 +448,11 @@ fn run_native_window_smoke_event_loop(
     let auto_close_after = Duration::from_millis(options.auto_close_after_ms.max(1));
     let screenshot_file = report.screenshot_file.clone();
     let screenshot_handle = handles[0].main() as isize;
+    let typography_scale = draw_plans
+        .first()
+        .and_then(Option::as_ref)
+        .map(NativeDrawPlan::typography_scale)
+        .unwrap_or(1.0);
     let capture_delay = screenshot_file
         .as_ref()
         .map(|_| {
@@ -467,20 +472,22 @@ fn run_native_window_smoke_event_loop(
             thread::sleep(capture_delay);
         }
         let screenshot_result = screenshot_file.map(|path| {
-            let result = capture_win32_hwnd_png(screenshot_handle as _, &path);
+            let result = capture_win32_hwnd_png(screenshot_handle as _, &path, typography_scale);
             (path, result)
         });
         let remaining = auto_close_after.saturating_sub(capture_delay);
         if !remaining.is_zero() {
             thread::sleep(remaining);
         }
+        let process_memory =
+            crate::desktop_runtime::capture_process_memory("native_window_before_teardown");
         for handle in close_handles {
             crate::windows_win32_host::approve_windows_win32_window_close(handle as _);
             unsafe {
                 PostMessageW(handle as _, WM_CLOSE, 0, 0);
             }
         }
-        screenshot_result
+        (screenshot_result, process_memory)
     });
 
     match crate::windows_win32_host::WindowsWin32MessageLoop::run_with_windows(&handles) {
@@ -496,15 +503,24 @@ fn run_native_window_smoke_event_loop(
     }
 
     match worker.join() {
-        Ok(Some((path, Ok(())))) => {
-            report.screenshot_captured = true;
-            report.events.push(format!("screenshot_captured:{path}"));
+        Ok((screenshot_result, process_memory)) => {
+            report.process_memory_during_runtime = process_memory;
+            match screenshot_result {
+                Some((path, Ok(capture))) => {
+                    report.screenshot_captured = true;
+                    report.native_view_capture = Some(capture);
+                    report.events.push(format!("screenshot_captured:{path}"));
+                    report
+                        .events
+                        .push("screenshot_backend:win32_wm_printclient_dib_png".to_string());
+                }
+                Some((_path, Err(err))) => {
+                    report.screenshot_error = Some(err);
+                    report.events.push("screenshot_error".to_string());
+                }
+                None => {}
+            }
         }
-        Ok(Some((_path, Err(err)))) => {
-            report.screenshot_error = Some(err);
-            report.events.push("screenshot_error".to_string());
-        }
-        Ok(None) => {}
         Err(_) => {
             report.screenshot_error = Some("native smoke worker panicked".to_string());
             report.events.push("smoke_worker_error".to_string());
@@ -692,12 +708,16 @@ impl Drop for Win32SelectedGdiObject {
 fn capture_win32_hwnd_png(
     hwnd: windows_sys::Win32::Foundation::HWND,
     path: &str,
-) -> Result<(), String> {
+    typography_scale: f32,
+) -> Result<crate::NativeViewCaptureEvidence, String> {
     use std::{ffi::c_void, mem, path::Path};
     use windows_sys::Win32::{
         Foundation::RECT,
         Graphics::Gdi::{GetDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, RGBQUAD},
-        UI::WindowsAndMessaging::{GetClientRect, SendMessageW, WM_PRINTCLIENT},
+        UI::{
+            HiDpi::GetDpiForWindow,
+            WindowsAndMessaging::{GetClientRect, SendMessageW, WM_PRINTCLIENT},
+        },
     };
 
     let mut rect = RECT {
@@ -760,7 +780,41 @@ fn capture_win32_hwnd_png(
     }
 
     let rgba = bgra_to_rgba(&bgra);
-    write_rgba_png(Path::new(path), width as u32, height as u32, &rgba)
+    let pixel_width = width as u32;
+    let pixel_height = height as u32;
+    write_rgba_png(Path::new(path), pixel_width, pixel_height, &rgba)?;
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+    Ok(win32_capture_evidence(
+        pixel_width,
+        pixel_height,
+        dpi,
+        typography_scale,
+    ))
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn win32_capture_evidence(
+    pixel_width: u32,
+    pixel_height: u32,
+    dpi: u32,
+    typography_scale: f32,
+) -> crate::NativeViewCaptureEvidence {
+    let scale_factor = f64::from(dpi.max(1)) / 96.0;
+    let logical_width = (f64::from(pixel_width) / scale_factor).round().max(1.0) as u32;
+    let logical_height = (f64::from(pixel_height) / scale_factor).round().max(1.0) as u32;
+    crate::NativeViewCaptureEvidence {
+        platform: "windows",
+        backend: "win32_wm_printclient_dib_png",
+        display_server: None,
+        logical_width,
+        logical_height,
+        pixel_width,
+        pixel_height,
+        scale_factor,
+        typography_scale,
+        typography: crate::windows_gdi_renderer::windows_native_typography_profile()
+            .with_typography_scale(typography_scale),
+    }
 }
 
 #[cfg(all(windows, feature = "windows-win32"))]
@@ -809,5 +863,20 @@ mod tests {
         assert!(
             Win32SelectedGdiObject::select(std::ptr::null_mut(), std::ptr::null_mut()).is_none()
         );
+    }
+
+    #[test]
+    fn capture_evidence_preserves_pixel_geometry_and_resolves_logical_dpi() {
+        let evidence = win32_capture_evidence(1920, 1280, 192, 1.25);
+
+        assert_eq!(evidence.platform, "windows");
+        assert_eq!(evidence.backend, "win32_wm_printclient_dib_png");
+        assert_eq!(evidence.logical_width, 960);
+        assert_eq!(evidence.logical_height, 640);
+        assert_eq!(evidence.pixel_width, 1920);
+        assert_eq!(evidence.pixel_height, 1280);
+        assert_eq!(evidence.scale_factor, 2.0);
+        assert_eq!(evidence.typography_scale, 1.25);
+        assert_eq!(evidence.typography.typography_scale, 1.25);
     }
 }

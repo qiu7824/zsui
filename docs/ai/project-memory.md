@@ -339,6 +339,12 @@ history remain authoritative for implementation status.
   counters, Mach task information and Linux procfs parsing stay in the backend
   namespace. A new target extends that adapter contract without adding `cfg`
   or native dependencies to `native_proof.rs`.
+- A successful desktop final-surface capture always returns
+  `NativeViewCaptureEvidence`. Win32 uses `WM_PRINTCLIENT` plus a GDI DIB and
+  records client pixels, `GetDpiForWindow` scale, logical geometry, draw-plan
+  typography scale and detected system typography; AppKit and Linux fill the
+  same platform-neutral contract from their final surfaces. Runtime memory is
+  sampled before native-window teardown, not reconstructed by a demo.
 - A selected desktop backend owns a cloned `NativeViewInputRuntime` containing
   the static typed View or shared live View, semantic pointer/keyboard/text/IME
   state, resource policy, close command and command executors. Raw backend

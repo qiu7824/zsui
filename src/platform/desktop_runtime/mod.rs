@@ -497,6 +497,11 @@ mod tests {
             assert!(adapter.contains("fn native_proof_typography("));
             assert!(adapter.contains("fn capture_process_memory("));
         }
+
+        let windows_smoke = include_str!("windows_smoke.rs");
+        assert!(windows_smoke.contains("report.native_view_capture = Some(capture)"));
+        assert!(windows_smoke.contains("report.process_memory_during_runtime = process_memory"));
+        assert!(windows_smoke.contains("Result<crate::NativeViewCaptureEvidence, String>"));
     }
 
     #[test]

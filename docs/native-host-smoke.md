@@ -37,11 +37,14 @@ cargo run --example native_smoke_run -- windows
 On Windows this opens the Win32/GDI native window path, closes it
 automatically, then rewrites `interaction.json` and `launch.log` with the
 observed window lifecycle. It also captures `window.png` into the artifact
-directory through the direct Win32 `HWND`. macOS now enters `NSApplication`
-with owned `NSWindow` objects, and Linux enters the lightweight Wayland/X11
-host with an owned native window and directly presented surface. Both direct native smoke paths auto-close and
-record lifecycle evidence, but still need target screenshot capture before
-target-smoke proof is complete.
+directory through the direct Win32 `HWND`. The same capture returns structured
+client pixel/logical geometry, DPI scale, typography and pre-teardown process
+memory through `NativeViewCaptureEvidence`. macOS enters `NSApplication` with
+owned `NSWindow` objects, and Linux enters the lightweight Wayland/X11 host
+with an owned native window and directly presented surface. All three direct
+desktop paths capture their final native surface into the same evidence schema;
+target-smoke completion still requires reviewing the generated image and
+interaction report.
 
 Windows can also request a real status item during the same smoke run:
 
