@@ -2,9 +2,12 @@ use std::path::PathBuf;
 
 use crate::{
     native::NativeViewInputRuntime, ClipboardData, DesktopCapabilities, FileDialogSpec,
-    HostCapabilities, NativeDrawPlan, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
-    SaveFileDialogSpec, TraySpec, WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
+    HostCapabilities, NativeDrawPlan, NativeProofProcessMemoryEvidence, NativeTypographyProfile,
+    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec,
+    WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
+
+mod process_memory;
 
 #[cfg_attr(all(windows, feature = "windows-win32"), path = "windows.rs")]
 #[cfg_attr(all(target_os = "macos", feature = "macos-appkit"), path = "macos.rs")]
@@ -131,6 +134,15 @@ pub(super) trait DesktopRuntimeBackend: Default {
 
     fn desktop_capabilities(&self) -> DesktopCapabilities;
 
+    fn native_proof_backend_name(&self) -> &'static str;
+
+    fn native_proof_typography(&self, typography_scale: f32) -> NativeTypographyProfile;
+
+    fn capture_process_memory(
+        &self,
+        sample_point: &'static str,
+    ) -> Option<NativeProofProcessMemoryEvidence>;
+
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
         Err(ZsuiError::unsupported(
             "read_clipboard",
@@ -186,6 +198,20 @@ pub(crate) fn native_host_capabilities() -> HostCapabilities {
 
 pub(crate) fn desktop_capabilities() -> DesktopCapabilities {
     SelectedDesktopRuntimeBackend::default().desktop_capabilities()
+}
+
+pub(crate) fn native_proof_backend_name() -> &'static str {
+    SelectedDesktopRuntimeBackend::default().native_proof_backend_name()
+}
+
+pub(crate) fn native_proof_typography(typography_scale: f32) -> NativeTypographyProfile {
+    SelectedDesktopRuntimeBackend::default().native_proof_typography(typography_scale)
+}
+
+pub(crate) fn capture_process_memory(
+    sample_point: &'static str,
+) -> Option<NativeProofProcessMemoryEvidence> {
+    SelectedDesktopRuntimeBackend::default().capture_process_memory(sample_point)
 }
 
 pub(crate) fn open_file_dialog(spec: &FileDialogSpec) -> Option<ZsuiResult<Option<Vec<PathBuf>>>> {
@@ -428,6 +454,48 @@ mod tests {
                 !desktop_services_core.contains(forbidden),
                 "desktop service facade contains platform dispatch: {forbidden}"
             );
+        }
+    }
+
+    #[test]
+    fn native_proof_delegates_target_identity_typography_and_memory_sampling() {
+        let source = include_str!("../../native_proof.rs");
+        let core = source
+            .split_once("#[cfg(test)]")
+            .map_or(source, |(core, _)| core);
+
+        assert!(core.contains("crate::desktop_runtime::native_proof_backend_name()"));
+        assert!(core.contains("crate::desktop_runtime::native_proof_typography("));
+        assert!(core.contains("crate::desktop_runtime::capture_process_memory("));
+        for forbidden in [
+            "target_os",
+            "windows_sys",
+            "libc::",
+            "/proc/self",
+            "windows_gdi_renderer",
+            "cfg!(feature",
+        ] {
+            assert!(
+                !core.contains(forbidden),
+                "native proof shared layer contains target dispatch: {forbidden}"
+            );
+        }
+
+        let process_memory = include_str!("process_memory.rs");
+        assert!(process_memory.contains("GetProcessMemoryInfo"));
+        assert!(process_memory.contains("mach_task_basic_info"));
+        assert!(process_memory.contains("/proc/self/smaps_rollup"));
+        for adapter in [
+            include_str!("windows.rs"),
+            include_str!("macos.rs"),
+            include_str!("linux_direct.rs"),
+            include_str!("linux_gtk.rs"),
+            include_str!("winit.rs"),
+            include_str!("unsupported.rs"),
+        ] {
+            assert!(adapter.contains("fn native_proof_backend_name("));
+            assert!(adapter.contains("fn native_proof_typography("));
+            assert!(adapter.contains("fn capture_process_memory("));
         }
     }
 

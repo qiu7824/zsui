@@ -88,6 +88,32 @@ impl DesktopRuntimeBackend for Backend {
     fn desktop_capabilities(&self) -> DesktopCapabilities {
         DesktopCapabilities::all_unsupported(PlatformName::current())
     }
+
+    fn native_proof_backend_name(&self) -> &'static str {
+        "winit-fallback"
+    }
+
+    fn native_proof_typography(&self, typography_scale: f32) -> crate::NativeTypographyProfile {
+        crate::NativeTypographyProfile::fallback(
+            crate::ZsTypographyPlatformStyle::current(),
+            typography_scale,
+        )
+    }
+
+    fn capture_process_memory(
+        &self,
+        sample_point: &'static str,
+    ) -> Option<crate::NativeProofProcessMemoryEvidence> {
+        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+        {
+            return super::process_memory::capture_linux(sample_point);
+        }
+        #[allow(unreachable_code)]
+        {
+            let _ = sample_point;
+            None
+        }
+    }
 }
 
 struct WinitNativeApp {

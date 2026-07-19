@@ -55,6 +55,22 @@ impl DesktopRuntimeBackend for Backend {
         DesktopCapabilities::windows_win32_current()
     }
 
+    fn native_proof_backend_name(&self) -> &'static str {
+        "win32"
+    }
+
+    fn native_proof_typography(&self, typography_scale: f32) -> crate::NativeTypographyProfile {
+        crate::windows_gdi_renderer::windows_native_typography_profile()
+            .with_typography_scale(typography_scale)
+    }
+
+    fn capture_process_memory(
+        &self,
+        sample_point: &'static str,
+    ) -> Option<crate::NativeProofProcessMemoryEvidence> {
+        super::process_memory::capture_windows(sample_point)
+    }
+
     #[cfg(feature = "clipboard")]
     fn read_clipboard(&mut self) -> ZsuiResult<Option<crate::ClipboardData>> {
         crate::windows_win32_host::windows_read_clipboard()

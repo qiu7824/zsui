@@ -90,6 +90,24 @@ impl DesktopRuntimeBackend for Backend {
         DesktopCapabilities::linux_gtk_current()
     }
 
+    fn native_proof_backend_name(&self) -> &'static str {
+        "gtk4"
+    }
+
+    fn native_proof_typography(&self, typography_scale: f32) -> crate::NativeTypographyProfile {
+        crate::NativeTypographyProfile::fallback(
+            crate::ZsTypographyPlatformStyle::Gtk,
+            typography_scale,
+        )
+    }
+
+    fn capture_process_memory(
+        &self,
+        sample_point: &'static str,
+    ) -> Option<crate::NativeProofProcessMemoryEvidence> {
+        super::process_memory::capture_linux(sample_point)
+    }
+
     #[cfg(feature = "clipboard")]
     fn read_clipboard(&mut self) -> ZsuiResult<Option<crate::ClipboardData>> {
         let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;

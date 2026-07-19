@@ -90,6 +90,24 @@ impl DesktopRuntimeBackend for Backend {
         DesktopCapabilities::macos_appkit_current()
     }
 
+    fn native_proof_backend_name(&self) -> &'static str {
+        "appkit"
+    }
+
+    fn native_proof_typography(&self, typography_scale: f32) -> crate::NativeTypographyProfile {
+        crate::NativeTypographyProfile::fallback(
+            crate::ZsTypographyPlatformStyle::Macos,
+            typography_scale,
+        )
+    }
+
+    fn capture_process_memory(
+        &self,
+        sample_point: &'static str,
+    ) -> Option<crate::NativeProofProcessMemoryEvidence> {
+        super::process_memory::capture_macos(sample_point)
+    }
+
     #[cfg(feature = "clipboard")]
     fn read_clipboard(&mut self) -> ZsuiResult<Option<crate::ClipboardData>> {
         let mut clipboard = crate::macos_appkit_services::MacosAppKitClipboardService;

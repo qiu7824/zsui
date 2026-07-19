@@ -70,4 +70,40 @@ impl DesktopRuntimeBackend for Backend {
     fn desktop_capabilities(&self) -> DesktopCapabilities {
         DesktopCapabilities::all_unsupported(PlatformName::current())
     }
+
+    fn native_proof_backend_name(&self) -> &'static str {
+        "unavailable"
+    }
+
+    fn native_proof_typography(&self, typography_scale: f32) -> crate::NativeTypographyProfile {
+        #[cfg(all(windows, feature = "windows-gdi"))]
+        {
+            return crate::windows_gdi_renderer::windows_native_typography_profile()
+                .with_typography_scale(typography_scale);
+        }
+        #[allow(unreachable_code)]
+        crate::NativeTypographyProfile::fallback(
+            crate::ZsTypographyPlatformStyle::current(),
+            typography_scale,
+        )
+    }
+
+    fn capture_process_memory(
+        &self,
+        sample_point: &'static str,
+    ) -> Option<crate::NativeProofProcessMemoryEvidence> {
+        #[cfg(all(windows, feature = "windows-gdi"))]
+        {
+            return super::process_memory::capture_windows(sample_point);
+        }
+        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+        {
+            return super::process_memory::capture_linux(sample_point);
+        }
+        #[allow(unreachable_code)]
+        {
+            let _ = sample_point;
+            None
+        }
+    }
 }

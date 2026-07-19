@@ -526,6 +526,13 @@ authoring, desktop-service dispatch or the shared host loop. Public View
 builders do not accept the internal experience or the low-level render-proof
 `PlatformStyle` enums.
 
+The native-proof document is platform-neutral as well. The selected desktop
+runtime adapter supplies the proof backend identity, fallback typography and
+process-memory sampler. Win32 process counters, Mach task information and
+Linux procfs parsing live under `src/platform/desktop_runtime/`; adding another
+target does not add target `cfg`, native APIs or backend-name inference to
+`native_proof.rs`.
+
 The selected desktop backend owns a cloned `NativeViewInputRuntime` containing
 the static typed View or shared live View, semantic pointer/keyboard/text/IME
 state, resource policy, close command and command executors. Raw host routes do

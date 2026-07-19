@@ -333,6 +333,12 @@ history remain authoritative for implementation status.
   details must name only their own platform implementation and remain
   unsupported or partial until the corresponding feature and target evidence
   exist.
+- The shared native-proof document does not select an operating system or call
+  target APIs. The selected `desktop_runtime` adapter supplies its proof
+  backend identity, fallback typography and process-memory sampler; Win32
+  counters, Mach task information and Linux procfs parsing stay in the backend
+  namespace. A new target extends that adapter contract without adding `cfg`
+  or native dependencies to `native_proof.rs`.
 - A selected desktop backend owns a cloned `NativeViewInputRuntime` containing
   the static typed View or shared live View, semantic pointer/keyboard/text/IME
   state, resource policy, close command and command executors. Raw backend

@@ -2,7 +2,6 @@ use serde::Serialize;
 
 use crate::{
     NativeTypographyProfile, NativeWindowSmokeRunReport, ViewHitTarget, ViewHitTargetKind,
-    ZsTypographyPlatformStyle,
 };
 
 pub const NATIVE_PROOF_SCHEMA: &str = "zsui.native-proof/v1";
@@ -63,26 +62,7 @@ impl NativeProofProcessMemoryEvidence {
     }
 
     pub(crate) fn capture_at(sample_point: &'static str) -> Option<Self> {
-        #[cfg(not(any(
-            all(target_os = "windows", feature = "windows-gdi"),
-            all(target_os = "macos", feature = "macos-appkit"),
-            all(target_os = "linux", not(target_env = "ohos"))
-        )))]
-        let _ = sample_point;
-        #[cfg(all(target_os = "windows", feature = "windows-gdi"))]
-        {
-            return capture_windows_process_memory(sample_point);
-        }
-        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-        {
-            return capture_macos_process_memory(sample_point);
-        }
-        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-        {
-            return capture_linux_process_memory(sample_point);
-        }
-        #[allow(unreachable_code)]
-        None
+        crate::desktop_runtime::capture_process_memory(sample_point)
     }
 }
 
@@ -161,7 +141,7 @@ impl NativeProofDocument {
         let typography_scale = capture
             .map(|capture| capture.typography_scale)
             .unwrap_or(1.0);
-        let typography = native_proof_typography(capture, &platform, typography_scale);
+        let typography = native_proof_typography(capture, typography_scale);
         let focused_widget = runtime.native_view_focused_widget;
         let content_offset_y = runtime.window_menu_surface_height.min(i32::MAX as u32) as i32;
         let errors = native_proof_errors(&runtime);
@@ -173,7 +153,7 @@ impl NativeProofDocument {
             application: application.into(),
             scenario: scenario.into(),
             theme: theme.into(),
-            backend: native_proof_backend(&capture_backend, &platform).to_string(),
+            backend: native_proof_backend(&capture_backend).to_string(),
             capture_backend,
             display_server: capture
                 .and_then(|capture| capture.display_server)
@@ -238,25 +218,12 @@ impl NativeProofDocument {
 
 fn native_proof_typography(
     capture: Option<&crate::NativeViewCaptureEvidence>,
-    platform: &str,
     typography_scale: f32,
 ) -> NativeTypographyProfile {
     if let Some(capture) = capture {
         return capture.typography.clone();
     }
-    #[cfg(all(target_os = "windows", feature = "windows-gdi"))]
-    if platform == "windows" {
-        return crate::windows_gdi_renderer::windows_native_typography_profile()
-            .with_typography_scale(typography_scale);
-    }
-    NativeTypographyProfile::fallback(
-        match platform {
-            "macos" => ZsTypographyPlatformStyle::Macos,
-            "linux" => ZsTypographyPlatformStyle::Gtk,
-            _ => ZsTypographyPlatformStyle::Windows,
-        },
-        typography_scale,
-    )
+    crate::desktop_runtime::native_proof_typography(typography_scale)
 }
 
 fn native_proof_widget_id(widget: u64) -> String {
@@ -287,7 +254,7 @@ fn native_proof_role(kind: ViewHitTargetKind) -> String {
     role
 }
 
-fn native_proof_backend(capture_backend: &str, platform: &str) -> &'static str {
+fn native_proof_backend(capture_backend: &str) -> &'static str {
     if capture_backend.starts_with("appkit_") {
         "appkit"
     } else if capture_backend.starts_with("winit_softbuffer_") {
@@ -297,13 +264,7 @@ fn native_proof_backend(capture_backend: &str, platform: &str) -> &'static str {
     } else if capture_backend.starts_with("win32_") || capture_backend.starts_with("windows_") {
         "win32"
     } else {
-        match platform {
-            "macos" => "appkit",
-            "linux" if cfg!(feature = "linux-direct-host") => "linux-direct",
-            "linux" => "gtk4",
-            "windows" => "win32",
-            _ => "unknown",
-        }
+        crate::desktop_runtime::native_proof_backend_name()
     }
 }
 
@@ -312,113 +273,6 @@ fn native_proof_architecture(architecture: &str) -> &str {
         "aarch64" => "arm64",
         value => value,
     }
-}
-
-#[cfg(all(target_os = "windows", feature = "windows-gdi"))]
-fn capture_windows_process_memory(
-    sample_point: &'static str,
-) -> Option<NativeProofProcessMemoryEvidence> {
-    use windows_sys::Win32::System::{
-        ProcessStatus::{
-            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
-        },
-        Threading::GetCurrentProcess,
-    };
-
-    let mut counters = unsafe { std::mem::zeroed::<PROCESS_MEMORY_COUNTERS_EX>() };
-    counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
-    let captured = unsafe {
-        GetProcessMemoryInfo(
-            GetCurrentProcess(),
-            (&mut counters as *mut PROCESS_MEMORY_COUNTERS_EX).cast::<PROCESS_MEMORY_COUNTERS>(),
-            counters.cb,
-        )
-    };
-    (captured != 0).then(|| NativeProofProcessMemoryEvidence {
-        source: "win32_get_process_memory_info",
-        sample_point,
-        resident_bytes: counters.WorkingSetSize as u64,
-        peak_resident_bytes: counters.PeakWorkingSetSize as u64,
-        private_bytes: Some(counters.PrivateUsage as u64),
-        peak_private_bytes: Some(counters.PeakPagefileUsage as u64),
-        proportional_set_size_bytes: None,
-        virtual_bytes: None,
-    })
-}
-
-#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-#[allow(deprecated)]
-fn capture_macos_process_memory(
-    sample_point: &'static str,
-) -> Option<NativeProofProcessMemoryEvidence> {
-    let mut info = unsafe { std::mem::zeroed::<libc::mach_task_basic_info>() };
-    let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
-    let captured = unsafe {
-        libc::task_info(
-            libc::mach_task_self(),
-            libc::MACH_TASK_BASIC_INFO as libc::task_flavor_t,
-            (&mut info as *mut libc::mach_task_basic_info).cast::<libc::integer_t>(),
-            &mut count,
-        )
-    };
-    if captured != libc::KERN_SUCCESS {
-        return None;
-    }
-    let resident_bytes = unsafe { std::ptr::addr_of!(info.resident_size).read_unaligned() };
-    let peak_resident_bytes =
-        unsafe { std::ptr::addr_of!(info.resident_size_max).read_unaligned() };
-    let virtual_bytes = unsafe { std::ptr::addr_of!(info.virtual_size).read_unaligned() };
-    Some(NativeProofProcessMemoryEvidence {
-        source: "macos_mach_task_basic_info",
-        sample_point,
-        resident_bytes,
-        peak_resident_bytes: peak_resident_bytes.max(resident_bytes),
-        private_bytes: None,
-        peak_private_bytes: None,
-        proportional_set_size_bytes: None,
-        virtual_bytes: Some(virtual_bytes),
-    })
-}
-
-#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-fn capture_linux_process_memory(
-    sample_point: &'static str,
-) -> Option<NativeProofProcessMemoryEvidence> {
-    let status = std::fs::read_to_string("/proc/self/status").ok()?;
-    let resident_bytes = linux_proc_kib(&status, "VmRSS:")?;
-    let peak_resident_bytes = linux_proc_kib(&status, "VmHWM:").unwrap_or(resident_bytes);
-    let virtual_bytes = linux_proc_kib(&status, "VmSize:");
-    let rollup = std::fs::read_to_string("/proc/self/smaps_rollup").ok();
-    let private_bytes = rollup.as_deref().map(|rollup| {
-        ["Private_Clean:", "Private_Dirty:", "Private_Hugetlb:"]
-            .into_iter()
-            .filter_map(|key| linux_proc_kib(&rollup, key))
-            .sum::<u64>()
-    });
-    let proportional_set_size_bytes = rollup
-        .as_deref()
-        .and_then(|rollup| linux_proc_kib(rollup, "Pss:"));
-    Some(NativeProofProcessMemoryEvidence {
-        source: "linux_procfs_status_smaps_rollup",
-        sample_point,
-        resident_bytes,
-        peak_resident_bytes: peak_resident_bytes.max(resident_bytes),
-        private_bytes,
-        peak_private_bytes: None,
-        proportional_set_size_bytes,
-        virtual_bytes,
-    })
-}
-
-#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-fn linux_proc_kib(contents: &str, key: &str) -> Option<u64> {
-    let line = contents.lines().find(|line| line.starts_with(key))?;
-    let kib = line[key.len()..]
-        .split_whitespace()
-        .next()?
-        .parse::<u64>()
-        .ok()?;
-    kib.checked_mul(1_024)
 }
 
 fn native_proof_errors(runtime: &NativeWindowSmokeRunReport) -> Vec<String> {
@@ -492,7 +346,7 @@ mod tests {
     use super::*;
     use crate::{
         Dp, NativeViewCaptureEvidence, NativeWindowSmokeRunOptions, Rect, ViewHitTarget,
-        ViewHitTargetKind, WidgetId,
+        ViewHitTargetKind, WidgetId, ZsTypographyPlatformStyle,
     };
 
     #[test]
@@ -581,10 +435,7 @@ mod tests {
 
         assert_eq!(document.window.width, 1024);
         assert_eq!(document.window.height, 640);
-        assert_eq!(
-            document.backend,
-            native_proof_backend("unavailable", std::env::consts::OS)
-        );
+        assert_eq!(document.backend, native_proof_backend("unavailable"));
         assert_eq!(document.scale_factor, 1.0);
         assert_eq!(Dp::new(document.typography_scale), Dp::new(1.0));
     }
