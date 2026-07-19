@@ -70,6 +70,8 @@ history remain authoritative for implementation status.
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent
   and Linux accelerator details stay inside their native adapters.
+  `src/platform/menu_accelerator.rs` owns AppKit/GTK string projection;
+  `src/menu.rs` remains free of target `cfg` and toolkit encodings.
 - Applications that need native window-menu actions in their typed update loop
   use `stateful_view_with_app_commands(...)`. Its `Command -> Option<Msg>`
   mapping stays platform-neutral. Win32 and AppKit connect their native menu
@@ -362,7 +364,8 @@ history remain authoritative for implementation status.
   locks; they must not duplicate focus, popup, selection, drag or edit state.
   `native.rs` does not construct or return a Win32/AppKit/Linux route type, and
   adding another backend does not add a target method or platform branch to the
-  shared input runtime.
+  shared input runtime. Its surface snapshot accessor is part of the common
+  live-View contract and must not be compiled only for one target backend.
 - Public `ViewNodeKind` and `ZsButtonPresentation` payloads remain semantic and
   must not store a platform selector. Toolbar and adaptive-navigation layout,
   construction, paint and hit testing resolve the framework experience

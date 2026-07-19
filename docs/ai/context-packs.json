@@ -274,6 +274,7 @@
         "src/linux_gtk_services.rs",
         "src/native_draw_support.rs",
         "src/native_file_dialog.rs",
+        "src/platform/menu_accelerator.rs",
         "src/render_protocol.rs",
         "Cargo.toml",
         "docs/native-host-smoke.md",

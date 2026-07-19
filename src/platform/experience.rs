@@ -377,6 +377,44 @@ mod tests {
     }
 
     #[test]
+    fn shared_menu_and_live_view_contracts_do_not_encode_target_backends() {
+        let menu = include_str!("../menu.rs");
+        for forbidden in [
+            "target_os",
+            "windows-win32",
+            "macos-appkit",
+            "linux-gtk",
+            "gtk_accelerator",
+            "appkit_key_equivalent",
+            "Page_Up",
+            "\\u{f700}",
+        ] {
+            assert!(
+                !menu.contains(forbidden),
+                "shared menu model contains target encoding: {forbidden}"
+            );
+        }
+
+        let live_view = include_str!("../view/focus.rs");
+        for forbidden in ["#[cfg(all(windows", "windows-win32", "target_os"] {
+            assert!(
+                !live_view.contains(forbidden),
+                "shared live View runtime contains a target gate: {forbidden}"
+            );
+        }
+        assert!(live_view.contains("fn surface(&self) -> (Rect, Dpi);"));
+        assert!(live_view.contains("pub(crate) fn surface(&self) -> (Rect, Dpi)"));
+
+        let accelerator_adapter = include_str!("menu_accelerator.rs");
+        assert!(accelerator_adapter.contains("pub(crate) fn gtk_accelerator("));
+        assert!(accelerator_adapter.contains("pub(crate) fn appkit_key_equivalent("));
+        assert!(include_str!("../macos_appkit_menu.rs")
+            .contains("platform_menu_accelerator::appkit_key_equivalent"));
+        assert!(include_str!("../linux_gtk_menu.rs")
+            .contains("platform_menu_accelerator::gtk_accelerator"));
+    }
+
+    #[test]
     fn built_in_render_contracts_share_one_platform_style_type() {
         let component_sources = [
             include_str!("../password_box.rs"),

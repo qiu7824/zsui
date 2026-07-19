@@ -249,7 +249,7 @@ fn append_appkit_menu_nodes(
                 let title = NSString::from_str(label);
                 let key_equivalent = accelerator
                     .as_ref()
-                    .and_then(|accelerator| accelerator.appkit_key_equivalent())
+                    .and_then(crate::platform_menu_accelerator::appkit_key_equivalent)
                     .unwrap_or_default();
                 let key_equivalent = NSString::from_str(&key_equivalent);
                 let item = unsafe {

@@ -562,8 +562,12 @@ state, resource policy, close command and command executors. Raw host routes do
 not rebuild that state machine. Win32 only translates messages and UTF-16
 units, defers host effects until locks are released, and maps the shared report
 to its compatibility report. AppKit, Linux and future backends consume the same
-runtime without adding a target-specific constructor or platform branch to the
-input core.
+runtime and its platform-neutral surface snapshot without adding a
+target-specific constructor, trait method or compile gate to the input core.
+Semantic menu accelerators follow the same boundary: the shared menu model
+stores only typed keys and modifiers, while `src/platform/menu_accelerator.rs`
+projects AppKit key equivalents and GTK accelerator strings for their native
+menu adapters.
 
 Regression tests scan the
 Gallery, Notepad and desktop showcase authoring slices so target `cfg`, platform

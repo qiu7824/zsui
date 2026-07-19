@@ -364,7 +364,9 @@ message loop calls `TranslateAcceleratorW` before normal dispatch, so a shared
 same typed `Command` as clicking the native menu item. Its semantic `Primary`
 modifier maps to Control on Windows and Linux and Command on macOS. AppKit maps
 the typed key to a key equivalent and GTK4 maps it to an application action
-accelerator; application code does not parse target-specific shortcut strings.
+accelerator through the private platform accelerator adapter; the shared menu
+model and application code do not contain or parse target-specific shortcut
+strings.
 The native menu callback is owned beside the target window's live-view host;
 it is not a global widget registry and does not expose toolkit objects to the
 application.

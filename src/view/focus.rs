@@ -11,7 +11,7 @@ pub struct LiveViewUpdate {
 }
 
 trait LiveViewDriver: Send {
-    #[cfg(all(windows, feature = "windows-win32"))]
+    #[allow(dead_code)]
     fn surface(&self) -> (Rect, Dpi);
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
     fn set_typography_scale(&mut self, scale: f32) -> bool;
@@ -120,7 +120,7 @@ pub struct SharedLiveViewRuntime {
 }
 
 impl SharedLiveViewRuntime {
-    #[cfg(all(windows, feature = "windows-win32"))]
+    #[allow(dead_code)]
     pub(crate) fn surface(&self) -> (Rect, Dpi) {
         self.lock().surface()
     }
@@ -469,7 +469,6 @@ where
     ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
     UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
 {
-    #[cfg(all(windows, feature = "windows-win32"))]
     fn surface(&self) -> (Rect, Dpi) {
         (self.bounds, self.dpi)
     }

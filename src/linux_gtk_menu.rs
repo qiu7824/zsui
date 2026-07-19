@@ -204,7 +204,8 @@ fn build_gtk_menu(
                 });
                 application.add_action(&action);
                 if let Some(accelerator) = accelerator {
-                    let accelerator = accelerator.gtk_accelerator();
+                    let accelerator =
+                        crate::platform_menu_accelerator::gtk_accelerator(accelerator);
                     application.set_accels_for_action(&detailed_action, &[&accelerator]);
                 }
                 action_names.push(action_name);

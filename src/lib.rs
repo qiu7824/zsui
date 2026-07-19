@@ -152,6 +152,13 @@ pub mod password_box;
 mod platform_experience;
 #[path = "platform/identity.rs"]
 mod platform_identity;
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
+#[path = "platform/menu_accelerator.rs"]
+mod platform_menu_accelerator;
 #[path = "platform/style.rs"]
 mod platform_style;
 pub mod product_adapter;
