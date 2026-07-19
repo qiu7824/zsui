@@ -25,9 +25,87 @@
 
 </div>
 
-<p align="center">
-  <img src="docs/images/workbench-v2.png" alt="ZSUI 工作台" width="100%">
-</p>
+## 同一份源码，三平台真实界面
+
+普通应用只写一份 `State / Msg / view / update` 和语义组件声明。框架内部再分别选择
+Win32、AppKit 与 Linux 的组合规则、文字栈、渲染器、窗口宿主和系统服务；应用层
+不传平台枚举、不选择渲染器，也不维护三份 View 树。
+
+<table>
+  <tr><th>Windows · Win32</th></tr>
+  <tr>
+    <td><img src="docs/images/component-gallery-preview4-inputs.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">Fluent 导航与卡片</td>
+  </tr>
+  <tr><th>macOS 15 · AppKit</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/macos/gallery-inputs-light.png" alt="macOS AppKit component gallery inputs" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">AppKit source list 与表单节奏</td>
+  </tr>
+  <tr><th>Ubuntu 24.04 · Linux</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/gallery-inputs-light.png" alt="Linux component gallery inputs" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">Linux sidebar 与 boxed rows</td>
+  </tr>
+</table>
+
+上图是同一套 Gallery 语义声明产生的实际窗口截图，不是把 Windows 皮肤换色后复用。
+Windows 图为本机 Win32 最终缓冲表面；macOS 图来自 `macos-15` Runner 的最终
+`NSView`；Linux 图来自 Ubuntu 24.04 X11 的最终 Softbuffer 表面。Windows Gallery
+与 Linux Gallery 使用 1180×780，macOS Gallery 使用 1024×640，因此这里比较
+平台组合与组件风格，不是逐像素基准。
+
+<details>
+<summary><b>展开同一 Notepad 交互场景与 Linux 双渲染配置</b></summary>
+
+<h4>同一窗口规格的未保存确认场景</h4>
+<table>
+  <tr><th>Windows · Win32</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/windows/notepad-interaction.png" alt="Windows Win32 notepad interaction" width="100%"></td>
+  </tr>
+  <tr><th>macOS 15 · AppKit</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/macos/notepad-interaction.png" alt="macOS AppKit notepad interaction" width="100%"></td>
+  </tr>
+  <tr><th>Ubuntu 24.04 · Linux</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux notepad interaction" width="100%"></td>
+  </tr>
+</table>
+
+三张图由同一个 `examples/zsui_notepad.rs` 场景驱动，均完成输入、选择、撤销、
+滚动、关闭请求和未保存拦截；对话框动作顺序、工具栏、标签页、字体与窗口表面由
+各平台规则决定。对应结构化 JSON 与图片一起保存在 `docs/platform-proof/`。
+
+<h4>Linux 默认文字栈与纯 Rust 可裁剪配置</h4>
+<table>
+  <tr><th>Cairo + Pango</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux Cairo Pango notepad proof" width="100%"></td>
+  </tr>
+  <tr><th>tiny-skia + cosmic-text/swash</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust notepad proof" width="100%"></td>
+  </tr>
+</table>
+
+两种 Linux 配置复用完全相同的应用代码和平台体验层，只替换框架内部的文字与
+光栅 profile。5 次采样中，纯 Rust 配置中位 RSS 为 15.77 MiB，默认配置为
+25.32 MiB；完整测量见
+[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)。
+
+</details>
+
+这些目标机证据由
+[Native UI Proof](https://github.com/qiu7824/zsui/actions/workflows/native-proof.yml)
+持续生成；共享 `DrawPlan` 图片不能替代最终平台表面截图。
 
 <table>
   <tr>
@@ -73,69 +151,6 @@
 </table>
 
 </details>
-
-## 同一份源码，三平台真实界面
-
-普通应用只写一份 `State / Msg / view / update` 和语义组件声明。框架内部再分别选择
-Win32、AppKit 与 Linux 的组合规则、文字栈、渲染器、窗口宿主和系统服务；应用层
-不传平台枚举、不选择渲染器，也不维护三份 View 树。
-
-<table>
-  <tr><th>Windows · Win32</th><th>macOS 15 · AppKit</th><th>Ubuntu 24.04 · Linux</th></tr>
-  <tr>
-    <td><img src="docs/images/component-gallery-preview4-inputs.png" alt="Windows Win32 component gallery inputs"></td>
-    <td><img src="docs/platform-proof/macos/gallery-inputs-light.png" alt="macOS AppKit component gallery inputs"></td>
-    <td><img src="docs/platform-proof/linux/gallery-inputs-light.png" alt="Linux component gallery inputs"></td>
-  </tr>
-  <tr>
-    <td align="center">Fluent 导航与卡片</td>
-    <td align="center">AppKit source list 与表单节奏</td>
-    <td align="center">Linux sidebar 与 boxed rows</td>
-  </tr>
-</table>
-
-上图是同一套 Gallery 语义声明产生的实际窗口截图，不是把 Windows 皮肤换色后复用。
-Windows 图为本机 Win32 最终缓冲表面；macOS 图来自 `macos-15` Runner 的最终
-`NSView`；Linux 图来自 Ubuntu 24.04 X11 的最终 Softbuffer 表面。Windows Gallery
-与 Linux Gallery 使用 1180×780，macOS Gallery 使用 1024×640，因此这里比较
-平台组合与组件风格，不是逐像素基准。
-
-<details>
-<summary><b>展开同一 Notepad 交互场景与 Linux 双渲染配置</b></summary>
-
-<h4>同一窗口规格的未保存确认场景</h4>
-<table>
-  <tr><th>Windows · Win32</th><th>macOS 15 · AppKit</th><th>Ubuntu 24.04 · Linux</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/windows/notepad-interaction.png" alt="Windows Win32 notepad interaction"></td>
-    <td><img src="docs/platform-proof/macos/notepad-interaction.png" alt="macOS AppKit notepad interaction"></td>
-    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux notepad interaction"></td>
-  </tr>
-</table>
-
-三张图由同一个 `examples/zsui_notepad.rs` 场景驱动，均完成输入、选择、撤销、
-滚动、关闭请求和未保存拦截；对话框动作顺序、工具栏、标签页、字体与窗口表面由
-各平台规则决定。对应结构化 JSON 与图片一起保存在 `docs/platform-proof/`。
-
-<h4>Linux 默认文字栈与纯 Rust 可裁剪配置</h4>
-<table>
-  <tr><th>Cairo + Pango</th><th>tiny-skia + cosmic-text/swash</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux Cairo Pango notepad proof"></td>
-    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust notepad proof"></td>
-  </tr>
-</table>
-
-两种 Linux 配置复用完全相同的应用代码和平台体验层，只替换框架内部的文字与
-光栅 profile。5 次采样中，纯 Rust 配置中位 RSS 为 15.77 MiB，默认配置为
-25.32 MiB；完整测量见
-[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)。
-
-</details>
-
-这些目标机证据由
-[Native UI Proof](https://github.com/qiu7824/zsui/actions/workflows/native-proof.yml)
-持续生成；共享 `DrawPlan` 图片不能替代最终平台表面截图。
 
 ## 项目定位
 

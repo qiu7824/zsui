@@ -26,6 +26,92 @@ services, and platform backends an application enables.
 
 </div>
 
+## One Application Source, Three Real Platform Surfaces
+
+Ordinary applications write one `State / Msg / view / update` loop and one set
+of semantic component declarations. ZSUI internally selects the Win32, AppKit
+or Linux composition rules, text stack, renderer, window host and system
+services. Application View code does not receive a platform enum, select a
+renderer or maintain three component trees.
+
+<table>
+  <tr><th>Windows · Win32</th></tr>
+  <tr>
+    <td><img src="docs/images/component-gallery-preview4-inputs.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">Fluent navigation and cards</td>
+  </tr>
+  <tr><th>macOS 15 · AppKit</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/macos/gallery-inputs-light.png" alt="macOS AppKit component gallery inputs" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">AppKit source list and form rhythm</td>
+  </tr>
+  <tr><th>Ubuntu 24.04 · Linux</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/gallery-inputs-light.png" alt="Linux component gallery inputs" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">Linux sidebar and boxed rows</td>
+  </tr>
+</table>
+
+These are real window captures from the same semantic Gallery declaration, not
+one Windows skin recolored for every target. The Windows image is a local Win32
+buffer capture at 1180×780; Linux also uses 1180×780 and AppKit uses 1024×640,
+so this table compares platform composition rather than pixel baselines.
+
+<details>
+<summary><b>Show the shared Notepad interaction and both Linux render profiles</b></summary>
+
+<h4>The same window-spec unsaved-changes scenario</h4>
+<table>
+  <tr><th>Windows · Win32</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/windows/notepad-interaction.png" alt="Windows Win32 notepad interaction" width="100%"></td>
+  </tr>
+  <tr><th>macOS 15 · AppKit</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/macos/notepad-interaction.png" alt="macOS AppKit notepad interaction" width="100%"></td>
+  </tr>
+  <tr><th>Ubuntu 24.04 · Linux</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux notepad interaction" width="100%"></td>
+  </tr>
+</table>
+
+All three captures are driven by the unchanged `examples/zsui_notepad.rs`
+scenario after text input, selection, undo, scrolling, a close request and the
+unsaved-changes veto. Platform rules own action order, toolbar composition,
+tabs, typography and the final window surface. Structured reports live beside
+the images in `docs/platform-proof/`.
+
+<h4>Default Linux text stack and the trimmable pure-Rust profile</h4>
+<table>
+  <tr><th>Cairo + Pango</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux Cairo Pango notepad proof" width="100%"></td>
+  </tr>
+  <tr><th>tiny-skia + cosmic-text/swash</th></tr>
+  <tr>
+    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust notepad proof" width="100%"></td>
+  </tr>
+</table>
+
+Both profiles use exactly the same application source and platform-experience
+layer; only the internal text/raster profile changes. Across five samples, the
+pure-Rust profile measured a 15.77 MiB median RSS versus 25.32 MiB for the
+default profile. See
+[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838).
+
+</details>
+
+[Native UI Proof](https://github.com/qiu7824/zsui/actions/workflows/native-proof.yml)
+continuously regenerates target evidence. Shared `DrawPlan` images do not count
+as final platform-surface proof.
+
 ZSUI is a Rust-first native system UI framework.
 It is intentionally declaration-first: application code describes windows,
 tray/status menus, commands, hotkeys, settings pages and host capabilities in
@@ -41,10 +127,6 @@ when available. macOS and Linux have real AppKit and `linux-direct`
 host/render/input paths with final-surface target-runner evidence. Linux uses a
 native desktop window and system integration with platform-specific self-drawn
 controls; the optional GTK4 compatibility host remains a separate backend.
-
-<p align="center">
-  <img src="docs/images/workbench-v2.png" alt="ZSUI workbench" width="100%">
-</p>
 
 <table>
   <tr>
@@ -90,73 +172,6 @@ controls; the optional GTK4 compatibility host remains a separate backend.
 </table>
 
 </details>
-
-## One Application Source, Three Real Platform Surfaces
-
-Ordinary applications write one `State / Msg / view / update` loop and one set
-of semantic component declarations. ZSUI internally selects the Win32, AppKit
-or Linux composition rules, text stack, renderer, window host and system
-services. Application View code does not receive a platform enum, select a
-renderer or maintain three component trees.
-
-<table>
-  <tr><th>Windows · Win32</th><th>macOS 15 · AppKit</th><th>Ubuntu 24.04 · Linux</th></tr>
-  <tr>
-    <td><img src="docs/images/component-gallery-preview4-inputs.png" alt="Windows Win32 component gallery inputs"></td>
-    <td><img src="docs/platform-proof/macos/gallery-inputs-light.png" alt="macOS AppKit component gallery inputs"></td>
-    <td><img src="docs/platform-proof/linux/gallery-inputs-light.png" alt="Linux component gallery inputs"></td>
-  </tr>
-  <tr>
-    <td align="center">Fluent navigation and cards</td>
-    <td align="center">AppKit source list and form rhythm</td>
-    <td align="center">Linux sidebar and boxed rows</td>
-  </tr>
-</table>
-
-These are real window captures from the same semantic Gallery declaration, not
-one Windows skin recolored for every target. The Windows image is a local Win32
-buffer capture at 1180×780; Linux also uses 1180×780 and AppKit uses 1024×640,
-so this table compares platform composition rather than pixel baselines.
-
-<details>
-<summary><b>Show the shared Notepad interaction and both Linux render profiles</b></summary>
-
-<h4>The same window-spec unsaved-changes scenario</h4>
-<table>
-  <tr><th>Windows · Win32</th><th>macOS 15 · AppKit</th><th>Ubuntu 24.04 · Linux</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/windows/notepad-interaction.png" alt="Windows Win32 notepad interaction"></td>
-    <td><img src="docs/platform-proof/macos/notepad-interaction.png" alt="macOS AppKit notepad interaction"></td>
-    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux notepad interaction"></td>
-  </tr>
-</table>
-
-All three captures are driven by the unchanged `examples/zsui_notepad.rs`
-scenario after text input, selection, undo, scrolling, a close request and the
-unsaved-changes veto. Platform rules own action order, toolbar composition,
-tabs, typography and the final window surface. Structured reports live beside
-the images in `docs/platform-proof/`.
-
-<h4>Default Linux text stack and the trimmable pure-Rust profile</h4>
-<table>
-  <tr><th>Cairo + Pango</th><th>tiny-skia + cosmic-text/swash</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux Cairo Pango notepad proof"></td>
-    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust notepad proof"></td>
-  </tr>
-</table>
-
-Both profiles use exactly the same application source and platform-experience
-layer; only the internal text/raster profile changes. Across five samples, the
-pure-Rust profile measured a 15.77 MiB median RSS versus 25.32 MiB for the
-default profile. See
-[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838).
-
-</details>
-
-[Native UI Proof](https://github.com/qiu7824/zsui/actions/workflows/native-proof.yml)
-continuously regenerates target evidence. Shared `DrawPlan` images do not count
-as final platform-surface proof.
 
 ## Quick Start
 
