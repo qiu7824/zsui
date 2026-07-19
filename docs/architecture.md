@@ -503,14 +503,21 @@ text layout, rasterization, presentation and operating-system services. This
 keeps application authoring unified without applying a Windows component tree
 or one renderer to every target.
 
-The boundary has two concrete internal modules. `src/platform/experience.rs`
-owns the single compile-target selection and maps semantic component defaults
-to Fluent, AppKit or GTK behavior. `src/platform/backend_profile.rs` separately
-selects Host, Text, Raster, Presenter and Services implementations. Public View
-builders do not accept the internal experience or the low-level render-proof
-`PlatformStyle` enums. Regression tests scan the Gallery, Notepad and desktop
-showcase authoring slices so target `cfg`, platform enums and raw native handles
-cannot silently return to ordinary `view`/`update` code.
+The boundary has three concrete internal layers. `src/platform/experience.rs`
+owns the single compile-target selection for semantic component defaults and
+maps them to Fluent, AppKit or GTK behavior. `src/platform/backend_profile.rs`
+describes Host, Text, Raster, Presenter and Services choices independently.
+`src/platform/desktop_runtime/` is the production adapter contract: its single
+compile-time selector delegates the event loop and native file panels to a
+target-owned Win32, AppKit, Linux-direct, GTK compatibility or Winit-fallback
+module. `native.rs` consumes that contract and contains no production backend
+selection for those operations. Adding another desktop backend therefore adds
+one adapter implementation without changing application authoring or the
+shared host loop. Public View builders do not accept the internal experience or
+the low-level render-proof `PlatformStyle` enums. Regression tests scan the
+Gallery, Notepad and desktop showcase authoring slices so target `cfg`, platform
+enums and raw native handles cannot silently return to ordinary `view`/`update`
+code.
 
 The retained public View payload is semantic as well: toolbar buttons and
 adaptive navigation nodes store icons, labels, item counts and state, but no

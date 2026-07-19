@@ -241,12 +241,19 @@
       "required": [
         "src/native_hosts.rs",
         "src/native_host_launch.rs",
-        "src/native_adapter_manifest.rs",
         "src/platform/experience.rs",
-        "src/platform/backend_profile.rs"
+        "src/platform/backend_profile.rs",
+        "src/platform/desktop_runtime/mod.rs"
       ],
       "optional": [
+        "src/native_adapter_manifest.rs",
         "src/platform/windows/mod.rs",
+        "src/platform/desktop_runtime/windows.rs",
+        "src/platform/desktop_runtime/macos.rs",
+        "src/platform/desktop_runtime/linux_direct.rs",
+        "src/platform/desktop_runtime/linux_gtk.rs",
+        "src/platform/desktop_runtime/winit.rs",
+        "src/platform/desktop_runtime/unsupported.rs",
         "src/desktop_services.rs",
         "docs/porting.md",
         "src/native_clipboard.rs",

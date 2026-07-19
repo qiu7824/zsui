@@ -34,6 +34,8 @@ pub mod control_protocol;
 pub mod core;
 #[cfg(feature = "date-picker")]
 pub mod date;
+#[path = "platform/desktop_runtime/mod.rs"]
+mod desktop_runtime;
 pub mod desktop_services;
 #[cfg(feature = "document-shell")]
 pub mod document_shell;

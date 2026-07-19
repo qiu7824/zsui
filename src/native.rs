@@ -6391,7 +6391,9 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(all(windows, feature = "windows-win32"))]
-    fn windows_win32_route(&self) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
+    pub(crate) fn windows_win32_route(
+        &self,
+    ) -> Option<crate::windows_win32_host::WindowsWin32ViewInputRoute> {
         let route = if let Some(runtime) = &self.live_view {
             crate::windows_win32_host::WindowsWin32ViewInputRoute::from_live_view(runtime.clone())
         } else {
@@ -7895,41 +7897,8 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn open_file_picker(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<String>>> {
-        #[cfg(all(windows, feature = "windows-win32"))]
-        {
-            return crate::windows_win32_host::windows_win32_open_file_dialog(spec).map(
-                |selection| {
-                    selection.map(|paths| {
-                        paths
-                            .into_iter()
-                            .map(|path| path.to_string_lossy().into_owned())
-                            .collect()
-                    })
-                },
-            );
-        }
-
-        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-        {
-            return crate::macos_appkit_services::macos_appkit_open_file_dialog(spec).map(
-                |selection| {
-                    selection.map(|paths| {
-                        paths
-                            .into_iter()
-                            .map(|path| path.to_string_lossy().into_owned())
-                            .collect()
-                    })
-                },
-            );
-        }
-
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-direct-host"
-        ))]
-        {
-            return crate::linux_direct::linux_direct_open_file_dialog(spec).map(|selection| {
+        if let Some(result) = crate::desktop_runtime::open_file_dialog(spec) {
+            return result.map(|selection| {
                 selection.map(|paths| {
                     paths
                         .into_iter()
@@ -7938,36 +7907,7 @@ impl ZsuiHost for NativeWindowHost {
                 })
             });
         }
-
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-gtk",
-            not(feature = "linux-direct-host")
-        ))]
-        {
-            return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec).map(|selection| {
-                selection.map(|paths| {
-                    paths
-                        .into_iter()
-                        .map(|path| path.to_string_lossy().into_owned())
-                        .collect()
-                })
-            });
-        }
-
-        #[cfg(not(any(
-            all(windows, feature = "windows-win32"),
-            all(target_os = "macos", feature = "macos-appkit"),
-            all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                any(feature = "linux-direct-host", feature = "linux-gtk")
-            )
-        )))]
-        {
-            self.inner.open_file_picker(spec)
-        }
+        self.inner.open_file_picker(spec)
     }
 
     fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
@@ -7979,7 +7919,7 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn run_event_loop(&mut self) -> ZsuiResult<()> {
-        run_native_window_event_loop(
+        crate::desktop_runtime::run_event_loop(
             self.windows.clone(),
             self.trays.clone(),
             self.draw_plans.clone(),
@@ -8013,300 +7953,7 @@ impl crate::FileDialogService for NativeWindowHost {
         &mut self,
         spec: &crate::SaveFileDialogSpec,
     ) -> ZsuiResult<Option<std::path::PathBuf>> {
-        #[cfg(all(windows, feature = "windows-win32"))]
-        {
-            return crate::windows_win32_host::windows_win32_save_file_dialog(spec);
-        }
-
-        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-        {
-            return crate::macos_appkit_services::macos_appkit_save_file_dialog(spec);
-        }
-
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-direct-host"
-        ))]
-        {
-            return crate::linux_direct::linux_direct_save_file_dialog(spec);
-        }
-
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-gtk",
-            not(feature = "linux-direct-host")
-        ))]
-        {
-            return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
-        }
-
-        #[cfg(not(any(
-            all(windows, feature = "windows-win32"),
-            all(target_os = "macos", feature = "macos-appkit"),
-            all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                any(feature = "linux-direct-host", feature = "linux-gtk")
-            )
-        )))]
-        {
-            let _ = spec;
-            Err(ZsuiError::unsupported(
-                "save_file_dialog",
-                "the selected desktop backend does not implement a native save dialog",
-            ))
-        }
-    }
-}
-
-#[cfg(all(windows, feature = "windows-win32"))]
-fn run_native_window_event_loop(
-    windows: Vec<WindowSpec>,
-    trays: Vec<TraySpec>,
-    draw_plans: Vec<Option<NativeDrawPlan>>,
-    view_runtimes: Vec<NativeViewInputRuntime>,
-    shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    let input_routes = view_runtimes
-        .iter()
-        .map(NativeViewInputRuntime::windows_win32_route)
-        .collect::<Vec<_>>();
-    let shell_routes = shell_runtimes
-        .into_iter()
-        .map(|runtime| runtime.map(crate::windows_win32_host::WindowsWin32ShellInputRoute::new))
-        .collect::<Vec<_>>();
-    crate::windows_win32_host::run_windows_win32_native_window_event_loop_with_routes_and_status_items(
-        &windows,
-        &draw_plans,
-        &input_routes,
-        &shell_routes,
-        &trays,
-    )
-}
-
-#[cfg(all(windows, not(feature = "windows-win32")))]
-fn run_native_window_event_loop(
-    _windows: Vec<WindowSpec>,
-    _trays: Vec<TraySpec>,
-    _draw_plans: Vec<Option<NativeDrawPlan>>,
-    _view_runtimes: Vec<NativeViewInputRuntime>,
-    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    Err(ZsuiError::unsupported(
-        "native_window",
-        "enable the windows-win32 feature to compile the direct Win32 native window host",
-    ))
-}
-
-#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-fn run_native_window_event_loop(
-    windows: Vec<WindowSpec>,
-    trays: Vec<TraySpec>,
-    draw_plans: Vec<Option<NativeDrawPlan>>,
-    view_runtimes: Vec<NativeViewInputRuntime>,
-    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    if !trays.is_empty() {
-        return Err(ZsuiError::unsupported(
-            "native_window_status_item",
-            "the AppKit NSStatusItem runtime is not connected to the unified event loop",
-        ));
-    }
-    crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
-        &windows,
-        &draw_plans,
-        &view_runtimes,
-        None,
-        None,
-        &[],
-    )
-    .map(|_| ())
-}
-
-#[cfg(all(
-    target_os = "linux",
-    not(target_env = "ohos"),
-    feature = "linux-direct-host"
-))]
-fn run_native_window_event_loop(
-    windows: Vec<WindowSpec>,
-    trays: Vec<TraySpec>,
-    draw_plans: Vec<Option<NativeDrawPlan>>,
-    view_runtimes: Vec<NativeViewInputRuntime>,
-    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    if !trays.is_empty() {
-        return Err(ZsuiError::unsupported(
-            "native_window_status_item",
-            "the Linux direct status-item runtime is not connected to the unified event loop",
-        ));
-    }
-    crate::linux_direct::run_linux_direct_native_window_event_loop(
-        &windows,
-        &draw_plans,
-        &view_runtimes,
-        None,
-        None,
-        &[],
-    )
-    .map(|_| ())
-}
-
-#[cfg(all(
-    target_os = "linux",
-    not(target_env = "ohos"),
-    feature = "linux-gtk",
-    not(feature = "linux-direct-host")
-))]
-fn run_native_window_event_loop(
-    windows: Vec<WindowSpec>,
-    trays: Vec<TraySpec>,
-    draw_plans: Vec<Option<NativeDrawPlan>>,
-    view_runtimes: Vec<NativeViewInputRuntime>,
-    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    if !trays.is_empty() {
-        return Err(ZsuiError::unsupported(
-            "native_window_status_item",
-            "the GTK4 status-item runtime is not connected to the unified event loop",
-        ));
-    }
-    crate::linux_gtk_services::run_linux_gtk_native_window_event_loop(
-        &windows,
-        &draw_plans,
-        &view_runtimes,
-        None,
-        None,
-        &[],
-    )
-    .map(|_| ())
-}
-
-#[cfg(any(
-    all(
-        feature = "desktop-winit",
-        not(feature = "macos-appkit"),
-        target_os = "macos"
-    ),
-    all(
-        feature = "desktop-winit",
-        not(feature = "linux-direct-host"),
-        not(feature = "linux-gtk"),
-        target_os = "linux",
-        not(target_env = "ohos")
-    )
-))]
-fn run_native_window_event_loop(
-    windows: Vec<WindowSpec>,
-    trays: Vec<TraySpec>,
-    _draw_plans: Vec<Option<NativeDrawPlan>>,
-    _view_runtimes: Vec<NativeViewInputRuntime>,
-    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    use std::collections::HashMap;
-    use winit::{
-        application::ApplicationHandler,
-        dpi::{LogicalSize, Size},
-        event::WindowEvent,
-        event_loop::{ActiveEventLoop, EventLoop},
-        window::{Window as WinitWindow, WindowAttributes, WindowId as WinitWindowId, WindowLevel},
-    };
-
-    struct WinitNativeApp {
-        specs: Vec<WindowSpec>,
-        windows: HashMap<WinitWindowId, WinitWindow>,
-        startup_error: Option<String>,
-    }
-
-    impl ApplicationHandler for WinitNativeApp {
-        fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-            if !self.windows.is_empty() {
-                return;
-            }
-
-            for spec in &self.specs {
-                let mut attributes = WindowAttributes::default()
-                    .with_title(spec.title.clone())
-                    .with_inner_size(Size::Logical(LogicalSize::new(
-                        spec.width as f64,
-                        spec.height as f64,
-                    )))
-                    .with_visible(spec.visible)
-                    .with_resizable(spec.resizable)
-                    .with_decorations(spec.decorations)
-                    .with_transparent(spec.transparent);
-
-                if let (Some(width), Some(height)) = (spec.min_width, spec.min_height) {
-                    attributes = attributes.with_min_inner_size(Size::Logical(LogicalSize::new(
-                        width as f64,
-                        height as f64,
-                    )));
-                }
-                if spec.always_on_top {
-                    attributes = attributes.with_window_level(WindowLevel::AlwaysOnTop);
-                }
-
-                match event_loop.create_window(attributes) {
-                    Ok(window) => {
-                        self.windows.insert(window.id(), window);
-                    }
-                    Err(err) => {
-                        self.startup_error = Some(err.to_string());
-                        event_loop.exit();
-                        return;
-                    }
-                }
-            }
-        }
-
-        fn window_event(
-            &mut self,
-            event_loop: &ActiveEventLoop,
-            window_id: WinitWindowId,
-            event: WindowEvent,
-        ) {
-            if matches!(event, WindowEvent::CloseRequested) {
-                self.windows.remove(&window_id);
-                if self.windows.is_empty() {
-                    event_loop.exit();
-                }
-            }
-        }
-    }
-
-    if windows.is_empty() {
-        return Ok(());
-    }
-    if windows.iter().any(|window| window.menu.is_some()) {
-        return Err(ZsuiError::unsupported(
-            "native_menu",
-            "the first-pass Winit host does not implement a native application menu",
-        ));
-    }
-    if !trays.is_empty() {
-        return Err(ZsuiError::unsupported(
-            "native_window_status_item",
-            "native tray/status item runtime is wired only for the direct Windows Win32 host",
-        ));
-    }
-
-    let event_loop = EventLoop::new()
-        .map_err(|err| ZsuiError::host("native_window_event_loop", err.to_string()))?;
-    let mut app = WinitNativeApp {
-        specs: windows,
-        windows: HashMap::new(),
-        startup_error: None,
-    };
-    event_loop
-        .run_app(&mut app)
-        .map_err(|err| ZsuiError::host("native_window_event_loop", err.to_string()))?;
-
-    if let Some(err) = app.startup_error {
-        Err(ZsuiError::host("create_native_window", err))
-    } else {
-        Ok(())
+        crate::desktop_runtime::save_file_dialog(spec)
     }
 }
 
@@ -9384,38 +9031,6 @@ fn write_rgba_png(
     png_writer
         .write_image_data(rgba)
         .map_err(|err| err.to_string())
-}
-
-#[cfg(any(
-    not(any(
-        target_os = "windows",
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos"))
-    )),
-    all(
-        target_os = "macos",
-        not(feature = "macos-appkit"),
-        not(feature = "desktop-winit")
-    ),
-    all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        not(feature = "linux-direct-host"),
-        not(feature = "linux-gtk"),
-        not(feature = "desktop-winit")
-    )
-))]
-fn run_native_window_event_loop(
-    _windows: Vec<WindowSpec>,
-    _trays: Vec<TraySpec>,
-    _draw_plans: Vec<Option<NativeDrawPlan>>,
-    _view_runtimes: Vec<NativeViewInputRuntime>,
-    _shell_runtimes: Vec<Option<ZsShellRuntime>>,
-) -> ZsuiResult<()> {
-    Err(ZsuiError::unsupported(
-        "native_window",
-        "desktop native windows are implemented for Windows, macOS and Linux; Android and Harmony need mobile runtime hosts",
-    ))
 }
 
 #[cfg(any(

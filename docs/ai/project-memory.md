@@ -315,6 +315,12 @@ history remain authoritative for implementation status.
   Presenter and Services choices separate. These modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take
   a platform style, platform enum or raw native handle.
+- Production desktop event-loop and native file-panel selection live behind
+  the private `src/platform/desktop_runtime/` adapter contract. `native.rs`
+  passes platform-neutral windows, draw plans, input runtimes and service specs
+  into that boundary; target modules own Win32, AppKit, Linux-direct, GTK or
+  Winit calls. A new desktop backend adds an adapter implementation instead of
+  adding target branches to the shared host or application API.
 - Public `ViewNodeKind` and `ZsButtonPresentation` payloads remain semantic and
   must not store a platform selector. Toolbar and adaptive-navigation layout,
   construction, paint and hit testing resolve the framework experience
