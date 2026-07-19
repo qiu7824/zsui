@@ -39,7 +39,10 @@ composition and interaction conventions:
 - `PlatformExperience` resolves semantic navigation, toolbar/header, tabs,
   forms, dialogs, popups, metrics, typography and icon sources inside the
   framework. It may produce different component trees for the same semantic
-  declaration.
+  declaration. `src/platform/identity.rs` owns the canonical target/toolkit
+  types, and `NativeUiPlatform::current_target` selects the build target;
+  backend inventory and launch metadata are derived from the experience
+  registration rather than maintained as parallel platform tables.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.

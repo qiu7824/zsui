@@ -1,9 +1,6 @@
 use serde::Serialize;
 
-use crate::{
-    native_ui_backend_for_platform, platform_experience::PlatformExperience, NativeUiPlatform,
-    NativeUiToolkit,
-};
+use crate::{platform_experience::PlatformExperience, NativeUiPlatform, NativeUiToolkit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NativeHostLaunchMode {
@@ -68,8 +65,8 @@ impl NativeHostLaunchPlan {
 pub fn native_host_launch_plan_for_platform(
     platform: NativeUiPlatform,
 ) -> Option<NativeHostLaunchPlan> {
-    let backend = native_ui_backend_for_platform(platform)?;
     let experience = PlatformExperience::for_platform(platform);
+    let backend = experience.backend_descriptor();
     let profile = experience.backend();
     debug_assert_eq!(profile.toolkit(), backend.toolkit);
     debug_assert_eq!(profile.host().module_path(), backend.module_path);

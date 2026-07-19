@@ -506,10 +506,16 @@ text layout, rasterization, presentation and operating-system services. This
 keeps application authoring unified without applying a Windows component tree
 or one renderer to every target.
 
-The boundary has three concrete internal layers. `src/platform/experience.rs`
-owns the single compile-target selection for semantic component defaults and
-maps them to Fluent, AppKit or GTK behavior. `src/platform/backend_profile.rs`
-describes Host, Text, Raster, Presenter and Services choices independently.
+The boundary has three concrete internal layers. `src/platform/identity.rs`
+defines the canonical platform/toolkit identity types, and
+`NativeUiPlatform::current_target` owns the single compile-target identity
+selector. `src/platform/experience.rs`
+consumes that identity, maps it to Fluent, AppKit, GTK or mobile behavior and
+owns the matching backend status and adapter identity. The public backend
+inventory and launch plans are derived from that same experience registration
+instead of repeating toolkit, module-path and status tables.
+`src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
+Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single
 compile-time selector delegates the event loop, runtime smoke, final-surface
 capture, scaffold `HostCapabilities`, native-host `HostCapabilities`, the active

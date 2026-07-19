@@ -246,6 +246,7 @@
         "src/platform/desktop_runtime/mod.rs"
       ],
       "optional": [
+        "src/platform/identity.rs",
         "src/native_adapter_manifest.rs",
         "src/platform/windows/mod.rs",
         "src/platform/desktop_runtime/windows.rs",

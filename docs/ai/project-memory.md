@@ -313,9 +313,13 @@ history remain authoritative for implementation status.
   selected Host/Text/Raster/Presenter/Services profile owns target execution.
   Application parameters remain editable once through public semantic specs and
   tokens, and optional Cargo features remain independently trimmable.
-- `src/platform/experience.rs` is the only compile-target selector for framework
-  experience defaults; all built-in desktop `PlatformStyle::current()` paths
-  delegate to it. `src/platform/backend_profile.rs` keeps Host, Text, Raster,
+- `src/platform/identity.rs` owns the canonical target/toolkit types and
+  `NativeUiPlatform::current_target` is the compile-target identity selector.
+  `src/platform/experience.rs` consumes it for framework experience
+  defaults and owns the matching backend status and adapter identity; the
+  public backend inventory and launch plan derive from that registration.
+  All built-in desktop `PlatformStyle::current()` paths delegate to the same
+  experience. `src/platform/backend_profile.rs` keeps Host, Text, Raster,
   Presenter and Services choices separate. These modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take
   a platform style, platform enum or raw native handle.

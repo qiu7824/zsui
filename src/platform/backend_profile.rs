@@ -1,4 +1,4 @@
-use crate::NativeUiToolkit;
+use crate::platform_identity::NativeUiToolkit;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeHostProfile {

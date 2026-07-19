@@ -1,4 +1,7 @@
-use crate::{backend_profile::BackendProfile, NativeUiPlatform};
+use crate::{
+    backend_profile::BackendProfile,
+    platform_identity::{NativeUiBackendDescriptor, NativeUiBackendStatus, NativeUiPlatform},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformDesignLanguage {
@@ -14,6 +17,8 @@ pub(crate) struct PlatformExperience {
     platform: NativeUiPlatform,
     design_language: PlatformDesignLanguage,
     backend: BackendProfile,
+    backend_status: NativeUiBackendStatus,
+    adapter_boundary: &'static str,
 }
 
 impl PlatformExperience {
@@ -23,63 +28,56 @@ impl PlatformExperience {
                 platform,
                 design_language: PlatformDesignLanguage::Fluent,
                 backend: BackendProfile::windows(),
+                backend_status: NativeUiBackendStatus::NativeHostFirstPass,
+                adapter_boundary: "WindowsWin32GdiNativeWindowBoundary",
             },
             NativeUiPlatform::Macos => Self {
                 platform,
                 design_language: PlatformDesignLanguage::AppKit,
                 backend: BackendProfile::macos(),
+                backend_status: NativeUiBackendStatus::NativeHostFirstPass,
+                adapter_boundary: "MacosAppKitWindowService",
             },
             NativeUiPlatform::Linux => Self {
                 platform,
                 design_language: PlatformDesignLanguage::Gtk,
                 backend: BackendProfile::linux(),
+                backend_status: NativeUiBackendStatus::NativeHostFirstPass,
+                adapter_boundary: "LinuxDirectWindowHost",
             },
             NativeUiPlatform::Android => Self {
                 platform,
                 design_language: PlatformDesignLanguage::Material,
                 backend: BackendProfile::android(),
+                backend_status: NativeUiBackendStatus::AdapterBoundaryScaffold,
+                adapter_boundary: "AndroidActivityAdapterBoundary",
             },
             NativeUiPlatform::Harmony => Self {
                 platform,
                 design_language: PlatformDesignLanguage::Harmony,
                 backend: BackendProfile::harmony(),
+                backend_status: NativeUiBackendStatus::AdapterBoundaryScaffold,
+                adapter_boundary: "HarmonyAbilityAdapterBoundary",
             },
         }
     }
 
     pub(crate) const fn current() -> Option<Self> {
-        #[cfg(target_env = "ohos")]
-        {
-            return Some(Self::for_platform(NativeUiPlatform::Harmony));
-        }
-        #[cfg(target_os = "windows")]
-        {
-            return Some(Self::for_platform(NativeUiPlatform::Windows));
-        }
-        #[cfg(target_os = "macos")]
-        {
-            return Some(Self::for_platform(NativeUiPlatform::Macos));
-        }
-        #[cfg(target_os = "android")]
-        {
-            return Some(Self::for_platform(NativeUiPlatform::Android));
-        }
+        let platform = match NativeUiPlatform::current_target() {
+            Some(platform) => platform,
+            None => return None,
+        };
         #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
         {
             #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
             {
                 return Some(Self {
                     backend: BackendProfile::linux_lite(),
-                    ..Self::for_platform(NativeUiPlatform::Linux)
+                    ..Self::for_platform(platform)
                 });
             }
-            #[cfg(not(all(feature = "linux-direct-lite", not(feature = "linux-direct"))))]
-            {
-                return Some(Self::for_platform(NativeUiPlatform::Linux));
-            }
         }
-        #[allow(unreachable_code)]
-        None
+        Some(Self::for_platform(platform))
     }
 
     pub(crate) const fn current_or_desktop_fallback() -> Self {
@@ -95,6 +93,16 @@ impl PlatformExperience {
 
     pub(crate) const fn backend(self) -> BackendProfile {
         self.backend
+    }
+
+    pub(crate) const fn backend_descriptor(self) -> NativeUiBackendDescriptor {
+        NativeUiBackendDescriptor {
+            platform: self.platform,
+            toolkit: self.backend.toolkit(),
+            status: self.backend_status,
+            adapter_boundary: self.adapter_boundary,
+            module_path: self.backend.host().module_path(),
+        }
     }
 
     pub(crate) const fn is_desktop(self) -> bool {
@@ -119,6 +127,14 @@ impl PlatformExperience {
         }
     }
 }
+
+pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
+    PlatformExperience::for_platform(NativeUiPlatform::Windows).backend_descriptor(),
+    PlatformExperience::for_platform(NativeUiPlatform::Macos).backend_descriptor(),
+    PlatformExperience::for_platform(NativeUiPlatform::Linux).backend_descriptor(),
+    PlatformExperience::for_platform(NativeUiPlatform::Android).backend_descriptor(),
+    PlatformExperience::for_platform(NativeUiPlatform::Harmony).backend_descriptor(),
+];
 
 #[cfg(test)]
 mod tests {
@@ -148,19 +164,75 @@ mod tests {
     }
 
     #[test]
-    fn current_experience_is_the_only_target_selector() {
+    fn current_experience_consumes_the_canonical_target_selector() {
         let current = PlatformExperience::current();
         assert_eq!(
             current.map(PlatformExperience::platform),
+            NativeUiPlatform::current_target()
+        );
+        assert_eq!(
+            NativeUiPlatform::current_target(),
             native_ui_platform_for_current_target()
         );
         assert_eq!(
-            current
-                .map(PlatformExperience::platform)
+            NativeUiPlatform::current_target()
                 .map(crate::PlatformName::from)
                 .unwrap_or(crate::PlatformName::Unknown),
             crate::PlatformName::current()
         );
+    }
+
+    #[test]
+    fn public_backend_inventory_is_derived_from_platform_experience() {
+        for platform in crate::SUPPORTED_NATIVE_UI_PLATFORMS {
+            let expected = PlatformExperience::for_platform(platform).backend_descriptor();
+            let actual = native_ui_backend_for_platform(platform)
+                .expect("supported platform should have a backend descriptor");
+            assert_eq!(*actual, expected);
+        }
+
+        let manifest = include_str!("../native_adapter_manifest.rs");
+        let manifest_core = manifest
+            .split_once("#[cfg(test)]")
+            .map_or(manifest, |(core, _)| core);
+        assert!(manifest_core
+            .contains("pub use crate::platform_experience::SUPPORTED_NATIVE_UI_BACKENDS"));
+        assert!(!manifest_core.contains("adapter_boundary: \""));
+        assert!(!manifest_core.contains("module_path: \"src/"));
+
+        let experience = include_str!("experience.rs");
+        let experience_core = experience
+            .split_once("#[cfg(test)]")
+            .map_or(experience, |(core, _)| core);
+        assert!(experience_core.contains("pub const SUPPORTED_NATIVE_UI_BACKENDS"));
+        for boundary in [
+            "WindowsWin32GdiNativeWindowBoundary",
+            "MacosAppKitWindowService",
+            "LinuxDirectWindowHost",
+            "AndroidActivityAdapterBoundary",
+            "HarmonyAbilityAdapterBoundary",
+        ] {
+            assert_eq!(
+                experience_core.matches(boundary).count(),
+                1,
+                "backend identity should have one registration for {boundary}"
+            );
+        }
+
+        let launch = include_str!("../native_host_launch.rs");
+        let launch_core = launch
+            .split_once("#[cfg(test)]")
+            .map_or(launch, |(core, _)| core);
+        assert!(launch_core.contains("experience.backend_descriptor()"));
+        assert!(!launch_core.contains("native_ui_backend_for_platform"));
+
+        let capability = include_str!("../capability.rs");
+        let capability_core = capability
+            .split_once("#[cfg(test)]")
+            .map_or(capability, |(core, _)| core);
+        assert!(capability_core.contains("NativeUiPlatform::current_target()"));
+        assert!(!capability_core.contains("cfg!(target_os"));
+        assert!(!capability_core.contains("#[cfg(target_os"));
     }
 
     #[test]

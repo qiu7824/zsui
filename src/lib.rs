@@ -150,6 +150,8 @@ pub mod paged_list;
 pub mod password_box;
 #[path = "platform/experience.rs"]
 mod platform_experience;
+#[path = "platform/identity.rs"]
+mod platform_identity;
 pub mod product_adapter;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
 pub mod progress;

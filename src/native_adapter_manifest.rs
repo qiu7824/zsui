@@ -1,157 +1,9 @@
+pub use crate::platform_experience::SUPPORTED_NATIVE_UI_BACKENDS;
+pub use crate::platform_identity::{
+    NativeUiBackendDescriptor, NativeUiBackendStatus, NativeUiPlatform, NativeUiToolkit,
+    SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
+};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NativeUiPlatform {
-    Windows,
-    Macos,
-    Linux,
-    Android,
-    Harmony,
-}
-
-impl NativeUiPlatform {
-    pub const fn platform_name(self) -> &'static str {
-        match self {
-            Self::Windows => "windows",
-            Self::Macos => "macos",
-            Self::Linux => "linux",
-            Self::Android => "android",
-            Self::Harmony => "harmony",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NativeUiToolkit {
-    WinitDesktop,
-    Win32Gdi,
-    AppKit,
-    LinuxDirect,
-    Gtk4Libadwaita,
-    AndroidActivity,
-    HarmonyAbility,
-}
-
-impl NativeUiToolkit {
-    pub const fn toolkit_name(self) -> &'static str {
-        match self {
-            Self::WinitDesktop => "winit_desktop",
-            Self::Win32Gdi => "win32_gdi",
-            Self::AppKit => "appkit",
-            Self::LinuxDirect => "linux_direct",
-            Self::Gtk4Libadwaita => "gtk4_libadwaita",
-            Self::AndroidActivity => "android_activity",
-            Self::HarmonyAbility => "harmony_ability",
-        }
-    }
-}
-
-pub const SUPPORTED_NATIVE_UI_PLATFORMS: [NativeUiPlatform; 5] = [
-    NativeUiPlatform::Windows,
-    NativeUiPlatform::Macos,
-    NativeUiPlatform::Linux,
-    NativeUiPlatform::Android,
-    NativeUiPlatform::Harmony,
-];
-
-pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 6] = [
-    NativeUiToolkit::Win32Gdi,
-    NativeUiToolkit::AppKit,
-    NativeUiToolkit::LinuxDirect,
-    NativeUiToolkit::Gtk4Libadwaita,
-    NativeUiToolkit::AndroidActivity,
-    NativeUiToolkit::HarmonyAbility,
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NativeUiBackendStatus {
-    NativeHostIntegrated,
-    NativeHostFirstPass,
-    AdapterBoundaryScaffold,
-}
-
-impl NativeUiBackendStatus {
-    pub const fn status_name(self) -> &'static str {
-        match self {
-            Self::NativeHostIntegrated => "native_host_integrated",
-            Self::NativeHostFirstPass => "native_host_first_pass",
-            Self::AdapterBoundaryScaffold => "adapter_boundary_scaffold",
-        }
-    }
-
-    pub const fn is_native_runtime_ready(self) -> bool {
-        matches!(self, Self::NativeHostIntegrated)
-    }
-
-    pub const fn is_scaffold(self) -> bool {
-        matches!(self, Self::AdapterBoundaryScaffold)
-    }
-
-    pub const fn is_first_pass_native_host(self) -> bool {
-        matches!(self, Self::NativeHostFirstPass)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct NativeUiBackendDescriptor {
-    pub platform: NativeUiPlatform,
-    pub toolkit: NativeUiToolkit,
-    pub status: NativeUiBackendStatus,
-    pub adapter_boundary: &'static str,
-    pub module_path: &'static str,
-}
-
-impl NativeUiBackendDescriptor {
-    pub const fn platform_name(&self) -> &'static str {
-        self.platform.platform_name()
-    }
-
-    pub const fn toolkit_name(&self) -> &'static str {
-        self.toolkit.toolkit_name()
-    }
-
-    pub const fn status_name(&self) -> &'static str {
-        self.status.status_name()
-    }
-}
-
-pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
-    NativeUiBackendDescriptor {
-        platform: NativeUiPlatform::Windows,
-        toolkit: NativeUiToolkit::Win32Gdi,
-        status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "WindowsWin32GdiNativeWindowBoundary",
-        module_path: "src/platform/windows/mod.rs",
-    },
-    NativeUiBackendDescriptor {
-        platform: NativeUiPlatform::Macos,
-        toolkit: NativeUiToolkit::AppKit,
-        status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "MacosAppKitWindowService",
-        module_path: "src/macos_appkit_services.rs",
-    },
-    NativeUiBackendDescriptor {
-        platform: NativeUiPlatform::Linux,
-        toolkit: NativeUiToolkit::LinuxDirect,
-        status: NativeUiBackendStatus::NativeHostFirstPass,
-        adapter_boundary: "LinuxDirectWindowHost",
-        module_path: "src/linux_direct.rs",
-    },
-    NativeUiBackendDescriptor {
-        platform: NativeUiPlatform::Android,
-        toolkit: NativeUiToolkit::AndroidActivity,
-        status: NativeUiBackendStatus::AdapterBoundaryScaffold,
-        adapter_boundary: "AndroidActivityAdapterBoundary",
-        module_path: "src/android_activity_host.rs",
-    },
-    NativeUiBackendDescriptor {
-        platform: NativeUiPlatform::Harmony,
-        toolkit: NativeUiToolkit::HarmonyAbility,
-        status: NativeUiBackendStatus::AdapterBoundaryScaffold,
-        adapter_boundary: "HarmonyAbilityAdapterBoundary",
-        module_path: "src/harmony_ability_host.rs",
-    },
-];
 
 pub fn native_ui_backend_for_platform(
     platform: NativeUiPlatform,
@@ -170,8 +22,7 @@ pub fn native_ui_backend_for_toolkit(
 }
 
 pub fn native_ui_platform_for_current_target() -> Option<NativeUiPlatform> {
-    crate::platform_experience::PlatformExperience::current()
-        .map(crate::platform_experience::PlatformExperience::platform)
+    NativeUiPlatform::current_target()
 }
 
 pub fn native_ui_backend_for_current_target() -> Option<&'static NativeUiBackendDescriptor> {

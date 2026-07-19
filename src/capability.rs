@@ -13,8 +13,8 @@ pub enum PlatformName {
 
 impl PlatformName {
     pub fn current() -> Self {
-        match crate::platform_experience::PlatformExperience::current() {
-            Some(experience) => experience.platform().into(),
+        match crate::NativeUiPlatform::current_target() {
+            Some(platform) => platform.into(),
             None => Self::Unknown,
         }
     }
