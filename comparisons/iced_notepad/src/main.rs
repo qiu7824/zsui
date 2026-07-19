@@ -111,7 +111,8 @@ impl Notepad {
             },
             None => (
                 None,
-                "Iced Notepad baseline\n\nA typed Elm-style text editing benchmark.\n".to_string(),
+                "Iced Notepad baseline / 记事本基线\n\nA typed Elm-style text editing benchmark. / 文本编辑内存基线。\n"
+                    .to_string(),
                 None,
             ),
         };

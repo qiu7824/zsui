@@ -182,7 +182,7 @@ impl DocumentState {
             },
             None => Self {
                 path: None,
-                text: "Slint Notepad baseline\n\nA declarative UI text editing benchmark.\n"
+                text: "Slint Notepad baseline / 记事本基线\n\nA declarative UI text editing benchmark. / 文本编辑内存基线。\n"
                     .to_string(),
                 dirty: false,
                 error: None,

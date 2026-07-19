@@ -39,7 +39,7 @@ def main():
     result = {
         "schema": SCHEMA,
         "runner": args.runner,
-        "scenario": "notepad-900x620-first-frame-idle",
+        "scenario": "notepad-900x620-first-frame-idle-bilingual",
         "sample_count": 5,
         "frameworks": {},
     }

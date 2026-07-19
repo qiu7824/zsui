@@ -228,6 +228,37 @@ jobs:
               )
           PY
 
+      - name: Capture comparison Linux resident mappings
+        run: |
+          root=target/ui-memory-comparison/ubuntu-24.04-x86_64
+          export root
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            bash -euxo pipefail -c '
+              comparisons/slint_notepad/target/release/slint-notepad-baseline \
+                --benchmark-seconds 7 \
+                --sample-after-ms 3500 \
+                --memory-report "$root/slint-notepad-diagnostic.json" &
+              app_pid=$!
+              sleep 3.5
+              python3 comparisons/scripts/capture_linux_smaps.py \
+                --pid "$app_pid" \
+                --output "$root/slint-notepad-smaps.json"
+              wait "$app_pid"
+            '
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            bash -euxo pipefail -c '
+              comparisons/iced_notepad/target/release/iced-notepad-baseline \
+                --benchmark-seconds 7 \
+                --sample-after-ms 3500 \
+                --memory-report "$root/iced-notepad-diagnostic.json" &
+              app_pid=$!
+              sleep 3.5
+              python3 comparisons/scripts/capture_linux_smaps.py \
+                --pid "$app_pid" \
+                --output "$root/iced-notepad-smaps.json"
+              wait "$app_pid"
+            '
+
       - name: Summarize Ubuntu memory
         run: |
           python3 comparisons/scripts/summarize_memory.py \
@@ -241,18 +272,20 @@ jobs:
           import json
           from pathlib import Path
 
-          report = json.loads(Path(
-              "target/ui-memory-comparison/ubuntu-24.04-x86_64/zsui-notepad-smaps.json"
-          ).read_text(encoding="utf-8"))
-          print("\n### ZSUI Linux resident mapping diagnosis\n")
-          print("| Category | RSS MiB | PSS MiB | Private MiB |")
-          print("| --- | ---: | ---: | ---: |")
-          for row in report["categories"]:
-              private = row["Private_Clean"] + row["Private_Dirty"]
-              print(
-                  f'| {row["category"]} | {row["Rss"] / 1048576:.2f} | '
-                  f'{row["Pss"] / 1048576:.2f} | {private / 1048576:.2f} |'
+          root = Path("target/ui-memory-comparison/ubuntu-24.04-x86_64")
+          for framework in ("zsui", "slint", "iced"):
+              report = json.loads(
+                  (root / f"{framework}-notepad-smaps.json").read_text(encoding="utf-8")
               )
+              print(f"\n### {framework.capitalize()} Linux resident mapping diagnosis\n")
+              print("| Category | RSS MiB | PSS MiB | Private MiB |")
+              print("| --- | ---: | ---: | ---: |")
+              for row in report["categories"]:
+                  private = row["Private_Clean"] + row["Private_Dirty"]
+                  print(
+                      f'| {row["category"]} | {row["Rss"] / 1048576:.2f} | '
+                      f'{row["Pss"] / 1048576:.2f} | {private / 1048576:.2f} |'
+                  )
           PY
 
       - name: Upload Ubuntu measurements
