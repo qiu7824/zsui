@@ -220,18 +220,6 @@ impl DesktopCapabilities {
                 ),
             )
             .with_support(
-                DesktopCapability::SystemTheme,
-                if cfg!(feature = "macos-appkit") {
-                    CapabilitySupport::partial(
-                        "effective AppKit light/dark/high-contrast appearances, semantic NSColor resolution and appearance-change repaint are connected; target live-change proof is pending",
-                    )
-                } else {
-                    CapabilitySupport::unsupported(
-                        "enable macos-appkit to compile AppKit system appearance support",
-                    )
-                },
-            )
-            .with_support(
                 DesktopCapability::NativeIcons,
                 CapabilitySupport::supported(
                     "the GDI renderer detects Segoe Fluent Icons and falls back to Segoe MDL2 Assets",
@@ -314,6 +302,18 @@ impl DesktopCapabilities {
                 },
             )
             .with_support(
+                DesktopCapability::ScaleFactor,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "NSView backing scale and resize geometry feed the shared DPI-aware layout; multi-display target proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit backing-scale support",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::ClipboardText,
                 if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
@@ -363,21 +363,27 @@ impl DesktopCapabilities {
             )
             .with_support(
                 DesktopCapability::SystemTheme,
-                if cfg!(feature = "linux-gtk") {
+                if cfg!(feature = "macos-appkit") {
                     CapabilitySupport::partial(
-                        "GTK light/dark/high-contrast theme detection, semantic theme-color lookup and settings-change repaint are connected; Wayland/X11 live-change proof is pending",
+                        "effective AppKit light/dark/high-contrast appearances, semantic NSColor resolution and appearance-change repaint are connected; target live-change proof is pending",
                     )
                 } else {
                     CapabilitySupport::unsupported(
-                        "enable linux-gtk to compile GTK system appearance support",
+                        "enable macos-appkit to compile AppKit system appearance support",
                     )
                 },
             )
             .with_support(
                 DesktopCapability::NativeIcons,
-                CapabilitySupport::partial(
-                    "SF Symbols are resolved and painted by the AppKit draw sink; target visual proof is pending",
-                ),
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "SF Symbols are resolved and painted by the AppKit draw sink; target visual proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile AppKit SF Symbols support",
+                    )
+                },
             )
     }
 
@@ -456,6 +462,18 @@ impl DesktopCapabilities {
                 },
             )
             .with_support(
+                DesktopCapability::ScaleFactor,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK scale-factor and DrawingArea allocation changes feed the shared DPI-aware layout; Wayland/X11 target proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK scale-factor support",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::ClipboardText,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
@@ -504,10 +522,28 @@ impl DesktopCapabilities {
                 },
             )
             .with_support(
+                DesktopCapability::SystemTheme,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK light/dark/high-contrast theme detection, semantic theme-color lookup and settings-change repaint are connected; Wayland/X11 live-change proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK system appearance support",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::NativeIcons,
-                CapabilitySupport::partial(
-                    "GtkIconTheme lookup and bundled Fluent SVG fallback are painted by the GTK4 draw sink; target visual proof is pending",
-                ),
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GtkIconTheme lookup and bundled Fluent SVG fallback are painted by the GTK4 draw sink; target visual proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK4 icon-theme support",
+                    )
+                },
             )
     }
 
@@ -564,6 +600,13 @@ impl DesktopCapabilities {
                 ),
             )
             .with_support(
+                DesktopCapability::ScaleFactor,
+                support(
+                    "native scale-factor events resize the presentation surface and feed the shared DPI-aware layout; Wayland/X11 target proof is pending",
+                    "enable linux-direct to compile Linux scale-factor routing",
+                ),
+            )
+            .with_support(
                 DesktopCapability::ClipboardText,
                 if compiled && cfg!(feature = "clipboard") {
                     CapabilitySupport::partial(
@@ -599,28 +642,26 @@ impl DesktopCapabilities {
             .with_support(
                 DesktopCapability::NativeIcons,
                 support(
-                    "freedesktop icon-theme lookup with bundled semantic fallback is connected; target visual proof is pending",
-                    "enable linux-direct to compile freedesktop icon-theme support",
+                    "the complete Cairo symbolic set is the default and optional linux-system-icons enables exact freedesktop lookup; target visual proof is pending",
+                    "enable linux-direct to compile Linux native icon rendering",
                 ),
             )
             .with_support(
                 DesktopCapability::NativeMenu,
-                CapabilitySupport::unsupported(
-                    "a desktop-shell native menu surface is not yet connected to the lightweight Linux host",
-                ),
+                if compiled {
+                    CapabilitySupport::supported(
+                        "the owned desktop menu bar, popup navigation, accelerators and typed command routing are connected on the direct host",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-direct to compile the owned Linux desktop menu surface",
+                    )
+                },
             )
     }
 
     pub fn current_native_backend() -> Self {
-        match PlatformName::current() {
-            PlatformName::Windows => Self::windows_win32_current(),
-            PlatformName::Macos => Self::macos_appkit_current(),
-            PlatformName::Linux if cfg!(feature = "linux-direct-host") => {
-                Self::linux_direct_current()
-            }
-            PlatformName::Linux => Self::linux_gtk_current(),
-            platform => Self::all_unsupported(platform),
-        }
+        crate::desktop_runtime::capabilities()
     }
 }
 
@@ -1164,8 +1205,44 @@ mod tests {
         );
         assert_eq!(
             linux.missing_or_incomplete().len(),
-            REQUIRED_DESKTOP_CAPABILITIES.len()
+            REQUIRED_DESKTOP_CAPABILITIES.len() - usize::from(cfg!(feature = "linux-direct-host"))
         );
+    }
+
+    #[test]
+    fn backend_theme_capabilities_do_not_cross_platforms() {
+        let windows = DesktopCapabilities::windows_win32_current();
+        let macos = DesktopCapabilities::macos_appkit_current();
+        let gtk = DesktopCapabilities::linux_gtk_current();
+
+        let windows_theme = windows.support(DesktopCapability::SystemTheme).unwrap();
+        assert!(windows_theme.detail.contains("SPI_GETHIGHCONTRAST"));
+        assert!(!windows_theme.detail.contains("AppKit"));
+        assert!(!windows_theme.detail.contains("GTK"));
+
+        let macos_theme = macos.support(DesktopCapability::SystemTheme).unwrap();
+        assert_eq!(
+            macos_theme.status,
+            if cfg!(feature = "macos-appkit") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
+        assert!(macos_theme.detail.contains("AppKit"));
+        assert!(!macos_theme.detail.contains("GTK"));
+
+        let gtk_theme = gtk.support(DesktopCapability::SystemTheme).unwrap();
+        assert_eq!(
+            gtk_theme.status,
+            if cfg!(feature = "linux-gtk") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
+        assert!(gtk_theme.detail.contains("GTK"));
+        assert!(!gtk_theme.detail.contains("AppKit"));
     }
 
     #[test]

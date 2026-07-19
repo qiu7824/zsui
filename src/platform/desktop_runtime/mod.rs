@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use crate::{
-    native::NativeViewInputRuntime, ClipboardData, FileDialogSpec, NativeDrawPlan,
-    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec,
-    WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
+    native::NativeViewInputRuntime, ClipboardData, DesktopCapabilities, FileDialogSpec,
+    NativeDrawPlan, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, SaveFileDialogSpec,
+    TraySpec, WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
 
 #[cfg_attr(all(windows, feature = "windows-win32"), path = "windows.rs")]
@@ -125,6 +125,8 @@ pub(super) trait DesktopRuntimeBackend: Default {
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport>;
 
+    fn capabilities(&self) -> DesktopCapabilities;
+
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
         Err(ZsuiError::unsupported(
             "read_clipboard",
@@ -168,6 +170,10 @@ pub(crate) fn run_event_loop(
         view_runtimes,
         shell_runtimes,
     })
+}
+
+pub(crate) fn capabilities() -> DesktopCapabilities {
+    SelectedDesktopRuntimeBackend::default().capabilities()
 }
 
 pub(crate) fn open_file_dialog(spec: &FileDialogSpec) -> Option<ZsuiResult<Option<Vec<PathBuf>>>> {
@@ -337,9 +343,16 @@ mod tests {
 
     #[test]
     fn selected_backend_has_a_stable_identity() {
-        assert!(!SelectedDesktopRuntimeBackend::default()
-            .backend_name()
-            .is_empty());
+        let backend = SelectedDesktopRuntimeBackend::default();
+        assert!(!backend.backend_name().is_empty());
+        assert_eq!(
+            backend.capabilities().platform,
+            crate::PlatformName::current()
+        );
+        assert_eq!(
+            crate::DesktopCapabilities::current_native_backend(),
+            backend.capabilities()
+        );
     }
 
     #[test]
@@ -354,6 +367,7 @@ mod tests {
         assert!(source.contains("crate::desktop_runtime::open_file_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::save_file_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::run_smoke_event_loop("));
+        assert!(desktop_services_core.contains("crate::desktop_runtime::capabilities()"));
         assert!(!source.contains("fn run_native_window_event_loop("));
         assert!(!source.contains("fn run_native_window_smoke_event_loop("));
         assert!(!source.contains("capture_win32_hwnd_png"));
@@ -377,6 +391,7 @@ mod tests {
         for forbidden in [
             "#[cfg(",
             "cfg!(target_os",
+            "PlatformName::current()",
             "windows_win32_host",
             "macos_appkit_services",
             "linux_direct::",

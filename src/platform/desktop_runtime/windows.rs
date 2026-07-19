@@ -2,7 +2,9 @@
 mod smoke;
 
 use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
-use crate::{FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiResult};
+use crate::{
+    DesktopCapabilities, FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiResult,
+};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -38,6 +40,10 @@ impl DesktopRuntimeBackend for Backend {
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
         smoke::run(request)
+    }
+
+    fn capabilities(&self) -> DesktopCapabilities {
+        DesktopCapabilities::windows_win32_current()
     }
 
     #[cfg(feature = "clipboard")]

@@ -1,5 +1,5 @@
 use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
-use crate::{NativeWindowSmokeRunReport, ZsuiError, ZsuiResult};
+use crate::{DesktopCapabilities, NativeWindowSmokeRunReport, PlatformName, ZsuiError, ZsuiResult};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -43,5 +43,9 @@ impl DesktopRuntimeBackend for Backend {
             "desktop native smoke windows are implemented for Windows, macOS and Linux; Android and Harmony need mobile runtime hosts"
         };
         Err(ZsuiError::unsupported("native_window_smoke", detail))
+    }
+
+    fn capabilities(&self) -> DesktopCapabilities {
+        DesktopCapabilities::all_unsupported(PlatformName::current())
     }
 }

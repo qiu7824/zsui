@@ -12,7 +12,10 @@ use winit::{
 mod smoke;
 
 use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
-use crate::{NativeWindowSmokeRunReport, WindowSpec, ZsuiError, ZsuiResult};
+use crate::{
+    DesktopCapabilities, NativeWindowSmokeRunReport, PlatformName, WindowSpec, ZsuiError,
+    ZsuiResult,
+};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -68,6 +71,10 @@ impl DesktopRuntimeBackend for Backend {
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
         smoke::run(request)
+    }
+
+    fn capabilities(&self) -> DesktopCapabilities {
+        DesktopCapabilities::all_unsupported(PlatformName::current())
     }
 }
 

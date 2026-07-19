@@ -3,7 +3,8 @@ use super::{
     DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
 };
 use crate::{
-    FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError, ZsuiResult,
+    DesktopCapabilities, FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError,
+    ZsuiResult,
 };
 
 #[derive(Default)]
@@ -75,6 +76,10 @@ impl DesktopRuntimeBackend for Backend {
                     "the AppKit event loop exited before the final NSView capture",
             },
         )
+    }
+
+    fn capabilities(&self) -> DesktopCapabilities {
+        DesktopCapabilities::macos_appkit_current()
     }
 
     #[cfg(feature = "clipboard")]

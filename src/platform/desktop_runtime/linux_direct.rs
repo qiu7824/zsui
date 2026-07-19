@@ -3,7 +3,8 @@ use super::{
     DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
 };
 use crate::{
-    FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError, ZsuiResult,
+    DesktopCapabilities, FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError,
+    ZsuiResult,
 };
 
 #[derive(Default)]
@@ -81,6 +82,10 @@ impl DesktopRuntimeBackend for Backend {
                     "the Linux direct event loop exited before the final surface capture",
             },
         )
+    }
+
+    fn capabilities(&self) -> DesktopCapabilities {
+        DesktopCapabilities::linux_direct_current()
     }
 
     #[cfg(feature = "clipboard")]
