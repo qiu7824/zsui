@@ -377,8 +377,8 @@ mod tests {
     }
 
     #[test]
-    fn built_in_style_defaults_use_the_shared_experience_selector() {
-        let style_sources = [
+    fn built_in_render_contracts_share_one_platform_style_type() {
+        let component_sources = [
             include_str!("../password_box.rs"),
             include_str!("../progress.rs"),
             include_str!("../render_protocol.rs"),
@@ -386,20 +386,44 @@ mod tests {
             include_str!("../widget_render.rs"),
         ]
         .join("\n");
-        let style_count = style_sources
+        let alias_count = component_sources
+            .lines()
+            .filter(|line| {
+                let line = line.trim_start();
+                line.starts_with("pub type Zs")
+                    && line.contains("PlatformStyle = crate::ZsPlatformStyle")
+            })
+            .count();
+        let duplicated_enum_count = component_sources
             .lines()
             .filter(|line| {
                 let line = line.trim_start();
                 line.starts_with("pub enum Zs") && line.contains("PlatformStyle")
             })
             .count();
-        let selector_count = style_sources
-            .matches("PlatformExperience::current_or_desktop_fallback")
-            .count();
+        let shared_style_source = include_str!("style.rs");
 
-        assert_eq!(style_count, 20, "update the centralized-style inventory");
-        assert!(selector_count >= style_count);
-        assert!(!style_sources.contains("cfg!(target_os"));
-        assert!(!style_sources.contains("cfg!(all(target_os"));
+        assert_eq!(alias_count, 20, "update the shared-style alias inventory");
+        assert_eq!(
+            duplicated_enum_count, 0,
+            "component render contracts must not declare separate platform enums"
+        );
+        assert_eq!(
+            shared_style_source
+                .matches("pub enum ZsPlatformStyle")
+                .count(),
+            1
+        );
+        assert_eq!(
+            shared_style_source
+                .matches("PlatformExperience::current_or_desktop_fallback")
+                .count(),
+            1
+        );
+        assert!(!component_sources
+            .contains("select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)"));
+        assert!(!component_sources.contains("cfg!(target_os"));
+        assert!(!component_sources.contains("cfg!(all(target_os"));
+        assert!(!shared_style_source.contains("cfg!(target_os"));
     }
 }

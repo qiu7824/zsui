@@ -144,20 +144,7 @@ impl Default for ZsProgressRingSpec {
 }
 
 #[cfg(feature = "progress-ring")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsProgressRingPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "progress-ring")]
-impl ZsProgressRingPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsProgressRingPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "progress-ring")]
 #[derive(Debug, Clone, Copy, PartialEq)]

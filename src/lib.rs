@@ -152,6 +152,8 @@ pub mod password_box;
 mod platform_experience;
 #[path = "platform/identity.rs"]
 mod platform_identity;
+#[path = "platform/style.rs"]
+mod platform_style;
 pub mod product_adapter;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
 pub mod progress;
@@ -501,6 +503,7 @@ pub use password_box::{
     ZsPasswordBoxMetrics, ZsPasswordBoxPlatformStyle, ZsPasswordBoxRenderPlan,
     ZsPasswordRevealMode,
 };
+pub use platform_style::ZsPlatformStyle;
 pub use product_adapter::{
     product_adapter_reuse_checklist, product_adapter_runtime_smoke_example_names,
     required_product_adapter_surface_names, required_product_adapter_task_names,

@@ -66,7 +66,7 @@ AppKit 字体契约由框架统一解析，不由示例调整：
 
 AppKit 后端使用 `NSFont` 系统字体而不是嵌入 SF Pro；Core Text 塑形、
 `NSString` 测量与最终绘制必须使用同一套字号和行高。标签固有高度、编辑器视觉行、
-选区、光标和命中测试同时读取 `ZsTypographyPlatformStyle::Macos`，禁止在组件或
+选区、光标和命中测试同时读取共享的 `ZsPlatformStyle::Macos` 配置，禁止在组件或
 Demo 中另写 14/20 的 Windows 字体常量。`TextWeight::Automatic` 使用平台文字
 样式的默认字重；应用显式指定的 Regular、Medium、Semibold 或 Bold 不得被平台
 解析器覆盖。

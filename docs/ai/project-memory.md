@@ -318,9 +318,11 @@ history remain authoritative for implementation status.
   `src/platform/experience.rs` consumes it for framework experience
   defaults and owns the matching backend status and adapter identity; the
   public backend inventory and launch plan derive from that registration.
-  All built-in desktop `PlatformStyle::current()` paths delegate to the same
-  experience. `src/platform/backend_profile.rs` keeps Host, Text, Raster,
-  Presenter and Services choices separate. These modules remain internal:
+  `src/platform/style.rs` owns one low-level `ZsPlatformStyle` selected by that
+  experience. Built-in component-specific `Zs*PlatformStyle` names are
+  compatibility aliases of the shared type, not separate selectors.
+  `src/platform/backend_profile.rs` keeps Host, Text, Raster, Presenter and
+  Services choices separate. The platform modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take
   a platform style, platform enum or raw native handle.
 - Production desktop event-loop, runtime-smoke, final-surface capture, scaffold

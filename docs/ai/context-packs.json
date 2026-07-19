@@ -62,6 +62,7 @@
       "optional": [
         "src/view",
         "src/native.rs",
+        "src/platform/style.rs",
         "src/component_catalog.rs",
         "examples/rust_first_view.rs",
         "examples/list_selection.rs",

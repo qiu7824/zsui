@@ -514,6 +514,12 @@ consumes that identity, maps it to Fluent, AppKit, GTK or mobile behavior and
 owns the matching backend status and adapter identity. The public backend
 inventory and launch plans are derived from that same experience registration
 instead of repeating toolkit, module-path and status tables.
+`src/platform/style.rs` owns the single low-level desktop design profile used
+by render contracts and deterministic proof. Component-specific
+`Zs*PlatformStyle` names are source-compatible aliases of that one type rather
+than independent platform selectors. Ordinary View construction never accepts
+the profile; applications continue to change semantic specs and theme tokens
+once, while `PlatformExperience` resolves the target profile.
 `src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
 Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single
@@ -533,7 +539,7 @@ platform-neutral proof report at the adapter boundary. Adding another desktop
 backend therefore adds one adapter implementation without changing application
 authoring, desktop-service dispatch or the shared host loop. Public View
 builders do not accept the internal experience or the low-level render-proof
-`PlatformStyle` enums.
+`ZsPlatformStyle`.
 
 The native-proof document is platform-neutral as well. The selected desktop
 runtime adapter supplies the proof backend identity, fallback typography and

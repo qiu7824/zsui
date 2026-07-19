@@ -40,19 +40,7 @@ pub enum TextWeight {
 /// Applications keep using [`TextRole`]. The active backend selects this
 /// profile so a semantic body, caption or title does not inherit Windows
 /// Fluent point sizes on AppKit or GTK.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsTypographyPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-impl ZsTypographyPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsTypographyPlatformStyle = crate::ZsPlatformStyle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HorizontalAlign {

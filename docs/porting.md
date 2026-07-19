@@ -230,7 +230,8 @@ Left/Right move tab-header focus without wrapping, Enter/Space selects and
 Ctrl+Tab/Ctrl+Shift+Tab selects cyclically. On AppKit, Left/Right select
 adjacent pages. On GTK4, Left/Right and Home/End move header focus, Space
 selects, and Ctrl+PageUp/Ctrl+PageDown changes the current page. Backends choose
-their internal `ZsTabPlatformStyle`; application code must not branch on the
+the shared internal `ZsPlatformStyle`; `ZsTabPlatformStyle` is only a
+source-compatible low-level alias, and application code must not branch on the
 platform.
 Treat `ZsuiThemeMode::HighContrast` as a distinct accessibility appearance,
 not as an alias for the current light/dark palette. System mode must honor an

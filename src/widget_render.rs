@@ -152,27 +152,7 @@ use crate::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
 /// Windows values mirror the WinUI theme-resource geometry used by ZSUI's
 /// self-drawn controls. AppKit and GTK values preserve their denser desktop
 /// control character instead of reusing the Windows profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsBaseControlPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-impl ZsBaseControlPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-
-    pub const fn typography(self) -> crate::ZsTypographyPlatformStyle {
-        match self {
-            Self::Windows => crate::ZsTypographyPlatformStyle::Windows,
-            Self::Macos => crate::ZsTypographyPlatformStyle::Macos,
-            Self::Gtk => crate::ZsTypographyPlatformStyle::Gtk,
-        }
-    }
-}
+pub type ZsBaseControlPlatformStyle = crate::ZsPlatformStyle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ZsBaseControlMetrics {
@@ -606,20 +586,7 @@ pub fn zs_navigation_item_native_draw_plan(
 }
 
 #[cfg(feature = "info-bar")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsInfoBarPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "info-bar")]
-impl ZsInfoBarPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsInfoBarPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "info-bar")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -996,20 +963,7 @@ pub fn zs_info_bar_native_draw_plan(
 }
 
 #[cfg(feature = "teaching-tip")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsTeachingTipPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "teaching-tip")]
-impl ZsTeachingTipPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsTeachingTipPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "teaching-tip")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1597,20 +1551,7 @@ pub fn zs_teaching_tip_native_draw_plan(
 }
 
 #[cfg(feature = "toast")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsToastPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "toast")]
-impl ZsToastPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsToastPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "toast")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1892,20 +1833,7 @@ pub fn zs_toast_native_draw_plan(
 }
 
 #[cfg(feature = "breadcrumb")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsBreadcrumbPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "breadcrumb")]
-impl ZsBreadcrumbPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsBreadcrumbPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "breadcrumb")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -2529,20 +2457,7 @@ pub fn zs_toggle_native_draw_plan(plan: &ZsToggleRenderPlan) -> NativeDrawPlan {
 }
 
 #[cfg(feature = "toggle-button")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsToggleButtonPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "toggle-button")]
-impl ZsToggleButtonPlatformStyle {
-    pub(crate) const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsToggleButtonPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "toggle-button")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -2804,20 +2719,7 @@ pub fn zs_slider_native_draw_plan(plan: &ZsSliderRenderPlan) -> NativeDrawPlan {
 }
 
 #[cfg(feature = "number-box")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsNumberBoxPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "number-box")]
-impl ZsNumberBoxPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsNumberBoxPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "number-box")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -3208,28 +3110,7 @@ pub fn zs_progress_bar_native_draw_plan(plan: &ZsProgressBarRenderPlan) -> Nativ
 }
 
 #[cfg(feature = "tabs")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsTabPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "tabs")]
-impl ZsTabPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-
-    pub const fn arrow_selects(self) -> bool {
-        matches!(self, Self::Macos)
-    }
-
-    pub const fn supports_home_end_focus(self) -> bool {
-        matches!(self, Self::Gtk)
-    }
-}
+pub type ZsTabPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "tabs")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -3681,20 +3562,7 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
 pub const ZS_AUTO_SUGGEST_MAX_VISIBLE_ITEMS: usize = 8;
 
 #[cfg(feature = "auto-suggest")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsAutoSuggestPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "auto-suggest")]
-impl ZsAutoSuggestPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsAutoSuggestPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "auto-suggest")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -4083,20 +3951,7 @@ fn inset_row_text(row: Rect, padding: i32) -> Rect {
 }
 
 #[cfg(feature = "grid-view")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsGridViewPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "grid-view")]
-impl ZsGridViewPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsGridViewPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "grid-view")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -4437,20 +4292,7 @@ pub fn zs_grid_view_native_draw_plan(
 }
 
 #[cfg(feature = "tree")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsTreePlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "tree")]
-impl ZsTreePlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsTreePlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "tree")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -4703,20 +4545,7 @@ pub fn zs_tree_view_native_draw_plan(plan: &ZsTreeViewRenderPlan) -> NativeDrawP
 }
 
 #[cfg(feature = "table")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsTablePlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "table")]
-impl ZsTablePlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsTablePlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "table")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -5791,27 +5620,7 @@ pub fn zs_date_picker_popup_native_draw_plan(
 }
 
 #[cfg(feature = "time-picker")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsTimePickerPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "time-picker")]
-impl ZsTimePickerPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-
-    pub const fn default_clock(self) -> ZsClockFormat {
-        match self {
-            Self::Windows => ZsClockFormat::TwelveHour,
-            Self::Macos | Self::Gtk => ZsClockFormat::TwentyFourHour,
-        }
-    }
-}
+pub type ZsTimePickerPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "time-picker")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -6223,20 +6032,7 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
 }
 
 #[cfg(feature = "color-picker")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsColorPickerPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "color-picker")]
-impl ZsColorPickerPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsColorPickerPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "color-picker")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -6966,20 +6762,7 @@ pub fn zs_color_picker_popup_native_draw_plan(
 pub const ZS_COMMAND_PALETTE_MAX_VISIBLE_ITEMS: usize = 8;
 
 #[cfg(feature = "command-palette")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsCommandPalettePlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "command-palette")]
-impl ZsCommandPalettePlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsCommandPalettePlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "command-palette")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -7464,20 +7247,7 @@ pub fn zs_command_palette_native_draw_plan(
 }
 
 #[cfg(feature = "dialog")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ZsContentDialogPlatformStyle {
-    Windows,
-    Macos,
-    Gtk,
-}
-
-#[cfg(feature = "dialog")]
-impl ZsContentDialogPlatformStyle {
-    pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
-    }
-}
+pub type ZsContentDialogPlatformStyle = crate::ZsPlatformStyle;
 
 #[cfg(feature = "dialog")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

@@ -43,6 +43,9 @@ composition and interaction conventions:
   types, and `NativeUiPlatform::current_target` selects the build target;
   backend inventory and launch metadata are derived from the experience
   registration rather than maintained as parallel platform tables.
+- Low-level render and proof APIs share one `ZsPlatformStyle` profile selected
+  by `PlatformExperience`. Existing component-specific style names remain
+  compatibility aliases, not separate selectors or application-level choices.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.
