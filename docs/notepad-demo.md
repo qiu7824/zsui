@@ -176,9 +176,24 @@ status, native menus, shared editing commands, runtime word-wrap coverage and
 visual-row/page navigation, two-axis editor caret reveal, edge-drag scrolling,
 extended-grapheme acceptance and native close-request interception.
 
-Runtime, package-count and binary-size data must be regenerated after this
-rewrite; earlier Windows-only measurements are not presented as current data.
-The comparison script now counts the single shared source file:
+The fixed Ubuntu 24.04 X11 comparison renders the same 900 x 620 bilingual
+first-frame-idle Notepad scenario five times. Run `29677560838` recorded:
+
+| Renderer | Median RSS MiB | Private MiB | PSS MiB | Binary MiB |
+| --- | ---: | ---: | ---: | ---: |
+| ZSUI pure Rust | 15.77 | 10.74 | 12.09 | 5.14 |
+| ZSUI Cairo/Pango | 25.32 | 15.15 | 18.18 | 3.14 |
+| Slint software | 22.89 | 17.32 | 18.77 | 14.96 |
+| Iced tiny-skia | 16.71 | 11.51 | 12.90 | 6.13 |
+
+The pure-Rust renderer therefore reduced median RSS by 9.55 MiB (37.7%)
+against the established ZSUI Linux renderer in that fixed workload. These are
+target observations, not constants for every distribution, font set or display
+server. Native UI Proof run `29677560805` separately launched its real X11
+window, captured the final Softbuffer surface and reported Ubuntu Sans 11,
+zero runtime errors and zero unhandled commands.
+
+The comparison script counts the single shared source file:
 
 ```powershell
 .\scripts\measure-notepad-comparison.ps1

@@ -89,8 +89,9 @@ ZSUI 不是浏览器壳，也不是对 WinUI 3 的运行时封装。它的目标
 - 平台差异通过 capability/host trait 表达，不制造虚假的完全统一
 
 Windows 是当前最完整的真实运行路径，包含 Win32 原生窗口、缓冲无闪屏绘制、
-GDI+ 抗锯齿圆角、DPI、语义图标、输入路由和应用外壳。macOS/Linux 当前是
-第一阶段桌面运行路径；Android/Harmony 仍处于宿主与设备验证建设阶段。
+GDI+ 抗锯齿圆角、DPI、语义图标、输入路由和应用外壳。macOS/Linux 已进入
+真实窗口、最终表面截图和结构报告的持续 CI 验收阶段；Android/Harmony 仍处于
+宿主与设备验证建设阶段。
 
 ## 平台原生图标
 
@@ -365,7 +366,9 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 `password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
 开启；原生文本无障碍桥接也只在显式开启 `accessibility` 时进入编译，Win32 使用
 UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，`linux-gtk`
-兼容后端使用 GTK4 Accessibility；轻量 `linux-direct` 的 AT-SPI 桥接仍是明确缺口。
+兼容后端使用 GTK4 Accessibility；默认 `linux-direct` 通过 AccessKit 投影到 AT-SPI，
+并由真实 Weston Wayland Runner 验证菜单与辅助功能事件。`linux-direct-lite` 复用同一
+宿主桥接，但仍需独立补齐 Wayland/AT-SPI 运行证据。
 这些路径均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择
 时才会打包全部能力。
 
@@ -401,9 +404,9 @@ cargo run --example desktop_native_showcase --features full
 
 同一个 `State`、`Msg`、`view` 和 `update` 包含左侧导航、命令栏、单行/多行
 输入、列表滚动、主题开关与原生菜单声明。统一入口现在分别进入 Win32、
-`NSApplication` 和 Linux Wayland/X11 原生窗口事件循环。Windows 已有真实 smoke 截图；
-AppKit 与 Linux 仍需按 [v0.2 原生 UI 应用闭环](docs/v0.2-desktop-native.md)
-完成绘制、输入、截图和目标机交互证据。
+`NSApplication` 和 Linux Wayland/X11 原生窗口事件循环。固定 CI 已真实启动 AppKit、
+X11 与 Weston Wayland 窗口，导出最终平台表面截图和结构化运行报告；发布前的真实
+输入法候选窗与人工辅助功能体验仍是单独验收门槛。
 
 应用层使用 `section`、`navigation_view(ZsNavigationViewSpec)`、
 `command_bar(ZsCommandBarSpec)` 和 `toolbar_button` 声明语义界面，不传平台枚举。
@@ -464,6 +467,12 @@ cargo run --release --example invoice_workbench
 cargo run --example zsui_notepad --no-default-features --features notepad-demo
 ```
 
+Linux 还可以从同一份应用源码选择不链接 Cairo/Pango 的纯 Rust 渲染配置：
+
+```powershell
+cargo run --example zsui_notepad_lite --no-default-features --features notepad-demo-lite
+```
+
 它用同一份 Rust `State / Msg / view / update` 代码运行在 Win32、AppKit 和 Linux
 原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，并把三平台标题栏关闭
 统一路由到强类型未保存确认。长文档视觉行/页导航、滚轮、边缘拖拽滚动、裁剪视口及
@@ -473,6 +482,12 @@ cargo run --example zsui_notepad --no-default-features --features notepad-demo
 [验收与测量说明](docs/notepad-demo.md)记录了能力边界、代码量和验证方法。
 仓库 CI 还会检查根包依赖图和 Rust 源码入口，阻止 WebView2、WKWebView、
 WebKitGTK、Wry、Tauri 等浏览器壳能力进入 ZSUI；`comparisons/` 中隔离的基准不属于框架。
+
+Ubuntu 24.04 固定双语场景的 5 次首帧空闲采样中，纯 Rust 配置的中位 RSS 为
+15.77 MiB、私有 RSS 为 10.74 MiB、PSS 为 12.09 MiB，可执行文件为 5.14 MiB；
+默认 Cairo/Pango 配置分别为 25.32、15.15、18.18 和 3.14 MiB。该结果来自
+[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)，
+不代表所有发行版、字体集或显示服务器上的固定值。
 
 ### 现代计算器
 
@@ -491,8 +506,8 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 | 平台 | 当前状态 | 说明 |
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
-| macOS | 原生宿主首轮 | 统一入口进入 NSApplication/NSWindow；绘制、输入、截图和目标机证据仍待完成 |
-| Linux | 轻量原生宿主首轮 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口，直接呈现自绘表面并使用 Cairo/Pango、内置 symbolic 矢量图标、原生 IME 事件和 XDG portal；精确 freedesktop 主题图标由 `linux-system-icons` 可选启用；GTK4 保留为可选兼容后端 |
+| macOS | 原生运行与 CI 证据 | 统一入口进入 NSApplication/NSWindow；AppKit 最终 NSView 截图、输入和布局报告已由 macos-15 Runner 验证 |
+| Linux | 原生运行与 CI 证据 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口并使用 Cairo/Pango；可选 `linux-direct-lite` 使用 cosmic-text/swash 与 tiny-skia 降低常驻内存；X11 最终表面及 Wayland/AT-SPI/菜单已有目标机证据 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 | Harmony | 宿主契约 | Ability/FFI 与真实设备运行仍待完成 |
 

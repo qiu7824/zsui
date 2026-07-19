@@ -59,8 +59,9 @@ AT-SPI bus.
 IME, menu, portal and AccessKit host. It replaces Cairo/Pango with tiny-skia
 and cosmic-text/swash, draws directly into the Softbuffer frame, and keeps the
 application source unchanged. The default remains `linux-direct`; the pure-Rust
-profile is experimental until its target proof covers CJK, bidirectional text,
-IME, accessibility and both Wayland/X11 at the same level as the default.
+profile has X11 final-surface proof for the shared CJK/bidirectional Notepad
+scene, but remains experimental until its target proof also covers Wayland,
+AT-SPI and real IME behavior at the same level as the default.
 
 The AppKit and Linux backend features provide target-native desktop service
 slices through safe Rust contracts. AppKit maps `WindowSpec` to an owned

@@ -195,6 +195,19 @@ history remain authoritative for implementation status.
   mappings; its private RSS and PSS were lower than Slint in that fixed run.
   Do not replace the native Cairo/Pango typography path or remove Ubuntu Sans
   and CJK fallback merely to optimize aggregate RSS.
+- Linux memory comparison run `29677560838` on commit `d4b5de6` measured the
+  optional pure-Rust `linux-direct-lite` X11 Notepad over five bilingual runs at
+  15.77 MiB median RSS, 10.74 MiB private RSS and 12.09 MiB PSS, with a 5.14 MiB
+  binary. The same run measured default ZSUI at 25.32/15.15/18.18 MiB, Slint at
+  22.89/17.32/18.77 MiB and Iced at 16.71/11.51/12.90 MiB respectively. Lite
+  reduced default ZSUI median RSS by 9.55 MiB (37.7%) while retaining Ubuntu
+  Sans 11 plus CJK fallback. Native UI Proof run `29677560805` launched its
+  real X11 window, captured the final cosmic-text/tiny-skia/Softbuffer surface,
+  and reported no runtime errors or unhandled commands. The same proof run also
+  passed AppKit, default X11 and default Weston Wayland/AT-SPI/menu jobs; it is
+  not evidence that the lite renderer itself has passed Wayland or AT-SPI.
+  CI run `29677560820` passed core, full Windows, AppKit/Linux target checks and
+  the locked feature matrix for the same commit.
 - Native proof JSON uses the framework-owned `NativeProofDocument` envelope.
   Acceptance applications supply scenario metadata and typed message names;
   the framework projects backend identity, runner metadata, logical/pixel
