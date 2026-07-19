@@ -1,5 +1,8 @@
-use super::{DesktopRuntimeBackend, DesktopRuntimeRequest};
-use crate::{FileDialogSpec, SaveFileDialogSpec, ZsuiResult};
+#[path = "windows_smoke.rs"]
+mod smoke;
+
+use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
+use crate::{FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiResult};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -28,6 +31,13 @@ impl DesktopRuntimeBackend for Backend {
             &shell_routes,
             &request.trays,
         )
+    }
+
+    fn run_smoke_event_loop(
+        self,
+        request: DesktopSmokeRequest,
+    ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        smoke::run(request)
     }
 
     fn open_file_dialog(

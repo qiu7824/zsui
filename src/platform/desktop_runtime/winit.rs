@@ -8,8 +8,11 @@ use winit::{
     window::{Window as WinitWindow, WindowAttributes, WindowId as WinitWindowId, WindowLevel},
 };
 
-use super::{DesktopRuntimeBackend, DesktopRuntimeRequest};
-use crate::{WindowSpec, ZsuiError, ZsuiResult};
+#[path = "winit_smoke.rs"]
+mod smoke;
+
+use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
+use crate::{NativeWindowSmokeRunReport, WindowSpec, ZsuiError, ZsuiResult};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -58,6 +61,13 @@ impl DesktopRuntimeBackend for Backend {
         } else {
             Ok(())
         }
+    }
+
+    fn run_smoke_event_loop(
+        self,
+        request: DesktopSmokeRequest,
+    ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        smoke::run(request)
     }
 }
 

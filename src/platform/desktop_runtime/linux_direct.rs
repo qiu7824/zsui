@@ -1,5 +1,10 @@
-use super::{DesktopRuntimeBackend, DesktopRuntimeRequest};
-use crate::{FileDialogSpec, SaveFileDialogSpec, ZsuiError, ZsuiResult};
+use super::{
+    complete_native_smoke, DesktopNativeSmokeMetadata, DesktopNativeSmokeOutcome,
+    DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
+};
+use crate::{
+    FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError, ZsuiResult,
+};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -27,6 +32,55 @@ impl DesktopRuntimeBackend for Backend {
             &[],
         )
         .map(|_| ())
+    }
+
+    fn run_smoke_event_loop(
+        self,
+        request: DesktopSmokeRequest,
+    ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        if request.windows.is_empty() {
+            return Ok(NativeWindowSmokeRunReport::empty(request.options));
+        }
+        let run = crate::linux_direct::run_linux_direct_native_window_event_loop(
+            &request.windows,
+            &request.draw_plans,
+            std::slice::from_ref(&request.view_runtime),
+            Some(request.options.auto_close_after_ms),
+            request
+                .options
+                .screenshot_file
+                .as_deref()
+                .map(std::path::Path::new),
+            &request.options.native_view_inputs,
+        )?;
+        complete_native_smoke(
+            request,
+            DesktopNativeSmokeOutcome {
+                created_window_count: run.created_window_count,
+                proof_input_reports: run.proof_input_reports,
+                native_view_capture: run.native_view_capture,
+                menu_command_routed: run.menu_command_routed,
+                menu_surface_created: run.menu_surface_created,
+                menu_surface_height: run.menu_surface_height,
+                menu_surface_open_at_capture: run.menu_surface_open_at_capture,
+                process_memory: run.process_memory,
+                accessibility_backend: run
+                    .accessibility_bridge_created
+                    .then_some("accesskit_atspi"),
+                accessibility_node_count: run.accessibility_node_count,
+                accessibility_action_count: run.accessibility_action_count,
+            },
+            DesktopNativeSmokeMetadata {
+                proof_backend: "linux_direct",
+                screenshot_backend: if cfg!(feature = "linux-direct") {
+                    "winit_softbuffer_cairo_pango"
+                } else {
+                    "winit_softbuffer_cosmic_text_tiny_skia"
+                },
+                missing_capture_error:
+                    "the Linux direct event loop exited before the final surface capture",
+            },
+        )
     }
 
     fn open_file_dialog(

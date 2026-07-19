@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use crate::{
-    native::NativeViewInputRuntime, FileDialogSpec, NativeDrawPlan, SaveFileDialogSpec, TraySpec,
-    WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
+    native::NativeViewInputRuntime, FileDialogSpec, NativeDrawPlan, NativeWindowSmokeRunOptions,
+    NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec, WindowSpec, ZsShellRuntime,
+    ZsuiError, ZsuiResult,
 };
 
 #[cfg_attr(all(windows, feature = "windows-win32"), path = "windows.rs")]
@@ -83,11 +84,46 @@ pub(super) struct DesktopRuntimeRequest {
     pub(super) shell_runtimes: Vec<Option<ZsShellRuntime>>,
 }
 
+pub(super) struct DesktopSmokeRequest {
+    pub(super) windows: Vec<WindowSpec>,
+    pub(super) draw_plans: Vec<Option<NativeDrawPlan>>,
+    pub(super) view_runtime: NativeViewInputRuntime,
+    pub(super) shell_runtime: Option<ZsShellRuntime>,
+    pub(super) options: NativeWindowSmokeRunOptions,
+}
+
+#[allow(dead_code)]
+pub(super) struct DesktopNativeSmokeOutcome {
+    pub(super) created_window_count: usize,
+    pub(super) proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    pub(super) native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub(super) menu_command_routed: bool,
+    pub(super) menu_surface_created: bool,
+    pub(super) menu_surface_height: u32,
+    pub(super) menu_surface_open_at_capture: bool,
+    pub(super) process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
+    pub(super) accessibility_backend: Option<&'static str>,
+    pub(super) accessibility_node_count: usize,
+    pub(super) accessibility_action_count: usize,
+}
+
+#[allow(dead_code)]
+pub(super) struct DesktopNativeSmokeMetadata {
+    pub(super) proof_backend: &'static str,
+    pub(super) screenshot_backend: &'static str,
+    pub(super) missing_capture_error: &'static str,
+}
+
 pub(super) trait DesktopRuntimeBackend: Default {
     #[cfg(test)]
     fn backend_name(&self) -> &'static str;
 
     fn run_event_loop(self, request: DesktopRuntimeRequest) -> ZsuiResult<()>;
+
+    fn run_smoke_event_loop(
+        self,
+        request: DesktopSmokeRequest,
+    ) -> ZsuiResult<NativeWindowSmokeRunReport>;
 
     fn open_file_dialog(
         &mut self,
@@ -124,6 +160,142 @@ pub(crate) fn open_file_dialog(spec: &FileDialogSpec) -> Option<ZsuiResult<Optio
     SelectedDesktopRuntimeBackend::default().open_file_dialog(spec)
 }
 
+pub(crate) fn run_smoke_event_loop(
+    windows: Vec<WindowSpec>,
+    draw_plans: Vec<Option<NativeDrawPlan>>,
+    view_runtime: NativeViewInputRuntime,
+    shell_runtime: Option<ZsShellRuntime>,
+    options: NativeWindowSmokeRunOptions,
+) -> ZsuiResult<NativeWindowSmokeRunReport> {
+    SelectedDesktopRuntimeBackend::default().run_smoke_event_loop(DesktopSmokeRequest {
+        windows,
+        draw_plans,
+        view_runtime,
+        shell_runtime,
+        options,
+    })
+}
+
+#[allow(dead_code)]
+pub(super) fn complete_native_smoke(
+    request: DesktopSmokeRequest,
+    outcome: DesktopNativeSmokeOutcome,
+    metadata: DesktopNativeSmokeMetadata,
+) -> ZsuiResult<NativeWindowSmokeRunReport> {
+    let DesktopSmokeRequest {
+        windows,
+        draw_plans,
+        view_runtime,
+        shell_runtime,
+        options,
+    } = request;
+    let _backend_owned_state = (view_runtime, shell_runtime);
+    let mut report = NativeWindowSmokeRunReport {
+        requested_window_count: windows.len(),
+        window_menu_requested_count: windows
+            .iter()
+            .filter(|window| window.menu.is_some())
+            .count(),
+        window_menu_native_command_count: windows
+            .iter()
+            .filter_map(|window| window.menu.as_ref())
+            .map(crate::native::menu_command_count)
+            .sum(),
+        auto_close_after_ms: options.auto_close_after_ms,
+        ..NativeWindowSmokeRunReport::empty(options.clone())
+    };
+    crate::native::record_draw_plan_smoke(&mut report, &draw_plans);
+    report.created_window_count = outcome.created_window_count;
+    report.window_menu_attached_count = report
+        .window_menu_requested_count
+        .min(outcome.created_window_count);
+    report.close_requested_count = outcome.created_window_count;
+    report.exited_by_auto_close = true;
+    report.events.extend(
+        windows
+            .iter()
+            .take(outcome.created_window_count)
+            .map(|spec| format!("window_created:{}", spec.title)),
+    );
+    report.events.push("auto_close_elapsed".to_string());
+    crate::native::record_native_view_input_reports(
+        &mut report,
+        &options.native_view_inputs,
+        &outcome.proof_input_reports,
+        metadata.proof_backend,
+    );
+    report.window_menu_command_routed = outcome.menu_command_routed;
+    report.window_menu_surface_created = outcome.menu_surface_created;
+    report.window_menu_surface_height = outcome.menu_surface_height;
+    report.window_menu_surface_open_at_capture = outcome.menu_surface_open_at_capture;
+    report.process_memory_during_runtime = outcome.process_memory;
+    report.native_accessibility_backend = outcome.accessibility_backend;
+    report.native_accessibility_node_count = outcome.accessibility_node_count;
+    report.native_accessibility_action_count = outcome.accessibility_action_count;
+    if let Some(backend) = outcome.accessibility_backend {
+        report.events.push(format!(
+            "native_accessibility_bridge:{backend}:nodes={}",
+            outcome.accessibility_node_count
+        ));
+    }
+    if outcome.menu_command_routed {
+        report.events.push("window_menu_command_routed".to_string());
+    }
+    match outcome.native_view_capture {
+        Some(Ok(capture)) => {
+            report.screenshot_captured = true;
+            report.native_view_capture = Some(capture);
+            if let Some(path) = &report.screenshot_file {
+                report.events.push(format!("screenshot_captured:{path}"));
+            }
+            report.events.push(format!(
+                "screenshot_backend:{}",
+                metadata.screenshot_backend
+            ));
+        }
+        Some(Err(error)) => {
+            report.screenshot_error = Some(error);
+            report.events.push("screenshot_error".to_string());
+        }
+        None if options.screenshot_file.is_some() => {
+            report.screenshot_error = Some(metadata.missing_capture_error.to_string());
+            report.events.push("screenshot_error".to_string());
+        }
+        None => {}
+    }
+    if options.status_item.is_some() {
+        report.status_item_error = Some(
+            "status-item smoke is not connected to the selected native event loop".to_string(),
+        );
+        report.events.push("status_item_unsupported".to_string());
+    }
+    if options.require_visible_window && !report.visible_window_was_created() {
+        return Err(ZsuiError::host(
+            "native_window_smoke",
+            "no visible native window was created",
+        ));
+    }
+    if options.require_screenshot && !report.screenshot_captured {
+        return Err(ZsuiError::host(
+            "native_window_smoke_screenshot",
+            report
+                .screenshot_error
+                .clone()
+                .unwrap_or_else(|| "window screenshot was not captured".to_string()),
+        ));
+    }
+    if options.require_status_item {
+        return Err(ZsuiError::unsupported(
+            "native_window_smoke_status_item",
+            report
+                .status_item_error
+                .clone()
+                .unwrap_or_else(|| "status item was not created".to_string()),
+        ));
+    }
+    Ok(report)
+}
+
 pub(crate) fn save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
     SelectedDesktopRuntimeBackend::default().save_file_dialog(spec)
 }
@@ -146,7 +318,15 @@ mod tests {
         assert!(source.contains("crate::desktop_runtime::run_event_loop("));
         assert!(source.contains("crate::desktop_runtime::open_file_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::save_file_dialog(spec)"));
+        assert!(source.contains("crate::desktop_runtime::run_smoke_event_loop("));
         assert!(!source.contains("fn run_native_window_event_loop("));
+        assert!(!source.contains("fn run_native_window_smoke_event_loop("));
+        assert!(!source.contains("capture_win32_hwnd_png"));
+        assert!(!source.contains("post_windows_native_view_input"));
+        assert!(!source.contains("WindowsWin32MessageLoop"));
+        assert!(!source.contains("run_macos_appkit_native_window_event_loop"));
+        assert!(!source.contains("run_linux_direct_native_window_event_loop"));
+        assert!(!source.contains("run_linux_gtk_native_window_event_loop"));
         assert!(!source.contains("windows_win32_open_file_dialog"));
         assert!(!source.contains("macos_appkit_open_file_dialog"));
         assert!(!source.contains("linux_direct_open_file_dialog"));

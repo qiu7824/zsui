@@ -1,5 +1,10 @@
-use super::{DesktopRuntimeBackend, DesktopRuntimeRequest};
-use crate::{FileDialogSpec, SaveFileDialogSpec, ZsuiError, ZsuiResult};
+use super::{
+    complete_native_smoke, DesktopNativeSmokeMetadata, DesktopNativeSmokeOutcome,
+    DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
+};
+use crate::{
+    FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError, ZsuiResult,
+};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -27,6 +32,49 @@ impl DesktopRuntimeBackend for Backend {
             &[],
         )
         .map(|_| ())
+    }
+
+    fn run_smoke_event_loop(
+        self,
+        request: DesktopSmokeRequest,
+    ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        if request.windows.is_empty() {
+            return Ok(NativeWindowSmokeRunReport::empty(request.options));
+        }
+        let run = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
+            &request.windows,
+            &request.draw_plans,
+            std::slice::from_ref(&request.view_runtime),
+            Some(request.options.auto_close_after_ms),
+            request
+                .options
+                .screenshot_file
+                .as_deref()
+                .map(std::path::Path::new),
+            &request.options.native_view_inputs,
+        )?;
+        complete_native_smoke(
+            request,
+            DesktopNativeSmokeOutcome {
+                created_window_count: run.created_window_count,
+                proof_input_reports: run.proof_input_reports,
+                native_view_capture: run.native_view_capture,
+                menu_command_routed: run.menu_command_routed,
+                menu_surface_created: false,
+                menu_surface_height: 0,
+                menu_surface_open_at_capture: false,
+                process_memory: None,
+                accessibility_backend: None,
+                accessibility_node_count: 0,
+                accessibility_action_count: 0,
+            },
+            DesktopNativeSmokeMetadata {
+                proof_backend: "appkit",
+                screenshot_backend: "appkit_nsview_bitmap_cache",
+                missing_capture_error:
+                    "the AppKit event loop exited before the final NSView capture",
+            },
+        )
     }
 
     fn open_file_dialog(
