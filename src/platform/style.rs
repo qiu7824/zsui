@@ -20,8 +20,13 @@ pub enum ZsPlatformStyle {
 impl ZsPlatformStyle {
     /// Resolves the design profile registered for the current build target.
     pub const fn current() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
+        match crate::platform_experience::PlatformExperience::current() {
+            Some(experience) => match experience.shared_component_style() {
+                Some(style) => style,
+                None => Self::Windows,
+            },
+            None => Self::Windows,
+        }
     }
 
     pub const fn typography(self) -> Self {
@@ -41,6 +46,14 @@ impl ZsPlatformStyle {
         match self {
             Self::Windows => crate::ZsClockFormat::TwelveHour,
             Self::Macos | Self::Gtk => crate::ZsClockFormat::TwentyFourHour,
+        }
+    }
+
+    #[cfg(feature = "password-box")]
+    pub const fn default_password_reveal_mode(self) -> crate::ZsPasswordRevealMode {
+        match self {
+            Self::Windows => crate::ZsPasswordRevealMode::Peek,
+            Self::Macos | Self::Gtk => crate::ZsPasswordRevealMode::Hidden,
         }
     }
 }
@@ -77,6 +90,23 @@ mod tests {
         assert_eq!(
             ZsPlatformStyle::Gtk.default_clock(),
             crate::ZsClockFormat::TwentyFourHour
+        );
+    }
+
+    #[cfg(feature = "password-box")]
+    #[test]
+    fn shared_profile_preserves_password_reveal_defaults() {
+        assert_eq!(
+            ZsPlatformStyle::Windows.default_password_reveal_mode(),
+            crate::ZsPasswordRevealMode::Peek
+        );
+        assert_eq!(
+            ZsPlatformStyle::Macos.default_password_reveal_mode(),
+            crate::ZsPasswordRevealMode::Hidden
+        );
+        assert_eq!(
+            ZsPlatformStyle::Gtk.default_password_reveal_mode(),
+            crate::ZsPasswordRevealMode::Hidden
         );
     }
 }

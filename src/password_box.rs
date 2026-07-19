@@ -76,8 +76,7 @@ pub enum ZsPasswordRevealMode {
 
 impl ZsPasswordRevealMode {
     pub const fn platform_default() -> Self {
-        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
-            .select_desktop(Self::Peek, Self::Hidden, Self::Hidden, Self::Hidden)
+        crate::ZsPlatformStyle::current().default_password_reveal_mode()
     }
 }
 

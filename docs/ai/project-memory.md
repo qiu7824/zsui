@@ -321,8 +321,11 @@ history remain authoritative for implementation status.
   defaults and owns the matching backend status and adapter identity; the
   public backend inventory and launch plan derive from that registration.
   `src/platform/style.rs` owns one low-level `ZsPlatformStyle` selected by that
-  experience. Built-in component-specific `Zs*PlatformStyle` names are
-  compatibility aliases of the shared type, not separate selectors.
+  experience. `PlatformExperience::shared_component_style` is the sole
+  platform-experience to component-profile mapper; component modules consume
+  `ZsPlatformStyle` defaults and do not call `PlatformExperience` themselves.
+  Built-in component-specific `Zs*PlatformStyle` names are compatibility
+  aliases of the shared type, not separate selectors.
   `src/platform/backend_profile.rs` keeps Host, Text, Raster, Presenter and
   Services choices separate. The platform modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take

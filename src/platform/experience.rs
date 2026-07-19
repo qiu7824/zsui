@@ -1,6 +1,7 @@
 use crate::{
     backend_profile::BackendProfile,
     platform_identity::{NativeUiBackendDescriptor, NativeUiBackendStatus, NativeUiPlatform},
+    platform_style::ZsPlatformStyle,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,13 +81,6 @@ impl PlatformExperience {
         Some(Self::for_platform(platform))
     }
 
-    pub(crate) const fn current_or_desktop_fallback() -> Self {
-        match Self::current() {
-            Some(experience) => experience,
-            None => Self::for_platform(NativeUiPlatform::Windows),
-        }
-    }
-
     pub(crate) const fn platform(self) -> NativeUiPlatform {
         self.platform
     }
@@ -112,18 +106,17 @@ impl PlatformExperience {
         )
     }
 
-    pub(crate) const fn select_desktop<T: Copy>(
-        self,
-        windows: T,
-        macos: T,
-        linux: T,
-        fallback: T,
-    ) -> T {
+    /// Maps a registered platform experience to the shared component profile.
+    ///
+    /// Desktop backends may reuse one of these profiles without adding target
+    /// branches to component modules. Mobile registrations deliberately return
+    /// `None` until their own component profiles and runtime hosts exist.
+    pub(crate) const fn shared_component_style(self) -> Option<ZsPlatformStyle> {
         match self.design_language {
-            PlatformDesignLanguage::Fluent => windows,
-            PlatformDesignLanguage::AppKit => macos,
-            PlatformDesignLanguage::Gtk => linux,
-            PlatformDesignLanguage::Material | PlatformDesignLanguage::Harmony => fallback,
+            PlatformDesignLanguage::Fluent => Some(ZsPlatformStyle::Windows),
+            PlatformDesignLanguage::AppKit => Some(ZsPlatformStyle::Macos),
+            PlatformDesignLanguage::Gtk => Some(ZsPlatformStyle::Gtk),
+            PlatformDesignLanguage::Material | PlatformDesignLanguage::Harmony => None,
         }
     }
 }
@@ -236,26 +229,26 @@ mod tests {
     }
 
     #[test]
-    fn desktop_style_selection_is_semantic_and_mobile_fallback_is_explicit() {
+    fn shared_component_style_is_registered_once_and_mobile_remains_explicit() {
         assert_eq!(
-            PlatformExperience::for_platform(NativeUiPlatform::Windows)
-                .select_desktop("fluent", "appkit", "gtk", "fallback"),
-            "fluent"
+            PlatformExperience::for_platform(NativeUiPlatform::Windows).shared_component_style(),
+            Some(ZsPlatformStyle::Windows)
         );
         assert_eq!(
-            PlatformExperience::for_platform(NativeUiPlatform::Macos)
-                .select_desktop("fluent", "appkit", "gtk", "fallback"),
-            "appkit"
+            PlatformExperience::for_platform(NativeUiPlatform::Macos).shared_component_style(),
+            Some(ZsPlatformStyle::Macos)
         );
         assert_eq!(
-            PlatformExperience::for_platform(NativeUiPlatform::Linux)
-                .select_desktop("fluent", "appkit", "gtk", "fallback"),
-            "gtk"
+            PlatformExperience::for_platform(NativeUiPlatform::Linux).shared_component_style(),
+            Some(ZsPlatformStyle::Gtk)
         );
         assert_eq!(
-            PlatformExperience::for_platform(NativeUiPlatform::Android)
-                .select_desktop("fluent", "appkit", "gtk", "fallback"),
-            "fallback"
+            PlatformExperience::for_platform(NativeUiPlatform::Android).shared_component_style(),
+            None
+        );
+        assert_eq!(
+            PlatformExperience::for_platform(NativeUiPlatform::Harmony).shared_component_style(),
+            None
         );
     }
 
@@ -454,14 +447,31 @@ mod tests {
         );
         assert_eq!(
             shared_style_source
-                .matches("PlatformExperience::current_or_desktop_fallback")
+                .matches("PlatformExperience::current()")
                 .count(),
             1
         );
-        assert!(!component_sources
-            .contains("select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)"));
+        assert_eq!(
+            shared_style_source
+                .matches("shared_component_style()")
+                .count(),
+            1
+        );
+        assert!(!component_sources.contains("PlatformExperience::"));
         assert!(!component_sources.contains("cfg!(target_os"));
         assert!(!component_sources.contains("cfg!(all(target_os"));
         assert!(!shared_style_source.contains("cfg!(target_os"));
+
+        let experience_source = include_str!("experience.rs");
+        let experience_core = experience_source
+            .split_once("#[cfg(test)]")
+            .map_or(experience_source, |(core, _)| core);
+        assert_eq!(
+            experience_core
+                .matches("pub(crate) const fn shared_component_style")
+                .count(),
+            1
+        );
+        assert!(!experience_core.contains("select_desktop<"));
     }
 }

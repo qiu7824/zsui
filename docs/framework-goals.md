@@ -46,6 +46,9 @@ composition and interaction conventions:
 - Low-level render and proof APIs share one `ZsPlatformStyle` profile selected
   by `PlatformExperience`. Existing component-specific style names remain
   compatibility aliases, not separate selectors or application-level choices.
+  `PlatformExperience::shared_component_style` is the only target-experience
+  to component-profile mapping; component modules consume the resolved shared
+  profile and never select a target experience themselves.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.
