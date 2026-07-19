@@ -661,7 +661,7 @@ impl DesktopCapabilities {
     }
 
     pub fn current_native_backend() -> Self {
-        crate::desktop_runtime::capabilities()
+        crate::desktop_runtime::desktop_capabilities()
     }
 }
 

@@ -159,25 +159,11 @@ impl HostCapabilities {
     }
 
     pub fn current_platform_scaffold() -> Self {
-        match PlatformName::current() {
-            PlatformName::Windows => Self::windows_scaffold(),
-            PlatformName::Macos => Self::macos_scaffold(),
-            PlatformName::Linux => Self::linux_scaffold(),
-            PlatformName::Android => Self::android_scaffold(),
-            PlatformName::Harmony => Self::harmony_scaffold(),
-            other => Self::all_unsupported(other),
-        }
+        crate::desktop_runtime::scaffold_capabilities()
     }
 
     pub fn current_native_window_host() -> Self {
-        match PlatformName::current() {
-            PlatformName::Windows => Self::windows_native_window_host(),
-            PlatformName::Macos => Self::macos_native_window_host(),
-            PlatformName::Linux => Self::linux_native_window_host(),
-            PlatformName::Android => Self::android_native_window_host(),
-            PlatformName::Harmony => Self::harmony_native_window_host(),
-            other => Self::all_unsupported(other),
-        }
+        crate::desktop_runtime::native_host_capabilities()
     }
 
     pub fn degraded_capabilities(&self) -> Vec<(&'static str, &CapabilitySupport)> {
@@ -420,6 +406,12 @@ impl HostCapabilities {
             capabilities.window_decorations = CapabilitySupport::partial(
                 "server/client compositor decorations and undecorated declarations are connected; target proof is pending",
             );
+            capabilities.window_always_on_top = CapabilitySupport::partial(
+                "native window-level declarations are connected; Wayland/X11 compositor proof is pending",
+            );
+            capabilities.window_transparency = CapabilitySupport::partial(
+                "transparent surface declarations are connected; Wayland/X11 compositor proof is pending",
+            );
         } else if cfg!(feature = "linux-gtk") {
             capabilities.windows = CapabilitySupport::partial(
                 "GtkApplication/ApplicationWindow lifecycle, draw-plan rendering, typed input, semantic focus rings and allocation relayout are connected; target proof is pending",
@@ -447,7 +439,11 @@ impl HostCapabilities {
                 "enable linux-direct plus clipboard, or linux-gtk, to compile a Linux clipboard service",
             )
         };
-        capabilities.menus = if cfg!(all(
+        capabilities.menus = if cfg!(feature = "linux-direct-host") {
+            CapabilitySupport::supported(
+                "the owned desktop menu bar, popup navigation, accelerators and typed command routing are connected on the direct host",
+            )
+        } else if cfg!(all(
             feature = "linux-gtk",
             not(feature = "linux-direct-host")
         )) {
@@ -456,7 +452,7 @@ impl HostCapabilities {
             )
         } else {
             CapabilitySupport::unsupported(
-                "the lightweight Linux host does not yet connect a desktop-shell native menu surface",
+                "enable linux-direct or linux-gtk to compile a Linux desktop menu surface",
             )
         };
         capabilities.file_picker = if cfg!(feature = "linux-direct-host") {

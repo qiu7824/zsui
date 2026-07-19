@@ -13,8 +13,8 @@ mod smoke;
 
 use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
 use crate::{
-    DesktopCapabilities, NativeWindowSmokeRunReport, PlatformName, WindowSpec, ZsuiError,
-    ZsuiResult,
+    DesktopCapabilities, HostCapabilities, NativeWindowSmokeRunReport, PlatformName, WindowSpec,
+    ZsuiError, ZsuiResult,
 };
 
 #[derive(Default)]
@@ -73,7 +73,19 @@ impl DesktopRuntimeBackend for Backend {
         smoke::run(request)
     }
 
-    fn capabilities(&self) -> DesktopCapabilities {
+    fn scaffold_capabilities(&self) -> HostCapabilities {
+        match PlatformName::current() {
+            PlatformName::Macos => HostCapabilities::macos_scaffold(),
+            PlatformName::Linux => HostCapabilities::linux_scaffold(),
+            platform => HostCapabilities::all_unsupported(platform),
+        }
+    }
+
+    fn native_host_capabilities(&self) -> HostCapabilities {
+        self.scaffold_capabilities()
+    }
+
+    fn desktop_capabilities(&self) -> DesktopCapabilities {
         DesktopCapabilities::all_unsupported(PlatformName::current())
     }
 }

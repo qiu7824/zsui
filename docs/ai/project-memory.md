@@ -315,20 +315,24 @@ history remain authoritative for implementation status.
   Presenter and Services choices separate. These modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take
   a platform style, platform enum or raw native handle.
-- Production desktop event-loop, runtime-smoke, final-surface capture, active
-  `DesktopCapabilities` profile, clipboard and native file-panel selection live
-  behind the private `src/platform/desktop_runtime/` adapter contract.
-  `native.rs` and the public desktop-service facades pass platform-neutral
-  windows, draw plans, input
-  runtimes, clipboard data and service specs into that boundary; target modules
-  own Win32, AppKit, Linux-direct, GTK or Winit calls and resources. Target
+- Production desktop event-loop, runtime-smoke, final-surface capture, scaffold
+  and native-host `HostCapabilities`, active `DesktopCapabilities`, clipboard
+  and native file-panel selection live behind the private
+  `src/platform/desktop_runtime/` adapter contract. `native.rs`, `capability.rs`
+  and the public desktop-service facades pass platform-neutral windows, draw
+  plans, input runtimes, clipboard data and service specs into that boundary;
+  target modules own Win32, AppKit, Linux-direct, GTK or Winit calls and
+  resources. Target
   smoke results are normalized into the shared proof report inside that
   boundary. A new desktop backend adds one adapter implementation instead of
   adding target branches to the shared host, desktop services or application
   API. Explicit per-platform capability constructors are inspection contracts;
-  the selected adapter alone chooses the active profile. Capability details
-  must name only their own platform implementation and remain unsupported or
-  partial until the corresponding feature and target evidence exist.
+  the selected adapter alone chooses all active capability profiles. A new
+  backend implements those profile methods alongside its event loop instead of
+  adding another current-platform match to shared capability code. Capability
+  details must name only their own platform implementation and remain
+  unsupported or partial until the corresponding feature and target evidence
+  exist.
 - `NativeViewInputRuntime` exposes a platform-neutral backend attachment made
   from either a static typed View or a shared live View plus resource policy,
   close command and command executors. Target adapters lower that attachment

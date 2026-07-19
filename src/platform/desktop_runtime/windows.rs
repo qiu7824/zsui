@@ -3,7 +3,8 @@ mod smoke;
 
 use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
 use crate::{
-    DesktopCapabilities, FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiResult,
+    DesktopCapabilities, FileDialogSpec, HostCapabilities, NativeWindowSmokeRunReport,
+    SaveFileDialogSpec, ZsuiResult,
 };
 
 #[derive(Default)]
@@ -42,7 +43,15 @@ impl DesktopRuntimeBackend for Backend {
         smoke::run(request)
     }
 
-    fn capabilities(&self) -> DesktopCapabilities {
+    fn scaffold_capabilities(&self) -> HostCapabilities {
+        HostCapabilities::windows_scaffold()
+    }
+
+    fn native_host_capabilities(&self) -> HostCapabilities {
+        HostCapabilities::windows_native_window_host()
+    }
+
+    fn desktop_capabilities(&self) -> DesktopCapabilities {
         DesktopCapabilities::windows_win32_current()
     }
 

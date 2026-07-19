@@ -1,5 +1,8 @@
 use super::{DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest};
-use crate::{DesktopCapabilities, NativeWindowSmokeRunReport, PlatformName, ZsuiError, ZsuiResult};
+use crate::{
+    DesktopCapabilities, HostCapabilities, NativeWindowSmokeRunReport, PlatformName, ZsuiError,
+    ZsuiResult,
+};
 
 #[derive(Default)]
 pub(super) struct Backend;
@@ -45,7 +48,26 @@ impl DesktopRuntimeBackend for Backend {
         Err(ZsuiError::unsupported("native_window_smoke", detail))
     }
 
-    fn capabilities(&self) -> DesktopCapabilities {
+    fn scaffold_capabilities(&self) -> HostCapabilities {
+        match PlatformName::current() {
+            PlatformName::Windows => HostCapabilities::windows_scaffold(),
+            PlatformName::Macos => HostCapabilities::macos_scaffold(),
+            PlatformName::Linux => HostCapabilities::linux_scaffold(),
+            PlatformName::Android => HostCapabilities::android_scaffold(),
+            PlatformName::Harmony => HostCapabilities::harmony_scaffold(),
+            platform => HostCapabilities::all_unsupported(platform),
+        }
+    }
+
+    fn native_host_capabilities(&self) -> HostCapabilities {
+        match PlatformName::current() {
+            PlatformName::Android => HostCapabilities::android_native_window_host(),
+            PlatformName::Harmony => HostCapabilities::harmony_native_window_host(),
+            platform => HostCapabilities::all_unsupported(platform),
+        }
+    }
+
+    fn desktop_capabilities(&self) -> DesktopCapabilities {
         DesktopCapabilities::all_unsupported(PlatformName::current())
     }
 }

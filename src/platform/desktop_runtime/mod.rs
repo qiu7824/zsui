@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use crate::{
     native::NativeViewInputRuntime, ClipboardData, DesktopCapabilities, FileDialogSpec,
-    NativeDrawPlan, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, SaveFileDialogSpec,
-    TraySpec, WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
+    HostCapabilities, NativeDrawPlan, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
+    SaveFileDialogSpec, TraySpec, WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
 
 #[cfg_attr(all(windows, feature = "windows-win32"), path = "windows.rs")]
@@ -125,7 +125,11 @@ pub(super) trait DesktopRuntimeBackend: Default {
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport>;
 
-    fn capabilities(&self) -> DesktopCapabilities;
+    fn scaffold_capabilities(&self) -> HostCapabilities;
+
+    fn native_host_capabilities(&self) -> HostCapabilities;
+
+    fn desktop_capabilities(&self) -> DesktopCapabilities;
 
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
         Err(ZsuiError::unsupported(
@@ -172,8 +176,16 @@ pub(crate) fn run_event_loop(
     })
 }
 
-pub(crate) fn capabilities() -> DesktopCapabilities {
-    SelectedDesktopRuntimeBackend::default().capabilities()
+pub(crate) fn scaffold_capabilities() -> HostCapabilities {
+    SelectedDesktopRuntimeBackend::default().scaffold_capabilities()
+}
+
+pub(crate) fn native_host_capabilities() -> HostCapabilities {
+    SelectedDesktopRuntimeBackend::default().native_host_capabilities()
+}
+
+pub(crate) fn desktop_capabilities() -> DesktopCapabilities {
+    SelectedDesktopRuntimeBackend::default().desktop_capabilities()
 }
 
 pub(crate) fn open_file_dialog(spec: &FileDialogSpec) -> Option<ZsuiResult<Option<Vec<PathBuf>>>> {
@@ -346,12 +358,20 @@ mod tests {
         let backend = SelectedDesktopRuntimeBackend::default();
         assert!(!backend.backend_name().is_empty());
         assert_eq!(
-            backend.capabilities().platform,
+            backend.desktop_capabilities().platform,
             crate::PlatformName::current()
         );
         assert_eq!(
             crate::DesktopCapabilities::current_native_backend(),
-            backend.capabilities()
+            backend.desktop_capabilities()
+        );
+        assert_eq!(
+            crate::HostCapabilities::current_platform_scaffold(),
+            backend.scaffold_capabilities()
+        );
+        assert_eq!(
+            crate::HostCapabilities::current_native_window_host(),
+            backend.native_host_capabilities()
         );
     }
 
@@ -367,7 +387,14 @@ mod tests {
         assert!(source.contains("crate::desktop_runtime::open_file_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::save_file_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::run_smoke_event_loop("));
-        assert!(desktop_services_core.contains("crate::desktop_runtime::capabilities()"));
+        assert!(desktop_services_core.contains("crate::desktop_runtime::desktop_capabilities()"));
+        let capability_source = include_str!("../../capability.rs");
+        let capability_core = capability_source
+            .split_once("#[cfg(test)]")
+            .map_or(capability_source, |(core, _)| core);
+        assert!(capability_core.contains("crate::desktop_runtime::scaffold_capabilities()"));
+        assert!(capability_core.contains("crate::desktop_runtime::native_host_capabilities()"));
+        assert!(!capability_core.contains("PlatformName::current()"));
         assert!(!source.contains("fn run_native_window_event_loop("));
         assert!(!source.contains("fn run_native_window_smoke_event_loop("));
         assert!(!source.contains("capture_win32_hwnd_png"));

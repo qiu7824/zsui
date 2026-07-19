@@ -3,8 +3,8 @@ use super::{
     DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
 };
 use crate::{
-    DesktopCapabilities, FileDialogSpec, NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError,
-    ZsuiResult,
+    DesktopCapabilities, FileDialogSpec, HostCapabilities, NativeWindowSmokeRunReport,
+    SaveFileDialogSpec, ZsuiError, ZsuiResult,
 };
 
 #[derive(Default)]
@@ -78,7 +78,15 @@ impl DesktopRuntimeBackend for Backend {
         )
     }
 
-    fn capabilities(&self) -> DesktopCapabilities {
+    fn scaffold_capabilities(&self) -> HostCapabilities {
+        HostCapabilities::macos_scaffold()
+    }
+
+    fn native_host_capabilities(&self) -> HostCapabilities {
+        HostCapabilities::macos_native_window_host()
+    }
+
+    fn desktop_capabilities(&self) -> DesktopCapabilities {
         DesktopCapabilities::macos_appkit_current()
     }
 

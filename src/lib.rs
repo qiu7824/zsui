@@ -1001,15 +1001,25 @@ mod tests {
         assert_eq!(linux.window_decorations.status, CapabilityStatus::Partial);
         assert_eq!(
             linux.window_always_on_top.status,
-            CapabilityStatus::Unsupported
+            if cfg!(feature = "linux-direct-host") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
         );
         assert_eq!(
             linux.window_transparency.status,
-            CapabilityStatus::Unsupported
+            if cfg!(feature = "linux-direct-host") {
+                CapabilityStatus::Partial
+            } else {
+                CapabilityStatus::Unsupported
+            }
         );
         assert_eq!(
             linux.menus.status,
-            if cfg!(all(
+            if cfg!(feature = "linux-direct-host") {
+                CapabilityStatus::Supported
+            } else if cfg!(all(
                 feature = "linux-gtk",
                 not(feature = "linux-direct-host")
             )) {
@@ -1038,17 +1048,21 @@ mod tests {
             }
         );
 
-        for capabilities in [
-            HostCapabilities::windows_native_window_host(),
-            HostCapabilities::macos_native_window_host(),
-            HostCapabilities::linux_native_window_host(),
-        ] {
-            let resolved = Window::new("Example")
-                .transparent(true)
-                .resolve_for(&capabilities);
-            assert!(resolved.requested.transparent);
-            assert!(!resolved.effective.transparent);
-        }
+        let windows_transparent = Window::new("Example")
+            .transparent(true)
+            .resolve_for(&HostCapabilities::windows_native_window_host());
+        let macos_transparent = Window::new("Example")
+            .transparent(true)
+            .resolve_for(&HostCapabilities::macos_native_window_host());
+        let linux_transparent = Window::new("Example")
+            .transparent(true)
+            .resolve_for(&HostCapabilities::linux_native_window_host());
+        assert!(!windows_transparent.effective.transparent);
+        assert!(!macos_transparent.effective.transparent);
+        assert_eq!(
+            linux_transparent.effective.transparent,
+            cfg!(feature = "linux-direct-host")
+        );
     }
 
     #[test]

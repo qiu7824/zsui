@@ -509,13 +509,15 @@ maps them to Fluent, AppKit or GTK behavior. `src/platform/backend_profile.rs`
 describes Host, Text, Raster, Presenter and Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single
 compile-time selector delegates the event loop, runtime smoke, final-surface
-capture, the active `DesktopCapabilities` profile, clipboard and native file
-panels to a target-owned Win32, AppKit, Linux-direct, GTK compatibility or
-Winit-fallback module. `native.rs` and the public desktop-service facades consume
-that contract and contain no current-platform matching or production/smoke
-backend selection for those operations. Explicit per-platform capability
-constructors remain available for inspection and contract tests, but only the
-selected adapter decides which profile is active.
+capture, scaffold `HostCapabilities`, native-host `HostCapabilities`, the active
+`DesktopCapabilities` profile, clipboard and native file panels to a target-owned
+Win32, AppKit, Linux-direct, GTK compatibility or Winit-fallback module.
+`native.rs`, `capability.rs` and the public desktop-service facades consume that
+contract and contain no current-platform matching or production/smoke backend
+selection for those operations. Explicit per-platform capability constructors
+remain available for inspection and contract tests, but only the selected
+adapter decides which profiles are active. A new platform backend therefore
+defines its execution and all active capability views in the same adapter.
 Win32 GDI capture ownership and Winit smoke lifecycle details stay in dedicated
 backend modules; AppKit, Linux-direct and GTK convert target results into one
 platform-neutral proof report at the adapter boundary. Adding another desktop
