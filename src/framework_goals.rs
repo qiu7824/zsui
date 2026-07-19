@@ -40,12 +40,20 @@ pub fn zsui_rust_first_goal_names() -> Vec<&'static str> {
 pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
     vec![
         ZsuiRustFirstGoal::new(
+            "unified_application_authoring",
+            "Require one platform-neutral Rust application source for Windows, macOS and Linux while preserving genuinely native platform composition and backend behavior inside ZSUI.",
+            "one State/Msg/view/update/native_window path, semantic components and tokens, framework-owned PlatformExperience composition, and compile-time selected Host/Text/Raster/Presenter/Services profiles",
+            "application platform cfg, platform enums, raw handles, renderer selection, duplicated per-platform view trees, or examples that patch platform visuals outside reusable framework rules",
+            "src/view, src/native.rs, src/platform, src/style.rs, examples/desktop_native_showcase.rs, examples/component_gallery.rs, examples/zsui_notepad.rs",
+            "make the shared application path the only ordinary desktop authoring path, move remaining platform composition and typography choices behind framework contracts, and gate it with one-source three-target proof",
+        ),
+        ZsuiRustFirstGoal::new(
             "native_proof_ci",
             "Require repeatable target-native runtime evidence to block UI regressions on every desktop platform.",
             "fixed target runners, final platform-view screenshots, versioned semantic reports, calibrated image comparison and reviewed read-only baselines",
             "treating cargo check or shared DrawPlan PNGs as platform proof, using moving runner labels, or automatically accepting changed baselines",
             ".github/workflows/ci.yml, docs/v0.3-native-proof-ci.md, docs/native-host-smoke.md, examples/component_gallery.rs, examples/zsui_notepad.rs",
-            "implement deterministic AppKit Gallery and Notepad proof with final NSView capture on macos-15, then migrate Win32 and GTK4 to the same schema and comparison gate",
+            "keep the operational AppKit gate blocking regressions and align Win32 and Linux with the same reviewed baseline and comparison policy",
         ),
         ZsuiRustFirstGoal::new(
             "runnable_vertical_slices",
@@ -226,7 +234,8 @@ mod tests {
     fn rust_first_goal_manifest_tracks_core_direction() {
         let names = zsui_rust_first_goal_names();
 
-        assert_eq!(names.len(), 22);
+        assert_eq!(names.len(), 23);
+        assert!(names.contains(&"unified_application_authoring"));
         assert!(names.contains(&"native_proof_ci"));
         assert!(names.contains(&"runnable_vertical_slices"));
         assert!(names.contains(&"one_line_native_entrypoints"));
@@ -242,6 +251,13 @@ mod tests {
         assert!(names.contains(&"strong_typed_ids"));
 
         let goals = zsui_rust_first_goals();
+        let unified_authoring = goals
+            .iter()
+            .find(|goal| goal.goal_name == "unified_application_authoring")
+            .expect("unified application authoring goal should exist");
+        assert!(unified_authoring.prefer.contains("State/Msg/view/update"));
+        assert!(unified_authoring.avoid.contains("application platform cfg"));
+
         let typed_messages = goals
             .iter()
             .find(|goal| goal.goal_name == "typed_messages")

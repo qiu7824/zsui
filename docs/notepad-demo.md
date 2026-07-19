@@ -114,16 +114,16 @@ the shaped visual-order path. It also
 commits a combining sequence plus joined emoji and uses
 Left/Backspace to prove that one complete grapheme is removed, then sends a real
 title-bar close request while the document is dirty, verifies that the request
-is vetoed and captures the shared unsaved-confirmation surface. On
-non-Windows targets the same source is compiled against the AppKit or GTK4
-host; target runtime evidence is tracked separately and is not inferred from
-cross-compilation.
+is vetoed and captures the shared unsaved-confirmation surface. On non-Windows
+targets the same source runs against the AppKit or Linux desktop host. Fixed
+AppKit, X11 and Wayland CI jobs now capture target runtime evidence; none of
+that evidence is inferred from cross-compilation.
 
 ## Current functional boundary
 
 | Capability | Current acceptance state |
 | --- | --- |
-| Shared application source on Win32/AppKit/GTK4 | implemented |
+| Shared application source on Win32/AppKit/Linux | implemented |
 | Self-drawn multiline input, focus and IME host routing | implemented |
 | New/open/save/save-as and dirty decision | implemented |
 | Target-native menu and primary-key accelerators | implemented |
@@ -137,15 +137,15 @@ cross-compilation.
 | Long-document vertical viewport and shaped no-wrap horizontal caret reveal | implemented |
 | Captured selection drag with row/column edge scrolling | implemented |
 | Extended-grapheme-safe caret, deletion, wrapping and pointer hit testing | implemented |
-| Proportional advances and bidirectional caret/selection/hit geometry | implemented; AppKit/GTK4 target proof pending |
-| Visual-order bidirectional Left/Right navigation | implemented; AppKit/GTK4 target proof pending |
-| Intercepting the operating-system window-close button | implemented on Win32/AppKit/GTK4 |
-| AppKit and GTK4 physical-machine interaction evidence | pending target runners |
+| Proportional advances and bidirectional caret/selection/hit geometry | implemented with Win32/AppKit/Linux target proof |
+| Visual-order bidirectional Left/Right navigation | implemented with Win32/AppKit/Linux target proof |
+| Intercepting the operating-system window-close button | implemented on Win32/AppKit/Linux |
+| AppKit and Linux target-runner interaction evidence | implemented; physical-device IME and assistive-technology review remains manual |
 
-The current Win32 shaped-text smoke capture is stored at
+The reviewed cross-platform interaction captures and structured reports are
+stored under [`platform-proof`](platform-proof/). The earlier Win32 shaped-text
+diagnostic remains at
 [`platform-proof/windows/shaped-text.png`](platform-proof/windows/shaped-text.png).
-It is diagnostic Windows evidence and does not substitute for the pending
-AppKit/GTK4 target runs.
 
 Commands still outside the shared editor contract are not placed in the menu.
 This avoids claiming behavior that exists only in one platform service.

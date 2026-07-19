@@ -22,6 +22,42 @@ and Harmony remain first-class platform targets, but they need real
 Activity/Ability runtime hosts and device smoke proof before this same public
 shape can create mobile native surfaces.
 
+## Highest Priority: Fully Unified Application Authoring
+
+Windows, macOS and Linux applications must use one ordinary Rust authoring
+model. The same source owns `State`, `Msg`, `view`, `update`, semantic component
+declarations, theme overrides and the `native_window(...)` entry. Application
+view code must not select a platform, renderer or host and must not contain
+target `cfg`, `PlatformStyle` matches, raw handles, Objective-C/GTK objects or
+duplicated per-platform view trees. Platform packaging metadata is generated or
+configured outside the application view source.
+
+"Unified" applies to the public authoring model, not to the backend
+implementation or to visual output. ZSUI must preserve each platform's own
+composition and interaction conventions:
+
+- `PlatformExperience` resolves semantic navigation, toolbar/header, tabs,
+  forms, dialogs, popups, metrics, typography and icon sources inside the
+  framework. It may produce different component trees for the same semantic
+  declaration.
+- A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
+  `Services`. Windows, AppKit and Linux implementations remain independent and
+  can use different event loops, text stacks, rasterizers and system services.
+- Every text backend must expose one canonical layout result used by measure,
+  paint, hit testing, caret/selection geometry and accessibility. A demo-local
+  font or clipping correction is not an acceptable fix.
+- Applications may customize semantic specs and public theme/token values once;
+  ZSUI resolves those values against the current platform without requiring an
+  application branch.
+- Cargo features remain the build boundary. A unified API must not force every
+  widget, renderer or platform integration into the final binary.
+
+The acceptance gate is one unchanged Gallery, Notepad or utility application
+source compiled for all three desktop targets. Each target must launch its real
+host, execute the same semantic scenario and emit final-surface screenshots and
+structured evidence. Example-only platform adjustments do not satisfy this
+goal; reusable corrections belong in framework contracts and backends first.
+
 ## v0.3 Core Milestone: Native Proof CI
 
 ZSUI 0.3.0 prioritizes repeatable native runtime evidence over adding more
@@ -30,11 +66,13 @@ real Win32, AppKit and Linux application paths on target runners, execute fixed
 interaction scenarios, capture the final platform view, emit structured
 layout/focus/event evidence and compare it against reviewed baselines.
 
-The first blocking target is AppKit on the fixed GitHub-hosted `macos-15`
-ARM64 runner. Shared `DrawPlan` images are not target evidence; the AppKit gate
-must capture the final `NSView`. Baselines are read-only in CI and can change
-only through an explicit reviewed commit. The complete milestone, phased
-delivery order and release gates are defined in
+The original first blocking target—AppKit on the fixed GitHub-hosted
+`macos-15` ARM64 runner—is now operational. Shared `DrawPlan` images are not
+target evidence; the AppKit gate captures the final `NSView`. The current
+blocking target is one unchanged application-authoring path with aligned
+Win32, AppKit and Linux evidence and reviewed regression baselines. Baselines
+are read-only in CI and can change only through an explicit reviewed commit.
+The complete milestone, phased delivery order and release gates are defined in
 [`v0.3-native-proof-ci.md`](v0.3-native-proof-ci.md).
 
 ## Delivery Order
@@ -42,21 +80,24 @@ delivery order and release gates are defined in
 ZSUI is delivered through runnable vertical slices rather than contract count.
 The current priority order is:
 
-1. Establish the AppKit Native Proof CI gate on `macos-15`: real
-   `NSApplication`/`NSWindow`/`NSView` execution, deterministic Gallery and
-   Notepad scenarios, final-view PNG capture, structured reports and reviewed
-   visual baselines.
-2. Move the existing Win32 proof and the Linux target runtime onto the same
+1. Make fully unified application authoring the enforced desktop boundary:
+   remove remaining application platform branches and renderer selection, move
+   platform composition into framework-owned experience contracts, and prove
+   one unchanged source on Win32, AppKit and Linux.
+2. Harden the operational AppKit Native Proof CI gate on `macos-15`: retain
+   real `NSApplication`/`NSWindow`/`NSView` execution and deterministic Gallery
+   and Notepad scenarios, then add reviewed visual baselines.
+3. Move the existing Win32 proof and the Linux target runtime onto the same
    versioned proof schema and regression tool so all three desktop paths block
    regressions before the 0.3.0 release.
-3. Complete the reusable conversation/task workbench loop: navigation,
+4. Complete the reusable conversation/task workbench loop: navigation,
    timeline scrolling, composer input, tool/message actions and inspector state.
-4. Stabilize the Rust-first application loop so typed messages update explicit
+5. Stabilize the Rust-first application loop so typed messages update explicit
    state and repaint the live window, then cover IME, accessibility, focus,
    menus and dialogs required by native utility applications.
-5. Tighten Cargo feature boundaries and split crates only after the public
+6. Tighten Cargo feature boundaries and split crates only after the public
    widget/runtime boundaries are proven by real applications.
-6. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
+7. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
    and device smoke artifacts.
 
 Protocol manifests, AI handoff metadata and mobile bridge contracts support

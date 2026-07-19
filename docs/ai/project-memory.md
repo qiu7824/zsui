@@ -298,6 +298,22 @@ history remain authoritative for implementation status.
   the framework; applications can override public semantic spec fields or use
   resolved spacing tokens with ordinary View modifiers without adding `cfg` or
   matching a platform.
+- Fully unified desktop authoring is the highest-priority architecture target.
+  One application source owns `State`, `Msg`, `view`, `update`, semantic specs,
+  theme overrides and `native_window(...)` on Windows, macOS and Linux. Normal
+  application View code must not select a host, renderer or platform and must
+  not duplicate per-platform trees behind `cfg`.
+- Unified authoring does not mean a unified backend or a shared Windows skin.
+  Framework-owned `PlatformExperience` composition resolves navigation,
+  toolbar/header placement, tabs, forms, dialogs and popups; a statically
+  selected Host/Text/Raster/Presenter/Services profile owns target execution.
+  Application parameters remain editable once through public semantic specs and
+  tokens, and optional Cargo features remain independently trimmable.
+- Typography, clipping or composition corrections found in Gallery, Notepad or
+  another acceptance application must be implemented as reusable framework
+  rules before the example consumes them. Measure, paint, hit testing,
+  caret/selection geometry and accessibility must share one backend text-layout
+  result; demo-local fixes do not advance the unified-platform goal.
 - GTK/Adwaita boxed sections use padded rows with one-pixel separators, and
   the row's outer minimum height must include its interior padding. GTK sidebar
   selection stays neutral (not accent-filled), matching the

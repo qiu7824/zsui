@@ -472,6 +472,43 @@ layout returns `NativeWindowContentReady`. The unconstrained
 - Add windows-rs or other wider platform bindings only for concrete backend work.
 - Use strong typed IDs for windows, widgets, commands and resources.
 
+## Fully Unified Desktop Authoring Boundary
+
+Ordinary Windows, macOS and Linux applications have one source-level path:
+
+```text
+State + Msg + view + update + semantic specs/tokens
+                         |
+                         v
+              framework PlatformExperience
+                         |
+                         v
+       compile-time Host/Text/Raster/Presenter/Services profile
+                         |
+             +-----------+-----------+
+             |           |           |
+           Win32       AppKit      Linux desktop
+```
+
+The upper boundary is completely platform-neutral. Application View code does
+not receive a platform enum, select a renderer, import raw host objects or
+duplicate a component tree behind target `cfg`. Semantic parameter changes are
+made once through public specs, typed units and theme tokens.
+
+The lower boundary is deliberately not uniform. The framework's platform
+experience layer may map the same semantic navigation, toolbar, tab, form,
+dialog or popup declaration to different composition and interaction rules.
+The statically selected backend profile then supplies the real event loop,
+text layout, rasterization, presentation and operating-system services. This
+keeps application authoring unified without applying a Windows component tree
+or one renderer to every target.
+
+Layout, paint, hit testing, caret/selection geometry and accessibility must
+consume the same backend text-layout result. Typography, clipping and density
+corrections therefore belong in reusable framework text/style contracts rather
+than in Gallery or Notepad. Cargo features remain orthogonal: one API shape does
+not imply one always-enabled binary surface.
+
 ## Host Boundary
 
 Applications call `ZsuiHost` operations:

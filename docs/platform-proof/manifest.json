@@ -28,12 +28,12 @@
     {
       "id": "macos",
       "backend": "macos-appkit",
-      "status": "not_started"
+      "status": "in_progress"
     },
     {
       "id": "linux",
       "backend": "linux-direct",
-      "status": "not_started"
+      "status": "in_progress"
     }
   ]
 }
