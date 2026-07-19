@@ -40,6 +40,16 @@ impl DesktopRuntimeBackend for Backend {
         smoke::run(request)
     }
 
+    #[cfg(feature = "clipboard")]
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<crate::ClipboardData>> {
+        crate::windows_win32_host::windows_read_clipboard()
+    }
+
+    #[cfg(feature = "clipboard")]
+    fn write_clipboard(&mut self, data: &crate::ClipboardData) -> ZsuiResult<()> {
+        crate::windows_win32_host::windows_write_clipboard(data)
+    }
+
     fn open_file_dialog(
         &mut self,
         spec: &FileDialogSpec,

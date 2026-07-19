@@ -77,6 +77,18 @@ impl DesktopRuntimeBackend for Backend {
         )
     }
 
+    #[cfg(feature = "clipboard")]
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<crate::ClipboardData>> {
+        let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
+        crate::ClipboardService::read_clipboard(&mut clipboard)
+    }
+
+    #[cfg(feature = "clipboard")]
+    fn write_clipboard(&mut self, data: &crate::ClipboardData) -> ZsuiResult<()> {
+        let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
+        crate::ClipboardService::write_clipboard(&mut clipboard, data)
+    }
+
     fn open_file_dialog(
         &mut self,
         spec: &FileDialogSpec,

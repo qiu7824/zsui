@@ -780,98 +780,11 @@ impl NativeClipboardService {
 
 impl ClipboardService for NativeClipboardService {
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
-        #[cfg(all(feature = "clipboard", windows, feature = "windows-win32"))]
-        {
-            return crate::windows_win32_host::windows_read_clipboard();
-        }
-        #[cfg(all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"))]
-        {
-            let mut clipboard = crate::macos_appkit_services::MacosAppKitClipboardService;
-            return clipboard.read_clipboard();
-        }
-        #[cfg(all(
-            feature = "clipboard",
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-direct-host"
-        ))]
-        {
-            return crate::linux_direct::linux_direct_read_clipboard();
-        }
-        #[cfg(all(
-            feature = "clipboard",
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-gtk",
-            not(feature = "linux-direct-host")
-        ))]
-        {
-            let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
-            return clipboard.read_clipboard();
-        }
-        #[cfg(not(any(
-            all(feature = "clipboard", windows, feature = "windows-win32"),
-            all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"),
-            all(
-                feature = "clipboard",
-                target_os = "linux",
-                not(target_env = "ohos"),
-                any(feature = "linux-direct-host", feature = "linux-gtk")
-            )
-        )))]
-        Err(ZsuiError::unsupported(
-            "read_clipboard",
-            "enable the clipboard feature and target-native desktop backend",
-        ))
+        crate::desktop_runtime::read_clipboard()
     }
 
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
-        #[cfg(all(feature = "clipboard", windows, feature = "windows-win32"))]
-        {
-            return crate::windows_win32_host::windows_write_clipboard(data);
-        }
-        #[cfg(all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"))]
-        {
-            let mut clipboard = crate::macos_appkit_services::MacosAppKitClipboardService;
-            return clipboard.write_clipboard(data);
-        }
-        #[cfg(all(
-            feature = "clipboard",
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-direct-host"
-        ))]
-        {
-            return crate::linux_direct::linux_direct_write_clipboard(data);
-        }
-        #[cfg(all(
-            feature = "clipboard",
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-gtk",
-            not(feature = "linux-direct-host")
-        ))]
-        {
-            let mut clipboard = crate::linux_gtk_services::LinuxGtkClipboardService;
-            return clipboard.write_clipboard(data);
-        }
-        #[cfg(not(any(
-            all(feature = "clipboard", windows, feature = "windows-win32"),
-            all(feature = "clipboard", target_os = "macos", feature = "macos-appkit"),
-            all(
-                feature = "clipboard",
-                target_os = "linux",
-                not(target_env = "ohos"),
-                any(feature = "linux-direct-host", feature = "linux-gtk")
-            )
-        )))]
-        {
-            let _ = data;
-            Err(ZsuiError::unsupported(
-                "write_clipboard",
-                "enable the clipboard feature and target-native desktop backend",
-            ))
-        }
+        crate::desktop_runtime::write_clipboard(data)
     }
 }
 
@@ -893,91 +806,11 @@ impl NativeFileDialogService {
 
 impl FileDialogService for NativeFileDialogService {
     fn open_file_dialog(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
-        #[cfg(all(windows, feature = "windows-win32"))]
-        {
-            return crate::windows_win32_host::windows_win32_open_file_dialog(spec);
-        }
-        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-        {
-            return crate::macos_appkit_services::macos_appkit_open_file_dialog(spec);
-        }
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-direct-host"
-        ))]
-        {
-            return crate::linux_direct::linux_direct_open_file_dialog(spec);
-        }
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-gtk",
-            not(feature = "linux-direct-host")
-        ))]
-        {
-            return crate::linux_gtk_services::linux_gtk_open_file_dialog(spec);
-        }
-        #[cfg(not(any(
-            all(windows, feature = "windows-win32"),
-            all(target_os = "macos", feature = "macos-appkit"),
-            all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                any(feature = "linux-direct-host", feature = "linux-gtk")
-            )
-        )))]
-        {
-            let _ = spec;
-            Err(ZsuiError::unsupported(
-                "open_file_dialog",
-                "enable the target-native desktop backend feature",
-            ))
-        }
+        crate::desktop_runtime::open_file_dialog_required(spec)
     }
 
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
-        #[cfg(all(windows, feature = "windows-win32"))]
-        {
-            return crate::windows_win32_host::windows_win32_save_file_dialog(spec);
-        }
-        #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
-        {
-            return crate::macos_appkit_services::macos_appkit_save_file_dialog(spec);
-        }
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-direct-host"
-        ))]
-        {
-            return crate::linux_direct::linux_direct_save_file_dialog(spec);
-        }
-        #[cfg(all(
-            target_os = "linux",
-            not(target_env = "ohos"),
-            feature = "linux-gtk",
-            not(feature = "linux-direct-host")
-        ))]
-        {
-            return crate::linux_gtk_services::linux_gtk_save_file_dialog(spec);
-        }
-        #[cfg(not(any(
-            all(windows, feature = "windows-win32"),
-            all(target_os = "macos", feature = "macos-appkit"),
-            all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                any(feature = "linux-direct-host", feature = "linux-gtk")
-            )
-        )))]
-        {
-            let _ = spec;
-            Err(ZsuiError::unsupported(
-                "save_file_dialog",
-                "enable the target-native desktop backend feature",
-            ))
-        }
+        crate::desktop_runtime::save_file_dialog(spec)
     }
 }
 
@@ -1247,9 +1080,18 @@ mod tests {
         )
     )))]
     #[test]
-    fn native_file_dialog_facade_reports_a_missing_backend() {
+    fn native_desktop_service_facades_report_a_missing_backend() {
+        let mut clipboard = NativeClipboardService::new();
         let mut dialogs = NativeFileDialogService::new();
 
+        assert!(matches!(
+            clipboard.read_clipboard(),
+            Err(ZsuiError::Unsupported { capability, .. }) if capability == "read_clipboard"
+        ));
+        assert!(matches!(
+            clipboard.write_clipboard(&ClipboardData::Text("test".to_string())),
+            Err(ZsuiError::Unsupported { capability, .. }) if capability == "write_clipboard"
+        ));
         assert!(matches!(
             dialogs.open_file_dialog(&FileDialogSpec::new("Open")),
             Err(ZsuiError::Unsupported { capability, .. }) if capability == "open_file_dialog"

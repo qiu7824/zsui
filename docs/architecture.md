@@ -509,15 +509,17 @@ maps them to Fluent, AppKit or GTK behavior. `src/platform/backend_profile.rs`
 describes Host, Text, Raster, Presenter and Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single
 compile-time selector delegates the event loop, runtime smoke, final-surface
-capture and native file panels to a target-owned Win32, AppKit, Linux-direct,
-GTK compatibility or Winit-fallback module. `native.rs` consumes that contract
-and contains no production or smoke backend selection for those operations.
+capture, clipboard and native file panels to a target-owned Win32, AppKit,
+Linux-direct, GTK compatibility or Winit-fallback module. `native.rs` and the
+public desktop-service facades consume that contract
+and contain no production or smoke backend selection for those operations.
 Win32 GDI capture ownership and Winit smoke lifecycle details stay in dedicated
 backend modules; AppKit, Linux-direct and GTK convert target results into one
 platform-neutral proof report at the adapter boundary. Adding another desktop
 backend therefore adds one adapter implementation without changing application
-authoring or the shared host loop. Public View builders do not accept the
-internal experience or the low-level render-proof `PlatformStyle` enums.
+authoring, desktop-service dispatch or the shared host loop. Public View
+builders do not accept the internal experience or the low-level render-proof
+`PlatformStyle` enums.
 Regression tests scan the
 Gallery, Notepad and desktop showcase authoring slices so target `cfg`, platform
 enums and raw native handles cannot silently return to ordinary `view`/`update`

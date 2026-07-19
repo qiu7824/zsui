@@ -7606,60 +7606,11 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
-        #[cfg(feature = "clipboard")]
-        {
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|err| ZsuiError::host("read_clipboard", err.to_string()))?;
-            return match clipboard.get_text() {
-                Ok(text) => Ok(Some(ClipboardData::Text(text))),
-                Err(arboard::Error::ContentNotAvailable) => Ok(None),
-                Err(err) => Err(ZsuiError::host("read_clipboard", err.to_string())),
-            };
-        }
-
-        #[cfg(not(feature = "clipboard"))]
-        {
-            Err(ZsuiError::unsupported(
-                "clipboard_text",
-                "enable the clipboard feature to compile the native text clipboard service",
-            ))
-        }
+        crate::desktop_runtime::read_clipboard()
     }
 
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
-        #[cfg(feature = "clipboard")]
-        {
-            let text = match data {
-                ClipboardData::Text(text) => text.clone(),
-                ClipboardData::Empty => String::new(),
-                ClipboardData::ImageRgba { .. } => {
-                    return Err(ZsuiError::unsupported(
-                        "clipboard_image",
-                        "the native image clipboard service is not connected",
-                    ));
-                }
-                ClipboardData::Files(_) => {
-                    return Err(ZsuiError::unsupported(
-                        "clipboard_files",
-                        "the native file clipboard service is not connected",
-                    ));
-                }
-            };
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()))?;
-            return clipboard
-                .set_text(text)
-                .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()));
-        }
-
-        #[cfg(not(feature = "clipboard"))]
-        {
-            let _ = data;
-            Err(ZsuiError::unsupported(
-                "clipboard_text",
-                "enable the clipboard feature to compile the native text clipboard service",
-            ))
-        }
+        crate::desktop_runtime::write_clipboard(data)
     }
 
     fn open_file_picker(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<String>>> {

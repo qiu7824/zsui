@@ -315,14 +315,16 @@ history remain authoritative for implementation status.
   Presenter and Services choices separate. These modules remain internal:
   ordinary View constructors and acceptance-application authoring must not take
   a platform style, platform enum or raw native handle.
-- Production desktop event-loop, runtime-smoke, final-surface capture and native
-  file-panel selection live behind the private `src/platform/desktop_runtime/`
-  adapter contract. `native.rs` passes platform-neutral windows, draw plans,
-  input runtimes and service specs into that boundary; target modules own Win32,
-  AppKit, Linux-direct, GTK or Winit calls and resources. Target smoke results
-  are normalized into the shared proof report inside that boundary. A new
-  desktop backend adds an adapter implementation instead of adding target
-  branches to the shared host or application API.
+- Production desktop event-loop, runtime-smoke, final-surface capture,
+  clipboard and native file-panel selection live behind the private
+  `src/platform/desktop_runtime/` adapter contract. `native.rs` and the public
+  desktop-service facades pass platform-neutral windows, draw plans, input
+  runtimes, clipboard data and service specs into that boundary; target modules
+  own Win32, AppKit, Linux-direct, GTK or Winit calls and resources. Target
+  smoke results are normalized into the shared proof report inside that
+  boundary. A new desktop backend adds one adapter implementation instead of
+  adding target branches to the shared host, desktop services or application
+  API.
 - Public `ViewNodeKind` and `ZsButtonPresentation` payloads remain semantic and
   must not store a platform selector. Toolbar and adaptive-navigation layout,
   construction, paint and hit testing resolve the framework experience

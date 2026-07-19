@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use crate::{
-    native::NativeViewInputRuntime, FileDialogSpec, NativeDrawPlan, NativeWindowSmokeRunOptions,
-    NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec, WindowSpec, ZsShellRuntime,
-    ZsuiError, ZsuiResult,
+    native::NativeViewInputRuntime, ClipboardData, FileDialogSpec, NativeDrawPlan,
+    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec,
+    WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
 
 #[cfg_attr(all(windows, feature = "windows-win32"), path = "windows.rs")]
@@ -125,6 +125,20 @@ pub(super) trait DesktopRuntimeBackend: Default {
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport>;
 
+    fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
+        Err(ZsuiError::unsupported(
+            "read_clipboard",
+            "enable the clipboard feature and target-native desktop backend",
+        ))
+    }
+
+    fn write_clipboard(&mut self, _data: &ClipboardData) -> ZsuiResult<()> {
+        Err(ZsuiError::unsupported(
+            "write_clipboard",
+            "enable the clipboard feature and target-native desktop backend",
+        ))
+    }
+
     fn open_file_dialog(
         &mut self,
         _spec: &FileDialogSpec,
@@ -158,6 +172,23 @@ pub(crate) fn run_event_loop(
 
 pub(crate) fn open_file_dialog(spec: &FileDialogSpec) -> Option<ZsuiResult<Option<Vec<PathBuf>>>> {
     SelectedDesktopRuntimeBackend::default().open_file_dialog(spec)
+}
+
+pub(crate) fn open_file_dialog_required(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
+    open_file_dialog(spec).unwrap_or_else(|| {
+        Err(ZsuiError::unsupported(
+            "open_file_dialog",
+            "enable the target-native desktop backend feature",
+        ))
+    })
+}
+
+pub(crate) fn read_clipboard() -> ZsuiResult<Option<ClipboardData>> {
+    SelectedDesktopRuntimeBackend::default().read_clipboard()
+}
+
+pub(crate) fn write_clipboard(data: &ClipboardData) -> ZsuiResult<()> {
+    SelectedDesktopRuntimeBackend::default().write_clipboard(data)
 }
 
 pub(crate) fn run_smoke_event_loop(
@@ -314,6 +345,10 @@ mod tests {
     #[test]
     fn native_core_delegates_production_runtime_and_dialog_selection() {
         let source = include_str!("../../native.rs");
+        let desktop_services = include_str!("../../desktop_services.rs");
+        let desktop_services_core = desktop_services
+            .split_once("#[cfg(test)]")
+            .map_or(desktop_services, |(core, _)| core);
 
         assert!(source.contains("crate::desktop_runtime::run_event_loop("));
         assert!(source.contains("crate::desktop_runtime::open_file_dialog(spec)"));
@@ -331,5 +366,23 @@ mod tests {
         assert!(!source.contains("macos_appkit_open_file_dialog"));
         assert!(!source.contains("linux_direct_open_file_dialog"));
         assert!(!source.contains("linux_gtk_open_file_dialog"));
+        assert!(desktop_services_core.contains("crate::desktop_runtime::read_clipboard()"));
+        assert!(desktop_services_core.contains("crate::desktop_runtime::write_clipboard(data)"));
+        assert!(desktop_services_core
+            .contains("crate::desktop_runtime::open_file_dialog_required(spec)"));
+        assert!(desktop_services_core.contains("crate::desktop_runtime::save_file_dialog(spec)"));
+        for forbidden in [
+            "#[cfg(",
+            "cfg!(target_os",
+            "windows_win32_host",
+            "macos_appkit_services",
+            "linux_direct::",
+            "linux_gtk_services",
+        ] {
+            assert!(
+                !desktop_services_core.contains(forbidden),
+                "desktop service facade contains platform dispatch: {forbidden}"
+            );
+        }
     }
 }
