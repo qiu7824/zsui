@@ -526,12 +526,13 @@ authoring, desktop-service dispatch or the shared host loop. Public View
 builders do not accept the internal experience or the low-level render-proof
 `PlatformStyle` enums.
 
-The shared input runtime exports one `NativeViewInputBackendAttachment`: a
-static typed View or shared live View together with resource policy, close
-command and command executors. A selected target adapter may lower this into a
-backend-owned route, as Win32 does, but `native.rs` neither names nor returns
-that route type. A new desktop backend consumes the same attachment or the
-shared runtime directly without adding a target-specific constructor to the
+The selected desktop backend owns a cloned `NativeViewInputRuntime` containing
+the static typed View or shared live View, semantic pointer/keyboard/text/IME
+state, resource policy, close command and command executors. Raw host routes do
+not rebuild that state machine. Win32 only translates messages and UTF-16
+units, defers host effects until locks are released, and maps the shared report
+to its compatibility report. AppKit, Linux and future backends consume the same
+runtime without adding a target-specific constructor or platform branch to the
 input core.
 
 Regression tests scan the

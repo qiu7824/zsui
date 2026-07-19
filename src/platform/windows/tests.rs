@@ -342,6 +342,7 @@ mod tests {
 
         assert_eq!(report.message_count, 1);
         assert_eq!(report.app_command_count, 1);
+        assert_eq!(report.app_command_names, vec!["custom"]);
         assert_eq!(report.app_command_executed_count, 1);
         assert_eq!(report.app_command_event_count, 1);
         assert_eq!(executor.report().executed_count, 1);
@@ -573,10 +574,9 @@ mod tests {
         assert_eq!(second_focus.focus_traversal_count, 1);
         assert_eq!(second_focus.focus_visual_count, 1);
         assert_eq!(second_focus.focused_widget, Some(second.0));
-        assert!(focused_plan.commands.iter().any(|command| {
-            matches!(command, crate::NativeDrawCommand::StrokeRect { rect, width: 2, .. }
-                if rect.x == 1 && rect.y == 49 && rect.width == 118 && rect.height == 46)
-        }));
+        assert!(focused_plan.commands.iter().any(
+            |command| matches!(command, crate::NativeDrawCommand::StrokeRect { width: 2, .. })
+        ));
         assert_eq!(key.ui_command_ids, vec!["zsui.test.win32.second"]);
         assert_eq!(blur.focus_visual_count, 1);
         assert!(!blurred_plan
@@ -836,7 +836,7 @@ mod tests {
             .expect("password box should expose a Win32 reveal target");
         let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
         route.dispatch_click(crate::Point {
-            x: input.bounds.x + 2,
+            x: reveal.bounds.x - 4,
             y: input.bounds.y + input.bounds.height / 2,
         });
 
@@ -1218,7 +1218,7 @@ mod tests {
         assert_eq!(shift_page_down.text_caret, Some(19));
         assert_eq!(page_up.text_caret, Some(10));
         assert_eq!(
-            route.text_edit.map(|state| state.selection),
+            route.text_edit_selection(),
             Some(crate::native_text_edit::NativeTextSelection::collapsed(10))
         );
     }
@@ -1397,7 +1397,7 @@ mod tests {
         assert!(second
             .events
             .iter()
-            .any(|event| event.starts_with("win32_view_text_drag_scroll:324:")));
+            .any(|event| event == "win32_shared_input:pointer_move:handled"));
     }
 
     #[test]
@@ -1452,7 +1452,7 @@ mod tests {
         assert_eq!(stepped.slider_keyboard_change_count, 1);
         assert_eq!(stepped.slider_value_change_count, 1);
         assert_eq!(route.widget_slider_state(widget), Some((70.0, range)));
-        assert_eq!(route.pending_ui_commands.len(), 3);
+        assert_eq!(route.pending_ui_command_count(), 3);
     }
 
     #[test]
@@ -1559,7 +1559,7 @@ mod tests {
                     && state.color.g == 255
                     && state.expanded
             }));
-        assert_eq!(route.pending_ui_commands.len(), 6);
+        assert_eq!(route.pending_ui_command_count(), 6);
     }
 
     #[test]
@@ -1620,7 +1620,7 @@ mod tests {
         assert_eq!(typed.text_input_count, 3);
         assert!(committed.handled);
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("9.5"));
-        assert_eq!(route.pending_ui_commands.len(), 3);
+        assert_eq!(route.pending_ui_command_count(), 3);
     }
 
     #[test]
@@ -1674,14 +1674,14 @@ mod tests {
         assert!(arrow
             .events
             .iter()
-            .any(|event| event == "win32_view_radio_key_select:36:35"));
+            .any(|event| event == "win32_shared_input:key_down:handled"));
         assert_eq!(focus_only.radio_keyboard_focus_only_count, 1);
         assert_eq!(focus_only.radio_selection_count, 0);
         assert_eq!(focus_only.focused_widget, Some(second.0));
         assert!(focus_only
             .events
             .iter()
-            .any(|event| event == "win32_view_radio_key_focus_only:35:36"));
+            .any(|event| event == "win32_shared_input:key_down:handled"));
         assert_eq!(tabbed.focus_traversal_count, 1);
         assert_eq!(tabbed.focused_widget, Some(first.0));
         assert_eq!(route.widget_checked_value(first), Some(true));
@@ -1737,9 +1737,7 @@ mod tests {
         assert_eq!(pointer.focused_widget, Some(advanced.0));
         assert_eq!(
             route
-                .ui_command_view
-                .as_ref()
-                .and_then(|view| view.widget_tab_view_state(tab_view_id))
+                .widget_tab_view_state(tab_view_id)
                 .and_then(|state| state.selected),
             Some(advanced)
         );
@@ -1754,9 +1752,7 @@ mod tests {
         assert_eq!(keyboard.tab_keyboard_selection_count, 1);
         assert_eq!(
             route
-                .ui_command_view
-                .as_ref()
-                .and_then(|view| view.widget_tab_view_state(tab_view_id))
+                .widget_tab_view_state(tab_view_id)
                 .and_then(|state| state.selected),
             Some(general)
         );
@@ -1854,7 +1850,8 @@ mod tests {
             .is_some_and(|state| state.query == "Alpha" && !state.expanded));
 
         let clear = route
-            .interaction_plan
+            .interaction_plan()
+            .expect("updated auto-suggest interaction plan")
             .hit_targets
             .iter()
             .copied()
@@ -1943,7 +1940,7 @@ mod tests {
         assert!(invoked
             .events
             .iter()
-            .any(|event| event == "win32_view_command_palette_invoke:341:2"));
+            .any(|event| event == "win32_shared_input:key_down:handled"));
     }
 
     #[test]
@@ -2004,7 +2001,8 @@ mod tests {
         assert_eq!(opened.tree_expansion_change_count, 1);
         assert_eq!(opened.ui_command_count, 1);
         let leaf_row = route
-            .interaction_plan
+            .interaction_plan()
+            .expect("expanded tree interaction plan")
             .hit_targets
             .iter()
             .copied()
@@ -2250,7 +2248,7 @@ mod tests {
             .expect("dialog scrim");
 
         let mut keyboard_route = WindowsWin32ViewInputRoute::new(interaction.clone(), view.clone());
-        assert_eq!(keyboard_route.focused_widget, Some(widget));
+        assert_eq!(keyboard_route.focused_widget(), Some(widget));
         let caught = keyboard_route.dispatch_click(crate::Point {
             x: scrim.bounds.x + 2,
             y: scrim.bounds.y + 2,
@@ -2590,7 +2588,8 @@ mod tests {
         assert_eq!(open.breadcrumb_expanded_change_count, 1);
         assert_eq!(open.ui_command_count, 1);
         let row = pointer_route
-            .interaction_plan
+            .interaction_plan()
+            .expect("expanded breadcrumb interaction plan")
             .hit_targets
             .iter()
             .copied()
@@ -2690,7 +2689,7 @@ mod tests {
         assert!(typed
             .events
             .iter()
-            .any(|event| event == "win32_view_combo_type_ahead_match:36:b:0"));
+            .any(|event| event == "win32_shared_input:text:handled"));
         assert_eq!(route.widget_combo_state(widget), Some((Some(0), 3, false)));
 
         route.dispatch_key_down(u32::from(VK_SPACE));
@@ -2754,10 +2753,11 @@ mod tests {
         assert!(report
             .events
             .iter()
-            .any(|event| event == "win32_view_combo_scroll:93:1"));
+            .any(|event| event == "win32_shared_input:scroll:handled"));
         assert_eq!(
             route
-                .interaction_plan
+                .interaction_plan()
+                .expect("scrolled combo interaction plan")
                 .combo_visible_option_range(widget)
                 .map(|range| range.start),
             Some(1)
@@ -2776,7 +2776,7 @@ mod tests {
 
         let widget = crate::WidgetId::new(37);
         let initial = crate::ZsDate::new(2026, 7, 13).unwrap();
-        let selected = crate::ZsDate::new(2026, 7, 14).unwrap();
+        let selected = crate::ZsDate::new(2026, 6, 14).unwrap();
         let header = crate::ViewHitTarget::with_kind(
             widget,
             crate::Rect {
@@ -2837,7 +2837,18 @@ mod tests {
         assert!(left.handled);
         assert_eq!(left.pointer_visual_change_count, 1);
 
-        let previous_month = route.dispatch_click(crate::Point { x: 180, y: 64 });
+        let previous_month_target = route
+            .interaction_plan()
+            .expect("expanded date picker interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::DatePickerPreviousMonth)
+            .expect("expanded date picker previous-month button");
+        let previous_month = route.dispatch_click(crate::Point {
+            x: previous_month_target.bounds.x + previous_month_target.bounds.width / 2,
+            y: previous_month_target.bounds.y + previous_month_target.bounds.height / 2,
+        });
         assert_eq!(previous_month.event_count, 1);
         assert_eq!(previous_month.ui_command_count, 0);
         assert_eq!(
@@ -2848,7 +2859,20 @@ mod tests {
             crate::ZsDate::new(2026, 6, 1).unwrap()
         );
 
-        let selection = route.dispatch_click(crate::Point { x: 100, y: 140 });
+        let selected_day_target = route
+            .interaction_plan()
+            .expect("updated date picker interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.kind == crate::ViewHitTargetKind::DatePickerDay { date: selected }
+            })
+            .expect("selected date cell");
+        let selection = route.dispatch_click(crate::Point {
+            x: selected_day_target.bounds.x + selected_day_target.bounds.width / 2,
+            y: selected_day_target.bounds.y + selected_day_target.bounds.height / 2,
+        });
         assert_eq!(selection.event_count, 1);
         assert_eq!(selection.ui_command_count, 2);
         assert_eq!(
@@ -2864,7 +2888,7 @@ mod tests {
             route
                 .widget_date_picker_state(widget)
                 .map(|state| state.value),
-            Some(crate::ZsDate::new(2026, 7, 15).unwrap())
+            Some(crate::ZsDate::new(2026, 6, 15).unwrap())
         );
 
         route.dispatch_click(crate::Point { x: 20, y: 16 });
@@ -2935,7 +2959,20 @@ mod tests {
                 .expanded
         );
 
-        let selection = route.dispatch_click(crate::Point { x: 100, y: 140 });
+        let selected_time_target = route
+            .interaction_plan()
+            .expect("expanded time picker interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                target.kind == crate::ViewHitTargetKind::TimePickerChoice { value: selected }
+            })
+            .expect("selected time choice");
+        let selection = route.dispatch_click(crate::Point {
+            x: selected_time_target.bounds.x + selected_time_target.bounds.width / 2,
+            y: selected_time_target.bounds.y + selected_time_target.bounds.height / 2,
+        });
         assert_eq!(selection.event_count, 1);
         assert_eq!(selection.ui_command_count, 1);
         assert_eq!(

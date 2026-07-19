@@ -430,4 +430,34 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn win32_input_route_owns_shared_semantics_without_a_second_state_machine() {
+        let route = include_str!("../windows/input/mod.rs");
+        let pointer = include_str!("../windows/input/pointer.rs");
+        let runtime = include_str!("../windows/input/runtime.rs");
+        let route_state = route
+            .split_once("pub(crate) fn windows_win32_view_input_route")
+            .map_or(route, |(state, _)| state);
+
+        assert!(route_state.contains("shared_runtime: crate::native::NativeViewInputRuntime"));
+        assert!(pointer.contains("self.shared_runtime.dispatch_pointer_down"));
+        assert!(runtime.contains("self.shared_runtime.dispatch_app_command"));
+        for duplicate in [
+            "interaction_plan: ViewInteractionPlan",
+            "ui_command_view: Option<ViewNode<UiCommand>>",
+            "live_view: Option<SharedLiveViewRuntime>",
+            "text_edit: Option<NativeTextEditState>",
+            "combo_type_ahead: NativeComboTypeAheadState",
+            "slider_drag: Option<crate::WidgetId>",
+            "color_picker_drag: Option<",
+            "pending_app_commands: Vec<Command>",
+            "pending_ui_commands: Vec<UiCommand>",
+        ] {
+            assert!(
+                !route_state.contains(duplicate),
+                "Win32 input route duplicated shared semantic state: {duplicate}"
+            );
+        }
+    }
 }

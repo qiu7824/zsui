@@ -41,6 +41,11 @@ use crate::native_input_visuals::{
 use crate::native_input_visuals::{
     decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
 };
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+use crate::native_input_visuals::{
+    native_text_first_visible_row_for_index_alignment_with_backend,
+    native_text_visible_range_with_backend,
+};
 #[cfg(feature = "textbox")]
 use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
 use crate::native_text_edit::{
@@ -1247,26 +1252,8 @@ pub(crate) struct NativeViewInputRuntime {
     defer_app_command_execution: bool,
     pending_app_commands: Vec<Command>,
     ui_command_executor: Option<SharedUiCommandExecutor>,
-}
-
-#[allow(dead_code)]
-#[derive(Clone)]
-pub(crate) enum NativeViewInputBackendSource {
-    Live(SharedLiveViewRuntime),
-    Static {
-        interaction_plan: ViewInteractionPlan,
-        ui_command_view: ViewNode<UiCommand>,
-    },
-}
-
-#[allow(dead_code)]
-#[derive(Clone)]
-pub(crate) struct NativeViewInputBackendAttachment {
-    pub(crate) source: NativeViewInputBackendSource,
-    pub(crate) resource_policy: NativeWindowResourcePolicy,
-    pub(crate) window_close_request_command: Option<Command>,
-    pub(crate) app_command_executor: Option<SharedAppCommandExecutor>,
-    pub(crate) ui_command_executor: Option<SharedUiCommandExecutor>,
+    defer_ui_command_execution: bool,
+    pending_ui_commands: Vec<UiCommand>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1357,6 +1344,7 @@ pub(crate) struct NativeViewInputDispatchReport {
     ))]
     pub pointer_visual_changed: bool,
     pub hit_target_count: usize,
+    pub view_event_count: usize,
     pub message_count: usize,
     pub app_command_count: usize,
     pub ui_command_count: usize,
@@ -1479,7 +1467,7 @@ pub(crate) struct NativeViewInputDispatchReport {
 
 #[allow(dead_code)]
 impl NativeViewInputRuntime {
-    fn new(
+    pub(crate) fn new(
         surface: Rect,
         interaction_plan: Option<ViewInteractionPlan>,
         ui_command_view: Option<ViewNode<UiCommand>>,
@@ -1571,6 +1559,8 @@ impl NativeViewInputRuntime {
             defer_app_command_execution: false,
             pending_app_commands: Vec::new(),
             ui_command_executor,
+            defer_ui_command_execution: false,
+            pending_ui_commands: Vec::new(),
         };
         runtime.reconcile_modal_focus(&mut NativeViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
@@ -1676,6 +1666,11 @@ impl NativeViewInputRuntime {
         self.text_shaping = backend;
     }
 
+    #[cfg(feature = "tooltip")]
+    pub(crate) fn set_tooltip_timing(&mut self, timing: crate::tooltip::ZsTooltipTiming) {
+        self.tooltip = crate::tooltip::ZsTooltipRuntime::new(timing);
+    }
+
     pub(crate) fn hit_target_count(&self) -> usize {
         self.current_interaction_plan()
             .as_ref()
@@ -1692,6 +1687,11 @@ impl NativeViewInputRuntime {
 
     pub(crate) const fn focused_widget(&self) -> Option<crate::WidgetId> {
         self.focused_widget
+    }
+
+    #[cfg(test)]
+    pub(crate) fn text_edit_selection(&self) -> Option<NativeTextSelection> {
+        self.text_edit.map(|state| state.selection)
     }
 
     pub(crate) fn dispatch_accessibility_focus(
@@ -1730,6 +1730,122 @@ impl NativeViewInputRuntime {
         let mut report = self.dispatch_text_input(value);
         report.handled = true;
         report.focused_widget = Some(target.widget.0);
+        report
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    pub(crate) fn dispatch_accessibility_set_selection(
+        &mut self,
+        selection: NativeTextSelection,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport::default();
+        let Some(target) = self.focused_text_input_target() else {
+            return report;
+        };
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return report;
+        }
+        let value = self.widget_text_value(target.widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let previous = state.selection;
+        state.selection = selection.clamp(&value);
+        state.preferred_visual_x = None;
+        let interaction = self.current_interaction_plan().unwrap_or_default();
+        let visual_target = native_text_visual_target(target, &interaction);
+        state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.first_visible_visual_row,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
+            visual_target,
+            &value,
+            state.selection.caret,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(target.widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        self.text_edit = Some(state);
+        report.handled = true;
+        report.text_selection_changed = previous != state.selection;
+        report.text_caret = Some(state.selection.caret);
+        if report.text_selection_changed {
+            report = self.dispatch_view_event(
+                ViewEvent::TextSelectionChanged {
+                    widget: target.widget,
+                    selection: state.selection.into(),
+                },
+                report,
+            );
+        }
+        report
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    pub(crate) fn dispatch_accessibility_scroll_text_range(
+        &mut self,
+        widget: crate::WidgetId,
+        selection: NativeTextSelection,
+        align_to_top: bool,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport::default();
+        let Some(target) = self.focused_text_input_target() else {
+            return report;
+        };
+        if target.widget != widget {
+            return report;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return report;
+        }
+        let value = self.widget_text_value(widget).unwrap_or_default();
+        let mut state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        let previous_row = state.first_visible_visual_row;
+        let previous_horizontal_scroll = state.horizontal_scroll_px;
+        let selection = selection.clamp(&value);
+        let (start, end) = selection.ordered();
+        let index = if align_to_top { start } else { end };
+        let interaction = self.current_interaction_plan().unwrap_or_default();
+        let visual_target = native_text_visual_target(target, &interaction);
+        state.first_visible_visual_row =
+            native_text_first_visible_row_for_index_alignment_with_backend(
+                visual_target,
+                &value,
+                index,
+                align_to_top,
+                self.widget_text_wrap(widget),
+                self.dpi,
+                &self.text_shaping,
+            );
+        state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
+            visual_target,
+            &value,
+            index,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        self.text_edit = Some(state);
+        report.handled = true;
+        if state.first_visible_visual_row != previous_row
+            || state.horizontal_scroll_px != previous_horizontal_scroll
+        {
+            report.redraw_plan = self.current_composed_draw_plan();
+        }
         report
     }
 
@@ -2171,7 +2287,7 @@ impl NativeViewInputRuntime {
         self.dispatch_pointer_move_at(point, std::time::Instant::now())
     }
 
-    fn dispatch_pointer_move_at(
+    pub(crate) fn dispatch_pointer_move_at(
         &mut self,
         point: Point,
         now: std::time::Instant,
@@ -4244,7 +4360,7 @@ impl NativeViewInputRuntime {
         self.dispatch_text_input_at(text, std::time::Instant::now())
     }
 
-    fn dispatch_text_input_at(
+    pub(crate) fn dispatch_text_input_at(
         &mut self,
         text: &str,
         _now: std::time::Instant,
@@ -4954,7 +5070,7 @@ impl NativeViewInputRuntime {
         self.refresh_transient_view_at(std::time::Instant::now())
     }
 
-    fn refresh_transient_view_at(
+    pub(crate) fn refresh_transient_view_at(
         &mut self,
         now: std::time::Instant,
     ) -> NativeViewInputDispatchReport {
@@ -5506,7 +5622,7 @@ impl NativeViewInputRuntime {
         }
     }
 
-    fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
+    pub(crate) fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_text_value(widget))
@@ -5538,7 +5654,10 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "password-box")]
-    fn widget_password_value(&self, widget: crate::WidgetId) -> Option<crate::ZsPassword> {
+    pub(crate) fn widget_password_value(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsPassword> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_password_value(widget))
@@ -5557,7 +5676,7 @@ impl NativeViewInputRuntime {
         self.widget_text_value(widget)
     }
 
-    fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
+    pub(crate) fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_checked_value(widget))
@@ -5642,7 +5761,10 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "slider")]
-    fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
+    pub(crate) fn widget_slider_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(f32, crate::SliderRange)> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_slider_state(widget))
@@ -5654,7 +5776,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "auto-suggest")]
-    fn widget_auto_suggest_state(
+    pub(crate) fn widget_auto_suggest_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<crate::ZsAutoSuggestState> {
@@ -5669,7 +5791,10 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "tree")]
-    fn widget_tree_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTreeViewState> {
+    pub(crate) fn widget_tree_view_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsTreeViewState> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_tree_view_state(widget))
@@ -5681,7 +5806,10 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "grid-view")]
-    fn widget_grid_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsGridViewState> {
+    pub(crate) fn widget_grid_view_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsGridViewState> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_grid_view_state(widget))
@@ -5693,7 +5821,10 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "table")]
-    fn widget_table_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTableViewState> {
+    pub(crate) fn widget_table_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsTableViewState> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_table_state(widget))
@@ -5705,7 +5836,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "dialog")]
-    fn widget_content_dialog_state(
+    pub(crate) fn widget_content_dialog_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
@@ -5720,7 +5851,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "command-palette")]
-    fn widget_command_palette_state(
+    pub(crate) fn widget_command_palette_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<crate::ZsCommandPaletteState> {
@@ -5735,7 +5866,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "toast")]
-    fn widget_toast_state(
+    pub(crate) fn widget_toast_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
@@ -5750,7 +5881,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "info-bar")]
-    fn widget_info_bar_state(
+    pub(crate) fn widget_info_bar_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
@@ -5777,7 +5908,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "teaching-tip")]
-    fn widget_teaching_tip_state(
+    pub(crate) fn widget_teaching_tip_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
@@ -5811,7 +5942,10 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "combo")]
-    fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
+    pub(crate) fn widget_combo_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(Option<usize>, usize, bool)> {
         self.live_view
             .as_ref()
             .and_then(|runtime| runtime.widget_combo_state(widget))
@@ -5937,7 +6071,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "date-picker")]
-    fn widget_date_picker_state(
+    pub(crate) fn widget_date_picker_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<crate::ZsDatePickerState> {
@@ -5952,7 +6086,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "time-picker")]
-    fn widget_time_picker_state(
+    pub(crate) fn widget_time_picker_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<crate::ZsTimePickerState> {
@@ -5967,7 +6101,7 @@ impl NativeViewInputRuntime {
     }
 
     #[cfg(feature = "color-picker")]
-    fn widget_color_picker_state(
+    pub(crate) fn widget_color_picker_state(
         &self,
         widget: crate::WidgetId,
     ) -> Option<crate::ZsColorPickerState> {
@@ -6002,6 +6136,7 @@ impl NativeViewInputRuntime {
         event: ViewEvent,
         mut report: NativeViewInputDispatchReport,
     ) -> NativeViewInputDispatchReport {
+        report.view_event_count += 1;
         #[cfg(feature = "textbox")]
         let mut text_edit_commands = Vec::new();
         let (commands, ui_commands, quit_requested) = if let Some(live_view) = &self.live_view {
@@ -6054,12 +6189,19 @@ impl NativeViewInputRuntime {
                 }
             }
         }
-        let ui_executor = self.ui_command_executor.clone();
-        for command in ui_commands {
-            report.ui_command_ids.push(command.id.0);
-            if let Some(executor) = &ui_executor {
-                if let Err(error) = executor.dispatch(command) {
-                    report.errors.push(error.to_string());
+        if self.defer_ui_command_execution {
+            for command in ui_commands {
+                report.ui_command_ids.push(command.id.0);
+                self.pending_ui_commands.push(command);
+            }
+        } else {
+            let ui_executor = self.ui_command_executor.clone();
+            for command in ui_commands {
+                report.ui_command_ids.push(command.id.0);
+                if let Some(executor) = &ui_executor {
+                    if let Err(error) = executor.dispatch(command) {
+                        report.errors.push(error.to_string());
+                    }
                 }
             }
         }
@@ -6262,12 +6404,19 @@ impl NativeViewInputRuntime {
                     }
                 }
             }
-            let ui_executor = self.ui_command_executor.clone();
-            for effect in update.ui_commands {
-                report.ui_command_ids.push(effect.id.0);
-                if let Some(executor) = &ui_executor {
-                    if let Err(error) = executor.dispatch(effect) {
-                        report.errors.push(error.to_string());
+            if self.defer_ui_command_execution {
+                for effect in update.ui_commands {
+                    report.ui_command_ids.push(effect.id.0);
+                    self.pending_ui_commands.push(effect);
+                }
+            } else {
+                let ui_executor = self.ui_command_executor.clone();
+                for effect in update.ui_commands {
+                    report.ui_command_ids.push(effect.id.0);
+                    if let Some(executor) = &ui_executor {
+                        if let Err(error) = executor.dispatch(effect) {
+                            report.errors.push(error.to_string());
+                        }
                     }
                 }
             }
@@ -6346,6 +6495,60 @@ impl NativeViewInputRuntime {
         self.defer_app_command_execution = true;
     }
 
+    #[cfg(all(test, feature = "tabs"))]
+    pub(crate) fn widget_tab_view_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::view::ZsTabViewState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_tab_view_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_tab_view_state(widget))
+            })
+    }
+
+    pub(crate) const fn surface(&self) -> Option<(Rect, Dpi)> {
+        match self.surface {
+            Some(surface) => Some((surface, self.dpi)),
+            None => None,
+        }
+    }
+
+    pub(crate) fn defer_ui_command_execution(&mut self) {
+        self.defer_ui_command_execution = true;
+    }
+
+    pub(crate) fn set_resource_policy(&mut self, policy: NativeWindowResourcePolicy) {
+        self.resource_policy = policy;
+    }
+
+    pub(crate) const fn resource_policy(&self) -> NativeWindowResourcePolicy {
+        self.resource_policy
+    }
+
+    pub(crate) const fn is_view_suspended(&self) -> bool {
+        self.view_suspended
+    }
+
+    pub(crate) const fn has_live_view(&self) -> bool {
+        self.live_view.is_some()
+    }
+
+    pub(crate) fn set_window_close_request_command(&mut self, command: Option<Command>) {
+        self.window_close_request_command = command;
+    }
+
+    pub(crate) fn set_app_command_executor(&mut self, executor: SharedAppCommandExecutor) {
+        self.app_command_executor = Some(executor);
+    }
+
+    pub(crate) fn set_ui_command_executor(&mut self, executor: SharedUiCommandExecutor) {
+        self.ui_command_executor = Some(executor);
+    }
+
     pub(crate) fn take_pending_app_command_dispatch(
         &mut self,
     ) -> (Option<SharedAppCommandExecutor>, Vec<Command>) {
@@ -6353,6 +6556,126 @@ impl NativeViewInputRuntime {
             self.app_command_executor.clone(),
             std::mem::take(&mut self.pending_app_commands),
         )
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    pub(crate) fn text_accessibility_range_rectangles(
+        &self,
+        widget: crate::WidgetId,
+        selection: NativeTextSelection,
+    ) -> Option<Vec<Rect>> {
+        let target = self.focused_text_input_target()?;
+        if target.widget != widget {
+            return None;
+        }
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return None;
+        }
+        let value = self.widget_text_value(widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
+        let interaction = self.current_interaction_plan()?;
+        let visual_target = native_text_visual_target(target, &interaction);
+        let selection = selection.clamp(&value);
+        let geometry = native_text_visual_geometry_in_viewport_with_backend(
+            visual_target,
+            &value,
+            selection,
+            state.first_visible_visual_row,
+            state.horizontal_scroll_px,
+            self.widget_text_wrap(widget),
+            self.dpi,
+            &self.text_shaping,
+        );
+        if selection.is_collapsed() {
+            Some(vec![geometry.caret])
+        } else {
+            Some(geometry.selections)
+        }
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    pub(crate) fn text_accessibility_visible_range(
+        &self,
+    ) -> Option<(crate::WidgetId, std::ops::Range<usize>)> {
+        let target = self.focused_text_input_target()?;
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return None;
+        }
+        let value = self.widget_text_value(target.widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let interaction = self.current_interaction_plan()?;
+        Some((
+            target.widget,
+            native_text_visible_range_with_backend(
+                native_text_visual_target(target, &interaction),
+                &value,
+                state.first_visible_visual_row,
+                self.widget_text_wrap(target.widget),
+                self.dpi,
+                &self.text_shaping,
+            ),
+        ))
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    pub(crate) fn text_accessibility_index_for_point(
+        &self,
+        point: Point,
+    ) -> Option<(crate::WidgetId, usize)> {
+        let target = self.focused_text_input_target()?;
+        #[cfg(feature = "password-box")]
+        if target.kind == crate::ViewHitTargetKind::PasswordBox {
+            return None;
+        }
+        let value = self.widget_text_value(target.widget)?;
+        let state = self
+            .text_edit
+            .filter(|state| state.widget == target.widget)
+            .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
+        let interaction = self.current_interaction_plan()?;
+        let visual_target = native_text_visual_target(target, &interaction);
+        Some((
+            target.widget,
+            native_text_index_for_point_in_viewport_with_backend(
+                visual_target,
+                &value,
+                point,
+                state.first_visible_visual_row,
+                state.horizontal_scroll_px,
+                self.widget_text_wrap(target.widget),
+                self.dpi,
+                &self.text_shaping,
+            ),
+        ))
+    }
+
+    pub(crate) fn take_pending_ui_command_dispatch(
+        &mut self,
+    ) -> (Option<SharedUiCommandExecutor>, Vec<UiCommand>) {
+        (
+            self.ui_command_executor.clone(),
+            std::mem::take(&mut self.pending_ui_commands),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_ui_command_count(&self) -> usize {
+        self.pending_ui_commands.len()
+    }
+
+    pub(crate) fn live_view_revision(&self) -> u64 {
+        self.live_view
+            .as_ref()
+            .map(SharedLiveViewRuntime::revision)
+            .unwrap_or(0)
     }
 
     pub(crate) fn refresh_live_view_after_app_effect(
@@ -6371,22 +6694,13 @@ impl NativeViewInputRuntime {
         report.redraw_plan = Some(runtime.draw_plan());
     }
 
-    pub(crate) fn backend_attachment(&self) -> Option<NativeViewInputBackendAttachment> {
-        let source = if let Some(runtime) = &self.live_view {
-            NativeViewInputBackendSource::Live(runtime.clone())
-        } else {
-            NativeViewInputBackendSource::Static {
-                interaction_plan: self.interaction_plan.clone()?,
-                ui_command_view: self.ui_command_view.clone()?,
-            }
-        };
-        Some(NativeViewInputBackendAttachment {
-            source,
-            resource_policy: self.resource_policy,
-            window_close_request_command: self.window_close_request_command.clone(),
-            app_command_executor: self.app_command_executor.clone(),
-            ui_command_executor: self.ui_command_executor.clone(),
-        })
+    pub(crate) fn backend_runtime(&self) -> Option<Self> {
+        if self.live_view.is_none()
+            && (self.interaction_plan.is_none() || self.ui_command_view.is_none())
+        {
+            return None;
+        }
+        Some(self.clone())
     }
 }
 
@@ -7714,7 +8028,7 @@ mod tests {
 
     #[cfg(all(feature = "label", feature = "button"))]
     #[test]
-    fn native_view_backend_attachment_is_platform_neutral() {
+    fn native_view_backend_runtime_is_platform_neutral() {
         #[derive(Clone)]
         enum Msg {
             Save,
@@ -7723,26 +8037,17 @@ mod tests {
         let static_builder = native_window("Static Backend Attachment")
             .release_view_when_hidden()
             .ui_command_view(crate::button("Save").id(crate::WidgetId::new(41)));
-        let static_attachment = static_builder
+        let static_runtime = static_builder
             .native_view_input_runtime()
-            .backend_attachment()
-            .expect("static typed View should expose a backend attachment");
+            .backend_runtime()
+            .expect("static typed View should expose a backend runtime");
         assert_eq!(
-            static_attachment.resource_policy,
+            static_runtime.resource_policy,
             NativeWindowResourcePolicy::ReleaseViewWhenHidden
         );
-        match static_attachment.source {
-            NativeViewInputBackendSource::Static {
-                interaction_plan,
-                ui_command_view,
-            } => {
-                assert_eq!(interaction_plan.hit_target_count(), 1);
-                assert_eq!(ui_command_view.interaction_plan().hit_target_count(), 1);
-            }
-            NativeViewInputBackendSource::Live(_) => {
-                panic!("static typed View must not be lowered as a live source")
-            }
-        }
+        assert_eq!(static_runtime.hit_target_count(), 1);
+        assert!(static_runtime.live_view.is_none());
+        assert!(static_runtime.ui_command_view.is_some());
 
         let live_builder = native_window("Live Backend Attachment").stateful_view(
             false,
@@ -7755,18 +8060,13 @@ mod tests {
                 Msg::Save => *saved = true,
             },
         );
-        let live_attachment = live_builder
+        let live_runtime = live_builder
             .native_view_input_runtime()
-            .backend_attachment()
-            .expect("stateful View should expose a backend attachment");
-        match live_attachment.source {
-            NativeViewInputBackendSource::Live(runtime) => {
-                assert_eq!(runtime.interaction_plan().hit_target_count(), 1)
-            }
-            NativeViewInputBackendSource::Static { .. } => {
-                panic!("stateful View must remain a live backend source")
-            }
-        }
+            .backend_runtime()
+            .expect("stateful View should expose a backend runtime");
+        assert_eq!(live_runtime.hit_target_count(), 1);
+        assert!(live_runtime.live_view.is_some());
+        assert!(live_runtime.ui_command_view.is_none());
     }
 
     #[cfg(all(feature = "label", feature = "button"))]

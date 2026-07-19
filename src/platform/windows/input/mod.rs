@@ -1,106 +1,25 @@
 #[derive(Debug, Clone)]
 pub struct WindowsWin32ViewInputRoute {
-    interaction_plan: ViewInteractionPlan,
-    text_shaping: crate::native_input_visuals::NativeTextShapingBackend,
-    ui_command_view: Option<ViewNode<UiCommand>>,
-    live_view: Option<SharedLiveViewRuntime>,
-    resource_policy: NativeWindowResourcePolicy,
-    view_suspended: bool,
-    focused_widget: Option<crate::WidgetId>,
-    #[cfg(any(feature = "command-palette", feature = "dialog"))]
-    modal_restore_focus: Option<crate::WidgetId>,
-    #[cfg(feature = "tooltip")]
-    tooltip: crate::tooltip::ZsTooltipRuntime,
-    #[cfg(feature = "toast")]
-    toast: crate::toast::ZsToastRuntime,
-    text_edit: Option<NativeTextEditState>,
-    pending_utf16_high_surrogate: Option<u16>,
-    #[cfg(feature = "textbox")]
-    text_history: NativeTextHistory,
-    #[cfg(feature = "textbox")]
-    processing_text_edit_commands: bool,
-    text_drag: Option<NativeTextDragState>,
-    #[cfg(feature = "combo")]
-    combo_type_ahead: NativeComboTypeAheadState,
+    shared_runtime: crate::native::NativeViewInputRuntime,
+    shared_text_drag_active: bool,
     #[cfg(feature = "slider")]
-    slider_drag: Option<crate::WidgetId>,
+    shared_slider_drag_active: bool,
     #[cfg(feature = "color-picker")]
-    color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
-    #[cfg(any(
-        feature = "auto-suggest",
-        feature = "button",
-        feature = "breadcrumb",
-        feature = "color-picker",
-        feature = "date-picker",
-        feature = "dialog",
-        feature = "grid-view",
-        feature = "info-bar",
-        feature = "teaching-tip",
-        feature = "password-box",
-        feature = "tabs",
-        feature = "time-picker",
-        feature = "toast",
-        feature = "toggle-button",
-        feature = "table",
-        feature = "tree"
-    ))]
-    pointer_hover: Option<NativePointerVisualKey>,
-    #[cfg(any(
-        feature = "auto-suggest",
-        feature = "button",
-        feature = "breadcrumb",
-        feature = "color-picker",
-        feature = "date-picker",
-        feature = "dialog",
-        feature = "grid-view",
-        feature = "info-bar",
-        feature = "teaching-tip",
-        feature = "password-box",
-        feature = "tabs",
-        feature = "time-picker",
-        feature = "toast",
-        feature = "toggle-button",
-        feature = "table",
-        feature = "tree"
-    ))]
-    pointer_pressed: Option<NativePointerVisualKey>,
-    #[cfg(feature = "password-box")]
-    password_peek: Option<crate::WidgetId>,
-    surface: Option<crate::Rect>,
-    dpi: crate::Dpi,
+    shared_color_picker_drag_active: bool,
+    pending_utf16_high_surrogate: Option<u16>,
     pending_draw_plan: Option<NativeDrawPlan>,
     quit_requested: bool,
-    window_close_request_command: Option<Command>,
     close_approved: bool,
-    app_command_executor: Option<SharedAppCommandExecutor>,
-    pending_app_commands: Vec<Command>,
-    ui_command_executor: Option<SharedUiCommandExecutor>,
-    pending_ui_commands: Vec<UiCommand>,
+    resource_policy: NativeWindowResourcePolicy,
+    view_suspended: bool,
 }
 
 pub(crate) fn windows_win32_view_input_route(
     runtime: &crate::native::NativeViewInputRuntime,
 ) -> Option<WindowsWin32ViewInputRoute> {
-    let attachment = runtime.backend_attachment()?;
-    let route = match attachment.source {
-        crate::native::NativeViewInputBackendSource::Live(runtime) => {
-            WindowsWin32ViewInputRoute::from_live_view(runtime)
-        }
-        crate::native::NativeViewInputBackendSource::Static {
-            interaction_plan,
-            ui_command_view,
-        } => WindowsWin32ViewInputRoute::new(interaction_plan, ui_command_view),
-    }
-    .resource_policy(attachment.resource_policy)
-    .window_close_request_command(attachment.window_close_request_command);
-    let route = match attachment.app_command_executor {
-        Some(executor) => route.app_command_executor(executor),
-        None => route,
-    };
-    Some(match attachment.ui_command_executor {
-        Some(executor) => route.ui_command_executor(executor),
-        None => route,
-    })
+    runtime
+        .backend_runtime()
+        .map(WindowsWin32ViewInputRoute::from_shared_runtime)
 }
 
 impl WindowsWin32ViewInputRoute {
@@ -108,1311 +27,99 @@ impl WindowsWin32ViewInputRoute {
         interaction_plan: ViewInteractionPlan,
         ui_command_view: ViewNode<UiCommand>,
     ) -> Self {
-        let surface = ui_command_view.bounds();
-        #[cfg(feature = "toast")]
-        let now = std::time::Instant::now();
-        #[allow(unused_mut)]
-        let mut route = Self {
-            interaction_plan,
-            text_shaping: crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
-            ui_command_view: Some(ui_command_view),
-            live_view: None,
-            resource_policy: NativeWindowResourcePolicy::default(),
-            view_suspended: false,
-            focused_widget: None,
-            #[cfg(any(feature = "command-palette", feature = "dialog"))]
-            modal_restore_focus: None,
-            #[cfg(feature = "tooltip")]
-            tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
-            #[cfg(feature = "toast")]
-            toast: crate::toast::ZsToastRuntime::default(),
-            text_edit: None,
-            pending_utf16_high_surrogate: None,
-            #[cfg(feature = "textbox")]
-            text_history: NativeTextHistory::default(),
-            #[cfg(feature = "textbox")]
-            processing_text_edit_commands: false,
-            text_drag: None,
-            #[cfg(feature = "combo")]
-            combo_type_ahead: NativeComboTypeAheadState::default(),
-            #[cfg(feature = "slider")]
-            slider_drag: None,
-            #[cfg(feature = "color-picker")]
-            color_picker_drag: None,
-            #[cfg(any(
-                feature = "auto-suggest",
-                feature = "button",
-                feature = "breadcrumb",
-                feature = "color-picker",
-                feature = "date-picker",
-                feature = "dialog",
-                feature = "grid-view",
-                feature = "info-bar",
-                feature = "teaching-tip",
-                feature = "password-box",
-                feature = "tabs",
-                feature = "time-picker",
-                feature = "toast",
-                feature = "toggle-button",
-                feature = "table",
-                feature = "tree"
-            ))]
-            pointer_hover: None,
-            #[cfg(any(
-                feature = "auto-suggest",
-                feature = "button",
-                feature = "breadcrumb",
-                feature = "color-picker",
-                feature = "date-picker",
-                feature = "dialog",
-                feature = "grid-view",
-                feature = "info-bar",
-                feature = "teaching-tip",
-                feature = "password-box",
-                feature = "tabs",
-                feature = "time-picker",
-                feature = "toast",
-                feature = "toggle-button",
-                feature = "table",
-                feature = "tree"
-            ))]
-            pointer_pressed: None,
-            #[cfg(feature = "password-box")]
-            password_peek: None,
+        let surface = ui_command_view.bounds().unwrap_or_else(|| {
+            let width = interaction_plan
+                .hit_targets
+                .iter()
+                .map(|target| target.bounds.x.saturating_add(target.bounds.width))
+                .max()
+                .unwrap_or(1)
+                .max(1);
+            let height = interaction_plan
+                .hit_targets
+                .iter()
+                .map(|target| target.bounds.y.saturating_add(target.bounds.height))
+                .max()
+                .unwrap_or(1)
+                .max(1);
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            }
+        });
+        Self::from_shared_runtime(crate::native::NativeViewInputRuntime::new(
             surface,
-            dpi: crate::Dpi::standard(),
-            pending_draw_plan: None,
-            quit_requested: false,
-            window_close_request_command: None,
-            close_approved: false,
-            app_command_executor: None,
-            pending_app_commands: Vec::new(),
-            ui_command_executor: None,
-            pending_ui_commands: Vec::new(),
-        };
-        route.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
-        #[cfg(feature = "toast")]
-        route.sync_toast_runtime(now);
-        route
+            Some(interaction_plan),
+            Some(ui_command_view),
+            None,
+            NativeWindowResourcePolicy::default(),
+            None,
+            None,
+            None,
+        ))
     }
 
     pub fn from_live_view(live_view: SharedLiveViewRuntime) -> Self {
-        #[cfg(feature = "toast")]
-        let now = std::time::Instant::now();
-        #[allow(unused_mut)]
-        let mut route = Self {
-            interaction_plan: live_view.interaction_plan(),
-            text_shaping: crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
-            ui_command_view: None,
-            live_view: Some(live_view),
-            resource_policy: NativeWindowResourcePolicy::default(),
-            view_suspended: false,
-            focused_widget: None,
-            #[cfg(any(feature = "command-palette", feature = "dialog"))]
-            modal_restore_focus: None,
-            #[cfg(feature = "tooltip")]
-            tooltip: crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing()),
-            #[cfg(feature = "toast")]
-            toast: crate::toast::ZsToastRuntime::default(),
-            text_edit: None,
-            pending_utf16_high_surrogate: None,
-            #[cfg(feature = "textbox")]
-            text_history: NativeTextHistory::default(),
-            #[cfg(feature = "textbox")]
-            processing_text_edit_commands: false,
-            text_drag: None,
-            #[cfg(feature = "combo")]
-            combo_type_ahead: NativeComboTypeAheadState::default(),
+        let (surface, dpi) = live_view.surface();
+        let mut runtime = crate::native::NativeViewInputRuntime::new(
+            surface,
+            Some(live_view.interaction_plan()),
+            None,
+            Some(live_view),
+            NativeWindowResourcePolicy::default(),
+            None,
+            None,
+            None,
+        );
+        let _ = runtime.set_surface(surface, dpi);
+        Self::from_shared_runtime(runtime)
+    }
+
+    fn from_shared_runtime(mut shared_runtime: crate::native::NativeViewInputRuntime) -> Self {
+        shared_runtime.set_text_shaping_backend(
+            crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
+        );
+        #[cfg(feature = "tooltip")]
+        shared_runtime.set_tooltip_timing(windows_tooltip_timing());
+        shared_runtime.defer_app_command_execution();
+        shared_runtime.defer_ui_command_execution();
+        Self {
+            resource_policy: shared_runtime.resource_policy(),
+            view_suspended: shared_runtime.is_view_suspended(),
+            shared_runtime,
+            shared_text_drag_active: false,
             #[cfg(feature = "slider")]
-            slider_drag: None,
+            shared_slider_drag_active: false,
             #[cfg(feature = "color-picker")]
-            color_picker_drag: None,
-            #[cfg(any(
-                feature = "auto-suggest",
-                feature = "button",
-                feature = "breadcrumb",
-                feature = "color-picker",
-                feature = "date-picker",
-                feature = "dialog",
-                feature = "grid-view",
-                feature = "info-bar",
-                feature = "teaching-tip",
-                feature = "password-box",
-                feature = "tabs",
-                feature = "time-picker",
-                feature = "toast",
-                feature = "toggle-button",
-                feature = "table",
-                feature = "tree"
-            ))]
-            pointer_hover: None,
-            #[cfg(any(
-                feature = "auto-suggest",
-                feature = "button",
-                feature = "breadcrumb",
-                feature = "color-picker",
-                feature = "date-picker",
-                feature = "dialog",
-                feature = "grid-view",
-                feature = "info-bar",
-                feature = "teaching-tip",
-                feature = "password-box",
-                feature = "tabs",
-                feature = "time-picker",
-                feature = "toast",
-                feature = "toggle-button",
-                feature = "table",
-                feature = "tree"
-            ))]
-            pointer_pressed: None,
-            #[cfg(feature = "password-box")]
-            password_peek: None,
-            surface: None,
-            dpi: crate::Dpi::standard(),
+            shared_color_picker_drag_active: false,
+            pending_utf16_high_surrogate: None,
             pending_draw_plan: None,
             quit_requested: false,
-            window_close_request_command: None,
             close_approved: false,
-            app_command_executor: None,
-            pending_app_commands: Vec::new(),
-            ui_command_executor: None,
-            pending_ui_commands: Vec::new(),
-        };
-        route.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
-        #[cfg(feature = "toast")]
-        route.sync_toast_runtime(now);
-        route
+        }
     }
 
     pub fn app_command_executor(mut self, executor: SharedAppCommandExecutor) -> Self {
-        self.app_command_executor = Some(executor);
+        self.shared_runtime.set_app_command_executor(executor);
         self
     }
 
     pub fn resource_policy(mut self, policy: NativeWindowResourcePolicy) -> Self {
+        self.shared_runtime.set_resource_policy(policy);
         self.resource_policy = policy;
         self
     }
 
     pub fn window_close_request_command(mut self, command: Option<Command>) -> Self {
-        self.window_close_request_command = command;
+        self.shared_runtime.set_window_close_request_command(command);
         self
     }
 
     pub fn ui_command_executor(mut self, executor: SharedUiCommandExecutor) -> Self {
-        self.ui_command_executor = Some(executor);
+        self.shared_runtime.set_ui_command_executor(executor);
         self
-    }
-
-    pub fn hit_target_count(&self) -> usize {
-        self.interaction_plan.hit_target_count()
-    }
-
-    fn suspend_view_when_hidden(&mut self) -> bool {
-        if self.view_suspended || !self.resource_policy.releases_view_when_hidden() {
-            return false;
-        }
-        let Some(live_view) = self.live_view.clone() else {
-            return false;
-        };
-        if !live_view.suspend() {
-            return false;
-        }
-        self.view_suspended = true;
-        self.interaction_plan = ViewInteractionPlan::default();
-        self.focused_widget = None;
-        #[cfg(any(feature = "command-palette", feature = "dialog"))]
-        {
-            self.modal_restore_focus = None;
-        }
-        self.text_edit = None;
-        self.pending_utf16_high_surrogate = None;
-        self.text_drag = None;
-        self.pending_draw_plan = None;
-        #[cfg(feature = "textbox")]
-        {
-            self.text_history = NativeTextHistory::default();
-            self.processing_text_edit_commands = false;
-        }
-        #[cfg(feature = "combo")]
-        self.combo_type_ahead.reset();
-        #[cfg(feature = "slider")]
-        {
-            self.slider_drag = None;
-        }
-        #[cfg(feature = "color-picker")]
-        {
-            self.color_picker_drag = None;
-        }
-        #[cfg(any(
-            feature = "auto-suggest",
-            feature = "button",
-            feature = "breadcrumb",
-            feature = "color-picker",
-            feature = "date-picker",
-            feature = "dialog",
-            feature = "grid-view",
-            feature = "info-bar",
-            feature = "teaching-tip",
-            feature = "password-box",
-            feature = "tabs",
-            feature = "time-picker",
-            feature = "toast",
-            feature = "toggle-button",
-            feature = "table",
-            feature = "tree"
-        ))]
-        {
-            self.pointer_hover = None;
-            self.pointer_pressed = None;
-        }
-        #[cfg(feature = "password-box")]
-        {
-            self.password_peek = None;
-        }
-        #[cfg(feature = "tooltip")]
-        {
-            self.tooltip = crate::tooltip::ZsTooltipRuntime::new(windows_tooltip_timing());
-        }
-        #[cfg(feature = "toast")]
-        {
-            self.toast = crate::toast::ZsToastRuntime::default();
-        }
-        self.text_shaping.release_idle_memory();
-        true
-    }
-
-    fn resume_view_when_visible(&mut self) -> bool {
-        if !self.view_suspended {
-            return false;
-        }
-        let Some(live_view) = self.live_view.clone() else {
-            return false;
-        };
-        let update = live_view.resume();
-        self.view_suspended = false;
-        self.interaction_plan = live_view.interaction_plan();
-        self.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
-        #[cfg(feature = "toast")]
-        self.sync_toast_runtime(std::time::Instant::now());
-        update.redraw && self.rebuild_pending_draw_plan()
-    }
-}
-
-impl WindowsWin32ViewInputRoute {
-    fn dispatch_event(
-        &mut self,
-        event: crate::ViewEvent,
-        report: &mut WindowsWin32ViewInputDispatchReport,
-    ) {
-        if let Some(live_view) = &self.live_view {
-            let update = live_view.dispatch_event(&event);
-            #[cfg(feature = "textbox")]
-            let text_edit_commands = update.text_edit_commands.clone();
-            report.message_count += update.message_count;
-            report.ui_command_count += update.ui_commands.len();
-            report.app_command_count += update.commands.len();
-            report.live_view_revision = update.revision;
-            report.quit_requested |= update.quit_requested;
-            for command in update.commands {
-                report
-                    .app_command_names
-                    .push(crate::app_command_name(&command));
-                report
-                    .events
-                    .push(format!("win32_live_view_command:{command:?}"));
-                if command == Command::Quit {
-                    report.quit_requested = true;
-                    self.quit_requested = true;
-                }
-                self.pending_app_commands.push(command);
-            }
-            for command in update.ui_commands {
-                report.ui_command_ids.push(command.id.0);
-                report
-                    .events
-                    .push(format!("win32_live_view_ui_command:{}", command.id.0));
-                self.pending_ui_commands.push(command);
-            }
-            if update.redraw {
-                self.interaction_plan = live_view.interaction_plan();
-                self.reconcile_modal_focus(report);
-                self.rebuild_pending_draw_plan();
-                report.hit_target_count = self.hit_target_count();
-                report
-                    .events
-                    .push(format!("win32_live_view_repaint:{}", update.revision));
-            }
-            self.quit_requested |= update.quit_requested;
-            #[cfg(feature = "toast")]
-            self.sync_toast_runtime(std::time::Instant::now());
-            #[cfg(feature = "textbox")]
-            self.dispatch_text_edit_commands(text_edit_commands, report);
-            return;
-        }
-
-        let mut event_cx = ViewEventCx::new();
-        let Some(view) = &mut self.ui_command_view else {
-            return;
-        };
-        view.event(&mut event_cx, &event);
-        let commands = event_cx.into_messages();
-        report.message_count += commands.len();
-        report.ui_command_count += commands.len();
-        for command in commands {
-            report.ui_command_ids.push(command.id.0);
-            report
-                .events
-                .push(format!("win32_view_ui_command:{}", command.id.0));
-            self.pending_ui_commands.push(command);
-        }
-        if let Some(surface) = self.surface {
-            let mut layout = crate::ViewLayoutCx::new(surface, self.dpi);
-            view.layout(&mut layout);
-        }
-        let next_interaction_plan = view.interaction_plan();
-        if next_interaction_plan.hit_target_count() > 0 {
-            self.interaction_plan = next_interaction_plan;
-        }
-        self.reconcile_modal_focus(report);
-        #[cfg(feature = "toast")]
-        self.sync_toast_runtime(std::time::Instant::now());
-        self.rebuild_pending_draw_plan();
-    }
-
-    #[cfg(feature = "textbox")]
-    fn dispatch_text_edit_commands(
-        &mut self,
-        commands: Vec<crate::ZsTextEditCommandRequest>,
-        report: &mut WindowsWin32ViewInputDispatchReport,
-    ) {
-        if commands.is_empty() {
-            return;
-        }
-        if self.processing_text_edit_commands {
-            report
-                .text_edit_command_errors
-                .push("nested text edit commands are not supported".to_string());
-            return;
-        }
-
-        self.processing_text_edit_commands = true;
-        for request in commands {
-            report.text_edit_command_count += 1;
-            self.dispatch_text_edit_command(request, report);
-        }
-        self.processing_text_edit_commands = false;
-    }
-
-    #[cfg(feature = "textbox")]
-    fn dispatch_text_edit_command(
-        &mut self,
-        request: crate::ZsTextEditCommandRequest,
-        report: &mut WindowsWin32ViewInputDispatchReport,
-    ) {
-        let target = match request.widget {
-            Some(widget) => self.interaction_plan.hit_target_for_widget(widget),
-            None => self.focused_target(),
-        };
-        let Some(target) = target else {
-            return;
-        };
-        if !matches!(
-            target.kind,
-            crate::ViewHitTargetKind::Textbox | crate::ViewHitTargetKind::TextEditor
-        ) {
-            return;
-        }
-
-        let widget = target.widget;
-        let mut value = self.widget_text_value(widget).unwrap_or_default();
-        let mut state = self
-            .text_edit
-            .filter(|state| state.widget == widget)
-            .unwrap_or_else(|| NativeTextEditState::at_end(widget, &value));
-        state.clamp(&value);
-        let mut clipboard = crate::NativeClipboardService::new();
-        let result = apply_text_edit_command(
-            request.command,
-            widget,
-            &mut value,
-            &mut state.selection,
-            &mut self.text_history,
-            &mut clipboard,
-        );
-        let result = match result {
-            Ok(result) => result,
-            Err(error) => {
-                report.handled = true;
-                report.text_edit_command_errors.push(error.to_string());
-                return;
-            }
-        };
-
-        if result.selection_changed || result.text_changed {
-            state.preferred_visual_x = None;
-            state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
-                target,
-                &value,
-                state.selection.caret,
-                state.first_visible_visual_row,
-                self.widget_text_wrap(widget),
-                self.dpi,
-                &self.text_shaping,
-            );
-            state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
-                target,
-                &value,
-                state.selection.caret,
-                state.horizontal_scroll_px,
-                self.widget_text_wrap(widget),
-                self.dpi,
-                &self.text_shaping,
-            );
-        }
-        self.text_edit = Some(state);
-        report.handled |= result.handled;
-        report.text_selection_change_count += usize::from(result.selection_changed);
-        report.text_caret = Some(state.selection.caret);
-        report.text_clipboard_read_count += usize::from(result.clipboard_read);
-        report.text_clipboard_write_count += usize::from(result.clipboard_write);
-        report.text_undo_count += usize::from(result.undo_applied);
-        report.events.push(format!(
-            "win32_view_text_edit_command:{}:{:?}",
-            widget.0, request.command
-        ));
-
-        let event = if result.text_changed {
-            Some(crate::ViewEvent::TextEdited {
-                widget,
-                value,
-                selection: state.selection.into(),
-            })
-        } else if result.selection_changed {
-            Some(crate::ViewEvent::TextSelectionChanged {
-                widget,
-                selection: state.selection.into(),
-            })
-        } else {
-            None
-        };
-        if let Some(event) = event {
-            report.event_count += 1;
-            self.dispatch_event(event, report);
-        }
-    }
-
-    fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_text_value(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_text_value(widget).map(str::to_string))
-            })
-    }
-
-    fn widget_text_wrap(&self, widget: crate::WidgetId) -> crate::TextWrap {
-        #[cfg(feature = "textbox")]
-        {
-            if let Some(wrap) = self
-                .live_view
-                .as_ref()
-                .and_then(|runtime| runtime.widget_text_wrap(widget))
-                .or_else(|| {
-                    self.ui_command_view
-                        .as_ref()
-                        .and_then(|view| view.widget_text_wrap(widget))
-                })
-            {
-                return wrap;
-            }
-        }
-        let _ = widget;
-        crate::TextWrap::NoWrap
-    }
-
-    #[cfg(feature = "password-box")]
-    fn widget_password_value(&self, widget: crate::WidgetId) -> Option<crate::ZsPassword> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_password_value(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_password_value(widget).cloned())
-            })
-    }
-
-    fn widget_display_text_value(&self, widget: crate::WidgetId) -> Option<String> {
-        #[cfg(feature = "password-box")]
-        if let Some(password) = self.widget_password_value(widget) {
-            return Some(crate::mask_password(password.as_str()));
-        }
-        self.widget_text_value(widget)
-    }
-
-    fn widget_checked_value(&self, widget: crate::WidgetId) -> Option<bool> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_checked_value(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_checked_value(widget))
-            })
-    }
-
-    fn widget_accepts_tab_focus(&self, target: crate::ViewHitTarget) -> bool {
-        #[cfg(not(any(feature = "radio", feature = "tabs")))]
-        let _ = target;
-        #[cfg(feature = "radio")]
-        if target.kind == crate::ViewHitTargetKind::RadioButton {
-            return self
-                .live_view
-                .as_ref()
-                .and_then(|runtime| runtime.widget_radio_is_tab_stop(target.widget))
-                .or_else(|| {
-                    self.ui_command_view
-                        .as_ref()
-                        .and_then(|view| view.widget_radio_is_tab_stop(target.widget))
-                })
-                .unwrap_or(true);
-        }
-        #[cfg(feature = "tabs")]
-        if matches!(target.kind, crate::ViewHitTargetKind::Tab { .. }) {
-            return self
-                .widget_tab_header_state(target.widget)
-                .is_none_or(|state| state.selected);
-        }
-        true
-    }
-
-    #[cfg(feature = "radio")]
-    fn widget_radio_relative_widget(
-        &self,
-        widget: crate::WidgetId,
-        navigation: crate::ViewStackDirection,
-        offset: isize,
-    ) -> Option<crate::WidgetId> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_radio_relative_widget(widget, navigation, offset))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_radio_relative_widget(widget, navigation, offset))
-            })
-    }
-
-    #[cfg(feature = "tabs")]
-    fn widget_tab_header_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<crate::view::ZsTabHeaderState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_tab_header_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_tab_header_state(widget))
-            })
-    }
-
-    #[cfg(feature = "tabs")]
-    fn widget_tab_cycle_target(
-        &self,
-        focused: crate::WidgetId,
-        offset: isize,
-    ) -> Option<(crate::WidgetId, crate::ZsTabId)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_tab_cycle_target(focused, offset))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_tab_cycle_target(focused, offset))
-            })
-    }
-
-    #[cfg(feature = "slider")]
-    fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_slider_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_slider_state(widget))
-            })
-    }
-
-    #[cfg(feature = "color-picker")]
-    fn widget_color_picker_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<crate::ZsColorPickerState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_color_picker_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_color_picker_state(widget))
-            })
-    }
-
-    #[cfg(feature = "auto-suggest")]
-    fn widget_auto_suggest_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<crate::ZsAutoSuggestState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_auto_suggest_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_auto_suggest_state(widget))
-            })
-    }
-
-    #[cfg(feature = "tree")]
-    fn widget_tree_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTreeViewState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_tree_view_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_tree_view_state(widget))
-            })
-    }
-
-    #[cfg(feature = "grid-view")]
-    fn widget_grid_view_state(&self, widget: crate::WidgetId) -> Option<crate::ZsGridViewState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_grid_view_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_grid_view_state(widget))
-            })
-    }
-
-    #[cfg(feature = "table")]
-    fn widget_table_state(&self, widget: crate::WidgetId) -> Option<crate::ZsTableViewState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_table_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_table_state(widget))
-            })
-    }
-
-    #[cfg(feature = "dialog")]
-    fn widget_content_dialog_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_content_dialog_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_content_dialog_state(widget))
-            })
-    }
-
-    #[cfg(feature = "command-palette")]
-    fn widget_command_palette_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<crate::ZsCommandPaletteState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_command_palette_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_command_palette_state(widget))
-            })
-    }
-
-    #[cfg(feature = "toast")]
-    fn widget_toast_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<(crate::ZsToastState, crate::ZsToastSpec)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_toast_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_toast_state(widget))
-            })
-    }
-
-    #[cfg(feature = "info-bar")]
-    fn widget_info_bar_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<(crate::ZsInfoBarState, crate::ZsInfoBarSpec)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_info_bar_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_info_bar_state(widget))
-            })
-    }
-
-    #[cfg(feature = "breadcrumb")]
-    fn widget_breadcrumb_state(&self, widget: crate::WidgetId) -> Option<crate::ZsBreadcrumbState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_breadcrumb_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_breadcrumb_state(widget))
-            })
-    }
-
-    #[cfg(feature = "teaching-tip")]
-    fn widget_teaching_tip_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<(crate::ZsTeachingTipState, crate::ZsTeachingTipSpec)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_teaching_tip_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_teaching_tip_state(widget))
-            })
-    }
-
-    #[cfg(feature = "toast")]
-    fn active_toast(&self) -> Option<(crate::WidgetId, crate::ZsToastSpec)> {
-        let target = self
-            .interaction_plan
-            .hit_targets
-            .iter()
-            .rev()
-            .copied()
-            .find(|target| target.kind == crate::ViewHitTargetKind::Toast)?;
-        self.widget_toast_state(target.widget)
-            .map(|(_, spec)| (target.widget, spec))
-    }
-
-    #[cfg(feature = "toast")]
-    fn sync_toast_runtime(&mut self, now: std::time::Instant) -> bool {
-        let active = self.active_toast();
-        self.toast
-            .sync(active.as_ref().map(|(widget, spec)| (*widget, spec)), now)
-    }
-
-    #[cfg(feature = "combo")]
-    fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_combo_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_combo_state(widget))
-            })
-    }
-
-    #[cfg(feature = "combo")]
-    fn widget_combo_type_ahead_match(
-        &self,
-        widget: crate::WidgetId,
-        query: &str,
-        start_after: Option<usize>,
-    ) -> Option<usize> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_combo_type_ahead_match(widget, query, start_after))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_combo_type_ahead_match(widget, query, start_after))
-            })
-    }
-
-    #[cfg(any(
-        feature = "auto-suggest",
-        feature = "color-picker",
-        feature = "combo",
-        feature = "date-picker",
-        feature = "time-picker"
-    ))]
-    fn dismiss_popup_overlays_except(
-        &mut self,
-        except: Option<crate::WidgetId>,
-        report: &mut WindowsWin32ViewInputDispatchReport,
-    ) {
-        #[cfg(feature = "auto-suggest")]
-        let auto_suggest_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
-            Some(target.widget) != except
-                && target.kind == crate::ViewHitTargetKind::AutoSuggestBox
-                && self
-                    .widget_auto_suggest_state(target.widget)
-                    .is_some_and(|state| state.expanded)
-        });
-        #[cfg(feature = "combo")]
-        let combo_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
-            Some(target.widget) != except
-                && target.kind == crate::ViewHitTargetKind::ComboBox
-                && self
-                    .widget_combo_state(target.widget)
-                    .is_some_and(|(_, _, expanded)| expanded)
-        });
-        #[cfg(feature = "color-picker")]
-        let color_picker_was_dismissed = self.interaction_plan.hit_targets.iter().any(|target| {
-            Some(target.widget) != except
-                && target.kind == crate::ViewHitTargetKind::ColorPicker
-                && self
-                    .widget_color_picker_state(target.widget)
-                    .is_some_and(|state| state.expanded)
-        });
-        let should_dismiss = self.interaction_plan.hit_targets.iter().any(|target| {
-            if Some(target.widget) == except {
-                return false;
-            }
-            match target.kind {
-                #[cfg(feature = "auto-suggest")]
-                crate::ViewHitTargetKind::AutoSuggestBox => self
-                    .widget_auto_suggest_state(target.widget)
-                    .is_some_and(|state| state.expanded),
-                #[cfg(feature = "combo")]
-                crate::ViewHitTargetKind::ComboBox => self
-                    .widget_combo_state(target.widget)
-                    .is_some_and(|(_, _, expanded)| expanded),
-                #[cfg(feature = "color-picker")]
-                crate::ViewHitTargetKind::ColorPicker => self
-                    .widget_color_picker_state(target.widget)
-                    .is_some_and(|state| state.expanded),
-                #[cfg(feature = "date-picker")]
-                crate::ViewHitTargetKind::DatePicker => self
-                    .widget_date_picker_state(target.widget)
-                    .is_some_and(|state| state.expanded),
-                #[cfg(feature = "time-picker")]
-                crate::ViewHitTargetKind::TimePicker => self
-                    .widget_time_picker_state(target.widget)
-                    .is_some_and(|state| state.expanded),
-                _ => false,
-            }
-        });
-        if !should_dismiss {
-            return;
-        }
-        #[cfg(feature = "auto-suggest")]
-        {
-            report.auto_suggest_expanded_change_count += usize::from(auto_suggest_was_dismissed);
-        }
-        #[cfg(feature = "combo")]
-        {
-            report.combo_expanded_change_count += usize::from(combo_was_dismissed);
-        }
-        #[cfg(feature = "color-picker")]
-        {
-            report.color_picker_expanded_change_count += usize::from(color_picker_was_dismissed);
-        }
-        report.handled = true;
-        report.event_count += 1;
-        report
-            .events
-            .push("win32_view_popup_overlays_dismissed".to_string());
-        self.dispatch_event(crate::ViewEvent::DismissPopupOverlays { except }, report);
-    }
-
-    #[cfg(not(any(
-        feature = "auto-suggest",
-        feature = "color-picker",
-        feature = "combo",
-        feature = "date-picker",
-        feature = "time-picker"
-    )))]
-    fn dismiss_popup_overlays_except(
-        &mut self,
-        _except: Option<crate::WidgetId>,
-        _report: &mut WindowsWin32ViewInputDispatchReport,
-    ) {
-    }
-
-    #[cfg(feature = "date-picker")]
-    fn widget_date_picker_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<crate::ZsDatePickerState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_date_picker_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_date_picker_state(widget))
-            })
-    }
-
-    #[cfg(feature = "time-picker")]
-    fn widget_time_picker_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<crate::ZsTimePickerState> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_time_picker_state(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_time_picker_state(widget))
-            })
-    }
-
-    #[cfg(feature = "list")]
-    fn widget_list_relative_widget(
-        &self,
-        widget: crate::WidgetId,
-        offset: isize,
-    ) -> Option<(crate::WidgetId, usize)> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_list_relative_widget(widget, offset))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_list_relative_widget(widget, offset))
-            })
-    }
-
-    #[cfg(feature = "list")]
-    fn widget_list_index(&self, widget: crate::WidgetId) -> Option<usize> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_list_index(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_list_index(widget))
-            })
-    }
-
-    #[cfg(feature = "scroll")]
-    fn widget_scroll_target(&self, widget: crate::WidgetId) -> Option<crate::WidgetId> {
-        self.live_view
-            .as_ref()
-            .and_then(|runtime| runtime.widget_scroll_target(widget))
-            .or_else(|| {
-                self.ui_command_view
-                    .as_ref()
-                    .and_then(|view| view.widget_scroll_target(widget))
-            })
-    }
-
-    fn take_pending_draw_plan(&mut self) -> Option<NativeDrawPlan> {
-        self.pending_draw_plan.take()
-    }
-
-    fn rebuild_pending_draw_plan(&mut self) -> bool {
-        if self.view_suspended {
-            return false;
-        }
-        let mut plan = if let Some(live_view) = &self.live_view {
-            live_view.draw_plan()
-        } else if let Some(view) = &self.ui_command_view {
-            let mut paint_cx = ViewPaintCx::new(self.dpi);
-            view.paint(&mut paint_cx);
-            paint_cx.into_plan()
-        } else {
-            return false;
-        };
-        #[cfg(any(
-            feature = "auto-suggest",
-            feature = "button",
-            feature = "breadcrumb",
-            feature = "color-picker",
-            feature = "date-picker",
-            feature = "dialog",
-            feature = "grid-view",
-            feature = "info-bar",
-            feature = "teaching-tip",
-            feature = "password-box",
-            feature = "tabs",
-            feature = "time-picker",
-            feature = "toast",
-            feature = "toggle-button",
-            feature = "table",
-            feature = "tree"
-        ))]
-        decorate_native_pointer_visuals(
-            &mut plan,
-            &self.interaction_plan,
-            self.pointer_hover,
-            self.pointer_pressed,
-            self.dpi,
-        );
-        #[cfg(feature = "password-box")]
-        self.compose_password_peek(&mut plan);
-        if let (Some(target), Some(state)) = (self.focused_target(), self.text_edit) {
-            if let Some(value) = self.widget_display_text_value(target.widget) {
-                let target = native_text_visual_target(target, &self.interaction_plan);
-                decorate_native_text_edit_visuals_in_viewport_with_backend(
-                    &mut plan,
-                    target,
-                    &value,
-                    state.selection.clamp(&value),
-                    state.first_visible_visual_row,
-                    state.horizontal_scroll_px,
-                    self.widget_text_wrap(target.widget),
-                    self.dpi,
-                    &self.text_shaping,
-                );
-            }
-        }
-        decorate_native_focus_ring(
-            &mut plan,
-            &self.interaction_plan,
-            self.focused_widget,
-            self.dpi,
-        );
-        #[cfg(feature = "tooltip")]
-        self.compose_tooltip(&mut plan);
-        self.pending_draw_plan = Some(plan);
-        true
-    }
-
-    fn refresh_live_view_after_app_effect(&mut self) -> Option<u64> {
-        let live_view = self.live_view.as_ref()?;
-        let update = live_view.refresh();
-        if update.redraw {
-            self.interaction_plan = live_view.interaction_plan();
-            self.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
-            self.rebuild_pending_draw_plan();
-        }
-        Some(update.revision)
-    }
-
-    #[cfg(feature = "tooltip")]
-    fn compose_tooltip(&self, plan: &mut NativeDrawPlan) {
-        let Some(surface) = self.surface else {
-            return;
-        };
-        let Some(target) = self.tooltip.visible_target(&self.interaction_plan) else {
-            return;
-        };
-        let render = crate::zs_tooltip_render_plan(
-            &target.spec,
-            target.bounds,
-            self.tooltip.anchor(),
-            surface,
-            crate::ZsTooltipPlatformStyle::Windows,
-            self.dpi,
-        );
-        let overlay = crate::zs_tooltip_native_draw_plan(&render, &target.spec);
-        plan.commands.extend(overlay.commands);
-    }
-
-    #[cfg(feature = "password-box")]
-    fn compose_password_peek(&self, plan: &mut NativeDrawPlan) {
-        let Some(widget) = self.password_peek else {
-            return;
-        };
-        let Some(target) = self.interaction_plan.hit_target_for_widget(widget) else {
-            return;
-        };
-        let Some(value) = self.widget_password_value(widget) else {
-            return;
-        };
-        for command in plan.commands.iter_mut().rev() {
-            let crate::NativeDrawCommand::Text(text) = command else {
-                continue;
-            };
-            if !crate::native_input_visuals::rect_contains(target.bounds, text.bounds) {
-                continue;
-            }
-            let bounds = text.bounds;
-            let style = text.style;
-            *command = crate::NativeDrawCommand::SecureText(
-                crate::NativeDrawSecureTextCommand::new(value, bounds, style, true),
-            );
-            break;
-        }
-    }
-
-    #[cfg(any(
-        feature = "auto-suggest",
-        feature = "button",
-        feature = "breadcrumb",
-        feature = "color-picker",
-        feature = "date-picker",
-        feature = "dialog",
-        feature = "grid-view",
-        feature = "info-bar",
-        feature = "teaching-tip",
-        feature = "password-box",
-        feature = "tabs",
-        feature = "time-picker",
-        feature = "toast",
-        feature = "toggle-button",
-        feature = "table",
-        feature = "tree"
-    ))]
-    fn update_pointer_visual_state(
-        &mut self,
-        hovered: Option<NativePointerVisualKey>,
-        pressed: Option<NativePointerVisualKey>,
-        report: &mut WindowsWin32ViewInputDispatchReport,
-    ) {
-        if self.pointer_hover == hovered && self.pointer_pressed == pressed {
-            return;
-        }
-        self.pointer_hover = hovered;
-        self.pointer_pressed = pressed;
-        report.handled = true;
-        report.pointer_visual_change_count += 1;
-        self.rebuild_pending_draw_plan();
-    }
-
-    fn take_quit_requested(&mut self) -> bool {
-        std::mem::take(&mut self.quit_requested)
-    }
-
-    fn take_pending_app_command_dispatch(
-        &mut self,
-    ) -> (Option<SharedAppCommandExecutor>, Vec<Command>) {
-        (
-            self.app_command_executor.clone(),
-            std::mem::take(&mut self.pending_app_commands),
-        )
-    }
-
-    fn take_pending_ui_command_dispatch(
-        &mut self,
-    ) -> (Option<SharedUiCommandExecutor>, Vec<UiCommand>) {
-        (
-            self.ui_command_executor.clone(),
-            std::mem::take(&mut self.pending_ui_commands),
-        )
-    }
-
-    fn background_poll_interval_ms(&self) -> Option<u64> {
-        let live_interval = self
-            .live_view
-            .as_ref()
-            .and_then(SharedLiveViewRuntime::background_poll_interval_ms);
-        let interval = live_interval;
-        #[cfg(feature = "tooltip")]
-        let interval = interval
-            .into_iter()
-            .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
-            .min();
-        #[cfg(feature = "toast")]
-        let interval = interval
-            .into_iter()
-            .chain(self.toast.poll_interval_ms(std::time::Instant::now()))
-            .min();
-        interval
-    }
-
-    fn refresh_background_view(&mut self) -> WindowsWin32ViewInputDispatchReport {
-        self.refresh_background_view_at(std::time::Instant::now())
-    }
-
-    fn refresh_background_view_at(
-        &mut self,
-        now: std::time::Instant,
-    ) -> WindowsWin32ViewInputDispatchReport {
-        #[cfg(not(any(feature = "tooltip", feature = "toast")))]
-        let _ = now;
-        let mut report = WindowsWin32ViewInputDispatchReport {
-            hit_target_count: self.hit_target_count(),
-            ..WindowsWin32ViewInputDispatchReport::default()
-        };
-        let mut redraw = false;
-        if let Some(live_view) = &self.live_view {
-            let update = live_view.refresh();
-            if update.redraw {
-                self.interaction_plan = live_view.interaction_plan();
-                report.background_refresh_count = 1;
-                self.reconcile_modal_focus(&mut report);
-            }
-            report.live_view_revision = update.revision;
-            report.events.push(format!(
-                "win32_live_view_background_refresh:{}",
-                update.revision
-            ));
-            redraw |= update.redraw;
-        }
-        #[cfg(feature = "tooltip")]
-        if self.tooltip.refresh(now) {
-            report.handled = true;
-            report.events.push("win32_tooltip_tick".to_string());
-            redraw = true;
-        }
-        #[cfg(feature = "toast")]
-        if let Some((widget, toast)) = self.toast.take_expired(now) {
-            report.handled = true;
-            report.toast_response_count = 1;
-            report.toast_timeout_count = 1;
-            report.event_count = 1;
-            report.events.push(format!(
-                "win32_view_toast_response:{}:{toast:?}:Timeout",
-                widget.0
-            ));
-            self.dispatch_event(
-                crate::ViewEvent::ToastResponded {
-                    widget,
-                    toast,
-                    response: crate::ZsToastResponse::Dismissed(
-                        crate::ZsToastDismissReason::Timeout,
-                    ),
-                },
-                &mut report,
-            );
-            redraw = true;
-        }
-        #[cfg(feature = "toast")]
-        self.sync_toast_runtime(now);
-        if redraw {
-            self.rebuild_pending_draw_plan();
-        }
-        report
-    }
-
-    fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
-        self.dpi = dpi;
-        self.surface = Some(bounds);
-        let mut changed = false;
-        if let Some(live_view) = &self.live_view {
-            if live_view.set_surface(bounds, dpi) {
-                self.interaction_plan = live_view.interaction_plan();
-                changed = true;
-            }
-        }
-        if let Some(view) = &mut self.ui_command_view {
-            let mut layout = crate::ViewLayoutCx::new(bounds, dpi);
-            view.layout(&mut layout);
-            self.interaction_plan = view.interaction_plan();
-            changed = true;
-        }
-        self.reconcile_modal_focus(&mut WindowsWin32ViewInputDispatchReport::default());
-        if changed {
-            self.rebuild_pending_draw_plan();
-        }
-        changed
     }
 }
 
@@ -1736,6 +443,7 @@ pub fn clear_windows_win32_window_view_input_routes() {
         .clear();
 }
 
+
 pub fn windows_win32_window_view_input_report(
     hwnd: HWND,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
@@ -1816,7 +524,7 @@ pub fn sync_windows_win32_window_view_visibility(hwnd: HWND, visible: bool) -> b
         let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) else {
             return false;
         };
-        let eligible = record.route.live_view.is_some()
+        let eligible = record.route.has_live_view()
             && record.route.resource_policy.releases_view_when_hidden();
         if !eligible {
             return false;
@@ -2056,6 +764,7 @@ pub fn dispatch_windows_win32_window_view_blur(
 }
 
 pub fn dispatch_windows_win32_window_view_scroll(
+
     hwnd: HWND,
     point: crate::Point,
     delta_y: crate::Dp,
@@ -2231,6 +940,9 @@ fn dispatch_windows_win32_app_commands(
     executor: Option<SharedAppCommandExecutor>,
     commands: Vec<Command>,
 ) -> bool {
+    report
+        .app_command_names
+        .extend(commands.iter().map(crate::app_command_name));
     let Some(executor) = executor else {
         report.app_command_unhandled_count += commands.len();
         return false;

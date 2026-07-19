@@ -11,6 +11,8 @@ pub struct LiveViewUpdate {
 }
 
 trait LiveViewDriver: Send {
+    #[cfg(all(windows, feature = "windows-win32"))]
+    fn surface(&self) -> (Rect, Dpi);
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
     fn set_typography_scale(&mut self, scale: f32) -> bool;
     fn suspend(&mut self) -> bool;
@@ -91,6 +93,8 @@ trait LiveViewDriver: Send {
     fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState>;
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState>;
+    #[cfg(all(test, feature = "tabs"))]
+    fn widget_tab_view_state(&self, widget: WidgetId) -> Option<ZsTabViewState>;
     #[cfg(feature = "tabs")]
     fn widget_tab_cycle_target(
         &self,
@@ -116,6 +120,11 @@ pub struct SharedLiveViewRuntime {
 }
 
 impl SharedLiveViewRuntime {
+    #[cfg(all(windows, feature = "windows-win32"))]
+    pub(crate) fn surface(&self) -> (Rect, Dpi) {
+        self.lock().surface()
+    }
+
     pub fn set_surface(&self, bounds: Rect, dpi: Dpi) -> bool {
         self.lock().set_surface(bounds, dpi)
     }
@@ -303,6 +312,11 @@ impl SharedLiveViewRuntime {
         self.lock().widget_tab_header_state(widget)
     }
 
+    #[cfg(all(test, feature = "tabs"))]
+    pub(crate) fn widget_tab_view_state(&self, widget: WidgetId) -> Option<ZsTabViewState> {
+        self.lock().widget_tab_view_state(widget)
+    }
+
     #[cfg(feature = "tabs")]
     pub(crate) fn widget_tab_cycle_target(
         &self,
@@ -455,6 +469,11 @@ where
     ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
     UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
 {
+    #[cfg(all(windows, feature = "windows-win32"))]
+    fn surface(&self) -> (Rect, Dpi) {
+        (self.bounds, self.dpi)
+    }
+
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool {
         if self.bounds == bounds && self.dpi == dpi {
             return false;
@@ -727,6 +746,11 @@ where
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
         self.view.widget_tab_header_state(widget)
+    }
+
+    #[cfg(all(test, feature = "tabs"))]
+    fn widget_tab_view_state(&self, widget: WidgetId) -> Option<ZsTabViewState> {
+        self.view.widget_tab_view_state(widget)
     }
 
     #[cfg(feature = "tabs")]

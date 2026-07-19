@@ -10,59 +10,15 @@ use std::{
     },
 };
 
-#[cfg(feature = "combo")]
-use crate::native::NativeComboTypeAheadState;
 use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
-};
-use crate::native_input_visuals::{
-    decorate_native_focus_ring, decorate_native_text_edit_visuals_in_viewport_with_backend,
-    move_native_text_selection_horizontally_with_backend,
-    native_text_drag_viewport_for_point_with_backend,
-    native_text_first_visible_row_for_caret_with_backend,
-    native_text_horizontal_scroll_for_caret_with_backend,
-    native_text_index_for_point_in_viewport_with_backend,
-    native_text_index_for_vertical_move_with_backend,
-    native_text_index_for_vertical_page_move_with_backend,
-    native_text_scroll_visual_rows_with_backend, native_text_visual_target,
-    native_text_wheel_row_delta, NativeTextVisualDirection, NativeTextVisualHorizontalDirection,
-};
-#[cfg(any(
-    feature = "auto-suggest",
-    feature = "button",
-    feature = "breadcrumb",
-    feature = "color-picker",
-    feature = "date-picker",
-    feature = "dialog",
-    feature = "grid-view",
-    feature = "info-bar",
-    feature = "teaching-tip",
-    feature = "password-box",
-    feature = "tabs",
-    feature = "time-picker",
-    feature = "toast",
-    feature = "toggle-button",
-    feature = "table",
-    feature = "tree"
-))]
-use crate::native_input_visuals::{
-    decorate_native_pointer_visuals, native_pointer_visual_key, NativePointerVisualKey,
-};
-#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
-use crate::native_input_visuals::{
-    native_text_first_visible_row_for_index_alignment_with_backend,
-    native_text_visible_range_with_backend, native_text_visual_geometry_in_viewport_with_backend,
-};
-#[cfg(feature = "textbox")]
-use crate::native_text_edit::{apply_text_edit_command, NativeTextHistory};
-use crate::native_text_edit::{
-    apply_text_input, move_selection, move_selection_to, set_pointer_selection,
-    NativeTextDragState, NativeTextEditState, NativeTextMovement,
 };
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
 };
+#[cfg(test)]
+use crate::View;
 use crate::{
     native_status_menu_command_from_menu, Color, Command, FileDialogService, FileDialogSpec,
     HostCapabilities, MenuItemSpec, MenuSpec, NativeAppIconResource, NativeDrawPlan,
@@ -74,9 +30,8 @@ use crate::{
     NativeTransientWindowHostOperation, NativeTransientWindowPresentation,
     NativeTransientWindowRequest, NativeWindowOptions, NativeWindowResourcePolicy, Renderer,
     SaveFileDialogSpec, SharedAppCommandExecutor, SharedUiCommandExecutor, Size, TraySpec,
-    UiCommand, UiRect, View, ViewEventCx, ViewInteractionPlan, ViewNode, ViewPaintCx, WindowSpec,
-    ZsAccelerator, ZsAcceleratorKey, ZsShellInteractionEvent, ZsShellInteractionUpdate,
-    ZsShellRuntime, ZsuiError, ZsuiResult,
+    UiCommand, UiRect, ViewInteractionPlan, ViewNode, WindowSpec, ZsAccelerator, ZsAcceleratorKey,
+    ZsShellInteractionEvent, ZsShellInteractionUpdate, ZsShellRuntime, ZsuiError, ZsuiResult,
 };
 use windows_sys::Win32::{
     Foundation::{
@@ -202,11 +157,9 @@ pub const ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS: u32 = TPM_RETURNCMD | TPM_NONOTIFY
 const ZSUI_WIN32_VK_RETURN: u32 = 0x0d;
 const ZSUI_WIN32_VK_TAB: u32 = 0x09;
 const ZSUI_WIN32_VK_SPACE: u32 = 0x20;
-const ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID: usize = 0x5a51;
-#[cfg(feature = "list")]
+#[cfg(test)]
 const ZSUI_WIN32_VK_UP: u32 = 0x26;
-#[cfg(feature = "list")]
-const ZSUI_WIN32_VK_DOWN: u32 = 0x28;
+const ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID: usize = 0x5a51;
 
 include!("application.rs");
 include!("services/menu.rs");
@@ -221,6 +174,7 @@ include!("input/pointer.rs");
 include!("input/ime.rs");
 include!("input/keyboard.rs");
 include!("input/focus.rs");
+include!("input/runtime.rs");
 include!("window_proc.rs");
 include!("text/composition.rs");
 include!("timer.rs");
