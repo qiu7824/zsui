@@ -370,8 +370,10 @@ Optional dependencies must stay behind explicit feature gates: `clipboard`
 enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
 `desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
 `macos-appkit` enables optional `objc2` AppKit bindings, `linux-direct` enables
-the lightweight Wayland/X11, Cairo/Pango, icon-theme and portal stack, and
-`linux-gtk` enables optional GTK4 compatibility bindings. Platform-native window, clipboard, file-dialog
+the lightweight Wayland/X11, Cairo/Pango, built-in symbolic-vector and portal
+stack, `linux-system-icons` optionally adds freedesktop theme lookup plus
+GdkPixbuf decoding, and `linux-gtk` enables optional GTK4 compatibility
+bindings. Platform-native window, clipboard, file-dialog
 and menu adapters therefore do not enter builds that omit their backend
 feature. Window adapters own `NSWindow` or Wayland/X11 window instances behind
 strong `WindowId` values; clipboard adapters map `ClipboardData::Text`/`Empty`

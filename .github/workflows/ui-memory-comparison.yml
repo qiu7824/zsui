@@ -212,6 +212,21 @@ jobs:
                 --output "$root/zsui-notepad-smaps.json"
               wait "$app_pid"
             '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path(
+              "target/ui-memory-comparison/ubuntu-24.04-x86_64/zsui-notepad-smaps.json"
+          ).read_text(encoding="utf-8"))
+          loaded = {mapping["path"] for mapping in report["largest_mappings"]}
+          offenders = sorted(path for path in loaded if "/librsvg-" in path)
+          if offenders:
+              raise SystemExit(
+                  "lightweight linux-direct unexpectedly loaded librsvg: "
+                  + ", ".join(offenders)
+              )
+          PY
 
       - name: Summarize Ubuntu memory
         run: |

@@ -96,10 +96,11 @@ GDI+ 抗锯齿圆角、DPI、语义图标、输入路由和应用外壳。macOS/
 
 应用和控件只使用 `ZsIcon` 语义值，不直接写字体私有码点。Windows 运行时先检测
 系统的 Segoe Fluent Icons，不存在时使用 Windows 10 自带的 Segoe MDL2 Assets；
-仓库不携带这两套字体。macOS 使用 SF Symbols 名称，Linux `linux-direct` 从当前
-freedesktop 图标主题解析 symbolic 名称，`linux-gtk` 兼容后端使用 GTK 图标主题。
-系统源找不到图标时，可使用 `fluent-icons` 提供的 MIT Fluent System Icons SVG
-子集作为回退。
+仓库不携带这两套字体。macOS 使用 SF Symbols 名称；Linux `linux-direct` 默认使用
+内置 Cairo symbolic 矢量图标，避免轻量应用仅为 SVG 图标常驻整套解码动态库。
+需要精确跟随当前 freedesktop 图标主题时可启用 `linux-system-icons`，`linux-gtk`
+兼容后端继续使用 GTK 图标主题。系统源找不到图标时，可使用 `fluent-icons`
+提供的 MIT Fluent System Icons SVG 子集作为回退。
 
 Windows 字体检测和 GDI 绘制已经接入真实运行路径。macOS 的 AppKit `NSImage`
 查找、Linux 的 freedesktop/GTK 主题查找及最终像素输出仍分别经过目标机证明，因此
@@ -491,7 +492,7 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
 | macOS | 原生宿主首轮 | 统一入口进入 NSApplication/NSWindow；绘制、输入、截图和目标机证据仍待完成 |
-| Linux | 轻量原生宿主首轮 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口，直接呈现自绘表面并使用 Cairo/Pango、freedesktop 图标、原生 IME 事件和 XDG portal；Ubuntu 24.04 X11 CI 已通过真实启动、交互和最终帧截图，Wayland 与 AT-SPI 目标证据仍待补齐；GTK4 保留为可选兼容后端 |
+| Linux | 轻量原生宿主首轮 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口，直接呈现自绘表面并使用 Cairo/Pango、内置 symbolic 矢量图标、原生 IME 事件和 XDG portal；精确 freedesktop 主题图标由 `linux-system-icons` 可选启用；GTK4 保留为可选兼容后端 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 | Harmony | 宿主契约 | Ability/FFI 与真实设备运行仍待完成 |
 

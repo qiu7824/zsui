@@ -572,8 +572,6 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec![
                 "cairo-rs",
-                "freedesktop-icons",
-                "gdk-pixbuf",
                 "pango",
                 "pangocairo",
                 "rfd",
@@ -581,7 +579,15 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "winit",
             ],
             Vec::new(),
-            "lightweight Linux native-window backend with direct software presentation, Pango text, freedesktop icons and XDG portal dialogs",
+            "lightweight Linux native-window backend with direct software presentation, Pango text, built-in symbolic vectors and XDG portal dialogs",
+        ),
+        ZsuiCargoFeature::new(
+            "linux-system-icons",
+            Backend,
+            false,
+            vec!["freedesktop-icons", "gdk-pixbuf"],
+            vec!["linux-direct"],
+            "optional freedesktop icon-theme lookup and raster decoding for Linux applications that require exact desktop theme icons",
         ),
         ZsuiCargoFeature::new(
             "linux-gtk",
@@ -659,6 +665,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "desktop-winit",
                 "hotkey",
                 "localization",
+                "linux-system-icons",
                 "mobile",
                 "native-smoke",
                 "product-adapter",
@@ -711,6 +718,7 @@ mod tests {
         assert!(names.contains(&"windows-gdi"));
         assert!(names.contains(&"macos-appkit"));
         assert!(names.contains(&"linux-direct"));
+        assert!(names.contains(&"linux-system-icons"));
         assert!(names.contains(&"linux-gtk"));
         assert!(names.contains(&"password-box"));
         assert!(names.contains(&"text-input-core"));

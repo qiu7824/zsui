@@ -12,7 +12,8 @@ the backend.
 | Windows 11 | Segoe Fluent Icons installed by Windows | Segoe MDL2 Assets | MIT Fluent System Icons SVG |
 | Windows 10 | Segoe Fluent Icons when installed | Segoe MDL2 Assets installed by Windows | MIT Fluent System Icons SVG |
 | macOS | SF Symbols through AppKit | - | MIT Fluent System Icons SVG |
-| Linux | Current freedesktop icon theme symbolic icon | - | MIT Fluent System Icons SVG |
+| Linux `linux-direct` | Built-in Cairo symbolic vectors | Optional freedesktop theme through `linux-system-icons` | MIT Fluent System Icons SVG |
+| Linux `linux-gtk` | Current GTK icon theme symbolic icon | - | MIT Fluent System Icons SVG |
 
 No Microsoft or Apple icon font is distributed with ZSUI. Windows checks the
 font selected by GDI instead of assuming that a requested family exists. The
@@ -20,11 +21,13 @@ live Windows renderer uses Segoe Fluent Icons first and Segoe MDL2 Assets when
 the Fluent family is unavailable.
 
 On a macOS target, `macos-appkit` includes SF Symbol names plus the portable
-fallback catalog. On a Linux target, `linux-direct` resolves freedesktop theme
-names and includes the same fallback catalog; `linux-gtk` retains GTK theme
-lookup for the compatibility backend. The `fluent-icons` feature can enable the SVG
-catalog explicitly on any target. This target-aware gating avoids putting the
-fallback assets into an ordinary Windows build.
+fallback catalog. On Linux, the lightweight `linux-direct` profile draws a
+complete 16-unit symbolic vector set directly with Cairo. Applications that
+require the exact active desktop icon theme opt into `linux-system-icons`,
+which adds freedesktop lookup and GdkPixbuf decoding. `linux-gtk` retains GTK
+theme lookup for the compatibility backend. The `fluent-icons` feature can
+enable the SVG catalog explicitly on any target. This gating keeps SVG loaders
+and their dynamic libraries out of an ordinary lightweight Linux process.
 
 ```toml
 [dependencies]
@@ -67,8 +70,9 @@ selected MIT Fluent System Icons SVG fallbacks.
   renderer.
 - macOS: SF Symbol names and safe resolver contracts are complete; the AppKit
   `NSImage` lookup remains part of the unfinished AppKit host.
-- Linux: freedesktop symbolic names and runtime theme-file lookup are connected
-  in `linux-direct`; target visual proof remains required.
+- Linux: the built-in symbolic vectors are connected to the lightweight
+  `linux-direct` renderer; exact freedesktop theme-file lookup is available
+  through `linux-system-icons`. Both paths require target visual proof.
 
 The capability report therefore marks Windows native icons as supported and
 macOS/Linux native icons as partial. A name catalog is not runtime proof.

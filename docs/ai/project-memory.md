@@ -170,6 +170,14 @@ history remain authoritative for implementation status.
   gallery action evidence, Linux menu-surface geometry and command routing.
   CI run `29660600124` also passed the Ubuntu `linux-direct` target checks,
   macOS target checks, Windows tests, core tests and the locked feature matrix.
+- Linux memory comparison run `29669817180` measured the default X11 Notepad
+  at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
+  runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB
+  to system font data. Exact freedesktop/GdkPixbuf icon-theme decoding is now
+  the optional `linux-system-icons` capability; default `linux-direct` uses a
+  complete Cairo symbolic vector set so lightweight applications do not load
+  the SVG decoder. Ubuntu Sans plus CJK fallback remains intentional and must
+  not be removed merely to lower RSS.
 - Native proof JSON uses the framework-owned `NativeProofDocument` envelope.
   Acceptance applications supply scenario metadata and typed message names;
   the framework projects backend identity, runner metadata, logical/pixel
@@ -184,9 +192,11 @@ history remain authoritative for implementation status.
   (`Ubuntu Sans 11`). A generic headless `Sans` fallback is not acceptable
   evidence of Ubuntu-native typography.
 - The default Linux backend is `linux-direct`: a real Wayland/X11 window,
-  direct software presentation, Cairo/Pango text and geometry, freedesktop
-  icon themes, native IME events, system clipboard, XDG portal dialogs and an
-  owned desktop menu surface. With the optional `accessibility` feature, the
+  direct software presentation, Cairo/Pango text and geometry, built-in Cairo
+  symbolic icons, native IME events, system clipboard, XDG portal dialogs and
+  an owned desktop menu surface. Exact freedesktop theme lookup and GdkPixbuf
+  decoding are isolated behind `linux-system-icons`. With the optional
+  `accessibility` feature, the
   shared hit-target tree is projected through AccessKit to AT-SPI with stable
   author IDs, roles, bounds, labels, focus and supported actions. Accessibility
   remains optional and does not increase the default lightweight build.
@@ -274,10 +284,11 @@ history remain authoritative for implementation status.
   branches.
 - Linux native proof must exercise the default `linux-direct` Winit input route
   before capture and provide Ubuntu Sans, a real CJK system fallback font,
-  Adwaita theme icons and an SVG loader. Missing-glyph boxes, square fallback
-  icons, clipped bilingual labels or a screenshot produced without the
-  scripted interaction are proof failures rather than acceptable headless
-  runner differences. The Ubuntu 24.04 X11/Xvfb proof first passed on commit
+  and the complete built-in symbolic vector set. Exact Adwaita theme and SVG
+  loader proof belongs to the optional `linux-system-icons` matrix. Missing-
+  glyph boxes, generic square icons, clipped bilingual labels or a screenshot
+  produced without the scripted interaction are proof failures rather than
+  acceptable headless runner differences. The Ubuntu 24.04 X11/Xvfb proof first passed on commit
   `cbe7b24`. Wayland proof must run with `DISPLAY` unset against a real Weston
   socket, record `display_server=wayland` from Winit's raw display handle, and
   use an external `pyatspi` client to enumerate and invoke the exported tree.

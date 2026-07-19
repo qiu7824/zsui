@@ -119,7 +119,8 @@ windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4"]
-linux-direct = ["dep:cairo-rs", "dep:freedesktop-icons", "dep:gdk-pixbuf", "dep:pango", "dep:pangocairo", "dep:rfd", "dep:softbuffer", "dep:winit"]
+linux-direct = ["dep:cairo-rs", "dep:pango", "dep:pangocairo", "dep:rfd", "dep:softbuffer", "dep:winit"]
+linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-direct"]
 all-widgets = ["button", "breadcrumb", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
 full = [
@@ -133,6 +134,7 @@ full = [
     "desktop-winit",
     "hotkey",
     "localization",
+    "linux-system-icons",
     "mobile",
     "native-smoke",
     "product-adapter",

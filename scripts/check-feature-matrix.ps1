@@ -76,6 +76,7 @@ $singleFeatures = @(
     "windows-win32",
     "macos-appkit",
     "linux-direct",
+    "linux-system-icons",
     "linux-gtk",
     "desktop-native",
     "all-widgets",

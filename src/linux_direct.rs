@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use cairo::{Context as CairoContext, Format, ImageSurface};
+#[cfg(feature = "linux-system-icons")]
 use gdk_pixbuf::prelude::*;
 use pango::prelude::*;
 use softbuffer::{Context as SoftBufferContext, Surface as SoftBufferSurface};
@@ -21,12 +22,14 @@ use winit::window::{
 };
 
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
+#[cfg(feature = "linux-system-icons")]
+use crate::NativeIconColorMode;
 use crate::{
     Color, HorizontalAlign, MenuItemSpec, MenuSpec, NativeDrawCommand, NativeDrawCommandSink,
     NativeDrawIconCommand, NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand,
-    NativeIconColorMode, NativeImageInterpolation, NativeStyleResolver, Point, Rect,
-    Size as ZsSize, TextLayout, TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign,
-    WindowSpec, ZsAccelerator, ZsAcceleratorKey, ZsIcon, ZsuiError, ZsuiResult,
+    NativeImageInterpolation, NativeStyleResolver, Point, Rect, Size as ZsSize, TextLayout,
+    TextRun, TextStyle, TextWeight, TextWrap, VerticalAlign, WindowSpec, ZsAccelerator,
+    ZsAcceleratorKey, ZsIcon, ZsuiError, ZsuiResult,
 };
 
 type LinuxDisplayHandle = OwnedDisplayHandle;
@@ -1491,49 +1494,57 @@ impl<'a> LinuxDirectDrawSink<'a> {
     }
 
     fn draw_icon(&mut self, command: &NativeDrawIconCommand) {
-        let logical_size = command.bounds.width.min(command.bounds.height).max(1) as u32;
-        let physical_size = (f64::from(logical_size) * self.scale_factor)
-            .ceil()
-            .clamp(1.0, f64::from(u16::MAX)) as u32;
-        let theme_aware = command.color_mode == NativeIconColorMode::ThemeAware;
-        let key = (command.icon, physical_size, theme_aware);
-        if !self.icon_cache.contains_key(&key) {
-            if let Some(raster) = load_linux_icon_raster(
-                command.icon,
-                physical_size,
-                theme_aware.then(|| self.palette.resolve(command.color)),
-            ) {
-                self.icon_cache.insert(key, raster);
+        #[cfg(feature = "linux-system-icons")]
+        {
+            let logical_size = command.bounds.width.min(command.bounds.height).max(1) as u32;
+            let physical_size = (f64::from(logical_size) * self.scale_factor)
+                .ceil()
+                .clamp(1.0, f64::from(u16::MAX)) as u32;
+            let theme_aware = command.color_mode == NativeIconColorMode::ThemeAware;
+            let key = (command.icon, physical_size, theme_aware);
+            if !self.icon_cache.contains_key(&key) {
+                if let Some(raster) = load_linux_icon_raster(
+                    command.icon,
+                    physical_size,
+                    theme_aware.then(|| self.palette.resolve(command.color)),
+                ) {
+                    self.icon_cache.insert(key, raster);
+                }
+            }
+            if let Some(raster) = self.icon_cache.get(&key) {
+                let Ok(surface) = ImageSurface::create_for_data(
+                    raster.premultiplied_bgra.clone(),
+                    Format::ARgb32,
+                    raster.width,
+                    raster.height,
+                    raster.width.saturating_mul(4),
+                ) else {
+                    return;
+                };
+                if self.context.save().is_err() {
+                    return;
+                }
+                self.add_rect(command.bounds);
+                self.context.clip();
+                self.context
+                    .translate(f64::from(command.bounds.x), f64::from(command.bounds.y));
+                self.context.scale(
+                    f64::from(command.bounds.width.max(1)) / f64::from(raster.width.max(1)),
+                    f64::from(command.bounds.height.max(1)) / f64::from(raster.height.max(1)),
+                );
+                if self.context.set_source_surface(&surface, 0.0, 0.0).is_ok() {
+                    let _ = self.context.paint();
+                }
+                let _ = self.context.restore();
+                return;
             }
         }
-        let Some(raster) = self.icon_cache.get(&key) else {
-            draw_linux_icon_fallback(self.context, command, self.palette);
-            return;
-        };
-        let Ok(surface) = ImageSurface::create_for_data(
-            raster.premultiplied_bgra.clone(),
-            Format::ARgb32,
-            raster.width,
-            raster.height,
-            raster.width.saturating_mul(4),
-        ) else {
-            return;
-        };
-        if self.context.save().is_err() {
-            return;
-        }
-        self.add_rect(command.bounds);
-        self.context.clip();
-        self.context
-            .translate(f64::from(command.bounds.x), f64::from(command.bounds.y));
-        self.context.scale(
-            f64::from(command.bounds.width.max(1)) / f64::from(raster.width.max(1)),
-            f64::from(command.bounds.height.max(1)) / f64::from(raster.height.max(1)),
+
+        crate::linux_direct_icons::draw_symbolic_icon(
+            self.context,
+            command,
+            self.palette.resolve(command.color),
         );
-        if self.context.set_source_surface(&surface, 0.0, 0.0).is_ok() {
-            let _ = self.context.paint();
-        }
-        let _ = self.context.restore();
     }
 
     fn draw_image(&self, command: &NativeDrawImageCommand) {
@@ -1726,6 +1737,7 @@ fn set_cairo_source(context: &CairoContext, color: Color) {
     );
 }
 
+#[cfg(feature = "linux-system-icons")]
 fn load_linux_icon_raster(
     icon: ZsIcon,
     physical_size: u32,
@@ -1758,6 +1770,7 @@ fn load_linux_icon_raster(
     pixbuf_to_linux_icon_raster(&pixbuf, recolor)
 }
 
+#[cfg(feature = "linux-system-icons")]
 fn pixbuf_to_linux_icon_raster(
     pixbuf: &gdk_pixbuf::Pixbuf,
     recolor: Option<Color>,
@@ -1801,79 +1814,7 @@ fn pixbuf_to_linux_icon_raster(
     })
 }
 
-fn draw_linux_icon_fallback(
-    context: &CairoContext,
-    command: &NativeDrawIconCommand,
-    palette: NativeDrawPalette,
-) {
-    let color = palette.resolve(command.color);
-    set_cairo_source(context, color);
-    context.set_line_width(1.5);
-    let rect = command.bounds;
-    match command.icon {
-        ZsIcon::Add => {
-            context.move_to(f64::from(rect.x + rect.width / 2), f64::from(rect.y + 3));
-            context.line_to(
-                f64::from(rect.x + rect.width / 2),
-                f64::from(rect.y + rect.height - 3),
-            );
-            context.move_to(f64::from(rect.x + 3), f64::from(rect.y + rect.height / 2));
-            context.line_to(
-                f64::from(rect.x + rect.width - 3),
-                f64::from(rect.y + rect.height / 2),
-            );
-        }
-        ZsIcon::Close => {
-            context.move_to(f64::from(rect.x + 3), f64::from(rect.y + 3));
-            context.line_to(
-                f64::from(rect.x + rect.width - 3),
-                f64::from(rect.y + rect.height - 3),
-            );
-            context.move_to(f64::from(rect.x + rect.width - 3), f64::from(rect.y + 3));
-            context.line_to(f64::from(rect.x + 3), f64::from(rect.y + rect.height - 3));
-        }
-        ZsIcon::ChevronDown | ZsIcon::ChevronUp | ZsIcon::ChevronLeft | ZsIcon::ChevronRight => {
-            let center_x = rect.x + rect.width / 2;
-            let center_y = rect.y + rect.height / 2;
-            let delta = rect.width.min(rect.height).max(4) / 4;
-            let points = match command.icon {
-                ZsIcon::ChevronDown => [
-                    (center_x - delta, center_y - delta / 2),
-                    (center_x, center_y + delta / 2),
-                    (center_x + delta, center_y - delta / 2),
-                ],
-                ZsIcon::ChevronUp => [
-                    (center_x - delta, center_y + delta / 2),
-                    (center_x, center_y - delta / 2),
-                    (center_x + delta, center_y + delta / 2),
-                ],
-                ZsIcon::ChevronLeft => [
-                    (center_x + delta / 2, center_y - delta),
-                    (center_x - delta / 2, center_y),
-                    (center_x + delta / 2, center_y + delta),
-                ],
-                _ => [
-                    (center_x - delta / 2, center_y - delta),
-                    (center_x + delta / 2, center_y),
-                    (center_x - delta / 2, center_y + delta),
-                ],
-            };
-            context.move_to(f64::from(points[0].0), f64::from(points[0].1));
-            context.line_to(f64::from(points[1].0), f64::from(points[1].1));
-            context.line_to(f64::from(points[2].0), f64::from(points[2].1));
-        }
-        _ => {
-            context.rectangle(
-                f64::from(rect.x + 2),
-                f64::from(rect.y + 2),
-                f64::from((rect.width - 4).max(1)),
-                f64::from((rect.height - 4).max(1)),
-            );
-        }
-    }
-    let _ = context.stroke();
-}
-
+#[cfg(feature = "linux-system-icons")]
 fn linux_direct_icon_theme() -> &'static str {
     static THEME: OnceLock<String> = OnceLock::new();
     THEME
