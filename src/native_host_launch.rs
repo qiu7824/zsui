@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::{
-    native_ui_backend_for_current_target, native_ui_backend_for_platform, NativeUiPlatform,
+    native_ui_backend_for_platform, platform_experience::PlatformExperience, NativeUiPlatform,
     NativeUiToolkit,
 };
 
@@ -34,6 +34,10 @@ pub struct NativeHostLaunchPlan {
     pub native_application_type: &'static str,
     pub native_window_type: &'static str,
     pub real_host_module_path: &'static str,
+    pub text_backend: &'static str,
+    pub raster_backend: &'static str,
+    pub presenter_backend: &'static str,
+    pub services_backend: &'static str,
     pub fallback_module_path: &'static str,
     pub mode: NativeHostLaunchMode,
     pub target_os_verification_required: bool,
@@ -65,50 +69,38 @@ pub fn native_host_launch_plan_for_platform(
     platform: NativeUiPlatform,
 ) -> Option<NativeHostLaunchPlan> {
     let backend = native_ui_backend_for_platform(platform)?;
-    let desktop = matches!(
-        platform,
-        NativeUiPlatform::Windows | NativeUiPlatform::Macos | NativeUiPlatform::Linux
-    );
+    let experience = PlatformExperience::for_platform(platform);
+    let profile = experience.backend();
+    debug_assert_eq!(profile.toolkit(), backend.toolkit);
+    debug_assert_eq!(profile.host().module_path(), backend.module_path);
 
     Some(NativeHostLaunchPlan {
         platform,
-        toolkit: backend.toolkit,
-        entry_point: if desktop {
+        toolkit: profile.toolkit(),
+        entry_point: if experience.is_desktop() {
             "zsui::native_window(\"Title\").run()"
         } else {
             "mobile runtime host scaffold"
         },
-        native_application_type: match platform {
-            NativeUiPlatform::Windows => "Win32 message loop with GDI no-flicker paint on Windows",
-            NativeUiPlatform::Macos => "NSApplication event loop on macOS",
-            NativeUiPlatform::Linux => "Wayland/X11 native event loop on Linux",
-            NativeUiPlatform::Android => "Android Activity host",
-            NativeUiPlatform::Harmony => "Harmony Ability host",
-        },
-        native_window_type: match platform {
-            NativeUiPlatform::Windows => "Win32 HWND main/quick windows",
-            NativeUiPlatform::Macos => "AppKit NSWindow",
-            NativeUiPlatform::Linux => "Wayland/X11 native window with directly presented surface",
-            NativeUiPlatform::Android => "android.app.Activity surface",
-            NativeUiPlatform::Harmony => "OpenHarmony Ability window",
-        },
-        real_host_module_path: backend.module_path,
+        native_application_type: profile.host().native_application_type(),
+        native_window_type: profile.host().native_window_type(),
+        real_host_module_path: profile.host().module_path(),
+        text_backend: profile.text().name(),
+        raster_backend: profile.raster().name(),
+        presenter_backend: profile.presenter().name(),
+        services_backend: profile.services().name(),
         fallback_module_path: "src/host.rs",
-        mode: match platform {
-            NativeUiPlatform::Windows => NativeHostLaunchMode::RealNativeHost,
-            NativeUiPlatform::Macos | NativeUiPlatform::Linux => {
-                NativeHostLaunchMode::RealNativeHost
-            }
-            NativeUiPlatform::Android | NativeUiPlatform::Harmony => {
-                NativeHostLaunchMode::ContractScaffoldFallback
-            }
+        mode: if profile.has_real_runtime() {
+            NativeHostLaunchMode::RealNativeHost
+        } else {
+            NativeHostLaunchMode::ContractScaffoldFallback
         },
         target_os_verification_required: true,
     })
 }
 
 pub fn native_host_launch_plan_for_current_target() -> Option<NativeHostLaunchPlan> {
-    native_host_launch_plan_for_platform(native_ui_backend_for_current_target()?.platform)
+    native_host_launch_plan_for_platform(PlatformExperience::current()?.platform())
 }
 
 #[cfg(test)]
@@ -124,6 +116,10 @@ mod tests {
         assert_eq!(plan.toolkit_name(), "win32_gdi");
         assert_eq!(plan.mode_name(), "real_native_host");
         assert_eq!(plan.real_host_module_path, "src/platform/windows/mod.rs");
+        assert_eq!(plan.text_backend, "uniscribe");
+        assert_eq!(plan.raster_backend, "gdi_plus");
+        assert_eq!(plan.presenter_backend, "buffered_dib");
+        assert_eq!(plan.services_backend, "win32");
         assert!(plan.enters_real_event_loop());
         assert!(plan.needs_target_os_verification());
     }

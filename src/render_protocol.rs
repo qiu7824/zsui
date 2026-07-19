@@ -49,13 +49,8 @@ pub enum ZsTypographyPlatformStyle {
 
 impl ZsTypographyPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 

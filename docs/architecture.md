@@ -503,6 +503,15 @@ text layout, rasterization, presentation and operating-system services. This
 keeps application authoring unified without applying a Windows component tree
 or one renderer to every target.
 
+The boundary has two concrete internal modules. `src/platform/experience.rs`
+owns the single compile-target selection and maps semantic component defaults
+to Fluent, AppKit or GTK behavior. `src/platform/backend_profile.rs` separately
+selects Host, Text, Raster, Presenter and Services implementations. Public View
+builders do not accept the internal experience or the low-level render-proof
+`PlatformStyle` enums. Regression tests scan the Gallery, Notepad and desktop
+showcase authoring slices so target `cfg`, platform enums and raw native handles
+cannot silently return to ordinary `view`/`update` code.
+
 Layout, paint, hit testing, caret/selection geometry and accessibility must
 consume the same backend text-layout result. Typography, clipping and density
 corrections therefore belong in reusable framework text/style contracts rather

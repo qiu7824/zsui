@@ -170,28 +170,8 @@ pub fn native_ui_backend_for_toolkit(
 }
 
 pub fn native_ui_platform_for_current_target() -> Option<NativeUiPlatform> {
-    #[cfg(target_env = "ohos")]
-    {
-        return Some(NativeUiPlatform::Harmony);
-    }
-    #[cfg(target_os = "windows")]
-    {
-        return Some(NativeUiPlatform::Windows);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        return Some(NativeUiPlatform::Macos);
-    }
-    #[cfg(target_os = "android")]
-    {
-        return Some(NativeUiPlatform::Android);
-    }
-    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-    {
-        return Some(NativeUiPlatform::Linux);
-    }
-    #[allow(unreachable_code)]
-    None
+    crate::platform_experience::PlatformExperience::current()
+        .map(crate::platform_experience::PlatformExperience::platform)
 }
 
 pub fn native_ui_backend_for_current_target() -> Option<&'static NativeUiBackendDescriptor> {

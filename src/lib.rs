@@ -12,6 +12,8 @@ pub mod app;
 pub mod app_command;
 #[cfg(feature = "auto-suggest")]
 pub mod auto_suggest;
+#[path = "platform/backend_profile.rs"]
+mod backend_profile;
 #[cfg(feature = "breadcrumb")]
 pub mod breadcrumb;
 #[cfg(feature = "calculator")]
@@ -144,6 +146,8 @@ mod native_text_edit;
 pub mod paged_list;
 #[cfg(feature = "password-box")]
 pub mod password_box;
+#[path = "platform/experience.rs"]
+mod platform_experience;
 pub mod product_adapter;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
 pub mod progress;

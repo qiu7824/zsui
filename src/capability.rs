@@ -13,18 +13,9 @@ pub enum PlatformName {
 
 impl PlatformName {
     pub fn current() -> Self {
-        if cfg!(target_env = "ohos") {
-            Self::Harmony
-        } else if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(target_os = "android") {
-            Self::Android
-        } else if cfg!(target_os = "linux") {
-            Self::Linux
-        } else {
-            Self::Unknown
+        match crate::platform_experience::PlatformExperience::current() {
+            Some(experience) => experience.platform().into(),
+            None => Self::Unknown,
         }
     }
 
@@ -37,6 +28,18 @@ impl PlatformName {
             Self::Harmony => "harmony",
             Self::Unknown => "unknown",
             Self::Other(value) => value.as_str(),
+        }
+    }
+}
+
+impl From<crate::NativeUiPlatform> for PlatformName {
+    fn from(platform: crate::NativeUiPlatform) -> Self {
+        match platform {
+            crate::NativeUiPlatform::Windows => Self::Windows,
+            crate::NativeUiPlatform::Macos => Self::Macos,
+            crate::NativeUiPlatform::Linux => Self::Linux,
+            crate::NativeUiPlatform::Android => Self::Android,
+            crate::NativeUiPlatform::Harmony => Self::Harmony,
         }
     }
 }

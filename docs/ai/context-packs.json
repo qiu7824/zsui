@@ -56,12 +56,13 @@
         "src/view/mod.rs",
         "src/view/node.rs",
         "src/components.rs",
-        "src/widget_render.rs",
-        "src/component_catalog.rs"
+        "src/platform/experience.rs",
+        "src/widget_render.rs"
       ],
       "optional": [
         "src/view",
         "src/native.rs",
+        "src/component_catalog.rs",
         "examples/rust_first_view.rs",
         "examples/list_selection.rs",
         "examples/scroll_view.rs"
@@ -241,11 +242,13 @@
         "src/native_hosts.rs",
         "src/native_host_launch.rs",
         "src/native_adapter_manifest.rs",
-        "src/desktop_services.rs",
-        "docs/porting.md"
+        "src/platform/experience.rs",
+        "src/platform/backend_profile.rs"
       ],
       "optional": [
         "src/platform/windows/mod.rs",
+        "src/desktop_services.rs",
+        "docs/porting.md",
         "src/native_clipboard.rs",
         "src/native_menu.rs",
         "src/macos_appkit_menu.rs",

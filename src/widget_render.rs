@@ -161,13 +161,8 @@ pub enum ZsBaseControlPlatformStyle {
 
 impl ZsBaseControlPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 
     pub const fn typography(self) -> crate::ZsTypographyPlatformStyle {
@@ -621,13 +616,8 @@ pub enum ZsInfoBarPlatformStyle {
 #[cfg(feature = "info-bar")]
 impl ZsInfoBarPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -1016,13 +1006,8 @@ pub enum ZsTeachingTipPlatformStyle {
 #[cfg(feature = "teaching-tip")]
 impl ZsTeachingTipPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -1622,13 +1607,8 @@ pub enum ZsToastPlatformStyle {
 #[cfg(feature = "toast")]
 impl ZsToastPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -1922,13 +1902,8 @@ pub enum ZsBreadcrumbPlatformStyle {
 #[cfg(feature = "breadcrumb")]
 impl ZsBreadcrumbPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -2564,13 +2539,8 @@ pub enum ZsToggleButtonPlatformStyle {
 #[cfg(feature = "toggle-button")]
 impl ZsToggleButtonPlatformStyle {
     pub(crate) const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -2844,13 +2814,8 @@ pub enum ZsNumberBoxPlatformStyle {
 #[cfg(feature = "number-box")]
 impl ZsNumberBoxPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else {
-            Self::Gtk
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -3253,13 +3218,8 @@ pub enum ZsTabPlatformStyle {
 #[cfg(feature = "tabs")]
 impl ZsTabPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else {
-            Self::Gtk
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 
     pub const fn arrow_selects(self) -> bool {
@@ -3731,13 +3691,8 @@ pub enum ZsAutoSuggestPlatformStyle {
 #[cfg(feature = "auto-suggest")]
 impl ZsAutoSuggestPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else {
-            Self::Gtk
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -4138,13 +4093,8 @@ pub enum ZsGridViewPlatformStyle {
 #[cfg(feature = "grid-view")]
 impl ZsGridViewPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -4497,13 +4447,8 @@ pub enum ZsTreePlatformStyle {
 #[cfg(feature = "tree")]
 impl ZsTreePlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else {
-            Self::Gtk
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -4768,13 +4713,8 @@ pub enum ZsTablePlatformStyle {
 #[cfg(feature = "table")]
 impl ZsTablePlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else {
-            Self::Gtk
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -5861,13 +5801,8 @@ pub enum ZsTimePickerPlatformStyle {
 #[cfg(feature = "time-picker")]
 impl ZsTimePickerPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
-            Self::Macos
-        } else {
-            Self::Gtk
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 
     pub const fn default_clock(self) -> ZsClockFormat {
@@ -6298,13 +6233,8 @@ pub enum ZsColorPickerPlatformStyle {
 #[cfg(feature = "color-picker")]
 impl ZsColorPickerPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -7046,13 +6976,8 @@ pub enum ZsCommandPalettePlatformStyle {
 #[cfg(feature = "command-palette")]
 impl ZsCommandPalettePlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 
@@ -7549,13 +7474,8 @@ pub enum ZsContentDialogPlatformStyle {
 #[cfg(feature = "dialog")]
 impl ZsContentDialogPlatformStyle {
     pub const fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Macos
-        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
-            Self::Gtk
-        } else {
-            Self::Windows
-        }
+        crate::platform_experience::PlatformExperience::current_or_desktop_fallback()
+            .select_desktop(Self::Windows, Self::Macos, Self::Gtk, Self::Windows)
     }
 }
 

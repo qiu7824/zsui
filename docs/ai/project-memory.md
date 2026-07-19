@@ -309,6 +309,12 @@ history remain authoritative for implementation status.
   selected Host/Text/Raster/Presenter/Services profile owns target execution.
   Application parameters remain editable once through public semantic specs and
   tokens, and optional Cargo features remain independently trimmable.
+- `src/platform/experience.rs` is the only compile-target selector for framework
+  experience defaults; all built-in desktop `PlatformStyle::current()` paths
+  delegate to it. `src/platform/backend_profile.rs` keeps Host, Text, Raster,
+  Presenter and Services choices separate. These modules remain internal:
+  ordinary View constructors and acceptance-application authoring must not take
+  a platform style, platform enum or raw native handle.
 - Typography, clipping or composition corrections found in Gallery, Notepad or
   another acceptance application must be implemented as reusable framework
   rules before the example consumes them. Measure, paint, hit testing,
