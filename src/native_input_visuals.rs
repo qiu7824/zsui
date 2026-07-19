@@ -53,49 +53,34 @@ impl NativeTextShapingCache {
         Some(shaped)
     }
 }
+pub(crate) trait NativeTextShaper {
+    fn debug_name(&self) -> &'static str;
 
+    fn typography_scale(&self) -> f32 {
+        1.0
+    }
+
+    fn shape_line(&self, text: &str) -> Option<NativeShapedTextLine>;
+}
+
+#[cfg(windows)]
+pub(crate) trait NativePlatformTextShaper: NativeTextShaper + Send + Sync {}
+
+#[cfg(windows)]
+impl<T> NativePlatformTextShaper for T where T: NativeTextShaper + Send + Sync {}
+
+#[cfg(not(windows))]
+pub(crate) trait NativePlatformTextShaper: NativeTextShaper {}
+
+#[cfg(not(windows))]
+impl<T> NativePlatformTextShaper for T where T: NativeTextShaper {}
+
+#[allow(dead_code)]
 #[derive(Clone, Default)]
 pub(crate) enum NativeTextShapingBackend {
     #[default]
     LogicalCells,
-    #[cfg(all(
-        windows,
-        feature = "windows-gdi",
-        feature = "windows-win32",
-        feature = "text-input-core"
-    ))]
-    WindowsGdi(NativeTextShapingCache),
-    #[cfg(all(
-        target_os = "macos",
-        feature = "macos-appkit",
-        feature = "text-input-core"
-    ))]
-    AppKit(NativeTextShapingCache),
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-direct",
-        feature = "text-input-core"
-    ))]
-    LinuxDirect(pango::Context, NativeTextShapingCache),
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-direct-lite",
-        not(feature = "linux-direct"),
-        feature = "text-input-core"
-    ))]
-    LinuxDirectLite(
-        crate::linux_direct_lite::LinuxLiteTextSystem,
-        NativeTextShapingCache,
-    ),
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-gtk",
-        feature = "text-input-core"
-    ))]
-    Gtk(gtk4::pango::Context, NativeTextShapingCache),
+    Platform(Arc<dyn NativePlatformTextShaper>, NativeTextShapingCache),
     #[cfg(test)]
     Test(fn(&str, i32) -> Option<NativeShapedTextLine>),
 }
@@ -104,41 +89,7 @@ impl std::fmt::Debug for NativeTextShapingBackend {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::LogicalCells => formatter.write_str("LogicalCells"),
-            #[cfg(all(
-                windows,
-                feature = "windows-gdi",
-                feature = "windows-win32",
-                feature = "text-input-core"
-            ))]
-            Self::WindowsGdi(_) => formatter.write_str("WindowsGdi"),
-            #[cfg(all(
-                target_os = "macos",
-                feature = "macos-appkit",
-                feature = "text-input-core"
-            ))]
-            Self::AppKit(_) => formatter.write_str("AppKit"),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct",
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirect(_, _) => formatter.write_str("LinuxDirect(PangoContext)"),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct-lite",
-                not(feature = "linux-direct"),
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirectLite(_, _) => formatter.write_str("LinuxDirectLite(CosmicText)"),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-gtk",
-                feature = "text-input-core"
-            ))]
-            Self::Gtk(_, _) => formatter.write_str("Gtk(PangoContext)"),
+            Self::Platform(shaper, _) => formatter.write_str(shaper.debug_name()),
             #[cfg(test)]
             Self::Test(_) => formatter.write_str("Test"),
         }
@@ -146,185 +97,30 @@ impl std::fmt::Debug for NativeTextShapingBackend {
 }
 
 impl NativeTextShapingBackend {
+    #[allow(dead_code)]
+    pub(crate) fn platform(shaper: impl NativePlatformTextShaper + 'static) -> Self {
+        Self::Platform(Arc::new(shaper), NativeTextShapingCache::default())
+    }
+
     fn typography_scale(&self) -> f32 {
         match self {
-            #[cfg(all(
-                target_os = "macos",
-                feature = "macos-appkit",
-                feature = "text-input-core"
-            ))]
-            Self::AppKit(_) => crate::macos_appkit_renderer::appkit_ui_font_scale(),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct",
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirect(_, _) => crate::linux_direct::linux_direct_ui_font_scale(),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct-lite",
-                not(feature = "linux-direct"),
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirectLite(context, _) => context.ui_scale(),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-gtk",
-                feature = "text-input-core"
-            ))]
-            Self::Gtk(_, _) => crate::linux_gtk_renderer::linux_gtk_ui_font_scale(),
-            _ => 1.0,
+            Self::Platform(shaper, _) => shaper.typography_scale(),
+            Self::LogicalCells => 1.0,
+            #[cfg(test)]
+            Self::Test(_) => 1.0,
         }
     }
 
     pub(crate) fn release_idle_memory(&self) {
-        match self {
-            Self::LogicalCells => {}
-            #[cfg(all(
-                windows,
-                feature = "windows-gdi",
-                feature = "windows-win32",
-                feature = "text-input-core"
-            ))]
-            Self::WindowsGdi(cache) => cache.release_idle_memory(),
-            #[cfg(all(
-                target_os = "macos",
-                feature = "macos-appkit",
-                feature = "text-input-core"
-            ))]
-            Self::AppKit(cache) => cache.release_idle_memory(),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct",
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirect(_, cache) => cache.release_idle_memory(),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct-lite",
-                not(feature = "linux-direct"),
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirectLite(_, cache) => cache.release_idle_memory(),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-gtk",
-                feature = "text-input-core"
-            ))]
-            Self::Gtk(_, cache) => cache.release_idle_memory(),
-            #[cfg(test)]
-            Self::Test(_) => {}
+        if let Self::Platform(_, cache) = self {
+            cache.release_idle_memory();
         }
-    }
-
-    #[cfg(all(windows, feature = "windows-gdi", feature = "windows-win32"))]
-    pub(crate) fn windows_gdi() -> Self {
-        #[cfg(feature = "text-input-core")]
-        {
-            Self::WindowsGdi(NativeTextShapingCache::default())
-        }
-        #[cfg(not(feature = "text-input-core"))]
-        {
-            Self::LogicalCells
-        }
-    }
-
-    #[cfg(all(
-        target_os = "macos",
-        feature = "macos-appkit",
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn appkit() -> Self {
-        Self::AppKit(NativeTextShapingCache::default())
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-direct",
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn linux_direct(context: pango::Context) -> Self {
-        Self::LinuxDirect(context, NativeTextShapingCache::default())
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-direct-lite",
-        not(feature = "linux-direct"),
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn linux_direct_lite(
-        context: crate::linux_direct_lite::LinuxLiteTextSystem,
-    ) -> Self {
-        Self::LinuxDirectLite(context, NativeTextShapingCache::default())
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-gtk",
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn gtk(context: gtk4::pango::Context) -> Self {
-        Self::Gtk(context, NativeTextShapingCache::default())
     }
 
     fn shape_line(&self, text: &str, fallback_width: i32) -> NativeShapedTextLine {
         let shaped = match self {
             Self::LogicalCells => None,
-            #[cfg(all(
-                windows,
-                feature = "windows-gdi",
-                feature = "windows-win32",
-                feature = "text-input-core"
-            ))]
-            Self::WindowsGdi(cache) => cache.shape(text, || {
-                crate::windows_gdi_renderer::shape_windows_gdi_text_line(text)
-            }),
-            #[cfg(all(
-                target_os = "macos",
-                feature = "macos-appkit",
-                feature = "text-input-core"
-            ))]
-            Self::AppKit(cache) => cache.shape(text, || {
-                crate::macos_appkit_renderer::shape_macos_appkit_text_line(text)
-            }),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct",
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirect(context, cache) => cache.shape(text, || {
-                crate::linux_direct::shape_linux_direct_text_line(context, text)
-            }),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-direct-lite",
-                not(feature = "linux-direct"),
-                feature = "text-input-core"
-            ))]
-            Self::LinuxDirectLite(context, cache) => cache.shape(text, || {
-                crate::linux_direct_lite::shape_linux_lite_text_line(context, text)
-            }),
-            #[cfg(all(
-                target_os = "linux",
-                not(target_env = "ohos"),
-                feature = "linux-gtk",
-                feature = "text-input-core"
-            ))]
-            Self::Gtk(context, cache) => cache.shape(text, || {
-                crate::linux_gtk_renderer::shape_linux_gtk_text_line(context, text)
-            }),
+            Self::Platform(shaper, cache) => cache.shape(text, || shaper.shape_line(text)),
             #[cfg(test)]
             Self::Test(shape) => shape(text, fallback_width),
         };
@@ -378,14 +174,7 @@ pub(crate) struct NativeShapedTextCaret {
 }
 
 impl NativeShapedTextCaret {
-    #[cfg(any(
-        test,
-        all(
-            target_os = "macos",
-            feature = "macos-appkit",
-            feature = "text-input-core"
-        )
-    ))]
+    #[allow(dead_code)]
     pub(crate) fn closest_cluster_edges(self, next: Self) -> (i32, i32) {
         [
             (self.primary_x, next.primary_x),
@@ -2149,14 +1938,7 @@ fn native_text_viewport_lines_with_backend(
     (lines, visible_rows)
 }
 
-#[cfg(any(
-    test,
-    all(
-        target_os = "windows",
-        feature = "accessibility",
-        feature = "text-input-core"
-    )
-))]
+#[allow(dead_code)]
 pub(crate) fn native_text_visible_range_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -2183,14 +1965,7 @@ pub(crate) fn native_text_visible_range_with_backend(
     start..end.max(start)
 }
 
-#[cfg(any(
-    test,
-    all(
-        target_os = "windows",
-        feature = "accessibility",
-        feature = "text-input-core"
-    )
-))]
+#[allow(dead_code)]
 pub(crate) fn native_text_first_visible_row_for_index_alignment_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -2460,6 +2235,48 @@ pub(crate) fn rect_contains(outer: Rect, inner: Rect) -> bool {
 mod tests {
     use super::*;
     use crate::{ViewHitTarget, ViewHitTargetKind};
+
+    #[test]
+    fn shared_text_shaping_contract_has_no_platform_variants() {
+        let source = include_str!("native_input_visuals.rs");
+        let contract_start = source
+            .find("pub(crate) trait NativeTextShaper")
+            .expect("text shaper contract should exist");
+        let contract_end = source
+            .find("pub(crate) struct NativeShapedTextCluster")
+            .expect("shared shaped cluster should follow the backend contract");
+        let contract = &source[contract_start..contract_end];
+        assert!(contract.contains("Platform(Arc<dyn NativePlatformTextShaper>"));
+        for forbidden in [
+            "WindowsGdi(",
+            "AppKit(",
+            "LinuxDirect(",
+            "LinuxDirectLite(",
+            "Gtk(",
+            "pango::",
+            "gtk4::",
+            "windows_gdi_renderer",
+            "macos_appkit_renderer",
+            "linux_direct::",
+            "linux_gtk_renderer",
+        ] {
+            assert!(
+                !contract.contains(forbidden),
+                "shared shaping contract contains platform implementation: {forbidden}"
+            );
+        }
+
+        let native = include_str!("native.rs");
+        assert!(native.contains("fn set_text_shaping_backend("));
+        for forbidden in [
+            "use_appkit_text_shaping",
+            "use_linux_direct_text_shaping",
+            "use_linux_direct_lite_text_shaping",
+            "use_gtk_text_shaping",
+        ] {
+            assert!(!native.contains(forbidden));
+        }
+    }
 
     fn body_line_height() -> i32 {
         Dp::new(

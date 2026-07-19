@@ -44,7 +44,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
     }
     let plan = Rc::new(RefCell::new(plan));
     #[cfg(feature = "text-input-core")]
-    runtime.use_gtk_text_shaping(drawing_area.pango_context());
+    runtime.set_text_shaping_backend(linux_gtk_text_shaping_backend(drawing_area.pango_context()));
     runtime.defer_app_command_execution();
     let runtime = Rc::new(RefCell::new(runtime));
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -1083,6 +1083,35 @@ impl TextLayout for LinuxGtkTextLayout {
                 bounds,
             }]
         }
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+fn linux_gtk_text_shaping_backend(
+    context: gtk::pango::Context,
+) -> crate::native_input_visuals::NativeTextShapingBackend {
+    crate::native_input_visuals::NativeTextShapingBackend::platform(LinuxGtkPangoTextShaper {
+        context,
+    })
+}
+
+#[cfg(feature = "text-input-core")]
+struct LinuxGtkPangoTextShaper {
+    context: gtk::pango::Context,
+}
+
+#[cfg(feature = "text-input-core")]
+impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
+    fn debug_name(&self) -> &'static str {
+        "Gtk(PangoContext)"
+    }
+
+    fn typography_scale(&self) -> f32 {
+        linux_gtk_ui_font_scale()
+    }
+
+    fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_linux_gtk_text_line(&self.context, text)
     }
 }
 

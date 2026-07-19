@@ -1051,7 +1051,7 @@ pub(crate) fn install_macos_appkit_draw_plan(
     #[allow(unused_mut)] mut runtime: crate::native::NativeViewInputRuntime,
 ) -> MacosAppKitDrawViewHost {
     #[cfg(feature = "text-input-core")]
-    runtime.use_appkit_text_shaping();
+    runtime.set_text_shaping_backend(macos_appkit_text_shaping_backend());
     let mut plan = plan;
     if let Some(updated) = runtime.set_typography_scale(appkit_ui_font_scale()) {
         plan = updated;
@@ -1121,6 +1121,29 @@ impl TextLayout for MacosAppKitTextLayout {
                 bounds,
             }]
         }
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+fn macos_appkit_text_shaping_backend() -> crate::native_input_visuals::NativeTextShapingBackend {
+    crate::native_input_visuals::NativeTextShapingBackend::platform(MacosAppKitTextShaper)
+}
+
+#[cfg(feature = "text-input-core")]
+struct MacosAppKitTextShaper;
+
+#[cfg(feature = "text-input-core")]
+impl crate::native_input_visuals::NativeTextShaper for MacosAppKitTextShaper {
+    fn debug_name(&self) -> &'static str {
+        "AppKit"
+    }
+
+    fn typography_scale(&self) -> f32 {
+        appkit_ui_font_scale()
+    }
+
+    fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_macos_appkit_text_line(text)
     }
 }
 

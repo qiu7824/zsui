@@ -525,6 +525,15 @@ Gallery, Notepad and desktop showcase authoring slices so target `cfg`, platform
 enums and raw native handles cannot silently return to ordinary `view`/`update`
 code.
 
+The shared text-input geometry owns only the `NativeTextShaper` contract, its
+bounded shaped-line cache and the platform-neutral logical-cell fallback.
+Win32 GDI/Uniscribe, AppKit/Core Text, Linux Direct Pango, Linux Direct Lite
+Cosmic Text and GTK Pango construct backend-owned shapers and inject them into
+the per-window input runtime. Their contexts, scale queries and shaping calls
+do not appear as variants in the shared input core, so another platform adds a
+shaper implementation without extending a cross-platform enum or matching on
+its native context type.
+
 The retained public View payload is semantic as well: toolbar buttons and
 adaptive navigation nodes store icons, labels, item counts and state, but no
 platform selector. Framework construction plus adaptive layout, paint and hit

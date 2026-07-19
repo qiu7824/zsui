@@ -89,7 +89,7 @@ impl WindowsWin32ViewInputRoute {
         #[allow(unused_mut)]
         let mut route = Self {
             interaction_plan,
-            text_shaping: crate::native_input_visuals::NativeTextShapingBackend::windows_gdi(),
+            text_shaping: crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
             ui_command_view: Some(ui_command_view),
             live_view: None,
             resource_policy: NativeWindowResourcePolicy::default(),
@@ -177,7 +177,7 @@ impl WindowsWin32ViewInputRoute {
         #[allow(unused_mut)]
         let mut route = Self {
             interaction_plan: live_view.interaction_plan(),
-            text_shaping: crate::native_input_visuals::NativeTextShapingBackend::windows_gdi(),
+            text_shaping: crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
             ui_command_view: None,
             live_view: Some(live_view),
             resource_policy: NativeWindowResourcePolicy::default(),

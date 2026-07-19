@@ -738,6 +738,35 @@ impl TextLayout for WindowsGdiTextLayout {
     }
 }
 
+#[allow(dead_code)]
+pub(crate) fn windows_gdi_text_shaping_backend(
+) -> crate::native_input_visuals::NativeTextShapingBackend {
+    #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+    {
+        return crate::native_input_visuals::NativeTextShapingBackend::platform(
+            WindowsGdiTextShaper,
+        );
+    }
+    #[cfg(not(all(feature = "text-input-core", feature = "windows-win32")))]
+    {
+        crate::native_input_visuals::NativeTextShapingBackend::default()
+    }
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+struct WindowsGdiTextShaper;
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
+    fn debug_name(&self) -> &'static str {
+        "WindowsGdi"
+    }
+
+    fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_windows_gdi_text_line(text)
+    }
+}
+
 #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
 pub(crate) fn shape_windows_gdi_text_line(
     text: &str,

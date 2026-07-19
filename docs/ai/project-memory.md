@@ -330,6 +330,13 @@ history remain authoritative for implementation status.
   construction, paint and hit testing resolve the framework experience
   internally. A private `ViewNode` style override exists only for deterministic
   framework proof; the ordinary public builders leave it unset.
+- Shared text-input geometry depends on the platform-neutral `NativeTextShaper`
+  contract and a bounded per-window cache. Win32 GDI/Uniscribe, AppKit/Core
+  Text, Linux Direct Pango, Linux Direct Lite Cosmic Text and GTK Pango inject
+  backend-owned shapers into the input runtime; their native contexts and
+  platform variants must not return to `native_input_visuals.rs` or the public
+  View API. A new platform supplies another shaper implementation without
+  extending a shared platform enum.
 - Typography, clipping or composition corrections found in Gallery, Notepad or
   another acceptance application must be implemented as reusable framework
   rules before the example consumes them. Measure, paint, hit testing,

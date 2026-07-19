@@ -1649,50 +1649,11 @@ impl NativeViewInputRuntime {
             .redraw
             .then(|| self.compose_input_visuals(runtime.draw_plan()))
     }
-
-    #[cfg(all(
-        target_os = "macos",
-        feature = "macos-appkit",
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn use_appkit_text_shaping(&mut self) {
-        self.text_shaping = crate::native_input_visuals::NativeTextShapingBackend::appkit();
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-direct",
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn use_linux_direct_text_shaping(&mut self, context: pango::Context) {
-        self.text_shaping =
-            crate::native_input_visuals::NativeTextShapingBackend::linux_direct(context);
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-direct-lite",
-        not(feature = "linux-direct"),
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn use_linux_direct_lite_text_shaping(
+    pub(crate) fn set_text_shaping_backend(
         &mut self,
-        context: crate::linux_direct_lite::LinuxLiteTextSystem,
+        backend: crate::native_input_visuals::NativeTextShapingBackend,
     ) {
-        self.text_shaping =
-            crate::native_input_visuals::NativeTextShapingBackend::linux_direct_lite(context);
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        feature = "linux-gtk",
-        feature = "text-input-core"
-    ))]
-    pub(crate) fn use_gtk_text_shaping(&mut self, context: gtk4::pango::Context) {
-        self.text_shaping = crate::native_input_visuals::NativeTextShapingBackend::gtk(context);
+        self.text_shaping = backend;
     }
 
     pub(crate) fn hit_target_count(&self) -> usize {
@@ -6415,15 +6376,6 @@ impl NativeViewInputRuntime {
     }
 }
 
-#[cfg(any(
-    test,
-    all(target_os = "macos", feature = "macos-appkit"),
-    all(
-        target_os = "linux",
-        not(target_env = "ohos"),
-        any(feature = "linux-direct-host", feature = "linux-gtk")
-    )
-))]
 #[allow(dead_code)]
 pub(crate) fn dispatch_deferred_native_view_app_commands(
     report: &mut NativeViewInputDispatchReport,

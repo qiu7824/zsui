@@ -239,13 +239,16 @@ impl LinuxDirectApp {
                 .unwrap_or_default();
             let text_context = linux_direct_text_context();
             #[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
-            runtime.use_linux_direct_text_shaping(text_context.clone());
+            runtime
+                .set_text_shaping_backend(linux_direct_text_shaping_backend(text_context.clone()));
             #[cfg(all(
                 feature = "text-input-core",
                 feature = "linux-direct-lite",
                 not(feature = "linux-direct")
             ))]
-            runtime.use_linux_direct_lite_text_shaping(text_context.clone());
+            runtime.set_text_shaping_backend(linux_direct_lite_text_shaping_backend(
+                text_context.clone(),
+            ));
             runtime.defer_app_command_execution();
             let mut direct = LinuxDirectWindow::new(
                 event_loop,
@@ -1956,9 +1959,79 @@ fn linux_direct_text_context() -> LinuxDirectTextContext {
     pangocairo::FontMap::default().create_context()
 }
 
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+fn linux_direct_text_shaping_backend(
+    context: pango::Context,
+) -> crate::native_input_visuals::NativeTextShapingBackend {
+    crate::native_input_visuals::NativeTextShapingBackend::platform(LinuxDirectPangoTextShaper {
+        context,
+    })
+}
+
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+struct LinuxDirectPangoTextShaper {
+    context: pango::Context,
+}
+
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShaper {
+    fn debug_name(&self) -> &'static str {
+        "LinuxDirect(PangoContext)"
+    }
+
+    fn typography_scale(&self) -> f32 {
+        linux_direct_ui_font_scale()
+    }
+
+    fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_linux_direct_text_line(&self.context, text)
+    }
+}
+
 #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
 fn linux_direct_text_context() -> LinuxDirectTextContext {
     crate::linux_direct_lite::LinuxLiteTextSystem::new(linux_direct_configured_font_name())
+}
+
+#[cfg(all(
+    feature = "text-input-core",
+    feature = "linux-direct-lite",
+    not(feature = "linux-direct")
+))]
+fn linux_direct_lite_text_shaping_backend(
+    system: crate::linux_direct_lite::LinuxLiteTextSystem,
+) -> crate::native_input_visuals::NativeTextShapingBackend {
+    crate::native_input_visuals::NativeTextShapingBackend::platform(LinuxDirectLiteTextShaper {
+        system,
+    })
+}
+
+#[cfg(all(
+    feature = "text-input-core",
+    feature = "linux-direct-lite",
+    not(feature = "linux-direct")
+))]
+struct LinuxDirectLiteTextShaper {
+    system: crate::linux_direct_lite::LinuxLiteTextSystem,
+}
+
+#[cfg(all(
+    feature = "text-input-core",
+    feature = "linux-direct-lite",
+    not(feature = "linux-direct")
+))]
+impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper {
+    fn debug_name(&self) -> &'static str {
+        "LinuxDirectLite(CosmicText)"
+    }
+
+    fn typography_scale(&self) -> f32 {
+        self.system.ui_scale()
+    }
+
+    fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        crate::linux_direct_lite::shape_linux_lite_text_line(&self.system, text)
+    }
 }
 
 #[cfg(feature = "linux-direct")]
