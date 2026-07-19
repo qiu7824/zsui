@@ -220,7 +220,7 @@ impl LinuxDirectApp {
             let initial_width = spec.width;
             let initial_height = spec.height;
             let mut runtime = initial_runtimes
-                .get(index)
+                .get_mut(index)
                 .map(|runtime| std::mem::take(runtime))
                 .unwrap_or_default();
             let pango_context = linux_direct_pango_context();
