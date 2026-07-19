@@ -626,9 +626,14 @@ jobs:
           # real session property once. This avoids racing adapter activation
           # with repeated status changes in a headless session.
           sleep 4.0
+          set +e
           python3 comparisons/scripts/capture_linux_smaps.py \
             --pid "$notepad_pid" \
-            --output "$root/notepad-smaps.json"
+            --output "$root/notepad-smaps.json" \
+            >"$root/notepad-smaps.log" 2>&1
+          notepad_smaps_status=$?
+          set -e
+          echo "notepad_smaps_status=$notepad_smaps_status" >>"$root/notepad-smaps.log"
           gdbus call \
             --session \
             --dest org.a11y.Bus \
