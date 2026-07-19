@@ -178,6 +178,23 @@ history remain authoritative for implementation status.
   complete Cairo symbolic vector set so lightweight applications do not load
   the SVG decoder. Ubuntu Sans plus CJK fallback remains intentional and must
   not be removed merely to lower RSS.
+- Linux memory comparison run `29674253855` measured the optimized default X11
+  Notepad at 25.39 MiB median RSS and peak RSS, 15.20 MiB private RSS and
+  18.23 MiB PSS. Relative to run `29669817180`, removing the default SVG icon
+  stack and rendering Cairo directly into the Softbuffer presentation buffer
+  reduced median RSS by 9.05 MiB (26.3%), peak RSS by 11.08 MiB (30.4%),
+  private RSS by 6.04 MiB (28.4%) and PSS by 6.80 MiB (27.2%). Native UI Proof
+  run `29674253848` passed AppKit, X11 and real Weston Wayland/AT-SPI/menu
+  scenes after the direct-buffer change.
+- Linux framework memory comparisons must render a bilingual CJK workload and
+  capture smaps categories for ZSUI, Slint and Iced; an English-only comparator
+  understates its font residency. Run `29674669518` measured ZSUI at 25.31 MiB
+  RSS, 15.18 MiB private RSS and 18.15 MiB PSS, Slint at 23.04/17.47/18.92 MiB
+  and Iced at 16.73/11.51/12.87 MiB respectively. ZSUI's higher aggregate RSS
+  versus Slint comes from shared Cairo/Pango/GLib and native Ubuntu/CJK font
+  mappings; its private RSS and PSS were lower than Slint in that fixed run.
+  Do not replace the native Cairo/Pango typography path or remove Ubuntu Sans
+  and CJK fallback merely to optimize aggregate RSS.
 - Native proof JSON uses the framework-owned `NativeProofDocument` envelope.
   Acceptance applications supply scenario metadata and typed message names;
   the framework projects backend identity, runner metadata, logical/pixel
