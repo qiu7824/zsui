@@ -178,7 +178,10 @@ impl LinuxDirectApp {
             .map_err(|error| format!("could not initialize software presentation: {error}"))?;
         self.context = Some(context);
 
-        for (index, spec) in self.specs.iter().enumerate() {
+        let specs = std::mem::take(&mut self.specs);
+        let mut initial_plans = std::mem::take(&mut self.initial_plans);
+        let mut initial_runtimes = std::mem::take(&mut self.initial_runtimes);
+        for (index, spec) in specs.into_iter().enumerate() {
             let mut attributes = WindowAttributes::default()
                 .with_title(spec.title.clone())
                 .with_inner_size(Size::Logical(LogicalSize::new(
@@ -211,10 +214,14 @@ impl LinuxDirectApp {
                 Rc::clone(&window),
             )
             .map_err(|error| format!("could not create `{}` surface: {error}", spec.title))?;
-            let mut runtime = self
-                .initial_runtimes
+            let title = spec.title;
+            let menu = spec.menu;
+            let visible = spec.visible;
+            let initial_width = spec.width;
+            let initial_height = spec.height;
+            let mut runtime = initial_runtimes
                 .get(index)
-                .cloned()
+                .map(std::mem::take)
                 .unwrap_or_default();
             let pango_context = linux_direct_pango_context();
             #[cfg(feature = "text-input-core")]
@@ -222,12 +229,15 @@ impl LinuxDirectApp {
             runtime.defer_app_command_execution();
             let mut direct = LinuxDirectWindow::new(
                 event_loop,
-                spec.clone(),
+                title,
+                menu,
+                initial_width,
+                initial_height,
                 Rc::clone(&window),
                 surface,
-                self.initial_plans
-                    .get(index)
-                    .and_then(Clone::clone)
+                initial_plans
+                    .get_mut(index)
+                    .and_then(Option::take)
                     .unwrap_or_default(),
                 runtime,
                 pango_context,
@@ -235,7 +245,7 @@ impl LinuxDirectApp {
             );
             direct.resize(window.inner_size());
             direct.sync_text_input();
-            window.set_visible(spec.visible);
+            window.set_visible(visible);
             window.request_redraw();
             self.windows.insert(window.id(), direct);
             self.created_window_count += 1;
@@ -547,8 +557,12 @@ impl ApplicationHandler for LinuxDirectApp {
                         window.sync_accessibility();
                     }
                     crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
-                        if let Some(command) = window.spec.menu.as_ref().and_then(|menu| {
-                            menu_command_for_key(menu, &event.logical_key, window.modifiers)
+                        if let Some(command) = window.menu_surface.as_ref().and_then(|surface| {
+                            menu_command_for_key(
+                                surface.spec(),
+                                &event.logical_key,
+                                window.modifiers,
+                            )
                         }) {
                             let report = window.runtime.dispatch_app_command(command);
                             window.apply_report(report, event_loop);
@@ -626,7 +640,7 @@ impl ApplicationHandler for LinuxDirectApp {
 }
 
 struct LinuxDirectWindow {
-    spec: WindowSpec,
+    title: String,
     window: Rc<WinitWindow>,
     surface: LinuxSoftBufferSurface,
     plan: NativeDrawPlan,
@@ -653,7 +667,10 @@ struct LinuxDirectWindow {
 impl LinuxDirectWindow {
     fn new(
         event_loop: &ActiveEventLoop,
-        spec: WindowSpec,
+        title: String,
+        menu: Option<MenuSpec>,
+        initial_width: u32,
+        initial_height: u32,
         window: Rc<WinitWindow>,
         surface: LinuxSoftBufferSurface,
         plan: NativeDrawPlan,
@@ -664,23 +681,20 @@ impl LinuxDirectWindow {
         let scale_factor = window.scale_factor().max(0.1);
         let theme = window.theme().unwrap_or(WinitTheme::Light);
         let display_server = linux_direct_display_server(&window);
-        let mut menu_surface = spec
-            .menu
-            .clone()
-            .map(crate::linux_direct_menu::LinuxDirectMenuSurface::new);
+        let mut menu_surface = menu.map(crate::linux_direct_menu::LinuxDirectMenuSurface::new);
         if let Some(menu) = menu_surface.as_mut() {
-            menu.layout(spec.width.max(1) as i32, &pango_context);
+            menu.layout(initial_width.max(1) as i32, &pango_context);
         }
         #[cfg(feature = "accessibility")]
         let accessibility = crate::linux_direct_accessibility::LinuxDirectAccessibility::new(
             event_loop,
             &window,
-            &spec.title,
+            &title,
             Rect {
                 x: 0,
                 y: 0,
-                width: spec.width.max(1) as i32,
-                height: spec.height.max(1) as i32,
+                width: initial_width.max(1) as i32,
+                height: initial_height.max(1) as i32,
             },
             scale_factor,
             menu_surface
@@ -693,14 +707,15 @@ impl LinuxDirectWindow {
             runtime.current_interaction_plan(),
             runtime.focused_widget(),
         );
+        let draw_pango_context = pango_context.clone();
         Self {
-            spec,
+            title,
             window,
             surface,
             plan,
             runtime,
             pango_context,
-            draw_pango_context: linux_direct_pango_context(),
+            draw_pango_context,
             display_server,
             scale_factor,
             physical_size: PhysicalSize::new(1, 1),
@@ -929,7 +944,7 @@ impl LinuxDirectWindow {
             .as_ref()
             .map(|menu| menu.accessibility_snapshot());
         self.accessibility.update(
-            &self.spec.title,
+            &self.title,
             Rect {
                 x: 0,
                 y: 0,
@@ -1065,7 +1080,21 @@ impl LinuxDirectWindow {
         self.surface
             .resize(width, height)
             .map_err(|error| format!("could not resize software surface: {error}"))?;
-        let frame = render_linux_direct_frame(
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .map_err(|error| format!("could not acquire software buffer: {error}"))?;
+        let expected_len = (width.get() as usize)
+            .checked_mul(height.get() as usize)
+            .ok_or_else(|| "software buffer dimensions overflow usize".to_string())?;
+        if buffer.len() != expected_len {
+            return Err(format!(
+                "software buffer length {} does not match frame size {expected_len}",
+                buffer.len()
+            ));
+        }
+        render_linux_direct_frame(
+            &mut buffer,
             &self.plan,
             self.menu_surface.as_ref(),
             width.get(),
@@ -1075,25 +1104,14 @@ impl LinuxDirectWindow {
             &self.draw_pango_context,
             &mut self.icon_cache,
         )?;
-        let mut buffer = self
-            .surface
-            .buffer_mut()
-            .map_err(|error| format!("could not acquire software buffer: {error}"))?;
-        if buffer.len() != frame.len() {
-            return Err(format!(
-                "software buffer length {} does not match rendered frame {}",
-                buffer.len(),
-                frame.len()
-            ));
+        if self.retain_frame {
+            self.last_frame.clear();
+            self.last_frame.extend_from_slice(&buffer);
         }
-        buffer.copy_from_slice(&frame);
         self.window.pre_present_notify();
         buffer
             .present()
             .map_err(|error| format!("could not present software buffer: {error}"))?;
-        if self.retain_frame {
-            self.last_frame = frame;
-        }
         Ok(())
     }
 
@@ -1209,6 +1227,7 @@ struct LinuxIconRaster {
 }
 
 fn render_linux_direct_frame(
+    frame: &mut [u32],
     plan: &NativeDrawPlan,
     menu_surface: Option<&crate::linux_direct_menu::LinuxDirectMenuSurface>,
     width: u32,
@@ -1217,11 +1236,40 @@ fn render_linux_direct_frame(
     theme: WinitTheme,
     pango_context: &pango::Context,
     icon_cache: &mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
-) -> Result<Vec<u32>, String> {
+) -> Result<(), String> {
     let width_i32 = i32::try_from(width).map_err(|_| "frame width exceeds i32".to_string())?;
     let height_i32 = i32::try_from(height).map_err(|_| "frame height exceeds i32".to_string())?;
-    let mut image = ImageSurface::create(Format::ARgb32, width_i32, height_i32)
-        .map_err(|error| format!("could not create Cairo image surface: {error}"))?;
+    let expected_len = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| "software frame dimensions overflow usize".to_string())?;
+    if frame.len() != expected_len {
+        return Err(format!(
+            "software frame length {} does not match {width}x{height}",
+            frame.len()
+        ));
+    }
+    let stride = Format::Rgb24
+        .stride_for_width(width)
+        .map_err(|error| format!("could not compute Cairo image stride: {error}"))?;
+    if usize::try_from(stride).ok() != Some(width as usize * std::mem::size_of::<u32>()) {
+        return Err(format!(
+            "Cairo RGB24 stride {stride} does not match the software buffer width {width}"
+        ));
+    }
+    // SAFETY: `frame` owns `width * height` native-endian RGB24 pixels and
+    // remains borrowed for the complete lifetime of `image`. Cairo state and
+    // the image surface are dropped before this function returns, so no Cairo
+    // reference can outlive the softbuffer guard that supplied the slice.
+    let image = unsafe {
+        ImageSurface::create_for_data_unsafe(
+            frame.as_mut_ptr().cast::<u8>(),
+            Format::Rgb24,
+            width_i32,
+            height_i32,
+            stride,
+        )
+    }
+    .map_err(|error| format!("could not bind Cairo to the software buffer: {error}"))?;
     let context = CairoContext::new(&image)
         .map_err(|error| format!("could not create Cairo drawing context: {error}"))?;
     let palette = NativeDrawPalette::for_mode(plan.theme_mode, matches!(theme, WinitTheme::Dark));
@@ -1268,32 +1316,8 @@ fn render_linux_direct_frame(
     }
     drop(context);
     image.flush();
-
-    let stride = usize::try_from(image.stride())
-        .map_err(|_| "Cairo returned a negative image stride".to_string())?;
-    let data = image
-        .data()
-        .map_err(|error| format!("could not map Cairo image surface: {error}"))?;
-    let mut frame = Vec::with_capacity(width as usize * height as usize);
-    for row in 0..height as usize {
-        let start = row
-            .checked_mul(stride)
-            .ok_or_else(|| "Cairo row offset overflowed".to_string())?;
-        let end = start
-            .checked_add(width as usize * 4)
-            .ok_or_else(|| "Cairo row length overflowed".to_string())?;
-        let row_data = data
-            .get(start..end)
-            .ok_or_else(|| "Cairo image data is shorter than its declared stride".to_string())?;
-        for pixel in row_data.chunks_exact(4) {
-            #[cfg(target_endian = "little")]
-            let (blue, green, red) = (pixel[0], pixel[1], pixel[2]);
-            #[cfg(target_endian = "big")]
-            let (blue, green, red) = (pixel[3], pixel[2], pixel[1]);
-            frame.push((u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue));
-        }
-    }
-    Ok(frame)
+    drop(image);
+    Ok(())
 }
 
 struct LinuxDirectTextLayout {

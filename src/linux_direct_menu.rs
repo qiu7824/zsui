@@ -108,6 +108,10 @@ impl LinuxDirectMenuSurface {
         self.open_root.is_some()
     }
 
+    pub(crate) const fn spec(&self) -> &MenuSpec {
+        &self.menu
+    }
+
     pub(crate) fn accessibility_snapshot(&self) -> LinuxMenuAccessibilitySnapshot {
         let roots = self
             .roots
