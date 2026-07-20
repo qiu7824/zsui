@@ -502,6 +502,13 @@ mod tests {
             "PlatformBreadcrumbProfile",
             "PlatformToggleButtonProfile",
             "PlatformNumberBoxProfile",
+            "PlatformAutoSuggestProfile",
+            "PlatformGridViewProfile",
+            "PlatformTreeViewProfile",
+            "PlatformTableProfile",
+            "PlatformTimePickerProfile",
+            "PlatformColorPickerProfile",
+            "PlatformCommandPaletteProfile",
             "PlatformShellProfile",
         ] {
             assert!(
@@ -791,6 +798,124 @@ mod tests {
                     "{name} contains a platform branch outside the profile: {forbidden}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn search_and_collection_controls_consume_internal_component_profiles() {
+        let render = include_str!("../widget_render.rs");
+        for (name, start_marker, end_marker, profile, style_alias) in [
+            (
+                "auto suggest",
+                "pub type ZsAutoSuggestPlatformStyle",
+                "pub type ZsGridViewPlatformStyle",
+                "PlatformAutoSuggestProfile::for_platform",
+                "ZsAutoSuggestPlatformStyle",
+            ),
+            (
+                "grid view",
+                "pub type ZsGridViewPlatformStyle",
+                "pub type ZsTreePlatformStyle",
+                "PlatformGridViewProfile::for_platform",
+                "ZsGridViewPlatformStyle",
+            ),
+            (
+                "tree view",
+                "pub type ZsTreePlatformStyle",
+                "pub type ZsTablePlatformStyle",
+                "PlatformTreeViewProfile::for_platform",
+                "ZsTreePlatformStyle",
+            ),
+            (
+                "data grid",
+                "pub type ZsTablePlatformStyle",
+                "pub type ZsTimePickerPlatformStyle",
+                "PlatformTableProfile::for_platform",
+                "ZsTablePlatformStyle",
+            ),
+        ] {
+            let start = render
+                .find(start_marker)
+                .unwrap_or_else(|| panic!("{name} render section should exist"));
+            let end = render[start..]
+                .find(end_marker)
+                .map(|offset| start + offset)
+                .unwrap_or_else(|| panic!("{end_marker} should follow {name}"));
+            let section = &render[start..end];
+            assert!(
+                section.contains(profile),
+                "{name} should resolve through {profile}"
+            );
+            for platform in ["Windows", "Macos", "Gtk"] {
+                let forbidden = format!("{style_alias}::{platform}");
+                assert!(
+                    !section.contains(&forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn picker_and_palette_controls_consume_internal_component_profiles() {
+        let render = include_str!("../widget_render.rs");
+        for (name, start_marker, end_marker, profile, style_alias) in [
+            (
+                "time picker",
+                "pub type ZsTimePickerPlatformStyle",
+                "pub type ZsColorPickerPlatformStyle",
+                "PlatformTimePickerProfile::for_platform",
+                "ZsTimePickerPlatformStyle",
+            ),
+            (
+                "color picker",
+                "pub type ZsColorPickerPlatformStyle",
+                "pub type ZsCommandPalettePlatformStyle",
+                "PlatformColorPickerProfile::for_platform",
+                "ZsColorPickerPlatformStyle",
+            ),
+            (
+                "command palette",
+                "pub type ZsCommandPalettePlatformStyle",
+                "pub type ZsContentDialogPlatformStyle",
+                "PlatformCommandPaletteProfile::for_platform",
+                "ZsCommandPalettePlatformStyle",
+            ),
+        ] {
+            let start = render
+                .find(start_marker)
+                .unwrap_or_else(|| panic!("{name} render section should exist"));
+            let end = render[start..]
+                .find(end_marker)
+                .map(|offset| start + offset)
+                .unwrap_or_else(|| panic!("{end_marker} should follow {name}"));
+            let section = &render[start..end];
+            assert!(
+                section.contains(profile),
+                "{name} should resolve through {profile}"
+            );
+            for platform in ["Windows", "Macos", "Gtk"] {
+                let forbidden = format!("{style_alias}::{platform}");
+                assert!(
+                    !section.contains(&forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_widget_renderer_has_no_desktop_platform_variant_branches() {
+        let render = include_str!("../widget_render.rs");
+        let production = render
+            .split_once("#[cfg(test)]")
+            .map_or(render, |(production, _)| production);
+        for platform in ["Windows", "Macos", "Gtk"] {
+            let forbidden = format!("PlatformStyle::{platform}");
+            assert!(
+                !production.contains(&forbidden),
+                "shared widget renderer contains a desktop branch outside profiles: {forbidden}"
+            );
         }
     }
 

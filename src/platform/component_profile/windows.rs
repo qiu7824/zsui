@@ -231,6 +231,136 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             button_icon_size: Dp::new(12.0),
             stepper_presentation: PlatformNumberBoxStepperPresentation::ChevronIcons,
         },
+        #[cfg(feature = "auto-suggest")]
+        auto_suggest: PlatformAutoSuggestProfile {
+            metrics: ZsAutoSuggestMetrics {
+                control_height: Dp::new(32.0),
+                row_height: Dp::new(36.0),
+                text_padding: Dp::new(12.0),
+                icon_column_width: Dp::new(32.0),
+                icon_size: Dp::new(16.0),
+                popup_gap: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                overlay_radius: Dp::new(8.0),
+                leading_search_icon: false,
+            },
+        },
+        #[cfg(feature = "grid-view")]
+        grid_view: PlatformGridViewProfile {
+            metrics: ZsGridViewMetrics {
+                minimum_item_width: Dp::new(132.0),
+                item_height: Dp::new(112.0),
+                item_gap: Dp::new(8.0),
+                item_padding: Dp::new(10.0),
+                media_height: Dp::new(58.0),
+                icon_size: Dp::new(32.0),
+                item_radius: Dp::new(4.0),
+                media_radius: Dp::new(3.0),
+                text_gap: Dp::new(2.0),
+            },
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: Some(28),
+                foreground: ColorRole::PrimaryText,
+            },
+        },
+        #[cfg(feature = "tree")]
+        tree_view: PlatformTreeViewProfile {
+            metrics: ZsTreeViewMetrics {
+                row_height: Dp::new(32.0),
+                depth_indent: Dp::new(20.0),
+                disclosure_column: Dp::new(24.0),
+                disclosure_size: Dp::new(12.0),
+                icon_size: Dp::new(16.0),
+                leading_padding: Dp::new(6.0),
+                content_gap: Dp::new(6.0),
+                row_radius: Dp::new(4.0),
+            },
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: Some(36),
+                foreground: ColorRole::PrimaryText,
+            },
+        },
+        #[cfg(feature = "table")]
+        table: PlatformTableProfile {
+            metrics: ZsTableMetrics {
+                header_height: Dp::new(36.0),
+                row_height: Dp::new(32.0),
+                horizontal_padding: Dp::new(12.0),
+                sort_icon_size: Dp::new(12.0),
+                radius: Dp::new(4.0),
+                separator_width: Dp::new(1.0),
+            },
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: Some(36),
+                foreground: ColorRole::PrimaryText,
+            },
+        },
+        #[cfg(feature = "time-picker")]
+        time_picker: PlatformTimePickerProfile {
+            metrics: ZsTimePickerMetrics {
+                popup_width: Dp::new(280.0),
+                row_height: Dp::new(40.0),
+                visible_rows: 5,
+                text_padding: Dp::new(12.0),
+                icon_column_width: Dp::new(32.0),
+                popup_gap: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                overlay_radius: Dp::new(8.0),
+            },
+            header_fill: ColorRole::Control,
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: Some(48),
+                foreground: ColorRole::PrimaryText,
+            },
+        },
+        #[cfg(feature = "color-picker")]
+        color_picker: PlatformColorPickerProfile {
+            metrics: ZsColorPickerMetrics {
+                popup_width: Dp::new(320.0),
+                popup_padding: Dp::new(16.0),
+                preview_size: Dp::new(48.0),
+                preview_gap: Dp::new(10.0),
+                // The 288-DP content width leaves a 256-DP square spectrum
+                // when precision fields are absent.
+                spectrum_height: Dp::new(256.0),
+                spectrum_gap: Dp::new(8.0),
+                hue_track_height: Dp::new(10.0),
+                row_height: Dp::new(28.0),
+                row_gap: Dp::new(4.0),
+                label_width: Dp::new(24.0),
+                value_width: Dp::new(42.0),
+                track_height: Dp::new(8.0),
+                thumb_width: Dp::new(12.0),
+                popup_gap: Dp::new(4.0),
+                control_radius: Dp::new(4.0),
+                overlay_radius: Dp::new(8.0),
+            },
+            swatch_size: Dp::new(22.0),
+            header_fill: ColorRole::Control,
+            active_channel_alpha: 24,
+        },
+        #[cfg(feature = "command-palette")]
+        command_palette: PlatformCommandPaletteProfile {
+            metrics: ZsCommandPaletteMetrics {
+                preferred_width: Dp::new(640.0),
+                viewport_margin: Dp::new(24.0),
+                top_offset: Dp::new(72.0),
+                search_height: Dp::new(52.0),
+                row_height: Dp::new(48.0),
+                horizontal_padding: Dp::new(12.0),
+                icon_size: Dp::new(20.0),
+                icon_column_width: Dp::new(36.0),
+                shortcut_width: Dp::new(112.0),
+                surface_radius: Dp::new(8.0),
+                search_radius: Dp::new(4.0),
+                row_radius: Dp::new(4.0),
+            },
+            scrim_alpha: 56,
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Windows,
             navigation: PlatformShellNavigationComposition::FluentPane,

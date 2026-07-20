@@ -231,6 +231,134 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             button_icon_size: Dp::new(10.0),
             stepper_presentation: PlatformNumberBoxStepperPresentation::ChevronIcons,
         },
+        #[cfg(feature = "auto-suggest")]
+        auto_suggest: PlatformAutoSuggestProfile {
+            metrics: ZsAutoSuggestMetrics {
+                control_height: Dp::new(28.0),
+                row_height: Dp::new(28.0),
+                text_padding: Dp::new(8.0),
+                icon_column_width: Dp::new(24.0),
+                icon_size: Dp::new(14.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(10.0),
+                leading_search_icon: true,
+            },
+        },
+        #[cfg(feature = "grid-view")]
+        grid_view: PlatformGridViewProfile {
+            metrics: ZsGridViewMetrics {
+                minimum_item_width: Dp::new(124.0),
+                item_height: Dp::new(104.0),
+                item_gap: Dp::new(10.0),
+                item_padding: Dp::new(9.0),
+                media_height: Dp::new(54.0),
+                icon_size: Dp::new(28.0),
+                item_radius: Dp::new(8.0),
+                media_radius: Dp::new(6.0),
+                text_gap: Dp::new(1.0),
+            },
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: None,
+                foreground: ColorRole::AccentText,
+            },
+        },
+        #[cfg(feature = "tree")]
+        tree_view: PlatformTreeViewProfile {
+            metrics: ZsTreeViewMetrics {
+                row_height: Dp::new(22.0),
+                depth_indent: Dp::new(16.0),
+                disclosure_column: Dp::new(18.0),
+                disclosure_size: Dp::new(10.0),
+                icon_size: Dp::new(16.0),
+                leading_padding: Dp::new(4.0),
+                content_gap: Dp::new(4.0),
+                row_radius: Dp::new(4.0),
+            },
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: None,
+                foreground: ColorRole::AccentText,
+            },
+        },
+        #[cfg(feature = "table")]
+        table: PlatformTableProfile {
+            metrics: ZsTableMetrics {
+                header_height: Dp::new(24.0),
+                row_height: Dp::new(24.0),
+                horizontal_padding: Dp::new(8.0),
+                sort_icon_size: Dp::new(10.0),
+                radius: Dp::new(5.0),
+                separator_width: Dp::new(1.0),
+            },
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: None,
+                foreground: ColorRole::AccentText,
+            },
+        },
+        #[cfg(feature = "time-picker")]
+        time_picker: PlatformTimePickerProfile {
+            metrics: ZsTimePickerMetrics {
+                popup_width: Dp::new(216.0),
+                row_height: Dp::new(30.0),
+                visible_rows: 3,
+                text_padding: Dp::new(10.0),
+                icon_column_width: Dp::new(26.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(10.0),
+            },
+            header_fill: ColorRole::Surface,
+            selection: PlatformCollectionSelectionProfile {
+                fill_role: ColorRole::Accent,
+                fill_alpha: None,
+                foreground: ColorRole::AccentText,
+            },
+        },
+        #[cfg(feature = "color-picker")]
+        color_picker: PlatformColorPickerProfile {
+            metrics: ZsColorPickerMetrics {
+                popup_width: Dp::new(264.0),
+                popup_padding: Dp::new(12.0),
+                preview_size: Dp::new(40.0),
+                preview_gap: Dp::new(10.0),
+                spectrum_height: Dp::new(0.0),
+                spectrum_gap: Dp::new(0.0),
+                hue_track_height: Dp::new(0.0),
+                row_height: Dp::new(32.0),
+                row_gap: Dp::new(3.0),
+                label_width: Dp::new(20.0),
+                value_width: Dp::new(36.0),
+                track_height: Dp::new(6.0),
+                thumb_width: Dp::new(10.0),
+                popup_gap: Dp::new(6.0),
+                control_radius: Dp::new(6.0),
+                overlay_radius: Dp::new(10.0),
+            },
+            swatch_size: Dp::new(18.0),
+            header_fill: ColorRole::Surface,
+            active_channel_alpha: 18,
+        },
+        #[cfg(feature = "command-palette")]
+        command_palette: PlatformCommandPaletteProfile {
+            metrics: ZsCommandPaletteMetrics {
+                preferred_width: Dp::new(560.0),
+                viewport_margin: Dp::new(24.0),
+                top_offset: Dp::new(64.0),
+                search_height: Dp::new(48.0),
+                row_height: Dp::new(44.0),
+                horizontal_padding: Dp::new(12.0),
+                icon_size: Dp::new(18.0),
+                icon_column_width: Dp::new(32.0),
+                shortcut_width: Dp::new(96.0),
+                surface_radius: Dp::new(14.0),
+                search_radius: Dp::new(8.0),
+                row_radius: Dp::new(7.0),
+            },
+            scrim_alpha: 44,
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Macos,
             navigation: PlatformShellNavigationComposition::AppKitSourceList,

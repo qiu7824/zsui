@@ -1,5 +1,26 @@
+#[cfg(any(
+    feature = "label",
+    feature = "button",
+    feature = "tabs",
+    feature = "grid-view",
+    feature = "tree",
+    feature = "table",
+    feature = "time-picker",
+    feature = "color-picker"
+))]
+use crate::ColorRole;
+#[cfg(any(feature = "label", feature = "button", feature = "tabs"))]
+use crate::TextRole;
+#[cfg(feature = "auto-suggest")]
+use crate::ZsAutoSuggestMetrics;
 #[cfg(feature = "breadcrumb")]
 use crate::ZsBreadcrumbMetrics;
+#[cfg(feature = "color-picker")]
+use crate::ZsColorPickerMetrics;
+#[cfg(feature = "command-palette")]
+use crate::ZsCommandPaletteMetrics;
+#[cfg(feature = "grid-view")]
+use crate::ZsGridViewMetrics;
 #[cfg(feature = "info-bar")]
 use crate::ZsInfoBarMetrics;
 #[cfg(feature = "button")]
@@ -8,16 +29,20 @@ use crate::ZsNavigationItemMetrics;
 use crate::ZsNumberBoxMetrics;
 #[cfg(feature = "tabs")]
 use crate::ZsTabViewMetrics;
+#[cfg(feature = "table")]
+use crate::ZsTableMetrics;
 #[cfg(feature = "teaching-tip")]
 use crate::ZsTeachingTipMetrics;
+#[cfg(feature = "time-picker")]
+use crate::ZsTimePickerMetrics;
 #[cfg(feature = "toast")]
 use crate::ZsToastMetrics;
 #[cfg(feature = "toggle-button")]
 use crate::ZsToggleButtonMetrics;
+#[cfg(feature = "tree")]
+use crate::ZsTreeViewMetrics;
 #[cfg(feature = "label")]
 use crate::ZsuiSpacingTokens;
-#[cfg(any(feature = "label", feature = "button", feature = "tabs"))]
-use crate::{ColorRole, TextRole};
 use crate::{Dp, ZsBaseControlMetrics, ZsPlatformStyle};
 #[cfg(feature = "dialog")]
 use crate::{ZsContentDialogButton, ZsContentDialogMetrics, ZsContentDialogSpec};
@@ -60,6 +85,20 @@ pub(crate) struct PlatformComponentProfile {
     pub toggle_button: PlatformToggleButtonProfile,
     #[cfg(feature = "number-box")]
     pub number_box: PlatformNumberBoxProfile,
+    #[cfg(feature = "auto-suggest")]
+    pub auto_suggest: PlatformAutoSuggestProfile,
+    #[cfg(feature = "grid-view")]
+    pub grid_view: PlatformGridViewProfile,
+    #[cfg(feature = "tree")]
+    pub tree_view: PlatformTreeViewProfile,
+    #[cfg(feature = "table")]
+    pub table: PlatformTableProfile,
+    #[cfg(feature = "time-picker")]
+    pub time_picker: PlatformTimePickerProfile,
+    #[cfg(feature = "color-picker")]
+    pub color_picker: PlatformColorPickerProfile,
+    #[cfg(feature = "command-palette")]
+    pub command_palette: PlatformCommandPaletteProfile,
     pub shell: PlatformShellProfile,
 }
 
@@ -625,6 +664,135 @@ impl PlatformNumberBoxProfile {
     }
 }
 
+#[cfg(feature = "auto-suggest")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformAutoSuggestProfile {
+    pub metrics: ZsAutoSuggestMetrics,
+}
+
+#[cfg(feature = "auto-suggest")]
+impl PlatformAutoSuggestProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).auto_suggest
+    }
+}
+
+#[cfg(any(
+    feature = "grid-view",
+    feature = "tree",
+    feature = "table",
+    feature = "time-picker"
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlatformCollectionSelectionProfile {
+    fill_role: ColorRole,
+    fill_alpha: Option<u8>,
+    foreground: ColorRole,
+}
+
+#[cfg(any(
+    feature = "grid-view",
+    feature = "tree",
+    feature = "table",
+    feature = "time-picker"
+))]
+impl PlatformCollectionSelectionProfile {
+    pub(crate) const fn fill(self) -> (ColorRole, Option<u8>) {
+        (self.fill_role, self.fill_alpha)
+    }
+
+    pub(crate) const fn foreground(self) -> ColorRole {
+        self.foreground
+    }
+}
+
+#[cfg(feature = "grid-view")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformGridViewProfile {
+    pub metrics: ZsGridViewMetrics,
+    pub selection: PlatformCollectionSelectionProfile,
+}
+
+#[cfg(feature = "grid-view")]
+impl PlatformGridViewProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).grid_view
+    }
+}
+
+#[cfg(feature = "tree")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformTreeViewProfile {
+    pub metrics: ZsTreeViewMetrics,
+    pub selection: PlatformCollectionSelectionProfile,
+}
+
+#[cfg(feature = "tree")]
+impl PlatformTreeViewProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).tree_view
+    }
+}
+
+#[cfg(feature = "table")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformTableProfile {
+    pub metrics: ZsTableMetrics,
+    pub selection: PlatformCollectionSelectionProfile,
+}
+
+#[cfg(feature = "table")]
+impl PlatformTableProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).table
+    }
+}
+
+#[cfg(feature = "time-picker")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformTimePickerProfile {
+    pub metrics: ZsTimePickerMetrics,
+    pub header_fill: ColorRole,
+    pub selection: PlatformCollectionSelectionProfile,
+}
+
+#[cfg(feature = "time-picker")]
+impl PlatformTimePickerProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).time_picker
+    }
+}
+
+#[cfg(feature = "color-picker")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformColorPickerProfile {
+    pub metrics: ZsColorPickerMetrics,
+    pub swatch_size: Dp,
+    pub header_fill: ColorRole,
+    pub active_channel_alpha: u8,
+}
+
+#[cfg(feature = "color-picker")]
+impl PlatformColorPickerProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).color_picker
+    }
+}
+
+#[cfg(feature = "command-palette")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformCommandPaletteProfile {
+    pub metrics: ZsCommandPaletteMetrics,
+    pub scrim_alpha: u8,
+}
+
+#[cfg(feature = "command-palette")]
+impl PlatformCommandPaletteProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).command_palette
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformShellNavigationComposition {
     FluentPane,
@@ -906,6 +1074,71 @@ mod tests {
                 PlatformNumberBoxStepperPresentation::TextSigns
             );
             assert_eq!(macos.number_box.button_icon_size, Dp::new(10.0));
+        }
+
+        #[cfg(feature = "auto-suggest")]
+        {
+            assert!(!windows.auto_suggest.metrics.leading_search_icon);
+            assert!(macos.auto_suggest.metrics.leading_search_icon);
+            assert_eq!(gtk.auto_suggest.metrics.control_height, Dp::new(34.0));
+        }
+
+        #[cfg(feature = "grid-view")]
+        {
+            assert_eq!(
+                windows.grid_view.selection.fill(),
+                (ColorRole::Accent, Some(28))
+            );
+            assert_eq!(
+                macos.grid_view.selection.foreground(),
+                ColorRole::AccentText
+            );
+            assert_eq!(gtk.grid_view.metrics.item_height, Dp::new(116.0));
+        }
+
+        #[cfg(feature = "tree")]
+        {
+            assert_eq!(windows.tree_view.metrics.row_height, Dp::new(32.0));
+            assert_eq!(macos.tree_view.metrics.row_height, Dp::new(22.0));
+            assert_eq!(
+                gtk.tree_view.selection.fill(),
+                (ColorRole::Accent, Some(48))
+            );
+        }
+
+        #[cfg(feature = "table")]
+        {
+            assert_eq!(windows.table.metrics.row_height, Dp::new(32.0));
+            assert_eq!(macos.table.selection.foreground(), ColorRole::AccentText);
+            assert_eq!(gtk.table.selection.fill(), (ColorRole::Accent, Some(48)));
+        }
+
+        #[cfg(feature = "time-picker")]
+        {
+            assert_eq!(windows.time_picker.header_fill, ColorRole::Control);
+            assert_eq!(macos.time_picker.header_fill, ColorRole::Surface);
+            assert_eq!(
+                macos.time_picker.selection.foreground(),
+                ColorRole::AccentText
+            );
+            assert_eq!(gtk.time_picker.selection.fill(), (ColorRole::Control, None));
+        }
+
+        #[cfg(feature = "color-picker")]
+        {
+            assert_eq!(windows.color_picker.metrics.spectrum_height, Dp::new(256.0));
+            assert_eq!(macos.color_picker.swatch_size, Dp::new(18.0));
+            assert_eq!(gtk.color_picker.active_channel_alpha, 20);
+        }
+
+        #[cfg(feature = "command-palette")]
+        {
+            assert_eq!(
+                windows.command_palette.metrics.preferred_width,
+                Dp::new(640.0)
+            );
+            assert_eq!(macos.command_palette.scrim_alpha, 44);
+            assert_eq!(gtk.command_palette.scrim_alpha, 72);
         }
 
         assert_eq!(

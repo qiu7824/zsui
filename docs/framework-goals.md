@@ -54,8 +54,11 @@ composition and interaction conventions:
   separately maintainable module. The profiles own semantic sections,
   adaptive navigation, foundational controls and navigation rows, command bars,
   tabs, content-dialog action composition, InfoBar/TeachingTip/Toast feedback,
-  BreadcrumbBar, ToggleButton, NumberBox and the legacy navigation/card shell
-  while remaining independent from native backend selection. The same semantic
+  BreadcrumbBar, ToggleButton, NumberBox, AutoSuggestBox, GridView, TreeView,
+  DataGrid, TimePicker, ColorPicker, CommandPalette and the legacy
+  navigation/card shell while remaining independent from native backend
+  selection. Shared component rendering consumes those resolved profiles
+  without direct desktop-platform variant branches. The same semantic
   declaration resolves to Fluent, AppKit or GTK composition without an
   application-level platform branch.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and

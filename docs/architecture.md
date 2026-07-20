@@ -529,14 +529,18 @@ Platform-owned defaults live separately in
 contain component composition, metrics and interaction conventions but no
 native host or renderer implementation.
 Base controls, navigation rows, tabs, command bars, content dialogs, feedback
-surfaces, breadcrumbs, toggle buttons, number boxes and shells consume those
-profiles for layout, paint, hit testing and keyboard behavior instead of
-matching platforms in shared component code. The dialog profile owns action
-order, equal-versus-intrinsic sizing, trailing alignment, modal scrim strength
-and visual-order focus traversal; the public dialog model retains only semantic
-Primary, Secondary and Close responses. Feature-gated profiles independently
-own InfoBar, TeachingTip, Toast, BreadcrumbBar, ToggleButton and NumberBox
-composition, metrics and platform interaction treatments.
+surfaces, breadcrumbs, toggle buttons, number boxes, search fields, grid/tree/
+table collections and shells consume those profiles for layout, paint, hit
+testing and keyboard behavior instead of matching platforms in shared
+component code. The dialog profile owns action order, equal-versus-intrinsic
+sizing, trailing alignment, modal scrim strength and visual-order focus
+traversal; the public dialog model retains only semantic Primary, Secondary
+and Close responses. Feature-gated profiles independently own InfoBar,
+TeachingTip, Toast, BreadcrumbBar, ToggleButton, NumberBox, AutoSuggestBox,
+GridView, TreeView, DataGrid, TimePicker, ColorPicker and CommandPalette
+composition, metrics and interaction treatments. Production
+`widget_render.rs` therefore consumes resolved profiles and contains no direct
+Windows, macOS or GTK variant branches.
 `src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
 Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single

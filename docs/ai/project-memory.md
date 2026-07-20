@@ -330,9 +330,12 @@ history remain authoritative for implementation status.
   adaptive navigation, foundational controls and navigation rows, command
   bars, tabs, content-dialog action order/sizing/alignment/scrim/focus
   traversal, feature-gated InfoBar/TeachingTip/Toast/BreadcrumbBar/
-  ToggleButton/NumberBox metrics and interaction treatments, and the legacy
-  navigation/card shell. View, Shell and shared keyboard routing consume the
-  resolved profile instead of repeating platform matches.
+  ToggleButton/NumberBox/AutoSuggestBox/GridView/TreeView/DataGrid/TimePicker/
+  ColorPicker/CommandPalette metrics and interaction treatments, and the
+  legacy navigation/card shell. View, Shell and shared keyboard routing
+  consume the resolved profile instead of repeating platform matches.
+  Production `widget_render.rs` contains no direct Windows, macOS or GTK
+  variant branch.
   One `ZsShellLayoutSpec` therefore resolves to a Fluent pane/card composition,
   AppKit source-list/forms composition or GTK sidebar/boxed-list composition
   without exposing a platform selector in the application API.

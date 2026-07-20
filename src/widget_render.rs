@@ -3156,41 +3156,8 @@ pub struct ZsAutoSuggestMetrics {
 #[cfg(feature = "auto-suggest")]
 impl ZsAutoSuggestMetrics {
     pub const fn for_platform(platform: ZsAutoSuggestPlatformStyle) -> Self {
-        match platform {
-            ZsAutoSuggestPlatformStyle::Windows => Self {
-                control_height: Dp::new(32.0),
-                row_height: Dp::new(36.0),
-                text_padding: Dp::new(12.0),
-                icon_column_width: Dp::new(32.0),
-                icon_size: Dp::new(16.0),
-                popup_gap: Dp::new(4.0),
-                control_radius: Dp::new(4.0),
-                overlay_radius: Dp::new(8.0),
-                leading_search_icon: false,
-            },
-            ZsAutoSuggestPlatformStyle::Macos => Self {
-                control_height: Dp::new(28.0),
-                row_height: Dp::new(28.0),
-                text_padding: Dp::new(8.0),
-                icon_column_width: Dp::new(24.0),
-                icon_size: Dp::new(14.0),
-                popup_gap: Dp::new(6.0),
-                control_radius: Dp::new(6.0),
-                overlay_radius: Dp::new(10.0),
-                leading_search_icon: true,
-            },
-            ZsAutoSuggestPlatformStyle::Gtk => Self {
-                control_height: Dp::new(34.0),
-                row_height: Dp::new(34.0),
-                text_padding: Dp::new(10.0),
-                icon_column_width: Dp::new(28.0),
-                icon_size: Dp::new(16.0),
-                popup_gap: Dp::new(6.0),
-                control_radius: Dp::new(8.0),
-                overlay_radius: Dp::new(12.0),
-                leading_search_icon: true,
-            },
-        }
+        crate::platform_component_profile::PlatformAutoSuggestProfile::for_platform(platform)
+            .metrics
     }
 }
 
@@ -3276,7 +3243,9 @@ fn zs_auto_suggest_render_plan_impl(
     dpi: Dpi,
     viewport: Option<Rect>,
 ) -> ZsAutoSuggestRenderPlan {
-    let metrics = ZsAutoSuggestMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformAutoSuggestProfile::for_platform(platform)
+            .metrics;
     let padding = metrics.text_padding.to_px(dpi).round_i32().max(1);
     let icon_column = metrics.icon_column_width.to_px(dpi).round_i32().max(1);
     let icon_size = metrics
@@ -3474,11 +3443,13 @@ pub fn zs_auto_suggest_popup_native_draw_plan(
         stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
         radius: plan.overlay_radius,
     }];
-    let padding = ZsAutoSuggestMetrics::for_platform(plan.platform)
-        .text_padding
-        .to_px(dpi)
-        .round_i32()
-        .max(1);
+    let padding =
+        crate::platform_component_profile::PlatformAutoSuggestProfile::for_platform(plan.platform)
+            .metrics
+            .text_padding
+            .to_px(dpi)
+            .round_i32()
+            .max(1);
     if suggestions.is_empty() {
         if let (Some(label), Some(row)) = (no_results_text, plan.suggestion_rows.first()) {
             let mut style = SemanticTextStyle::body();
@@ -3545,41 +3516,7 @@ pub struct ZsGridViewMetrics {
 #[cfg(feature = "grid-view")]
 impl ZsGridViewMetrics {
     pub const fn for_platform(platform: ZsGridViewPlatformStyle) -> Self {
-        match platform {
-            ZsGridViewPlatformStyle::Windows => Self {
-                minimum_item_width: Dp::new(132.0),
-                item_height: Dp::new(112.0),
-                item_gap: Dp::new(8.0),
-                item_padding: Dp::new(10.0),
-                media_height: Dp::new(58.0),
-                icon_size: Dp::new(32.0),
-                item_radius: Dp::new(4.0),
-                media_radius: Dp::new(3.0),
-                text_gap: Dp::new(2.0),
-            },
-            ZsGridViewPlatformStyle::Macos => Self {
-                minimum_item_width: Dp::new(124.0),
-                item_height: Dp::new(104.0),
-                item_gap: Dp::new(10.0),
-                item_padding: Dp::new(9.0),
-                media_height: Dp::new(54.0),
-                icon_size: Dp::new(28.0),
-                item_radius: Dp::new(8.0),
-                media_radius: Dp::new(6.0),
-                text_gap: Dp::new(1.0),
-            },
-            ZsGridViewPlatformStyle::Gtk => Self {
-                minimum_item_width: Dp::new(136.0),
-                item_height: Dp::new(116.0),
-                item_gap: Dp::new(8.0),
-                item_padding: Dp::new(10.0),
-                media_height: Dp::new(60.0),
-                icon_size: Dp::new(32.0),
-                item_radius: Dp::new(6.0),
-                media_radius: Dp::new(5.0),
-                text_gap: Dp::new(2.0),
-            },
-        }
+        crate::platform_component_profile::PlatformGridViewProfile::for_platform(platform).metrics
     }
 }
 
@@ -3616,7 +3553,8 @@ pub fn zs_grid_view_render_plan(
     platform: ZsGridViewPlatformStyle,
     dpi: Dpi,
 ) -> ZsGridViewRenderPlan {
-    let metrics = ZsGridViewMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformGridViewProfile::for_platform(platform).metrics;
     let minimum_item_width = metrics.minimum_item_width.to_px(dpi).round_i32().max(1);
     let item_height = metrics.item_height.to_px(dpi).round_i32().max(1);
     let gap = metrics.item_gap.to_px(dpi).round_i32().max(0);
@@ -3760,6 +3698,8 @@ pub fn zs_grid_view_native_draw_plan(
     plan: &ZsGridViewRenderPlan,
     items: &[crate::ZsGridViewItem],
 ) -> NativeDrawPlan {
+    let profile =
+        crate::platform_component_profile::PlatformGridViewProfile::for_platform(plan.platform);
     let mut commands = vec![
         NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -3774,26 +3714,14 @@ pub fn zs_grid_view_native_draw_plan(
             continue;
         };
         let (fill, stroke) = if tile.selected {
-            match plan.platform {
-                ZsGridViewPlatformStyle::Windows => (
-                    NativeDrawFill::RoleWithAlpha {
-                        role: ColorRole::Accent,
-                        alpha: 28,
-                    },
-                    Some(NativeDrawFill::Role(ColorRole::Accent)),
-                ),
-                ZsGridViewPlatformStyle::Macos => (
-                    NativeDrawFill::Role(ColorRole::Accent),
-                    Some(NativeDrawFill::Role(ColorRole::Accent)),
-                ),
-                ZsGridViewPlatformStyle::Gtk => (
-                    NativeDrawFill::RoleWithAlpha {
-                        role: ColorRole::Accent,
-                        alpha: 44,
-                    },
-                    Some(NativeDrawFill::Role(ColorRole::Accent)),
-                ),
-            }
+            let (role, alpha) = profile.selection.fill();
+            (
+                match alpha {
+                    Some(alpha) => NativeDrawFill::RoleWithAlpha { role, alpha },
+                    None => NativeDrawFill::Role(role),
+                },
+                Some(NativeDrawFill::Role(ColorRole::Accent)),
+            )
         } else {
             (
                 NativeDrawFill::Role(ColorRole::Control),
@@ -3809,8 +3737,8 @@ pub fn zs_grid_view_native_draw_plan(
         commands.push(NativeDrawCommand::RoundFill {
             rect: tile.media_bounds,
             fill: NativeDrawFill::RoleWithAlpha {
-                role: if tile.selected && plan.platform == ZsGridViewPlatformStyle::Macos {
-                    ColorRole::AccentText
+                role: if tile.selected {
+                    profile.selection.foreground()
                 } else {
                     ColorRole::PrimaryText
                 },
@@ -3818,8 +3746,8 @@ pub fn zs_grid_view_native_draw_plan(
             },
             radius: plan.media_radius,
         });
-        let foreground = if tile.selected && plan.platform == ZsGridViewPlatformStyle::Macos {
-            ColorRole::AccentText
+        let foreground = if tile.selected {
+            profile.selection.foreground()
         } else {
             ColorRole::PrimaryText
         };
@@ -3885,38 +3813,7 @@ pub struct ZsTreeViewMetrics {
 #[cfg(feature = "tree")]
 impl ZsTreeViewMetrics {
     pub const fn for_platform(platform: ZsTreePlatformStyle) -> Self {
-        match platform {
-            ZsTreePlatformStyle::Windows => Self {
-                row_height: Dp::new(32.0),
-                depth_indent: Dp::new(20.0),
-                disclosure_column: Dp::new(24.0),
-                disclosure_size: Dp::new(12.0),
-                icon_size: Dp::new(16.0),
-                leading_padding: Dp::new(6.0),
-                content_gap: Dp::new(6.0),
-                row_radius: Dp::new(4.0),
-            },
-            ZsTreePlatformStyle::Macos => Self {
-                row_height: Dp::new(22.0),
-                depth_indent: Dp::new(16.0),
-                disclosure_column: Dp::new(18.0),
-                disclosure_size: Dp::new(10.0),
-                icon_size: Dp::new(16.0),
-                leading_padding: Dp::new(4.0),
-                content_gap: Dp::new(4.0),
-                row_radius: Dp::new(4.0),
-            },
-            ZsTreePlatformStyle::Gtk => Self {
-                row_height: Dp::new(34.0),
-                depth_indent: Dp::new(24.0),
-                disclosure_column: Dp::new(24.0),
-                disclosure_size: Dp::new(12.0),
-                icon_size: Dp::new(16.0),
-                leading_padding: Dp::new(6.0),
-                content_gap: Dp::new(6.0),
-                row_radius: Dp::new(6.0),
-            },
-        }
+        crate::platform_component_profile::PlatformTreeViewProfile::for_platform(platform).metrics
     }
 }
 
@@ -3955,7 +3852,8 @@ pub fn zs_tree_view_render_plan(
     platform: ZsTreePlatformStyle,
     dpi: Dpi,
 ) -> ZsTreeViewRenderPlan {
-    let metrics = ZsTreeViewMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformTreeViewProfile::for_platform(platform).metrics;
     let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
     let depth_indent = metrics.depth_indent.to_px(dpi).round_i32().max(1);
     let disclosure_column = metrics.disclosure_column.to_px(dpi).round_i32().max(1);
@@ -4054,6 +3952,8 @@ pub fn zs_tree_view_render_plan(
 
 #[cfg(feature = "tree")]
 pub fn zs_tree_view_native_draw_plan(plan: &ZsTreeViewRenderPlan) -> NativeDrawPlan {
+    let profile =
+        crate::platform_component_profile::PlatformTreeViewProfile::for_platform(plan.platform);
     let mut commands = vec![
         NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -4065,16 +3965,10 @@ pub fn zs_tree_view_native_draw_plan(plan: &ZsTreeViewRenderPlan) -> NativeDrawP
     ];
     for row in &plan.rows {
         if row.selected {
-            let fill = match plan.platform {
-                ZsTreePlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Accent),
-                ZsTreePlatformStyle::Windows => NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 36,
-                },
-                ZsTreePlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 48,
-                },
+            let (role, alpha) = profile.selection.fill();
+            let fill = match alpha {
+                Some(alpha) => NativeDrawFill::RoleWithAlpha { role, alpha },
+                None => NativeDrawFill::Role(role),
             };
             commands.push(NativeDrawCommand::RoundFill {
                 rect: row.bounds,
@@ -4082,8 +3976,8 @@ pub fn zs_tree_view_native_draw_plan(plan: &ZsTreeViewRenderPlan) -> NativeDrawP
                 radius: plan.row_radius,
             });
         }
-        let foreground = if row.selected && plan.platform == ZsTreePlatformStyle::Macos {
-            ColorRole::AccentText
+        let foreground = if row.selected {
+            profile.selection.foreground()
         } else {
             ColorRole::PrimaryText
         };
@@ -4136,32 +4030,7 @@ pub struct ZsTableMetrics {
 #[cfg(feature = "table")]
 impl ZsTableMetrics {
     pub const fn for_platform(platform: ZsTablePlatformStyle) -> Self {
-        match platform {
-            ZsTablePlatformStyle::Windows => Self {
-                header_height: Dp::new(36.0),
-                row_height: Dp::new(32.0),
-                horizontal_padding: Dp::new(12.0),
-                sort_icon_size: Dp::new(12.0),
-                radius: Dp::new(4.0),
-                separator_width: Dp::new(1.0),
-            },
-            ZsTablePlatformStyle::Macos => Self {
-                header_height: Dp::new(24.0),
-                row_height: Dp::new(24.0),
-                horizontal_padding: Dp::new(8.0),
-                sort_icon_size: Dp::new(10.0),
-                radius: Dp::new(5.0),
-                separator_width: Dp::new(1.0),
-            },
-            ZsTablePlatformStyle::Gtk => Self {
-                header_height: Dp::new(36.0),
-                row_height: Dp::new(34.0),
-                horizontal_padding: Dp::new(12.0),
-                sort_icon_size: Dp::new(12.0),
-                radius: Dp::new(6.0),
-                separator_width: Dp::new(1.0),
-            },
-        }
+        crate::platform_component_profile::PlatformTableProfile::for_platform(platform).metrics
     }
 }
 
@@ -4267,7 +4136,8 @@ pub fn zs_table_render_plan(
     platform: ZsTablePlatformStyle,
     dpi: Dpi,
 ) -> ZsTableRenderPlan {
-    let metrics = ZsTableMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformTableProfile::for_platform(platform).metrics;
     let header_height = metrics.header_height.to_px(dpi).round_i32().max(1);
     let row_height = metrics.row_height.to_px(dpi).round_i32().max(1);
     let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
@@ -4385,6 +4255,8 @@ pub fn zs_table_render_plan(
 
 #[cfg(feature = "table")]
 pub fn zs_table_native_draw_plan(plan: &ZsTableRenderPlan) -> NativeDrawPlan {
+    let profile =
+        crate::platform_component_profile::PlatformTableProfile::for_platform(plan.platform);
     let mut commands = vec![
         NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -4453,24 +4325,18 @@ pub fn zs_table_native_draw_plan(plan: &ZsTableRenderPlan) -> NativeDrawPlan {
     });
     for row in &plan.rows {
         if row.selected {
-            let fill = match plan.platform {
-                ZsTablePlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Accent),
-                ZsTablePlatformStyle::Windows => NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 36,
-                },
-                ZsTablePlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 48,
-                },
+            let (role, alpha) = profile.selection.fill();
+            let fill = match alpha {
+                Some(alpha) => NativeDrawFill::RoleWithAlpha { role, alpha },
+                None => NativeDrawFill::Role(role),
             };
             commands.push(NativeDrawCommand::FillRect {
                 rect: row.bounds,
                 fill,
             });
         }
-        let foreground = if row.selected && plan.platform == ZsTablePlatformStyle::Macos {
-            ColorRole::AccentText
+        let foreground = if row.selected {
+            profile.selection.foreground()
         } else {
             ColorRole::PrimaryText
         };
@@ -5213,38 +5079,7 @@ pub struct ZsTimePickerMetrics {
 #[cfg(feature = "time-picker")]
 impl ZsTimePickerMetrics {
     pub const fn for_platform(platform: ZsTimePickerPlatformStyle) -> Self {
-        match platform {
-            ZsTimePickerPlatformStyle::Windows => Self {
-                popup_width: Dp::new(280.0),
-                row_height: Dp::new(40.0),
-                visible_rows: 5,
-                text_padding: Dp::new(12.0),
-                icon_column_width: Dp::new(32.0),
-                popup_gap: Dp::new(4.0),
-                control_radius: Dp::new(4.0),
-                overlay_radius: Dp::new(8.0),
-            },
-            ZsTimePickerPlatformStyle::Macos => Self {
-                popup_width: Dp::new(216.0),
-                row_height: Dp::new(30.0),
-                visible_rows: 3,
-                text_padding: Dp::new(10.0),
-                icon_column_width: Dp::new(26.0),
-                popup_gap: Dp::new(6.0),
-                control_radius: Dp::new(6.0),
-                overlay_radius: Dp::new(10.0),
-            },
-            ZsTimePickerPlatformStyle::Gtk => Self {
-                popup_width: Dp::new(240.0),
-                row_height: Dp::new(36.0),
-                visible_rows: 3,
-                text_padding: Dp::new(12.0),
-                icon_column_width: Dp::new(34.0),
-                popup_gap: Dp::new(6.0),
-                control_radius: Dp::new(6.0),
-                overlay_radius: Dp::new(12.0),
-            },
-        }
+        crate::platform_component_profile::PlatformTimePickerProfile::for_platform(platform).metrics
     }
 }
 
@@ -5334,7 +5169,9 @@ fn zs_time_picker_render_plan_impl(
     viewport: Option<Rect>,
 ) -> ZsTimePickerRenderPlan {
     let value = value.snap(increment);
-    let metrics = ZsTimePickerMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformTimePickerProfile::for_platform(platform)
+            .metrics;
     let icon_column_width = metrics
         .icon_column_width
         .to_px(dpi)
@@ -5508,12 +5345,9 @@ pub fn zs_time_picker_header_native_draw_plan(
     plan: &ZsTimePickerRenderPlan,
     value: ZsTime,
 ) -> NativeDrawPlan {
-    let fill = match plan.platform {
-        ZsTimePickerPlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Surface),
-        ZsTimePickerPlatformStyle::Windows | ZsTimePickerPlatformStyle::Gtk => {
-            NativeDrawFill::Role(ColorRole::Control)
-        }
-    };
+    let profile =
+        crate::platform_component_profile::PlatformTimePickerProfile::for_platform(plan.platform);
+    let fill = NativeDrawFill::Role(profile.header_fill);
     NativeDrawPlan::new([
         NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -5542,6 +5376,8 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
     let Some(popup) = plan.popup else {
         return NativeDrawPlan::default();
     };
+    let profile =
+        crate::platform_component_profile::PlatformTimePickerProfile::for_platform(plan.platform);
     let mut commands = vec![NativeDrawCommand::RoundRect {
         rect: popup,
         fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
@@ -5561,13 +5397,10 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
     }
     for choice in &plan.choices {
         if choice.selected {
-            let fill = match plan.platform {
-                ZsTimePickerPlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Accent),
-                ZsTimePickerPlatformStyle::Windows => NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 48,
-                },
-                ZsTimePickerPlatformStyle::Gtk => NativeDrawFill::Role(ColorRole::Control),
+            let (role, alpha) = profile.selection.fill();
+            let fill = match alpha {
+                Some(alpha) => NativeDrawFill::RoleWithAlpha { role, alpha },
+                None => NativeDrawFill::Role(role),
             };
             commands.push(NativeDrawCommand::RoundFill {
                 rect: Rect {
@@ -5580,10 +5413,8 @@ pub fn zs_time_picker_popup_native_draw_plan(plan: &ZsTimePickerRenderPlan) -> N
                 radius: plan.control_radius,
             });
         }
-        let color = if choice.selected && plan.platform == ZsTimePickerPlatformStyle::Macos {
-            ColorRole::AccentText
-        } else if choice.selected {
-            ColorRole::PrimaryText
+        let color = if choice.selected {
+            profile.selection.foreground()
         } else {
             ColorRole::SecondaryText
         };
@@ -5633,66 +5464,8 @@ pub struct ZsColorPickerMetrics {
 #[cfg(feature = "color-picker")]
 impl ZsColorPickerMetrics {
     pub const fn for_platform(platform: ZsColorPickerPlatformStyle) -> Self {
-        match platform {
-            ZsColorPickerPlatformStyle::Windows => Self {
-                popup_width: Dp::new(320.0),
-                popup_padding: Dp::new(16.0),
-                preview_size: Dp::new(48.0),
-                preview_gap: Dp::new(10.0),
-                // WinUI recommends a square spectrum of at least 256 px when
-                // editable precision fields are not present. The 288-DP
-                // content width keeps this first-pass picker above that
-                // accuracy floor without introducing a native child control.
-                spectrum_height: Dp::new(256.0),
-                spectrum_gap: Dp::new(8.0),
-                hue_track_height: Dp::new(10.0),
-                row_height: Dp::new(28.0),
-                row_gap: Dp::new(4.0),
-                label_width: Dp::new(24.0),
-                value_width: Dp::new(42.0),
-                track_height: Dp::new(8.0),
-                thumb_width: Dp::new(12.0),
-                popup_gap: Dp::new(4.0),
-                control_radius: Dp::new(4.0),
-                overlay_radius: Dp::new(8.0),
-            },
-            ZsColorPickerPlatformStyle::Macos => Self {
-                popup_width: Dp::new(264.0),
-                popup_padding: Dp::new(12.0),
-                preview_size: Dp::new(40.0),
-                preview_gap: Dp::new(10.0),
-                spectrum_height: Dp::new(0.0),
-                spectrum_gap: Dp::new(0.0),
-                hue_track_height: Dp::new(0.0),
-                row_height: Dp::new(32.0),
-                row_gap: Dp::new(3.0),
-                label_width: Dp::new(20.0),
-                value_width: Dp::new(36.0),
-                track_height: Dp::new(6.0),
-                thumb_width: Dp::new(10.0),
-                popup_gap: Dp::new(6.0),
-                control_radius: Dp::new(6.0),
-                overlay_radius: Dp::new(10.0),
-            },
-            ZsColorPickerPlatformStyle::Gtk => Self {
-                popup_width: Dp::new(288.0),
-                popup_padding: Dp::new(16.0),
-                preview_size: Dp::new(44.0),
-                preview_gap: Dp::new(12.0),
-                spectrum_height: Dp::new(96.0),
-                spectrum_gap: Dp::new(8.0),
-                hue_track_height: Dp::new(10.0),
-                row_height: Dp::new(36.0),
-                row_gap: Dp::new(4.0),
-                label_width: Dp::new(24.0),
-                value_width: Dp::new(40.0),
-                track_height: Dp::new(8.0),
-                thumb_width: Dp::new(12.0),
-                popup_gap: Dp::new(6.0),
-                control_radius: Dp::new(6.0),
-                overlay_radius: Dp::new(12.0),
-            },
-        }
+        crate::platform_component_profile::PlatformColorPickerProfile::for_platform(platform)
+            .metrics
     }
 }
 
@@ -5764,17 +5537,15 @@ fn zs_color_picker_render_plan_impl(
     viewport: Option<Rect>,
 ) -> ZsColorPickerRenderPlan {
     let state = state.normalized();
-    let metrics = ZsColorPickerMetrics::for_platform(platform);
+    let profile =
+        crate::platform_component_profile::PlatformColorPickerProfile::for_platform(platform);
+    let metrics = profile.metrics;
     let inset = metrics.popup_padding.to_px(dpi).round_i32().max(1);
-    let swatch_size = scale(
-        match platform {
-            ZsColorPickerPlatformStyle::Windows => 22,
-            ZsColorPickerPlatformStyle::Macos => 18,
-            ZsColorPickerPlatformStyle::Gtk => 20,
-        },
-        dpi,
-    )
-    .min(bounds.height.saturating_sub(scale(8, dpi)).max(1));
+    let swatch_size = profile
+        .swatch_size
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.saturating_sub(scale(8, dpi)).max(1));
     let header_padding = scale(8, dpi);
     let icon_column = scale(28, dpi).min(bounds.width.max(1));
     let swatch_bounds = Rect {
@@ -6049,12 +5820,9 @@ pub fn zs_color_picker_header_native_draw_plan(
     state: ZsColorPickerState,
 ) -> NativeDrawPlan {
     let state = state.normalized();
-    let fill = match plan.platform {
-        ZsColorPickerPlatformStyle::Macos => NativeDrawFill::Role(ColorRole::Surface),
-        ZsColorPickerPlatformStyle::Windows | ZsColorPickerPlatformStyle::Gtk => {
-            NativeDrawFill::Role(ColorRole::Control)
-        }
-    };
+    let profile =
+        crate::platform_component_profile::PlatformColorPickerProfile::for_platform(plan.platform);
+    let fill = NativeDrawFill::Role(profile.header_fill);
     let swatch_color = Color::rgb(state.color.r, state.color.g, state.color.b);
     NativeDrawPlan::new([
         NativeDrawCommand::RoundRect {
@@ -6138,6 +5906,8 @@ pub fn zs_color_picker_popup_native_draw_plan(
     let Some(popup) = plan.popup else {
         return NativeDrawPlan::default();
     };
+    let profile =
+        crate::platform_component_profile::PlatformColorPickerProfile::for_platform(plan.platform);
     let mut commands = vec![NativeDrawCommand::RoundRect {
         rect: popup,
         fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
@@ -6262,11 +6032,7 @@ pub fn zs_color_picker_popup_native_draw_plan(
                 rect: row.bounds,
                 fill: NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::Accent,
-                    alpha: match plan.platform {
-                        ZsColorPickerPlatformStyle::Windows => 24,
-                        ZsColorPickerPlatformStyle::Macos => 18,
-                        ZsColorPickerPlatformStyle::Gtk => 20,
-                    },
+                    alpha: profile.active_channel_alpha,
                 },
                 radius: plan.control_radius,
             });
@@ -6359,50 +6125,8 @@ pub struct ZsCommandPaletteMetrics {
 #[cfg(feature = "command-palette")]
 impl ZsCommandPaletteMetrics {
     pub const fn for_platform(platform: ZsCommandPalettePlatformStyle) -> Self {
-        match platform {
-            ZsCommandPalettePlatformStyle::Windows => Self {
-                preferred_width: Dp::new(640.0),
-                viewport_margin: Dp::new(24.0),
-                top_offset: Dp::new(72.0),
-                search_height: Dp::new(52.0),
-                row_height: Dp::new(48.0),
-                horizontal_padding: Dp::new(12.0),
-                icon_size: Dp::new(20.0),
-                icon_column_width: Dp::new(36.0),
-                shortcut_width: Dp::new(112.0),
-                surface_radius: Dp::new(8.0),
-                search_radius: Dp::new(4.0),
-                row_radius: Dp::new(4.0),
-            },
-            ZsCommandPalettePlatformStyle::Macos => Self {
-                preferred_width: Dp::new(560.0),
-                viewport_margin: Dp::new(24.0),
-                top_offset: Dp::new(64.0),
-                search_height: Dp::new(48.0),
-                row_height: Dp::new(44.0),
-                horizontal_padding: Dp::new(12.0),
-                icon_size: Dp::new(18.0),
-                icon_column_width: Dp::new(32.0),
-                shortcut_width: Dp::new(96.0),
-                surface_radius: Dp::new(14.0),
-                search_radius: Dp::new(8.0),
-                row_radius: Dp::new(7.0),
-            },
-            ZsCommandPalettePlatformStyle::Gtk => Self {
-                preferred_width: Dp::new(560.0),
-                viewport_margin: Dp::new(24.0),
-                top_offset: Dp::new(72.0),
-                search_height: Dp::new(46.0),
-                row_height: Dp::new(44.0),
-                horizontal_padding: Dp::new(12.0),
-                icon_size: Dp::new(18.0),
-                icon_column_width: Dp::new(34.0),
-                shortcut_width: Dp::new(96.0),
-                surface_radius: Dp::new(12.0),
-                search_radius: Dp::new(9.0),
-                row_radius: Dp::new(7.0),
-            },
-        }
+        crate::platform_component_profile::PlatformCommandPaletteProfile::for_platform(platform)
+            .metrics
     }
 }
 
@@ -6446,7 +6170,9 @@ pub fn zs_command_palette_render_plan(
     platform: ZsCommandPalettePlatformStyle,
     dpi: Dpi,
 ) -> ZsCommandPaletteRenderPlan {
-    let metrics = ZsCommandPaletteMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformCommandPaletteProfile::for_platform(platform)
+            .metrics;
     let margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
     let top_offset = metrics.top_offset.to_px(dpi).round_i32().max(margin);
     let width = metrics.preferred_width.to_px(dpi).round_i32().max(1).min(
@@ -6658,11 +6384,11 @@ pub fn zs_command_palette_native_draw_plan(
     no_results_text: &str,
     items: &[crate::ZsCommandPaletteItem],
 ) -> NativeDrawPlan {
-    let scrim_alpha = match plan.platform {
-        ZsCommandPalettePlatformStyle::Windows => 56,
-        ZsCommandPalettePlatformStyle::Macos => 44,
-        ZsCommandPalettePlatformStyle::Gtk => 72,
-    };
+    let scrim_alpha =
+        crate::platform_component_profile::PlatformCommandPaletteProfile::for_platform(
+            plan.platform,
+        )
+        .scrim_alpha;
     let shadow = Rect {
         x: plan.surface.x.saturating_sub(5),
         y: plan.surface.y.saturating_add(3),
