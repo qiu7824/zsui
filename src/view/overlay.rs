@@ -2333,6 +2333,8 @@ impl<Msg> ViewNode<Msg> {
 
     fn hit_target_kind(&self) -> ViewHitTargetKind {
         match &self.kind {
+            #[cfg(feature = "canvas")]
+            ViewNodeKind::Canvas { .. } => ViewHitTargetKind::Canvas,
             #[cfg(feature = "button")]
             ViewNodeKind::Button { .. } => ViewHitTargetKind::Button,
             #[cfg(feature = "breadcrumb")]

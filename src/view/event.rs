@@ -371,6 +371,8 @@ impl ViewHitTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewHitTargetKind {
     Unknown,
+    #[cfg(feature = "canvas")]
+    Canvas,
     Button,
     #[cfg(feature = "label")]
     NavigationViewToggle,

@@ -1105,6 +1105,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         }
                     }
                 }
+                #[cfg(feature = "canvas")]
+                (
+                    ViewNodeKind::Canvas { on_click, .. },
+                    ViewEvent::Click { .. },
+                ) => {
+                    if let Some(message) = on_click.clone() {
+                        cx.emit(message);
+                    }
+                }
                 #[cfg(feature = "toggle-button")]
                 (
                     ViewNodeKind::ToggleButton {
@@ -1824,6 +1833,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         match &self.kind {
+            #[cfg(feature = "canvas")]
+            ViewNodeKind::Canvas { scene, .. } => {
+                for command in crate::zs_canvas_native_draw_plan(bounds, scene, cx.dpi).commands {
+                    cx.draw(command);
+                }
+            }
             #[cfg(feature = "label")]
             ViewNodeKind::NavigationView {
                 title,

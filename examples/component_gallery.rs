@@ -33,6 +33,7 @@ const DIALOG: WidgetId = WidgetId::new(401);
 const TOAST: WidgetId = WidgetId::new(402);
 const TEACHING_TIP: WidgetId = WidgetId::new(403);
 const TEACHING_TARGET: WidgetId = WidgetId::new(404);
+const CANVAS_SURFACE: WidgetId = WidgetId::new(501);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GalleryPage {
@@ -112,6 +113,7 @@ struct GalleryState {
     page: GalleryPage,
     dark: bool,
     click_count: u32,
+    canvas_activation_count: u32,
     text: String,
     password: ZsPassword,
     checkbox: bool,
@@ -153,6 +155,7 @@ impl Default for GalleryState {
             page: GalleryPage::Inputs,
             dark: false,
             click_count: 0,
+            canvas_activation_count: 0,
             text: "ZSUI 原生界面 / Native UI".to_string(),
             password: ZsPassword::from("desktop"),
             checkbox: true,
@@ -191,6 +194,7 @@ enum Msg {
     Navigate(GalleryPage),
     Dark(bool),
     PrimaryAction,
+    CanvasActivated,
     Text(String),
     Password(ZsPassword),
     Checkbox(bool),
@@ -782,6 +786,27 @@ fn catalog_page(state: &GalleryState) -> ViewNode<Msg> {
     )
     .column_gap(Dp::new(8.0))
     .row_gap(Dp::new(8.0));
+    let canvas_sample = ZsCanvasScene::new()
+        .with(ZsCanvasPrimitive::round_fill(
+            ZsCanvasRect::new(Dp::new(0.0), Dp::new(0.0), Dp::new(340.0), Dp::new(84.0)),
+            NativeDrawFill::role(ColorRole::Control),
+            Dp::new(8.0),
+        ))
+        .with(ZsCanvasPrimitive::round_fill(
+            ZsCanvasRect::new(Dp::new(12.0), Dp::new(12.0), Dp::new(60.0), Dp::new(60.0)),
+            NativeDrawFill::role(ColorRole::Accent),
+            Dp::new(12.0),
+        ))
+        .with(ZsCanvasPrimitive::icon(
+            ZsIcon::Image,
+            ZsCanvasRect::new(Dp::new(30.0), Dp::new(30.0), Dp::new(24.0), Dp::new(24.0)),
+            ColorRole::AccentText,
+        ))
+        .with(ZsCanvasPrimitive::text(
+            "Dp + 语义色 / Semantic colors",
+            ZsCanvasRect::new(Dp::new(84.0), Dp::new(26.0), Dp::new(244.0), Dp::new(34.0)),
+            SemanticTextStyle::body(),
+        ));
 
     column([
         info_bar(
@@ -805,9 +830,21 @@ fn catalog_page(state: &GalleryState) -> ViewNode<Msg> {
                 vec![inventory],
             ),
             card(
-                "布局与契约 / Layout and contracts",
+                "布局与绘制 / Layout and drawing",
                 vec![
                     layout_sample,
+                    body_strong("自绘画布 / Custom canvas"),
+                    canvas(canvas_sample)
+                        .id(CANVAS_SURFACE)
+                        .height(Dp::new(84.0))
+                        .on_click(Msg::CanvasActivated),
+                    secondary_text(
+                        format!(
+                            "已激活 {} 次 / Activated {} time(s)",
+                            state.canvas_activation_count, state.canvas_activation_count
+                        ),
+                        TextRole::Caption,
+                    ),
                     body_strong("保留帧图片 / Retained image"),
                     image_preview(&state.image_preview.snapshot())
                         .height(Dp::new(96.0))
@@ -904,6 +941,13 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
             state.status = format!(
                 "已保存 {} 次 / Saved {} time(s)",
                 state.click_count, state.click_count
+            );
+        }
+        Msg::CanvasActivated => {
+            state.canvas_activation_count = state.canvas_activation_count.saturating_add(1);
+            state.status = format!(
+                "画布已激活 {} 次 / Canvas activated {} time(s)",
+                state.canvas_activation_count, state.canvas_activation_count
             );
         }
         Msg::Text(value) => state.text = value,
@@ -1142,6 +1186,21 @@ fn main() -> ZsuiResult<()> {
             for point in click_points {
                 options = options.native_view_click(point);
             }
+        } else if initial_page == GalleryPage::Catalog {
+            let point = builder
+                .native_view_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(CANVAS_SURFACE))
+                .map(|target| Point {
+                    x: target.bounds.x + target.bounds.width / 2,
+                    y: target.bounds.y + target.bounds.height / 2,
+                })
+                .ok_or_else(|| {
+                    ZsuiError::host(
+                        "gallery_interaction_target",
+                        "missing Canvas gallery widget",
+                    )
+                })?;
+            options = options.native_view_click(point);
         }
         let widgets = builder
             .native_view_interaction_plan()
@@ -1149,10 +1208,13 @@ fn main() -> ZsuiResult<()> {
             .unwrap_or_default();
         let report = builder.run_smoke(options)?;
         let document = if native_proof {
-            let messages = (initial_page == GalleryPage::Inputs)
-                .then_some(["PrimaryAction", "CheckboxChanged", "ToggleChanged"])
-                .into_iter()
-                .flatten();
+            let messages = match initial_page {
+                GalleryPage::Inputs => {
+                    vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
+                }
+                GalleryPage::Catalog => vec!["CanvasActivated"],
+                _ => Vec::new(),
+            };
             serde_json::to_value(
                 NativeProofDocument::new(
                     "component_gallery",
@@ -1228,8 +1290,8 @@ mod tests {
     fn gallery_declares_every_catalog_family_and_keeps_contracts_explicit() {
         let summary = zsui_component_catalog_summary();
         assert_eq!(summary.total_count, 48);
-        assert_eq!(summary.runtime_surface_count, 46);
-        assert_eq!(summary.contract_only_count, 2);
+        assert_eq!(summary.runtime_surface_count, 47);
+        assert_eq!(summary.contract_only_count, 1);
     }
 
     #[test]

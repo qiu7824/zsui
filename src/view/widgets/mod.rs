@@ -1,4 +1,6 @@
 include!("button.rs");
+#[cfg(feature = "canvas")]
+include!("canvas.rs");
 include!("input.rs");
 include!("selection.rs");
 include!("navigation.rs");

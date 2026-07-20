@@ -112,6 +112,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "typed row/column grid layout with fixed and fractional tracks, gaps and spans",
         ),
         ZsuiCargoFeature::new(
+            "canvas",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "retained custom drawing surface with local-DP geometry, semantic colors and typed activation",
+        ),
+        ZsuiCargoFeature::new(
             "widgets-base",
             Widget,
             false,
@@ -634,6 +642,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             vec![
                 "button",
                 "breadcrumb",
+                "canvas",
                 "toggle-button",
                 "label",
                 "grid",
@@ -858,6 +867,7 @@ mod tests {
         assert!(!table.enables.contains(&"scroll"));
         assert!(!all_widgets.default_enabled);
         assert!(all_widgets.enables.contains(&"grid"));
+        assert!(all_widgets.enables.contains(&"canvas"));
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
         assert!(all_widgets.enables.contains(&"image-preview"));

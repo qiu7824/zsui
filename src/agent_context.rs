@@ -364,7 +364,6 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             source_path: "src/component_catalog.rs",
             missing_before_complete: vec![
                 "content-sized grid tracks and richer repeater layout",
-                "canvas runtime beyond its render-protocol contract",
                 "flyout runtime beyond its host-protocol contract",
                 "image view runtime beyond its render-protocol contract",
                 "accessibility and non-Windows target proof for advanced controls",
@@ -886,8 +885,8 @@ mod tests {
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
         assert_eq!(context.readiness.component_catalog.total_count, 48);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 46);
-        assert_eq!(context.readiness.component_catalog.contract_only_count, 2);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 47);
+        assert_eq!(context.readiness.component_catalog.contract_only_count, 1);
         assert_eq!(context.readiness.component_catalog.not_started_count, 0);
         let component_area = context
             .completion_areas

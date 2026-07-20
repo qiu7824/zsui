@@ -573,6 +573,11 @@ pub enum ViewNodeKind<Msg> {
         fit: ZsImageFit,
         interpolation: NativeImageInterpolation,
     },
+    #[cfg(feature = "canvas")]
+    Canvas {
+        scene: crate::ZsCanvasScene,
+        on_click: Option<Msg>,
+    },
     #[cfg(feature = "button")]
     Button {
         label: String,
@@ -1055,10 +1060,14 @@ impl<Msg> ViewNode<Msg> {
 }
 
 impl<Msg: Clone> ViewNode<Msg> {
-    #[cfg(feature = "button")]
+    #[cfg(any(feature = "button", feature = "canvas"))]
     pub fn on_click(mut self, message: Msg) -> Self {
-        if let ViewNodeKind::Button { on_click, .. } = &mut self.kind {
-            *on_click = Some(message);
+        match &mut self.kind {
+            #[cfg(feature = "button")]
+            ViewNodeKind::Button { on_click, .. } => *on_click = Some(message),
+            #[cfg(feature = "canvas")]
+            ViewNodeKind::Canvas { on_click, .. } => *on_click = Some(message),
+            _ => {}
         }
         self
     }

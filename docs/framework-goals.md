@@ -139,9 +139,9 @@ must stay independent of raw platform handles and broad native dependencies.
 ## Component Coverage
 
 `zsui_component_catalog()` is the component-level source of truth. The current
-catalog covers 48 desktop component families: 46 have a first-pass runtime
-surface, 2 have contracts only and none are not started. Canvas and Flyout
-remain contract-only. Composite shells do not change those statuses.
+catalog covers 48 desktop component families: 47 have a first-pass runtime
+surface, 1 has contracts only and none are not started. Flyout remains
+contract-only. Composite shells do not change those statuses.
 Embedded browser controls are intentionally outside the v0.2 product boundary.
 
 `workbench` is the first reusable application-shell feature. It provides

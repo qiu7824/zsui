@@ -262,6 +262,11 @@ const GRID_GAPS: &[&str] = &[
     "accessibility grouping semantics",
     "AppKit and GTK4 target layout smoke",
 ];
+const CANVAS_GAPS: &[&str] = &[
+    "accessibility grouping semantics",
+    "pointer-position, drag and path-drawing input",
+    "AppKit and Linux target interaction smoke",
+];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
     "accessibility tab-list and tab-panel providers",
@@ -284,8 +289,6 @@ const WORKBENCH_GAPS: &[&str] = &[
     "dark and high-contrast target smoke",
     "macOS and GTK native binding",
 ];
-const NEW_COMPONENT_GAPS: &[&str] = &["declaration API", "layout", "paint", "input", "smoke"];
-
 macro_rules! component {
     ($name:literal, $analogue:literal, $category:ident, $status:ident, $feature:expr, $path:literal, $gaps:expr) => {
         ZsuiComponentDescriptor {
@@ -350,10 +353,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "canvas",
         "Canvas",
         Layout,
-        ContractOnly,
-        None,
-        "src/render_protocol.rs",
-        NEW_COMPONENT_GAPS
+        FirstPass,
+        Some("canvas"),
+        "src/canvas.rs + src/view/widgets/canvas.rs + three desktop renderers",
+        CANVAS_GAPS
     ),
     component!(
         "navigation",
@@ -759,6 +762,9 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"color_picker"));
         assert!(!summary.missing_component_names.contains(&"command_palette"));
         assert!(!summary.missing_component_names.contains(&"image"));
+        assert!(!summary.missing_component_names.contains(&"canvas"));
+        assert_eq!(summary.first_pass_count, 47);
+        assert_eq!(summary.contract_only_count, 1);
     }
 
     #[test]

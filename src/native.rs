@@ -4318,6 +4318,15 @@ impl NativeViewInputRuntime {
                 NativeViewKey::Space
             )
         );
+        #[cfg(feature = "canvas")]
+        let activates = activates
+            || matches!(
+                (target.kind, key),
+                (
+                    crate::ViewHitTargetKind::Canvas,
+                    NativeViewKey::Enter | NativeViewKey::Space
+                )
+            );
         #[cfg(feature = "label")]
         let activates = activates
             || matches!(
@@ -8627,6 +8636,66 @@ mod tests {
                 matches!(
                     command,
                     crate::NativeDrawCommand::Text(text) if text.text == "Count: 1"
+                )
+            })
+        }));
+    }
+
+    #[cfg(feature = "canvas")]
+    #[test]
+    fn native_view_runtime_activates_canvas_by_pointer_and_keyboard() {
+        #[derive(Clone)]
+        enum Msg {
+            Activate,
+        }
+
+        let canvas_id = crate::WidgetId::new(72);
+        let builder = native_window("Canvas activation")
+            .size(240, 120)
+            .stateful_view(
+                0_u32,
+                move |count| {
+                    crate::canvas(
+                        crate::ZsCanvasScene::new().with(crate::ZsCanvasPrimitive::text(
+                            format!("Canvas: {count}"),
+                            crate::ZsCanvasRect::new(
+                                crate::Dp::new(8.0),
+                                crate::Dp::new(8.0),
+                                crate::Dp::new(160.0),
+                                crate::Dp::new(28.0),
+                            ),
+                            crate::SemanticTextStyle::body(),
+                        )),
+                    )
+                    .id(canvas_id)
+                    .height(crate::Dp::new(48.0))
+                    .on_click(Msg::Activate)
+                },
+                |count, message, _cx| match message {
+                    Msg::Activate => *count += 1,
+                },
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(canvas_id))
+            .expect("canvas should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pointer = runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        let keyboard = runtime.dispatch_key(NativeViewKey::Space);
+
+        assert!(pointer.handled);
+        assert_eq!(pointer.message_count, 1);
+        assert!(keyboard.handled);
+        assert_eq!(keyboard.message_count, 1);
+        assert!(keyboard.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::NativeDrawCommand::Text(text) if text.text == "Canvas: 2"
                 )
             })
         }));

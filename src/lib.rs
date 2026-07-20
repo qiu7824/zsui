@@ -18,6 +18,8 @@ mod backend_profile;
 pub mod breadcrumb;
 #[cfg(feature = "calculator")]
 pub mod calculator;
+#[cfg(feature = "canvas")]
+pub mod canvas;
 pub mod capability;
 pub mod clipboard;
 #[cfg(feature = "color-picker")]
@@ -243,6 +245,10 @@ pub use calculator::{
     ZsCalculatorAction, ZsCalculatorBinaryOperator, ZsCalculatorButtonKind,
     ZsCalculatorButtonRegion, ZsCalculatorEngine, ZsCalculatorHistoryEntry,
     ZsCalculatorInteraction, ZsCalculatorLayout, ZsCalculatorShellSpec,
+};
+#[cfg(feature = "canvas")]
+pub use canvas::{
+    zs_canvas_native_draw_plan, ZsCanvasPoint, ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
 };
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
 pub use clipboard::ClipboardData;
@@ -596,6 +602,8 @@ pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 pub use view::auto_suggest_box;
 #[cfg(feature = "breadcrumb")]
 pub use view::breadcrumb_bar;
+#[cfg(feature = "canvas")]
+pub use view::canvas;
 #[cfg(feature = "checkbox")]
 pub use view::checkbox;
 #[cfg(feature = "color-picker")]

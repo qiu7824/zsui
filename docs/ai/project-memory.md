@@ -40,6 +40,10 @@ history remain authoritative for implementation status.
 - Prefer composition, traits, typed messages, explicit state, strong IDs,
   typed `Dp`/`Px`/`Dpi`, RAII, `Result` and safe public APIs.
 - Keep raw platform APIs and `unsafe` inside backend modules.
+- Custom Canvas drawing retains backend-neutral primitives in local `Dp`
+  coordinates and uses semantic color/text/icon roles. It must emit a balanced
+  clip through the shared draw protocol and must not expose renderer or native
+  handles to application code. Interaction returns through typed View messages.
 - The public `crate::view` module is physically organized under `src/view/`:
   node, layout, event, focus, paint, overlay and widget-family source units
   share the existing module namespace so public paths and privacy stay stable.

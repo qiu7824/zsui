@@ -449,6 +449,11 @@ Localization is an independent `localization` service feature. Applications own
 their `ZsLocalizer`, use stable message IDs, Fluent parameters and plural rules,
 Unicode locale fallback, and normal typed state updates for runtime language
 changes. See the [localization guide](docs/localization.md).
+The component catalog tracks 48 desktop component families. Forty-seven have
+first-pass runtime surfaces and one remains contract-only. The optional
+`canvas` feature provides a retained custom-drawing surface with local `Dp`
+geometry, semantic colors and typed activation without exposing renderer or
+platform handles to application code.
 The `window` feature selects Win32, AppKit or GTK4 through
 target-specific dependencies, so the one-line window entry does not require an
 extra backend feature on supported desktop targets. Cargo features are additive

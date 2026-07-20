@@ -41,6 +41,7 @@ mod tests {
 
     #[cfg(any(
         feature = "button",
+        feature = "canvas",
         feature = "toggle-button",
         feature = "textbox",
         feature = "password-box",
@@ -68,6 +69,8 @@ mod tests {
     enum Msg {
         #[cfg(feature = "button")]
         SaveClicked,
+        #[cfg(feature = "canvas")]
+        CanvasClicked,
         #[cfg(feature = "textbox")]
         NameChanged(String),
         #[cfg(feature = "textbox")]
@@ -157,6 +160,73 @@ mod tests {
         view.event(&mut events, &ViewEvent::Click { widget: save_id });
 
         assert_eq!(events.into_messages(), vec![Msg::SaveClicked]);
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn canvas_layout_paint_hit_target_and_typed_activation_share_one_node() {
+        let canvas_id = WidgetId::new(8);
+        let scene = crate::ZsCanvasScene::new()
+            .with(crate::ZsCanvasPrimitive::round_fill(
+                crate::ZsCanvasRect::new(
+                    Dp::new(4.0),
+                    Dp::new(6.0),
+                    Dp::new(40.0),
+                    Dp::new(20.0),
+                ),
+                crate::NativeDrawFill::role(crate::ColorRole::Accent),
+                Dp::new(6.0),
+            ))
+            .with(crate::ZsCanvasPrimitive::text(
+                "自绘 / Canvas",
+                crate::ZsCanvasRect::new(
+                    Dp::new(50.0),
+                    Dp::new(6.0),
+                    Dp::new(120.0),
+                    Dp::new(24.0),
+                ),
+                crate::SemanticTextStyle::body(),
+            ));
+        let mut view = canvas(scene)
+            .id(canvas_id)
+            .width(Dp::new(180.0))
+            .height(Dp::new(48.0))
+            .on_click(Msg::CanvasClicked);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 20,
+                y: 30,
+                width: 180,
+                height: 48,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        let target = interaction
+            .hit_target_for_widget(canvas_id)
+            .expect("canvas should expose one hit target");
+        assert_eq!(target.kind, ViewHitTargetKind::Canvas);
+        assert_eq!(target.bounds, Rect { x: 20, y: 30, width: 180, height: 48 });
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(matches!(
+            paint.plan().commands.first(),
+            Some(NativeDrawCommand::PushClip { rect }) if *rect == target.bounds
+        ));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                rect: Rect { x: 24, y: 36, width: 40, height: 20 },
+                ..
+            }
+        )));
+        assert_eq!(paint.plan().commands.last(), Some(&NativeDrawCommand::PopClip));
+
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Click { widget: canvas_id });
+        assert_eq!(events.into_messages(), vec![Msg::CanvasClicked]);
     }
 
     #[test]
