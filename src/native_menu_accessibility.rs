@@ -55,7 +55,7 @@ pub(crate) struct NativeMenuFlyoutAccessibilitySnapshot {
 }
 
 impl NativeMenuFlyoutAccessibilitySnapshot {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub(crate) fn item(
         &self,
         path: crate::ZsMenuFlyoutPath,

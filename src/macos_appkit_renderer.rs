@@ -6,6 +6,8 @@ use std::{
 };
 
 use objc2::rc::Retained;
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+use objc2::rc::Weak;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 #[cfg(all(
     feature = "accessibility",
@@ -763,6 +765,179 @@ define_class!(
     }
 );
 
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+struct ZsuiAppKitMenuAccessibilityElementIvars {
+    view: Weak<ZsuiAppKitDrawView>,
+    parent: Weak<AnyObject>,
+    children: RefCell<Option<Retained<NSArray<AnyObject>>>>,
+    path: crate::ZsMenuFlyoutPath,
+    label: Retained<NSString>,
+    identifier: Retained<NSString>,
+    frame: NSRect,
+    enabled: bool,
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+define_class!(
+    #[unsafe(super = NSAccessibilityElement)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = ZsuiAppKitMenuAccessibilityElementIvars]
+    struct ZsuiAppKitMenuAccessibilityElement;
+
+    unsafe impl NSObjectProtocol for ZsuiAppKitMenuAccessibilityElement {}
+
+    impl ZsuiAppKitMenuAccessibilityElement {
+        #[unsafe(method(isAccessibilityElement))]
+        fn is_accessibility_element(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method_id(accessibilityRole))]
+        fn accessibility_role(&self) -> Retained<NSString> {
+            unsafe { NSAccessibilityMenuItemRole }.retain()
+        }
+
+        #[unsafe(method_id(accessibilityLabel))]
+        fn accessibility_label(&self) -> Retained<NSString> {
+            self.ivars().label.clone()
+        }
+
+        #[unsafe(method_id(accessibilityIdentifier))]
+        fn accessibility_identifier(&self) -> Retained<NSString> {
+            self.ivars().identifier.clone()
+        }
+
+        #[unsafe(method(accessibilityFrame))]
+        fn accessibility_frame(&self) -> NSRect {
+            self.ivars().frame
+        }
+
+        #[unsafe(method(isAccessibilityEnabled))]
+        fn is_accessibility_enabled(&self) -> bool {
+            self.ivars().enabled
+        }
+
+        #[unsafe(method(isAccessibilitySelected))]
+        fn is_accessibility_selected(&self) -> bool {
+            self.current_item()
+                .is_some_and(|item| item.highlighted())
+        }
+
+        #[unsafe(method(isAccessibilityFocused))]
+        fn is_accessibility_focused(&self) -> bool {
+            self.current_item()
+                .is_some_and(|item| item.highlighted())
+        }
+
+        #[unsafe(method_id(accessibilityValue))]
+        fn accessibility_value(&self) -> Option<Retained<NSNumber>> {
+            self.current_item()
+                .and_then(|item| item.checked())
+                .map(NSNumber::new_bool)
+        }
+
+        #[unsafe(method(isAccessibilityExpanded))]
+        fn is_accessibility_expanded(&self) -> bool {
+            self.current_item()
+                .and_then(|item| item.expanded())
+                .unwrap_or(false)
+        }
+
+        #[unsafe(method(setAccessibilityExpanded:))]
+        fn set_accessibility_expanded(&self, expanded: bool) {
+            let _ = self.dispatch_expanded(expanded);
+        }
+
+        #[unsafe(method_id(accessibilityParent))]
+        fn accessibility_parent(&self) -> Option<Retained<AnyObject>> {
+            self.ivars().parent.load()
+        }
+
+        #[unsafe(method_id(accessibilityChildren))]
+        fn accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
+            self.ivars().children.borrow().clone()
+        }
+
+        #[unsafe(method(accessibilityPerformPress))]
+        fn accessibility_perform_press(&self) -> bool {
+            if self
+                .current_item()
+                .is_some_and(|item| item.expanded().is_some())
+            {
+                self.dispatch_expanded(true)
+            } else {
+                self.dispatch_invoke()
+            }
+        }
+
+        #[unsafe(method(accessibilityPerformShowMenu))]
+        fn accessibility_perform_show_menu(&self) -> bool {
+            self.dispatch_expanded(true)
+        }
+    }
+);
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+impl ZsuiAppKitMenuAccessibilityElement {
+    fn new(
+        view: &ZsuiAppKitDrawView,
+        parent: &AnyObject,
+        item: &crate::native_menu_accessibility::NativeMenuFlyoutAccessibilityItem,
+        frame: NSRect,
+    ) -> Retained<Self> {
+        let identifier = NSString::from_str(&format!(
+            "zsui-menu-flyout-item-{}",
+            appkit_menu_flyout_path_identifier(item.path())
+        ));
+        let this = Self::alloc(view.mtm()).set_ivars(ZsuiAppKitMenuAccessibilityElementIvars {
+            view: Weak::new(view),
+            parent: Weak::new(parent),
+            children: RefCell::new(None),
+            path: item.path(),
+            label: NSString::from_str(&item.label),
+            identifier,
+            frame,
+            enabled: item.enabled,
+        });
+        unsafe { msg_send![super(this), init] }
+    }
+
+    fn current_item(
+        &self,
+    ) -> Option<crate::native_menu_accessibility::NativeMenuFlyoutAccessibilityItem> {
+        self.ivars()
+            .view
+            .load()?
+            .menu_flyout_accessibility_snapshot()?
+            .item(self.ivars().path)
+            .cloned()
+    }
+
+    fn dispatch_expanded(&self, expanded: bool) -> bool {
+        let Some(view) = self.ivars().view.load() else {
+            return false;
+        };
+        let report = view
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_accessibility_menu_flyout_expanded(self.ivars().path, expanded);
+        view.apply_input_report(report).handled
+    }
+
+    fn dispatch_invoke(&self) -> bool {
+        let Some(view) = self.ivars().view.load() else {
+            return false;
+        };
+        let report = view
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_accessibility_menu_flyout_invoke(self.ivars().path);
+        view.apply_input_report(report).handled
+    }
+}
+
 impl ZsuiAppKitDrawView {
     #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
     fn menu_flyout_accessibility_snapshot(
@@ -810,47 +985,17 @@ impl ZsuiAppKitDrawView {
                 .window()
                 .map(|window| window.convertRectToScreen(self.convertRect_toView(local, None)))
                 .unwrap_or(local);
-            let label = NSString::from_str(&item.label);
-            let element = unsafe {
-                NSAccessibilityElement::accessibilityElementWithRole_frame_label_parent(
-                    NSAccessibilityMenuItemRole,
-                    screen,
-                    Some(&label),
-                    Some(parent),
-                )
-            };
-            let identifier = NSString::from_str(&format!(
-                "zsui-menu-flyout-item-{}",
-                appkit_menu_flyout_path_identifier(item.path())
-            ));
-            unsafe {
-                let _: () = msg_send![&*element, setAccessibilityIdentifier: Some(&*identifier)];
-                let _: () = msg_send![&*element, setAccessibilityEnabled: item.enabled];
-                let _: () = msg_send![&*element, setAccessibilitySelected: item.highlighted()];
-            }
-            if let Some(expanded) = item.expanded() {
-                unsafe {
-                    let _: () = msg_send![&*element, setAccessibilityExpanded: expanded];
-                }
-            }
-            if let Some(checked) = item.checked() {
-                let value = NSNumber::new_bool(checked);
-                let value: &AnyObject = &*value;
-                unsafe {
-                    let _: () = msg_send![&*element, setAccessibilityValue: Some(value)];
-                }
-            }
+            let element = ZsuiAppKitMenuAccessibilityElement::new(self, parent, item, screen);
             let nested = self.build_menu_flyout_accessibility_children(
                 snapshot,
                 Some(item.path()),
                 &*element,
             );
             if !nested.is_empty() {
-                let nested: &NSArray<AnyObject> = &nested;
-                unsafe {
-                    let _: () = msg_send![&*element, setAccessibilityChildren: Some(nested)];
-                }
+                *element.ivars().children.borrow_mut() = Some(nested);
             }
+            let element: Retained<NSAccessibilityElement> = Retained::into_super(element);
+            let element = Retained::into_super(Retained::into_super(element));
             children.push(element);
         }
         NSArray::from_retained_slice(&children)
