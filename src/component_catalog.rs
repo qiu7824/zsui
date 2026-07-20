@@ -270,7 +270,6 @@ const GRID_GAPS: &[&str] = &[
 const CANVAS_GAPS: &[&str] = &[
     "accessibility grouping semantics",
     "path-construction primitives and multi-pointer or touch input",
-    "AppKit and Linux target interaction smoke",
 ];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",

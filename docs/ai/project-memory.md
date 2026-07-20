@@ -200,7 +200,10 @@ history remain authoritative for implementation status.
   count Canvas events and completed drag sequences separately. The local
   Win32 Gallery catalog proof produced one primary activation plus five typed
   Canvas events from primary click and secondary-button drag, with balanced
-  two-down/one-move/two-up input counts and no unhandled click.
+  two-down/one-move/two-up input counts and no unhandled click. Native UI Proof
+  run `29771247450` passed the same enforced catalog assertions on AppKit and
+  Linux Direct for commit `a1d74a1`; Canvas no longer carries a target
+  interaction-smoke gap.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB
