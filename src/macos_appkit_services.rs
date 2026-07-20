@@ -134,6 +134,7 @@ pub(crate) struct MacosAppKitNativeWindowRunReport {
     pub menu_command_routed: bool,
     pub accessibility_backend: Option<&'static str>,
     pub accessibility_node_count: usize,
+    pub accessibility_evidence_event: Option<String>,
 }
 
 pub(crate) fn run_macos_appkit_native_window_event_loop(
@@ -152,6 +153,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
             menu_command_routed: false,
             accessibility_backend: None,
             accessibility_node_count: 0,
+            accessibility_evidence_event: None,
         });
     }
     let mtm = appkit_main_thread_marker("macos_native_event_loop")?;
@@ -241,19 +243,24 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let native_view_capture = delegate.ivars().capture_result.borrow_mut().take();
     let proof_input_reports =
         std::mem::take(&mut *delegate.ivars().proof_input_reports.borrow_mut());
-    let accessibility_node_count = delegate
+    let accessibility_evidence = delegate
         .ivars()
         .capture_handler
         .as_ref()
-        .map(|handler| handler.accessibility_node_count())
+        .and_then(|handler| handler.accessibility_evidence());
+    let accessibility_node_count = accessibility_evidence
+        .map(|evidence| evidence.node_count)
         .unwrap_or(0);
     Ok(MacosAppKitNativeWindowRunReport {
         created_window_count: ids.len(),
         native_view_capture,
         proof_input_reports,
         menu_command_routed,
-        accessibility_backend: (accessibility_node_count > 0).then_some("appkit_nsaccessibility"),
+        accessibility_backend: accessibility_evidence
+            .is_some_and(|evidence| evidence.verified())
+            .then_some("appkit_nsaccessibility"),
         accessibility_node_count,
+        accessibility_evidence_event: accessibility_evidence.map(|evidence| evidence.event()),
     })
 }
 

@@ -183,6 +183,7 @@ jobs:
                   assert runtime["native_view_unhandled_click_count"] == 0
                   assert runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
                   assert runtime["native_accessibility_node_count"] >= 8
+                  assert "appkit_accessibility_tree:nodes=8/8,checked=1/1,expanded=2/2" in runtime["events"]
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
               if stem == "gallery-catalog-light":

@@ -54,7 +54,8 @@ impl DesktopRuntimeBackend for Backend {
                 .map(std::path::Path::new),
             &request.options.native_view_inputs,
         )?;
-        complete_native_smoke(
+        let accessibility_evidence_event = run.accessibility_evidence_event.clone();
+        let mut report = complete_native_smoke(
             request,
             DesktopNativeSmokeOutcome {
                 created_window_count: run.created_window_count,
@@ -75,7 +76,11 @@ impl DesktopRuntimeBackend for Backend {
                 missing_capture_error:
                     "the AppKit event loop exited before the final NSView capture",
             },
-        )
+        )?;
+        if let Some(event) = accessibility_evidence_event {
+            report.events.push(event);
+        }
+        Ok(report)
     }
 
     fn scaffold_capabilities(&self) -> HostCapabilities {

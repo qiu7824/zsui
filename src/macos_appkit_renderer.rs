@@ -1167,17 +1167,17 @@ fn appkit_menu_flyout_path_identifier(path: crate::ZsMenuFlyoutPath) -> String {
 
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 #[derive(Default)]
-struct AppKitMenuAccessibilityEvidence {
+struct AppKitMenuAccessibilityTreeCounts {
     node_count: usize,
     checked_count: usize,
     expanded_count: usize,
 }
 
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
-fn appkit_menu_accessibility_evidence(
+fn appkit_menu_accessibility_tree_counts(
     children: &NSArray<AnyObject>,
-) -> AppKitMenuAccessibilityEvidence {
-    let mut evidence = AppKitMenuAccessibilityEvidence::default();
+) -> AppKitMenuAccessibilityTreeCounts {
+    let mut evidence = AppKitMenuAccessibilityTreeCounts::default();
     for element in children.to_vec() {
         evidence.node_count = evidence.node_count.saturating_add(1);
         let value: Option<Retained<AnyObject>> =
@@ -1192,7 +1192,7 @@ fn appkit_menu_accessibility_evidence(
         let nested: Option<Retained<NSArray<AnyObject>>> =
             unsafe { msg_send![&*element, accessibilityChildren] };
         if let Some(nested) = nested {
-            let nested = appkit_menu_accessibility_evidence(&nested);
+            let nested = appkit_menu_accessibility_tree_counts(&nested);
             evidence.node_count = evidence.node_count.saturating_add(nested.node_count);
             evidence.checked_count = evidence.checked_count.saturating_add(nested.checked_count);
             evidence.expanded_count = evidence
@@ -1201,6 +1201,36 @@ fn appkit_menu_accessibility_evidence(
         }
     }
     evidence
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MacosAppKitAccessibilityEvidence {
+    pub(crate) node_count: usize,
+    pub(crate) expected_node_count: usize,
+    pub(crate) checked_count: usize,
+    pub(crate) expected_checked_count: usize,
+    pub(crate) expanded_count: usize,
+    pub(crate) expected_expanded_count: usize,
+}
+
+impl MacosAppKitAccessibilityEvidence {
+    pub(crate) const fn verified(self) -> bool {
+        self.node_count == self.expected_node_count
+            && self.checked_count == self.expected_checked_count
+            && self.expanded_count == self.expected_expanded_count
+    }
+
+    pub(crate) fn event(self) -> String {
+        format!(
+            "appkit_accessibility_tree:nodes={}/{},checked={}/{},expanded={}/{}",
+            self.node_count,
+            self.expected_node_count,
+            self.checked_count,
+            self.expected_checked_count,
+            self.expanded_count,
+            self.expected_expanded_count
+        )
+    }
 }
 
 fn appkit_pointer_modifiers(event: &NSEvent) -> crate::ZsPointerModifiers {
@@ -1234,11 +1264,11 @@ impl std::fmt::Debug for MacosAppKitDrawViewHost {
 }
 
 impl MacosAppKitDrawViewHost {
-    pub(crate) fn accessibility_node_count(&self) -> usize {
+    pub(crate) fn accessibility_evidence(&self) -> Option<MacosAppKitAccessibilityEvidence> {
         #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
         if let Some(snapshot) = self.view.menu_flyout_accessibility_snapshot() {
             if let Some(children) = self.view.menu_flyout_accessibility_children() {
-                let evidence = appkit_menu_accessibility_evidence(&children);
+                let evidence = appkit_menu_accessibility_tree_counts(&children);
                 let expected_checked = snapshot
                     .items
                     .iter()
@@ -1249,12 +1279,14 @@ impl MacosAppKitDrawViewHost {
                     .iter()
                     .filter(|item| item.expanded() == Some(true))
                     .count();
-                if evidence.node_count == snapshot.items.len()
-                    && evidence.checked_count == expected_checked
-                    && evidence.expanded_count == expected_expanded
-                {
-                    return evidence.node_count.saturating_add(1);
-                }
+                return Some(MacosAppKitAccessibilityEvidence {
+                    node_count: evidence.node_count.saturating_add(1),
+                    expected_node_count: snapshot.items.len().saturating_add(1),
+                    checked_count: evidence.checked_count,
+                    expected_checked_count: expected_checked,
+                    expanded_count: evidence.expanded_count,
+                    expected_expanded_count: expected_expanded,
+                });
             }
         }
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -1266,9 +1298,16 @@ impl MacosAppKitDrawViewHost {
             .focused_text_accessibility_snapshot()
             .is_some()
         {
-            return 1;
+            return Some(MacosAppKitAccessibilityEvidence {
+                node_count: 1,
+                expected_node_count: 1,
+                checked_count: 0,
+                expected_checked_count: 0,
+                expanded_count: 0,
+                expected_expanded_count: 0,
+            });
         }
-        0
+        None
     }
 
     pub(crate) fn dispatch_proof_inputs(
