@@ -104,6 +104,8 @@ mod macos_appkit_renderer;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 pub mod macos_appkit_services;
 pub mod menu;
+#[cfg(feature = "menu-flyout")]
+pub mod menu_flyout;
 pub mod mobile_host;
 pub mod native;
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -364,6 +366,12 @@ pub use info_bar::{
 #[cfg(feature = "localization")]
 pub use localization::{ZsLocale, ZsLocalizer, ZsMessageArgs, ZsMessageValue, ZsTextDirection};
 pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
+#[cfg(feature = "menu-flyout")]
+pub use menu_flyout::{
+    zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutMetrics,
+    ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan, ZsMenuFlyoutRowKind,
+    ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState,
+};
 pub use mobile_host::{
     mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,
     mobile_runtime_bridge_contract_artifact_file_names,
@@ -638,6 +646,8 @@ pub use view::image_preview;
 pub use view::info_bar;
 #[cfg(feature = "list")]
 pub use view::list;
+#[cfg(feature = "menu-flyout")]
+pub use view::menu_flyout;
 #[cfg(feature = "number-box")]
 pub use view::number_box;
 #[cfg(feature = "password-box")]

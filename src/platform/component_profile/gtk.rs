@@ -198,6 +198,27 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             shadow_alpha: 34,
             automatic_placement: crate::ZsFlyoutPlacement::Bottom,
         },
+        #[cfg(feature = "menu-flyout")]
+        menu_flyout: PlatformMenuFlyoutProfile {
+            metrics: ZsMenuFlyoutMetrics {
+                minimum_width: Dp::new(184.0),
+                maximum_width: Dp::new(380.0),
+                viewport_margin: Dp::new(8.0),
+                target_gap: Dp::new(4.0),
+                surface_padding: Dp::new(6.0),
+                row_height: Dp::new(36.0),
+                separator_height: Dp::new(9.0),
+                horizontal_padding: Dp::new(10.0),
+                indicator_width: Dp::new(24.0),
+                accelerator_gap: Dp::new(20.0),
+                submenu_width: Dp::new(20.0),
+                icon_size: Dp::new(16.0),
+                surface_radius: Dp::new(12.0),
+                row_radius: Dp::new(7.0),
+                shadow_offset: Dp::new(3.0),
+                shadow_alpha: 34,
+            },
+        },
         #[cfg(feature = "info-bar")]
         info_bar: PlatformInfoBarProfile {
             composition: PlatformInfoBarComposition::GtkBanner,

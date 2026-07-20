@@ -230,6 +230,26 @@ pub enum ViewEvent {
         widget: WidgetId,
         reason: crate::ZsFlyoutDismissReason,
     },
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyoutHighlighted {
+        widget: WidgetId,
+        path: crate::ZsMenuFlyoutPath,
+    },
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyoutSubmenuChanged {
+        widget: WidgetId,
+        submenu: Option<usize>,
+    },
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyoutInvoked {
+        widget: WidgetId,
+        path: crate::ZsMenuFlyoutPath,
+    },
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyoutOpenChanged {
+        widget: WidgetId,
+        open: bool,
+    },
     #[cfg(feature = "info-bar")]
     InfoBarFocused {
         widget: WidgetId,
@@ -322,6 +342,7 @@ pub enum ViewEvent {
         feature = "combo",
         feature = "date-picker",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "time-picker"
     ))]
     DismissPopupOverlays {
@@ -456,6 +477,14 @@ pub enum ViewHitTargetKind {
     Flyout,
     #[cfg(feature = "flyout")]
     FlyoutScrim,
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyout,
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyoutScrim,
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyoutItem {
+        path: crate::ZsMenuFlyoutPath,
+    },
     #[cfg(feature = "command-palette")]
     CommandPalette,
     #[cfg(feature = "command-palette")]
@@ -583,6 +612,12 @@ impl ViewInteractionPlan {
     }
 
     pub fn hit_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
+        #[cfg(feature = "menu-flyout")]
+        if let Some(target) = self.hit_targets.iter().copied().find(|target| {
+            target.widget == widget && target.kind == ViewHitTargetKind::MenuFlyout
+        }) {
+            return Some(target);
+        }
         #[cfg(feature = "flyout")]
         if let Some(target) = self.hit_targets.iter().copied().find(|target| {
             target.widget == widget && target.kind == ViewHitTargetKind::Flyout
@@ -667,6 +702,16 @@ impl ViewInteractionPlan {
     }
 
     pub(crate) fn modal_focus_target(&self) -> Option<ViewHitTarget> {
+        #[cfg(feature = "menu-flyout")]
+        if let Some(target) = self
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == ViewHitTargetKind::MenuFlyout)
+        {
+            return Some(target);
+        }
         #[cfg(feature = "flyout")]
         if let Some((surface_index, surface)) = self
             .hit_targets
@@ -816,6 +861,13 @@ impl ViewHitTarget {
         }
         #[cfg(feature = "flyout")]
         if self.kind == ViewHitTargetKind::FlyoutScrim {
+            return false;
+        }
+        #[cfg(feature = "menu-flyout")]
+        if matches!(
+            self.kind,
+            ViewHitTargetKind::MenuFlyoutScrim | ViewHitTargetKind::MenuFlyoutItem { .. }
+        ) {
             return false;
         }
         #[cfg(feature = "toast")]

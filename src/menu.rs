@@ -41,7 +41,7 @@ impl ZsAcceleratorKey {
         }
     }
 
-    fn label(self) -> String {
+    pub(crate) fn label(self) -> String {
         match self {
             Self::Character(key) => key.to_ascii_uppercase().to_string(),
             Self::Enter => "Enter".to_string(),

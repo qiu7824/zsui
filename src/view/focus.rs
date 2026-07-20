@@ -56,6 +56,11 @@ trait LiveViewDriver: Send {
     ) -> Option<(crate::ZsContentDialogState, crate::ZsContentDialogSpec)>;
     #[cfg(feature = "flyout")]
     fn widget_flyout_state(&self, widget: WidgetId) -> Option<crate::ZsFlyoutState>;
+    #[cfg(feature = "menu-flyout")]
+    fn widget_menu_flyout_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsMenuFlyoutState, crate::MenuSpec)>;
     #[cfg(feature = "command-palette")]
     fn widget_command_palette_state(
         &self,
@@ -223,6 +228,14 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "flyout")]
     pub fn widget_flyout_state(&self, widget: WidgetId) -> Option<crate::ZsFlyoutState> {
         self.lock().widget_flyout_state(widget)
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub fn widget_menu_flyout_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsMenuFlyoutState, crate::MenuSpec)> {
+        self.lock().widget_menu_flyout_state(widget)
     }
 
     #[cfg(feature = "command-palette")]
@@ -689,6 +702,14 @@ where
     #[cfg(feature = "flyout")]
     fn widget_flyout_state(&self, widget: WidgetId) -> Option<crate::ZsFlyoutState> {
         self.view.widget_flyout_state(widget)
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    fn widget_menu_flyout_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsMenuFlyoutState, crate::MenuSpec)> {
+        self.view.widget_menu_flyout_state(widget)
     }
 
     #[cfg(feature = "command-palette")]

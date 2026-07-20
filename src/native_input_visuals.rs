@@ -1427,6 +1427,15 @@ pub(crate) fn decorate_native_focus_ring(
     ) {
         return None;
     }
+    #[cfg(feature = "menu-flyout")]
+    if matches!(
+        target.kind,
+        ViewHitTargetKind::MenuFlyout
+            | ViewHitTargetKind::MenuFlyoutScrim
+            | ViewHitTargetKind::MenuFlyoutItem { .. }
+    ) {
+        return None;
+    }
     let focus_profile = crate::platform_component_profile::PlatformFocusVisualProfile::for_platform(
         crate::ZsPlatformStyle::current(),
     );
@@ -2522,6 +2531,29 @@ mod tests {
                 NativeDrawCommand::Text(_),
             ]
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "menu-flyout")]
+    fn menu_flyout_uses_row_highlight_without_an_outer_focus_rectangle() {
+        let widget = WidgetId::new(913);
+        let interaction_plan = ViewInteractionPlan::new([ViewHitTarget::with_kind(
+            widget,
+            Rect {
+                x: 80,
+                y: 60,
+                width: 240,
+                height: 160,
+            },
+            ViewHitTargetKind::MenuFlyout,
+        )]);
+        let mut plan = NativeDrawPlan::default();
+
+        assert_eq!(
+            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard(),),
+            None
+        );
+        assert!(plan.commands.is_empty());
     }
 
     #[test]

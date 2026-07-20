@@ -1045,6 +1045,10 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_command_palette_invoke_count: usize,
     pub native_view_command_palette_open_change_count: usize,
     pub native_view_command_palette_clear_count: usize,
+    pub native_view_menu_flyout_highlight_change_count: usize,
+    pub native_view_menu_flyout_submenu_change_count: usize,
+    pub native_view_menu_flyout_invoke_count: usize,
+    pub native_view_menu_flyout_open_change_count: usize,
     pub native_view_toast_focus_count: usize,
     pub native_view_toast_response_count: usize,
     pub native_view_toast_timeout_count: usize,
@@ -1195,6 +1199,10 @@ impl NativeWindowSmokeRunReport {
             native_view_command_palette_invoke_count: 0,
             native_view_command_palette_open_change_count: 0,
             native_view_command_palette_clear_count: 0,
+            native_view_menu_flyout_highlight_change_count: 0,
+            native_view_menu_flyout_submenu_change_count: 0,
+            native_view_menu_flyout_invoke_count: 0,
+            native_view_menu_flyout_open_change_count: 0,
             native_view_toast_focus_count: 0,
             native_view_toast_response_count: 0,
             native_view_toast_timeout_count: 0,
@@ -1256,7 +1264,12 @@ pub(crate) struct NativeViewInputRuntime {
     view_suspended: bool,
     animation_epoch: Option<std::time::Instant>,
     focused_widget: Option<crate::WidgetId>,
-    #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
+    #[cfg(any(
+        feature = "command-palette",
+        feature = "dialog",
+        feature = "flyout",
+        feature = "menu-flyout"
+    ))]
     modal_restore_focus: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
@@ -1510,6 +1523,14 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub command_palette_open_changed: bool,
     #[cfg(feature = "command-palette")]
     pub command_palette_cleared: bool,
+    #[cfg(feature = "menu-flyout")]
+    pub menu_flyout_highlight_changed: bool,
+    #[cfg(feature = "menu-flyout")]
+    pub menu_flyout_submenu_changed: bool,
+    #[cfg(feature = "menu-flyout")]
+    pub menu_flyout_invoked: bool,
+    #[cfg(feature = "menu-flyout")]
+    pub menu_flyout_open_changed: bool,
     #[cfg(feature = "toast")]
     pub toast_focus_changed: bool,
     #[cfg(feature = "toast")]
@@ -1580,7 +1601,12 @@ impl NativeViewInputRuntime {
             view_suspended: false,
             animation_epoch: Some(std::time::Instant::now()),
             focused_widget: None,
-            #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
+            #[cfg(any(
+                feature = "command-palette",
+                feature = "dialog",
+                feature = "flyout",
+                feature = "menu-flyout"
+            ))]
             modal_restore_focus: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::default(),
@@ -1671,7 +1697,12 @@ impl NativeViewInputRuntime {
         self.interaction_plan = None;
         self.animation_epoch = None;
         self.focused_widget = None;
-        #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
+        #[cfg(any(
+            feature = "command-palette",
+            feature = "dialog",
+            feature = "flyout",
+            feature = "menu-flyout"
+        ))]
         {
             self.modal_restore_focus = None;
         }
@@ -1939,7 +1970,12 @@ impl NativeViewInputRuntime {
     }
 
     fn reconcile_modal_focus(&mut self, report: &mut NativeViewInputDispatchReport) {
-        #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
+        #[cfg(any(
+            feature = "command-palette",
+            feature = "dialog",
+            feature = "flyout",
+            feature = "menu-flyout"
+        ))]
         {
             if let Some(modal) = self
                 .current_interaction_plan()
@@ -1994,7 +2030,12 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
             report.focused_widget = self.focused_widget.map(|widget| widget.0);
         }
-        #[cfg(not(any(feature = "command-palette", feature = "dialog", feature = "flyout")))]
+        #[cfg(not(any(
+            feature = "command-palette",
+            feature = "dialog",
+            feature = "flyout",
+            feature = "menu-flyout"
+        )))]
         let _ = report;
     }
 
@@ -2097,7 +2138,7 @@ impl NativeViewInputRuntime {
             return report;
         }
 
-        #[cfg(not(feature = "flyout"))]
+        #[cfg(not(any(feature = "flyout", feature = "menu-flyout")))]
         let _ = dismiss_transient_overlays;
         #[cfg(feature = "flyout")]
         if dismiss_transient_overlays {
@@ -2117,6 +2158,30 @@ impl NativeViewInputRuntime {
                     ViewEvent::FlyoutDismissed {
                         widget: target.widget,
                         reason: crate::ZsFlyoutDismissReason::LightDismiss,
+                    },
+                    report,
+                );
+            }
+        }
+        #[cfg(feature = "menu-flyout")]
+        if dismiss_transient_overlays {
+            let open_menu_flyout = self.current_interaction_plan().and_then(|plan| {
+                plan.hit_targets
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|target| target.kind == crate::ViewHitTargetKind::MenuFlyout)
+                    .filter(|target| {
+                        self.widget_menu_flyout_state(target.widget)
+                            .is_some_and(|(state, _)| state.open)
+                    })
+            });
+            if let Some(target) = open_menu_flyout {
+                report.menu_flyout_open_changed = true;
+                report = self.dispatch_view_event(
+                    ViewEvent::MenuFlyoutOpenChanged {
+                        widget: target.widget,
+                        open: false,
                     },
                     report,
                 );
@@ -2564,6 +2629,28 @@ impl NativeViewInputRuntime {
                 .and_then(native_pointer_visual_key);
             self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
         }
+        #[cfg(feature = "menu-flyout")]
+        if let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_at(point))
+        {
+            if let crate::ViewHitTargetKind::MenuFlyoutItem { path } = target.kind {
+                if self
+                    .widget_menu_flyout_state(target.widget)
+                    .is_some_and(|(state, _)| state.highlighted != Some(path))
+                {
+                    report.handled = true;
+                    report.menu_flyout_highlight_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::MenuFlyoutHighlighted {
+                            widget: target.widget,
+                            path,
+                        },
+                        report,
+                    );
+                }
+            }
+        }
         #[cfg(feature = "canvas")]
         if let Some(mut capture) = self.canvas_pointer {
             let bounds = self
@@ -2958,6 +3045,50 @@ impl NativeViewInputRuntime {
             return report;
         };
         report.handled = true;
+        #[cfg(feature = "menu-flyout")]
+        match target.kind {
+            crate::ViewHitTargetKind::MenuFlyoutItem { path } => {
+                if let Some(submenu) =
+                    self.widget_menu_flyout_state(target.widget)
+                        .and_then(|(_, menu)| {
+                            crate::menu_flyout::menu_flyout_submenu_index(&menu, path)
+                        })
+                {
+                    report.menu_flyout_submenu_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::MenuFlyoutSubmenuChanged {
+                            widget: target.widget,
+                            submenu: Some(submenu),
+                        },
+                        report,
+                    );
+                }
+                report.menu_flyout_invoked = true;
+                report.menu_flyout_open_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::MenuFlyoutInvoked {
+                        widget: target.widget,
+                        path,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::MenuFlyoutScrim => {
+                report.menu_flyout_open_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::MenuFlyoutOpenChanged {
+                        widget: target.widget,
+                        open: false,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::MenuFlyout => {
+                self.focus_target(target, &mut report);
+                return report;
+            }
+            _ => {}
+        }
         #[cfg(feature = "flyout")]
         match target.kind {
             crate::ViewHitTargetKind::FlyoutScrim => {
@@ -3829,6 +3960,117 @@ impl NativeViewInputRuntime {
                 }
             }
         }
+        #[cfg(feature = "menu-flyout")]
+        if let Some(menu_target) = interaction_plan
+            .hit_targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::MenuFlyout)
+        {
+            if self.focused_widget != Some(menu_target.widget) {
+                self.focus_target(menu_target, &mut report);
+            }
+            let Some((state, menu)) = self.widget_menu_flyout_state(menu_target.widget) else {
+                return report;
+            };
+            if !state.open {
+                return report;
+            }
+            let next = match key {
+                NativeViewKey::Up => state.relative_highlight(&menu, -1),
+                NativeViewKey::Down => state.relative_highlight(&menu, 1),
+                NativeViewKey::Home => state.first_enabled(&menu),
+                NativeViewKey::End => state.last_enabled(&menu),
+                _ => None,
+            };
+            if let Some(path) = next {
+                report.handled = true;
+                report.menu_flyout_highlight_changed = state.highlighted != Some(path);
+                if report.menu_flyout_highlight_changed {
+                    return self.dispatch_view_event(
+                        ViewEvent::MenuFlyoutHighlighted {
+                            widget: menu_target.widget,
+                            path,
+                        },
+                        report,
+                    );
+                }
+                return report;
+            }
+            let active = state.highlighted.or_else(|| state.first_enabled(&menu));
+            match key {
+                NativeViewKey::Right | NativeViewKey::Enter | NativeViewKey::Space => {
+                    if let Some(path) = active {
+                        if let Some(submenu) =
+                            crate::menu_flyout::menu_flyout_submenu_index(&menu, path)
+                        {
+                            report.handled = true;
+                            report.menu_flyout_submenu_changed = true;
+                            return self.dispatch_view_event(
+                                ViewEvent::MenuFlyoutSubmenuChanged {
+                                    widget: menu_target.widget,
+                                    submenu: Some(submenu),
+                                },
+                                report,
+                            );
+                        }
+                        if matches!(key, NativeViewKey::Enter | NativeViewKey::Space)
+                            && crate::menu_flyout::menu_flyout_command(&menu, path).is_some()
+                        {
+                            report.handled = true;
+                            report.menu_flyout_invoked = true;
+                            report.menu_flyout_open_changed = true;
+                            return self.dispatch_view_event(
+                                ViewEvent::MenuFlyoutInvoked {
+                                    widget: menu_target.widget,
+                                    path,
+                                },
+                                report,
+                            );
+                        }
+                    }
+                }
+                NativeViewKey::Left if state.open_submenu.is_some() => {
+                    report.handled = true;
+                    report.menu_flyout_submenu_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::MenuFlyoutSubmenuChanged {
+                            widget: menu_target.widget,
+                            submenu: None,
+                        },
+                        report,
+                    );
+                }
+                NativeViewKey::Escape => {
+                    report.handled = true;
+                    if state.open_submenu.is_some() {
+                        report.menu_flyout_submenu_changed = true;
+                        return self.dispatch_view_event(
+                            ViewEvent::MenuFlyoutSubmenuChanged {
+                                widget: menu_target.widget,
+                                submenu: None,
+                            },
+                            report,
+                        );
+                    }
+                    report.menu_flyout_open_changed = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::MenuFlyoutOpenChanged {
+                            widget: menu_target.widget,
+                            open: false,
+                        },
+                        report,
+                    );
+                }
+                NativeViewKey::Tab => {
+                    report.handled = true;
+                    return report;
+                }
+                _ => {}
+            }
+        }
+
         #[cfg(feature = "command-palette")]
         if let Some(palette_target) = interaction_plan
             .hit_targets
@@ -6416,6 +6658,7 @@ impl NativeViewInputRuntime {
         feature = "combo",
         feature = "date-picker",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "time-picker"
     ))]
     fn dismiss_popup_overlays_except(
@@ -6455,6 +6698,10 @@ impl NativeViewInputRuntime {
                 crate::ViewHitTargetKind::Flyout => self
                     .widget_flyout_state(target.widget)
                     .is_some_and(|state| state.open),
+                #[cfg(feature = "menu-flyout")]
+                crate::ViewHitTargetKind::MenuFlyout => self
+                    .widget_menu_flyout_state(target.widget)
+                    .is_some_and(|(state, _)| state.open),
                 _ => false,
             }
         });
@@ -6493,6 +6740,16 @@ impl NativeViewInputRuntime {
                             .is_some_and(|state| state.expanded)
                 });
         }
+        #[cfg(feature = "menu-flyout")]
+        {
+            report.menu_flyout_open_changed |= interaction_plan.hit_targets.iter().any(|target| {
+                Some(target.widget) != except
+                    && target.kind == crate::ViewHitTargetKind::MenuFlyout
+                    && self
+                        .widget_menu_flyout_state(target.widget)
+                        .is_some_and(|(state, _)| state.open)
+            });
+        }
         report.handled = true;
         self.dispatch_view_event(crate::ViewEvent::DismissPopupOverlays { except }, report)
     }
@@ -6503,6 +6760,7 @@ impl NativeViewInputRuntime {
         feature = "combo",
         feature = "date-picker",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "time-picker"
     )))]
     fn dismiss_popup_overlays_except(
@@ -6525,6 +6783,21 @@ impl NativeViewInputRuntime {
                 self.ui_command_view
                     .as_ref()
                     .and_then(|view| view.widget_flyout_state(widget))
+            })
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub(crate) fn widget_menu_flyout_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(crate::ZsMenuFlyoutState, crate::MenuSpec)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_menu_flyout_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_menu_flyout_state(widget))
             })
     }
 
@@ -7511,6 +7784,17 @@ pub(crate) fn record_native_view_input_reports(
                 usize::from(dispatch.command_palette_open_changed);
             report.native_view_command_palette_clear_count +=
                 usize::from(dispatch.command_palette_cleared);
+        }
+        #[cfg(feature = "menu-flyout")]
+        {
+            report.native_view_menu_flyout_highlight_change_count +=
+                usize::from(dispatch.menu_flyout_highlight_changed);
+            report.native_view_menu_flyout_submenu_change_count +=
+                usize::from(dispatch.menu_flyout_submenu_changed);
+            report.native_view_menu_flyout_invoke_count +=
+                usize::from(dispatch.menu_flyout_invoked);
+            report.native_view_menu_flyout_open_change_count +=
+                usize::from(dispatch.menu_flyout_open_changed);
         }
         #[cfg(feature = "toast")]
         {
@@ -11088,6 +11372,128 @@ mod tests {
         assert!(resize_runtime
             .widget_flyout_state(presenter)
             .is_some_and(|state| !state.open));
+    }
+
+    #[cfg(all(feature = "button", feature = "menu-flyout"))]
+    #[test]
+    fn native_view_runtime_routes_menu_flyout_keyboard_submenus_and_commands() {
+        #[derive(Clone)]
+        enum Msg {
+            Command(crate::Command),
+            Open(bool),
+        }
+        struct State {
+            open: bool,
+            command: Option<crate::Command>,
+        }
+
+        let presenter = crate::WidgetId::new(205);
+        let target = crate::WidgetId::new(206);
+        let build = |initial_open| {
+            native_window("Platform MenuFlyout")
+                .size(640, 400)
+                .stateful_view(
+                    State {
+                        open: initial_open,
+                        command: None,
+                    },
+                    move |state| {
+                        crate::menu_flyout(
+                            presenter,
+                            state.open,
+                            target,
+                            crate::MenuSpec::new()
+                                .item("Open / 打开", crate::Command::custom("document.open"))
+                                .separator()
+                                .submenu(
+                                    "Recent / 最近",
+                                    crate::MenuSpec::new()
+                                        .item("One", crate::Command::custom("recent.one")),
+                                ),
+                            crate::button("Menu / 菜单")
+                                .id(target)
+                                .on_click(Msg::Open(true)),
+                        )
+                        .on_menu_flyout_command(Msg::Command)
+                        .on_menu_flyout_open_change(Msg::Open)
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Command(command) => state.command = Some(command),
+                        Msg::Open(open) => state.open = open,
+                    },
+                )
+        };
+
+        let mut runtime = build(true).native_view_input_runtime();
+        assert_eq!(runtime.focused_widget(), Some(presenter));
+
+        let first = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(first.handled);
+        assert!(first.menu_flyout_highlight_changed);
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.highlighted == Some(crate::ZsMenuFlyoutPath::root(0))));
+
+        let submenu = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(submenu.menu_flyout_highlight_changed);
+        let opened = runtime.dispatch_key(NativeViewKey::Right);
+        assert!(opened.handled);
+        assert!(opened.menu_flyout_submenu_changed);
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.open_submenu == Some(2)
+                && state.highlighted == Some(crate::ZsMenuFlyoutPath::child(2, 0))));
+
+        let invoked = runtime.dispatch_key(NativeViewKey::Enter);
+        assert!(invoked.handled);
+        assert!(invoked.menu_flyout_invoked);
+        assert!(invoked.menu_flyout_open_changed);
+        assert_eq!(invoked.message_count, 2);
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| !state.open));
+
+        let mut escaped_runtime = build(true).native_view_input_runtime();
+        let escaped = escaped_runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(escaped.handled);
+        assert!(escaped.menu_flyout_open_changed);
+        assert_eq!(escaped.message_count, 1);
+        assert!(escaped_runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| !state.open));
+
+        let mut restored_runtime = build(false).native_view_input_runtime();
+        let target_bounds = restored_runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(target))
+            .expect("closed MenuFlyout target")
+            .bounds;
+        let opened = restored_runtime.dispatch_pointer_click(Point {
+            x: target_bounds.x + target_bounds.width / 2,
+            y: target_bounds.y + target_bounds.height / 2,
+        });
+        assert_eq!(opened.message_count, 1);
+        assert_eq!(restored_runtime.focused_widget(), Some(presenter));
+        let restored = restored_runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(restored.menu_flyout_open_changed);
+        assert_eq!(restored_runtime.focused_widget(), Some(target));
+
+        let mut resize_runtime = build(true).native_view_input_runtime();
+        let resized = resize_runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 720,
+                height: 460,
+            },
+            Dpi::standard(),
+        );
+        assert!(resized.surface_changed);
+        assert!(resized.menu_flyout_open_changed);
+        assert_eq!(resized.message_count, 1);
+        assert!(resize_runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| !state.open));
     }
 
     #[cfg(feature = "toast")]

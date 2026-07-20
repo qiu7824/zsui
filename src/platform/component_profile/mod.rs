@@ -22,6 +22,8 @@ use crate::ZsCommandPaletteMetrics;
 use crate::ZsGridViewMetrics;
 #[cfg(feature = "info-bar")]
 use crate::ZsInfoBarMetrics;
+#[cfg(feature = "menu-flyout")]
+use crate::ZsMenuFlyoutMetrics;
 #[cfg(feature = "button")]
 use crate::ZsNavigationItemMetrics;
 #[cfg(feature = "number-box")]
@@ -84,6 +86,8 @@ pub(crate) struct PlatformComponentProfile {
     pub dialog: PlatformDialogProfile,
     #[cfg(feature = "flyout")]
     pub flyout: PlatformFlyoutProfile,
+    #[cfg(feature = "menu-flyout")]
+    pub menu_flyout: PlatformMenuFlyoutProfile,
     #[cfg(feature = "info-bar")]
     pub info_bar: PlatformInfoBarProfile,
     #[cfg(feature = "teaching-tip")]
@@ -615,6 +619,19 @@ impl PlatformFlyoutProfile {
 
     pub(crate) const fn aligns_to_leading_edge(self) -> bool {
         matches!(self.composition, PlatformFlyoutComposition::FluentFlyout)
+    }
+}
+
+#[cfg(feature = "menu-flyout")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformMenuFlyoutProfile {
+    pub metrics: ZsMenuFlyoutMetrics,
+}
+
+#[cfg(feature = "menu-flyout")]
+impl PlatformMenuFlyoutProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).menu_flyout
     }
 }
 

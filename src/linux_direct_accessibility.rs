@@ -369,6 +369,8 @@ fn role_label(kind: ViewHitTargetKind) -> &'static str {
         Role::Row => "Row",
         Role::ColumnHeader => "Column header",
         Role::Dialog => "Dialog",
+        Role::Menu => "Menu",
+        Role::MenuItem | Role::MenuItemCheckBox => "Menu item",
         Role::Canvas => "Canvas",
         Role::ScrollView => "Scroll view",
         _ => "Control",
@@ -436,6 +438,12 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::Flyout => Role::Dialog,
         #[cfg(feature = "flyout")]
         ViewHitTargetKind::FlyoutScrim => Role::GenericContainer,
+        #[cfg(feature = "menu-flyout")]
+        ViewHitTargetKind::MenuFlyout => Role::Menu,
+        #[cfg(feature = "menu-flyout")]
+        ViewHitTargetKind::MenuFlyoutScrim => Role::GenericContainer,
+        #[cfg(feature = "menu-flyout")]
+        ViewHitTargetKind::MenuFlyoutItem { .. } => Role::MenuItem,
         #[cfg(feature = "command-palette")]
         ViewHitTargetKind::CommandPalette => Role::SearchInput,
         #[cfg(feature = "command-palette")]

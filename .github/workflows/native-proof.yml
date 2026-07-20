@@ -171,13 +171,15 @@ jobs:
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
               if stem == "gallery-feedback-light":
-                  assert proof["messages"] == ["FlyoutAction"]
-                  assert runtime["native_view_message_count"] >= 1
-                  assert runtime["native_view_event_count"] >= 1
-                  assert runtime["native_view_focused_widget"] == 407
+                  assert proof["messages"] == ["MenuFlyoutCommand", "MenuFlyoutOpenChanged", "OpenMenuFlyout"]
+                  assert runtime["native_view_message_count"] >= 3
+                  assert runtime["native_view_event_count"] >= 2
+                  assert runtime["native_view_menu_flyout_invoke_count"] == 1
+                  assert runtime["native_view_menu_flyout_open_change_count"] == 1
+                  assert runtime["native_view_focused_widget"] == 408
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
-                  assert {"flyout", "flyout_scrim"} <= roles
+                  assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
               if stem == "gallery-catalog-light":
                   assert runtime["native_view_pointer_down_count"] == 2
                   assert runtime["native_view_pointer_move_count"] == 1
@@ -398,13 +400,15 @@ jobs:
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
               if stem == "gallery-feedback-light":
-                  assert proof["messages"] == ["FlyoutAction"]
-                  assert runtime["native_view_message_count"] >= 1
-                  assert runtime["native_view_event_count"] >= 1
-                  assert runtime["native_view_focused_widget"] == 407
+                  assert proof["messages"] == ["MenuFlyoutCommand", "MenuFlyoutOpenChanged", "OpenMenuFlyout"]
+                  assert runtime["native_view_message_count"] >= 3
+                  assert runtime["native_view_event_count"] >= 2
+                  assert runtime["native_view_menu_flyout_invoke_count"] == 1
+                  assert runtime["native_view_menu_flyout_open_change_count"] == 1
+                  assert runtime["native_view_focused_widget"] == 408
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
-                  assert {"flyout", "flyout_scrim"} <= roles
+                  assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
               if stem == "gallery-catalog-light":
                   assert runtime["native_view_pointer_down_count"] == 2
                   assert runtime["native_view_pointer_move_count"] == 1
@@ -869,13 +873,15 @@ jobs:
 
           assert gallery["runtime"]["native_accessibility_action_count"] >= 1
           feedback_runtime = feedback["runtime"]
-          assert feedback["messages"] == ["FlyoutAction"]
-          assert feedback_runtime["native_view_message_count"] >= 1
-          assert feedback_runtime["native_view_event_count"] >= 1
-          assert feedback_runtime["native_view_focused_widget"] == 407
+          assert feedback["messages"] == ["MenuFlyoutCommand", "MenuFlyoutOpenChanged", "OpenMenuFlyout"]
+          assert feedback_runtime["native_view_message_count"] >= 3
+          assert feedback_runtime["native_view_event_count"] >= 2
+          assert feedback_runtime["native_view_menu_flyout_invoke_count"] == 1
+          assert feedback_runtime["native_view_menu_flyout_open_change_count"] == 1
+          assert feedback_runtime["native_view_focused_widget"] == 408
           assert feedback_runtime["native_view_unhandled_click_count"] == 0
           feedback_roles = {widget["role"] for widget in feedback["widgets"]}
-          assert {"flyout", "flyout_scrim"} <= feedback_roles
+          assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= feedback_roles
           assert atspi["backend"] == "accesskit_atspi"
           assert atspi["node_count"] >= 5
           assert atspi["action_invoked"] is True

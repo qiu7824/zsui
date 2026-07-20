@@ -115,6 +115,11 @@ fn record_windows_win32_view_input_report(
     report.native_view_command_palette_invoke_count += input.command_palette_invoke_count;
     report.native_view_command_palette_open_change_count += input.command_palette_open_change_count;
     report.native_view_command_palette_clear_count += input.command_palette_clear_count;
+    report.native_view_menu_flyout_highlight_change_count +=
+        input.menu_flyout_highlight_change_count;
+    report.native_view_menu_flyout_submenu_change_count += input.menu_flyout_submenu_change_count;
+    report.native_view_menu_flyout_invoke_count += input.menu_flyout_invoke_count;
+    report.native_view_menu_flyout_open_change_count += input.menu_flyout_open_change_count;
     report.native_view_toast_focus_count += input.toast_focus_change_count;
     report.native_view_toast_response_count += input.toast_response_count;
     report.native_view_toast_timeout_count += input.toast_timeout_count;

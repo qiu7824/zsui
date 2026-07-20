@@ -36,6 +36,8 @@ const TEACHING_TARGET: WidgetId = WidgetId::new(404);
 const FLYOUT: WidgetId = WidgetId::new(405);
 const FLYOUT_TARGET: WidgetId = WidgetId::new(406);
 const FLYOUT_ACTION: WidgetId = WidgetId::new(407);
+const MENU_FLYOUT: WidgetId = WidgetId::new(408);
+const MENU_FLYOUT_TARGET: WidgetId = WidgetId::new(409);
 const CANVAS_SURFACE: WidgetId = WidgetId::new(501);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +149,7 @@ struct GalleryState {
     palette_query: String,
     overlay: Option<GalleryOverlay>,
     flyout_open: bool,
+    menu_flyout_open: bool,
     image_preview: ZsImagePreviewState,
     status: String,
 }
@@ -192,6 +195,7 @@ impl Default for GalleryState {
             palette_query: String::new(),
             overlay: None,
             flyout_open: false,
+            menu_flyout_open: false,
             image_preview,
             status: "就绪 / Ready".to_string(),
         }
@@ -248,6 +252,9 @@ enum Msg {
     OpenFlyout,
     FlyoutAction,
     FlyoutDismissed(ZsFlyoutDismissReason),
+    OpenMenuFlyout,
+    MenuFlyoutCommand(Command),
+    MenuFlyoutOpen(bool),
     InfoBar(ZsInfoBarEvent),
 }
 
@@ -659,6 +666,28 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
     .on_command_palette_open_change(Msg::PaletteOpen)
 }
 
+fn gallery_menu_flyout_spec() -> MenuSpec {
+    let mut menu = MenuSpec::new().id("gallery.feedback.actions");
+    menu.items.push(
+        MenuItemSpec::command("保存 / Save", Command::custom("gallery.save"))
+            .accelerator(ZsAccelerator::primary_character('s')),
+    );
+    menu.items.push(MenuItemSpec::Separator);
+    menu.items.push(
+        MenuItemSpec::command("自动保存 / Auto save", Command::custom("gallery.autosave"))
+            .checked(true),
+    );
+    menu.items.push(MenuItemSpec::Submenu {
+        id: Some("gallery.feedback.more".to_string()),
+        label: "更多 / More".to_string(),
+        enabled: true,
+        menu: MenuSpec::new()
+            .item("复制 / Copy", Command::custom("gallery.copy"))
+            .item("共享 / Share", Command::custom("gallery.share")),
+    });
+    menu
+}
+
 fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
     let page = column([
         info_bar(
@@ -685,6 +714,9 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
                     button("弹出视图 / Flyout")
                         .id(FLYOUT_TARGET)
                         .on_click(Msg::OpenFlyout),
+                    button("菜单 / Menu")
+                        .id(MENU_FLYOUT_TARGET)
+                        .on_click(Msg::OpenMenuFlyout),
                 ])
                 .gap(Dp::new(12.0)),
                 column([
@@ -743,6 +775,16 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
         page,
     )
     .on_flyout_dismiss(Msg::FlyoutDismissed);
+
+    let page = menu_flyout(
+        MENU_FLYOUT,
+        state.menu_flyout_open,
+        MENU_FLYOUT_TARGET,
+        gallery_menu_flyout_spec(),
+        page,
+    )
+    .on_menu_flyout_command(Msg::MenuFlyoutCommand)
+    .on_menu_flyout_open_change(Msg::MenuFlyoutOpen);
 
     let page = teaching_tip(
         TEACHING_TIP,
@@ -1010,6 +1052,7 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
             state.palette_open = false;
             state.overlay = None;
             state.flyout_open = false;
+            state.menu_flyout_open = false;
             state.status = page.title().to_string();
         }
         Msg::Dark(value) => {
@@ -1135,7 +1178,11 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
                 value.get()
             );
         }
-        Msg::OpenOverlay(value) => state.overlay = Some(value),
+        Msg::OpenOverlay(value) => {
+            state.overlay = Some(value);
+            state.flyout_open = false;
+            state.menu_flyout_open = false;
+        }
         Msg::DialogResult(value) => {
             state.overlay = None;
             state.status = format!("对话框 / Dialog: {value:?}");
@@ -1151,6 +1198,7 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
         Msg::OpenFlyout => {
             state.overlay = None;
             state.flyout_open = true;
+            state.menu_flyout_open = false;
             state.status = "弹出视图已打开 / Flyout opened".to_string();
         }
         Msg::FlyoutAction => {
@@ -1160,6 +1208,23 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
             state.flyout_open = false;
             state.status = format!("弹出视图已关闭 / Flyout dismissed: {reason:?}");
         }
+        Msg::OpenMenuFlyout => {
+            state.overlay = None;
+            state.flyout_open = false;
+            state.menu_flyout_open = true;
+            state.status = "菜单已打开 / Menu opened".to_string();
+        }
+        Msg::MenuFlyoutCommand(command) => {
+            let (zh, en) = match &command {
+                Command::Custom { id, .. } if id == "gallery.save" => ("保存", "Save"),
+                Command::Custom { id, .. } if id == "gallery.autosave" => ("自动保存", "Auto save"),
+                Command::Custom { id, .. } if id == "gallery.copy" => ("复制", "Copy"),
+                Command::Custom { id, .. } if id == "gallery.share" => ("共享", "Share"),
+                _ => ("自定义命令", "Custom command"),
+            };
+            state.status = format!("菜单命令：{zh} / Menu command: {en}");
+        }
+        Msg::MenuFlyoutOpen(open) => state.menu_flyout_open = open,
         Msg::InfoBar(value) => state.status = format!("信息栏 / InfoBar: {value:?}"),
     }
 }
@@ -1198,7 +1263,7 @@ fn main() -> ZsuiResult<()> {
     let mut state = GalleryState::default();
     state.page = initial_page;
     state.dark = dark;
-    state.flyout_open = native_proof && initial_page == GalleryPage::Feedback;
+    state.menu_flyout_open = native_proof && initial_page == GalleryPage::Feedback;
     let default_size = (1180, 780);
     let window_width = proof_dimension(&args, "--width", default_size.0);
     let window_height = proof_dimension(&args, "--height", default_size.1);
@@ -1319,20 +1384,41 @@ fn main() -> ZsuiResult<()> {
                 ZsPointerModifiers::default(),
             );
         } else if initial_page == GalleryPage::Feedback {
-            let point = builder
-                .native_view_interaction_plan()
-                .and_then(|plan| plan.hit_target_for_widget(FLYOUT_ACTION))
-                .map(|target| Point {
-                    x: target.bounds.x + target.bounds.width / 2,
-                    y: target.bounds.y + target.bounds.height / 2,
+            let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
+                ZsuiError::host("gallery_interaction_plan", "missing View input plan")
+            })?;
+            let center = |target: ViewHitTarget| Point {
+                x: target.bounds.x + target.bounds.width / 2,
+                y: target.bounds.y + target.bounds.height / 2,
+            };
+            let command = interaction
+                .hit_targets
+                .iter()
+                .copied()
+                .find(|target| {
+                    matches!(
+                        target.kind,
+                        ViewHitTargetKind::MenuFlyoutItem { path }
+                            if path == ZsMenuFlyoutPath::root(0)
+                    )
                 })
+                .map(center)
                 .ok_or_else(|| {
                     ZsuiError::host(
                         "gallery_interaction_target",
-                        "missing Flyout gallery action",
+                        "missing MenuFlyout gallery command",
                     )
                 })?;
-            options = options.native_view_click(point);
+            let reopen = interaction
+                .hit_target_for_widget(MENU_FLYOUT_TARGET)
+                .map(center)
+                .ok_or_else(|| {
+                    ZsuiError::host(
+                        "gallery_interaction_target",
+                        "missing MenuFlyout gallery target",
+                    )
+                })?;
+            options = options.native_view_click(command).native_view_click(reopen);
         }
         let widgets = builder
             .native_view_interaction_plan()
@@ -1345,7 +1431,13 @@ fn main() -> ZsuiResult<()> {
                     vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
                 }
                 GalleryPage::Catalog => vec!["CanvasActivated", "CanvasPointer"],
-                GalleryPage::Feedback => vec!["FlyoutAction"],
+                GalleryPage::Feedback => {
+                    vec![
+                        "MenuFlyoutCommand",
+                        "MenuFlyoutOpenChanged",
+                        "OpenMenuFlyout",
+                    ]
+                }
                 _ => Vec::new(),
             };
             serde_json::to_value(

@@ -53,6 +53,7 @@ impl ViewPaintCx {
             feature = "date-picker",
             feature = "dialog",
             feature = "flyout",
+            feature = "menu-flyout",
             feature = "teaching-tip",
             feature = "time-picker",
             feature = "toast"
@@ -421,6 +422,27 @@ impl<Msg: Clone> ViewNode<Msg> {
 
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        #[cfg(feature = "menu-flyout")]
+        if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
+            self.bounds = Some(cx.bounds);
+            self.layout_dpi = cx.dpi;
+            for child in &mut self.children {
+                child.clear_layout_bounds();
+            }
+            let mut children = Vec::new();
+            if let Some(page) = self.children.first_mut() {
+                let mut page_cx = ViewLayoutCx {
+                    bounds: cx.bounds,
+                    dpi: cx.dpi,
+                    typography_scale_per_mille: cx.typography_scale_per_mille,
+                };
+                children.extend(page.layout(&mut page_cx).children);
+            }
+            return LayoutOutput {
+                bounds: cx.bounds,
+                children,
+            };
+        }
         #[cfg(feature = "flyout")]
         if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
             return self.layout_flyout(cx);
@@ -472,6 +494,114 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "menu-flyout")]
+        if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
+            let mut handled = false;
+            if let ViewNodeKind::MenuFlyout {
+                menu,
+                open,
+                target: menu_target,
+                highlighted,
+                open_submenu,
+                on_command,
+                on_open_change,
+                ..
+            } = &mut self.kind
+            {
+                match event {
+                    ViewEvent::MenuFlyoutOpenChanged {
+                        widget,
+                        open: requested,
+                    } if self.id == Some(*widget) => {
+                        *open = *requested;
+                        if *requested {
+                            let state = crate::ZsMenuFlyoutState {
+                                open: true,
+                                target: *menu_target,
+                                highlighted: *highlighted,
+                                open_submenu: *open_submenu,
+                            };
+                            *highlighted = state.highlighted.or_else(|| state.first_enabled(menu));
+                        } else {
+                            *highlighted = None;
+                            *open_submenu = None;
+                        }
+                        if let Some(message) = on_open_change {
+                            cx.emit(message(*requested));
+                        }
+                        handled = true;
+                    }
+                    ViewEvent::MenuFlyoutHighlighted { widget, path }
+                        if *open
+                            && self.id == Some(*widget)
+                            && crate::menu_flyout::menu_flyout_item(menu, *path).is_some() =>
+                    {
+                        *highlighted = Some(*path);
+                        if path.parent.is_none()
+                            && crate::menu_flyout::menu_flyout_submenu_index(menu, *path).is_none()
+                        {
+                            *open_submenu = None;
+                        }
+                        handled = true;
+                    }
+                    ViewEvent::MenuFlyoutSubmenuChanged { widget, submenu }
+                        if *open && self.id == Some(*widget) =>
+                    {
+                        *open_submenu = submenu.filter(|index| {
+                            crate::menu_flyout::menu_flyout_submenu_index(
+                                menu,
+                                crate::ZsMenuFlyoutPath::root(*index),
+                            )
+                            .is_some()
+                        });
+                        let state = crate::ZsMenuFlyoutState {
+                            open: true,
+                            target: *menu_target,
+                            highlighted: None,
+                            open_submenu: *open_submenu,
+                        };
+                        *highlighted = state.first_enabled(menu);
+                        handled = true;
+                    }
+                    ViewEvent::MenuFlyoutInvoked { widget, path }
+                        if *open && self.id == Some(*widget) =>
+                    {
+                        if let Some(command) = crate::menu_flyout::menu_flyout_command(menu, *path)
+                        {
+                            *open = false;
+                            *highlighted = None;
+                            *open_submenu = None;
+                            if let Some(message) = on_command {
+                                cx.emit(message(command));
+                            }
+                            if let Some(message) = on_open_change {
+                                cx.emit(message(false));
+                            }
+                            handled = true;
+                        }
+                    }
+                    ViewEvent::DismissPopupOverlays { except }
+                        if *open && self.id != *except =>
+                    {
+                        *open = false;
+                        *highlighted = None;
+                        *open_submenu = None;
+                        if let Some(message) = on_open_change {
+                            cx.emit(message(false));
+                        }
+                        handled = true;
+                    }
+                    _ => {}
+                }
+            }
+            if !handled {
+                if let Some(page) = self.children.first_mut() {
+                    page.event(cx, event);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "flyout")]
         if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
             let mut handled = false;
@@ -2953,6 +3083,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::ContentDialog { .. } => {}
             #[cfg(feature = "flyout")]
             ViewNodeKind::Flyout { .. } => {
+                if let Some(page) = self.children.first() {
+                    page.paint(cx);
+                }
+                cx.finish_node(self);
+                return;
+            }
+            #[cfg(feature = "menu-flyout")]
+            ViewNodeKind::MenuFlyout { .. } => {
                 if let Some(page) = self.children.first() {
                     page.paint(cx);
                 }

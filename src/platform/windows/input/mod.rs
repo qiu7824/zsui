@@ -217,6 +217,10 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub command_palette_invoke_count: usize,
     pub command_palette_open_change_count: usize,
     pub command_palette_clear_count: usize,
+    pub menu_flyout_highlight_change_count: usize,
+    pub menu_flyout_submenu_change_count: usize,
+    pub menu_flyout_invoke_count: usize,
+    pub menu_flyout_open_change_count: usize,
     pub toast_focus_change_count: usize,
     pub toast_response_count: usize,
     pub toast_timeout_count: usize,
@@ -331,6 +335,10 @@ impl WindowsWin32ViewInputDispatchReport {
         self.command_palette_invoke_count += next.command_palette_invoke_count;
         self.command_palette_open_change_count += next.command_palette_open_change_count;
         self.command_palette_clear_count += next.command_palette_clear_count;
+        self.menu_flyout_highlight_change_count += next.menu_flyout_highlight_change_count;
+        self.menu_flyout_submenu_change_count += next.menu_flyout_submenu_change_count;
+        self.menu_flyout_invoke_count += next.menu_flyout_invoke_count;
+        self.menu_flyout_open_change_count += next.menu_flyout_open_change_count;
         self.toast_focus_change_count += next.toast_focus_change_count;
         self.toast_response_count += next.toast_response_count;
         self.toast_timeout_count += next.toast_timeout_count;

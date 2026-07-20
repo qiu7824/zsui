@@ -271,6 +271,11 @@ const CANVAS_GAPS: &[&str] = &[
     "accessibility grouping semantics",
     "path-construction primitives and multi-pointer or touch input",
 ];
+const MENU_FLYOUT_GAPS: &[&str] = &[
+    "submenu stacks deeper than one level and delayed pointer-open timing",
+    "checked-item and submenu accessibility state on every target backend",
+    "AppKit and Linux target interaction smoke",
+];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
     "accessibility tab-list and tab-panel providers",
@@ -655,9 +660,9 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "MenuFlyout",
         Overlay,
         FirstPass,
-        Some("tray"),
-        "src/platform/windows/mod.rs",
-        PLATFORM_GAPS
+        Some("menu-flyout"),
+        "src/menu_flyout.rs + src/view/widgets/menu_flyout.rs + src/native.rs + three desktop component profiles",
+        MENU_FLYOUT_GAPS
     ),
     component!(
         "teaching_tip",

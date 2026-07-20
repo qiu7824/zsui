@@ -3,6 +3,8 @@ include!("button.rs");
 include!("canvas.rs");
 #[cfg(feature = "flyout")]
 include!("flyout.rs");
+#[cfg(feature = "menu-flyout")]
+include!("menu_flyout.rs");
 include!("input.rs");
 include!("selection.rs");
 include!("navigation.rs");

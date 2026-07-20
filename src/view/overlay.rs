@@ -50,6 +50,11 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::TeachingTipResponded { widget, .. }) => id == *widget,
             #[cfg(feature = "flyout")]
             (Some(id), ViewEvent::FlyoutDismissed { widget, .. }) => id == *widget,
+            #[cfg(feature = "menu-flyout")]
+            (Some(id), ViewEvent::MenuFlyoutHighlighted { widget, .. })
+            | (Some(id), ViewEvent::MenuFlyoutSubmenuChanged { widget, .. })
+            | (Some(id), ViewEvent::MenuFlyoutInvoked { widget, .. })
+            | (Some(id), ViewEvent::MenuFlyoutOpenChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "info-bar")]
             (Some(id), ViewEvent::InfoBarFocused { widget, .. })
             | (Some(id), ViewEvent::InfoBarInvoked { widget, .. }) => id == *widget,
@@ -83,6 +88,7 @@ impl<Msg> ViewNode<Msg> {
                 feature = "combo",
                 feature = "date-picker",
                 feature = "flyout",
+                feature = "menu-flyout",
                 feature = "time-picker"
             ))]
             (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
@@ -99,7 +105,11 @@ impl<Msg> ViewNode<Msg> {
                 .any(|child| child.contains_widget(widget))
     }
 
-    #[cfg(any(feature = "flyout", feature = "teaching-tip"))]
+    #[cfg(any(
+        feature = "flyout",
+        feature = "menu-flyout",
+        feature = "teaching-tip"
+    ))]
     fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
         if self.id == Some(widget) {
             return self.bounds;
@@ -121,6 +131,7 @@ impl<Msg> ViewNode<Msg> {
             feature = "date-picker",
             feature = "dialog",
             feature = "flyout",
+            feature = "menu-flyout",
             feature = "teaching-tip",
             feature = "time-picker",
             feature = "toast"
@@ -501,6 +512,37 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_flyout_state(widget))
     }
 
+    #[cfg(feature = "menu-flyout")]
+    pub fn widget_menu_flyout_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(crate::ZsMenuFlyoutState, crate::MenuSpec)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::MenuFlyout {
+                menu,
+                open,
+                target,
+                highlighted,
+                open_submenu,
+                ..
+            } = &self.kind
+            {
+                return Some((
+                    crate::ZsMenuFlyoutState {
+                        open: *open,
+                        target: *target,
+                        highlighted: *highlighted,
+                        open_submenu: *open_submenu,
+                    },
+                    menu.clone(),
+                ));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_menu_flyout_state(widget))
+    }
+
     #[cfg(feature = "toast")]
     pub fn widget_toast_state(
         &self,
@@ -861,6 +903,14 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "menu-flyout")]
+        if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
+            if let Some(page) = self.children.first() {
+                page.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
         #[cfg(feature = "flyout")]
         if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
             if let Some(page) = self.children.first() {
@@ -1448,6 +1498,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "date-picker",
         feature = "dialog",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "teaching-tip",
         feature = "time-picker",
         feature = "toast"
@@ -1457,6 +1508,59 @@ impl<Msg> ViewNode<Msg> {
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "menu-flyout")]
+        if let ViewNodeKind::MenuFlyout {
+            menu,
+            open,
+            target,
+            highlighted,
+            open_submenu,
+            ..
+        } = &self.kind
+        {
+            let menu_viewport = viewport.or(self.bounds);
+            if let Some(page) = self.children.first() {
+                page.collect_overlay_hit_targets(hit_targets, menu_viewport);
+            }
+            let target_bounds = self
+                .children
+                .first()
+                .and_then(|page| page.widget_layout_bounds(*target));
+            if let (true, Some(widget), Some(viewport), Some(target_bounds)) =
+                (*open, self.id, menu_viewport, target_bounds)
+            {
+                let plan = crate::zs_menu_flyout_render_plan(
+                    viewport,
+                    target_bounds,
+                    menu,
+                    *highlighted,
+                    *open_submenu,
+                    crate::ZsMenuFlyoutPlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    viewport,
+                    ViewHitTargetKind::MenuFlyoutScrim,
+                ));
+                for surface in &plan.surfaces {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        *surface,
+                        ViewHitTargetKind::MenuFlyout,
+                    ));
+                }
+                hit_targets.extend(plan.rows.into_iter().filter(|row| row.enabled).map(|row| {
+                    ViewHitTarget::with_kind(
+                        widget,
+                        row.bounds,
+                        ViewHitTargetKind::MenuFlyoutItem { path: row.path },
+                    )
+                }));
+            }
+            return;
+        }
+
         #[cfg(feature = "flyout")]
         if let ViewNodeKind::Flyout {
             spec,
@@ -2022,6 +2126,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "date-picker",
         feature = "dialog",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "teaching-tip",
         feature = "time-picker",
         feature = "toast"
@@ -2030,6 +2135,43 @@ impl<Msg> ViewNode<Msg> {
     where
         Msg: Clone,
     {
+        #[cfg(feature = "menu-flyout")]
+        if let ViewNodeKind::MenuFlyout {
+            menu,
+            open,
+            target,
+            highlighted,
+            open_submenu,
+            ..
+        } = &self.kind
+        {
+            let menu_viewport = viewport.or(self.bounds);
+            if let Some(page) = self.children.first() {
+                page.paint_overlays(cx, menu_viewport);
+            }
+            let target_bounds = self
+                .children
+                .first()
+                .and_then(|page| page.widget_layout_bounds(*target));
+            if let (true, Some(viewport), Some(target_bounds)) =
+                (*open, menu_viewport, target_bounds)
+            {
+                let plan = crate::zs_menu_flyout_render_plan(
+                    viewport,
+                    target_bounds,
+                    menu,
+                    *highlighted,
+                    *open_submenu,
+                    crate::ZsMenuFlyoutPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_menu_flyout_native_draw_plan(&plan, menu).commands {
+                    cx.draw(command);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "flyout")]
         if let ViewNodeKind::Flyout {
             spec,
@@ -2487,6 +2629,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
             #[cfg(feature = "flyout")]
             ViewNodeKind::Flyout { .. } => ViewHitTargetKind::Flyout,
+            #[cfg(feature = "menu-flyout")]
+            ViewNodeKind::MenuFlyout { .. } => ViewHitTargetKind::MenuFlyout,
             #[cfg(feature = "command-palette")]
             ViewNodeKind::CommandPalette { .. } => ViewHitTargetKind::CommandPalette,
             #[cfg(feature = "toast")]

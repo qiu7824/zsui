@@ -128,6 +128,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "anchored arbitrary-content overlay with platform-native composition and typed dismissal",
         ),
         ZsuiCargoFeature::new(
+            "menu-flyout",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "anchored menu overlay with typed commands, platform-adaptive metrics and keyboard routing",
+        ),
+        ZsuiCargoFeature::new(
             "widgets-base",
             Widget,
             false,
@@ -652,6 +660,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "breadcrumb",
                 "canvas",
                 "flyout",
+                "menu-flyout",
                 "toggle-button",
                 "label",
                 "grid",
@@ -861,6 +870,10 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "flyout")
             .expect("flyout feature should be listed");
+        let menu_flyout = manifest
+            .iter()
+            .find(|feature| feature.name == "menu-flyout")
+            .expect("menu-flyout feature should be listed");
         let image_preview = manifest
             .iter()
             .find(|feature| feature.name == "image-preview")
@@ -875,6 +888,7 @@ mod tests {
         assert!(!dialog.default_enabled);
         assert_eq!(dialog.enables, vec!["widgets-base"]);
         assert_eq!(flyout.enables, vec!["widgets-base"]);
+        assert_eq!(menu_flyout.enables, vec!["widgets-base"]);
         assert_eq!(table.enables, vec!["widgets-list"]);
         assert_eq!(image_preview.enables, vec!["image", "widgets-base"]);
         assert!(!table.enables.contains(&"list"));
@@ -883,6 +897,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"grid"));
         assert!(all_widgets.enables.contains(&"canvas"));
         assert!(all_widgets.enables.contains(&"flyout"));
+        assert!(all_widgets.enables.contains(&"menu-flyout"));
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
         assert!(all_widgets.enables.contains(&"image-preview"));

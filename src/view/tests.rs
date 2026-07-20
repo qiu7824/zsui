@@ -55,6 +55,7 @@ mod tests {
         feature = "date-picker",
         feature = "dialog",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "command-palette",
         feature = "info-bar",
         feature = "teaching-tip",
@@ -124,6 +125,10 @@ mod tests {
         DialogResult(crate::ZsContentDialogResult),
         #[cfg(feature = "flyout")]
         FlyoutDismissed(crate::ZsFlyoutDismissReason),
+        #[cfg(feature = "menu-flyout")]
+        MenuCommand(crate::Command),
+        #[cfg(feature = "menu-flyout")]
+        MenuOpen(bool),
         #[cfg(feature = "command-palette")]
         CommandQuery(String),
         #[cfg(feature = "command-palette")]
@@ -2153,6 +2158,102 @@ mod tests {
         assert!(view
             .widget_flyout_state(presenter)
             .is_some_and(|state| !state.open));
+    }
+
+    #[cfg(all(feature = "button", feature = "menu-flyout"))]
+    #[test]
+    fn menu_flyout_routes_typed_commands_submenus_and_modal_keyboard_surface() {
+        let presenter = WidgetId::new(195);
+        let target = WidgetId::new(196);
+        let menu = crate::MenuSpec::new()
+            .item("Open / 打开", crate::Command::custom("document.open"))
+            .separator()
+            .submenu(
+                "Recent / 最近",
+                crate::MenuSpec::new().item("One", crate::Command::custom("recent.one")),
+            );
+        let mut view = menu_flyout(
+            presenter,
+            true,
+            target,
+            menu,
+            button("Menu").id(target),
+        )
+        .on_menu_flyout_command(Msg::MenuCommand)
+        .on_menu_flyout_open_change(Msg::MenuOpen);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 400,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.modal_focus_target().map(|target| target.kind),
+            Some(ViewHitTargetKind::MenuFlyout)
+        );
+        assert!(interaction.hit_targets.iter().any(|target| matches!(
+            target.kind,
+            ViewHitTargetKind::MenuFlyoutItem {
+                path: crate::ZsMenuFlyoutPath {
+                    parent: None,
+                    item: 0
+                }
+            }
+        )));
+        assert!(interaction.hit_targets.iter().any(|target| matches!(
+            target.kind,
+            ViewHitTargetKind::MenuFlyoutItem {
+                path: crate::ZsMenuFlyoutPath {
+                    parent: None,
+                    item: 2
+                }
+            }
+        )));
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(
+            |command| matches!(command, NativeDrawCommand::Text(text) if text.text == "Open / 打开")
+        ));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::ChevronRight
+        )));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::MenuFlyoutSubmenuChanged {
+                widget: presenter,
+                submenu: Some(2),
+            },
+        );
+        assert!(view.widget_menu_flyout_state(presenter).is_some_and(
+            |(state, _)| state.open_submenu == Some(2)
+                && state.highlighted == Some(crate::ZsMenuFlyoutPath::child(2, 0))
+        ));
+        view.event(
+            &mut events,
+            &ViewEvent::MenuFlyoutInvoked {
+                widget: presenter,
+                path: crate::ZsMenuFlyoutPath::child(2, 0),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::MenuCommand(crate::Command::custom("recent.one")),
+                Msg::MenuOpen(false),
+            ]
+        );
+        assert!(view
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| !state.open));
     }
 
     #[cfg(feature = "command-palette")]

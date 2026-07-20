@@ -61,6 +61,7 @@ button = ["widgets-base"]
 breadcrumb = ["widgets-base"]
 canvas = ["widgets-base"]
 flyout = ["widgets-base"]
+menu-flyout = ["widgets-base"]
 toggle-button = ["widgets-input"]
 label = ["widgets-base"]
 grid = ["widgets-base"]
@@ -128,7 +129,7 @@ linux-direct = ["linux-direct-host", "dep:cairo-rs", "dep:pango", "dep:pangocair
 linux-direct-lite = ["linux-direct-host", "dep:cosmic-text", "dep:tiny-skia"]
 linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-direct"]
-all-widgets = ["button", "breadcrumb", "canvas", "flyout", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
+all-widgets = ["button", "breadcrumb", "canvas", "flyout", "menu-flyout", "toggle-button", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "workbench"]
 full = [
     "accessibility",
     "all-widgets",

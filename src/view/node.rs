@@ -709,6 +709,16 @@ pub enum ViewNodeKind<Msg> {
         target: WidgetId,
         on_dismiss: Option<fn(crate::ZsFlyoutDismissReason) -> Msg>,
     },
+    #[cfg(feature = "menu-flyout")]
+    MenuFlyout {
+        menu: crate::MenuSpec,
+        open: bool,
+        target: WidgetId,
+        highlighted: Option<crate::ZsMenuFlyoutPath>,
+        open_submenu: Option<usize>,
+        on_command: Option<fn(crate::Command) -> Msg>,
+        on_open_change: Option<fn(bool) -> Msg>,
+    },
     #[cfg(feature = "command-palette")]
     CommandPalette {
         items: Vec<crate::ZsCommandPaletteItem>,
@@ -1061,6 +1071,7 @@ impl<Msg> ViewNode<Msg> {
     #[cfg(any(
         feature = "flyout",
         feature = "label",
+        feature = "menu-flyout",
         feature = "tabs",
         feature = "virtual-list"
     ))]
@@ -1396,6 +1407,22 @@ impl<Msg: Clone> ViewNode<Msg> {
     ) -> Self {
         if let ViewNodeKind::Flyout { on_dismiss, .. } = &mut self.kind {
             *on_dismiss = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub fn on_menu_flyout_command(mut self, message: fn(crate::Command) -> Msg) -> Self {
+        if let ViewNodeKind::MenuFlyout { on_command, .. } = &mut self.kind {
+            *on_command = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub fn on_menu_flyout_open_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::MenuFlyout { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(message);
         }
         self
     }

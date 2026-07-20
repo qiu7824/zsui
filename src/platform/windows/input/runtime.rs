@@ -596,6 +596,15 @@ impl WindowsWin32ViewInputRoute {
             report.command_palette_clear_count =
                 usize::from(shared.command_palette_cleared);
         }
+        #[cfg(feature = "menu-flyout")]
+        {
+            report.menu_flyout_highlight_change_count =
+                usize::from(shared.menu_flyout_highlight_changed);
+            report.menu_flyout_submenu_change_count =
+                usize::from(shared.menu_flyout_submenu_changed);
+            report.menu_flyout_invoke_count = usize::from(shared.menu_flyout_invoked);
+            report.menu_flyout_open_change_count = usize::from(shared.menu_flyout_open_changed);
+        }
         #[cfg(feature = "toast")]
         {
             report.toast_focus_change_count = usize::from(shared.toast_focus_changed);
