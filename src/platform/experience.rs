@@ -488,7 +488,9 @@ mod tests {
             1
         );
         for contract in [
+            "PlatformBaseControlProfile",
             "PlatformButtonProfile",
+            "PlatformNavigationItemProfile",
             "PlatformSectionComposition",
             "PlatformNavigationComposition",
             "PlatformCommandBarProfile",
@@ -497,6 +499,9 @@ mod tests {
             "PlatformInfoBarProfile",
             "PlatformTeachingTipProfile",
             "PlatformToastProfile",
+            "PlatformBreadcrumbProfile",
+            "PlatformToggleButtonProfile",
+            "PlatformNumberBoxProfile",
             "PlatformShellProfile",
         ] {
             assert!(
@@ -710,6 +715,61 @@ mod tests {
                 "pub type ZsBreadcrumbPlatformStyle",
                 "PlatformToastProfile::for_platform",
                 "ZsToastPlatformStyle",
+            ),
+        ] {
+            let start = render
+                .find(start_marker)
+                .unwrap_or_else(|| panic!("{name} render section should exist"));
+            let end = render[start..]
+                .find(end_marker)
+                .map(|offset| start + offset)
+                .unwrap_or_else(|| panic!("{end_marker} should follow {name}"));
+            let section = &render[start..end];
+            assert!(
+                section.contains(profile),
+                "{name} should resolve through {profile}"
+            );
+            for platform in ["Windows", "Macos", "Gtk"] {
+                let forbidden = format!("{style_alias}::{platform}");
+                assert!(
+                    !section.contains(&forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn foundational_controls_consume_internal_component_profiles() {
+        let render = include_str!("../widget_render.rs");
+        for (name, start_marker, end_marker, profile, style_alias) in [
+            (
+                "base controls",
+                "pub type ZsBaseControlPlatformStyle",
+                "pub type ZsInfoBarPlatformStyle",
+                "PlatformBaseControlProfile::for_platform",
+                "ZsBaseControlPlatformStyle",
+            ),
+            (
+                "breadcrumb",
+                "pub type ZsBreadcrumbPlatformStyle",
+                "pub type ZsToggleButtonPlatformStyle",
+                "PlatformBreadcrumbProfile::for_platform",
+                "ZsBreadcrumbPlatformStyle",
+            ),
+            (
+                "toggle button",
+                "pub type ZsToggleButtonPlatformStyle",
+                "pub type ZsNumberBoxPlatformStyle",
+                "PlatformToggleButtonProfile::for_platform",
+                "ZsToggleButtonPlatformStyle",
+            ),
+            (
+                "number box",
+                "pub type ZsNumberBoxPlatformStyle",
+                "pub type ZsTabPlatformStyle",
+                "PlatformNumberBoxProfile::for_platform",
+                "ZsNumberBoxPlatformStyle",
             ),
         ] {
             let start = render

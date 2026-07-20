@@ -3,6 +3,48 @@ use super::*;
 pub(super) const fn profile() -> PlatformComponentProfile {
     PlatformComponentProfile {
         style: ZsPlatformStyle::Gtk,
+        base_control: PlatformBaseControlProfile {
+            metrics: ZsBaseControlMetrics {
+                body_line_height: Dp::new(20.0),
+                average_character_width: Dp::new(7.2),
+                button_minimum_width: Dp::new(86.0),
+                button_height: Dp::new(34.0),
+                button_radius: Dp::new(6.0),
+                button_padding_left: Dp::new(14.0),
+                button_padding_top: Dp::new(6.0),
+                button_padding_right: Dp::new(14.0),
+                button_padding_bottom: Dp::new(6.0),
+                text_input_minimum_width: Dp::new(80.0),
+                text_input_height: Dp::new(34.0),
+                text_input_radius: Dp::new(6.0),
+                text_input_padding_left: Dp::new(10.0),
+                text_input_padding_top: Dp::new(6.0),
+                text_input_padding_right: Dp::new(10.0),
+                text_input_padding_bottom: Dp::new(6.0),
+                check_minimum_width: Dp::new(86.0),
+                check_height: Dp::new(34.0),
+                check_indicator_size: Dp::new(20.0),
+                toggle_width: Dp::new(52.0),
+                toggle_height: Dp::new(34.0),
+                toggle_track_width: Dp::new(44.0),
+                toggle_track_height: Dp::new(24.0),
+                toggle_knob_off_size: Dp::new(16.0),
+                toggle_knob_on_size: Dp::new(18.0),
+                slider_minimum_width: Dp::new(120.0),
+                slider_height: Dp::new(34.0),
+                slider_track_height: Dp::new(4.0),
+                slider_thumb_size: Dp::new(18.0),
+                radio_minimum_width: Dp::new(86.0),
+                radio_height: Dp::new(34.0),
+                radio_indicator_size: Dp::new(20.0),
+                radio_dot_size: Dp::new(8.0),
+                progress_slot_height: Dp::new(16.0),
+                progress_track_height: Dp::new(4.0),
+                selection_minimum_width: Dp::new(120.0),
+                selection_height: Dp::new(34.0),
+                time_picker_minimum_width: Dp::new(140.0),
+            },
+        },
         #[cfg(feature = "label")]
         section: PlatformSectionProfile {
             composition: PlatformSectionComposition::GtkBoxedList,
@@ -23,6 +65,23 @@ pub(super) const fn profile() -> PlatformComponentProfile {
         button: PlatformButtonProfile {
             fill: ColorRole::SurfaceRaised,
             stroke: Some(ColorRole::Border),
+            navigation_item: PlatformNavigationItemProfile {
+                // Adwaita navigation sidebars use a neutral selected row;
+                // accent remains reserved for actionable controls.
+                composition: PlatformNavigationItemComposition::GtkSidebarRow,
+                metrics: ZsNavigationItemMetrics {
+                    open_pane_width: Dp::new(280.0),
+                    item_height: Dp::new(34.0),
+                    icon_size: Dp::new(16.0),
+                    icon_box_width: Dp::new(32.0),
+                    text_leading_margin: Dp::new(6.0),
+                    trailing_padding: Dp::new(10.0),
+                    indicator_width: Dp::new(3.0),
+                    indicator_height: Dp::new(20.0),
+                    indicator_radius: Dp::new(2.0),
+                    radius: Dp::new(6.0),
+                },
+            },
         },
         #[cfg(feature = "button")]
         command_bar: PlatformCommandBarProfile {
@@ -134,6 +193,45 @@ pub(super) const fn profile() -> PlatformComponentProfile {
                 average_character_width: Dp::new(7.2),
             },
             shadow_alpha: 34,
+        },
+        #[cfg(feature = "breadcrumb")]
+        breadcrumb: PlatformBreadcrumbProfile {
+            metrics: ZsBreadcrumbMetrics {
+                control_height: Dp::new(34.0),
+                horizontal_padding: Dp::new(10.0),
+                minimum_item_width: Dp::new(36.0),
+                separator_width: Dp::new(20.0),
+                icon_size: Dp::new(16.0),
+                radius: Dp::new(6.0),
+                character_width: Dp::new(7.0),
+                label_measurement_guard: Dp::new(8.0),
+                popup_row_height: Dp::new(34.0),
+                popup_padding: Dp::new(4.0),
+            },
+            collapse_behavior: PlatformBreadcrumbCollapseBehavior::CollapseLeadingAncestors,
+        },
+        #[cfg(feature = "toggle-button")]
+        toggle_button: PlatformToggleButtonProfile {
+            metrics: ZsToggleButtonMetrics {
+                minimum_height: Dp::new(34.0),
+                radius: Dp::new(5.0),
+                horizontal_padding: Dp::new(14.0),
+                selected_indicator_width: Dp::new(18.0),
+                selected_indicator_height: Dp::new(3.0),
+                checked_content_offset_y: Dp::new(1.0),
+            },
+        },
+        #[cfg(feature = "number-box")]
+        number_box: PlatformNumberBoxProfile {
+            metrics: ZsNumberBoxMetrics {
+                button_width: Dp::new(32.0),
+                button_gap: Dp::new(0.0),
+                text_inset: Dp::new(8.0),
+                radius: Dp::new(5.0),
+                horizontal_buttons: true,
+            },
+            button_icon_size: Dp::new(14.0),
+            stepper_presentation: PlatformNumberBoxStepperPresentation::TextSigns,
         },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Gtk,

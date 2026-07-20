@@ -1,16 +1,24 @@
+#[cfg(feature = "breadcrumb")]
+use crate::ZsBreadcrumbMetrics;
 #[cfg(feature = "info-bar")]
 use crate::ZsInfoBarMetrics;
+#[cfg(feature = "button")]
+use crate::ZsNavigationItemMetrics;
+#[cfg(feature = "number-box")]
+use crate::ZsNumberBoxMetrics;
 #[cfg(feature = "tabs")]
 use crate::ZsTabViewMetrics;
 #[cfg(feature = "teaching-tip")]
 use crate::ZsTeachingTipMetrics;
 #[cfg(feature = "toast")]
 use crate::ZsToastMetrics;
+#[cfg(feature = "toggle-button")]
+use crate::ZsToggleButtonMetrics;
 #[cfg(feature = "label")]
 use crate::ZsuiSpacingTokens;
 #[cfg(any(feature = "label", feature = "button", feature = "tabs"))]
 use crate::{ColorRole, TextRole};
-use crate::{Dp, ZsPlatformStyle};
+use crate::{Dp, ZsBaseControlMetrics, ZsPlatformStyle};
 #[cfg(feature = "dialog")]
 use crate::{ZsContentDialogButton, ZsContentDialogMetrics, ZsContentDialogSpec};
 
@@ -27,6 +35,7 @@ mod windows;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlatformComponentProfile {
     pub style: ZsPlatformStyle,
+    pub base_control: PlatformBaseControlProfile,
     #[cfg(feature = "label")]
     pub section: PlatformSectionProfile,
     #[cfg(feature = "label")]
@@ -45,6 +54,12 @@ pub(crate) struct PlatformComponentProfile {
     pub teaching_tip: PlatformTeachingTipProfile,
     #[cfg(feature = "toast")]
     pub toast: PlatformToastProfile,
+    #[cfg(feature = "breadcrumb")]
+    pub breadcrumb: PlatformBreadcrumbProfile,
+    #[cfg(feature = "toggle-button")]
+    pub toggle_button: PlatformToggleButtonProfile,
+    #[cfg(feature = "number-box")]
+    pub number_box: PlatformNumberBoxProfile,
     pub shell: PlatformShellProfile,
 }
 
@@ -59,6 +74,17 @@ impl PlatformComponentProfile {
 
     pub(crate) const fn current() -> Self {
         Self::for_style(ZsPlatformStyle::current())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformBaseControlProfile {
+    pub metrics: ZsBaseControlMetrics,
+}
+
+impl PlatformBaseControlProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).base_control
     }
 }
 
@@ -190,9 +216,58 @@ impl PlatformNavigationProfile {
 
 #[cfg(feature = "button")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformNavigationItemComposition {
+    FluentPaneRow,
+    AppKitSourceListRow,
+    GtkSidebarRow,
+}
+
+#[cfg(feature = "button")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformNavigationItemProfile {
+    pub composition: PlatformNavigationItemComposition,
+    pub metrics: ZsNavigationItemMetrics,
+}
+
+#[cfg(feature = "button")]
+impl PlatformNavigationItemProfile {
+    pub(crate) const fn draws_selection_indicator(self) -> bool {
+        matches!(
+            self.composition,
+            PlatformNavigationItemComposition::FluentPaneRow
+        )
+    }
+
+    pub(crate) const fn selected_fill(self) -> (ColorRole, Option<u8>) {
+        match self.composition {
+            PlatformNavigationItemComposition::FluentPaneRow => (ColorRole::Control, None),
+            PlatformNavigationItemComposition::AppKitSourceListRow => (ColorRole::Accent, Some(30)),
+            PlatformNavigationItemComposition::GtkSidebarRow => (ColorRole::PrimaryText, Some(26)),
+        }
+    }
+
+    pub(crate) const fn selected_content_color(self) -> ColorRole {
+        match self.composition {
+            PlatformNavigationItemComposition::AppKitSourceListRow => ColorRole::Accent,
+            PlatformNavigationItemComposition::FluentPaneRow
+            | PlatformNavigationItemComposition::GtkSidebarRow => ColorRole::PrimaryText,
+        }
+    }
+}
+
+#[cfg(feature = "button")]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlatformButtonProfile {
     pub fill: ColorRole,
     pub stroke: Option<ColorRole>,
+    pub navigation_item: PlatformNavigationItemProfile,
+}
+
+#[cfg(feature = "button")]
+impl PlatformButtonProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).button
+    }
 }
 
 #[cfg(feature = "button")]
@@ -487,6 +562,69 @@ impl PlatformToastProfile {
     }
 }
 
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformBreadcrumbCollapseBehavior {
+    CollapseLeadingAncestors,
+    PreserveRootWhenPossible,
+}
+
+#[cfg(feature = "breadcrumb")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformBreadcrumbProfile {
+    pub metrics: ZsBreadcrumbMetrics,
+    collapse_behavior: PlatformBreadcrumbCollapseBehavior,
+}
+
+#[cfg(feature = "breadcrumb")]
+impl PlatformBreadcrumbProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).breadcrumb
+    }
+
+    pub(crate) const fn preserves_root(self) -> bool {
+        matches!(
+            self.collapse_behavior,
+            PlatformBreadcrumbCollapseBehavior::PreserveRootWhenPossible
+        )
+    }
+}
+
+#[cfg(feature = "toggle-button")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformToggleButtonProfile {
+    pub metrics: ZsToggleButtonMetrics,
+}
+
+#[cfg(feature = "toggle-button")]
+impl PlatformToggleButtonProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).toggle_button
+    }
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformNumberBoxStepperPresentation {
+    ChevronIcons,
+    TextSigns,
+}
+
+#[cfg(feature = "number-box")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformNumberBoxProfile {
+    pub metrics: ZsNumberBoxMetrics,
+    pub button_icon_size: Dp,
+    pub stepper_presentation: PlatformNumberBoxStepperPresentation,
+}
+
+#[cfg(feature = "number-box")]
+impl PlatformNumberBoxProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).number_box
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformShellNavigationComposition {
     FluentPane,
@@ -574,6 +712,9 @@ mod tests {
         assert_eq!(windows.style, ZsPlatformStyle::Windows);
         assert_eq!(macos.style, ZsPlatformStyle::Macos);
         assert_eq!(gtk.style, ZsPlatformStyle::Gtk);
+        assert_eq!(windows.base_control.metrics.button_height, Dp::new(32.0));
+        assert_eq!(macos.base_control.metrics.button_height, Dp::new(28.0));
+        assert_eq!(gtk.base_control.metrics.button_height, Dp::new(34.0));
 
         #[cfg(feature = "label")]
         {
@@ -600,6 +741,16 @@ mod tests {
             assert_eq!(windows.command_bar.icon_size, Dp::new(20.0));
             assert_eq!(macos.command_bar.bar_height, Dp::new(28.0));
             assert_eq!(gtk.command_bar.item_gap, Dp::new(6.0));
+            assert!(windows.button.navigation_item.draws_selection_indicator());
+            assert!(!macos.button.navigation_item.draws_selection_indicator());
+            assert_eq!(
+                gtk.button.navigation_item.selected_fill(),
+                (ColorRole::PrimaryText, Some(26))
+            );
+            assert_eq!(
+                macos.button.navigation_item.selected_content_color(),
+                ColorRole::Accent
+            );
         }
 
         #[cfg(feature = "tabs")]
@@ -729,6 +880,32 @@ mod tests {
             );
             assert!(!windows.toast.emphasizes_message());
             assert!(gtk.toast.emphasizes_message());
+        }
+
+        #[cfg(feature = "breadcrumb")]
+        {
+            assert!(!windows.breadcrumb.preserves_root());
+            assert!(macos.breadcrumb.preserves_root());
+            assert!(!gtk.breadcrumb.preserves_root());
+            assert_eq!(macos.breadcrumb.metrics.control_height, Dp::new(24.0));
+        }
+
+        #[cfg(feature = "toggle-button")]
+        {
+            assert_eq!(windows.toggle_button.metrics.minimum_height, Dp::new(32.0));
+            assert_eq!(macos.toggle_button.metrics.minimum_height, Dp::new(28.0));
+            assert_eq!(gtk.toggle_button.metrics.minimum_height, Dp::new(34.0));
+        }
+
+        #[cfg(feature = "number-box")]
+        {
+            assert!(windows.number_box.metrics.horizontal_buttons);
+            assert!(!macos.number_box.metrics.horizontal_buttons);
+            assert_eq!(
+                gtk.number_box.stepper_presentation,
+                PlatformNumberBoxStepperPresentation::TextSigns
+            );
+            assert_eq!(macos.number_box.button_icon_size, Dp::new(10.0));
         }
 
         assert_eq!(

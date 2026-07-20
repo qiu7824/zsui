@@ -204,128 +204,8 @@ impl ZsBaseControlMetrics {
     }
 
     pub const fn for_platform(platform: ZsBaseControlPlatformStyle) -> Self {
-        match platform {
-            ZsBaseControlPlatformStyle::Windows => Self {
-                body_line_height: Dp::new(20.0),
-                average_character_width: Dp::new(7.2),
-                button_minimum_width: Dp::new(120.0),
-                button_height: Dp::new(32.0),
-                button_radius: Dp::new(4.0),
-                button_padding_left: Dp::new(11.0),
-                button_padding_top: Dp::new(5.0),
-                button_padding_right: Dp::new(11.0),
-                button_padding_bottom: Dp::new(6.0),
-                text_input_minimum_width: Dp::new(64.0),
-                text_input_height: Dp::new(32.0),
-                text_input_radius: Dp::new(4.0),
-                text_input_padding_left: Dp::new(10.0),
-                text_input_padding_top: Dp::new(5.0),
-                text_input_padding_right: Dp::new(6.0),
-                text_input_padding_bottom: Dp::new(6.0),
-                check_minimum_width: Dp::new(120.0),
-                check_height: Dp::new(32.0),
-                check_indicator_size: Dp::new(20.0),
-                toggle_width: Dp::new(48.0),
-                toggle_height: Dp::new(32.0),
-                toggle_track_width: Dp::new(40.0),
-                toggle_track_height: Dp::new(20.0),
-                toggle_knob_off_size: Dp::new(12.0),
-                toggle_knob_on_size: Dp::new(14.0),
-                slider_minimum_width: Dp::new(120.0),
-                slider_height: Dp::new(32.0),
-                slider_track_height: Dp::new(4.0),
-                slider_thumb_size: Dp::new(18.0),
-                radio_minimum_width: Dp::new(120.0),
-                radio_height: Dp::new(32.0),
-                radio_indicator_size: Dp::new(20.0),
-                radio_dot_size: Dp::new(8.0),
-                progress_slot_height: Dp::new(16.0),
-                progress_track_height: Dp::new(3.0),
-                selection_minimum_width: Dp::new(120.0),
-                selection_height: Dp::new(32.0),
-                time_picker_minimum_width: Dp::new(242.0),
-            },
-            ZsBaseControlPlatformStyle::Macos => Self {
-                body_line_height: Dp::new(16.0),
-                average_character_width: Dp::new(6.8),
-                button_minimum_width: Dp::new(82.0),
-                button_height: Dp::new(28.0),
-                button_radius: Dp::new(6.0),
-                button_padding_left: Dp::new(12.0),
-                button_padding_top: Dp::new(4.0),
-                button_padding_right: Dp::new(12.0),
-                button_padding_bottom: Dp::new(4.0),
-                text_input_minimum_width: Dp::new(72.0),
-                text_input_height: Dp::new(28.0),
-                text_input_radius: Dp::new(5.0),
-                text_input_padding_left: Dp::new(7.0),
-                text_input_padding_top: Dp::new(4.0),
-                text_input_padding_right: Dp::new(7.0),
-                text_input_padding_bottom: Dp::new(4.0),
-                check_minimum_width: Dp::new(82.0),
-                check_height: Dp::new(22.0),
-                check_indicator_size: Dp::new(14.0),
-                toggle_width: Dp::new(42.0),
-                toggle_height: Dp::new(28.0),
-                toggle_track_width: Dp::new(36.0),
-                toggle_track_height: Dp::new(20.0),
-                toggle_knob_off_size: Dp::new(16.0),
-                toggle_knob_on_size: Dp::new(16.0),
-                slider_minimum_width: Dp::new(96.0),
-                slider_height: Dp::new(28.0),
-                slider_track_height: Dp::new(3.0),
-                slider_thumb_size: Dp::new(14.0),
-                radio_minimum_width: Dp::new(82.0),
-                radio_height: Dp::new(22.0),
-                radio_indicator_size: Dp::new(16.0),
-                radio_dot_size: Dp::new(6.0),
-                progress_slot_height: Dp::new(12.0),
-                progress_track_height: Dp::new(3.0),
-                selection_minimum_width: Dp::new(96.0),
-                selection_height: Dp::new(28.0),
-                time_picker_minimum_width: Dp::new(120.0),
-            },
-            ZsBaseControlPlatformStyle::Gtk => Self {
-                body_line_height: Dp::new(20.0),
-                average_character_width: Dp::new(7.2),
-                button_minimum_width: Dp::new(86.0),
-                button_height: Dp::new(34.0),
-                button_radius: Dp::new(6.0),
-                button_padding_left: Dp::new(14.0),
-                button_padding_top: Dp::new(6.0),
-                button_padding_right: Dp::new(14.0),
-                button_padding_bottom: Dp::new(6.0),
-                text_input_minimum_width: Dp::new(80.0),
-                text_input_height: Dp::new(34.0),
-                text_input_radius: Dp::new(6.0),
-                text_input_padding_left: Dp::new(10.0),
-                text_input_padding_top: Dp::new(6.0),
-                text_input_padding_right: Dp::new(10.0),
-                text_input_padding_bottom: Dp::new(6.0),
-                check_minimum_width: Dp::new(86.0),
-                check_height: Dp::new(34.0),
-                check_indicator_size: Dp::new(20.0),
-                toggle_width: Dp::new(52.0),
-                toggle_height: Dp::new(34.0),
-                toggle_track_width: Dp::new(44.0),
-                toggle_track_height: Dp::new(24.0),
-                toggle_knob_off_size: Dp::new(16.0),
-                toggle_knob_on_size: Dp::new(18.0),
-                slider_minimum_width: Dp::new(120.0),
-                slider_height: Dp::new(34.0),
-                slider_track_height: Dp::new(4.0),
-                slider_thumb_size: Dp::new(18.0),
-                radio_minimum_width: Dp::new(86.0),
-                radio_height: Dp::new(34.0),
-                radio_indicator_size: Dp::new(20.0),
-                radio_dot_size: Dp::new(8.0),
-                progress_slot_height: Dp::new(16.0),
-                progress_track_height: Dp::new(4.0),
-                selection_minimum_width: Dp::new(120.0),
-                selection_height: Dp::new(34.0),
-                time_picker_minimum_width: Dp::new(140.0),
-            },
-        }
+        crate::platform_component_profile::PlatformBaseControlProfile::for_platform(platform)
+            .metrics
     }
 
     pub fn estimated_text_width(self, text: &str) -> Dp {
@@ -384,44 +264,9 @@ pub struct ZsNavigationItemMetrics {
 #[cfg(feature = "button")]
 impl ZsNavigationItemMetrics {
     pub const fn for_platform(platform: ZsBaseControlPlatformStyle) -> Self {
-        match platform {
-            ZsBaseControlPlatformStyle::Windows => Self {
-                open_pane_width: Dp::new(320.0),
-                item_height: Dp::new(36.0),
-                icon_size: Dp::new(16.0),
-                icon_box_width: Dp::new(40.0),
-                text_leading_margin: Dp::new(4.0),
-                trailing_padding: Dp::new(8.0),
-                indicator_width: Dp::new(3.0),
-                indicator_height: Dp::new(16.0),
-                indicator_radius: Dp::new(2.0),
-                radius: Dp::new(4.0),
-            },
-            ZsBaseControlPlatformStyle::Macos => Self {
-                open_pane_width: Dp::new(240.0),
-                item_height: Dp::new(28.0),
-                icon_size: Dp::new(16.0),
-                icon_box_width: Dp::new(28.0),
-                text_leading_margin: Dp::new(4.0),
-                trailing_padding: Dp::new(8.0),
-                indicator_width: Dp::new(0.0),
-                indicator_height: Dp::new(0.0),
-                indicator_radius: Dp::new(0.0),
-                radius: Dp::new(6.0),
-            },
-            ZsBaseControlPlatformStyle::Gtk => Self {
-                open_pane_width: Dp::new(280.0),
-                item_height: Dp::new(34.0),
-                icon_size: Dp::new(16.0),
-                icon_box_width: Dp::new(32.0),
-                text_leading_margin: Dp::new(6.0),
-                trailing_padding: Dp::new(10.0),
-                indicator_width: Dp::new(3.0),
-                indicator_height: Dp::new(20.0),
-                indicator_radius: Dp::new(2.0),
-                radius: Dp::new(6.0),
-            },
-        }
+        crate::platform_component_profile::PlatformButtonProfile::for_platform(platform)
+            .navigation_item
+            .metrics
     }
 }
 
@@ -445,7 +290,10 @@ pub fn zs_navigation_item_render_plan(
     platform: ZsBaseControlPlatformStyle,
     dpi: Dpi,
 ) -> ZsNavigationItemRenderPlan {
-    let metrics = ZsNavigationItemMetrics::for_platform(platform);
+    let navigation_item =
+        crate::platform_component_profile::PlatformButtonProfile::for_platform(platform)
+            .navigation_item;
+    let metrics = navigation_item.metrics;
     let icon_size = metrics
         .icon_size
         .to_px(dpi)
@@ -480,7 +328,7 @@ pub fn zs_navigation_item_render_plan(
         .x
         .saturating_add(bounds.width)
         .saturating_sub(trailing_padding);
-    let selection_indicator = (platform == ZsBaseControlPlatformStyle::Windows
+    let selection_indicator = (navigation_item.draws_selection_indicator()
         && selected
         && indicator_width > 0
         && indicator_height > 0)
@@ -515,23 +363,15 @@ pub fn zs_navigation_item_native_draw_plan(
     label: &str,
     icon: crate::ZsIcon,
 ) -> NativeDrawPlan {
+    let navigation_item =
+        crate::platform_component_profile::PlatformButtonProfile::for_platform(plan.platform)
+            .navigation_item;
     let mut commands = Vec::new();
     if plan.selected {
-        let fill = match plan.platform {
-            ZsBaseControlPlatformStyle::Windows => NativeDrawFill::Role(ColorRole::Control),
-            ZsBaseControlPlatformStyle::Macos => NativeDrawFill::RoleWithAlpha {
-                role: ColorRole::Accent,
-                alpha: 30,
-            },
-            // Libadwaita's `.navigation-sidebar` deliberately uses a
-            // neutral selected row rather than an accent-filled row. Accent
-            // is reserved for the control that is active or actionable. Its
-            // official stylesheet defines `$selected_color` as 10% of the
-            // current foreground over a transparent background.
-            ZsBaseControlPlatformStyle::Gtk => NativeDrawFill::RoleWithAlpha {
-                role: ColorRole::PrimaryText,
-                alpha: 26,
-            },
+        let (role, alpha) = navigation_item.selected_fill();
+        let fill = match alpha {
+            Some(alpha) => NativeDrawFill::RoleWithAlpha { role, alpha },
+            None => NativeDrawFill::Role(role),
         };
         commands.push(NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -553,29 +393,15 @@ pub fn zs_navigation_item_native_draw_plan(
             plan.icon_bounds,
             crate::NativeIconColorMode::ThemeAware,
         )
-        .with_color(
-            if plan.selected
-                && !matches!(
-                    plan.platform,
-                    ZsBaseControlPlatformStyle::Windows | ZsBaseControlPlatformStyle::Gtk
-                )
-            {
-                ColorRole::Accent
-            } else if plan.selected {
-                ColorRole::PrimaryText
-            } else {
-                ColorRole::SecondaryText
-            },
-        ),
+        .with_color(if plan.selected {
+            navigation_item.selected_content_color()
+        } else {
+            ColorRole::SecondaryText
+        }),
     ));
     let mut text_style = crate::SemanticTextStyle::body();
-    if plan.selected
-        && !matches!(
-            plan.platform,
-            ZsBaseControlPlatformStyle::Windows | ZsBaseControlPlatformStyle::Gtk
-        )
-    {
-        text_style.color = ColorRole::Accent;
+    if plan.selected {
+        text_style.color = navigation_item.selected_content_color();
     }
     commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
         label,
@@ -1732,44 +1558,7 @@ pub struct ZsBreadcrumbMetrics {
 #[cfg(feature = "breadcrumb")]
 impl ZsBreadcrumbMetrics {
     pub const fn for_platform(platform: ZsBreadcrumbPlatformStyle) -> Self {
-        match platform {
-            ZsBreadcrumbPlatformStyle::Windows => Self {
-                control_height: Dp::new(32.0),
-                horizontal_padding: Dp::new(8.0),
-                minimum_item_width: Dp::new(32.0),
-                separator_width: Dp::new(20.0),
-                icon_size: Dp::new(16.0),
-                radius: Dp::new(4.0),
-                character_width: Dp::new(7.2),
-                label_measurement_guard: Dp::new(10.0),
-                popup_row_height: Dp::new(32.0),
-                popup_padding: Dp::new(4.0),
-            },
-            ZsBreadcrumbPlatformStyle::Macos => Self {
-                control_height: Dp::new(24.0),
-                horizontal_padding: Dp::new(7.0),
-                minimum_item_width: Dp::new(28.0),
-                separator_width: Dp::new(16.0),
-                icon_size: Dp::new(13.0),
-                radius: Dp::new(5.0),
-                character_width: Dp::new(6.6),
-                label_measurement_guard: Dp::new(8.0),
-                popup_row_height: Dp::new(24.0),
-                popup_padding: Dp::new(4.0),
-            },
-            ZsBreadcrumbPlatformStyle::Gtk => Self {
-                control_height: Dp::new(34.0),
-                horizontal_padding: Dp::new(10.0),
-                minimum_item_width: Dp::new(36.0),
-                separator_width: Dp::new(20.0),
-                icon_size: Dp::new(16.0),
-                radius: Dp::new(6.0),
-                character_width: Dp::new(7.0),
-                label_measurement_guard: Dp::new(8.0),
-                popup_row_height: Dp::new(34.0),
-                popup_padding: Dp::new(4.0),
-            },
-        }
+        crate::platform_component_profile::PlatformBreadcrumbProfile::for_platform(platform).metrics
     }
 }
 
@@ -1816,7 +1605,9 @@ pub fn zs_breadcrumb_render_plan(
     dpi: Dpi,
     viewport: Option<Rect>,
 ) -> ZsBreadcrumbRenderPlan {
-    let metrics = ZsBreadcrumbMetrics::for_platform(platform);
+    let profile =
+        crate::platform_component_profile::PlatformBreadcrumbProfile::for_platform(platform);
+    let metrics = profile.metrics;
     let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(1);
     let minimum_width = metrics.minimum_item_width.to_px(dpi).round_i32().max(1);
     let separator_width = metrics.separator_width.to_px(dpi).round_i32().max(1);
@@ -1856,7 +1647,7 @@ pub fn zs_breadcrumb_render_plan(
     let overflow_width = control_height;
     if full_width > bounds.width.max(1) && items.len() > 1 {
         visible_indices.clear();
-        let keep_root = platform == ZsBreadcrumbPlatformStyle::Macos && items.len() > 1;
+        let keep_root = profile.preserves_root() && items.len() > 1;
         let reserved_root = if keep_root {
             desired_widths[0].saturating_add(separator_width)
         } else {
@@ -1891,7 +1682,7 @@ pub fn zs_breadcrumb_render_plan(
     let has_overflow = !hidden_indices.is_empty();
     let mut ordered = Vec::<Option<usize>>::new();
     if has_overflow {
-        if platform == ZsBreadcrumbPlatformStyle::Macos && visible_indices.first() == Some(&0) {
+        if profile.preserves_root() && visible_indices.first() == Some(&0) {
             ordered.push(Some(0));
             ordered.push(None);
             ordered.extend(visible_indices.iter().copied().skip(1).map(Some));
@@ -2352,32 +2143,8 @@ pub struct ZsToggleButtonMetrics {
 #[cfg(feature = "toggle-button")]
 impl ZsToggleButtonMetrics {
     pub const fn for_platform(platform: ZsToggleButtonPlatformStyle) -> Self {
-        match platform {
-            ZsToggleButtonPlatformStyle::Windows => Self {
-                minimum_height: Dp::new(32.0),
-                radius: Dp::new(4.0),
-                horizontal_padding: Dp::new(12.0),
-                selected_indicator_width: Dp::new(16.0),
-                selected_indicator_height: Dp::new(2.0),
-                checked_content_offset_y: Dp::new(0.0),
-            },
-            ZsToggleButtonPlatformStyle::Macos => Self {
-                minimum_height: Dp::new(28.0),
-                radius: Dp::new(6.0),
-                horizontal_padding: Dp::new(12.0),
-                selected_indicator_width: Dp::new(14.0),
-                selected_indicator_height: Dp::new(2.0),
-                checked_content_offset_y: Dp::new(1.0),
-            },
-            ZsToggleButtonPlatformStyle::Gtk => Self {
-                minimum_height: Dp::new(34.0),
-                radius: Dp::new(5.0),
-                horizontal_padding: Dp::new(14.0),
-                selected_indicator_width: Dp::new(18.0),
-                selected_indicator_height: Dp::new(3.0),
-                checked_content_offset_y: Dp::new(1.0),
-            },
-        }
+        crate::platform_component_profile::PlatformToggleButtonProfile::for_platform(platform)
+            .metrics
     }
 }
 
@@ -2399,7 +2166,9 @@ pub fn zs_toggle_button_render_plan(
     platform: ZsToggleButtonPlatformStyle,
     dpi: Dpi,
 ) -> ZsToggleButtonRenderPlan {
-    let metrics = ZsToggleButtonMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformToggleButtonProfile::for_platform(platform)
+            .metrics;
     let padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
     let offset_y = if checked {
         metrics
@@ -2613,29 +2382,7 @@ pub struct ZsNumberBoxMetrics {
 #[cfg(feature = "number-box")]
 impl ZsNumberBoxMetrics {
     pub const fn for_platform(platform: ZsNumberBoxPlatformStyle) -> Self {
-        match platform {
-            ZsNumberBoxPlatformStyle::Windows => Self {
-                button_width: Dp::new(32.0),
-                button_gap: Dp::new(0.0),
-                text_inset: Dp::new(8.0),
-                radius: Dp::new(4.0),
-                horizontal_buttons: true,
-            },
-            ZsNumberBoxPlatformStyle::Macos => Self {
-                button_width: Dp::new(18.0),
-                button_gap: Dp::new(4.0),
-                text_inset: Dp::new(7.0),
-                radius: Dp::new(5.0),
-                horizontal_buttons: false,
-            },
-            ZsNumberBoxPlatformStyle::Gtk => Self {
-                button_width: Dp::new(32.0),
-                button_gap: Dp::new(0.0),
-                text_inset: Dp::new(8.0),
-                radius: Dp::new(5.0),
-                horizontal_buttons: true,
-            },
-        }
+        crate::platform_component_profile::PlatformNumberBoxProfile::for_platform(platform).metrics
     }
 }
 
@@ -2657,7 +2404,9 @@ pub fn zs_number_box_render_plan(
     platform: ZsNumberBoxPlatformStyle,
     dpi: Dpi,
 ) -> ZsNumberBoxRenderPlan {
-    let metrics = ZsNumberBoxMetrics::for_platform(platform);
+    let profile =
+        crate::platform_component_profile::PlatformNumberBoxProfile::for_platform(platform);
+    let metrics = profile.metrics;
     let button_width = metrics
         .button_width
         .to_px(dpi)
@@ -2721,14 +2470,7 @@ pub fn zs_number_box_render_plan(
         },
         decrement_button,
         increment_button,
-        button_icon_size: Dp::new(match platform {
-            ZsNumberBoxPlatformStyle::Windows => 12.0,
-            ZsNumberBoxPlatformStyle::Macos => 10.0,
-            ZsNumberBoxPlatformStyle::Gtk => 14.0,
-        })
-        .to_px(dpi)
-        .round_i32()
-        .max(1),
+        button_icon_size: profile.button_icon_size.to_px(dpi).round_i32().max(1),
         radius: metrics.radius.to_px(dpi).round_i32().max(1),
         platform,
     }
@@ -2780,8 +2522,10 @@ pub fn zs_number_box_native_draw_plan(
             SemanticTextStyle::body(),
         )),
     ];
-    match plan.platform {
-        ZsNumberBoxPlatformStyle::Windows | ZsNumberBoxPlatformStyle::Macos => {
+    let profile =
+        crate::platform_component_profile::PlatformNumberBoxProfile::for_platform(plan.platform);
+    match profile.stepper_presentation {
+        crate::platform_component_profile::PlatformNumberBoxStepperPresentation::ChevronIcons => {
             let icon_size = plan.button_icon_size;
             let centered_icon = |bounds: Rect| Rect {
                 x: bounds
@@ -2810,7 +2554,7 @@ pub fn zs_number_box_native_draw_plan(
                 .with_color(increment_style.color),
             ));
         }
-        ZsNumberBoxPlatformStyle::Gtk => {
+        crate::platform_component_profile::PlatformNumberBoxStepperPresentation::TextSigns => {
             commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                 "−",
                 plan.decrement_button,
