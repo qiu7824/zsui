@@ -266,7 +266,7 @@ impl LinuxDirectApp {
                 text_context,
                 self.capture_path.is_some(),
             );
-            direct.resize(window.inner_size());
+            direct.synchronize_initial_surface(window.inner_size());
             direct.sync_text_input();
             window.set_visible(visible);
             window.request_redraw();
@@ -760,7 +760,15 @@ impl LinuxDirectWindow {
         }
     }
 
+    fn synchronize_initial_surface(&mut self, physical_size: PhysicalSize<u32>) {
+        self.update_surface(physical_size, true);
+    }
+
     fn resize(&mut self, physical_size: PhysicalSize<u32>) {
+        self.update_surface(physical_size, false);
+    }
+
+    fn update_surface(&mut self, physical_size: PhysicalSize<u32>, initial_attachment: bool) {
         self.physical_size =
             PhysicalSize::new(physical_size.width.max(1), physical_size.height.max(1));
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
@@ -772,15 +780,18 @@ impl LinuxDirectWindow {
         }
         let content_height = logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32
             - self.menu_content_offset_y();
-        let report = self.runtime.set_surface(
-            Rect {
-                x: 0,
-                y: 0,
-                width: logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
-                height: content_height.max(1),
-            },
-            crate::Dpi::standard(),
-        );
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+            height: content_height.max(1),
+        };
+        let report = if initial_attachment {
+            self.runtime
+                .synchronize_surface(surface, crate::Dpi::standard())
+        } else {
+            self.runtime.set_surface(surface, crate::Dpi::standard())
+        };
         if let Some(plan) = report.redraw_plan {
             self.plan = plan;
         }

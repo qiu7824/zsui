@@ -170,6 +170,14 @@ jobs:
                   capture["pixel_width"]
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
+              if stem == "gallery-feedback-light":
+                  assert proof["messages"] == ["FlyoutAction"]
+                  assert runtime["native_view_message_count"] >= 1
+                  assert runtime["native_view_event_count"] >= 1
+                  assert runtime["native_view_focused_widget"] == 407
+                  assert runtime["native_view_unhandled_click_count"] == 0
+                  roles = {widget["role"] for widget in proof["widgets"]}
+                  assert {"flyout", "flyout_scrim"} <= roles
 
       - name: Upload AppKit proof
         if: always()
@@ -382,6 +390,14 @@ jobs:
                   capture["pixel_width"]
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
+              if stem == "gallery-feedback-light":
+                  assert proof["messages"] == ["FlyoutAction"]
+                  assert runtime["native_view_message_count"] >= 1
+                  assert runtime["native_view_event_count"] >= 1
+                  assert runtime["native_view_focused_widget"] == 407
+                  assert runtime["native_view_unhandled_click_count"] == 0
+                  roles = {widget["role"] for widget in proof["widgets"]}
+                  assert {"flyout", "flyout_scrim"} <= roles
 
           lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
           lite_png = lite_root / "notepad-interaction.png"
@@ -669,6 +685,16 @@ jobs:
           set -e
           wait "$gallery_pid"
 
+          ZSUI_NATIVE_PROOF_DURATION_MS=2000 \
+            ./target/release/examples/component_gallery \
+              --native-proof \
+              --page feedback \
+              --theme light \
+              --width 1180 \
+              --height 780 \
+              --output "$root" \
+              >"$root/gallery-feedback-light.log" 2>&1
+
           ZSUI_NATIVE_PROOF_DURATION_MS=20000 \
           ZSUI_NATIVE_PROOF_OPEN_MENU=1 \
             ./target/release/examples/zsui_notepad \
@@ -809,10 +835,11 @@ jobs:
 
           root = Path("target/native-proof/ubuntu-24.04-wayland-x86_64")
           gallery = json.loads((root / "gallery-inputs-light.json").read_text("utf-8"))
+          feedback = json.loads((root / "gallery-feedback-light.json").read_text("utf-8"))
           notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
           atspi = json.loads((root / "atspi-proof.json").read_text("utf-8"))
 
-          for proof in (gallery, notepad):
+          for proof in (gallery, feedback, notepad):
               capture = proof["runtime"]["native_view_capture"]
               assert proof["schema"] == "zsui.native-proof/v1"
               assert proof["platform"] == "linux"
@@ -821,10 +848,20 @@ jobs:
               assert capture["display_server"] == "wayland"
               assert proof["errors"] == []
               assert proof["unhandled_commands"] == []
+
+          for proof in (gallery, notepad):
               assert proof["runtime"]["native_accessibility_backend"] == "accesskit_atspi"
               assert proof["runtime"]["native_accessibility_node_count"] >= 5
 
           assert gallery["runtime"]["native_accessibility_action_count"] >= 1
+          feedback_runtime = feedback["runtime"]
+          assert feedback["messages"] == ["FlyoutAction"]
+          assert feedback_runtime["native_view_message_count"] >= 1
+          assert feedback_runtime["native_view_event_count"] >= 1
+          assert feedback_runtime["native_view_focused_widget"] == 407
+          assert feedback_runtime["native_view_unhandled_click_count"] == 0
+          feedback_roles = {widget["role"] for widget in feedback["widgets"]}
+          assert {"flyout", "flyout_scrim"} <= feedback_roles
           assert atspi["backend"] == "accesskit_atspi"
           assert atspi["node_count"] >= 5
           assert atspi["action_invoked"] is True
@@ -836,6 +873,9 @@ jobs:
           assert runtime["window_menu_command_routed"] is True
           assert (
               root / "gallery-inputs-light.png"
+          ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+          assert (
+              root / "gallery-feedback-light.png"
           ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
           assert (
               root / "notepad-interaction.png"

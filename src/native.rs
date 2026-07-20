@@ -1976,7 +1976,24 @@ impl NativeViewInputRuntime {
         Some(self.compose_input_visuals(plan))
     }
 
+    pub(crate) fn synchronize_surface(
+        &mut self,
+        surface: Rect,
+        dpi: Dpi,
+    ) -> NativeViewInputDispatchReport {
+        self.update_surface(surface, dpi, false)
+    }
+
     pub(crate) fn set_surface(&mut self, surface: Rect, dpi: Dpi) -> NativeViewInputDispatchReport {
+        self.update_surface(surface, dpi, true)
+    }
+
+    fn update_surface(
+        &mut self,
+        surface: Rect,
+        dpi: Dpi,
+        dismiss_transient_overlays: bool,
+    ) -> NativeViewInputDispatchReport {
         let surface = Rect {
             x: surface.x,
             y: surface.y,
@@ -1999,8 +2016,10 @@ impl NativeViewInputRuntime {
             return report;
         }
 
+        #[cfg(not(feature = "flyout"))]
+        let _ = dismiss_transient_overlays;
         #[cfg(feature = "flyout")]
-        {
+        if dismiss_transient_overlays {
             let open_flyout = self.current_interaction_plan().and_then(|plan| {
                 plan.hit_targets
                     .iter()
@@ -10519,6 +10538,30 @@ mod tests {
         assert!(outside_runtime
             .widget_flyout_state(presenter)
             .is_some_and(|state| !state.open));
+
+        let mut attached_runtime = build().native_view_input_runtime();
+        let attached = attached_runtime.synchronize_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 620,
+                height: 380,
+            },
+            crate::Dpi::standard(),
+        );
+        assert!(attached.surface_changed);
+        assert!(attached_runtime
+            .widget_flyout_state(presenter)
+            .is_some_and(|state| state.open));
+        let attached_action = attached_runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(content_action))
+            .expect("attached flyout content action");
+        let attached_invoked = attached_runtime.dispatch_pointer_click(Point {
+            x: attached_action.bounds.x + attached_action.bounds.width / 2,
+            y: attached_action.bounds.y + attached_action.bounds.height / 2,
+        });
+        assert_eq!(attached_invoked.message_count, 1);
 
         let mut resize_runtime = build().native_view_input_runtime();
         let resized = resize_runtime.set_surface(
