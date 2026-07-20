@@ -2202,26 +2202,20 @@ mod tests {
         assert!(interaction.hit_targets.iter().any(|target| matches!(
             target.kind,
             ViewHitTargetKind::MenuFlyoutItem {
-                path: crate::ZsMenuFlyoutPath {
-                    parent: None,
-                    item: 0
-                },
+                path,
                 row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: true },
                 expanded: false,
                 highlighted: true,
-            }
+            } if path == crate::ZsMenuFlyoutPath::root(0)
         )));
         assert!(interaction.hit_targets.iter().any(|target| matches!(
             target.kind,
             ViewHitTargetKind::MenuFlyoutItem {
-                path: crate::ZsMenuFlyoutPath {
-                    parent: None,
-                    item: 2
-                },
+                path,
                 row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
                 expanded: false,
                 highlighted: false,
-            }
+            } if path == crate::ZsMenuFlyoutPath::root(2)
         )));
 
         let mut paint = ViewPaintCx::new(Dpi::standard());
@@ -2239,37 +2233,31 @@ mod tests {
             &mut events,
             &ViewEvent::MenuFlyoutSubmenuChanged {
                 widget: presenter,
-                submenu: Some(2),
+                submenu: Some(crate::ZsMenuFlyoutPath::root(2)),
             },
         );
         assert!(view.widget_menu_flyout_state(presenter).is_some_and(
-            |(state, _)| state.open_submenu == Some(2)
+            |(state, _)| state.open_submenus == vec![crate::ZsMenuFlyoutPath::root(2)]
                 && state.highlighted == Some(crate::ZsMenuFlyoutPath::child(2, 0))
         ));
         let submenu_interaction = view.interaction_plan();
         assert!(submenu_interaction.hit_targets.iter().any(|target| matches!(
             target.kind,
             ViewHitTargetKind::MenuFlyoutItem {
-                path: crate::ZsMenuFlyoutPath {
-                    parent: None,
-                    item: 2
-                },
+                path,
                 row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
                 expanded: true,
                 highlighted: false,
-            }
+            } if path == crate::ZsMenuFlyoutPath::root(2)
         )));
         assert!(submenu_interaction.hit_targets.iter().any(|target| matches!(
             target.kind,
             ViewHitTargetKind::MenuFlyoutItem {
-                path: crate::ZsMenuFlyoutPath {
-                    parent: Some(2),
-                    item: 0
-                },
+                path,
                 row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: false },
                 expanded: false,
                 highlighted: true,
-            }
+            } if path == crate::ZsMenuFlyoutPath::child(2, 0)
         )));
         view.event(
             &mut events,

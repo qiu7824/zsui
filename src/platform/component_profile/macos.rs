@@ -215,6 +215,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
                 row_radius: Dp::new(4.0),
                 shadow_offset: Dp::new(3.0),
                 shadow_alpha: 30,
+                submenu_open_delay_ms: 225,
             },
         },
         #[cfg(feature = "info-bar")]

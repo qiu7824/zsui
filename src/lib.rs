@@ -370,7 +370,7 @@ pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
 pub use menu_flyout::{
     zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutMetrics,
     ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan, ZsMenuFlyoutRowKind,
-    ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState,
+    ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState, ZS_MENU_FLYOUT_MAX_DEPTH,
 };
 pub use mobile_host::{
     mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,

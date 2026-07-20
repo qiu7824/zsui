@@ -175,7 +175,10 @@ jobs:
                   assert runtime["native_view_message_count"] >= 3
                   assert runtime["native_view_event_count"] >= 2
                   assert runtime["native_view_menu_flyout_invoke_count"] == 1
-                  assert runtime["native_view_menu_flyout_open_change_count"] == 1
+                  assert runtime["native_view_menu_flyout_open_change_count"] == 2
+                  assert runtime["native_view_menu_flyout_submenu_change_count"] == 4
+                  assert runtime["native_view_key_down_count"] == 9
+                  assert runtime["native_view_keyboard_activation_count"] == 1
                   assert runtime["native_view_focused_widget"] == 408
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
@@ -404,7 +407,10 @@ jobs:
                   assert runtime["native_view_message_count"] >= 3
                   assert runtime["native_view_event_count"] >= 2
                   assert runtime["native_view_menu_flyout_invoke_count"] == 1
-                  assert runtime["native_view_menu_flyout_open_change_count"] == 1
+                  assert runtime["native_view_menu_flyout_open_change_count"] == 2
+                  assert runtime["native_view_menu_flyout_submenu_change_count"] == 4
+                  assert runtime["native_view_key_down_count"] == 9
+                  assert runtime["native_view_keyboard_activation_count"] == 1
                   assert runtime["native_view_focused_widget"] == 408
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
@@ -985,7 +991,10 @@ jobs:
           assert feedback_runtime["native_view_message_count"] >= 3
           assert feedback_runtime["native_view_event_count"] >= 2
           assert feedback_runtime["native_view_menu_flyout_invoke_count"] == 1
-          assert feedback_runtime["native_view_menu_flyout_open_change_count"] == 1
+          assert feedback_runtime["native_view_menu_flyout_open_change_count"] == 2
+          assert feedback_runtime["native_view_menu_flyout_submenu_change_count"] == 4
+          assert feedback_runtime["native_view_key_down_count"] == 9
+          assert feedback_runtime["native_view_keyboard_activation_count"] == 1
           assert feedback_runtime["native_view_focused_widget"] == 408
           assert feedback_runtime["native_view_unhandled_click_count"] == 0
           feedback_roles = {widget["role"] for widget in feedback["widgets"]}

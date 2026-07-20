@@ -502,7 +502,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 open,
                 target: menu_target,
                 highlighted,
-                open_submenu,
+                open_submenus,
                 on_command,
                 on_open_change,
                 ..
@@ -519,12 +519,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 open: true,
                                 target: *menu_target,
                                 highlighted: *highlighted,
-                                open_submenu: *open_submenu,
+                                open_submenus: open_submenus.clone(),
                             };
                             *highlighted = state.highlighted.or_else(|| state.first_enabled(menu));
                         } else {
                             *highlighted = None;
-                            *open_submenu = None;
+                            open_submenus.clear();
                         }
                         if let Some(message) = on_open_change {
                             cx.emit(message(*requested));
@@ -537,30 +537,29 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             && crate::menu_flyout::menu_flyout_item(menu, *path).is_some() =>
                     {
                         *highlighted = Some(*path);
-                        if path.parent.is_none()
-                            && crate::menu_flyout::menu_flyout_submenu_index(menu, *path).is_none()
-                        {
-                            *open_submenu = None;
-                        }
                         handled = true;
                     }
                     ViewEvent::MenuFlyoutSubmenuChanged { widget, submenu }
                         if *open && self.id == Some(*widget) =>
                     {
-                        *open_submenu = submenu.filter(|index| {
-                            crate::menu_flyout::menu_flyout_submenu_index(
-                                menu,
-                                crate::ZsMenuFlyoutPath::root(*index),
-                            )
-                            .is_some()
-                        });
+                        let previous = open_submenus.clone();
+                        let next = submenu
+                            .and_then(|path| {
+                                crate::menu_flyout::menu_flyout_submenu_stack(menu, path)
+                            })
+                            .unwrap_or_default();
+                        let preserved = highlighted.filter(|path| path.level() == next.len());
+                        let closed = (next.len() < previous.len())
+                            .then(|| previous.get(next.len()).copied())
+                            .flatten();
+                        *open_submenus = next;
                         let state = crate::ZsMenuFlyoutState {
                             open: true,
                             target: *menu_target,
                             highlighted: None,
-                            open_submenu: *open_submenu,
+                            open_submenus: open_submenus.clone(),
                         };
-                        *highlighted = state.first_enabled(menu);
+                        *highlighted = preserved.or(closed).or_else(|| state.first_enabled(menu));
                         handled = true;
                     }
                     ViewEvent::MenuFlyoutInvoked { widget, path }
@@ -570,7 +569,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         {
                             *open = false;
                             *highlighted = None;
-                            *open_submenu = None;
+                            open_submenus.clear();
                             if let Some(message) = on_command {
                                 cx.emit(message(command));
                             }
@@ -585,7 +584,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     {
                         *open = false;
                         *highlighted = None;
-                        *open_submenu = None;
+                        open_submenus.clear();
                         if let Some(message) = on_open_change {
                             cx.emit(message(false));
                         }

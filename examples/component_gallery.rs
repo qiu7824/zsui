@@ -682,6 +682,13 @@ fn gallery_menu_flyout_spec() -> MenuSpec {
         label: "更多 / More".to_string(),
         enabled: true,
         menu: MenuSpec::new()
+            .submenu(
+                "导出 / Export",
+                MenuSpec::new().item(
+                    "PDF 文档 / PDF document",
+                    Command::custom("gallery.export.pdf"),
+                ),
+            )
             .item("复制 / Copy", Command::custom("gallery.copy"))
             .item("共享 / Share", Command::custom("gallery.share")),
     });
@@ -1220,6 +1227,9 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
                 Command::Custom { id, .. } if id == "gallery.autosave" => ("自动保存", "Auto save"),
                 Command::Custom { id, .. } if id == "gallery.copy" => ("复制", "Copy"),
                 Command::Custom { id, .. } if id == "gallery.share" => ("共享", "Share"),
+                Command::Custom { id, .. } if id == "gallery.export.pdf" => {
+                    ("导出 PDF", "Export PDF")
+                }
                 _ => ("自定义命令", "Custom command"),
             };
             state.status = format!("菜单命令：{zh} / Menu command: {en}");
@@ -1391,24 +1401,6 @@ fn main() -> ZsuiResult<()> {
                 x: target.bounds.x + target.bounds.width / 2,
                 y: target.bounds.y + target.bounds.height / 2,
             };
-            let command = interaction
-                .hit_targets
-                .iter()
-                .copied()
-                .find(|target| {
-                    matches!(
-                        target.kind,
-                        ViewHitTargetKind::MenuFlyoutItem { path, .. }
-                            if path == ZsMenuFlyoutPath::root(0)
-                    )
-                })
-                .map(center)
-                .ok_or_else(|| {
-                    ZsuiError::host(
-                        "gallery_interaction_target",
-                        "missing MenuFlyout gallery command",
-                    )
-                })?;
             let reopen = interaction
                 .hit_target_for_widget(MENU_FLYOUT_TARGET)
                 .map(center)
@@ -1418,7 +1410,21 @@ fn main() -> ZsuiResult<()> {
                         "missing MenuFlyout gallery target",
                     )
                 })?;
-            options = options.native_view_click(command).native_view_click(reopen);
+            options = options
+                .native_view_key_downs([
+                    NativeViewKey::Down,
+                    NativeViewKey::Down,
+                    NativeViewKey::Right,
+                    NativeViewKey::Right,
+                    NativeViewKey::Enter,
+                ])
+                .native_view_click(reopen)
+                .native_view_key_downs([
+                    NativeViewKey::Down,
+                    NativeViewKey::Down,
+                    NativeViewKey::Right,
+                    NativeViewKey::Right,
+                ]);
         }
         let widgets = builder
             .native_view_interaction_plan()

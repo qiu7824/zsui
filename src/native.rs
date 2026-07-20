@@ -1273,6 +1273,8 @@ pub(crate) struct NativeViewInputRuntime {
     modal_restore_focus: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
+    #[cfg(feature = "menu-flyout")]
+    menu_flyout_hover: crate::menu_flyout::ZsMenuFlyoutHoverRuntime,
     #[cfg(feature = "toast")]
     toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
@@ -1610,6 +1612,8 @@ impl NativeViewInputRuntime {
             modal_restore_focus: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::default(),
+            #[cfg(feature = "menu-flyout")]
+            menu_flyout_hover: crate::menu_flyout::ZsMenuFlyoutHoverRuntime::default(),
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
@@ -1755,6 +1759,10 @@ impl NativeViewInputRuntime {
         {
             self.tooltip = crate::tooltip::ZsTooltipRuntime::default();
         }
+        #[cfg(feature = "menu-flyout")]
+        {
+            self.menu_flyout_hover = crate::menu_flyout::ZsMenuFlyoutHoverRuntime::default();
+        }
         #[cfg(feature = "toast")]
         {
             self.toast = crate::toast::ZsToastRuntime::default();
@@ -1789,6 +1797,11 @@ impl NativeViewInputRuntime {
     #[cfg(feature = "tooltip")]
     pub(crate) fn set_tooltip_timing(&mut self, timing: crate::tooltip::ZsTooltipTiming) {
         self.tooltip = crate::tooltip::ZsTooltipRuntime::new(timing);
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub(crate) fn set_menu_flyout_open_delay(&mut self, delay: std::time::Duration) {
+        self.menu_flyout_hover = crate::menu_flyout::ZsMenuFlyoutHoverRuntime::new(delay);
     }
 
     pub(crate) fn hit_target_count(&self) -> usize {
@@ -2630,15 +2643,24 @@ impl NativeViewInputRuntime {
             self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
         }
         #[cfg(feature = "menu-flyout")]
-        if let Some(target) = self
+        match self
             .current_interaction_plan()
             .and_then(|plan| plan.hit_target_at(point))
         {
-            if let crate::ViewHitTargetKind::MenuFlyoutItem { path, .. } = target.kind {
-                if self
-                    .widget_menu_flyout_state(target.widget)
-                    .is_some_and(|(state, _)| state.highlighted != Some(path))
-                {
+            Some(target) => {
+                if let crate::ViewHitTargetKind::MenuFlyoutItem { path, .. } = target.kind {
+                    if let Some((state, menu)) = self.widget_menu_flyout_state(target.widget) {
+                        self.menu_flyout_hover.pointer_moved(
+                            target.widget,
+                            path,
+                            &state,
+                            &menu,
+                            now,
+                        );
+                        if state.highlighted == Some(path) {
+                            return report;
+                        }
+                    }
                     report.handled = true;
                     report.menu_flyout_highlight_changed = true;
                     return self.dispatch_view_event(
@@ -2648,8 +2670,11 @@ impl NativeViewInputRuntime {
                         },
                         report,
                     );
+                } else {
+                    self.menu_flyout_hover.cancel();
                 }
             }
+            None => self.menu_flyout_hover.cancel(),
         }
         #[cfg(feature = "canvas")]
         if let Some(mut capture) = self.canvas_pointer {
@@ -3048,17 +3073,18 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "menu-flyout")]
         match target.kind {
             crate::ViewHitTargetKind::MenuFlyoutItem { path, .. } => {
-                if let Some(submenu) =
-                    self.widget_menu_flyout_state(target.widget)
-                        .and_then(|(_, menu)| {
-                            crate::menu_flyout::menu_flyout_submenu_index(&menu, path)
-                        })
+                self.menu_flyout_hover.cancel();
+                if self
+                    .widget_menu_flyout_state(target.widget)
+                    .is_some_and(|(_, menu)| {
+                        crate::menu_flyout::menu_flyout_submenu(&menu, path).is_some()
+                    })
                 {
                     report.menu_flyout_submenu_changed = true;
                     return self.dispatch_view_event(
                         ViewEvent::MenuFlyoutSubmenuChanged {
                             widget: target.widget,
-                            submenu: Some(submenu),
+                            submenu: Some(path),
                         },
                         report,
                     );
@@ -3977,6 +4003,7 @@ impl NativeViewInputRuntime {
             if !state.open {
                 return report;
             }
+            self.menu_flyout_hover.cancel();
             let next = match key {
                 NativeViewKey::Up => state.relative_highlight(&menu, -1),
                 NativeViewKey::Down => state.relative_highlight(&menu, 1),
@@ -4002,15 +4029,13 @@ impl NativeViewInputRuntime {
             match key {
                 NativeViewKey::Right | NativeViewKey::Enter | NativeViewKey::Space => {
                     if let Some(path) = active {
-                        if let Some(submenu) =
-                            crate::menu_flyout::menu_flyout_submenu_index(&menu, path)
-                        {
+                        if crate::menu_flyout::menu_flyout_submenu(&menu, path).is_some() {
                             report.handled = true;
                             report.menu_flyout_submenu_changed = true;
                             return self.dispatch_view_event(
                                 ViewEvent::MenuFlyoutSubmenuChanged {
                                     widget: menu_target.widget,
-                                    submenu: Some(submenu),
+                                    submenu: Some(path),
                                 },
                                 report,
                             );
@@ -4031,25 +4056,35 @@ impl NativeViewInputRuntime {
                         }
                     }
                 }
-                NativeViewKey::Left if state.open_submenu.is_some() => {
+                NativeViewKey::Left if !state.open_submenus.is_empty() => {
                     report.handled = true;
                     report.menu_flyout_submenu_changed = true;
                     return self.dispatch_view_event(
                         ViewEvent::MenuFlyoutSubmenuChanged {
                             widget: menu_target.widget,
-                            submenu: None,
+                            submenu: state
+                                .open_submenus
+                                .len()
+                                .checked_sub(2)
+                                .and_then(|index| state.open_submenus.get(index))
+                                .copied(),
                         },
                         report,
                     );
                 }
                 NativeViewKey::Escape => {
                     report.handled = true;
-                    if state.open_submenu.is_some() {
+                    if !state.open_submenus.is_empty() {
                         report.menu_flyout_submenu_changed = true;
                         return self.dispatch_view_event(
                             ViewEvent::MenuFlyoutSubmenuChanged {
                                 widget: menu_target.widget,
-                                submenu: None,
+                                submenu: state
+                                    .open_submenus
+                                    .len()
+                                    .checked_sub(2)
+                                    .and_then(|index| state.open_submenus.get(index))
+                                    .copied(),
                             },
                             report,
                         );
@@ -5737,6 +5772,14 @@ impl NativeViewInputRuntime {
             .into_iter()
             .chain(self.tooltip.poll_interval_ms(std::time::Instant::now()))
             .min();
+        #[cfg(feature = "menu-flyout")]
+        let interval = interval
+            .into_iter()
+            .chain(
+                self.menu_flyout_hover
+                    .poll_interval_ms(std::time::Instant::now()),
+            )
+            .min();
         #[cfg(feature = "toast")]
         let interval = interval
             .into_iter()
@@ -5753,7 +5796,7 @@ impl NativeViewInputRuntime {
         &mut self,
         now: std::time::Instant,
     ) -> NativeViewInputDispatchReport {
-        #[cfg(not(any(feature = "tooltip", feature = "toast")))]
+        #[cfg(not(any(feature = "tooltip", feature = "toast", feature = "menu-flyout")))]
         let _ = now;
         let mut changed = false;
         if self
@@ -5776,6 +5819,21 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "tooltip")]
         {
             changed |= self.tooltip.refresh(now);
+        }
+        #[cfg(feature = "menu-flyout")]
+        if let Some((widget, submenu)) = self.menu_flyout_hover.take_due(now) {
+            let report = NativeViewInputDispatchReport {
+                handled: true,
+                menu_flyout_submenu_changed: true,
+                hit_target_count: self.hit_target_count(),
+                focused_widget: self.focused_widget.map(|widget| widget.0),
+                redraw_plan: changed.then(|| self.current_composed_draw_plan()).flatten(),
+                ..NativeViewInputDispatchReport::default()
+            };
+            return self.dispatch_view_event(
+                ViewEvent::MenuFlyoutSubmenuChanged { widget, submenu },
+                report,
+            );
         }
         #[cfg(feature = "toast")]
         if let Some((widget, toast)) = self.toast.take_expired(now) {
@@ -6867,6 +6925,15 @@ impl NativeViewInputRuntime {
         event: ViewEvent,
         mut report: NativeViewInputDispatchReport,
     ) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "menu-flyout")]
+        if matches!(
+            &event,
+            ViewEvent::MenuFlyoutOpenChanged { open: false, .. }
+                | ViewEvent::MenuFlyoutInvoked { .. }
+                | ViewEvent::DismissPopupOverlays { .. }
+        ) {
+            self.menu_flyout_hover.cancel();
+        }
         report.view_event_count += 1;
         #[cfg(feature = "textbox")]
         let mut text_edit_commands = Vec::new();
@@ -11407,8 +11474,11 @@ mod tests {
                                 .separator()
                                 .submenu(
                                     "Recent / 最近",
-                                    crate::MenuSpec::new()
-                                        .item("One", crate::Command::custom("recent.one")),
+                                    crate::MenuSpec::new().submenu(
+                                        "Projects / 项目",
+                                        crate::MenuSpec::new()
+                                            .item("One", crate::Command::custom("recent.one")),
+                                    ),
                                 ),
                             crate::button("Menu / 菜单")
                                 .id(target)
@@ -11438,8 +11508,30 @@ mod tests {
         assert!(opened.menu_flyout_submenu_changed);
         assert!(runtime
             .widget_menu_flyout_state(presenter)
-            .is_some_and(|(state, _)| state.open_submenu == Some(2)
+            .is_some_and(|(state, _)| state.open_submenus
+                == vec![crate::ZsMenuFlyoutPath::root(2)]
                 && state.highlighted == Some(crate::ZsMenuFlyoutPath::child(2, 0))));
+
+        let opened_deep = runtime.dispatch_key(NativeViewKey::Right);
+        assert!(opened_deep.handled);
+        assert!(opened_deep.menu_flyout_submenu_changed);
+        let project = crate::ZsMenuFlyoutPath::child(2, 0);
+        let recent = project.descendant(0).expect("third MenuFlyout level");
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.open_submenus
+                == vec![crate::ZsMenuFlyoutPath::root(2), project]
+                && state.highlighted == Some(recent)));
+
+        let closed_deep = runtime.dispatch_key(NativeViewKey::Left);
+        assert!(closed_deep.menu_flyout_submenu_changed);
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.open_submenus
+                == vec![crate::ZsMenuFlyoutPath::root(2)]
+                && state.highlighted == Some(project)));
+        let reopened_deep = runtime.dispatch_key(NativeViewKey::Right);
+        assert!(reopened_deep.menu_flyout_submenu_changed);
 
         let invoked = runtime.dispatch_key(NativeViewKey::Enter);
         assert!(invoked.handled);
@@ -11449,6 +11541,43 @@ mod tests {
         assert!(runtime
             .widget_menu_flyout_state(presenter)
             .is_some_and(|(state, _)| !state.open));
+
+        let mut hover_runtime = build(true).native_view_input_runtime();
+        hover_runtime.set_menu_flyout_open_delay(std::time::Duration::from_millis(40));
+        let submenu_target = hover_runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|target| {
+                    matches!(
+                        target.kind,
+                        crate::ViewHitTargetKind::MenuFlyoutItem { path, .. }
+                            if path == crate::ZsMenuFlyoutPath::root(2)
+                    )
+                })
+            })
+            .expect("root submenu target");
+        let submenu_point = Point {
+            x: submenu_target.bounds.x + submenu_target.bounds.width / 2,
+            y: submenu_target.bounds.y + submenu_target.bounds.height / 2,
+        };
+        let now = std::time::Instant::now();
+        let hovered = hover_runtime.dispatch_pointer_move_at(submenu_point, now);
+        assert!(hovered.menu_flyout_highlight_changed);
+        assert!(hover_runtime
+            .transient_poll_interval_ms()
+            .is_some_and(|delay| delay <= 40));
+        let _ = hover_runtime.refresh_transient_view_at(now + std::time::Duration::from_millis(39));
+        assert!(hover_runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.open_submenus.is_empty()));
+        let opened =
+            hover_runtime.refresh_transient_view_at(now + std::time::Duration::from_millis(40));
+        assert!(opened.menu_flyout_submenu_changed);
+        assert!(hover_runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(
+                |(state, _)| state.open_submenus == vec![crate::ZsMenuFlyoutPath::root(2)]
+            ));
 
         let mut escaped_runtime = build(true).native_view_input_runtime();
         let escaped = escaped_runtime.dispatch_key(NativeViewKey::Escape);

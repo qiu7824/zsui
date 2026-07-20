@@ -523,7 +523,7 @@ impl<Msg> ViewNode<Msg> {
                 open,
                 target,
                 highlighted,
-                open_submenu,
+                open_submenus,
                 ..
             } = &self.kind
             {
@@ -532,7 +532,7 @@ impl<Msg> ViewNode<Msg> {
                         open: *open,
                         target: *target,
                         highlighted: *highlighted,
-                        open_submenu: *open_submenu,
+                        open_submenus: open_submenus.clone(),
                     },
                     menu.clone(),
                 ));
@@ -1514,7 +1514,7 @@ impl<Msg> ViewNode<Msg> {
             open,
             target,
             highlighted,
-            open_submenu,
+            open_submenus,
             ..
         } = &self.kind
         {
@@ -1534,7 +1534,7 @@ impl<Msg> ViewNode<Msg> {
                     target_bounds,
                     menu,
                     *highlighted,
-                    *open_submenu,
+                    open_submenus,
                     crate::ZsMenuFlyoutPlatformStyle::current(),
                     self.layout_dpi,
                 );
@@ -1552,8 +1552,7 @@ impl<Msg> ViewNode<Msg> {
                 }
                 hit_targets.extend(plan.rows.into_iter().filter(|row| row.enabled).map(|row| {
                     let expanded = matches!(row.kind, crate::ZsMenuFlyoutRowKind::Submenu)
-                        && row.path.parent.is_none()
-                        && *open_submenu == Some(row.path.item);
+                        && open_submenus.contains(&row.path);
                     ViewHitTarget::with_kind(
                         widget,
                         row.bounds,
@@ -2149,7 +2148,7 @@ impl<Msg> ViewNode<Msg> {
             open,
             target,
             highlighted,
-            open_submenu,
+            open_submenus,
             ..
         } = &self.kind
         {
@@ -2169,7 +2168,7 @@ impl<Msg> ViewNode<Msg> {
                     target_bounds,
                     menu,
                     *highlighted,
-                    *open_submenu,
+                    open_submenus,
                     crate::ZsMenuFlyoutPlatformStyle::current(),
                     cx.dpi,
                 );

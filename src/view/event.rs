@@ -238,7 +238,7 @@ pub enum ViewEvent {
     #[cfg(feature = "menu-flyout")]
     MenuFlyoutSubmenuChanged {
         widget: WidgetId,
-        submenu: Option<usize>,
+        submenu: Option<crate::ZsMenuFlyoutPath>,
     },
     #[cfg(feature = "menu-flyout")]
     MenuFlyoutInvoked {

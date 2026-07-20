@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -8,26 +10,84 @@ use crate::{
 
 pub type ZsMenuFlyoutPlatformStyle = ZsPlatformStyle;
 
+/// Maximum supported MenuFlyout nesting depth, including the root item.
+pub const ZS_MENU_FLYOUT_MAX_DEPTH: usize = 8;
+
 /// Stable location of one visible MenuFlyout item.
 ///
-/// `parent` is `None` for the root menu and contains the root submenu index
-/// for one open child menu. Deeper submenu stacks remain an explicit 0.2 gap.
+/// A path contains every item index from the root menu to the visible item.
+/// It is fixed-size so hit targets remain cheap, copyable values while nested
+/// menu traversal stays bounded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ZsMenuFlyoutPath {
-    pub parent: Option<usize>,
-    pub item: usize,
+    indices: [usize; ZS_MENU_FLYOUT_MAX_DEPTH],
+    len: u8,
 }
 
 impl ZsMenuFlyoutPath {
     pub const fn root(item: usize) -> Self {
-        Self { parent: None, item }
+        let mut indices = [0; ZS_MENU_FLYOUT_MAX_DEPTH];
+        indices[0] = item;
+        Self { indices, len: 1 }
     }
 
     pub const fn child(parent: usize, item: usize) -> Self {
-        Self {
-            parent: Some(parent),
-            item,
+        let mut indices = [0; ZS_MENU_FLYOUT_MAX_DEPTH];
+        indices[0] = parent;
+        indices[1] = item;
+        Self { indices, len: 2 }
+    }
+
+    pub fn descendant(self, item: usize) -> Option<Self> {
+        let len = usize::from(self.len);
+        if len == 0 || len >= ZS_MENU_FLYOUT_MAX_DEPTH {
+            return None;
         }
+        let mut path = self;
+        path.indices[len] = item;
+        path.len = path.len.saturating_add(1);
+        Some(path)
+    }
+
+    pub const fn item(self) -> usize {
+        let len = self.len as usize;
+        if len == 0 || len > ZS_MENU_FLYOUT_MAX_DEPTH {
+            0
+        } else {
+            self.indices[len - 1]
+        }
+    }
+
+    pub const fn level(self) -> usize {
+        (self.len as usize).saturating_sub(1)
+    }
+
+    pub const fn is_root(self) -> bool {
+        self.len == 1
+    }
+
+    pub fn parent(self) -> Option<Self> {
+        (self.len > 1).then(|| Self {
+            indices: self.indices,
+            len: self.len - 1,
+        })
+    }
+
+    fn prefix(self, len: usize) -> Option<Self> {
+        (len > 0 && len <= usize::from(self.len)).then(|| Self {
+            indices: self.indices,
+            len: len as u8,
+        })
+    }
+
+    fn valid_len(self) -> Option<usize> {
+        let len = usize::from(self.len);
+        (len > 0 && len <= ZS_MENU_FLYOUT_MAX_DEPTH).then_some(len)
+    }
+
+    fn can_descend(self) -> bool {
+        self.valid_len()
+            .is_some_and(|len| len < ZS_MENU_FLYOUT_MAX_DEPTH)
     }
 }
 
@@ -36,24 +96,24 @@ pub struct ZsMenuFlyoutState {
     pub open: bool,
     pub target: crate::WidgetId,
     pub highlighted: Option<ZsMenuFlyoutPath>,
-    pub open_submenu: Option<usize>,
+    pub open_submenus: Vec<ZsMenuFlyoutPath>,
 }
 
 impl ZsMenuFlyoutState {
     pub fn first_enabled(&self, menu: &MenuSpec) -> Option<ZsMenuFlyoutPath> {
-        menu_flyout_enabled_paths(menu, self.open_submenu)
+        menu_flyout_enabled_paths(menu, &self.open_submenus)
             .into_iter()
             .next()
     }
 
     pub fn last_enabled(&self, menu: &MenuSpec) -> Option<ZsMenuFlyoutPath> {
-        menu_flyout_enabled_paths(menu, self.open_submenu)
+        menu_flyout_enabled_paths(menu, &self.open_submenus)
             .into_iter()
             .next_back()
     }
 
     pub fn relative_highlight(&self, menu: &MenuSpec, offset: isize) -> Option<ZsMenuFlyoutPath> {
-        let paths = menu_flyout_enabled_paths(menu, self.open_submenu).collect::<Vec<_>>();
+        let paths = menu_flyout_enabled_paths(menu, &self.open_submenus);
         if paths.is_empty() {
             return None;
         }
@@ -71,6 +131,90 @@ impl ZsMenuFlyoutState {
             (None, _) => 0,
         };
         paths.get(index).copied()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ZsMenuFlyoutPendingSubmenu {
+    widget: crate::WidgetId,
+    submenu: Option<ZsMenuFlyoutPath>,
+    due: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ZsMenuFlyoutHoverRuntime {
+    open_delay: Duration,
+    pending: Option<ZsMenuFlyoutPendingSubmenu>,
+}
+
+impl Default for ZsMenuFlyoutHoverRuntime {
+    fn default() -> Self {
+        Self::new(Duration::from_millis(
+            ZsMenuFlyoutMetrics::for_platform(ZsMenuFlyoutPlatformStyle::current())
+                .submenu_open_delay_ms,
+        ))
+    }
+}
+
+impl ZsMenuFlyoutHoverRuntime {
+    pub(crate) const fn new(open_delay: Duration) -> Self {
+        Self {
+            open_delay,
+            pending: None,
+        }
+    }
+
+    pub(crate) fn pointer_moved(
+        &mut self,
+        widget: crate::WidgetId,
+        path: ZsMenuFlyoutPath,
+        state: &ZsMenuFlyoutState,
+        menu: &MenuSpec,
+        now: Instant,
+    ) {
+        let submenu = if menu_flyout_submenu(menu, path).is_some() {
+            Some(path)
+        } else {
+            path.parent()
+        };
+        if state.open_submenus.last().copied() == submenu {
+            self.pending = None;
+            return;
+        }
+        if self
+            .pending
+            .is_some_and(|pending| pending.widget == widget && pending.submenu == submenu)
+        {
+            return;
+        }
+        self.pending = Some(ZsMenuFlyoutPendingSubmenu {
+            widget,
+            submenu,
+            due: now + self.open_delay,
+        });
+    }
+
+    pub(crate) fn cancel(&mut self) {
+        self.pending = None;
+    }
+
+    pub(crate) fn take_due(
+        &mut self,
+        now: Instant,
+    ) -> Option<(crate::WidgetId, Option<ZsMenuFlyoutPath>)> {
+        let pending = self.pending.filter(|pending| now >= pending.due)?;
+        self.pending = None;
+        Some((pending.widget, pending.submenu))
+    }
+
+    pub(crate) fn poll_interval_ms(&self, now: Instant) -> Option<u64> {
+        self.pending.map(|pending| {
+            pending
+                .due
+                .saturating_duration_since(now)
+                .as_millis()
+                .clamp(1, u64::MAX as u128) as u64
+        })
     }
 }
 
@@ -92,6 +236,7 @@ pub struct ZsMenuFlyoutMetrics {
     pub row_radius: Dp,
     pub shadow_offset: Dp,
     pub shadow_alpha: u8,
+    pub submenu_open_delay_ms: u64,
 }
 
 impl ZsMenuFlyoutMetrics {
@@ -138,7 +283,7 @@ pub fn zs_menu_flyout_render_plan(
     target: Rect,
     menu: &MenuSpec,
     highlighted: Option<ZsMenuFlyoutPath>,
-    open_submenu: Option<usize>,
+    open_submenus: &[ZsMenuFlyoutPath],
     platform: ZsMenuFlyoutPlatformStyle,
     dpi: Dpi,
 ) -> ZsMenuFlyoutRenderPlan {
@@ -149,33 +294,42 @@ pub fn zs_menu_flyout_render_plan(
     let root = place_root_surface(viewport, target, root_size, margin, gap);
     let mut surfaces = vec![root];
     let mut rows = menu_rows(root, menu, None, highlighted, metrics, platform, dpi);
-
-    if let Some(parent) = open_submenu {
-        if let Some(MenuItemSpec::Submenu {
-            enabled: true,
-            menu: submenu,
-            ..
-        }) = menu.items.get(parent)
-        {
-            if let Some(parent_row) = rows
-                .iter()
-                .find(|row| row.path == ZsMenuFlyoutPath::root(parent))
-            {
-                let child_size = menu_surface_size(viewport, submenu, metrics, platform, dpi);
-                let child =
-                    place_submenu_surface(viewport, parent_row.bounds, child_size, margin, gap);
-                surfaces.push(child);
-                rows.extend(menu_rows(
-                    child,
-                    submenu,
-                    Some(parent),
-                    highlighted,
-                    metrics,
-                    platform,
-                    dpi,
-                ));
-            }
+    let mut expected_parent = None;
+    let mut cascade_direction = None;
+    for submenu_path in open_submenus
+        .iter()
+        .take(ZS_MENU_FLYOUT_MAX_DEPTH.saturating_sub(1))
+    {
+        if submenu_path.parent() != expected_parent {
+            break;
         }
+        let Some(submenu) = menu_flyout_submenu(menu, *submenu_path) else {
+            break;
+        };
+        let Some(parent_row) = rows.iter().find(|row| row.path == *submenu_path) else {
+            break;
+        };
+        let child_size = menu_surface_size(viewport, submenu, metrics, platform, dpi);
+        let (child, direction) = place_submenu_surface(
+            viewport,
+            parent_row.bounds,
+            child_size,
+            margin,
+            gap,
+            cascade_direction,
+        );
+        cascade_direction = Some(direction);
+        surfaces.push(child);
+        rows.extend(menu_rows(
+            child,
+            submenu,
+            Some(*submenu_path),
+            highlighted,
+            metrics,
+            platform,
+            dpi,
+        ));
+        expected_parent = Some(*submenu_path);
     }
 
     ZsMenuFlyoutRenderPlan {
@@ -317,13 +471,19 @@ pub fn zs_menu_flyout_native_draw_plan(
 }
 
 pub(crate) fn menu_flyout_item(menu: &MenuSpec, path: ZsMenuFlyoutPath) -> Option<&MenuItemSpec> {
-    match path.parent {
-        None => menu.items.get(path.item),
-        Some(parent) => match menu.items.get(parent)? {
-            MenuItemSpec::Submenu { menu, .. } => menu.items.get(path.item),
-            _ => None,
-        },
+    let len = path.valid_len()?;
+    let mut current_menu = menu;
+    for depth in 0..len {
+        let item = current_menu.items.get(path.indices[depth])?;
+        if depth + 1 == len {
+            return Some(item);
+        }
+        current_menu = match item {
+            MenuItemSpec::Submenu { menu, .. } => menu,
+            _ => return None,
+        };
     }
+    None
 }
 
 pub(crate) fn menu_flyout_command(
@@ -340,40 +500,59 @@ pub(crate) fn menu_flyout_command(
     }
 }
 
-pub(crate) fn menu_flyout_submenu_index(menu: &MenuSpec, path: ZsMenuFlyoutPath) -> Option<usize> {
-    if path.parent.is_none()
-        && matches!(
-            menu.items.get(path.item),
-            Some(MenuItemSpec::Submenu { enabled: true, .. })
-        )
-    {
-        Some(path.item)
-    } else {
-        None
+pub(crate) fn menu_flyout_submenu(menu: &MenuSpec, path: ZsMenuFlyoutPath) -> Option<&MenuSpec> {
+    if !path.can_descend() {
+        return None;
     }
+    match menu_flyout_item(menu, path)? {
+        MenuItemSpec::Submenu {
+            enabled: true,
+            menu,
+            ..
+        } => Some(menu),
+        _ => None,
+    }
+}
+
+pub(crate) fn menu_flyout_submenu_stack(
+    menu: &MenuSpec,
+    path: ZsMenuFlyoutPath,
+) -> Option<Vec<ZsMenuFlyoutPath>> {
+    let len = path.valid_len()?;
+    let mut stack = Vec::with_capacity(len);
+    for depth in 1..=len {
+        let prefix = path.prefix(depth)?;
+        menu_flyout_submenu(menu, prefix)?;
+        stack.push(prefix);
+    }
+    Some(stack)
 }
 
 fn menu_flyout_enabled_paths(
     menu: &MenuSpec,
-    open_submenu: Option<usize>,
-) -> impl DoubleEndedIterator<Item = ZsMenuFlyoutPath> + '_ {
-    let (items, parent) = open_submenu
-        .and_then(|parent| match menu.items.get(parent) {
-            Some(MenuItemSpec::Submenu { menu, .. }) => Some((&menu.items[..], Some(parent))),
-            _ => None,
+    open_submenus: &[ZsMenuFlyoutPath],
+) -> Vec<ZsMenuFlyoutPath> {
+    let parent = open_submenus.last().copied();
+    let items = parent
+        .and_then(|path| menu_flyout_submenu(menu, path))
+        .map(|submenu| &submenu.items[..])
+        .unwrap_or(&menu.items[..]);
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let path = match parent {
+                Some(parent) => parent.descendant(index)?,
+                None => ZsMenuFlyoutPath::root(index),
+            };
+            let enabled = match item {
+                MenuItemSpec::Command { enabled, .. } => *enabled,
+                MenuItemSpec::Submenu { enabled, .. } => *enabled && path.can_descend(),
+                MenuItemSpec::Separator => false,
+            };
+            enabled.then_some(path)
         })
-        .unwrap_or((&menu.items[..], None));
-    items.iter().enumerate().filter_map(move |(index, item)| {
-        let enabled = match item {
-            MenuItemSpec::Command { enabled, .. } => *enabled,
-            MenuItemSpec::Submenu { enabled, .. } => *enabled && parent.is_none(),
-            MenuItemSpec::Separator => false,
-        };
-        enabled.then_some(ZsMenuFlyoutPath {
-            parent,
-            item: index,
-        })
-    })
+        .collect()
 }
 
 fn menu_surface_size(
@@ -464,7 +643,7 @@ fn menu_surface_size(
 fn menu_rows(
     surface: Rect,
     menu: &MenuSpec,
-    parent: Option<usize>,
+    parent: Option<ZsMenuFlyoutPath>,
     highlighted: Option<ZsMenuFlyoutPath>,
     metrics: ZsMenuFlyoutMetrics,
     platform: ZsMenuFlyoutPlatformStyle,
@@ -509,9 +688,11 @@ fn menu_rows(
             } else {
                 row_height
             };
-            let path = ZsMenuFlyoutPath {
-                parent,
-                item: index,
+            let path = match parent {
+                Some(parent) => parent
+                    .descendant(index)
+                    .unwrap_or_else(|| ZsMenuFlyoutPath::root(index)),
+                None => ZsMenuFlyoutPath::root(index),
             };
             let bounds = Rect {
                 x: surface.x.saturating_add(surface_padding),
@@ -569,7 +750,7 @@ fn menu_rows(
                 } => (ZsMenuFlyoutRowKind::Command { checked: *checked }, *enabled),
                 MenuItemSpec::Separator => (ZsMenuFlyoutRowKind::Separator, false),
                 MenuItemSpec::Submenu { enabled, .. } => {
-                    (ZsMenuFlyoutRowKind::Submenu, *enabled && parent.is_none())
+                    (ZsMenuFlyoutRowKind::Submenu, *enabled && path.can_descend())
                 }
             };
             ZsMenuFlyoutRowRenderPlan {
@@ -612,13 +793,20 @@ fn place_root_surface(viewport: Rect, target: Rect, size: Point, margin: i32, ga
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MenuCascadeDirection {
+    Left,
+    Right,
+}
+
 fn place_submenu_surface(
     viewport: Rect,
     parent_row: Rect,
     size: Point,
     margin: i32,
     gap: i32,
-) -> Rect {
+    preferred_direction: Option<MenuCascadeDirection>,
+) -> (Rect, MenuCascadeDirection) {
     let right = parent_row
         .x
         .saturating_add(parent_row.width)
@@ -630,22 +818,40 @@ fn place_submenu_surface(
         .saturating_sub(size.x)
         .max(viewport.x.saturating_add(margin));
     let left = parent_row.x.saturating_sub(gap).saturating_sub(size.x);
-    let x = if right <= maximum_x { right } else { left }
-        .clamp(viewport.x.saturating_add(margin), maximum_x);
+    let minimum_x = viewport.x.saturating_add(margin);
+    let right_fits = right <= maximum_x;
+    let left_fits = left >= minimum_x;
+    let direction = match preferred_direction {
+        Some(MenuCascadeDirection::Right) if right_fits => MenuCascadeDirection::Right,
+        Some(MenuCascadeDirection::Left) if left_fits => MenuCascadeDirection::Left,
+        Some(MenuCascadeDirection::Right) if left_fits => MenuCascadeDirection::Left,
+        Some(MenuCascadeDirection::Left) if right_fits => MenuCascadeDirection::Right,
+        Some(direction) => direction,
+        None if right_fits => MenuCascadeDirection::Right,
+        None => MenuCascadeDirection::Left,
+    };
+    let x = match direction {
+        MenuCascadeDirection::Left => left,
+        MenuCascadeDirection::Right => right,
+    }
+    .clamp(minimum_x, maximum_x);
     let maximum_y = viewport
         .y
         .saturating_add(viewport.height)
         .saturating_sub(margin)
         .saturating_sub(size.y)
         .max(viewport.y.saturating_add(margin));
-    Rect {
-        x,
-        y: parent_row
-            .y
-            .clamp(viewport.y.saturating_add(margin), maximum_y),
-        width: size.x,
-        height: size.y,
-    }
+    (
+        Rect {
+            x,
+            y: parent_row
+                .y
+                .clamp(viewport.y.saturating_add(margin), maximum_y),
+            width: size.x,
+            height: size.y,
+        },
+        direction,
+    )
 }
 
 fn menu_item_label(item: &MenuItemSpec) -> Option<&str> {
@@ -747,7 +953,7 @@ mod tests {
             target,
             &menu,
             None,
-            None,
+            &[],
             ZsPlatformStyle::Windows,
             Dpi::standard(),
         );
@@ -756,7 +962,7 @@ mod tests {
             target,
             &menu,
             None,
-            None,
+            &[],
             ZsPlatformStyle::Macos,
             Dpi::standard(),
         );
@@ -765,7 +971,7 @@ mod tests {
             target,
             &menu,
             None,
-            None,
+            &[],
             ZsPlatformStyle::Gtk,
             Dpi::standard(),
         );
@@ -793,7 +999,7 @@ mod tests {
             },
             &menu,
             Some(ZsMenuFlyoutPath::child(2, 0)),
-            Some(2),
+            &[ZsMenuFlyoutPath::root(2)],
             ZsPlatformStyle::Windows,
             Dpi::standard(),
         );
@@ -848,7 +1054,7 @@ mod tests {
             },
             &menu,
             None,
-            None,
+            &[],
             ZsPlatformStyle::Windows,
             Dpi::standard(),
         );
@@ -859,5 +1065,98 @@ mod tests {
 
         assert!(plan.rows[1].label_bounds.width >= expected);
         assert!(plan.rows[0].accelerator_bounds.width < 96);
+    }
+
+    #[test]
+    fn nested_submenu_stack_renders_every_surface_and_resolves_deep_command() {
+        let menu = MenuSpec::new().submenu(
+            "Tools",
+            MenuSpec::new().submenu(
+                "Export",
+                MenuSpec::new().item("PDF", Command::custom("export.pdf")),
+            ),
+        );
+        let tools = ZsMenuFlyoutPath::root(0);
+        let export = tools.descendant(0).expect("second menu level");
+        let pdf = export.descendant(0).expect("third menu level");
+        let plan = zs_menu_flyout_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600,
+            },
+            Rect {
+                x: 20,
+                y: 20,
+                width: 100,
+                height: 32,
+            },
+            &menu,
+            Some(pdf),
+            &[tools, export],
+            ZsPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+
+        assert_eq!(plan.surfaces.len(), 3);
+        for surfaces in plan.surfaces.windows(2) {
+            assert!(
+                surfaces[0].x.saturating_add(surfaces[0].width) <= surfaces[1].x
+                    || surfaces[1].x.saturating_add(surfaces[1].width) <= surfaces[0].x
+            );
+        }
+        assert!(plan.rows.iter().any(|row| row.path == pdf));
+        assert_eq!(
+            menu_flyout_command(&menu, pdf),
+            Some(Command::custom("export.pdf"))
+        );
+
+        let edge_plan = zs_menu_flyout_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600,
+            },
+            Rect {
+                x: 700,
+                y: 20,
+                width: 80,
+                height: 32,
+            },
+            &menu,
+            Some(pdf),
+            &[tools, export],
+            ZsPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        assert!(edge_plan
+            .surfaces
+            .windows(2)
+            .all(|pair| pair[1].x < pair[0].x));
+    }
+
+    #[test]
+    fn submenu_hover_waits_for_the_host_delay_before_opening() {
+        let menu = menu();
+        let widget = crate::WidgetId::new(9);
+        let submenu = ZsMenuFlyoutPath::root(2);
+        let state = ZsMenuFlyoutState {
+            open: true,
+            target: crate::WidgetId::new(8),
+            highlighted: Some(ZsMenuFlyoutPath::root(0)),
+            open_submenus: Vec::new(),
+        };
+        let now = Instant::now();
+        let mut runtime = ZsMenuFlyoutHoverRuntime::new(Duration::from_millis(40));
+
+        runtime.pointer_moved(widget, submenu, &state, &menu, now);
+
+        assert!(runtime.take_due(now + Duration::from_millis(39)).is_none());
+        assert_eq!(
+            runtime.take_due(now + Duration::from_millis(40)),
+            Some((widget, Some(submenu)))
+        );
     }
 }

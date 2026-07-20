@@ -272,7 +272,6 @@ const CANVAS_GAPS: &[&str] = &[
     "path-construction primitives and multi-pointer or touch input",
 ];
 const MENU_FLYOUT_GAPS: &[&str] = &[
-    "submenu stacks deeper than one level and delayed pointer-open timing",
     "Windows UIA and AppKit checked-item and submenu accessibility providers",
     "submenu expanded-state exposure through the Linux AT-SPI bridge",
 ];

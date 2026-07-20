@@ -209,13 +209,19 @@ history remain authoritative for implementation status.
   `menu_flyout` View builder and receive typed `Command` plus open-state
   messages; platform profiles own WinUI, AppKit and GTK menu density,
   placement, corner, accelerator and submenu geometry. The shared runtime
-  owns pointer invocation, keyboard traversal, one child submenu, modal focus
-  restoration, Escape/light-dismiss/resize closure and report counters.
+  owns pointer invocation, keyboard traversal, an eight-level bounded submenu
+  path/stack, same-direction edge-aware cascading, modal focus restoration,
+  Escape/light-dismiss/resize closure and report counters. Pointer traversal
+  opens or collapses submenu branches only after the platform timing expires;
+  Win32 reads `SPI_GETMENUSHOWDELAY`, while AppKit and GTK use their component
+  profile timing. The Gallery feedback proof descends through two submenu
+  branches, invokes the third-level command, reopens the menu and leaves the
+  full three-surface stack visible for the final native capture.
   Native UI Proof run `29776254335` on commit `e75295e` passed the final
   MenuFlyout screenshot, command invocation, reopen, focus and role assertions
   on AppKit, lightweight X11 and real Weston Wayland/AT-SPI. Remaining 0.2
-  gaps are deeper submenu stacks, delayed pointer-open timing and complete
-  cross-platform accessibility providers. Follow-up Native UI Proof run
+  gaps are complete cross-platform accessibility providers.
+  Follow-up Native UI Proof run
   `29779123448` on commit `71a82bd` read the self-drawn menu through real
   Wayland AT-SPI and verified `Auto save` as a checked `check menu item` plus
   `More` as a `menu`; Windows UIA, AppKit and Linux expanded-state exposure

@@ -16,7 +16,7 @@ pub fn menu_flyout<Msg>(
             open: true,
             target,
             highlighted: None,
-            open_submenu: None,
+            open_submenus: Vec::new(),
         }
         .first_enabled(&menu)
     });
@@ -25,7 +25,7 @@ pub fn menu_flyout<Msg>(
         open,
         target,
         highlighted: highlighted.flatten(),
-        open_submenu: None,
+        open_submenus: Vec::new(),
         on_command: None,
         on_open_change: None,
     })

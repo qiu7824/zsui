@@ -104,6 +104,8 @@ use windows_sys::Win32::{
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
 use windows_sys::Win32::UI::WindowsAndMessaging::WM_GETOBJECT;
 
+#[cfg(feature = "menu-flyout")]
+use windows_sys::Win32::UI::WindowsAndMessaging::SPI_GETMENUSHOWDELAY;
 #[cfg(feature = "tooltip")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETMESSAGEDURATION, SPI_GETMOUSEHOVERTIME};
 
@@ -149,6 +151,22 @@ fn windows_tooltip_timing() -> crate::tooltip::ZsTooltipTiming {
         open_delay: std::time::Duration::from_millis(u64::from(hover_ms)),
         visible_duration: std::time::Duration::from_secs(u64::from(message_seconds)),
     }
+}
+
+#[cfg(feature = "menu-flyout")]
+fn windows_menu_flyout_open_delay() -> std::time::Duration {
+    let fallback = crate::ZsMenuFlyoutMetrics::for_platform(crate::ZsPlatformStyle::Windows)
+        .submenu_open_delay_ms;
+    let mut delay_ms = fallback.clamp(1, u64::from(u32::MAX)) as u32;
+    unsafe {
+        let mut value = 0u32;
+        if SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, (&mut value as *mut u32).cast(), 0) != 0
+            && value > 0
+        {
+            delay_ms = value;
+        }
+    }
+    std::time::Duration::from_millis(u64::from(delay_ms))
 }
 const DEFAULT_MAIN_CLASS_NAME: &str = "ZsuiMainWindow";
 const DEFAULT_QUICK_CLASS_NAME: &str = "ZsuiQuickWindow";

@@ -715,7 +715,7 @@ pub enum ViewNodeKind<Msg> {
         open: bool,
         target: WidgetId,
         highlighted: Option<crate::ZsMenuFlyoutPath>,
-        open_submenu: Option<usize>,
+        open_submenus: Vec<crate::ZsMenuFlyoutPath>,
         on_command: Option<fn(crate::Command) -> Msg>,
         on_open_change: Option<fn(bool) -> Msg>,
     },

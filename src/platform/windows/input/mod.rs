@@ -87,6 +87,8 @@ impl WindowsWin32ViewInputRoute {
         );
         #[cfg(feature = "tooltip")]
         shared_runtime.set_tooltip_timing(windows_tooltip_timing());
+        #[cfg(feature = "menu-flyout")]
+        shared_runtime.set_menu_flyout_open_delay(windows_menu_flyout_open_delay());
         shared_runtime.defer_app_command_execution();
         shared_runtime.defer_ui_command_execution();
         Self {
