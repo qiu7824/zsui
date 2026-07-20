@@ -204,6 +204,18 @@ history remain authoritative for implementation status.
   run `29771247450` passed the same enforced catalog assertions on AppKit and
   Linux Direct for commit `a1d74a1`; Canvas no longer carries a target
   interaction-smoke gap.
+- `menu-flyout` is an independent `widgets-base` feature rather than an alias
+  for `flyout`. Applications provide one `MenuSpec` through the shared
+  `menu_flyout` View builder and receive typed `Command` plus open-state
+  messages; platform profiles own WinUI, AppKit and GTK menu density,
+  placement, corner, accelerator and submenu geometry. The shared runtime
+  owns pointer invocation, keyboard traversal, one child submenu, modal focus
+  restoration, Escape/light-dismiss/resize closure and report counters.
+  Native UI Proof run `29776254335` on commit `e75295e` passed the final
+  MenuFlyout screenshot, command invocation, reopen, focus and role assertions
+  on AppKit, lightweight X11 and real Weston Wayland/AT-SPI. Remaining 0.2
+  gaps are deeper submenu stacks, delayed pointer-open timing and complete
+  checked/submenu accessibility state on every target backend.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB
