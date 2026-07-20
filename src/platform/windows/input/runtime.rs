@@ -19,7 +19,10 @@ enum WindowsSharedInputKind {
     Background,
     AppCommand,
     WindowClose,
-    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+    #[cfg(all(
+        feature = "accessibility",
+        any(feature = "text-input-core", feature = "menu-flyout")
+    ))]
     Accessibility,
     Surface,
 }
@@ -39,7 +42,10 @@ impl WindowsSharedInputKind {
             Self::Background => "background",
             Self::AppCommand => "app_command",
             Self::WindowClose => "window_close",
-            #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+            #[cfg(all(
+                feature = "accessibility",
+                any(feature = "text-input-core", feature = "menu-flyout")
+            ))]
             Self::Accessibility => "accessibility",
             Self::Surface => "surface",
         }

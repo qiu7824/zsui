@@ -225,8 +225,14 @@ history remain authoritative for implementation status.
   `29779123448` on commit `71a82bd` read the self-drawn menu through real
   Wayland AT-SPI and verified `Auto save` as a checked `check menu item` plus
   `More` as a `menu`; the real Wayland proof also reads both open submenu
-  branches as `STATE_EXPANDED`. Windows UIA and AppKit providers remain
-  explicit gaps.
+  branches as `STATE_EXPANDED`. Windows now exposes the same recursive surface
+  as a real UIA Fragment tree with checked TogglePattern and nested
+  ExpandCollapsePattern providers; the external UI Automation probe runs in
+  the full Windows CI job. AppKit constructs real `NSAccessibilityElement`
+  menu-item children from the same semantic snapshot and accepts its backend
+  evidence only after reading back the recursive node count, checked value and
+  expanded states. The fixed macOS 15 Native UI Proof is the remaining target
+  gate before this accessibility slice is complete.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB

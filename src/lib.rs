@@ -146,6 +146,8 @@ mod native_input_visuals;
     all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
 ))]
 mod native_menu;
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+mod native_menu_accessibility;
 pub mod native_proof;
 pub mod native_smoke;
 mod native_text_edit;
@@ -197,6 +199,13 @@ pub mod widget_render;
 pub mod window;
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub mod windows_gdi_renderer;
+#[cfg(all(
+    windows,
+    feature = "accessibility",
+    feature = "menu-flyout",
+    feature = "windows-win32"
+))]
+mod windows_menu_uia;
 #[cfg(all(
     windows,
     feature = "accessibility",

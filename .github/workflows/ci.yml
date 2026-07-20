@@ -48,6 +48,8 @@ jobs:
       - run: cargo check --locked --example desktop_native_showcase --no-default-features --features desktop-native,window,button,label,textbox,toggle,list,scroll,style
       - shell: pwsh
         run: ./scripts/check-windows-text-accessibility.ps1 -Locked
+      - shell: pwsh
+        run: ./scripts/check-windows-menu-flyout-accessibility.ps1 -Locked
 
   desktop-target-checks:
     strategy:

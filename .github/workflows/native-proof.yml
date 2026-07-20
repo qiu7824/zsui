@@ -63,13 +63,13 @@ jobs:
             --locked \
             --example component_gallery \
             --no-default-features \
-            --features component-gallery-demo
+            --features component-gallery-demo,accessibility
           cargo build \
             --release \
             --locked \
             --example zsui_notepad \
             --no-default-features \
-            --features notepad-demo
+            --features notepad-demo,accessibility
 
       - name: Run real AppKit proof scenes
         run: |
@@ -181,6 +181,8 @@ jobs:
                   assert runtime["native_view_keyboard_activation_count"] == 1
                   assert runtime["native_view_focused_widget"] == 408
                   assert runtime["native_view_unhandled_click_count"] == 0
+                  assert runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
+                  assert runtime["native_accessibility_node_count"] >= 8
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
               if stem == "gallery-catalog-light":

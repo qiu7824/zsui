@@ -55,7 +55,7 @@ windows-core = { version = "0.62.2", optional = true }
 
 [features]
 default = ["window", "button", "label"]
-accessibility = ["dep:accesskit", "dep:accesskit_winit", "dep:windows", "dep:windows-core", "gtk4?/v4_10", "objc2-app-kit?/NSAccessibility", "objc2-app-kit?/NSAccessibilityConstants"]
+accessibility = ["dep:accesskit", "dep:accesskit_winit", "dep:windows", "dep:windows-core", "gtk4?/v4_10", "objc2-app-kit?/NSAccessibility", "objc2-app-kit?/NSAccessibilityConstants", "objc2-app-kit?/NSAccessibilityElement"]
 window = ["windows-win32", "macos-appkit", "linux-direct"]
 button = ["widgets-base"]
 breadcrumb = ["widgets-base"]

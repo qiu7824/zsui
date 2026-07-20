@@ -1843,6 +1843,118 @@ impl NativeViewInputRuntime {
         report
     }
 
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    pub(crate) fn dispatch_accessibility_menu_flyout_focus(
+        &mut self,
+        path: crate::ZsMenuFlyoutPath,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let Some(target) = self.current_interaction_plan().and_then(|plan| {
+            plan.hit_targets.into_iter().find(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::MenuFlyoutItem {
+                        path: target_path,
+                        ..
+                    } if target_path == path
+                )
+            })
+        }) else {
+            return report;
+        };
+        self.menu_flyout_hover.cancel();
+        report.handled = true;
+        report.focused_widget = Some(target.widget.0);
+        self.focused_widget = Some(target.widget);
+        if self
+            .widget_menu_flyout_state(target.widget)
+            .is_some_and(|(state, _)| state.highlighted == Some(path))
+        {
+            return report;
+        }
+        report.menu_flyout_highlight_changed = true;
+        self.dispatch_view_event(
+            ViewEvent::MenuFlyoutHighlighted {
+                widget: target.widget,
+                path,
+            },
+            report,
+        )
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    pub(crate) fn dispatch_accessibility_menu_flyout_invoke(
+        &mut self,
+        path: crate::ZsMenuFlyoutPath,
+    ) -> NativeViewInputDispatchReport {
+        let Some(target) = self.current_interaction_plan().and_then(|plan| {
+            plan.hit_targets.into_iter().find(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::MenuFlyoutItem {
+                        path: target_path,
+                        ..
+                    } if target_path == path
+                )
+            })
+        }) else {
+            return NativeViewInputDispatchReport::default();
+        };
+        self.dispatch_pointer_click(Point {
+            x: target
+                .bounds
+                .x
+                .saturating_add(target.bounds.width.max(1) / 2),
+            y: target
+                .bounds
+                .y
+                .saturating_add(target.bounds.height.max(1) / 2),
+        })
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    pub(crate) fn dispatch_accessibility_menu_flyout_expanded(
+        &mut self,
+        path: crate::ZsMenuFlyoutPath,
+        expanded: bool,
+    ) -> NativeViewInputDispatchReport {
+        let Some(target) = self.current_interaction_plan().and_then(|plan| {
+            plan.hit_targets.into_iter().find(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::MenuFlyoutItem {
+                        path: target_path,
+                        row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
+                        ..
+                    } if target_path == path
+                )
+            })
+        }) else {
+            return NativeViewInputDispatchReport::default();
+        };
+        let Some((state, _)) = self.widget_menu_flyout_state(target.widget) else {
+            return NativeViewInputDispatchReport::default();
+        };
+        let currently_expanded = state.open_submenus.contains(&path);
+        let mut report = self.dispatch_accessibility_menu_flyout_focus(path);
+        if currently_expanded == expanded {
+            return report;
+        }
+        report.handled = true;
+        report.menu_flyout_submenu_changed = true;
+        self.dispatch_view_event(
+            ViewEvent::MenuFlyoutSubmenuChanged {
+                widget: target.widget,
+                submenu: if expanded { Some(path) } else { path.parent() },
+            },
+            report,
+        )
+    }
+
     #[cfg(feature = "text-input-core")]
     pub(crate) fn dispatch_accessibility_set_value(
         &mut self,
@@ -11620,6 +11732,42 @@ mod tests {
         assert!(resize_runtime
             .widget_menu_flyout_state(presenter)
             .is_some_and(|(state, _)| !state.open));
+
+        #[cfg(feature = "accessibility")]
+        {
+            let root_submenu = crate::ZsMenuFlyoutPath::root(2);
+            let nested_submenu = crate::ZsMenuFlyoutPath::child(2, 0);
+            let mut accessibility_runtime = build(true).native_view_input_runtime();
+            let focused =
+                accessibility_runtime.dispatch_accessibility_menu_flyout_focus(root_submenu);
+            assert!(focused.handled);
+            assert!(focused.menu_flyout_highlight_changed);
+            let expanded = accessibility_runtime
+                .dispatch_accessibility_menu_flyout_expanded(root_submenu, true);
+            assert!(expanded.handled);
+            assert!(expanded.menu_flyout_submenu_changed);
+            let expanded_nested = accessibility_runtime
+                .dispatch_accessibility_menu_flyout_expanded(nested_submenu, true);
+            assert!(expanded_nested.menu_flyout_submenu_changed);
+            assert!(accessibility_runtime
+                .widget_menu_flyout_state(presenter)
+                .is_some_and(
+                    |(state, _)| state.open_submenus == vec![root_submenu, nested_submenu]
+                ));
+            let collapsed_nested = accessibility_runtime
+                .dispatch_accessibility_menu_flyout_expanded(nested_submenu, false);
+            assert!(collapsed_nested.menu_flyout_submenu_changed);
+            assert!(accessibility_runtime
+                .widget_menu_flyout_state(presenter)
+                .is_some_and(|(state, _)| state.open_submenus == vec![root_submenu]));
+            let invoked = accessibility_runtime
+                .dispatch_accessibility_menu_flyout_invoke(crate::ZsMenuFlyoutPath::root(0));
+            assert!(invoked.menu_flyout_invoked);
+            assert!(invoked.menu_flyout_open_changed);
+            assert!(accessibility_runtime
+                .widget_menu_flyout_state(presenter)
+                .is_some_and(|(state, _)| !state.open));
+        }
     }
 
     #[cfg(feature = "toast")]

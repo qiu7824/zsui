@@ -510,6 +510,74 @@ pub(crate) fn windows_win32_window_text_accessibility_snapshot(
         .and_then(|record| record.route.focused_text_accessibility_snapshot())
 }
 
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+pub(crate) fn windows_win32_window_menu_flyout_accessibility_snapshot(
+    hwnd: HWND,
+) -> Option<crate::native_menu_accessibility::NativeMenuFlyoutAccessibilitySnapshot> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let (interaction, menu) = {
+        let routes = window_view_input_routes()
+            .lock()
+            .expect("window view input route registry should not be poisoned");
+        let record = routes.iter().find(|record| record.hwnd == hwnd as isize)?;
+        let interaction = record.route.shared_runtime.current_interaction_plan()?;
+        let widget = interaction.hit_targets.iter().find_map(|target| {
+            matches!(
+                target.kind,
+                crate::ViewHitTargetKind::MenuFlyoutItem { .. }
+            )
+            .then_some(target.widget)
+        })?;
+        let (_, menu) = record
+            .route
+            .shared_runtime
+            .widget_menu_flyout_state(widget)?;
+        (interaction, menu)
+    };
+    let plan = window_draw_plan(hwnd)?;
+    crate::native_menu_accessibility::native_menu_flyout_accessibility_snapshot(
+        &plan,
+        &interaction,
+        Some(&menu),
+    )
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+pub(crate) fn focus_windows_win32_window_accessible_menu_flyout_item(
+    hwnd: HWND,
+    path: crate::ZsMenuFlyoutPath,
+) -> bool {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_menu_flyout_focus(path)
+    })
+    .is_some_and(|report| report.handled)
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+pub(crate) fn invoke_windows_win32_window_accessible_menu_flyout_item(
+    hwnd: HWND,
+    path: crate::ZsMenuFlyoutPath,
+) -> bool {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_menu_flyout_invoke(path)
+    })
+    .is_some_and(|report| report.handled)
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+pub(crate) fn set_windows_win32_window_accessible_menu_flyout_item_expanded(
+    hwnd: HWND,
+    path: crate::ZsMenuFlyoutPath,
+    expanded: bool,
+) -> bool {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_menu_flyout_expanded(path, expanded)
+    })
+    .is_some_and(|report| report.handled)
+}
+
 pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
     let Some((bounds, dpi)) = windows_win32_shell_surface(hwnd) else {
         return false;

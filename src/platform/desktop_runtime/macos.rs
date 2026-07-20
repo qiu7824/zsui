@@ -65,8 +65,8 @@ impl DesktopRuntimeBackend for Backend {
                 menu_surface_height: 0,
                 menu_surface_open_at_capture: false,
                 process_memory: None,
-                accessibility_backend: None,
-                accessibility_node_count: 0,
+                accessibility_backend: run.accessibility_backend,
+                accessibility_node_count: run.accessibility_node_count,
                 accessibility_action_count: 0,
             },
             DesktopNativeSmokeMetadata {

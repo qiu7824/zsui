@@ -8,6 +8,40 @@ impl WindowsWin32ViewInputRoute {
         self.shared_focused_target()
     }
 
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    fn dispatch_accessibility_menu_flyout_focus(
+        &mut self,
+        path: crate::ZsMenuFlyoutPath,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_accessibility_menu_flyout_focus(path);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    fn dispatch_accessibility_menu_flyout_invoke(
+        &mut self,
+        path: crate::ZsMenuFlyoutPath,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_accessibility_menu_flyout_invoke(path);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    fn dispatch_accessibility_menu_flyout_expanded(
+        &mut self,
+        path: crate::ZsMenuFlyoutPath,
+        expanded: bool,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_accessibility_menu_flyout_expanded(path, expanded);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
     fn dispatch_accessibility_set_text_value(
         &mut self,

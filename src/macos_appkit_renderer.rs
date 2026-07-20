@@ -7,9 +7,16 @@ use std::{
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+#[cfg(all(
+    feature = "accessibility",
+    any(feature = "text-input-core", feature = "menu-flyout")
+))]
 use objc2::Message;
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+use objc2_app_kit::NSAccessibilityElement;
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+use objc2_app_kit::{NSAccessibilityMenuItemRole, NSAccessibilityMenuRole};
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
 use objc2_app_kit::{
     NSAccessibilitySecureTextFieldSubrole, NSAccessibilityTextAreaRole,
@@ -29,6 +36,8 @@ use objc2_app_kit::{
     NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment,
     NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
 };
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+use objc2_foundation::NSNumber;
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
     NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSTimer,
@@ -284,32 +293,51 @@ define_class!(
     }
 
     impl ZsuiAppKitDrawView {
-        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[cfg(feature = "accessibility")]
         #[unsafe(method(isAccessibilityElement))]
         fn is_accessibility_element(&self) -> bool {
-            self.ivars()
-                .runtime
-                .borrow()
-                .focused_text_accessibility_snapshot()
-                .is_some()
-        }
-
-        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
-        #[unsafe(method_id(accessibilityRole))]
-        fn accessibility_role(&self) -> Option<Retained<NSString>> {
-            self
+            #[cfg(feature = "menu-flyout")]
+            let menu = self.menu_flyout_accessibility_snapshot().is_some();
+            #[cfg(not(feature = "menu-flyout"))]
+            let menu = false;
+            #[cfg(feature = "text-input-core")]
+            let text = self
                 .ivars()
                 .runtime
                 .borrow()
                 .focused_text_accessibility_snapshot()
-                .map(|snapshot| {
+                .is_some();
+            #[cfg(not(feature = "text-input-core"))]
+            let text = false;
+            menu || text
+        }
+
+        #[cfg(feature = "accessibility")]
+        #[unsafe(method_id(accessibilityRole))]
+        fn accessibility_role(&self) -> Option<Retained<NSString>> {
+            #[cfg(feature = "menu-flyout")]
+            let menu_role = self
+                .menu_flyout_accessibility_snapshot()
+                .map(|_| unsafe { NSAccessibilityMenuRole }.retain());
+            #[cfg(not(feature = "menu-flyout"))]
+            let menu_role: Option<Retained<NSString>> = None;
+            #[cfg(feature = "text-input-core")]
+            let text_role = self
+                    .ivars()
+                    .runtime
+                    .borrow()
+                    .focused_text_accessibility_snapshot()
+                    .map(|snapshot| {
                     let role = if snapshot.kind().is_multiline() {
                         unsafe { NSAccessibilityTextAreaRole }
                     } else {
                         unsafe { NSAccessibilityTextFieldRole }
                     };
                     role.retain()
-                })
+                });
+            #[cfg(not(feature = "text-input-core"))]
+            let text_role = None;
+            menu_role.or(text_role)
         }
 
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -323,14 +351,33 @@ define_class!(
                 .map(|_| unsafe { NSAccessibilitySecureTextFieldSubrole }.retain())
         }
 
-        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[cfg(feature = "accessibility")]
         #[unsafe(method_id(accessibilityIdentifier))]
         fn accessibility_identifier(&self) -> Option<Retained<NSString>> {
-            self.ivars()
-                .runtime
-                .borrow()
-                .focused_text_accessibility_snapshot()
-                .map(|snapshot| NSString::from_str(&format!("zsui-widget-{}", snapshot.widget().0)))
+            #[cfg(feature = "menu-flyout")]
+            let menu_identifier = self.menu_flyout_accessibility_snapshot().map(|snapshot| {
+                NSString::from_str(&format!("zsui-menu-flyout-{}", snapshot.widget.0))
+            });
+            #[cfg(not(feature = "menu-flyout"))]
+            let menu_identifier: Option<Retained<NSString>> = None;
+            #[cfg(feature = "text-input-core")]
+            let text_identifier = self
+                    .ivars()
+                    .runtime
+                    .borrow()
+                    .focused_text_accessibility_snapshot()
+                    .map(|snapshot| {
+                        NSString::from_str(&format!("zsui-widget-{}", snapshot.widget().0))
+                    });
+            #[cfg(not(feature = "text-input-core"))]
+            let text_identifier = None;
+            menu_identifier.or(text_identifier)
+        }
+
+        #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+        #[unsafe(method_id(accessibilityChildren))]
+        fn accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
+            self.menu_flyout_accessibility_children()
         }
 
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -353,14 +400,25 @@ define_class!(
                 .is_some_and(|snapshot| snapshot.kind().is_protected())
         }
 
-        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[cfg(feature = "accessibility")]
         #[unsafe(method(isAccessibilityFocused))]
         fn is_accessibility_focused(&self) -> bool {
-            self.ivars()
+            #[cfg(feature = "menu-flyout")]
+            let menu = self
+                .menu_flyout_accessibility_snapshot()
+                .is_some_and(|snapshot| snapshot.highlighted_item().is_some());
+            #[cfg(not(feature = "menu-flyout"))]
+            let menu = false;
+            #[cfg(feature = "text-input-core")]
+            let text = self
+                .ivars()
                 .runtime
                 .borrow()
                 .focused_text_accessibility_snapshot()
-                .is_some()
+                .is_some();
+            #[cfg(not(feature = "text-input-core"))]
+            let text = false;
+            menu || text
         }
 
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -430,18 +488,26 @@ define_class!(
                 .map(|text| NSString::from_str(&text))
         }
 
-        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        #[cfg(feature = "accessibility")]
         #[unsafe(method(accessibilityFrame))]
         fn accessibility_frame(&self) -> NSRect {
+            #[cfg(feature = "menu-flyout")]
             let local = self
-                .ivars()
-                .runtime
-                .borrow()
-                .focused_text_accessibility_snapshot()
-                .map(|snapshot| appkit_rect(snapshot.bounds()))
-                .unwrap_or_else(|| {
-                    NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0))
-                });
+                .menu_flyout_accessibility_snapshot()
+                .map(|snapshot| appkit_rect(snapshot.bounds));
+            #[cfg(not(feature = "menu-flyout"))]
+            let local: Option<NSRect> = None;
+            #[cfg(feature = "text-input-core")]
+            let local = local.or_else(|| {
+                self.ivars()
+                    .runtime
+                    .borrow()
+                    .focused_text_accessibility_snapshot()
+                    .map(|snapshot| appkit_rect(snapshot.bounds()))
+            });
+            let local = local.unwrap_or_else(|| {
+                NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0))
+            });
             self.window()
                 .map(|window| window.convertRectToScreen(self.convertRect_toView(local, None)))
                 .unwrap_or(local)
@@ -698,6 +764,98 @@ define_class!(
 );
 
 impl ZsuiAppKitDrawView {
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    fn menu_flyout_accessibility_snapshot(
+        &self,
+    ) -> Option<crate::native_menu_accessibility::NativeMenuFlyoutAccessibilitySnapshot> {
+        let (interaction, menu) = {
+            let runtime = self.ivars().runtime.borrow();
+            let interaction = runtime.current_interaction_plan()?;
+            let widget = interaction.hit_targets.iter().find_map(|target| {
+                matches!(target.kind, crate::ViewHitTargetKind::MenuFlyoutItem { .. })
+                    .then_some(target.widget)
+            })?;
+            let (_, menu) = runtime.widget_menu_flyout_state(widget)?;
+            (interaction, menu)
+        };
+        crate::native_menu_accessibility::native_menu_flyout_accessibility_snapshot(
+            &self.ivars().plan.borrow(),
+            &interaction,
+            Some(&menu),
+        )
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    fn menu_flyout_accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
+        let snapshot = self.menu_flyout_accessibility_snapshot()?;
+        let parent: &AnyObject = self;
+        Some(self.build_menu_flyout_accessibility_children(&snapshot, None, parent))
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+    fn build_menu_flyout_accessibility_children(
+        &self,
+        snapshot: &crate::native_menu_accessibility::NativeMenuFlyoutAccessibilitySnapshot,
+        parent_path: Option<crate::ZsMenuFlyoutPath>,
+        parent: &AnyObject,
+    ) -> Retained<NSArray<AnyObject>> {
+        let mut children = Vec::new();
+        for item in snapshot
+            .items
+            .iter()
+            .filter(|item| item.path().parent() == parent_path)
+        {
+            let local = appkit_rect(item.target.bounds);
+            let screen = self
+                .window()
+                .map(|window| window.convertRectToScreen(self.convertRect_toView(local, None)))
+                .unwrap_or(local);
+            let label = NSString::from_str(&item.label);
+            let element = unsafe {
+                NSAccessibilityElement::accessibilityElementWithRole_frame_label_parent(
+                    NSAccessibilityMenuItemRole,
+                    screen,
+                    Some(&label),
+                    Some(parent),
+                )
+            };
+            let identifier = NSString::from_str(&format!(
+                "zsui-menu-flyout-item-{}",
+                appkit_menu_flyout_path_identifier(item.path())
+            ));
+            unsafe {
+                let _: () = msg_send![&*element, setAccessibilityIdentifier: Some(&*identifier)];
+                let _: () = msg_send![&*element, setAccessibilityEnabled: item.enabled];
+                let _: () = msg_send![&*element, setAccessibilitySelected: item.highlighted()];
+            }
+            if let Some(expanded) = item.expanded() {
+                unsafe {
+                    let _: () = msg_send![&*element, setAccessibilityExpanded: expanded];
+                }
+            }
+            if let Some(checked) = item.checked() {
+                let value = NSNumber::new_bool(checked);
+                let value: &AnyObject = &*value;
+                unsafe {
+                    let _: () = msg_send![&*element, setAccessibilityValue: Some(value)];
+                }
+            }
+            let nested = self.build_menu_flyout_accessibility_children(
+                snapshot,
+                Some(item.path()),
+                &*element,
+            );
+            if !nested.is_empty() {
+                let nested: &NSArray<AnyObject> = &nested;
+                unsafe {
+                    let _: () = msg_send![&*element, setAccessibilityChildren: Some(nested)];
+                }
+            }
+            children.push(element);
+        }
+        NSArray::from_retained_slice(&children)
+    }
+
     fn pointer_point(&self, event: &NSEvent) -> crate::Point {
         let location = self.convertPoint_fromView(event.locationInWindow(), None);
         crate::Point {
@@ -850,6 +1008,56 @@ impl ZsuiAppKitDrawView {
     }
 }
 
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+fn appkit_menu_flyout_path_identifier(path: crate::ZsMenuFlyoutPath) -> String {
+    let mut indices = Vec::with_capacity(path.level().saturating_add(1));
+    let mut cursor = Some(path);
+    while let Some(current) = cursor {
+        indices.push(current.item().to_string());
+        cursor = current.parent();
+    }
+    indices.reverse();
+    indices.join("-")
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+#[derive(Default)]
+struct AppKitMenuAccessibilityEvidence {
+    node_count: usize,
+    checked_count: usize,
+    expanded_count: usize,
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+fn appkit_menu_accessibility_evidence(
+    children: &NSArray<AnyObject>,
+) -> AppKitMenuAccessibilityEvidence {
+    let mut evidence = AppKitMenuAccessibilityEvidence::default();
+    for element in children.to_vec() {
+        evidence.node_count = evidence.node_count.saturating_add(1);
+        let value: Option<Retained<AnyObject>> =
+            unsafe { msg_send![&*element, accessibilityValue] };
+        if value.is_some_and(|value| unsafe { msg_send![&*value, boolValue] }) {
+            evidence.checked_count = evidence.checked_count.saturating_add(1);
+        }
+        let expanded: bool = unsafe { msg_send![&*element, isAccessibilityExpanded] };
+        if expanded {
+            evidence.expanded_count = evidence.expanded_count.saturating_add(1);
+        }
+        let nested: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send![&*element, accessibilityChildren] };
+        if let Some(nested) = nested {
+            let nested = appkit_menu_accessibility_evidence(&nested);
+            evidence.node_count = evidence.node_count.saturating_add(nested.node_count);
+            evidence.checked_count = evidence.checked_count.saturating_add(nested.checked_count);
+            evidence.expanded_count = evidence
+                .expanded_count
+                .saturating_add(nested.expanded_count);
+        }
+    }
+    evidence
+}
+
 fn appkit_pointer_modifiers(event: &NSEvent) -> crate::ZsPointerModifiers {
     let flags = event.modifierFlags();
     crate::ZsPointerModifiers::new(
@@ -881,6 +1089,43 @@ impl std::fmt::Debug for MacosAppKitDrawViewHost {
 }
 
 impl MacosAppKitDrawViewHost {
+    pub(crate) fn accessibility_node_count(&self) -> usize {
+        #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+        if let Some(snapshot) = self.view.menu_flyout_accessibility_snapshot() {
+            if let Some(children) = self.view.menu_flyout_accessibility_children() {
+                let evidence = appkit_menu_accessibility_evidence(&children);
+                let expected_checked = snapshot
+                    .items
+                    .iter()
+                    .filter(|item| item.checked() == Some(true))
+                    .count();
+                let expected_expanded = snapshot
+                    .items
+                    .iter()
+                    .filter(|item| item.expanded() == Some(true))
+                    .count();
+                if evidence.node_count == snapshot.items.len()
+                    && evidence.checked_count == expected_checked
+                    && evidence.expanded_count == expected_expanded
+                {
+                    return evidence.node_count.saturating_add(1);
+                }
+            }
+        }
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        if self
+            .view
+            .ivars()
+            .runtime
+            .borrow()
+            .focused_text_accessibility_snapshot()
+            .is_some()
+        {
+            return 1;
+        }
+        0
+    }
+
     pub(crate) fn dispatch_proof_inputs(
         &self,
         inputs: &[crate::NativeViewSmokeInput],
