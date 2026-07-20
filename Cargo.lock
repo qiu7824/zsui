@@ -4268,7 +4268,7 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
 name = "zsui"
-version = "0.2.0-preview.5"
+version = "0.2.0-preview.6"
 dependencies = [
  "accesskit",
  "accesskit_winit",

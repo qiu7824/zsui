@@ -1,6 +1,6 @@
 [package]
 name = "zsui"
-version = "0.2.0-preview.5"
+version = "0.2.0-preview.6"
 edition = "2021"
 license = "MPL-2.0"
 repository = "https://github.com/qiu7824/zsui"
@@ -9,7 +9,7 @@ readme = "README.md"
 documentation = "https://docs.rs/zsui"
 keywords = ["gui", "native", "desktop", "win32", "wayland"]
 categories = ["gui"]
-exclude = ["/videos/**"]
+exclude = ["/tools/**", "/videos/**"]
 
 [dependencies]
 arboard = { version = "3.4", optional = true }
