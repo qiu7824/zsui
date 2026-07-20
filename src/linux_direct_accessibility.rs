@@ -369,6 +369,7 @@ fn role_label(kind: ViewHitTargetKind) -> &'static str {
         Role::Row => "Row",
         Role::ColumnHeader => "Column header",
         Role::Dialog => "Dialog",
+        Role::Canvas => "Canvas",
         Role::ScrollView => "Scroll view",
         _ => "Control",
     }
@@ -376,6 +377,8 @@ fn role_label(kind: ViewHitTargetKind) -> &'static str {
 
 fn accesskit_role(kind: ViewHitTargetKind) -> Role {
     match kind {
+        #[cfg(feature = "canvas")]
+        ViewHitTargetKind::Canvas => Role::Canvas,
         ViewHitTargetKind::Button => Role::Button,
         #[cfg(feature = "label")]
         ViewHitTargetKind::NavigationViewToggle => Role::Button,
@@ -429,6 +432,10 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::ContentDialogScrim => Role::GenericContainer,
         #[cfg(feature = "dialog")]
         ViewHitTargetKind::ContentDialogButton { .. } => Role::Button,
+        #[cfg(feature = "flyout")]
+        ViewHitTargetKind::Flyout => Role::Dialog,
+        #[cfg(feature = "flyout")]
+        ViewHitTargetKind::FlyoutScrim => Role::GenericContainer,
         #[cfg(feature = "command-palette")]
         ViewHitTargetKind::CommandPalette => Role::SearchInput,
         #[cfg(feature = "command-palette")]
@@ -513,5 +520,16 @@ mod tests {
         .theme_mode(ZsuiThemeMode::Light);
         assert_eq!(accessible_label(&plan, target), "保存 / Save");
         assert_eq!(accesskit_role(target.kind), Role::Button);
+    }
+
+    #[cfg(all(feature = "canvas", feature = "flyout"))]
+    #[test]
+    fn overlay_and_canvas_targets_keep_platform_semantics() {
+        assert_eq!(accesskit_role(ViewHitTargetKind::Canvas), Role::Canvas);
+        assert_eq!(accesskit_role(ViewHitTargetKind::Flyout), Role::Dialog);
+        assert_eq!(
+            accesskit_role(ViewHitTargetKind::FlyoutScrim),
+            Role::GenericContainer
+        );
     }
 }
