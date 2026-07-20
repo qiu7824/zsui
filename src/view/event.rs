@@ -66,6 +66,10 @@ pub enum ViewEvent {
     Click {
         widget: WidgetId,
     },
+    #[cfg(feature = "canvas")]
+    CanvasPointer {
+        event: crate::ZsCanvasPointerEvent,
+    },
     TextChanged {
         widget: WidgetId,
         value: String,

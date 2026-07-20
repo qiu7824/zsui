@@ -2,6 +2,10 @@
 pub struct WindowsWin32ViewInputRoute {
     shared_runtime: crate::native::NativeViewInputRuntime,
     shared_text_drag_active: bool,
+    #[cfg(feature = "canvas")]
+    shared_canvas_pointer_drag_active: bool,
+    #[cfg(feature = "canvas")]
+    shared_canvas_pointer_drag_moved: bool,
     #[cfg(feature = "slider")]
     shared_slider_drag_active: bool,
     #[cfg(feature = "color-picker")]
@@ -90,6 +94,10 @@ impl WindowsWin32ViewInputRoute {
             view_suspended: shared_runtime.is_view_suspended(),
             shared_runtime,
             shared_text_drag_active: false,
+            #[cfg(feature = "canvas")]
+            shared_canvas_pointer_drag_active: false,
+            #[cfg(feature = "canvas")]
+            shared_canvas_pointer_drag_moved: false,
             #[cfg(feature = "slider")]
             shared_slider_drag_active: false,
             #[cfg(feature = "color-picker")]
@@ -133,6 +141,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub pointer_down_count: usize,
     pub pointer_move_count: usize,
     pub pointer_up_count: usize,
+    pub canvas_pointer_event_count: usize,
+    pub canvas_pointer_drag_count: usize,
+    pub canvas_pointer_drag_active: bool,
     pub pointer_visual_change_count: usize,
     pub event_count: usize,
     pub message_count: usize,
@@ -245,6 +256,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.pointer_down_count += next.pointer_down_count;
         self.pointer_move_count += next.pointer_move_count;
         self.pointer_up_count += next.pointer_up_count;
+        self.canvas_pointer_event_count += next.canvas_pointer_event_count;
+        self.canvas_pointer_drag_count += next.canvas_pointer_drag_count;
+        self.canvas_pointer_drag_active = next.canvas_pointer_drag_active;
         self.pointer_visual_change_count += next.pointer_visual_change_count;
         self.event_count += next.event_count;
         self.message_count += next.message_count;
@@ -570,12 +584,34 @@ pub fn dispatch_windows_win32_window_view_pointer_down(
     })
 }
 
+pub fn dispatch_windows_win32_window_view_pointer_down_with_button(
+    hwnd: HWND,
+    point: crate::Point,
+    button: crate::ZsPointerButton,
+    modifiers: crate::ZsPointerModifiers,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_pointer_down_with_button(point, button, modifiers)
+    })
+}
+
 pub fn dispatch_windows_win32_window_view_pointer_move(
     hwnd: HWND,
     point: crate::Point,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     track_windows_win32_shell_pointer_leave(hwnd);
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_pointer_move(point))
+}
+
+pub fn dispatch_windows_win32_window_view_pointer_move_with_modifiers(
+    hwnd: HWND,
+    point: crate::Point,
+    modifiers: crate::ZsPointerModifiers,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    track_windows_win32_shell_pointer_leave(hwnd);
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_pointer_move_with_modifiers(point, modifiers)
+    })
 }
 
 pub fn dispatch_windows_win32_window_view_pointer_leave(
@@ -589,6 +625,17 @@ pub fn dispatch_windows_win32_window_view_pointer_up(
     point: crate::Point,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_pointer_up(point))
+}
+
+pub fn dispatch_windows_win32_window_view_pointer_up_with_button(
+    hwnd: HWND,
+    point: crate::Point,
+    button: crate::ZsPointerButton,
+    modifiers: crate::ZsPointerModifiers,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_pointer_up_with_button(point, button, modifiers)
+    })
 }
 
 pub fn cancel_windows_win32_window_view_pointer_drag(

@@ -72,6 +72,8 @@ mod tests {
         SaveClicked,
         #[cfg(feature = "canvas")]
         CanvasClicked,
+        #[cfg(feature = "canvas")]
+        CanvasPointer(crate::ZsCanvasPointerEvent),
         #[cfg(feature = "textbox")]
         NameChanged(String),
         #[cfg(feature = "textbox")]
@@ -194,7 +196,8 @@ mod tests {
             .id(canvas_id)
             .width(Dp::new(180.0))
             .height(Dp::new(48.0))
-            .on_click(Msg::CanvasClicked);
+            .on_click(Msg::CanvasClicked)
+            .on_canvas_pointer(Msg::CanvasPointer);
         view.layout(&mut ViewLayoutCx::new(
             Rect {
                 x: 20,
@@ -229,7 +232,19 @@ mod tests {
 
         let mut events = ViewEventCx::new();
         view.event(&mut events, &ViewEvent::Click { widget: canvas_id });
-        assert_eq!(events.into_messages(), vec![Msg::CanvasClicked]);
+        let pointer = crate::ZsCanvasPointerEvent::new(
+            canvas_id,
+            crate::ZsCanvasPointerPhase::Pressed,
+            crate::ZsCanvasPoint::new(Dp::new(12.0), Dp::new(9.0)),
+            crate::ZsPointerButton::Secondary,
+            crate::ZsPointerModifiers::new(true, false, false, false),
+            true,
+        );
+        view.event(&mut events, &ViewEvent::CanvasPointer { event: pointer });
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::CanvasClicked, Msg::CanvasPointer(pointer)]
+        );
     }
 
     #[test]

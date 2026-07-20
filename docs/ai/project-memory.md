@@ -44,6 +44,11 @@ history remain authoritative for implementation status.
   coordinates and uses semantic color/text/icon roles. It must emit a balanced
   clip through the shared draw protocol and must not expose renderer or native
   handles to application code. Interaction returns through typed View messages.
+  `ZsCanvasPointerEvent` reports press/move/release/cancel phases, primary,
+  secondary, middle or auxiliary buttons, keyboard modifiers, local-DP
+  positions and an explicit inside flag. Pointer capture keeps outside drag
+  positions unbounded, cancellation follows capture/focus loss, and the
+  existing primary `on_click` activation remains source-compatible.
 - The public `crate::view` module is physically organized under `src/view/`:
   node, layout, event, focus, paint, overlay and widget-family source units
   share the existing module namespace so public paths and privacy stay stable.
@@ -189,6 +194,13 @@ history remain authoritative for implementation status.
   performs transient-overlay dismissal. The remaining Flyout target gates are
   Escape/light-dismiss/resize matrices, nested overlay stacking and explicit
   platform accessibility announcement/AT-SPI action evidence.
+- Canvas target proof uses `NativeViewSmokeInput::PointerDrag` rather than a
+  backend-only test hook. Win32, AppKit, Linux Direct and optional GTK lower
+  the same typed button/modifier sequence into the shared runtime; reports
+  count Canvas events and completed drag sequences separately. The local
+  Win32 Gallery catalog proof produced one primary activation plus five typed
+  Canvas events from primary click and secondary-button drag, with balanced
+  two-down/one-move/two-up input counts and no unhandled click.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB

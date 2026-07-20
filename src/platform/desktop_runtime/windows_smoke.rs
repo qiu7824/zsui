@@ -76,6 +76,8 @@ fn record_windows_win32_view_input_report(
     report.native_view_pointer_down_count += input.pointer_down_count;
     report.native_view_pointer_move_count += input.pointer_move_count;
     report.native_view_pointer_up_count += input.pointer_up_count;
+    report.native_view_canvas_pointer_event_count += input.canvas_pointer_event_count;
+    report.native_view_canvas_pointer_drag_count += input.canvas_pointer_drag_count;
     report.native_view_pointer_visual_change_count += input.pointer_visual_change_count;
     report.native_view_text_drag_count += input.text_drag_count;
     report.native_view_text_drag_scroll_count += input.text_drag_scroll_count;
@@ -156,8 +158,9 @@ fn post_windows_native_view_input(
 ) {
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-        WM_MOUSEWHEEL,
+        PostMessageW, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+        WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN,
+        WM_XBUTTONUP,
     };
 
     match input {
@@ -173,6 +176,28 @@ fn post_windows_native_view_input(
             PostMessageW(hwnd, WM_LBUTTONDOWN, 0, windows_lparam_from_point(*start));
             PostMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*end));
             PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*end));
+        },
+        NativeViewSmokeInput::PointerDrag {
+            start,
+            end,
+            button,
+            modifiers,
+        } => unsafe {
+            let (down, up) = match button {
+                crate::ZsPointerButton::Primary => (WM_LBUTTONDOWN, WM_LBUTTONUP),
+                crate::ZsPointerButton::Secondary => (WM_RBUTTONDOWN, WM_RBUTTONUP),
+                crate::ZsPointerButton::Middle => (WM_MBUTTONDOWN, WM_MBUTTONUP),
+                crate::ZsPointerButton::Auxiliary(_) => (WM_XBUTTONDOWN, WM_XBUTTONUP),
+            };
+            let wparam = windows_wparam_from_pointer(*button, *modifiers);
+            PostMessageW(hwnd, down, wparam, windows_lparam_from_point(*start));
+            PostMessageW(
+                hwnd,
+                WM_MOUSEMOVE,
+                wparam & 0xffff,
+                windows_lparam_from_point(*end),
+            );
+            PostMessageW(hwnd, up, wparam, windows_lparam_from_point(*end));
         },
         NativeViewSmokeInput::Text(text) => {
             for unit in text.encode_utf16() {
@@ -209,6 +234,24 @@ fn post_windows_native_view_input(
             PostMessageW(hwnd, WM_CLOSE, 0, 0);
         },
     }
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn windows_wparam_from_pointer(
+    button: crate::ZsPointerButton,
+    modifiers: crate::ZsPointerModifiers,
+) -> usize {
+    let mut value = 0_usize;
+    if modifiers.shift {
+        value |= 0x0004;
+    }
+    if modifiers.control {
+        value |= 0x0008;
+    }
+    if let crate::ZsPointerButton::Auxiliary(button) = button {
+        value |= (usize::from(button.max(1)) & 0xffff) << 16;
+    }
+    value
 }
 
 #[cfg(all(windows, feature = "windows-win32"))]
@@ -534,6 +577,15 @@ fn run_native_window_smoke_event_loop(
             record_windows_win32_view_input_report(&mut report, &input_report);
         }
     }
+    report.native_view_click_count += if options.native_view_inputs.is_empty() {
+        options.native_view_click_points.len()
+    } else {
+        options
+            .native_view_inputs
+            .iter()
+            .filter(|input| matches!(input, NativeViewSmokeInput::Click(_)))
+            .count()
+    };
 
     if options.require_visible_window && !report.visible_window_was_created() {
         return Err(ZsuiError::host(

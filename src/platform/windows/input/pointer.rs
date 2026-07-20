@@ -18,8 +18,26 @@ impl WindowsWin32ViewInputRoute {
         point: crate::Point,
         shift: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_pointer_down_with_button(
+            point,
+            crate::ZsPointerButton::Primary,
+            crate::ZsPointerModifiers {
+                shift,
+                ..crate::ZsPointerModifiers::default()
+            },
+        )
+    }
+
+    fn dispatch_pointer_down_with_button(
+        &mut self,
+        point: crate::Point,
+        button: crate::ZsPointerButton,
+        modifiers: crate::ZsPointerModifiers,
+    ) -> WindowsWin32ViewInputDispatchReport {
         let target = self.shared_target_at(point);
-        let report = self.shared_runtime.dispatch_pointer_down(point, shift);
+        let report = self
+            .shared_runtime
+            .dispatch_pointer_down_with_button(point, button, modifiers);
         self.adapt_shared_report(report, WindowsSharedInputKind::PointerDown(target))
     }
 
@@ -27,9 +45,21 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
         point: crate::Point,
     ) -> WindowsWin32ViewInputDispatchReport {
-        self.dispatch_pointer_move_at(point, std::time::Instant::now())
+        self.dispatch_pointer_move_with_modifiers(point, crate::ZsPointerModifiers::default())
     }
 
+    fn dispatch_pointer_move_with_modifiers(
+        &mut self,
+        point: crate::Point,
+        modifiers: crate::ZsPointerModifiers,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_pointer_move_with_modifiers(point, modifiers);
+        self.adapt_shared_report(report, WindowsSharedInputKind::PointerMove)
+    }
+
+    #[allow(dead_code)]
     fn dispatch_pointer_move_at(
         &mut self,
         point: crate::Point,
@@ -43,14 +73,29 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
         point: crate::Point,
     ) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_pointer_up_with_button(
+            point,
+            crate::ZsPointerButton::Primary,
+            crate::ZsPointerModifiers::default(),
+        )
+    }
+
+    fn dispatch_pointer_up_with_button(
+        &mut self,
+        point: crate::Point,
+        button: crate::ZsPointerButton,
+        modifiers: crate::ZsPointerModifiers,
+    ) -> WindowsWin32ViewInputDispatchReport {
         let target = self.shared_target_at(point);
-        let report = self.shared_runtime.dispatch_pointer_up(point);
+        let report = self
+            .shared_runtime
+            .dispatch_pointer_up_with_button(point, button, modifiers);
         self.adapt_shared_report(report, WindowsSharedInputKind::PointerUp(target))
     }
 
     fn cancel_pointer_drag(&mut self) -> WindowsWin32ViewInputDispatchReport {
         let report = self.shared_runtime.cancel_pointer_drag();
-        self.adapt_shared_report(report, WindowsSharedInputKind::PointerUp(None))
+        self.adapt_shared_report(report, WindowsSharedInputKind::PointerCancel)
     }
 
     fn dispatch_pointer_leave(&mut self) -> WindowsWin32ViewInputDispatchReport {

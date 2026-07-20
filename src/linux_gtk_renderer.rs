@@ -118,7 +118,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         });
     }
     let gesture = gtk::GestureClick::new();
-    gesture.set_button(gtk::gdk::BUTTON_PRIMARY);
+    gesture.set_button(0);
     gesture.connect_pressed({
         let application = window.application();
         let area = drawing_area.clone();
@@ -126,15 +126,13 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
         move |gesture, _press_count, x, y| {
-            let shift = gesture
-                .current_event_state()
-                .contains(gtk::gdk::ModifierType::SHIFT_MASK);
-            let report = runtime.borrow_mut().dispatch_pointer_down(
+            let report = runtime.borrow_mut().dispatch_pointer_down_with_button(
                 crate::Point {
                     x: gtk_coordinate(x),
                     y: gtk_coordinate(y),
                 },
-                shift,
+                linux_gtk_pointer_button(gesture.current_button()),
+                linux_gtk_pointer_modifiers(gesture.current_event_state()),
             );
             if report.handled {
                 area.grab_focus();
@@ -155,11 +153,15 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
-        move |_gesture, _press_count, x, y| {
-            let report = runtime.borrow_mut().dispatch_pointer_up(crate::Point {
-                x: gtk_coordinate(x),
-                y: gtk_coordinate(y),
-            });
+        move |gesture, _press_count, x, y| {
+            let report = runtime.borrow_mut().dispatch_pointer_up_with_button(
+                crate::Point {
+                    x: gtk_coordinate(x),
+                    y: gtk_coordinate(y),
+                },
+                linux_gtk_pointer_button(gesture.current_button()),
+                linux_gtk_pointer_modifiers(gesture.current_event_state()),
+            );
             if report.handled {
                 area.grab_focus();
             }
@@ -203,11 +205,14 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
         let runtime_timer = Rc::clone(&runtime_timer);
-        move |_motion, x, y| {
-            let report = runtime.borrow_mut().dispatch_pointer_move(crate::Point {
-                x: gtk_coordinate(x),
-                y: gtk_coordinate(y),
-            });
+        move |motion, x, y| {
+            let report = runtime.borrow_mut().dispatch_pointer_move_with_modifiers(
+                crate::Point {
+                    x: gtk_coordinate(x),
+                    y: gtk_coordinate(y),
+                },
+                linux_gtk_pointer_modifiers(motion.current_event_state()),
+            );
             if report.handled {
                 apply_linux_gtk_input_report(
                     report,
@@ -566,6 +571,28 @@ impl LinuxGtkDrawViewHost {
                     let up = self.runtime.borrow_mut().dispatch_pointer_up(*end);
                     dispatch(up, &mut reports);
                 }
+                crate::NativeViewSmokeInput::PointerDrag {
+                    start,
+                    end,
+                    button,
+                    modifiers,
+                } => {
+                    let down = self
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_down_with_button(*start, *button, *modifiers);
+                    dispatch(down, &mut reports);
+                    let moved = self
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_move_with_modifiers(*end, *modifiers);
+                    dispatch(moved, &mut reports);
+                    let up = self
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_up_with_button(*end, *button, *modifiers);
+                    dispatch(up, &mut reports);
+                }
                 crate::NativeViewSmokeInput::Text(text) => {
                     let report = self.runtime.borrow_mut().dispatch_ime_commit(text);
                     dispatch(report, &mut reports);
@@ -883,6 +910,25 @@ fn gtk_coordinate(value: f64) -> i32 {
     value
         .round()
         .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+}
+
+fn linux_gtk_pointer_modifiers(modifiers: gtk::gdk::ModifierType) -> crate::ZsPointerModifiers {
+    crate::ZsPointerModifiers::new(
+        modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK),
+        modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK),
+        modifiers.contains(gtk::gdk::ModifierType::ALT_MASK),
+        modifiers
+            .intersects(gtk::gdk::ModifierType::SUPER_MASK | gtk::gdk::ModifierType::META_MASK),
+    )
+}
+
+fn linux_gtk_pointer_button(button: u32) -> crate::ZsPointerButton {
+    match button {
+        gtk::gdk::BUTTON_PRIMARY => crate::ZsPointerButton::Primary,
+        gtk::gdk::BUTTON_SECONDARY => crate::ZsPointerButton::Secondary,
+        gtk::gdk::BUTTON_MIDDLE => crate::ZsPointerButton::Middle,
+        button => crate::ZsPointerButton::Auxiliary(button.min(u32::from(u16::MAX)) as u16),
+    }
 }
 
 fn linux_gtk_system_appearance() -> (bool, bool) {

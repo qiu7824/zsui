@@ -476,9 +476,10 @@ impl ApplicationHandler for LinuxDirectApp {
                     window.sync_accessibility();
                 }
                 if !menu_captures {
-                    let report = window
-                        .runtime
-                        .dispatch_pointer_move(window.content_point(point));
+                    let report = window.runtime.dispatch_pointer_move_with_modifiers(
+                        window.content_point(point),
+                        linux_pointer_modifiers(window.modifiers),
+                    );
                     window.apply_report(report, event_loop);
                 }
             }
@@ -486,39 +487,43 @@ impl ApplicationHandler for LinuxDirectApp {
                 let report = window.runtime.dispatch_pointer_leave();
                 window.apply_report(report, event_loop);
             }
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Left,
-                ..
-            } => {
+            WindowEvent::MouseInput { state, button, .. } => {
                 let cursor = window.cursor;
+                let pointer_button = linux_pointer_button(button);
+                let primary = pointer_button == crate::ZsPointerButton::Primary;
                 if state == ElementState::Pressed {
-                    let menu_consumed = window
-                        .menu_surface
-                        .as_mut()
-                        .is_some_and(|menu| menu.pointer_down(cursor));
+                    let menu_consumed = primary
+                        && window
+                            .menu_surface
+                            .as_mut()
+                            .is_some_and(|menu| menu.pointer_down(cursor));
                     if menu_consumed {
                         window.window.request_redraw();
                     } else {
-                        window.pointer_down = true;
-                        let report = window.runtime.dispatch_pointer_down(
+                        let report = window.runtime.dispatch_pointer_down_with_button(
                             window.content_point(cursor),
-                            window.modifiers.shift_key(),
+                            pointer_button,
+                            linux_pointer_modifiers(window.modifiers),
                         );
                         window.apply_report(report, event_loop);
                     }
                 } else {
-                    window.pointer_down = false;
-                    let menu_result = window
-                        .menu_surface
-                        .as_mut()
-                        .map(|menu| menu.pointer_up(cursor, &window.draw_text_context))
-                        .unwrap_or(crate::linux_direct_menu::LinuxMenuInputResult::Ignored);
+                    let menu_result = if primary {
+                        window
+                            .menu_surface
+                            .as_mut()
+                            .map(|menu| menu.pointer_up(cursor, &window.draw_text_context))
+                            .unwrap_or(crate::linux_direct_menu::LinuxMenuInputResult::Ignored)
+                    } else {
+                        crate::linux_direct_menu::LinuxMenuInputResult::Ignored
+                    };
                     match menu_result {
                         crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
-                            let report = window
-                                .runtime
-                                .dispatch_pointer_up(window.content_point(cursor));
+                            let report = window.runtime.dispatch_pointer_up_with_button(
+                                window.content_point(cursor),
+                                pointer_button,
+                                linux_pointer_modifiers(window.modifiers),
+                            );
                             window.apply_report(report, event_loop);
                         }
                         crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
@@ -678,7 +683,6 @@ struct LinuxDirectWindow {
     physical_size: PhysicalSize<u32>,
     cursor: Point,
     modifiers: ModifiersState,
-    pointer_down: bool,
     window_focused: bool,
     presented_once: bool,
     theme: WinitTheme,
@@ -751,7 +755,6 @@ impl LinuxDirectWindow {
             physical_size: PhysicalSize::new(1, 1),
             cursor: Point { x: 0, y: 0 },
             modifiers: ModifiersState::default(),
-            pointer_down: false,
             window_focused: false,
             presented_once: false,
             theme,
@@ -921,6 +924,27 @@ impl LinuxDirectWindow {
                 let report = self.runtime.dispatch_pointer_move(*end);
                 reports.push(self.apply_report(report, event_loop));
                 let report = self.runtime.dispatch_pointer_up(*end);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::PointerDrag {
+                start,
+                end,
+                button,
+                modifiers,
+            } => {
+                self.cursor = *start;
+                let report = self
+                    .runtime
+                    .dispatch_pointer_down_with_button(*start, *button, *modifiers);
+                reports.push(self.apply_report(report, event_loop));
+                self.cursor = *end;
+                let report = self
+                    .runtime
+                    .dispatch_pointer_move_with_modifiers(*end, *modifiers);
+                reports.push(self.apply_report(report, event_loop));
+                let report = self
+                    .runtime
+                    .dispatch_pointer_up_with_button(*end, *button, *modifiers);
                 reports.push(self.apply_report(report, event_loop));
             }
             crate::NativeViewSmokeInput::Text(text) => {
@@ -1271,6 +1295,26 @@ fn accelerator_matches(accelerator: ZsAccelerator, key: &Key, modifiers: Modifie
         | (ZsAcceleratorKey::PageUp, Key::Named(NamedKey::PageUp))
         | (ZsAcceleratorKey::PageDown, Key::Named(NamedKey::PageDown)) => true,
         _ => false,
+    }
+}
+
+fn linux_pointer_modifiers(modifiers: ModifiersState) -> crate::ZsPointerModifiers {
+    crate::ZsPointerModifiers::new(
+        modifiers.shift_key(),
+        modifiers.control_key(),
+        modifiers.alt_key(),
+        modifiers.super_key(),
+    )
+}
+
+fn linux_pointer_button(button: MouseButton) -> crate::ZsPointerButton {
+    match button {
+        MouseButton::Left => crate::ZsPointerButton::Primary,
+        MouseButton::Right => crate::ZsPointerButton::Secondary,
+        MouseButton::Middle => crate::ZsPointerButton::Middle,
+        MouseButton::Back => crate::ZsPointerButton::Auxiliary(4),
+        MouseButton::Forward => crate::ZsPointerButton::Auxiliary(5),
+        MouseButton::Other(button) => crate::ZsPointerButton::Auxiliary(button),
     }
 }
 

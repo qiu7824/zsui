@@ -515,54 +515,37 @@ define_class!(
 
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
-            let location = self.convertPoint_fromView(event.locationInWindow(), None);
-            let report = self
-                .ivars()
-                .runtime
-                .borrow_mut()
-                .dispatch_pointer_down(
-                    crate::Point {
-                        x: appkit_coordinate(location.x),
-                        y: appkit_coordinate(location.y),
-                    },
-                    event
-                        .modifierFlags()
-                        .contains(NSEventModifierFlags::Shift),
-                );
-            if report.handled {
-                if let Some(window) = self.window() {
-                    window.makeFirstResponder(Some(self));
-                }
-            }
-            self.apply_input_report(report);
+            self.dispatch_pointer_down_event(event, crate::ZsPointerButton::Primary);
+        }
+
+        #[unsafe(method(rightMouseDown:))]
+        fn right_mouse_down(&self, event: &NSEvent) {
+            self.dispatch_pointer_down_event(event, crate::ZsPointerButton::Secondary);
+        }
+
+        #[unsafe(method(otherMouseDown:))]
+        fn other_mouse_down(&self, event: &NSEvent) {
+            self.dispatch_pointer_down_event(event, appkit_other_pointer_button(event));
         }
 
         #[unsafe(method(mouseDragged:))]
         fn mouse_dragged(&self, event: &NSEvent) {
-            let location = self.convertPoint_fromView(event.locationInWindow(), None);
-            let report = self
-                .ivars()
-                .runtime
-                .borrow_mut()
-                .dispatch_pointer_move(crate::Point {
-                    x: appkit_coordinate(location.x),
-                    y: appkit_coordinate(location.y),
-                });
-            self.apply_input_report(report);
+            self.dispatch_pointer_move_event(event);
+        }
+
+        #[unsafe(method(rightMouseDragged:))]
+        fn right_mouse_dragged(&self, event: &NSEvent) {
+            self.dispatch_pointer_move_event(event);
+        }
+
+        #[unsafe(method(otherMouseDragged:))]
+        fn other_mouse_dragged(&self, event: &NSEvent) {
+            self.dispatch_pointer_move_event(event);
         }
 
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, event: &NSEvent) {
-            let location = self.convertPoint_fromView(event.locationInWindow(), None);
-            let report = self
-                .ivars()
-                .runtime
-                .borrow_mut()
-                .dispatch_pointer_move(crate::Point {
-                    x: appkit_coordinate(location.x),
-                    y: appkit_coordinate(location.y),
-                });
-            self.apply_input_report(report);
+            self.dispatch_pointer_move_event(event);
         }
 
         #[unsafe(method(mouseExited:))]
@@ -573,21 +556,17 @@ define_class!(
 
         #[unsafe(method(mouseUp:))]
         fn mouse_up(&self, event: &NSEvent) {
-            let location = self.convertPoint_fromView(event.locationInWindow(), None);
-            let report = self
-                .ivars()
-                .runtime
-                .borrow_mut()
-                .dispatch_pointer_up(crate::Point {
-                    x: appkit_coordinate(location.x),
-                    y: appkit_coordinate(location.y),
-                });
-            if report.handled {
-                if let Some(window) = self.window() {
-                    window.makeFirstResponder(Some(self));
-                }
-            }
-            self.apply_input_report(report);
+            self.dispatch_pointer_up_event(event, crate::ZsPointerButton::Primary);
+        }
+
+        #[unsafe(method(rightMouseUp:))]
+        fn right_mouse_up(&self, event: &NSEvent) {
+            self.dispatch_pointer_up_event(event, crate::ZsPointerButton::Secondary);
+        }
+
+        #[unsafe(method(otherMouseUp:))]
+        fn other_mouse_up(&self, event: &NSEvent) {
+            self.dispatch_pointer_up_event(event, appkit_other_pointer_button(event));
         }
 
         #[unsafe(method(keyDown:))]
@@ -719,6 +698,62 @@ define_class!(
 );
 
 impl ZsuiAppKitDrawView {
+    fn pointer_point(&self, event: &NSEvent) -> crate::Point {
+        let location = self.convertPoint_fromView(event.locationInWindow(), None);
+        crate::Point {
+            x: appkit_coordinate(location.x),
+            y: appkit_coordinate(location.y),
+        }
+    }
+
+    fn dispatch_pointer_down_event(&self, event: &NSEvent, button: crate::ZsPointerButton) {
+        let report = self
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_pointer_down_with_button(
+                self.pointer_point(event),
+                button,
+                appkit_pointer_modifiers(event),
+            );
+        if report.handled {
+            if let Some(window) = self.window() {
+                window.makeFirstResponder(Some(self));
+            }
+        }
+        self.apply_input_report(report);
+    }
+
+    fn dispatch_pointer_move_event(&self, event: &NSEvent) {
+        let report = self
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_pointer_move_with_modifiers(
+                self.pointer_point(event),
+                appkit_pointer_modifiers(event),
+            );
+        self.apply_input_report(report);
+    }
+
+    fn dispatch_pointer_up_event(&self, event: &NSEvent, button: crate::ZsPointerButton) {
+        let report = self
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_pointer_up_with_button(
+                self.pointer_point(event),
+                button,
+                appkit_pointer_modifiers(event),
+            );
+        if report.handled {
+            if let Some(window) = self.window() {
+                window.makeFirstResponder(Some(self));
+            }
+        }
+        self.apply_input_report(report);
+    }
+
     fn apply_input_report(
         &self,
         mut report: crate::native::NativeViewInputDispatchReport,
@@ -815,6 +850,23 @@ impl ZsuiAppKitDrawView {
     }
 }
 
+fn appkit_pointer_modifiers(event: &NSEvent) -> crate::ZsPointerModifiers {
+    let flags = event.modifierFlags();
+    crate::ZsPointerModifiers::new(
+        flags.contains(NSEventModifierFlags::Shift),
+        flags.contains(NSEventModifierFlags::Control),
+        flags.contains(NSEventModifierFlags::Option),
+        flags.contains(NSEventModifierFlags::Command),
+    )
+}
+
+fn appkit_other_pointer_button(event: &NSEvent) -> crate::ZsPointerButton {
+    match event.buttonNumber() {
+        2 => crate::ZsPointerButton::Middle,
+        button => crate::ZsPointerButton::Auxiliary(button.max(0) as u16),
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct MacosAppKitDrawViewHost {
     view: Retained<ZsuiAppKitDrawView>,
@@ -885,6 +937,34 @@ impl MacosAppKitDrawViewHost {
                         .runtime
                         .borrow_mut()
                         .dispatch_pointer_up(*end);
+                    dispatch(up, &mut reports);
+                }
+                crate::NativeViewSmokeInput::PointerDrag {
+                    start,
+                    end,
+                    button,
+                    modifiers,
+                } => {
+                    let down = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_down_with_button(*start, *button, *modifiers);
+                    dispatch(down, &mut reports);
+                    let moved = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_move_with_modifiers(*end, *modifiers);
+                    dispatch(moved, &mut reports);
+                    let up = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_pointer_up_with_button(*end, *button, *modifiers);
                     dispatch(up, &mut reports);
                 }
                 crate::NativeViewSmokeInput::Text(text) => {

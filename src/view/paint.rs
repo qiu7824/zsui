@@ -1223,6 +1223,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message);
                     }
                 }
+                #[cfg(feature = "canvas")]
+                (
+                    ViewNodeKind::Canvas { on_pointer, .. },
+                    ViewEvent::CanvasPointer { event },
+                ) => {
+                    if let Some(message) = on_pointer {
+                        cx.emit(message(*event));
+                    }
+                }
                 #[cfg(feature = "toggle-button")]
                 (
                     ViewNodeKind::ToggleButton {

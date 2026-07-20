@@ -1446,6 +1446,8 @@ mod tests {
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
+            native_view_canvas_pointer_event_count: 0,
+            native_view_canvas_pointer_drag_count: 0,
             native_view_pointer_visual_change_count: 2,
             native_view_text_drag_count: 0,
             native_view_text_drag_scroll_count: 0,

@@ -178,6 +178,13 @@ jobs:
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"flyout", "flyout_scrim"} <= roles
+              if stem == "gallery-catalog-light":
+                  assert runtime["native_view_pointer_down_count"] == 2
+                  assert runtime["native_view_pointer_move_count"] == 1
+                  assert runtime["native_view_pointer_up_count"] == 2
+                  assert runtime["native_view_canvas_pointer_event_count"] == 5
+                  assert runtime["native_view_canvas_pointer_drag_count"] == 1
+                  assert runtime["native_view_unhandled_click_count"] == 0
 
       - name: Upload AppKit proof
         if: always()
@@ -398,6 +405,13 @@ jobs:
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"flyout", "flyout_scrim"} <= roles
+              if stem == "gallery-catalog-light":
+                  assert runtime["native_view_pointer_down_count"] == 2
+                  assert runtime["native_view_pointer_move_count"] == 1
+                  assert runtime["native_view_pointer_up_count"] == 2
+                  assert runtime["native_view_canvas_pointer_event_count"] == 5
+                  assert runtime["native_view_canvas_pointer_drag_count"] == 1
+                  assert runtime["native_view_unhandled_click_count"] == 0
 
           lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
           lite_png = lite_root / "notepad-interaction.png"

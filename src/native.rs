@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "combo")]
 use std::time::{Duration, Instant};
@@ -86,6 +86,35 @@ use crate::{
     },
     window::{Window, WindowSpec},
 };
+
+/// A backend-neutral pointer button used by retained View input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZsPointerButton {
+    Primary,
+    Secondary,
+    Middle,
+    Auxiliary(u16),
+}
+
+/// Keyboard modifiers sampled with a pointer event.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsPointerModifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub alt: bool,
+    pub super_key: bool,
+}
+
+impl ZsPointerModifiers {
+    pub const fn new(shift: bool, control: bool, alt: bool, super_key: bool) -> Self {
+        Self {
+            shift,
+            control,
+            alt,
+            super_key,
+        }
+    }
+}
 
 pub fn native_window(title: impl Into<String>) -> NativeWindowBuilder {
     NativeWindowBuilder::new(title)
@@ -717,10 +746,22 @@ impl NativeViewKey {
 pub enum NativeViewSmokeInput {
     Move(Point),
     Click(Point),
-    Drag { start: Point, end: Point },
+    Drag {
+        start: Point,
+        end: Point,
+    },
+    PointerDrag {
+        start: Point,
+        end: Point,
+        button: ZsPointerButton,
+        modifiers: ZsPointerModifiers,
+    },
     Text(String),
     KeyDown(NativeViewKey),
-    Scroll { point: Point, delta_y: i32 },
+    Scroll {
+        point: Point,
+        delta_y: i32,
+    },
     WindowCloseRequest,
 }
 
@@ -808,6 +849,23 @@ impl NativeWindowSmokeRunOptions {
     pub fn native_view_drag(mut self, start: Point, end: Point) -> Self {
         self.native_view_inputs
             .push(NativeViewSmokeInput::Drag { start, end });
+        self
+    }
+
+    pub fn native_view_pointer_drag(
+        mut self,
+        start: Point,
+        end: Point,
+        button: ZsPointerButton,
+        modifiers: ZsPointerModifiers,
+    ) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::PointerDrag {
+                start,
+                end,
+                button,
+                modifiers,
+            });
         self
     }
 
@@ -953,6 +1011,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_pointer_down_count: usize,
     pub native_view_pointer_move_count: usize,
     pub native_view_pointer_up_count: usize,
+    pub native_view_canvas_pointer_event_count: usize,
+    pub native_view_canvas_pointer_drag_count: usize,
     pub native_view_pointer_visual_change_count: usize,
     pub native_view_text_drag_count: usize,
     pub native_view_text_drag_scroll_count: usize,
@@ -1101,6 +1161,8 @@ impl NativeWindowSmokeRunReport {
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
             native_view_pointer_up_count: 0,
+            native_view_canvas_pointer_event_count: 0,
+            native_view_canvas_pointer_drag_count: 0,
             native_view_pointer_visual_change_count: 0,
             native_view_text_drag_count: 0,
             native_view_text_drag_scroll_count: 0,
@@ -1206,6 +1268,8 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(feature = "textbox")]
     processing_text_edit_commands: bool,
     text_drag: Option<NativeTextDragState>,
+    #[cfg(feature = "canvas")]
+    canvas_pointer: Option<NativeCanvasPointerCapture>,
     #[cfg(feature = "combo")]
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
@@ -1277,6 +1341,15 @@ enum NativeViewImeText {
     Plain(String),
     #[cfg(feature = "password-box")]
     Secure(crate::ZsPassword),
+}
+
+#[cfg(feature = "canvas")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeCanvasPointerCapture {
+    widget: crate::WidgetId,
+    bounds: Rect,
+    button: ZsPointerButton,
+    last_point: Point,
 }
 
 impl NativeViewImeText {
@@ -1371,6 +1444,12 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub text_undo_count: usize,
     pub text_drag_active: bool,
     pub text_drag_scroll_count: usize,
+    #[cfg(feature = "canvas")]
+    pub canvas_pointer_event_count: usize,
+    #[cfg(feature = "canvas")]
+    pub canvas_pointer_drag_active: bool,
+    #[cfg(feature = "canvas")]
+    pub canvas_pointer_button: Option<ZsPointerButton>,
     #[cfg(feature = "slider")]
     pub slider_value: Option<f32>,
     #[cfg(feature = "slider")]
@@ -1513,6 +1592,8 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "textbox")]
             processing_text_edit_commands: false,
             text_drag: None,
+            #[cfg(feature = "canvas")]
+            canvas_pointer: None,
             #[cfg(feature = "combo")]
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
@@ -2184,10 +2265,34 @@ impl NativeViewInputRuntime {
         point: Point,
         shift: bool,
     ) -> NativeViewInputDispatchReport {
+        self.dispatch_pointer_down_with_button(
+            point,
+            ZsPointerButton::Primary,
+            ZsPointerModifiers {
+                shift,
+                ..ZsPointerModifiers::default()
+            },
+        )
+    }
+
+    pub(crate) fn dispatch_pointer_down_with_button(
+        &mut self,
+        point: Point,
+        button: ZsPointerButton,
+        modifiers: ZsPointerModifiers,
+    ) -> NativeViewInputDispatchReport {
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "canvas")]
+        if let Some(capture) = self.canvas_pointer {
+            report.handled = true;
+            report.focused_widget = self.focused_widget.map(|widget| widget.0);
+            report.canvas_pointer_drag_active = true;
+            report.canvas_pointer_button = Some(capture.button);
+            return report;
+        }
         #[cfg(feature = "tooltip")]
         if self.tooltip.dismiss() {
             report.handled = true;
@@ -2232,12 +2337,46 @@ impl NativeViewInputRuntime {
         ))]
         self.update_pointer_visual_state(
             target.and_then(native_pointer_visual_key),
-            target.and_then(native_pointer_visual_key),
+            (button == ZsPointerButton::Primary)
+                .then(|| target.and_then(native_pointer_visual_key))
+                .flatten(),
             &mut report,
         );
         let Some(target) = target else {
             return report;
         };
+        #[cfg(feature = "canvas")]
+        if target.kind == crate::ViewHitTargetKind::Canvas {
+            self.text_drag = None;
+            self.focus_target(target, &mut report);
+            self.canvas_pointer = Some(NativeCanvasPointerCapture {
+                widget: target.widget,
+                bounds: target.bounds,
+                button,
+                last_point: point,
+            });
+            report.handled = true;
+            report.canvas_pointer_event_count = 1;
+            report.canvas_pointer_drag_active = true;
+            report.canvas_pointer_button = Some(button);
+            return self.dispatch_view_event(
+                ViewEvent::CanvasPointer {
+                    event: crate::canvas::zs_canvas_pointer_event(
+                        target.widget,
+                        target.bounds,
+                        point,
+                        self.dpi,
+                        crate::ZsCanvasPointerPhase::Pressed,
+                        button,
+                        modifiers,
+                    ),
+                },
+                report,
+            );
+        }
+        if button != ZsPointerButton::Primary {
+            return report;
+        }
         #[cfg(feature = "password-box")]
         if target.kind == crate::ViewHitTargetKind::PasswordBoxReveal {
             self.text_drag = None;
@@ -2304,7 +2443,11 @@ impl NativeViewInputRuntime {
             self.dpi,
             &self.text_shaping,
         );
-        let anchor = if shift { state.selection.anchor } else { index };
+        let anchor = if modifiers.shift {
+            state.selection.anchor
+        } else {
+            index
+        };
         let edit = set_pointer_selection(&value, &mut state.selection, anchor, index);
         state.preferred_visual_x = None;
         state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
@@ -2354,7 +2497,15 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_pointer_move(&mut self, point: Point) -> NativeViewInputDispatchReport {
-        self.dispatch_pointer_move_at(point, std::time::Instant::now())
+        self.dispatch_pointer_move_with_modifiers(point, ZsPointerModifiers::default())
+    }
+
+    pub(crate) fn dispatch_pointer_move_with_modifiers(
+        &mut self,
+        point: Point,
+        modifiers: ZsPointerModifiers,
+    ) -> NativeViewInputDispatchReport {
+        self.dispatch_pointer_move_at_with_modifiers(point, std::time::Instant::now(), modifiers)
     }
 
     pub(crate) fn dispatch_pointer_move_at(
@@ -2362,6 +2513,17 @@ impl NativeViewInputRuntime {
         point: Point,
         now: std::time::Instant,
     ) -> NativeViewInputDispatchReport {
+        self.dispatch_pointer_move_at_with_modifiers(point, now, ZsPointerModifiers::default())
+    }
+
+    pub(crate) fn dispatch_pointer_move_at_with_modifiers(
+        &mut self,
+        point: Point,
+        now: std::time::Instant,
+        modifiers: ZsPointerModifiers,
+    ) -> NativeViewInputDispatchReport {
+        #[cfg(not(feature = "canvas"))]
+        let _ = modifiers;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
@@ -2401,6 +2563,36 @@ impl NativeViewInputRuntime {
                 .and_then(|plan| plan.hit_target_at(point))
                 .and_then(native_pointer_visual_key);
             self.update_pointer_visual_state(hovered, self.pointer_pressed, &mut report);
+        }
+        #[cfg(feature = "canvas")]
+        if let Some(mut capture) = self.canvas_pointer {
+            let bounds = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(capture.widget))
+                .filter(|target| target.kind == crate::ViewHitTargetKind::Canvas)
+                .map(|target| target.bounds)
+                .unwrap_or(capture.bounds);
+            capture.bounds = bounds;
+            capture.last_point = point;
+            self.canvas_pointer = Some(capture);
+            report.handled = true;
+            report.canvas_pointer_event_count = 1;
+            report.canvas_pointer_drag_active = true;
+            report.canvas_pointer_button = Some(capture.button);
+            return self.dispatch_view_event(
+                ViewEvent::CanvasPointer {
+                    event: crate::canvas::zs_canvas_pointer_event(
+                        capture.widget,
+                        bounds,
+                        point,
+                        self.dpi,
+                        crate::ZsCanvasPointerPhase::Moved,
+                        capture.button,
+                        modifiers,
+                    ),
+                },
+                report,
+            );
         }
         #[cfg(feature = "password-box")]
         if let Some(widget) = self.password_peek {
@@ -2533,6 +2725,105 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn dispatch_pointer_up(&mut self, point: Point) -> NativeViewInputDispatchReport {
+        self.dispatch_pointer_up_with_button(
+            point,
+            ZsPointerButton::Primary,
+            ZsPointerModifiers::default(),
+        )
+    }
+
+    pub(crate) fn dispatch_pointer_up_with_button(
+        &mut self,
+        point: Point,
+        button: ZsPointerButton,
+        modifiers: ZsPointerModifiers,
+    ) -> NativeViewInputDispatchReport {
+        #[cfg(not(feature = "canvas"))]
+        let _ = modifiers;
+        #[cfg(feature = "canvas")]
+        if let Some(capture) = self.canvas_pointer {
+            if capture.button != button {
+                return NativeViewInputDispatchReport {
+                    hit_target_count: self.hit_target_count(),
+                    focused_widget: self.focused_widget.map(|widget| widget.0),
+                    canvas_pointer_drag_active: true,
+                    canvas_pointer_button: Some(capture.button),
+                    ..NativeViewInputDispatchReport::default()
+                };
+            }
+            self.canvas_pointer = None;
+            let target = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(capture.widget))
+                .filter(|target| target.kind == crate::ViewHitTargetKind::Canvas);
+            let bounds = target.map(|target| target.bounds).unwrap_or(capture.bounds);
+            let should_click = button == ZsPointerButton::Primary
+                && target.is_some_and(|target| target.bounds.contains(point));
+            #[allow(unused_mut)]
+            let mut report = NativeViewInputDispatchReport {
+                handled: true,
+                hit_target_count: self.hit_target_count(),
+                focused_widget: self.focused_widget.map(|widget| widget.0),
+                canvas_pointer_event_count: 1,
+                canvas_pointer_drag_active: false,
+                canvas_pointer_button: Some(button),
+                ..NativeViewInputDispatchReport::default()
+            };
+            #[cfg(any(
+                feature = "auto-suggest",
+                feature = "button",
+                feature = "breadcrumb",
+                feature = "color-picker",
+                feature = "command-palette",
+                feature = "date-picker",
+                feature = "dialog",
+                feature = "grid-view",
+                feature = "info-bar",
+                feature = "teaching-tip",
+                feature = "password-box",
+                feature = "tabs",
+                feature = "time-picker",
+                feature = "toast",
+                feature = "toggle-button",
+                feature = "table",
+                feature = "tree"
+            ))]
+            self.update_pointer_visual_state(
+                target.and_then(native_pointer_visual_key),
+                None,
+                &mut report,
+            );
+            let report = self.dispatch_view_event(
+                ViewEvent::CanvasPointer {
+                    event: crate::canvas::zs_canvas_pointer_event(
+                        capture.widget,
+                        bounds,
+                        point,
+                        self.dpi,
+                        crate::ZsCanvasPointerPhase::Released,
+                        button,
+                        modifiers,
+                    ),
+                },
+                report,
+            );
+            if should_click {
+                return self.dispatch_view_event(
+                    ViewEvent::Click {
+                        widget: capture.widget,
+                    },
+                    report,
+                );
+            }
+            return report;
+        }
+        if button != ZsPointerButton::Primary {
+            return NativeViewInputDispatchReport {
+                hit_target_count: self.hit_target_count(),
+                focused_widget: self.focused_widget.map(|widget| widget.0),
+                ..NativeViewInputDispatchReport::default()
+            };
+        }
         #[cfg(feature = "password-box")]
         if self.password_peek.take().is_some() {
             let mut report = NativeViewInputDispatchReport {
@@ -3039,7 +3330,11 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn cancel_pointer_drag(&mut self) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "canvas")]
+        let canvas_pointer = self.canvas_pointer.take();
         let had_drag = self.text_drag.take().is_some();
+        #[cfg(feature = "canvas")]
+        let had_drag = had_drag | canvas_pointer.is_some();
         #[cfg(feature = "password-box")]
         let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
@@ -3051,6 +3346,12 @@ impl NativeViewInputRuntime {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             text_drag_active: false,
+            #[cfg(feature = "canvas")]
+            canvas_pointer_event_count: usize::from(canvas_pointer.is_some()),
+            #[cfg(feature = "canvas")]
+            canvas_pointer_drag_active: false,
+            #[cfg(feature = "canvas")]
+            canvas_pointer_button: canvas_pointer.map(|capture| capture.button),
             #[cfg(feature = "slider")]
             slider_drag_active: false,
             #[cfg(feature = "color-picker")]
@@ -3078,6 +3379,29 @@ impl NativeViewInputRuntime {
         ))]
         self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
         self.populate_text_report(&mut report);
+        #[cfg(feature = "canvas")]
+        if let Some(capture) = canvas_pointer {
+            let bounds = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(capture.widget))
+                .filter(|target| target.kind == crate::ViewHitTargetKind::Canvas)
+                .map(|target| target.bounds)
+                .unwrap_or(capture.bounds);
+            return self.dispatch_view_event(
+                ViewEvent::CanvasPointer {
+                    event: crate::canvas::zs_canvas_pointer_event(
+                        capture.widget,
+                        bounds,
+                        capture.last_point,
+                        self.dpi,
+                        crate::ZsCanvasPointerPhase::Cancelled,
+                        capture.button,
+                        ZsPointerModifiers::default(),
+                    ),
+                },
+                report,
+            );
+        }
         report
     }
 
@@ -4805,13 +5129,8 @@ impl NativeViewInputRuntime {
     }
 
     pub(crate) fn blur_focus(&mut self) -> NativeViewInputDispatchReport {
-        let mut report = self.dismiss_popup_overlays_except(
-            None,
-            NativeViewInputDispatchReport {
-                hit_target_count: self.hit_target_count(),
-                ..NativeViewInputDispatchReport::default()
-            },
-        );
+        let pointer_report = self.cancel_pointer_drag();
+        let mut report = self.dismiss_popup_overlays_except(None, pointer_report);
         #[cfg(feature = "tooltip")]
         if self.tooltip.dismiss() {
             report.handled = true;
@@ -6980,7 +7299,7 @@ pub(crate) fn record_native_view_input_reports(
     for input in inputs {
         let dispatch_count = match input {
             NativeViewSmokeInput::Click(_) => 2,
-            NativeViewSmokeInput::Drag { .. } => 3,
+            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. } => 3,
             _ => 1,
         };
         let end = dispatch_index
@@ -6989,6 +7308,25 @@ pub(crate) fn record_native_view_input_reports(
         let input_dispatches = &dispatches[dispatch_index..end];
         dispatch_index = end;
         let handled = input_dispatches.iter().any(|dispatch| dispatch.handled);
+        #[cfg(feature = "canvas")]
+        {
+            let event_count = input_dispatches
+                .iter()
+                .map(|dispatch| dispatch.canvas_pointer_event_count)
+                .sum::<usize>();
+            report.native_view_canvas_pointer_event_count += event_count;
+            if event_count >= 3
+                && matches!(
+                    input,
+                    NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. }
+                )
+                && input_dispatches
+                    .last()
+                    .is_some_and(|dispatch| !dispatch.canvas_pointer_drag_active)
+            {
+                report.native_view_canvas_pointer_drag_count += 1;
+            }
+        }
 
         match input {
             NativeViewSmokeInput::Move(_) => report.native_view_pointer_move_count += 1,
@@ -7006,6 +7344,11 @@ pub(crate) fn record_native_view_input_reports(
                 }) {
                     report.native_view_text_drag_count += 1;
                 }
+            }
+            NativeViewSmokeInput::PointerDrag { .. } => {
+                report.native_view_pointer_down_count += 1;
+                report.native_view_pointer_move_count += 1;
+                report.native_view_pointer_up_count += 1;
             }
             NativeViewSmokeInput::Text(_) => {
                 report.native_view_text_input_count += usize::from(handled);
@@ -7051,6 +7394,7 @@ pub(crate) fn record_native_view_input_reports(
                 NativeViewSmokeInput::Move(_) => "move",
                 NativeViewSmokeInput::Click(_) => "click",
                 NativeViewSmokeInput::Drag { .. } => "drag",
+                NativeViewSmokeInput::PointerDrag { .. } => "pointer_drag",
                 NativeViewSmokeInput::Text(_) => "text",
                 NativeViewSmokeInput::KeyDown(_) => "key_down",
                 NativeViewSmokeInput::Scroll { .. } => "scroll",
@@ -8815,6 +9159,172 @@ mod tests {
                 matches!(
                     command,
                     crate::NativeDrawCommand::Text(text) if text.text == "Canvas: 2"
+                )
+            })
+        }));
+    }
+
+    #[cfg(feature = "canvas")]
+    #[test]
+    fn native_view_runtime_captures_typed_canvas_drag_buttons_and_cancellation() {
+        #[derive(Clone, Copy)]
+        struct State {
+            pointer_events: usize,
+            clicks: usize,
+            last: Option<crate::ZsCanvasPointerEvent>,
+        }
+
+        #[derive(Clone)]
+        enum Msg {
+            Pointer(crate::ZsCanvasPointerEvent),
+            Click,
+        }
+
+        let canvas_id = crate::WidgetId::new(720);
+        let builder = native_window("Canvas pointer capture")
+            .size(240, 120)
+            .stateful_view(
+                State {
+                    pointer_events: 0,
+                    clicks: 0,
+                    last: None,
+                },
+                move |state| {
+                    let last = state.last.map_or_else(
+                        || "none".to_string(),
+                        |event| {
+                            format!(
+                                "{:?} x={:.1} inside={}",
+                                event.phase, event.position.x.0, event.inside
+                            )
+                        },
+                    );
+                    crate::canvas(
+                        crate::ZsCanvasScene::new().with(crate::ZsCanvasPrimitive::text(
+                            format!(
+                                "events={} clicks={} {last}",
+                                state.pointer_events, state.clicks
+                            ),
+                            crate::ZsCanvasRect::new(
+                                crate::Dp::new(4.0),
+                                crate::Dp::new(4.0),
+                                crate::Dp::new(220.0),
+                                crate::Dp::new(28.0),
+                            ),
+                            crate::SemanticTextStyle::body(),
+                        )),
+                    )
+                    .id(canvas_id)
+                    .height(crate::Dp::new(48.0))
+                    .on_canvas_pointer(Msg::Pointer)
+                    .on_click(Msg::Click)
+                },
+                |state, message, _cx| match message {
+                    Msg::Pointer(event) => {
+                        state.pointer_events += 1;
+                        state.last = Some(event);
+                    }
+                    Msg::Click => state.clicks += 1,
+                },
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 480,
+                height: 240,
+            },
+            Dpi::new(192.0),
+        );
+        let target = runtime
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(canvas_id))
+            .expect("canvas hit target at 200% DPI");
+        let start = Point {
+            x: target.bounds.x + 20,
+            y: target.bounds.y + 16,
+        };
+        let outside = Point {
+            x: target.bounds.x - 20,
+            y: target.bounds.y + 16,
+        };
+        let modifiers = ZsPointerModifiers::new(true, false, true, false);
+
+        let pressed =
+            runtime.dispatch_pointer_down_with_button(start, ZsPointerButton::Secondary, modifiers);
+        let competing = runtime.dispatch_pointer_down_with_button(
+            start,
+            ZsPointerButton::Primary,
+            ZsPointerModifiers::default(),
+        );
+        let competing_up = runtime.dispatch_pointer_up_with_button(
+            start,
+            ZsPointerButton::Primary,
+            ZsPointerModifiers::default(),
+        );
+        let moved = runtime.dispatch_pointer_move_with_modifiers(outside, modifiers);
+        let released =
+            runtime.dispatch_pointer_up_with_button(outside, ZsPointerButton::Secondary, modifiers);
+
+        assert!(pressed.handled && pressed.canvas_pointer_drag_active);
+        assert!(competing.handled && competing.canvas_pointer_drag_active);
+        assert_eq!(
+            competing.canvas_pointer_button,
+            Some(ZsPointerButton::Secondary)
+        );
+        assert_eq!(competing.canvas_pointer_event_count, 0);
+        assert!(!competing_up.handled && competing_up.canvas_pointer_drag_active);
+        assert!(moved.handled && moved.canvas_pointer_drag_active);
+        assert!(released.handled && !released.canvas_pointer_drag_active);
+        assert_eq!(pressed.message_count, 1);
+        assert_eq!(moved.message_count, 1);
+        assert_eq!(released.message_count, 1);
+        assert!(released.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::NativeDrawCommand::Text(text)
+                        if text.text.contains("events=3 clicks=0 Released x=-10.0 inside=false")
+                )
+            })
+        }));
+
+        runtime.dispatch_pointer_down_with_button(
+            start,
+            ZsPointerButton::Primary,
+            ZsPointerModifiers::default(),
+        );
+        let clicked = runtime.dispatch_pointer_up_with_button(
+            start,
+            ZsPointerButton::Primary,
+            ZsPointerModifiers::default(),
+        );
+        assert_eq!(clicked.message_count, 2);
+        assert!(clicked.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::NativeDrawCommand::Text(text)
+                        if text.text.contains("events=5 clicks=1 Released x=10.0 inside=true")
+                )
+            })
+        }));
+
+        runtime.dispatch_pointer_down_with_button(
+            start,
+            ZsPointerButton::Middle,
+            ZsPointerModifiers::default(),
+        );
+        let cancelled = runtime.cancel_pointer_drag();
+        assert_eq!(cancelled.canvas_pointer_event_count, 1);
+        assert!(!cancelled.canvas_pointer_drag_active);
+        assert!(cancelled.redraw_plan.as_ref().is_some_and(|plan| {
+            plan.commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::NativeDrawCommand::Text(text)
+                        if text.text.contains("events=7 clicks=1 Cancelled")
                 )
             })
         }));
@@ -11881,6 +12391,69 @@ mod tests {
             options.native_view_inputs,
             vec![NativeViewSmokeInput::Drag { start, end }]
         );
+    }
+
+    #[test]
+    fn native_window_smoke_options_preserve_button_and_pointer_modifiers() {
+        let start = Point { x: 16, y: 24 };
+        let end = Point { x: 48, y: 40 };
+        let modifiers = ZsPointerModifiers::new(true, false, true, false);
+
+        let options = NativeWindowSmokeRunOptions::quick().native_view_pointer_drag(
+            start,
+            end,
+            ZsPointerButton::Secondary,
+            modifiers,
+        );
+
+        assert_eq!(
+            options.native_view_inputs,
+            vec![NativeViewSmokeInput::PointerDrag {
+                start,
+                end,
+                button: ZsPointerButton::Secondary,
+                modifiers,
+            }]
+        );
+    }
+
+    #[cfg(feature = "canvas")]
+    #[test]
+    fn native_proof_report_counts_canvas_pointer_events_and_drag_sequences() {
+        let input = NativeViewSmokeInput::PointerDrag {
+            start: Point { x: 8, y: 8 },
+            end: Point { x: 24, y: 16 },
+            button: ZsPointerButton::Secondary,
+            modifiers: ZsPointerModifiers::default(),
+        };
+        let dispatches = [
+            NativeViewInputDispatchReport {
+                handled: true,
+                canvas_pointer_event_count: 1,
+                canvas_pointer_drag_active: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                canvas_pointer_event_count: 1,
+                canvas_pointer_drag_active: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                canvas_pointer_event_count: 1,
+                ..NativeViewInputDispatchReport::default()
+            },
+        ];
+        let mut report = NativeWindowSmokeRunReport::empty(NativeWindowSmokeRunOptions::quick());
+
+        record_native_view_input_reports(&mut report, &[input], &dispatches, "test");
+
+        assert_eq!(report.native_view_canvas_pointer_event_count, 3);
+        assert_eq!(report.native_view_canvas_pointer_drag_count, 1);
+        assert_eq!(report.native_view_pointer_down_count, 1);
+        assert_eq!(report.native_view_pointer_move_count, 1);
+        assert_eq!(report.native_view_pointer_up_count, 1);
     }
 
     #[test]

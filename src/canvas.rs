@@ -2,8 +2,52 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand, NativeDrawPlan,
-    NativeIconColorMode, Rect, SemanticTextStyle, ZsIcon,
+    NativeIconColorMode, Rect, SemanticTextStyle, WidgetId, ZsIcon, ZsPointerButton,
+    ZsPointerModifiers,
 };
+
+/// Lifecycle phase for a Canvas pointer capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZsCanvasPointerPhase {
+    Pressed,
+    Moved,
+    Released,
+    Cancelled,
+}
+
+/// A typed pointer event expressed in the Canvas' local DP coordinate space.
+///
+/// Drag positions remain unbounded after capture; use `inside` to distinguish
+/// movement inside the final Canvas bounds from movement outside them.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsCanvasPointerEvent {
+    pub widget: WidgetId,
+    pub phase: ZsCanvasPointerPhase,
+    pub position: ZsCanvasPoint,
+    pub button: ZsPointerButton,
+    pub modifiers: ZsPointerModifiers,
+    pub inside: bool,
+}
+
+impl ZsCanvasPointerEvent {
+    pub const fn new(
+        widget: WidgetId,
+        phase: ZsCanvasPointerPhase,
+        position: ZsCanvasPoint,
+        button: ZsPointerButton,
+        modifiers: ZsPointerModifiers,
+        inside: bool,
+    ) -> Self {
+        Self {
+            widget,
+            phase,
+            position,
+            button,
+            modifiers,
+            inside,
+        }
+    }
+}
 
 /// A point in a Canvas' local device-independent coordinate system.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -265,6 +309,29 @@ fn canvas_non_negative_px(value: Dp, dpi: Dpi) -> i32 {
     canvas_signed_px(value, dpi).max(0)
 }
 
+pub(crate) fn zs_canvas_pointer_event(
+    widget: WidgetId,
+    bounds: Rect,
+    point: crate::Point,
+    dpi: Dpi,
+    phase: ZsCanvasPointerPhase,
+    button: ZsPointerButton,
+    modifiers: ZsPointerModifiers,
+) -> ZsCanvasPointerEvent {
+    let scale = dpi.scale_factor();
+    ZsCanvasPointerEvent::new(
+        widget,
+        phase,
+        ZsCanvasPoint::new(
+            Dp::new((point.x.saturating_sub(bounds.x)) as f32 / scale),
+            Dp::new((point.y.saturating_sub(bounds.y)) as f32 / scale),
+        ),
+        button,
+        modifiers,
+        bounds.contains(point),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,5 +422,32 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn canvas_pointer_events_use_local_dp_and_preserve_outside_drag_positions() {
+        let event = zs_canvas_pointer_event(
+            WidgetId::new(7),
+            Rect {
+                x: 100,
+                y: 40,
+                width: 200,
+                height: 100,
+            },
+            crate::Point { x: 80, y: 260 },
+            Dpi::new(192.0),
+            ZsCanvasPointerPhase::Moved,
+            ZsPointerButton::Secondary,
+            ZsPointerModifiers::new(true, false, true, false),
+        );
+
+        assert_eq!(
+            event.position,
+            ZsCanvasPoint::new(Dp::new(-10.0), Dp::new(110.0))
+        );
+        assert!(!event.inside);
+        assert_eq!(event.button, ZsPointerButton::Secondary);
+        assert!(event.modifiers.shift);
+        assert!(event.modifiers.alt);
     }
 }

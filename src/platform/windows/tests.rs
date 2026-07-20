@@ -1063,6 +1063,69 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "canvas")]
+    fn window_view_input_route_counts_only_moved_canvas_captures_as_drags() {
+        #[derive(Clone)]
+        enum Msg {
+            Pointer(crate::ZsCanvasPointerEvent),
+        }
+
+        let widget = crate::WidgetId::new(325);
+        let builder = crate::native_window("Win32 canvas drag accounting")
+            .size(240, 120)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::canvas(crate::ZsCanvasScene::new())
+                        .id(widget)
+                        .width(crate::Dp::new(180.0))
+                        .height(crate::Dp::new(64.0))
+                        .on_canvas_pointer(Msg::Pointer)
+                },
+                |_, message, _| match message {
+                    Msg::Pointer(_event) => {}
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("canvas should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("canvas should expose Win32 geometry");
+        let start = crate::Point {
+            x: target.bounds.x + 16,
+            y: target.bounds.y + 16,
+        };
+        let end = crate::Point {
+            x: target.bounds.x + 80,
+            y: target.bounds.y + 40,
+        };
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+
+        route.dispatch_pointer_down(start, false);
+        let clicked = route.dispatch_pointer_up(start);
+        assert_eq!(clicked.canvas_pointer_drag_count, 0);
+
+        route.dispatch_pointer_down_with_button(
+            start,
+            crate::ZsPointerButton::Secondary,
+            crate::ZsPointerModifiers::default(),
+        );
+        let moved = route.dispatch_pointer_move(end);
+        let dragged = route.dispatch_pointer_up_with_button(
+            end,
+            crate::ZsPointerButton::Secondary,
+            crate::ZsPointerModifiers::default(),
+        );
+
+        assert!(moved.canvas_pointer_drag_active);
+        assert_eq!(dragged.canvas_pointer_drag_count, 1);
+        assert!(!dragged.canvas_pointer_drag_active);
+    }
+
+    #[test]
     #[cfg(feature = "textbox")]
     fn window_view_input_route_scrolls_editor_and_reveals_keyboard_caret() {
         let widget = crate::WidgetId::new(321);

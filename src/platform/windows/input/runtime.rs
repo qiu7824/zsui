@@ -4,6 +4,7 @@ enum WindowsSharedInputKind {
     PointerDown(Option<crate::ViewHitTarget>),
     PointerMove,
     PointerUp(Option<crate::ViewHitTarget>),
+    PointerCancel,
     PointerLeave,
     Text {
         accepted: usize,
@@ -29,6 +30,7 @@ impl WindowsSharedInputKind {
             Self::PointerDown(_) => "pointer_down",
             Self::PointerMove => "pointer_move",
             Self::PointerUp(_) => "pointer_up",
+            Self::PointerCancel => "pointer_cancel",
             Self::PointerLeave => "pointer_leave",
             Self::Text { .. } => "text",
             Self::Key { .. } => "key_down",
@@ -336,6 +338,31 @@ impl WindowsWin32ViewInputRoute {
         let target = kind.target();
         let text_drag_ended = self.shared_text_drag_active && !shared.text_drag_active;
         self.shared_text_drag_active = shared.text_drag_active;
+        #[cfg(feature = "canvas")]
+        let canvas_pointer_drag_started =
+            !self.shared_canvas_pointer_drag_active && shared.canvas_pointer_drag_active;
+        #[cfg(feature = "canvas")]
+        if canvas_pointer_drag_started {
+            self.shared_canvas_pointer_drag_moved = false;
+        }
+        #[cfg(feature = "canvas")]
+        if matches!(kind, WindowsSharedInputKind::PointerMove)
+            && shared.canvas_pointer_drag_active
+            && shared.canvas_pointer_event_count > 0
+        {
+            self.shared_canvas_pointer_drag_moved = true;
+        }
+        #[cfg(feature = "canvas")]
+        let canvas_pointer_drag_ended = self.shared_canvas_pointer_drag_active
+            && !shared.canvas_pointer_drag_active
+            && self.shared_canvas_pointer_drag_moved;
+        #[cfg(feature = "canvas")]
+        {
+            self.shared_canvas_pointer_drag_active = shared.canvas_pointer_drag_active;
+            if !shared.canvas_pointer_drag_active {
+                self.shared_canvas_pointer_drag_moved = false;
+            }
+        }
         #[cfg(feature = "slider")]
         let slider_drag_ended = self.shared_slider_drag_active && !shared.slider_drag_active;
         #[cfg(feature = "slider")]
@@ -379,6 +406,12 @@ impl WindowsWin32ViewInputRoute {
             )],
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "canvas")]
+        {
+            report.canvas_pointer_event_count = shared.canvas_pointer_event_count;
+            report.canvas_pointer_drag_active = shared.canvas_pointer_drag_active;
+            report.canvas_pointer_drag_count = usize::from(canvas_pointer_drag_ended);
+        }
 
         if self.pending_draw_plan.is_some() && report.live_view_revision > 0 {
             report.events.push(format!(

@@ -250,7 +250,8 @@ pub use calculator::{
 };
 #[cfg(feature = "canvas")]
 pub use canvas::{
-    zs_canvas_native_draw_plan, ZsCanvasPoint, ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
+    zs_canvas_native_draw_plan, ZsCanvasPoint, ZsCanvasPointerEvent, ZsCanvasPointerPhase,
+    ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
 };
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
 pub use clipboard::ClipboardData;
@@ -412,7 +413,7 @@ pub use native::{
     NativeWindowContentMissing, NativeWindowContentReady, NativeWindowHost,
     NativeWindowResourcePolicy, NativeWindowRuntimeDriver, NativeWindowRuntimeDriverReport,
     NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
-    TypedNativeWindowBuilder,
+    TypedNativeWindowBuilder, ZsPointerButton, ZsPointerModifiers,
 };
 pub use native_adapter_manifest::{
     native_ui_adapter_parity_report, native_ui_backend_capability_matrix,

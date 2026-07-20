@@ -4,6 +4,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::Click { widget })
             | (Some(id), ViewEvent::TextChanged { widget, .. })
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
+            #[cfg(feature = "canvas")]
+            (Some(id), ViewEvent::CanvasPointer { event }) => id == event.widget,
             #[cfg(feature = "textbox")]
             (Some(id), ViewEvent::TextEdited { widget, .. })
             | (Some(id), ViewEvent::TextSelectionChanged { widget, .. }) => id == *widget,

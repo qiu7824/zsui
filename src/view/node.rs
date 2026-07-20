@@ -577,6 +577,7 @@ pub enum ViewNodeKind<Msg> {
     Canvas {
         scene: crate::ZsCanvasScene,
         on_click: Option<Msg>,
+        on_pointer: Option<fn(crate::ZsCanvasPointerEvent) -> Msg>,
     },
     #[cfg(feature = "button")]
     Button {
@@ -1372,6 +1373,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_dialog_result(mut self, message: fn(crate::ZsContentDialogResult) -> Msg) -> Self {
         if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
             *on_result = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "canvas")]
+    /// Maps Canvas pointer press, move, release and cancellation to an app message.
+    pub fn on_canvas_pointer(
+        mut self,
+        message: fn(crate::ZsCanvasPointerEvent) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::Canvas { on_pointer, .. } = &mut self.kind {
+            *on_pointer = Some(message);
         }
         self
     }

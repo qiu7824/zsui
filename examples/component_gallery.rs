@@ -117,6 +117,8 @@ struct GalleryState {
     dark: bool,
     click_count: u32,
     canvas_activation_count: u32,
+    canvas_pointer_count: u32,
+    canvas_pointer: Option<ZsCanvasPointerEvent>,
     text: String,
     password: ZsPassword,
     checkbox: bool,
@@ -160,6 +162,8 @@ impl Default for GalleryState {
             dark: false,
             click_count: 0,
             canvas_activation_count: 0,
+            canvas_pointer_count: 0,
+            canvas_pointer: None,
             text: "ZSUI 原生界面 / Native UI".to_string(),
             password: ZsPassword::from("desktop"),
             checkbox: true,
@@ -200,6 +204,7 @@ enum Msg {
     Dark(bool),
     PrimaryAction,
     CanvasActivated,
+    CanvasPointer(ZsCanvasPointerEvent),
     Text(String),
     Password(ZsPassword),
     Checkbox(bool),
@@ -269,6 +274,24 @@ fn status_text(value: impl Into<String>) -> ViewNode<Msg> {
     style.wrap = TextWrap::Word;
     style.ellipsis = false;
     styled_text(value, style)
+}
+
+const fn canvas_phase_label(phase: ZsCanvasPointerPhase) -> &'static str {
+    match phase {
+        ZsCanvasPointerPhase::Pressed => "按下 / Pressed",
+        ZsCanvasPointerPhase::Moved => "拖拽 / Moved",
+        ZsCanvasPointerPhase::Released => "释放 / Released",
+        ZsCanvasPointerPhase::Cancelled => "取消 / Cancelled",
+    }
+}
+
+const fn pointer_button_label(button: ZsPointerButton) -> &'static str {
+    match button {
+        ZsPointerButton::Primary => "主键 / Primary",
+        ZsPointerButton::Secondary => "右键 / Secondary",
+        ZsPointerButton::Middle => "中键 / Middle",
+        ZsPointerButton::Auxiliary(_) => "侧键 / Auxiliary",
+    }
 }
 
 const fn category_label(category: ZsuiComponentCategory) -> &'static str {
@@ -875,11 +898,34 @@ fn catalog_page(state: &GalleryState) -> ViewNode<Msg> {
                     canvas(canvas_sample)
                         .id(CANVAS_SURFACE)
                         .height(Dp::new(84.0))
-                        .on_click(Msg::CanvasActivated),
+                        .on_click(Msg::CanvasActivated)
+                        .on_canvas_pointer(Msg::CanvasPointer),
                     secondary_text(
                         format!(
-                            "已激活 {} 次 / Activated {} time(s)",
-                            state.canvas_activation_count, state.canvas_activation_count
+                            "激活 {} · 指针 {} / Activated {} · Pointer {}",
+                            state.canvas_activation_count,
+                            state.canvas_pointer_count,
+                            state.canvas_activation_count,
+                            state.canvas_pointer_count,
+                        ),
+                        TextRole::Caption,
+                    ),
+                    secondary_text(
+                        state.canvas_pointer.map_or_else(
+                            || {
+                                "等待按下、拖拽或右键 / Waiting for press, drag or secondary click"
+                                    .to_string()
+                            },
+                            |event| {
+                                format!(
+                                    "{} · {} · {:.1}, {:.1} dp{}",
+                                    canvas_phase_label(event.phase),
+                                    pointer_button_label(event.button),
+                                    event.position.x.0,
+                                    event.position.y.0,
+                                    if event.inside { "" } else { " · 外 / Out" },
+                                )
+                            },
                         ),
                         TextRole::Caption,
                     ),
@@ -987,6 +1033,16 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
             state.status = format!(
                 "画布已激活 {} 次 / Canvas activated {} time(s)",
                 state.canvas_activation_count, state.canvas_activation_count
+            );
+        }
+        Msg::CanvasPointer(event) => {
+            state.canvas_pointer_count = state.canvas_pointer_count.saturating_add(1);
+            state.canvas_pointer = Some(event);
+            state.status = format!(
+                "画布 {} · {:.1}, {:.1} dp / Canvas",
+                canvas_phase_label(event.phase),
+                event.position.x.0,
+                event.position.y.0,
             );
         }
         Msg::Text(value) => state.text = value,
@@ -1239,20 +1295,29 @@ fn main() -> ZsuiResult<()> {
                 options = options.native_view_click(point);
             }
         } else if initial_page == GalleryPage::Catalog {
-            let point = builder
+            let target = builder
                 .native_view_interaction_plan()
                 .and_then(|plan| plan.hit_target_for_widget(CANVAS_SURFACE))
-                .map(|target| Point {
-                    x: target.bounds.x + target.bounds.width / 2,
-                    y: target.bounds.y + target.bounds.height / 2,
-                })
                 .ok_or_else(|| {
                     ZsuiError::host(
                         "gallery_interaction_target",
                         "missing Canvas gallery widget",
                     )
                 })?;
-            options = options.native_view_click(point);
+            let point = Point {
+                x: target.bounds.x + target.bounds.width / 2,
+                y: target.bounds.y + target.bounds.height / 2,
+            };
+            let drag_end = Point {
+                x: (point.x + 36).min(target.bounds.x + target.bounds.width - 4),
+                y: (point.y + 12).min(target.bounds.y + target.bounds.height - 4),
+            };
+            options = options.native_view_click(point).native_view_pointer_drag(
+                point,
+                drag_end,
+                ZsPointerButton::Secondary,
+                ZsPointerModifiers::default(),
+            );
         } else if initial_page == GalleryPage::Feedback {
             let point = builder
                 .native_view_interaction_plan()
@@ -1279,7 +1344,7 @@ fn main() -> ZsuiResult<()> {
                 GalleryPage::Inputs => {
                     vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
                 }
-                GalleryPage::Catalog => vec!["CanvasActivated"],
+                GalleryPage::Catalog => vec!["CanvasActivated", "CanvasPointer"],
                 GalleryPage::Feedback => vec!["FlyoutAction"],
                 _ => Vec::new(),
             };

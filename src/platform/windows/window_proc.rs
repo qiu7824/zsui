@@ -97,9 +97,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 .is_some()
             {
                 0
-            } else if dispatch_windows_win32_window_view_pointer_move(
+            } else if dispatch_windows_win32_window_view_pointer_move_with_modifiers(
                 hwnd,
                 point_from_lparam(lparam),
+                windows_pointer_modifiers(wparam),
             )
             .is_some_and(|report| report.handled)
             {
@@ -124,10 +125,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             {
                 SetCapture(hwnd);
                 0
-            } else if dispatch_windows_win32_window_view_pointer_down(
+            } else if dispatch_windows_win32_window_view_pointer_down_with_button(
                 hwnd,
                 point_from_lparam(lparam),
-                (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
+                crate::ZsPointerButton::Primary,
+                windows_pointer_modifiers(wparam),
             )
             .is_some_and(|report| report.handled)
             {
@@ -142,12 +144,50 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             if dispatch_windows_win32_window_shell_pointer_up(hwnd).is_some() {
                 ReleaseCapture();
                 0
-            } else if dispatch_windows_win32_window_view_pointer_up(hwnd, point_from_lparam(lparam))
+            } else if dispatch_windows_win32_window_view_pointer_up_with_button(
+                hwnd,
+                point_from_lparam(lparam),
+                crate::ZsPointerButton::Primary,
+                windows_pointer_modifiers(wparam),
+            )
                 .is_some_and(|report| report.handled)
             {
                 SetFocus(hwnd);
                 ReleaseCapture();
                 0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN => {
+            let button = windows_pointer_button(msg, wparam);
+            if dispatch_windows_win32_window_view_pointer_down_with_button(
+                hwnd,
+                point_from_lparam(lparam),
+                button,
+                windows_pointer_modifiers(wparam),
+            )
+            .is_some_and(|report| report.handled)
+            {
+                SetFocus(hwnd);
+                SetCapture(hwnd);
+                if msg == WM_XBUTTONDOWN { 1 } else { 0 }
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_RBUTTONUP | WM_MBUTTONUP | WM_XBUTTONUP => {
+            let button = windows_pointer_button(msg, wparam);
+            if dispatch_windows_win32_window_view_pointer_up_with_button(
+                hwnd,
+                point_from_lparam(lparam),
+                button,
+                windows_pointer_modifiers(wparam),
+            )
+            .is_some_and(|report| report.handled)
+            {
+                ReleaseCapture();
+                if msg == WM_XBUTTONUP { 1 } else { 0 }
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -226,5 +266,28 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         WM_PAINT => paint_no_flicker_background(hwnd),
         WM_PRINTCLIENT => paint_window_client_to_dc(hwnd, wparam as _),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+fn windows_pointer_modifiers(wparam: WPARAM) -> crate::ZsPointerModifiers {
+    crate::ZsPointerModifiers::new(
+        wparam & 0x0004 != 0 || unsafe { GetKeyState(VK_SHIFT as i32) as u16 & 0x8000 != 0 },
+        wparam & 0x0008 != 0 || unsafe { GetKeyState(VK_CONTROL as i32) as u16 & 0x8000 != 0 },
+        unsafe { GetKeyState(VK_MENU as i32) as u16 & 0x8000 != 0 },
+        unsafe {
+            GetKeyState(VK_LWIN as i32) as u16 & 0x8000 != 0
+                || GetKeyState(VK_RWIN as i32) as u16 & 0x8000 != 0
+        },
+    )
+}
+
+fn windows_pointer_button(msg: u32, wparam: WPARAM) -> crate::ZsPointerButton {
+    match msg {
+        WM_RBUTTONDOWN | WM_RBUTTONUP => crate::ZsPointerButton::Secondary,
+        WM_MBUTTONDOWN | WM_MBUTTONUP => crate::ZsPointerButton::Middle,
+        WM_XBUTTONDOWN | WM_XBUTTONUP => {
+            crate::ZsPointerButton::Auxiliary(((wparam >> 16) & 0xffff) as u16)
+        }
+        _ => crate::ZsPointerButton::Primary,
     }
 }
