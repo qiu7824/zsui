@@ -6,7 +6,6 @@ pub enum PlatformName {
     Macos,
     Linux,
     Android,
-    Harmony,
     Unknown,
     Other(String),
 }
@@ -25,7 +24,6 @@ impl PlatformName {
             Self::Macos => "macos",
             Self::Linux => "linux",
             Self::Android => "android",
-            Self::Harmony => "harmony",
             Self::Unknown => "unknown",
             Self::Other(value) => value.as_str(),
         }
@@ -39,7 +37,6 @@ impl From<crate::NativeUiPlatform> for PlatformName {
             crate::NativeUiPlatform::Macos => Self::Macos,
             crate::NativeUiPlatform::Linux => Self::Linux,
             crate::NativeUiPlatform::Android => Self::Android,
-            crate::NativeUiPlatform::Harmony => Self::Harmony,
         }
     }
 }
@@ -526,65 +523,6 @@ impl HostCapabilities {
         let mut capabilities = Self::android_scaffold();
         capabilities.windows = CapabilitySupport::unsupported(
             "NativeWindowHost does not yet own an Android Activity event loop",
-        );
-        capabilities
-    }
-
-    pub fn harmony_scaffold() -> Self {
-        Self {
-            platform: PlatformName::Harmony,
-            windows: CapabilitySupport::partial(
-                "OpenHarmony Ability/native surface host is planned; generic PlatformHost records declarations",
-            ),
-            window_resizing: CapabilitySupport::unsupported(
-                "Harmony mobile surfaces do not map to desktop resize policy",
-            ),
-            window_decorations: CapabilitySupport::unsupported(
-                "Harmony app chrome is owned by Ability/theme/system bars",
-            ),
-            window_always_on_top: CapabilitySupport::unsupported(
-                "always-on-top requires platform-specific overlay permissions",
-            ),
-            window_transparency: CapabilitySupport::partial(
-                "transparent Harmony surfaces depend on Ability/window configuration",
-            ),
-            tray_or_status_menu: CapabilitySupport::unsupported(
-                "Harmony has cards/notifications instead of a desktop tray",
-            ),
-            menus: CapabilitySupport::partial(
-                "Harmony menus/actions need a dedicated mobile host",
-            ),
-            global_hotkeys: CapabilitySupport::unsupported(
-                "global shortcuts are not available to normal Harmony apps",
-            ),
-            clipboard_text: CapabilitySupport::partial(
-                "Harmony pasteboard host is planned",
-            ),
-            clipboard_image: CapabilitySupport::partial(
-                "Harmony image pasteboard support needs platform host work",
-            ),
-            clipboard_files: CapabilitySupport::partial(
-                "Harmony file pasteboard support needs URI/file host work",
-            ),
-            file_picker: CapabilitySupport::partial(
-                "Harmony file picker host is planned",
-            ),
-            native_dialogs: CapabilitySupport::partial(
-                "Harmony dialog host is planned",
-            ),
-            settings_pages: CapabilitySupport::partial(
-                "settings page specs can be mapped to Harmony screens",
-            ),
-            auto_paste: CapabilitySupport::unsupported(
-                "auto paste requires platform input/accessibility integration",
-            ),
-        }
-    }
-
-    pub fn harmony_native_window_host() -> Self {
-        let mut capabilities = Self::harmony_scaffold();
-        capabilities.windows = CapabilitySupport::unsupported(
-            "NativeWindowHost does not yet own a Harmony Ability event loop",
         );
         capabilities
     }

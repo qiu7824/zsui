@@ -50,16 +50,15 @@ zsui::native_window("Example").size(900, 620).run()?;
 ```
 
 That convenience builder uses `NativeWindowHost` for the desktop event loop and
-keeps full product behavior outside the framework. Android and Harmony are
-represented in the platform/capability model as scaffolds; they need dedicated
-Activity/Ability runtime hosts before `native_window(...).run()` can create
-mobile surfaces. Their current scaffold manifests and bridge contracts live in
-`src/mobile_host.rs`, `src/android_activity_host.rs` and
-`src/harmony_ability_host.rs`, and can be printed with
+keeps full product behavior outside the framework. Android is represented in
+the platform/capability model as a scaffold; it needs a dedicated Activity
+runtime host before `native_window(...).run()` can create a mobile surface. Its
+current scaffold manifest and bridge contract live in `src/mobile_host.rs` and
+`src/android_activity_host.rs`, and can be printed with
 `examples/mobile_scaffold_manifest.rs` or
 `examples/mobile_scaffold_manifest.rs --bridge <platform>`. The bridge
 contracts name the FFI symbols, lifecycle/surface/input callbacks, safety
-rules and device-smoke artifact files that the real mobile hosts must satisfy.
+rules and device-smoke artifact files that the real Android host must satisfy.
 `mobile_runtime_bridge_parity_report(platform)` and
 `examples/mobile_scaffold_manifest.rs --parity <platform>` compare the
 scaffold and contract metadata, confirm required callback route coverage and
@@ -67,7 +66,7 @@ list pending FFI callback symbols without claiming runtime readiness.
 `mobile_runtime_bridge_dispatch_report(platform)` and
 `examples/mobile_scaffold_manifest.rs --dispatch <platform>` map those callback
 symbols to lifecycle, surface, typed input and `NativeRuntimeDriver`
-operations before real Activity/Ability FFI glue exists.
+operations before real Activity FFI glue exists.
 `mobile_runtime_bridge_contract_smoke_report(platform)` and
 `examples/mobile_scaffold_manifest.rs --dispatch-smoke <platform>` locally
 replay that dispatch sequence as contract smoke while still reporting that FFI
@@ -80,15 +79,15 @@ traces, surface traces or input traces.
 `review_mobile_runtime_bridge_contract_artifacts(platform)` and
 `examples/mobile_scaffold_manifest.rs --review-contract <platform>` validate
 those local contract artifacts and expected JSON schemas without treating them
-as device proof. The `*_for_all` helpers and CLI `all` target can write/review
-Android and Harmony contract artifacts together.
+as device proof. The `*_for_all` helpers and CLI `all` target write/review
+artifacts for the configured mobile target.
 `mobile_runtime_device_smoke_plan(platform)` and
 `review_mobile_runtime_device_smoke_artifacts(platform)` provide the current
 read-only verification contract for those required device artifacts, including
 device-sourced JSON schema checks for lifecycle, surface and input traces.
 `mobile_runtime_device_smoke_trace_templates(platform)` and
 `examples/mobile_scaffold_manifest.rs --trace-template <platform>` expose the
-same trace shapes for the future Activity/Ability bridge implementation.
+same trace shapes for the future Activity bridge implementation.
 The same desktop builder can now accept a typed view with
 `native_window("Example").view(view).run()?`. That first lays out and paints
 `ViewNode<Msg>` into `NativeDrawPlan`; on the direct Windows host the plan is
@@ -334,8 +333,8 @@ The reusable self-draw command shape is represented in
 protocol includes a filled triangle primitive for targeted overlay tails;
 Win32 GDI, AppKit `NSBezierPath` and GTK Cairo translate it locally. The
 Windows GDI implementation lives in `src/windows_gdi_renderer.rs`; future platform renderers should
-translate the same commands to Direct2D, AppKit, GTK snapshot APIs, Android
-Canvas or Harmony Canvas only when that backend needs it, without leaking
+translate the same commands to Direct2D, AppKit, GTK snapshot APIs or Android
+Canvas only when that backend needs it, without leaking
 product state into the drawing layer.
 Win32 main/quick window style mapping, transient-window host, create-params,
 message-loop wrapper and `NativeMainWindowHost` implementation live in
@@ -446,7 +445,7 @@ longer narrative is `docs/framework-goals.md`.
 The target also captures the product direction: keep
 the one-line `zsui::native_window(...).run()?` path as the normal native-window
 entry point, use stable host/rendering behavior as the baseline, add
-Android/Harmony as explicit Activity/Ability hosts, and introduce wider
+Android as an explicit Activity host, and introduce wider
 platform API bindings only when a concrete backend needs them.
 The first implementation layer lives in `src/view/mod.rs`, `src/style.rs` and
 `src/geometry.rs`: typed `View<Msg>` trees, `WidgetId`, explicit app/event/paint
@@ -480,7 +479,7 @@ layout returns `NativeWindowContentReady`. The unconstrained
 - Keep the user-facing UI API declarative Rust, without XML or reflection.
 - Return `Result<T, ZsuiError>` for backend failures instead of panicking.
 - Model platform differences with traits and capability reports.
-- Treat Android and Harmony as explicit mobile native hosts, not desktop clones.
+- Treat Android as an explicit mobile native host, not a desktop clone.
 - Use Cargo features for widgets, services, platform backends and heavy deps.
 - Split large widget/backend families into smaller crates or feature modules.
 - Add windows-rs or other wider platform bindings only for concrete backend work.

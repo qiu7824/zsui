@@ -18,8 +18,8 @@ zsui::native_window("Example").size(900, 620).run()?;
 ```
 
 That one-line entry is the desktop target for Windows, macOS and Linux. Android
-and Harmony remain first-class platform targets, but they need real
-Activity/Ability runtime hosts and device smoke proof before this same public
+remains a first-class platform target, but it needs a real Activity runtime
+host and device smoke proof before this same public
 shape can create mobile native surfaces.
 
 ## Highest Priority: Fully Unified Application Authoring
@@ -122,8 +122,8 @@ The current priority order is:
    menus and dialogs required by native utility applications.
 6. Tighten Cargo feature boundaries and split crates only after the public
    widget/runtime boundaries are proven by real applications.
-7. Replace Android Activity and Harmony Ability scaffolds with real FFI hosts
-   and device smoke artifacts.
+7. Replace the Android Activity scaffold with a real FFI host and device smoke
+   artifacts.
 
 Protocol manifests, AI handoff metadata and mobile bridge contracts support
 these slices, but they do not advance product readiness by themselves. New
@@ -330,20 +330,19 @@ trait HotkeyBackend {
 }
 ```
 
-Expose a coherent ZSUI API, but do not pretend Windows, macOS, Linux, Android
-and Harmony support identical native services. Unsupported or partial behavior
+Expose a coherent ZSUI API, but do not pretend Windows, macOS, Linux and Android
+support identical native services. Unsupported or partial behavior
 must be visible through capability reports or `ZsuiError::Unsupported`.
 
-Android and Harmony should use explicit mobile host contracts instead of
-desktop metaphors. Android maps to Activity, lifecycle, Intent, ClipboardManager,
-Storage Access Framework, IME and notification surfaces. Harmony maps to
-Ability, Want, pasteboard, document picker, input method and notification or
-card surfaces. Both targets require FFI/lifecycle bindings and target-device
-smoke artifacts before completion claims. The current bridge contracts must
-remain explicit about callback symbols, lifecycle/surface/input routes, safety
-rules and device-smoke artifact names until real native FFI implementations
-replace the scaffold state. Artifact reviewers should validate captured device
-proof without generating fake screenshots or lifecycle logs.
+Android should use an explicit mobile host contract instead of desktop
+metaphors. It maps to Activity, lifecycle, Intent, ClipboardManager,
+Storage Access Framework, IME and notification surfaces. The target requires
+FFI/lifecycle bindings and target-device smoke artifacts before completion
+claims. The current bridge contracts must remain explicit about callback
+symbols, lifecycle/surface/input routes, safety rules and device-smoke artifact
+names until real native FFI implementations replace the scaffold state.
+Artifact reviewers should validate captured device proof without generating
+fake screenshots or lifecycle logs.
 
 ## Build Trimming
 

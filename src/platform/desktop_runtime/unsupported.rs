@@ -24,7 +24,7 @@ impl DesktopRuntimeBackend for Backend {
         let detail = if cfg!(windows) {
             "enable the windows-win32 feature to compile the direct Win32 native window host"
         } else {
-            "desktop native windows are implemented for Windows, macOS and Linux; Android and Harmony need mobile runtime hosts"
+            "desktop native windows are implemented for Windows, macOS and Linux; Android needs a mobile runtime host"
         };
         Err(ZsuiError::unsupported("native_window", detail))
     }
@@ -43,7 +43,7 @@ impl DesktopRuntimeBackend for Backend {
         let detail = if cfg!(windows) {
             "enable the windows-win32 feature to compile the direct Win32 native smoke host"
         } else {
-            "desktop native smoke windows are implemented for Windows, macOS and Linux; Android and Harmony need mobile runtime hosts"
+            "desktop native smoke windows are implemented for Windows, macOS and Linux; Android needs a mobile runtime host"
         };
         Err(ZsuiError::unsupported("native_window_smoke", detail))
     }
@@ -54,7 +54,6 @@ impl DesktopRuntimeBackend for Backend {
             PlatformName::Macos => HostCapabilities::macos_scaffold(),
             PlatformName::Linux => HostCapabilities::linux_scaffold(),
             PlatformName::Android => HostCapabilities::android_scaffold(),
-            PlatformName::Harmony => HostCapabilities::harmony_scaffold(),
             platform => HostCapabilities::all_unsupported(platform),
         }
     }
@@ -62,7 +61,6 @@ impl DesktopRuntimeBackend for Backend {
     fn native_host_capabilities(&self) -> HostCapabilities {
         match PlatformName::current() {
             PlatformName::Android => HostCapabilities::android_native_window_host(),
-            PlatformName::Harmony => HostCapabilities::harmony_native_window_host(),
             platform => HostCapabilities::all_unsupported(platform),
         }
     }

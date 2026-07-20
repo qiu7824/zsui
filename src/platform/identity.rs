@@ -6,7 +6,6 @@ pub enum NativeUiPlatform {
     Macos,
     Linux,
     Android,
-    Harmony,
 }
 
 impl NativeUiPlatform {
@@ -16,15 +15,10 @@ impl NativeUiPlatform {
             Self::Macos => "macos",
             Self::Linux => "linux",
             Self::Android => "android",
-            Self::Harmony => "harmony",
         }
     }
 
     pub const fn current_target() -> Option<Self> {
-        #[cfg(target_env = "ohos")]
-        {
-            return Some(Self::Harmony);
-        }
         #[cfg(target_os = "windows")]
         {
             return Some(Self::Windows);
@@ -54,7 +48,6 @@ pub enum NativeUiToolkit {
     LinuxDirect,
     Gtk4Libadwaita,
     AndroidActivity,
-    HarmonyAbility,
 }
 
 impl NativeUiToolkit {
@@ -66,26 +59,23 @@ impl NativeUiToolkit {
             Self::LinuxDirect => "linux_direct",
             Self::Gtk4Libadwaita => "gtk4_libadwaita",
             Self::AndroidActivity => "android_activity",
-            Self::HarmonyAbility => "harmony_ability",
         }
     }
 }
 
-pub const SUPPORTED_NATIVE_UI_PLATFORMS: [NativeUiPlatform; 5] = [
+pub const SUPPORTED_NATIVE_UI_PLATFORMS: [NativeUiPlatform; 4] = [
     NativeUiPlatform::Windows,
     NativeUiPlatform::Macos,
     NativeUiPlatform::Linux,
     NativeUiPlatform::Android,
-    NativeUiPlatform::Harmony,
 ];
 
-pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 6] = [
+pub const SUPPORTED_NATIVE_UI_TOOLKITS: [NativeUiToolkit; 5] = [
     NativeUiToolkit::Win32Gdi,
     NativeUiToolkit::AppKit,
     NativeUiToolkit::LinuxDirect,
     NativeUiToolkit::Gtk4Libadwaita,
     NativeUiToolkit::AndroidActivity,
-    NativeUiToolkit::HarmonyAbility,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

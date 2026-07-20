@@ -493,8 +493,8 @@ one source owns `State`, `Msg`, `view`, `update`, semantic specs and theme
 parameters, while framework-owned experience and backend profiles preserve the
 platform-specific component composition and implementation. It also preserves
 the simple `zsui::native_window(...).run()?` entry point
-for native desktop windows, treats Android and Harmony as explicit future
-Activity/Ability hosts, uses buffered no-flicker native rendering as the
+for native desktop windows, treats Android as an explicit future Activity
+host, uses buffered no-flicker native rendering as the
 Windows baseline, and only adds wider platform API crates such as
 `windows-rs` when a concrete backend surface needs them. The modular target is
 a small facade with feature-gated crates/modules, not a monolithic always-on
@@ -651,31 +651,29 @@ assert!(report.is_valid());
   desktop native-window runtime boundary, including projected status menu and
   settings declarations, status-menu command dispatch and settings-item updates
   through native host operations
-- Android and Harmony capability scaffolds for future mobile runtime hosts
-- Android Activity and Harmony Ability scaffold manifests plus FFI/lifecycle/
+- Android capability scaffolds for a future mobile runtime host
+- Android Activity scaffold manifests plus FFI/lifecycle/
   surface/input bridge contracts through `mobile_runtime_host_scaffold()` and
   `mobile_runtime_bridge_contract()`
-- Android/Harmony bridge parity reports through
+- Android bridge parity reports through
   `mobile_runtime_bridge_parity_report()` for checking scaffold/contract
   metadata, required callback route kinds and pending FFI symbols without
   claiming device runtime readiness
-- Android/Harmony bridge dispatch reports through
+- Android bridge dispatch reports through
   `mobile_runtime_bridge_dispatch_report()` for mapping required callback
   symbols to lifecycle, surface, typed input and `NativeRuntimeDriver`
   operations before real FFI code is added
-- Android/Harmony contract dispatch smoke through
+- Android contract dispatch smoke through
   `mobile_runtime_bridge_contract_smoke_report()` for locally replaying the
   required bridge sequence without faking device proof
-- Android/Harmony contract artifact writing through
+- Android contract artifact writing through
   `write_mobile_runtime_bridge_contract_artifacts()` without generating device
   launch, screenshot, lifecycle, surface or input proof; the local bundle also
   includes `device-smoke-plan.json` and `agent-context.json` for AI handoff
-- Android/Harmony contract artifact review through
+- Android contract artifact review through
   `review_mobile_runtime_bridge_contract_artifacts()` so local bridge artifacts
-  and expected JSON schemas can be validated separately from device smoke; the
-  `for_all` variants and CLI `all` target cover both Android and Harmony in one
-  run
-- Android/Harmony device-smoke plans and read-only artifact review through
+  and expected JSON schemas can be validated separately from device smoke
+- Android device-smoke plans and read-only artifact review through
   `mobile_runtime_device_smoke_plan()` and
   `mobile_runtime_device_smoke_trace_templates()` plus
   `review_mobile_runtime_device_smoke_artifacts()` with schema checks for
@@ -815,8 +813,8 @@ it falls back to in-memory clipboard storage.
   it, and records interaction artifacts.
 - `examples/native_smoke_review.rs`: reviews target smoke artifacts and reports
   missing or invalid required proof files.
-- `examples/mobile_scaffold_manifest.rs`: JSON manifest for Android Activity
-  and Harmony Ability host scaffolds, bridge contracts with `--bridge`, parity
+- `examples/mobile_scaffold_manifest.rs`: JSON manifest for the Android Activity
+  host scaffold, bridge contracts with `--bridge`, parity
   reports with `--parity`, dispatch reports with `--dispatch`, contract
   dispatch smoke with `--dispatch-smoke`, local contract artifact writing with
   `--write-contract` including device-smoke plans and agent context, local

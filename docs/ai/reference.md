@@ -7,7 +7,7 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 ## Current Completion
 
 ZSUI is roughly 64% complete as a standalone framework product, including the
-still-scaffolded mobile targets. The desktop-only v0.2 native application
+still-scaffolded Android target. The desktop-only v0.2 native application
 closure is roughly 75% complete. Component-level milestones must not be used as
 overall framework readiness.
 
@@ -20,14 +20,14 @@ overall framework readiness.
 - Rust-first API model: about 90% complete.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until AppKit and GTK4 target evidence exists.
-- Android and Harmony: about 32% complete.
+- Android: about 32% complete.
 - Product adapter/runtime harness: about 67% complete.
 - Native smoke verification: about 88% complete.
 
 The Windows implementation is further ahead than the overall
 framework: its window, draw-plan, stateful View and shell-layout foundation is
 roughly 76%
-ready. macOS/Linux native product hosts and real Android/Harmony runtimes keep
+ready. macOS/Linux native product hosts and the real Android runtime keep
 cross-platform product readiness substantially lower. Report these separately.
 
 The machine-readable audit tracks 18 required native capabilities per platform:
@@ -36,7 +36,6 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 - macOS: 0 ready, 8 first-pass runtime implementations, 10 contract-only.
 - Linux: 0 ready, 8 first-pass runtime implementations, 10 contract-only.
 - Android: 0 runtime implementations, 18 contract-only.
-- Harmony: 0 runtime implementations, 18 contract-only.
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
@@ -102,10 +101,10 @@ Windows first-pass target smoke has a local artifact path:
 `cargo run --example native_smoke_run -- windows` captures `window.png`, and
 `cargo run --example native_smoke_review -- windows` reports
 `target_smoke_complete=true` when all six required artifacts are present.
-macOS, Linux, Android and Harmony still require target/device proof.
-Android and Harmony now have explicit mobile bridge contracts in
-`src/mobile_host.rs`, `src/android_activity_host.rs` and
-`src/harmony_ability_host.rs`: callback symbols, lifecycle/surface/input/
+macOS, Linux and Android still require target/device proof.
+Android now has an explicit mobile bridge contract in
+`src/mobile_host.rs` and `src/android_activity_host.rs`: callback symbols,
+lifecycle/surface/input/
 command routes, FFI safety rules and required device-smoke artifact names are
 serialized through `mobile_runtime_bridge_contract(platform)` and
 `examples/mobile_scaffold_manifest.rs --bridge <platform>`. The same module now
@@ -133,8 +132,8 @@ and lifecycle traces missing.
 `examples/mobile_scaffold_manifest.rs --review-contract <platform>` validate
 those local contract artifacts and their expected JSON schema separately from
 real device smoke. Both
-`--write-contract all <root>` and `--review-contract all <root>` cover Android
-and Harmony in one command. It has
+`--write-contract all <root>` and `--review-contract all <root>` cover the
+configured mobile target in one command. It has
 device-smoke plans and read-only artifact review through
 `mobile_runtime_device_smoke_plan(platform)`,
 `mobile_runtime_device_smoke_trace_templates(platform)`,
@@ -165,8 +164,8 @@ tokens, declarative Rust builders, `Result<T, ZsuiError>`, capability traits,
 feature-gated platform backends, split-crate/module trimming and strong typed
 IDs. It also records the larger framework target: keep
 `zsui::native_window(...).run()?` as the normal native-window entry, make
-buffered no-flicker self-draw the Windows baseline, treat Android
-and Harmony as real Activity/Ability host targets, and add `windows-rs` or
+buffered no-flicker self-draw the Windows baseline, treat Android as a real
+Activity host target, and add `windows-rs` or
 other broader platform bindings only for specific backend work. The source
 target records the preferred and avoided API shapes, such as `enum Msg` over
 string events and feature/crate based trimming over global widget registration.
@@ -398,7 +397,7 @@ state cannot call `run`. The original one-line builder remains unchanged.
 - Adapter discovery: `src/native_adapter_manifest.rs`
 - Launch planning: `src/native_host_launch.rs`
 - Mobile host scaffolds and bridge contracts: `src/mobile_host.rs`,
-  `src/android_activity_host.rs`, `src/harmony_ability_host.rs`,
+  `src/android_activity_host.rs`,
   `examples/mobile_scaffold_manifest.rs`
 - Shared protocols: `src/geometry.rs`, `src/command_protocol.rs`,
   `src/event_protocol.rs`, `src/component_protocol.rs`,
@@ -470,8 +469,8 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
    real host event loops, then generalize the reusable composite-control route.
 5. Complete Win32 main-window/GDI/tray integration, then implement AppKit/GTK
    status item, menu, dialog, clipboard, rendering and input capabilities.
-6. Turn the Android Activity and Harmony Ability bridge contracts into real
-   FFI/runtime implementations with device smoke artifacts.
+6. Turn the Android Activity bridge contract into a real FFI/runtime
+   implementation with device smoke artifacts.
 7. Expand the non-clipboard product adapter example into a target native smoke
    harness.
 8. Expand host capability reporting so agents can choose supported APIs without
@@ -531,41 +530,41 @@ stable context without reading prose:
   audit with errors, warnings and host degradation details.
 - `zsui_declaration_audit_surface_names()`: machine-readable list of
   declaration surfaces currently covered by the audit.
-- `mobile_runtime_host_scaffold(platform)`: Activity/Ability bridge,
-  lifecycle, capability and device-smoke scaffold for Android or Harmony.
-- `mobile_runtime_bridge_contract(platform)`: Android/Harmony FFI callback,
+- `mobile_runtime_host_scaffold(platform)`: Activity bridge, lifecycle,
+  capability and device-smoke scaffold for Android.
+- `mobile_runtime_bridge_contract(platform)`: Android FFI callback,
   lifecycle, surface, input, command and device-smoke artifact contract.
-- `mobile_runtime_bridge_contracts_json()`: JSON form of both mobile bridge
-  contracts for AI/tool handoff.
-- `mobile_runtime_bridge_parity_report(platform)`: Android/Harmony scaffold vs
+- `mobile_runtime_bridge_contracts_json()`: JSON form of the mobile bridge
+  contract for AI/tool handoff.
+- `mobile_runtime_bridge_parity_report(platform)`: Android scaffold vs
   contract report covering required callback route kinds, pending FFI callback
   symbols and whether device smoke is still blocked.
-- `mobile_runtime_bridge_parity_reports_json()`: JSON form of both mobile
-  parity reports for AI/tool handoff.
-- `mobile_runtime_bridge_dispatch_report(platform)`: Android/Harmony callback
+- `mobile_runtime_bridge_parity_reports_json()`: JSON form of the mobile
+  parity report for AI/tool handoff.
+- `mobile_runtime_bridge_dispatch_report(platform)`: Android callback
   dispatch report mapping required bridge symbols to lifecycle, surface, input
   and `NativeRuntimeDriver` operations without claiming FFI implementation.
-- `mobile_runtime_bridge_dispatch_reports_json()`: JSON form of both mobile
-  dispatch reports for AI/tool handoff.
-- `mobile_runtime_bridge_contract_smoke_report(platform)`: local Android/
-  Harmony contract smoke that replays required bridge dispatch steps and reports
+- `mobile_runtime_bridge_dispatch_reports_json()`: JSON form of the mobile
+  dispatch report for AI/tool handoff.
+- `mobile_runtime_bridge_contract_smoke_report(platform)`: local Android
+  contract smoke that replays required bridge dispatch steps and reports
   dispatch-operation coverage without claiming device proof.
-- `mobile_runtime_bridge_contract_smoke_reports_json()`: JSON form of both
-  mobile contract dispatch smoke reports for AI/tool handoff.
+- `mobile_runtime_bridge_contract_smoke_reports_json()`: JSON form of the
+  mobile contract dispatch smoke report for AI/tool handoff.
 - `write_mobile_runtime_bridge_contract_artifacts(platform)`: writes local
-  Android/Harmony bridge contract artifacts, the device-smoke plan and the
+  Android bridge contract artifacts, the device-smoke plan and the
   current ZSUI agent context without generating device launch, screenshot,
   lifecycle, surface or input proof.
 - `review_mobile_runtime_bridge_contract_artifacts(platform)`: validates local
-  Android/Harmony bridge contract artifacts and expected JSON schema without
+  Android bridge contract artifacts and expected JSON schema without
   claiming device proof.
 - `write_mobile_runtime_bridge_contract_artifacts_for_all()` and
   `review_mobile_runtime_bridge_contract_artifacts_for_all()`: write/review
-  both Android and Harmony local contract artifacts in one call.
-- `mobile_runtime_device_smoke_plan(platform)`: required Android/Harmony device
+  the configured mobile contract artifacts in one call.
+- `mobile_runtime_device_smoke_plan(platform)`: required Android device
   artifact plan without faking target proof.
 - `mobile_runtime_device_smoke_trace_templates(platform)`: lifecycle, surface,
-  input and optional clipboard/pasteboard trace JSON templates expected by
+  input and optional clipboard trace JSON templates expected by
   mobile device-smoke review.
 - `review_mobile_runtime_device_smoke_artifacts(platform)`: read-only verifier
   for mobile `manifest.json`, launch log, screenshot, lifecycle, surface and

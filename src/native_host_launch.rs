@@ -125,14 +125,10 @@ mod tests {
     fn mobile_launch_plans_are_explicit_scaffold_fallbacks() {
         let android = native_host_launch_plan_for_platform(NativeUiPlatform::Android)
             .expect("android launch plan should exist");
-        let harmony = native_host_launch_plan_for_platform(NativeUiPlatform::Harmony)
-            .expect("harmony launch plan should exist");
 
         assert_eq!(android.toolkit, NativeUiToolkit::AndroidActivity);
         assert_eq!(android.mode, NativeHostLaunchMode::ContractScaffoldFallback);
         assert!(!android.enters_real_event_loop());
-        assert_eq!(harmony.toolkit, NativeUiToolkit::HarmonyAbility);
-        assert_eq!(harmony.mode_name(), "contract_scaffold_fallback");
     }
 
     #[test]

@@ -61,7 +61,6 @@ $singleFeatures = @(
     "settings",
     "product-adapter",
     "android",
-    "harmony",
     "mobile",
     "clipboard",
     "image",

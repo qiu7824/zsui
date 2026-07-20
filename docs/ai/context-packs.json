@@ -292,11 +292,10 @@
     },
     {
       "id": "mobile-hosts",
-      "purpose": "Android Activity and Harmony Ability host contracts and proof",
+      "purpose": "Android Activity host contracts and proof",
       "required": [
         "src/mobile_host.rs",
         "src/android_activity_host.rs",
-        "src/harmony_ability_host.rs",
         "examples/mobile_scaffold_manifest.rs"
       ],
       "optional": [

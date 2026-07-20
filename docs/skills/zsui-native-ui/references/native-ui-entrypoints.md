@@ -46,7 +46,7 @@ is enough.
 | Runtime/window/settings/search host contracts | `src/native_hosts.rs` |
 | Platform/toolkit capability metadata | `src/native_adapter_manifest.rs` |
 | Target launch planning | `src/native_host_launch.rs` |
-| Mobile host scaffolds and bridge contracts | `src/mobile_host.rs`, `src/android_activity_host.rs`, `src/harmony_ability_host.rs` |
+| Mobile host scaffolds and bridge contracts | `src/mobile_host.rs`, `src/android_activity_host.rs` |
 | Target smoke artifacts | `src/native_smoke.rs`, `docs/native-host-smoke.md` |
 | Product adapter and runtime harness | `src/product_adapter.rs` |
 | Declarations and audit | `src/app.rs`, `src/window.rs`, `src/tray.rs`, `src/menu.rs`, `src/settings.rs`, `examples/declaration_audit.rs` |
@@ -67,9 +67,9 @@ Use these states in reports:
 - System complete: real OS behavior is proven, including permissions, focus,
   native lifecycle and desktop/mobile integration.
 
-Do not collapse these states. For example, Android and Harmony can appear in
-the capability model while still needing real Activity/Ability runtime hosts
-before they are target-smoke verified.
+Do not collapse these states. For example, Android can appear in the
+capability model while still needing a real Activity runtime host before it is
+target-smoke verified.
 
 ## Current Standalone Shape
 
@@ -98,7 +98,7 @@ Already reusable at code level:
   RAII native resources, buffered no-flicker rendering foundations,
   typed units, compile-time builder constraints, explicit contexts, safe public
   APIs, explicit state, theme tokens, declarative Rust builders, `Result`
-  errors, capability traits, Android/Harmony mobile host boundaries,
+  errors, capability traits, Android mobile host boundaries,
   feature-gated platform backends, split-crate/module trimming, platform API
   use on demand and strong typed IDs. The manifest records preferred and
   avoided API shapes;
@@ -144,43 +144,42 @@ Already reusable at code level:
   search controls and runtime startup.
 - Native backend metadata for Windows through the `win32_gdi` runtime, macOS
   through AppKit, Linux through the default `linux-direct` Wayland/X11 host
-  (with optional GTK4 compatibility), plus Android and Harmony adapter
-  scaffolds. `winit_desktop` is retained only as an explicit fallback.
-- Android Activity and Harmony Ability scaffold manifests with bridge entry
+  (with optional GTK4 compatibility), plus an Android adapter
+  scaffold. `winit_desktop` is retained only as an explicit fallback.
+- Android Activity scaffold manifests with bridge entry
   points, lifecycle bindings, permissions and capability mappings.
-- Android/Harmony bridge contracts through `mobile_runtime_bridge_contract()`,
+- Android bridge contracts through `mobile_runtime_bridge_contract()`,
   including FFI callback symbols, lifecycle/surface/input/command routes,
   safety rules and required device-smoke artifact names.
-- Android/Harmony bridge parity reports through
+- Android bridge parity reports through
   `mobile_runtime_bridge_parity_report()` and
   `mobile_scaffold_manifest --parity` to check scaffold/contract metadata,
   required callback route coverage and pending FFI symbols without claiming
   runtime readiness.
-- Android/Harmony bridge dispatch reports through
+- Android bridge dispatch reports through
   `mobile_runtime_bridge_dispatch_report()` and
   `mobile_scaffold_manifest --dispatch` to map required callback symbols to
   lifecycle, surface, typed input and `NativeRuntimeDriver` operations.
-- Android/Harmony contract dispatch smoke through
+- Android contract dispatch smoke through
   `mobile_runtime_bridge_contract_smoke_report()` and
   `mobile_scaffold_manifest --dispatch-smoke` to replay the declared bridge
   sequence without faking device proof.
-- Android/Harmony local contract artifact writing through
+- Android local contract artifact writing through
   `write_mobile_runtime_bridge_contract_artifacts()` and
   `mobile_scaffold_manifest --write-contract` to capture local bridge reports,
   the device-smoke plan and agent context without generating launch,
   screenshot, lifecycle, surface or input proof.
-- Android/Harmony local contract artifact review through
+- Android local contract artifact review through
   `review_mobile_runtime_bridge_contract_artifacts()` and
   `mobile_scaffold_manifest --review-contract`, including expected JSON schema
-  checks and separate from device-smoke proof review. The write/review contract
-  paths support an `all` target for Android and Harmony together.
-- Android/Harmony device-smoke plans and read-only review through
+  checks and separate from device-smoke proof review.
+- Android device-smoke plans and read-only review through
   `mobile_runtime_device_smoke_plan()` and
   `review_mobile_runtime_device_smoke_artifacts()`, including device-sourced
   schema checks for lifecycle, surface and input traces.
-- Android/Harmony device trace templates through
+- Android device trace templates through
   `mobile_runtime_device_smoke_trace_templates()` and
-  `mobile_scaffold_manifest --trace-template`, so Activity/Ability bridge code
+  `mobile_scaffold_manifest --trace-template`, so Activity bridge code
   can write reviewable lifecycle, surface and input artifacts.
 - Machine-readable AI context through `zsui_agent_context()` and
   `zsui_agent_context_json()`.
@@ -252,8 +251,8 @@ Still requiring implementation or target proof before system-complete claims:
 - Target artifact review on each OS/device through `native_smoke_review`.
 - Real tray/status, menu, dialog, file-picker, shell-open and clipboard monitor
   proof on each desktop target.
-- Android Activity and Harmony Ability runtime host implementations.
-- Android/Harmony FFI bridge implementations and real device artifacts beyond
+- Android Activity runtime host implementation.
+- Android FFI bridge implementation and real device artifacts beyond
   the current bridge contracts/reviewers.
 - Target smoke proof that a real native host can run through
   `ZsuiReusableRuntimeHarness`.

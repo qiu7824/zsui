@@ -42,7 +42,6 @@ fn parse_platform(platform: &str) -> Result<NativeUiPlatform, String> {
         "macos" => Ok(NativeUiPlatform::Macos),
         "linux" => Ok(NativeUiPlatform::Linux),
         "android" => Ok(NativeUiPlatform::Android),
-        "harmony" => Ok(NativeUiPlatform::Harmony),
         _ => Err(format!("unknown ZSUI platform `{platform}`")),
     }
 }

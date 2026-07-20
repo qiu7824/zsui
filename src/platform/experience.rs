@@ -10,7 +10,6 @@ pub(crate) enum PlatformDesignLanguage {
     AppKit,
     Gtk,
     Material,
-    Harmony,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,13 +51,6 @@ impl PlatformExperience {
                 backend: BackendProfile::android(),
                 backend_status: NativeUiBackendStatus::AdapterBoundaryScaffold,
                 adapter_boundary: "AndroidActivityAdapterBoundary",
-            },
-            NativeUiPlatform::Harmony => Self {
-                platform,
-                design_language: PlatformDesignLanguage::Harmony,
-                backend: BackendProfile::harmony(),
-                backend_status: NativeUiBackendStatus::AdapterBoundaryScaffold,
-                adapter_boundary: "HarmonyAbilityAdapterBoundary",
             },
         }
     }
@@ -116,17 +108,16 @@ impl PlatformExperience {
             PlatformDesignLanguage::Fluent => Some(ZsPlatformStyle::Windows),
             PlatformDesignLanguage::AppKit => Some(ZsPlatformStyle::Macos),
             PlatformDesignLanguage::Gtk => Some(ZsPlatformStyle::Gtk),
-            PlatformDesignLanguage::Material | PlatformDesignLanguage::Harmony => None,
+            PlatformDesignLanguage::Material => None,
         }
     }
 }
 
-pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 5] = [
+pub const SUPPORTED_NATIVE_UI_BACKENDS: [NativeUiBackendDescriptor; 4] = [
     PlatformExperience::for_platform(NativeUiPlatform::Windows).backend_descriptor(),
     PlatformExperience::for_platform(NativeUiPlatform::Macos).backend_descriptor(),
     PlatformExperience::for_platform(NativeUiPlatform::Linux).backend_descriptor(),
     PlatformExperience::for_platform(NativeUiPlatform::Android).backend_descriptor(),
-    PlatformExperience::for_platform(NativeUiPlatform::Harmony).backend_descriptor(),
 ];
 
 #[cfg(test)]
@@ -203,7 +194,6 @@ mod tests {
             "MacosAppKitWindowService",
             "LinuxDirectWindowHost",
             "AndroidActivityAdapterBoundary",
-            "HarmonyAbilityAdapterBoundary",
         ] {
             assert_eq!(
                 experience_core.matches(boundary).count(),
@@ -244,10 +234,6 @@ mod tests {
         );
         assert_eq!(
             PlatformExperience::for_platform(NativeUiPlatform::Android).shared_component_style(),
-            None
-        );
-        assert_eq!(
-            PlatformExperience::for_platform(NativeUiPlatform::Harmony).shared_component_style(),
             None
         );
     }

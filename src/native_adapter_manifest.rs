@@ -344,11 +344,6 @@ fn native_ui_capability_readiness(
             "src/android_activity_host.rs",
             "the Activity bridge contract exists but no Android runtime implementation is connected",
         ),
-        NativeUiPlatform::Harmony => (
-            ContractOnly,
-            "src/harmony_ability_host.rs",
-            "the Ability bridge contract exists but no Harmony runtime implementation is connected",
-        ),
     };
 
     NativeUiCapabilityReadiness {
@@ -634,16 +629,8 @@ mod tests {
             NativeUiBackendStatus::AdapterBoundaryScaffold
         );
 
-        let harmony = native_ui_backend_for_toolkit(NativeUiToolkit::HarmonyAbility)
-            .expect("harmony backend should be declared");
-        assert_eq!(harmony.platform, NativeUiPlatform::Harmony);
-        assert_eq!(
-            harmony.status,
-            NativeUiBackendStatus::AdapterBoundaryScaffold
-        );
-
-        assert_eq!(SUPPORTED_NATIVE_UI_PLATFORMS.len(), 5);
-        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 6);
+        assert_eq!(SUPPORTED_NATIVE_UI_PLATFORMS.len(), 4);
+        assert_eq!(SUPPORTED_NATIVE_UI_TOOLKITS.len(), 5);
         assert_eq!(REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES.len(), 18);
     }
 

@@ -6,7 +6,6 @@ pub(crate) enum NativeHostProfile {
     AppKit,
     LinuxDirect,
     AndroidActivity,
-    HarmonyAbility,
 }
 
 impl NativeHostProfile {
@@ -16,7 +15,6 @@ impl NativeHostProfile {
             Self::AppKit => "src/macos_appkit_services.rs",
             Self::LinuxDirect => "src/linux_direct.rs",
             Self::AndroidActivity => "src/android_activity_host.rs",
-            Self::HarmonyAbility => "src/harmony_ability_host.rs",
         }
     }
 
@@ -26,7 +24,6 @@ impl NativeHostProfile {
             Self::AppKit => "NSApplication event loop on macOS",
             Self::LinuxDirect => "Wayland/X11 native event loop on Linux",
             Self::AndroidActivity => "Android Activity host",
-            Self::HarmonyAbility => "Harmony Ability host",
         }
     }
 
@@ -36,7 +33,6 @@ impl NativeHostProfile {
             Self::AppKit => "AppKit NSWindow",
             Self::LinuxDirect => "Wayland/X11 native window with directly presented surface",
             Self::AndroidActivity => "android.app.Activity surface",
-            Self::HarmonyAbility => "OpenHarmony Ability window",
         }
     }
 }
@@ -56,7 +52,6 @@ pub(crate) enum NativeTextProfile {
     ))]
     CosmicText,
     AndroidText,
-    HarmonyText,
 }
 
 impl NativeTextProfile {
@@ -75,7 +70,6 @@ impl NativeTextProfile {
             ))]
             Self::CosmicText => "cosmic_text",
             Self::AndroidText => "android_text",
-            Self::HarmonyText => "harmony_text",
         }
     }
 }
@@ -95,7 +89,6 @@ pub(crate) enum NativeRasterProfile {
     ))]
     TinySkia,
     AndroidCanvas,
-    HarmonyDrawing,
 }
 
 impl NativeRasterProfile {
@@ -114,7 +107,6 @@ impl NativeRasterProfile {
             ))]
             Self::TinySkia => "tiny_skia",
             Self::AndroidCanvas => "android_canvas",
-            Self::HarmonyDrawing => "harmony_drawing",
         }
     }
 }
@@ -125,7 +117,6 @@ pub(crate) enum NativePresenterProfile {
     AppKitView,
     Softbuffer,
     AndroidSurface,
-    HarmonySurface,
 }
 
 impl NativePresenterProfile {
@@ -135,7 +126,6 @@ impl NativePresenterProfile {
             Self::AppKitView => "appkit_view",
             Self::Softbuffer => "softbuffer",
             Self::AndroidSurface => "android_surface",
-            Self::HarmonySurface => "harmony_surface",
         }
     }
 }
@@ -146,7 +136,6 @@ pub(crate) enum NativeServicesProfile {
     AppKit,
     XdgDesktop,
     Android,
-    Harmony,
 }
 
 impl NativeServicesProfile {
@@ -156,7 +145,6 @@ impl NativeServicesProfile {
             Self::AppKit => "appkit",
             Self::XdgDesktop => "xdg_desktop",
             Self::Android => "android",
-            Self::Harmony => "harmony",
         }
     }
 }
@@ -233,18 +221,6 @@ impl BackendProfile {
             raster: NativeRasterProfile::AndroidCanvas,
             presenter: NativePresenterProfile::AndroidSurface,
             services: NativeServicesProfile::Android,
-            real_runtime: false,
-        }
-    }
-
-    pub(crate) const fn harmony() -> Self {
-        Self {
-            toolkit: NativeUiToolkit::HarmonyAbility,
-            host: NativeHostProfile::HarmonyAbility,
-            text: NativeTextProfile::HarmonyText,
-            raster: NativeRasterProfile::HarmonyDrawing,
-            presenter: NativePresenterProfile::HarmonySurface,
-            services: NativeServicesProfile::Harmony,
             real_runtime: false,
         }
     }

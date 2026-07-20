@@ -61,15 +61,15 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "a ZSUI-only control gallery with native interaction, repaint and target smoke proof",
             "raising overall completion from manifests, AI metadata or mobile scaffolds that do not run on a target",
             "examples/navigation_shell_layout.rs, examples/workbench_shell.rs, examples/zsui_notepad.rs, examples/zsui_calculator.rs, src/shell_layout.rs, src/workbench.rs, src/document_shell.rs, src/calculator.rs, src/native.rs",
-            "attach the calculator runtime to the generic native builder, turn the notepad's native editor/file-dialog/lifecycle plumbing into reusable services, connect the workbench composer loop, then apply the same runtime gate to AppKit, GTK, Android and Harmony",
+            "attach the calculator runtime to the generic native builder, turn the notepad's native editor/file-dialog/lifecycle plumbing into reusable services, connect the workbench composer loop, then apply the same runtime gate to AppKit, GTK and Android",
         ),
         ZsuiRustFirstGoal::new(
             "one_line_native_entrypoints",
             "Keep the ordinary native-window entry point short, safe and target-selected by the framework.",
-            "zsui::native_window(\"Example\").size(900, 620).run()? for desktop now and mobile once Activity/Ability hosts are real",
-            "forcing users to choose raw HWND/AppKit/GTK/Activity/Ability objects for ordinary window creation",
+            "zsui::native_window(\"Example\").size(900, 620).run()? for desktop now and mobile once the Activity host is real",
+            "forcing users to choose raw HWND/AppKit/GTK/Activity objects for ordinary window creation",
             "src/native.rs, src/native_host_launch.rs",
-            "prove Windows, macOS and Linux target smoke for the one-line path, then connect Android and Harmony hosts without changing the public entry shape",
+            "prove Windows, macOS and Linux target smoke for the one-line path, then connect the Android host without changing the public entry shape",
         ),
         ZsuiRustFirstGoal::new(
             "composition_and_traits",
@@ -176,12 +176,12 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "split tray, hotkey, dialog, file-picker and shell-open backend traits into real hosts",
         ),
         ZsuiRustFirstGoal::new(
-            "mobile_native_hosts",
-            "Treat Android and Harmony as native platform targets with explicit Activity/Ability host boundaries.",
-            "Android Activity and Harmony Ability scaffolds, lifecycle bindings, FFI gates and device smoke artifacts",
-            "pretending desktop tray/window semantics map exactly to mobile notifications, abilities or activities",
-            "src/mobile_host.rs, src/android_activity_host.rs, src/harmony_ability_host.rs",
-            "turn scaffold manifests into real Activity/Ability runtime bridges and require device smoke proof",
+            "mobile_native_host",
+            "Treat Android as a native platform target with an explicit Activity host boundary.",
+            "Android Activity scaffold, lifecycle bindings, FFI gates and device smoke artifacts",
+            "pretending desktop tray/window semantics map exactly to mobile notifications or activities",
+            "src/mobile_host.rs, src/android_activity_host.rs",
+            "turn the scaffold manifest into a real Activity runtime bridge and require device smoke proof",
         ),
         ZsuiRustFirstGoal::new(
             "feature_gated_platform_capabilities",
@@ -210,7 +210,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
         ZsuiRustFirstGoal::new(
             "platform_api_on_demand",
             "Add platform API crates and bindings only when a concrete backend surface requires them.",
-            "narrow feature-gated windows-sys/windows-rs/AppKit/GTK/Android/Harmony bindings inside backend modules",
+            "narrow feature-gated windows-sys/windows-rs/AppKit/GTK/Android bindings inside backend modules",
             "pulling broad native dependency surfaces into core declarations or user-facing APIs before they are needed",
             "Cargo.toml, src/platform/windows/mod.rs, src/windows_gdi_renderer.rs",
             "use windows-rs or wider native APIs only for concrete Direct2D, composition, tray, input or renderer work",
@@ -243,7 +243,7 @@ mod tests {
         assert!(names.contains(&"typed_messages"));
         assert!(names.contains(&"raii_native_resources"));
         assert!(names.contains(&"production_native_foundation"));
-        assert!(names.contains(&"mobile_native_hosts"));
+        assert!(names.contains(&"mobile_native_host"));
         assert!(names.contains(&"feature_gated_platform_capabilities"));
         assert!(names.contains(&"task_scoped_ai_context"));
         assert!(names.contains(&"crate_split_architecture"));

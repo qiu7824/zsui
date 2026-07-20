@@ -111,10 +111,7 @@ pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<Nati
         ],
         PlatformName::Macos => vec![NativeIconSource::macos_symbol(icon)],
         PlatformName::Linux => vec![NativeIconSource::linux_theme(icon)],
-        PlatformName::Android
-        | PlatformName::Harmony
-        | PlatformName::Unknown
-        | PlatformName::Other(_) => Vec::new(),
+        PlatformName::Android | PlatformName::Unknown | PlatformName::Other(_) => Vec::new(),
     };
     #[cfg(any(
         feature = "fluent-icons",

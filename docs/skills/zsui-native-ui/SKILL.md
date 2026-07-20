@@ -1,6 +1,6 @@
 ---
 name: zsui-native-ui
-description: Work on ZSUI's standalone Rust UI contracts and native Windows Win32, macOS AppKit/SwiftUI, lightweight Linux Wayland/X11 plus optional GTK/libadwaita compatibility, Android Activity, and Harmony Ability hosts. Use this when modifying or verifying native UI framework surfaces such as windows, tray/status menus, settings pages, clipboard, dialogs, file pickers, host capabilities, launch plans, target smoke tests, or when an AI agent needs to understand how to build on ZSUI without copying product behavior.
+description: Work on ZSUI's standalone Rust UI contracts and native Windows Win32, macOS AppKit/SwiftUI, lightweight Linux Wayland/X11 plus optional GTK/libadwaita compatibility, and Android Activity hosts. Use this when modifying or verifying native UI framework surfaces such as windows, tray/status menus, settings pages, clipboard, dialogs, file pickers, host capabilities, launch plans, target smoke tests, or when an AI agent needs to understand how to build on ZSUI without copying product behavior.
 ---
 
 # ZSUI Native UI
@@ -35,7 +35,7 @@ platform host into a copy of a product application.
   and traits, typed messages, RAII resources, typed units, explicit state and
   safe public APIs. Use `docs/framework-goals.md` for the fuller guidance on
   one-line native window entry points, typed messages, feature/crate trimming,
-  split crates/modules for heavy widget and backend families, Android/Harmony
+  split crates/modules for heavy widget and backend families, Android
   host boundaries, buffered no-flicker rendering and no global widget
   registration.
 - Do not report a platform feature as complete just because a declaration or
@@ -77,8 +77,8 @@ platform host into a copy of a product application.
    Reuse `ZsCalculatorEngine` and `ZsCalculatorShellSpec` for standard decimal
    calculator behavior and presentation. Keep scientific/conversion modes and
    product-specific commands outside that shell until their contracts exist.
-3. For Android or Harmony, inspect `mobile_runtime_host_scaffold(platform)` and
-   `mobile_runtime_bridge_contract(platform)` before editing Activity/Ability
+3. For Android, inspect `mobile_runtime_host_scaffold(platform)` and
+   `mobile_runtime_bridge_contract(platform)` before editing Activity
    bridge code. Use `mobile_runtime_bridge_parity_report(platform)` to check
    required callback route coverage and pending FFI symbols. Use
    `mobile_runtime_bridge_dispatch_report(platform)` to check how required
@@ -91,14 +91,14 @@ platform host into a copy of a product application.
    `review_mobile_runtime_bridge_contract_artifacts(platform)` to validate
    local contract artifacts and expected JSON schemas separately from device
    proof. Use the `*_for_all` variants or CLI `all` target when updating
-   Android and Harmony together. Use
+   the configured mobile target. Use
    `mobile_runtime_device_smoke_plan(platform)` and
    `review_mobile_runtime_device_smoke_artifacts(platform)` when changing
    mobile device proof requirements; device trace JSON must satisfy the
    device-sourced lifecycle, surface and input schemas. Use
    `mobile_runtime_device_smoke_trace_templates(platform)` or
    `mobile_scaffold_manifest --trace-template` to inspect the exact trace shape
-   expected from a future Activity/Ability bridge.
+   expected from a future Activity bridge.
 4. Edit platform code only for native presentation or OS service calls.
 5. Route behavior through public contracts such as `ZsuiHost`,
    `NativeRuntimeDriver`, `NativeMainWindowHost`, `NativeDialogHost`,
@@ -133,7 +133,7 @@ Use `native_ui_backend_capability_matrix()`,
 `review_mobile_runtime_bridge_contract_artifacts()`,
 `native_host_smoke_plan()` and `docs/ai/reference.md` as the detailed ZSUI
 source of truth for progress. If the
-current machine is Windows, say that macOS, Linux, Android and Harmony runtime
+current machine is Windows, say that macOS, Linux and Android runtime
 proof still requires target artifacts.
 
 ## Verification

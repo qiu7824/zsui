@@ -228,7 +228,6 @@ fn parse_mobile_trace_kind(trace_kind: &str) -> Result<MobileRuntimeDeviceSmokeT
         "surface" => Ok(MobileRuntimeDeviceSmokeTraceKind::Surface),
         "input" => Ok(MobileRuntimeDeviceSmokeTraceKind::Input),
         "clipboard" => Ok(MobileRuntimeDeviceSmokeTraceKind::Clipboard),
-        "pasteboard" => Ok(MobileRuntimeDeviceSmokeTraceKind::Pasteboard),
         _ => Err(format!("unknown ZSUI mobile trace kind `{trace_kind}`")),
     }
 }
@@ -236,7 +235,6 @@ fn parse_mobile_trace_kind(trace_kind: &str) -> Result<MobileRuntimeDeviceSmokeT
 fn parse_mobile_platform(platform: &str) -> Result<NativeUiPlatform, String> {
     match platform {
         "android" => Ok(NativeUiPlatform::Android),
-        "harmony" => Ok(NativeUiPlatform::Harmony),
         _ => Err(format!("unknown ZSUI mobile platform `{platform}`")),
     }
 }

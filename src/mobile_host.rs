@@ -5,11 +5,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::android_activity_host::android_activity_host_scaffold;
 use crate::native_hosts::NativeRuntimeDriverOperation;
-use crate::{
-    android_activity_host::android_activity_host_scaffold,
-    harmony_ability_host::harmony_ability_host_scaffold,
-};
 use crate::{
     NativeUiAdapterCapability, NativeUiBackendStatus, NativeUiPlatform, NativeUiToolkit, ZsuiError,
     ZsuiResult,
@@ -155,7 +152,6 @@ pub enum MobileRuntimeDeviceSmokeTraceKind {
     Surface,
     Input,
     Clipboard,
-    Pasteboard,
 }
 
 impl MobileRuntimeDeviceSmokeTraceKind {
@@ -165,7 +161,6 @@ impl MobileRuntimeDeviceSmokeTraceKind {
             Self::Surface => "surface",
             Self::Input => "input",
             Self::Clipboard => "clipboard",
-            Self::Pasteboard => "pasteboard",
         }
     }
 
@@ -175,7 +170,6 @@ impl MobileRuntimeDeviceSmokeTraceKind {
             Self::Surface => "surface_trace",
             Self::Input => "input_trace",
             Self::Clipboard => "clipboard_trace",
-            Self::Pasteboard => "pasteboard_trace",
         }
     }
 
@@ -185,7 +179,6 @@ impl MobileRuntimeDeviceSmokeTraceKind {
             Self::Surface => "surface.json",
             Self::Input => "input.json",
             Self::Clipboard => "clipboard.json",
-            Self::Pasteboard => "pasteboard.json",
         }
     }
 }
@@ -729,7 +722,7 @@ pub fn mobile_runtime_bridge_parity_report(
     }
     if !ready_for_device_smoke {
         blocking_reasons.push(format!(
-            "{} device smoke is blocked until the Activity/Ability runtime exists",
+            "{} device smoke is blocked until the Activity runtime exists",
             scaffold.platform_name
         ));
     }
@@ -774,7 +767,7 @@ pub fn mobile_runtime_bridge_parity_report(
 }
 
 pub fn mobile_runtime_bridge_parity_reports() -> Vec<MobileRuntimeBridgeParityReport> {
-    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+    vec![NativeUiPlatform::Android]
         .into_iter()
         .filter_map(mobile_runtime_bridge_parity_report)
         .collect()
@@ -869,7 +862,7 @@ pub fn mobile_runtime_bridge_dispatch_report(
 }
 
 pub fn mobile_runtime_bridge_dispatch_reports() -> Vec<MobileRuntimeBridgeDispatchReport> {
-    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+    vec![NativeUiPlatform::Android]
         .into_iter()
         .filter_map(mobile_runtime_bridge_dispatch_report)
         .collect()
@@ -976,7 +969,7 @@ pub fn mobile_runtime_bridge_contract_smoke_report(
 
 pub fn mobile_runtime_bridge_contract_smoke_reports() -> Vec<MobileRuntimeBridgeContractSmokeReport>
 {
-    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+    vec![NativeUiPlatform::Android]
         .into_iter()
         .filter_map(mobile_runtime_bridge_contract_smoke_report)
         .collect()
@@ -1062,7 +1055,7 @@ pub fn write_mobile_runtime_bridge_contract_artifacts_for_all_to(
     artifact_root: impl AsRef<Path>,
 ) -> ZsuiResult<Vec<MobileRuntimeBridgeContractArtifactWriteReport>> {
     let artifact_root = artifact_root.as_ref();
-    [NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+    [NativeUiPlatform::Android]
         .into_iter()
         .map(|platform| write_mobile_runtime_bridge_contract_artifacts_to(platform, artifact_root))
         .collect()
@@ -1213,7 +1206,7 @@ pub fn review_mobile_runtime_bridge_contract_artifacts_for_all_at(
     artifact_root: impl AsRef<Path>,
 ) -> ZsuiResult<Vec<MobileRuntimeBridgeContractArtifactReviewReport>> {
     let artifact_root = artifact_root.as_ref();
-    [NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+    [NativeUiPlatform::Android]
         .into_iter()
         .map(|platform| review_mobile_runtime_bridge_contract_artifacts_at(platform, artifact_root))
         .collect()
@@ -1328,7 +1321,7 @@ pub fn mobile_runtime_device_smoke_plan_with_artifact_root(
             None
         } else {
             Some(format!(
-                "{platform_name} has a bridge contract but still needs real Activity/Ability FFI implementation and device artifacts"
+                "{platform_name} has a bridge contract but still needs a real Activity FFI implementation and device artifacts"
             ))
         },
         artifact_dir: path_to_mobile_manifest_string(artifact_dir),
@@ -1338,7 +1331,7 @@ pub fn mobile_runtime_device_smoke_plan_with_artifact_root(
 }
 
 pub fn mobile_runtime_device_smoke_plans() -> Vec<MobileRuntimeDeviceSmokePlan> {
-    vec![NativeUiPlatform::Android, NativeUiPlatform::Harmony]
+    vec![NativeUiPlatform::Android]
         .into_iter()
         .filter_map(mobile_runtime_device_smoke_plan)
         .collect()
@@ -1492,16 +1485,12 @@ pub fn mobile_runtime_host_scaffold(
 ) -> Option<MobileRuntimeHostScaffold> {
     match platform {
         NativeUiPlatform::Android => Some(android_activity_host_scaffold()),
-        NativeUiPlatform::Harmony => Some(harmony_ability_host_scaffold()),
         NativeUiPlatform::Windows | NativeUiPlatform::Macos | NativeUiPlatform::Linux => None,
     }
 }
 
 pub fn mobile_runtime_host_scaffolds() -> Vec<MobileRuntimeHostScaffold> {
-    vec![
-        android_activity_host_scaffold(),
-        harmony_ability_host_scaffold(),
-    ]
+    vec![android_activity_host_scaffold()]
 }
 
 pub fn mobile_runtime_host_scaffold_module_paths() -> Vec<&'static str> {
@@ -1951,7 +1940,6 @@ fn mobile_runtime_device_smoke_trace_kind_for_artifact_name(
         "surface_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Surface),
         "input_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Input),
         "clipboard_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Clipboard),
-        "pasteboard_trace" => Some(MobileRuntimeDeviceSmokeTraceKind::Pasteboard),
         _ => None,
     }
 }
@@ -1971,32 +1959,14 @@ fn mobile_runtime_device_smoke_trace_example_events(
                 "onDestroy",
             ]
         }
-        (NativeUiPlatform::Harmony, MobileRuntimeDeviceSmokeTraceKind::Lifecycle) => vec![
-            "onCreate",
-            "onWindowStageCreate",
-            "onForeground",
-            "onBackground",
-            "onWindowStageDestroy",
-            "onDestroy",
-        ],
         (NativeUiPlatform::Android, MobileRuntimeDeviceSmokeTraceKind::Surface) => {
             vec!["surfaceCreated", "surfaceChanged", "surfaceDestroyed"]
-        }
-        (NativeUiPlatform::Harmony, MobileRuntimeDeviceSmokeTraceKind::Surface) => {
-            vec![
-                "onWindowStageCreate",
-                "onAreaChange",
-                "onWindowStageDestroy",
-            ]
         }
         (_, MobileRuntimeDeviceSmokeTraceKind::Input) => {
             vec!["focus", "pointer_down", "pointer_up", "key_input"]
         }
         (NativeUiPlatform::Android, MobileRuntimeDeviceSmokeTraceKind::Clipboard) => {
             vec!["set_primary_clip", "read_primary_clip"]
-        }
-        (NativeUiPlatform::Harmony, MobileRuntimeDeviceSmokeTraceKind::Pasteboard) => {
-            vec!["set_data", "get_data"]
         }
         _ => Vec::new(),
     }
@@ -2024,9 +1994,6 @@ fn validate_mobile_device_smoke_artifact_schema(
         }
         "clipboard_trace" => {
             require_mobile_device_trace_schema(value, expected_platform_name, "clipboard")?;
-        }
-        "pasteboard_trace" => {
-            require_mobile_device_trace_schema(value, expected_platform_name, "pasteboard")?;
         }
         artifact_name => {
             return Err(format!("unknown device smoke artifact `{artifact_name}`"));
@@ -2145,18 +2112,14 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn mobile_scaffolds_exist_for_android_and_harmony_only() {
+    fn mobile_scaffold_exists_for_android() {
         let scaffolds = mobile_runtime_host_scaffolds();
 
-        assert_eq!(scaffolds.len(), 2);
+        assert_eq!(scaffolds.len(), 1);
         assert_eq!(scaffolds[0].platform_name, "android");
-        assert_eq!(scaffolds[1].platform_name, "harmony");
         assert!(mobile_runtime_host_scaffold(NativeUiPlatform::Windows).is_none());
         assert!(
             mobile_runtime_host_scaffold_module_paths().contains(&"src/android_activity_host.rs")
-        );
-        assert!(
-            mobile_runtime_host_scaffold_module_paths().contains(&"src/harmony_ability_host.rs")
         );
     }
 
@@ -2164,8 +2127,6 @@ mod tests {
     fn mobile_scaffolds_name_pending_platform_bindings() {
         let android = mobile_runtime_host_scaffold(NativeUiPlatform::Android)
             .expect("android scaffold should exist");
-        let harmony = mobile_runtime_host_scaffold(NativeUiPlatform::Harmony)
-            .expect("harmony scaffold should exist");
 
         assert!(android.pending_capability_names().contains(&"main_window"));
         assert!(android
@@ -2173,21 +2134,13 @@ mod tests {
             .expect("android main window binding should exist")
             .platform_binding_name
             .contains("Activity"));
-        assert!(harmony
-            .capability_binding_for(NativeUiAdapterCapability::MainWindow)
-            .expect("harmony main window binding should exist")
-            .platform_binding_name
-            .contains("Ability"));
         assert!(android.implemented_capability_names().is_empty());
-        assert!(harmony.implemented_capability_names().is_empty());
     }
 
     #[test]
     fn mobile_bridge_contracts_name_required_runtime_callbacks_and_device_artifacts() {
         let android = mobile_runtime_bridge_contract(NativeUiPlatform::Android)
             .expect("android bridge contract should exist");
-        let harmony = mobile_runtime_bridge_contract(NativeUiPlatform::Harmony)
-            .expect("harmony bridge contract should exist");
 
         assert!(android
             .required_callback_symbol_names()
@@ -2195,18 +2148,9 @@ mod tests {
         assert!(android
             .required_callback_symbol_names()
             .contains(&"zsui_android_activity_surface_created"));
-        assert!(harmony
-            .required_callback_symbol_names()
-            .contains(&"zsui_harmony_ability_lifecycle"));
-        assert!(harmony
-            .required_callback_symbol_names()
-            .contains(&"zsui_harmony_ability_surface_created"));
         assert!(android
             .required_device_smoke_file_names()
             .contains(&"lifecycle.json"));
-        assert!(harmony
-            .required_device_smoke_file_names()
-            .contains(&"surface.json"));
         assert!(mobile_runtime_bridge_callback_symbol_names()
             .contains(&"zsui_android_activity_dispatch_ui_event"));
         assert!(mobile_runtime_device_smoke_artifact_names().contains(&"device-window.png"));
@@ -2217,10 +2161,8 @@ mod tests {
         let reports = mobile_runtime_bridge_parity_reports();
         let android = mobile_runtime_bridge_parity_report(NativeUiPlatform::Android)
             .expect("android parity report should exist");
-        let harmony = mobile_runtime_bridge_parity_report(NativeUiPlatform::Harmony)
-            .expect("harmony parity report should exist");
 
-        assert_eq!(reports.len(), 2);
+        assert_eq!(reports.len(), 1);
         assert!(android.scaffold_matches_contract);
         assert!(android.contract_covers_required_runtime_routes);
         assert!(android.missing_required_callback_kind_names.is_empty());
@@ -2233,9 +2175,6 @@ mod tests {
         assert!(android
             .required_device_smoke_file_names
             .contains(&"device-window.png"));
-        assert!(harmony
-            .pending_ffi_callback_symbol_names
-            .contains(&"zsui_harmony_ability_dispatch_ui_event"));
         assert!(mobile_runtime_required_bridge_callback_kind_names().contains(&"event_poll"));
         assert!(mobile_runtime_device_smoke_command_names()
             .contains(&"mobile_scaffold_manifest --parity"));
@@ -2245,8 +2184,6 @@ mod tests {
     fn mobile_bridge_dispatch_report_maps_callbacks_to_runtime_operations() {
         let android = mobile_runtime_bridge_dispatch_report(NativeUiPlatform::Android)
             .expect("android dispatch report should exist");
-        let harmony = mobile_runtime_bridge_dispatch_report(NativeUiPlatform::Harmony)
-            .expect("harmony dispatch report should exist");
 
         assert!(android.dispatch_contract_ready);
         assert!(!android.runtime_ffi_implemented);
@@ -2280,10 +2217,6 @@ mod tests {
         assert!(android.dispatch_steps.iter().any(|step| step.symbol_name
             == "zsui_android_activity_dispatch_ui_event"
             && step.dispatch_operation_name == "dispatch_ui_event"));
-        assert!(harmony.dispatch_contract_ready);
-        assert!(harmony.dispatch_steps.iter().any(|step| step.symbol_name
-            == "zsui_harmony_ability_surface_resized"
-            && step.dispatch_operation_name == "bind_or_resize_surface"));
         assert!(mobile_runtime_bridge_dispatch_reports_json()
             .expect("dispatch reports should serialize")
             .contains("dispatch_contract_ready"));
@@ -2295,8 +2228,6 @@ mod tests {
     fn mobile_bridge_contract_smoke_replays_dispatch_steps_without_device_claims() {
         let android = mobile_runtime_bridge_contract_smoke_report(NativeUiPlatform::Android)
             .expect("android contract smoke report should exist");
-        let harmony = mobile_runtime_bridge_contract_smoke_report(NativeUiPlatform::Harmony)
-            .expect("harmony contract smoke report should exist");
 
         assert_eq!(android.smoke_kind_name, "contract_dispatch_smoke");
         assert!(android.contract_smoke_complete);
@@ -2316,10 +2247,6 @@ mod tests {
         assert!(android
             .native_runtime_driver_operation_names
             .contains(&"start_runtime"));
-        assert!(harmony.contract_smoke_complete);
-        assert!(harmony.steps.iter().any(|step| step.symbol_name
-            == "zsui_harmony_ability_dispatch_command"
-            && step.dispatch_operation_name == "dispatch_ui_command"));
         assert!(mobile_runtime_bridge_contract_smoke_reports_json()
             .expect("contract smoke reports should serialize")
             .contains("contract_dispatch_smoke"));
@@ -2428,7 +2355,7 @@ mod tests {
         let write_reports = write_mobile_runtime_bridge_contract_artifacts_for_all_to(&root)
             .expect("all mobile contract artifacts should write");
 
-        assert_eq!(write_reports.len(), 2);
+        assert_eq!(write_reports.len(), 1);
         assert!(write_reports
             .iter()
             .all(|report| report.contract_artifacts_complete));
@@ -2438,13 +2365,10 @@ mod tests {
         assert!(write_reports
             .iter()
             .any(|report| report.platform == NativeUiPlatform::Android));
-        assert!(write_reports
-            .iter()
-            .any(|report| report.platform == NativeUiPlatform::Harmony));
 
         let review_reports = review_mobile_runtime_bridge_contract_artifacts_for_all_at(&root)
             .expect("all mobile contract artifacts should review");
-        assert_eq!(review_reports.len(), 2);
+        assert_eq!(review_reports.len(), 1);
         assert!(review_reports
             .iter()
             .all(|report| report.contract_artifacts_complete));
@@ -2459,7 +2383,7 @@ mod tests {
     fn mobile_bridge_contract_artifact_review_reports_missing_contract_files() {
         let root = unique_mobile_test_root("contract-review-missing");
         let report =
-            review_mobile_runtime_bridge_contract_artifacts_at(NativeUiPlatform::Harmony, &root)
+            review_mobile_runtime_bridge_contract_artifacts_at(NativeUiPlatform::Android, &root)
                 .expect("contract review should report missing files");
 
         assert!(!report.contract_artifacts_complete);
@@ -2503,11 +2427,6 @@ mod tests {
         let android_templates =
             mobile_runtime_device_smoke_trace_templates(NativeUiPlatform::Android)
                 .expect("android trace templates should exist");
-        let harmony_lifecycle = mobile_runtime_device_smoke_trace_template(
-            NativeUiPlatform::Harmony,
-            MobileRuntimeDeviceSmokeTraceKind::Lifecycle,
-        )
-        .expect("harmony lifecycle template should exist");
 
         assert!(android_templates.iter().any(|template| {
             template.file_name == "lifecycle.json"
@@ -2518,13 +2437,6 @@ mod tests {
         assert!(android_templates.iter().any(|template| {
             template.file_name == "clipboard.json" && !template.required_for_device_smoke
         }));
-        assert_eq!(harmony_lifecycle.trace_kind_name, "lifecycle");
-        assert!(harmony_lifecycle.events.contains(&"onWindowStageCreate"));
-        assert!(
-            mobile_runtime_device_smoke_trace_templates_json(NativeUiPlatform::Harmony)
-                .expect("trace templates should serialize")
-                .contains("device_smoke")
-        );
         assert!(mobile_runtime_device_smoke_trace_template_json(
             NativeUiPlatform::Android,
             MobileRuntimeDeviceSmokeTraceKind::Input,
@@ -2554,32 +2466,32 @@ mod tests {
     #[test]
     fn mobile_device_smoke_review_validates_json_and_png_artifacts() {
         let root = unique_mobile_test_root("valid");
-        let dir = root.join("harmony");
+        let dir = root.join("android");
         fs::create_dir_all(&dir).expect("test artifact dir should be creatable");
         let manifest = serde_json::to_string_pretty(
-            &mobile_runtime_host_scaffold(NativeUiPlatform::Harmony)
-                .expect("harmony scaffold should exist"),
+            &mobile_runtime_host_scaffold(NativeUiPlatform::Android)
+                .expect("android scaffold should exist"),
         )
-        .expect("harmony scaffold should serialize");
+        .expect("android scaffold should serialize");
         write_text(&dir.join("manifest.json"), &manifest);
         write_text(&dir.join("device-launch.log"), "launched");
         write_png_header(&dir.join("device-window.png"));
         write_device_trace(
             &dir.join("lifecycle.json"),
-            "harmony",
+            "android",
             "lifecycle",
             "onCreate",
         );
         write_device_trace(
             &dir.join("surface.json"),
-            "harmony",
+            "android",
             "surface",
-            "onWindowStageCreate",
+            "surfaceCreated",
         );
-        write_device_trace(&dir.join("input.json"), "harmony", "input", "touch");
+        write_device_trace(&dir.join("input.json"), "android", "input", "touch");
 
         let report =
-            review_mobile_runtime_device_smoke_artifacts_at(NativeUiPlatform::Harmony, &root)
+            review_mobile_runtime_device_smoke_artifacts_at(NativeUiPlatform::Android, &root)
                 .expect("mobile device smoke review should inspect artifacts");
 
         assert!(report.device_smoke_complete);
@@ -2647,7 +2559,6 @@ mod tests {
         let json = mobile_runtime_host_scaffolds_json().expect("scaffolds should serialize");
 
         assert!(json.contains("android_activity"));
-        assert!(json.contains("harmony_ability"));
         assert!(json.contains("device smoke artifacts"));
         assert!(json.contains("zsui_android_activity_surface_created"));
 

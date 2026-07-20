@@ -1259,7 +1259,6 @@ fn smoke_capabilities_for_platform(platform: NativeUiPlatform) -> HostCapabiliti
         NativeUiPlatform::Macos => HostCapabilities::macos_native_window_host(),
         NativeUiPlatform::Linux => HostCapabilities::linux_native_window_host(),
         NativeUiPlatform::Android => HostCapabilities::android_native_window_host(),
-        NativeUiPlatform::Harmony => HostCapabilities::harmony_native_window_host(),
     }
 }
 
@@ -1344,7 +1343,7 @@ mod tests {
 
         assert!(json.contains("target/native-host-smoke/windows"));
         assert!(json.contains("agent-context.json"));
-        assert!(json.contains("harmony"));
+        assert!(json.contains("android"));
     }
 
     #[test]

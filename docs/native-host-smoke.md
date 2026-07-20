@@ -14,7 +14,7 @@ Generate the smoke manifest with:
 cargo run --example native_smoke_manifest -- windows
 ```
 
-Use `macos`, `linux`, `android`, `harmony`, `current` or `all` for other
+Use `macos`, `linux`, `android`, `current` or `all` for other
 manifest scopes.
 
 Record the contract-level artifact files with:
@@ -631,13 +631,12 @@ Windows uses the `win32_gdi` runtime, macOS uses AppKit, and Linux defaults to
 supplied draw plans. AppKit and `linux-direct` now capture their final platform
 view automatically in Native Proof CI; Ubuntu 24.04 X11/Xvfb proof is green,
 while a real Wayland compositor run remains pending.
-Android and Harmony are still scaffold/bridge-contract plans until real
-Activity/Ability runtime hosts exist. Their current device-smoke contract can
+Android is still a scaffold/bridge-contract plan until a real Activity runtime
+host exists. Its current device-smoke contract can
 be inspected with:
 
 ```powershell
 cargo run --example mobile_scaffold_manifest -- --bridge android
-cargo run --example mobile_scaffold_manifest -- --bridge harmony
 cargo run --example mobile_scaffold_manifest -- --parity android
 cargo run --example mobile_scaffold_manifest -- --dispatch android
 cargo run --example mobile_scaffold_manifest -- --dispatch-smoke android
@@ -661,8 +660,8 @@ write-contract command writes local contract JSON artifacts, including
 `device-smoke-plan.json` and `agent-context.json`, but intentionally does not
 create device launch logs, screenshots, lifecycle, surface or input traces. The
 review-contract command validates only those local contract JSON artifacts and
-their expected schemas. Both contract artifact commands accept `all` to cover
-Android and Harmony. The review command validates device-smoke artifact
+their expected schemas. Both contract artifact commands accept `all` for the
+configured mobile target. The review command validates device-smoke artifact
 presence, JSON files, PNG headers and device-sourced trace schemas. The
 trace-template command prints the lifecycle/surface/input JSON shape the
 device-side bridge must write. None of these commands generates or fakes device

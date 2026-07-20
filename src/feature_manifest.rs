@@ -440,20 +440,12 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "Android Activity host scaffold and future runtime bridge",
         ),
         ZsuiCargoFeature::new(
-            "harmony",
-            Platform,
-            false,
-            Vec::new(),
-            Vec::new(),
-            "Harmony Ability host scaffold and future runtime bridge",
-        ),
-        ZsuiCargoFeature::new(
             "mobile",
             Platform,
             false,
             Vec::new(),
-            vec!["android", "harmony"],
-            "combined mobile platform scaffolds",
+            vec!["android"],
+            "Android mobile platform scaffold",
         ),
         ZsuiCargoFeature::new(
             "clipboard",

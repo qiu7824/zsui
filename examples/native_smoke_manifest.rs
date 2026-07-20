@@ -37,7 +37,6 @@ fn parse_platform(platform: &str) -> Option<NativeUiPlatform> {
         "macos" => Some(NativeUiPlatform::Macos),
         "linux" => Some(NativeUiPlatform::Linux),
         "android" => Some(NativeUiPlatform::Android),
-        "harmony" => Some(NativeUiPlatform::Harmony),
         _ => None,
     }
 }

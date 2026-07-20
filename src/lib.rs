@@ -45,7 +45,6 @@ pub mod framework_goals;
 pub mod geometry;
 #[cfg(feature = "grid-view")]
 pub mod grid_view;
-pub mod harmony_ability_host;
 pub mod host;
 pub mod host_protocol;
 pub mod hotkey;
@@ -309,12 +308,6 @@ pub use geometry::{
 };
 #[cfg(feature = "grid-view")]
 pub use grid_view::{ZsGridViewItem, ZsGridViewItemId, ZsGridViewState};
-pub use harmony_ability_host::{
-    harmony_ability_bridge_callbacks, harmony_ability_bridge_contract,
-    harmony_ability_bridge_entry_points, harmony_ability_capability_bindings,
-    harmony_ability_device_smoke_artifacts, harmony_ability_host_scaffold,
-    harmony_ability_lifecycle_bindings, harmony_ability_required_permissions,
-};
 pub use host::{MemoryHost, PlatformHost, TrayRecord, WindowRecord, ZsuiHost};
 pub use host_protocol::{
     clipboard_monitor_poll_result_for_sequence, native_paste_target_activation_snapshot,
@@ -1088,23 +1081,12 @@ mod tests {
     #[test]
     fn mobile_platform_capabilities_are_explicit_scaffolds() {
         assert_eq!(PlatformName::Android.as_str(), "android");
-        assert_eq!(PlatformName::Harmony.as_str(), "harmony");
 
         let android = HostCapabilities::android_scaffold();
         assert_eq!(android.platform, PlatformName::Android);
         assert_eq!(android.windows.status, CapabilityStatus::Partial);
         assert_eq!(
             HostCapabilities::android_native_window_host()
-                .windows
-                .status,
-            CapabilityStatus::Unsupported
-        );
-
-        let harmony = HostCapabilities::harmony_scaffold();
-        assert_eq!(harmony.platform, PlatformName::Harmony);
-        assert_eq!(harmony.windows.status, CapabilityStatus::Partial);
-        assert_eq!(
-            HostCapabilities::harmony_native_window_host()
                 .windows
                 .status,
             CapabilityStatus::Unsupported

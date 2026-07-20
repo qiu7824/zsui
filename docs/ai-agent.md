@@ -37,7 +37,7 @@ and is not part of normal task context.
 - Cargo defaults remain small; advanced controls, services and backends are
   explicit features or optional dependencies.
 - Windows is the strongest real runtime today. macOS/Linux are first-pass
-  desktop paths. Android/Harmony still require real runtime and device proof.
+  desktop paths. Android still requires a real runtime and device proof.
 - The component catalog currently tracks 48 families: 46 first-pass runtime,
   2 contract-only and none not started. WebView is intentionally outside the
   v0.2 product boundary; composite shells do not change the catalog count.
@@ -58,7 +58,7 @@ and is not part of normal task context.
 | `windows-renderer` | Win32/GDI+, no-flicker paint, DPI, icons, pointer input |
 | `icons` | Semantic icons, native platform sources and licensed SVG fallback |
 | `desktop-hosts` | Windows/macOS/Linux host and capability boundaries |
-| `mobile-hosts` | Android Activity and Harmony Ability contracts/proof |
+| `mobile-hosts` | Android Activity contracts/proof |
 | `product-adapter` | Product boundary, runtime harness, command executors |
 | `completion-audit` | Full progress, component count, platform evidence |
 | `release` | Formatting, tests, feature matrix, docs and release checks |

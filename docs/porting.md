@@ -2,10 +2,10 @@
 
 A ZSUI host translates framework declarations into native platform behavior.
 It should not embed product business logic.
-Current platform names include Windows, macOS, Linux, Android and Harmony.
-Android and Harmony are capability scaffolds until dedicated mobile runtime
-hosts are implemented. Use `mobile_runtime_host_scaffold(platform)` or
-`examples/mobile_scaffold_manifest.rs` to inspect the current Activity/Ability
+Current platform names include Windows, macOS, Linux and Android.
+Android is a capability scaffold until its dedicated mobile runtime host is
+implemented. Use `mobile_runtime_host_scaffold(platform)` or
+`examples/mobile_scaffold_manifest.rs` to inspect the current Activity
 bridge entry points, lifecycle bindings, capability bindings and target smoke
 requirements. Use `mobile_runtime_bridge_contract(platform)` or
 `examples/mobile_scaffold_manifest.rs --bridge <platform>` for the stricter
@@ -30,7 +30,7 @@ generating device proof. Use
 `examples/mobile_scaffold_manifest.rs --review-contract <platform>` to validate
 those local contract artifacts and expected JSON schemas separately from
 device-smoke proof. The write/review contract APIs also have `*_for_all`
-variants, and the CLI accepts `all` for both Android and Harmony. Use
+variants, and the CLI accepts `all` for the configured mobile target. Use
 `examples/mobile_scaffold_manifest.rs --smoke <platform>` for the device
 artifact plan, `--trace-template <platform>` for lifecycle/surface/input trace
 templates and `--review <platform>` for read-only validation of captured mobile
@@ -40,8 +40,8 @@ device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
 `windows-gdi`, `windows-win32`, `macos-appkit`, `linux-direct`,
-`linux-direct-lite`, `linux-gtk`,
-`android` and `harmony` are platform/backend gates, while `clipboard` and
+`linux-direct-lite`, `linux-gtk` and
+`android` are platform/backend gates, while `clipboard` and
 `image` own their optional dependencies. The default `window` umbrella must
 keep the one-line desktop entry working and rely
 on target-specific dependencies to compile only the active platform backend.

@@ -433,13 +433,12 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             ],
         },
         ZsuiCompletionArea {
-            area_name: "android_and_harmony",
+            area_name: "android",
             percent_complete: 32,
             status_name: "mobile_device_smoke_trace_template_ready",
             source_path: "src/mobile_host.rs",
             missing_before_complete: vec![
                 "Android Activity FFI implementation",
-                "Harmony Ability FFI implementation",
                 "real device smoke artifacts",
             ],
         },
@@ -465,7 +464,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "manual or touch scroll interaction proof",
                 "macOS/Linux screenshot capture",
                 "macOS/Linux target smoke artifacts",
-                "real Android/Harmony device artifact runs",
+                "real Android device artifact runs",
             ],
         },
     ]
@@ -584,7 +583,6 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             "scripts/ai-context.ps1",
             "src/mobile_host.rs",
             "src/android_activity_host.rs",
-            "src/harmony_ability_host.rs",
             "src/windows_gdi_renderer.rs",
             "src/platform/windows/mod.rs",
         ],
@@ -845,26 +843,6 @@ fn platform_binding_name_for_capability(
         (NativeUiPlatform::Android, "main_execution_plan_bridge") => {
             Some("shared_main_execution_plan_bridge")
         }
-        (NativeUiPlatform::Harmony, "main_window") => Some("harmony_ability_window"),
-        (NativeUiPlatform::Harmony, "settings_window") => Some("harmony_settings_page"),
-        (NativeUiPlatform::Harmony, "settings_dropdown") => Some("harmony_selector_or_menu"),
-        (NativeUiPlatform::Harmony, "input_dialog") => Some("harmony_text_input_dialog"),
-        (NativeUiPlatform::Harmony, "edit_dialog") => Some("harmony_text_editor_ability"),
-        (NativeUiPlatform::Harmony, "clipboard") => Some("harmony_pasteboard"),
-        (NativeUiPlatform::Harmony, "popup_menu") => Some("harmony_menu"),
-        (NativeUiPlatform::Harmony, "status_item") => Some("harmony_notification_surface"),
-        (NativeUiPlatform::Harmony, "renderer") => Some("harmony_canvas_renderer"),
-        (NativeUiPlatform::Harmony, "text_layout") => Some("harmony_text_layout"),
-        (NativeUiPlatform::Harmony, "main_search_control") => Some("harmony_search_component"),
-        (NativeUiPlatform::Harmony, "transient_window") => Some("harmony_popup_component"),
-        (NativeUiPlatform::Harmony, "ime") => Some("harmony_input_method_bridge"),
-        (NativeUiPlatform::Harmony, "shell_open") => Some("harmony_want_launcher"),
-        (NativeUiPlatform::Harmony, "file_dialog") => Some("harmony_document_picker"),
-        (NativeUiPlatform::Harmony, "paste_target") => Some("harmony_accessibility_paste_target"),
-        (NativeUiPlatform::Harmony, "window_identity") => Some("harmony_ability_identity"),
-        (NativeUiPlatform::Harmony, "main_execution_plan_bridge") => {
-            Some("shared_main_execution_plan_bridge")
-        }
         _ => None,
     }
 }
@@ -880,9 +858,9 @@ mod tests {
         assert_eq!(context.framework_name, "zsui");
         assert_eq!(
             context.readiness.platform_names,
-            vec!["windows", "macos", "linux", "android", "harmony"]
+            vec!["windows", "macos", "linux", "android"]
         );
-        assert_eq!(context.platform_bootstrap.len(), 5);
+        assert_eq!(context.platform_bootstrap.len(), 4);
         assert_eq!(
             context.readiness.default_feature_names,
             vec!["window", "button", "label"]
@@ -940,14 +918,13 @@ mod tests {
         assert!(context
             .readiness
             .rust_first_goal_names
-            .contains(&"mobile_native_hosts"));
+            .contains(&"mobile_native_host"));
         assert!(context
             .readiness
             .rust_first_goal_names
             .contains(&"crate_split_architecture"));
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
-        assert!(context.readiness.scaffold_platforms.contains(&"harmony"));
-        assert_eq!(context.readiness.platform_capability_readiness.len(), 5);
+        assert_eq!(context.readiness.platform_capability_readiness.len(), 4);
         let macos = context
             .readiness
             .platform_capability_readiness
@@ -1022,16 +999,8 @@ mod tests {
             .contains(&"src/android_activity_host.rs"));
         assert!(context
             .readiness
-            .mobile_runtime_bridge_contract_module_paths
-            .contains(&"src/harmony_ability_host.rs"));
-        assert!(context
-            .readiness
             .mobile_runtime_bridge_callback_symbol_names
             .contains(&"zsui_android_activity_surface_created"));
-        assert!(context
-            .readiness
-            .mobile_runtime_bridge_callback_symbol_names
-            .contains(&"zsui_harmony_ability_lifecycle"));
         assert!(context
             .readiness
             .mobile_runtime_bridge_contract_artifact_file_names
@@ -1099,8 +1068,6 @@ mod tests {
     fn bootstrap_plan_names_next_gate_for_mobile_scaffolds() {
         let android = zsui_reuse_bootstrap_plan(NativeUiPlatform::Android)
             .expect("android bootstrap should exist");
-        let harmony = zsui_reuse_bootstrap_plan(NativeUiPlatform::Harmony)
-            .expect("harmony bootstrap should exist");
 
         assert!(android.scaffolded());
         assert_eq!(
@@ -1110,9 +1077,6 @@ mod tests {
         assert!(android
             .platform_binding_names
             .contains(&"android_activity_surface"));
-        assert!(harmony
-            .platform_binding_names
-            .contains(&"harmony_ability_window"));
     }
 
     #[test]
@@ -1158,8 +1122,6 @@ mod tests {
         assert!(json.contains("appkit"));
         assert!(json.contains("gtk4_libadwaita"));
         assert!(json.contains("android_activity"));
-        assert!(json.contains("harmony_ability"));
-        assert!(json.contains("zsui_harmony_ability_surface_created"));
         assert!(json.contains("device-smoke-plan.json"));
         assert!(json.contains("agent-context.json"));
         assert!(json.contains("device-window.png"));
@@ -1170,7 +1132,6 @@ mod tests {
         assert!(json.contains("mobile_scaffold_manifest --review-contract"));
         assert!(json.contains("mobile_scaffold_manifest --trace-template"));
         assert!(json.contains("mobile_scaffold_manifest --review"));
-        assert!(json.contains("src/harmony_ability_host.rs"));
         assert!(json.contains("src/shell_layout.rs"));
         assert!(json.contains("examples/navigation_shell_layout.rs"));
     }
