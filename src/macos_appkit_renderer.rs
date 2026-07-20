@@ -1171,6 +1171,7 @@ struct AppKitMenuAccessibilityTreeCounts {
     node_count: usize,
     checked_count: usize,
     expanded_count: usize,
+    paths: Vec<String>,
 }
 
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
@@ -1180,6 +1181,13 @@ fn appkit_menu_accessibility_tree_counts(
     let mut evidence = AppKitMenuAccessibilityTreeCounts::default();
     for element in children.to_vec() {
         evidence.node_count = evidence.node_count.saturating_add(1);
+        let identifier: Option<Retained<NSString>> =
+            unsafe { msg_send![&*element, accessibilityIdentifier] };
+        evidence.paths.push(
+            identifier
+                .map(|identifier| identifier.to_string())
+                .unwrap_or_else(|| "<missing>".to_string()),
+        );
         let value: Option<Retained<AnyObject>> =
             unsafe { msg_send![&*element, accessibilityValue] };
         if value.is_some_and(|value| unsafe { msg_send![&*value, boolValue] }) {
@@ -1198,12 +1206,13 @@ fn appkit_menu_accessibility_tree_counts(
             evidence.expanded_count = evidence
                 .expanded_count
                 .saturating_add(nested.expanded_count);
+            evidence.paths.extend(nested.paths);
         }
     }
     evidence
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct MacosAppKitAccessibilityEvidence {
     pub(crate) node_count: usize,
     pub(crate) expected_node_count: usize,
@@ -1211,24 +1220,28 @@ pub(crate) struct MacosAppKitAccessibilityEvidence {
     pub(crate) expected_checked_count: usize,
     pub(crate) expanded_count: usize,
     pub(crate) expected_expanded_count: usize,
+    pub(crate) paths: Vec<String>,
+    pub(crate) expected_paths: Vec<String>,
 }
 
 impl MacosAppKitAccessibilityEvidence {
-    pub(crate) const fn verified(self) -> bool {
+    pub(crate) fn verified(&self) -> bool {
         self.node_count == self.expected_node_count
             && self.checked_count == self.expected_checked_count
             && self.expanded_count == self.expected_expanded_count
     }
 
-    pub(crate) fn event(self) -> String {
+    pub(crate) fn event(&self) -> String {
         format!(
-            "appkit_accessibility_tree:nodes={}/{},checked={}/{},expanded={}/{}",
+            "appkit_accessibility_tree:nodes={}/{},checked={}/{},expanded={}/{},paths={:?}/{:?}",
             self.node_count,
             self.expected_node_count,
             self.checked_count,
             self.expected_checked_count,
             self.expanded_count,
-            self.expected_expanded_count
+            self.expected_expanded_count,
+            self.paths,
+            self.expected_paths
         )
     }
 }
@@ -1279,6 +1292,16 @@ impl MacosAppKitDrawViewHost {
                     .iter()
                     .filter(|item| item.expanded() == Some(true))
                     .count();
+                let expected_paths = snapshot
+                    .items
+                    .iter()
+                    .map(|item| {
+                        format!(
+                            "zsui-menu-flyout-item-{}",
+                            appkit_menu_flyout_path_identifier(item.path())
+                        )
+                    })
+                    .collect();
                 return Some(MacosAppKitAccessibilityEvidence {
                     node_count: evidence.node_count.saturating_add(1),
                     expected_node_count: snapshot.items.len().saturating_add(1),
@@ -1286,6 +1309,8 @@ impl MacosAppKitDrawViewHost {
                     expected_checked_count: expected_checked,
                     expanded_count: evidence.expanded_count,
                     expected_expanded_count: expected_expanded,
+                    paths: evidence.paths,
+                    expected_paths,
                 });
             }
         }
@@ -1305,6 +1330,8 @@ impl MacosAppKitDrawViewHost {
                 expected_checked_count: 0,
                 expanded_count: 0,
                 expected_expanded_count: 0,
+                paths: Vec::new(),
+                expected_paths: Vec::new(),
             });
         }
         None

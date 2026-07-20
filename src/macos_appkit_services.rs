@@ -249,6 +249,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         .as_ref()
         .and_then(|handler| handler.accessibility_evidence());
     let accessibility_node_count = accessibility_evidence
+        .as_ref()
         .map(|evidence| evidence.node_count)
         .unwrap_or(0);
     Ok(MacosAppKitNativeWindowRunReport {
@@ -257,10 +258,13 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         proof_input_reports,
         menu_command_routed,
         accessibility_backend: accessibility_evidence
+            .as_ref()
             .is_some_and(|evidence| evidence.verified())
             .then_some("appkit_nsaccessibility"),
         accessibility_node_count,
-        accessibility_evidence_event: accessibility_evidence.map(|evidence| evidence.event()),
+        accessibility_evidence_event: accessibility_evidence
+            .as_ref()
+            .map(|evidence| evidence.event()),
     })
 }
 
