@@ -153,9 +153,9 @@ const CONTENT_DIALOG_GAPS: &[&str] = &[
     "AppKit and GTK4 target interaction smoke",
 ];
 const FLYOUT_GAPS: &[&str] = &[
-    "accessibility popover relationship and focus restoration announcement",
-    "detachable AppKit popover and nested overlay validation",
-    "AppKit and Linux target interaction smoke",
+    "platform accessibility announcement and Flyout-specific AT-SPI action proof",
+    "detachable AppKit popover and nested overlay stacking validation",
+    "AppKit/Linux Escape, light-dismiss and resize target interaction matrix",
 ];
 const TOAST_GAPS: &[&str] = &[
     "accessibility live-region announcement and reduced-motion transition",

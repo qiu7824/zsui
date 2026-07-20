@@ -180,6 +180,15 @@ history remain authoritative for implementation status.
   gallery action evidence, Linux menu-surface geometry and command routing.
   CI run `29660600124` also passed the Ubuntu `linux-direct` target checks,
   macOS target checks, Windows tests, core tests and the locked feature matrix.
+- Native UI Proof run `29762236980` on commit `64e553b` passed AppKit, X11 and
+  real Weston Wayland Flyout interaction. Each target retained the initially
+  open Flyout through first-window negotiation, invoked `FlyoutAction`, focused
+  widget 407 and captured the final platform surface. The Linux host treats an
+  initial unfocused notification and pre-presentation surface negotiation as
+  startup state, while a later true-to-false focus transition or resize still
+  performs transient-overlay dismissal. The remaining Flyout target gates are
+  Escape/light-dismiss/resize matrices, nested overlay stacking and explicit
+  platform accessibility announcement/AT-SPI action evidence.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB
@@ -631,9 +640,11 @@ history remain authoritative for implementation status.
   closes the Flyout. Window focus loss and surface resize also dismiss it.
   Windows uses a Fluent flyout without a tail, macOS uses an AppKit-popover
   profile and Linux uses a GTK-popover profile. Application code does not branch
-  on platforms or import native handles. Accessibility popover relationships,
-  nested overlay validation and AppKit/Linux target interaction proof remain
-  readiness gaps.
+  on platforms or import native handles. AppKit, Linux X11 and real Weston
+  Wayland final-surface proofs invoke the same typed action and retain focus in
+  the overlay. Accessibility announcements and Flyout-specific AT-SPI actions,
+  nested overlay validation, and target Escape/light-dismiss/resize matrices
+  remain readiness gaps.
 - Toast is an independent `toast` Cargo feature over `widgets-base`. It is a
   nonmodal in-window feedback layer, not an imitation of Windows or macOS
   system-notification chrome. Applications own an optional `ZsToastSpec` with a

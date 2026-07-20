@@ -373,7 +373,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             area_name: "minimal_native_window_runtime",
             percent_complete: 89,
             status_name:
-                "win32_stateful_view_shaped_visual_bidi_dual_command_and_live_shell_ready",
+                "three_target_stateful_view_shaped_visual_bidi_dual_command_and_live_shell_proof",
             source_path: "src/native.rs",
             missing_before_complete: vec![
                 "real native menus",
@@ -382,8 +382,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "broader pointer dispatch into ViewEventCx",
                 "touch and inertial scroll dispatch",
                 "generic calculator runtime route",
-                "macOS/Linux target input and IME interaction proof",
-                "macOS/Linux target smoke artifacts",
+                "broader macOS/Linux input and native IME candidate-window interaction proof",
             ],
         },
         ZsuiCompletionArea {
@@ -417,13 +416,11 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
             percent_complete: 94,
-            status_name: "three_native_event_loops_renderers_shaped_text_visual_bidi_selection_focus_visuals_and_resize",
+            status_name: "three_native_event_loops_renderers_final_surface_captures_shaped_text_visual_bidi_selection_focus_visuals_and_resize",
             source_path: "src/native_host_launch.rs",
             missing_before_complete: vec![
-                "AppKit proportional and bidirectional text target interaction proof plus richer pointer dispatch",
-                "GTK4 proportional and bidirectional text target interaction proof plus richer pointer dispatch",
-                "macOS target screenshot and interaction artifacts",
-                "Linux Wayland/X11 screenshot and interaction artifacts",
+                "richer AppKit pointer, IME candidate-window and accessibility interaction proof",
+                "broader Linux Wayland/X11 input, IME and accessibility interaction proof",
                 "richer Win32 pointer/IME events",
                 "manual or touch scroll interaction proof",
                 "target smoke artifact for real user popup menu selection",
@@ -455,13 +452,11 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             area_name: "native_smoke_verification",
             percent_complete: 88,
             status_name:
-                "win32_stateful_controls_shaped_bidi_tabs_and_high_contrast_smoke_recorded",
+                "three_target_final_surface_stateful_controls_shaped_bidi_and_flyout_smoke_recorded",
             source_path: "src/native_smoke.rs",
             missing_before_complete: vec![
                 "required tray/menu target smoke artifacts with user popup interaction",
                 "manual or touch scroll interaction proof",
-                "macOS/Linux screenshot capture",
-                "macOS/Linux target smoke artifacts",
                 "real Android device artifact runs",
             ],
         },

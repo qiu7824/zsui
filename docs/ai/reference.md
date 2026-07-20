@@ -19,7 +19,8 @@ overall framework readiness.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
 - Full desktop native host implementation: about 94% complete; product
-  readiness remains lower until AppKit and GTK4 target evidence exists.
+  readiness remains lower until broader AppKit and Linux IME, accessibility and
+  per-control target evidence exists.
 - Android: about 32% complete.
 - Product adapter/runtime harness: about 67% complete.
 - Native smoke verification: about 88% complete.
@@ -57,9 +58,10 @@ The current machine-readable handoff is `zsui::zsui_agent_context()`; tools can
 also call `zsui::zsui_agent_context_json()` to read the same platform, gate and
 completion data as JSON.
 
-It is not yet a complete application UI runtime. AppKit and GTK4 now have
+It is not yet a complete application UI runtime. AppKit and Linux now have
 first-pass native hosts, renderers, typed input, clipboard, file-dialog and
-menu paths, but their target-machine interaction proof is incomplete. The
+menu paths plus final-surface target proof, but their complete input, IME,
+accessibility and per-control interaction matrices remain incomplete. The
 current Windows backend metadata points to the
 `win32_gdi` runtime. Win32 main/quick window style, transient-window host,
 create-params, message-loop and `NativeMainWindowHost` implementation live in
@@ -245,6 +247,16 @@ Win32 reads the system mouse-hover and message-duration settings and has a real
 buffered screenshot plus deterministic hover-route coverage. Accessibility
 relationships, top-level overflow beyond the current viewport and AppKit/GTK
 target-machine evidence remain open.
+The independent `flyout` feature wraps one ordinary page and one arbitrary
+application View subtree while keeping open state, stable presenter/target IDs
+and content state in application code. Shared placement flips and clamps the
+platform-specific Fluent, AppKit-popover or GTK-popover profile; a modal focus
+scope absorbs the first outside click and emits typed action, Escape or
+light-dismiss results. Native UI Proof run `29762236980` captures the final
+AppKit, X11 and real Weston Wayland surfaces after the same Flyout action and
+verifies the typed message and focused widget. Nested overlays, accessibility
+announcements/Flyout-specific AT-SPI actions and complete target Escape,
+light-dismiss and resize matrices remain open.
 The independent `progress-ring` feature adds active/inactive and validated
 determinate/indeterminate state without enabling ProgressBar. Its shared
 `StrokeArc` draw command maps to antialiased GDI+, NSBezierPath and Cairo;
