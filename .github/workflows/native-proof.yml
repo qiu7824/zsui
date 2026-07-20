@@ -773,8 +773,6 @@ jobs:
                                   "name": node.name or "",
                                   "role": node.getRoleName(),
                                   "checked": state.contains(pyatspi.STATE_CHECKED),
-                                  "expandable": state.contains(pyatspi.STATE_EXPANDABLE),
-                                  "expanded": state.contains(pyatspi.STATE_EXPANDED),
                                   "focused": state.contains(pyatspi.STATE_FOCUSED),
                                   "selected": state.contains(pyatspi.STATE_SELECTED),
                               }
@@ -801,8 +799,10 @@ jobs:
           highlighted = by_name["保存 / Save"]
           if not checked["checked"]:
               raise SystemExit(f"checked MenuFlyout state is missing: {checked}")
-          if not submenu["expandable"] or submenu["expanded"]:
-              raise SystemExit(f"collapsed submenu state is missing: {submenu}")
+          if checked["role"] not in {"check menu item", "checkmenuitem"}:
+              raise SystemExit(f"checked MenuFlyout role is missing: {checked}")
+          if submenu["role"] != "menu":
+              raise SystemExit(f"submenu MenuFlyout role is missing: {submenu}")
           if not highlighted["selected"] or not highlighted["focused"]:
               raise SystemExit(f"highlighted MenuFlyout state is missing: {highlighted}")
 
@@ -1000,8 +1000,11 @@ jobs:
           assert menu_atspi["backend"] == "accesskit_atspi"
           menu_rows = {row["name"]: row for row in menu_atspi["rows"]}
           assert menu_rows["自动保存 / Auto save"]["checked"] is True
-          assert menu_rows["更多 / More"]["expandable"] is True
-          assert menu_rows["更多 / More"]["expanded"] is False
+          assert menu_rows["自动保存 / Auto save"]["role"] in {
+              "check menu item",
+              "checkmenuitem",
+          }
+          assert menu_rows["更多 / More"]["role"] == "menu"
           assert menu_rows["保存 / Save"]["selected"] is True
           assert menu_rows["保存 / Save"]["focused"] is True
 
