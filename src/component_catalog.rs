@@ -273,7 +273,8 @@ const CANVAS_GAPS: &[&str] = &[
 ];
 const MENU_FLYOUT_GAPS: &[&str] = &[
     "submenu stacks deeper than one level and delayed pointer-open timing",
-    "checked-item and submenu accessibility state on every target backend",
+    "Windows UIA and AppKit checked-item and submenu accessibility providers",
+    "submenu expanded-state exposure through the Linux AT-SPI bridge",
 ];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
