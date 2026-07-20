@@ -49,6 +49,9 @@ composition and interaction conventions:
   `PlatformExperience::shared_component_style` is the only target-experience
   to component-profile mapping; component modules consume the resolved shared
   profile and never select a target experience themselves.
+  `src/platform/component_profile.rs` groups the framework-owned composition
+  and metrics for semantic sections, adaptive navigation, base buttons and
+  command bars while remaining independent from native backend selection.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.

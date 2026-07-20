@@ -324,6 +324,10 @@ history remain authoritative for implementation status.
   experience. `PlatformExperience::shared_component_style` is the sole
   platform-experience to component-profile mapper; component modules consume
   `ZsPlatformStyle` defaults and do not call `PlatformExperience` themselves.
+  `src/platform/component_profile.rs` owns framework composition and metrics
+  for semantic sections, adaptive navigation, base buttons and command bars;
+  View construction, layout and paint consume that profile instead of
+  repeating platform matches.
   Built-in component-specific `Zs*PlatformStyle` names are compatibility
   aliases of the shared type, not separate selectors.
   `src/platform/backend_profile.rs` keeps Host, Text, Raster, Presenter and

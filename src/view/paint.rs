@@ -269,16 +269,16 @@ impl<Msg: Clone> ViewNode<Msg> {
         if layout.pane_bounds.is_some() {
             let (items, footer_items) = navigation_children.split_at_mut(item_count);
             let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
+            let navigation_profile =
+                crate::platform_component_profile::PlatformComponentProfile::for_style(platform)
+                    .navigation;
             let item_gap = spacing.xs.to_px(cx.dpi).round_i32().max(0);
             let footer_gap = spacing.xs.to_px(cx.dpi).round_i32().max(0);
-            let pane_padding = match platform {
-                crate::ZsBaseControlPlatformStyle::Gtk => spacing.md,
-                crate::ZsBaseControlPlatformStyle::Windows
-                | crate::ZsBaseControlPlatformStyle::Macos => spacing.lg,
-            }
-            .to_px(cx.dpi)
-            .round_i32()
-            .max(0);
+            let pane_padding = navigation_profile
+                .pane_padding(spacing)
+                .to_px(cx.dpi)
+                .round_i32()
+                .max(0);
             let show_footer =
                 layout.mode == ZsNavigationViewLayoutMode::Expanded || layout.overlay_open;
             let footer_heights = if show_footer {
@@ -1835,6 +1835,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 minimum_content_width,
             } => {
                 let platform = self.resolved_platform_style();
+                let navigation_profile =
+                    crate::platform_component_profile::PlatformComponentProfile::for_style(
+                        platform,
+                    )
+                    .navigation;
                 let layout = zs_navigation_view_layout(
                     bounds,
                     platform,
@@ -1872,24 +1877,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         rect: scrim,
                         fill: NativeDrawFill::RoleWithAlpha {
                             role: ColorRole::PrimaryText,
-                            alpha: match platform {
-                                crate::ZsBaseControlPlatformStyle::Windows => 42,
-                                crate::ZsBaseControlPlatformStyle::Macos => 32,
-                                crate::ZsBaseControlPlatformStyle::Gtk => 48,
-                            },
+                            alpha: navigation_profile.scrim_alpha,
                         },
                     });
                 }
                 if let Some(pane) = layout.pane_bounds {
                     cx.draw(NativeDrawCommand::FillRect {
                         rect: pane,
-                        fill: NativeDrawFill::Role(match platform {
-                            crate::ZsBaseControlPlatformStyle::Gtk => ColorRole::Surface,
-                            crate::ZsBaseControlPlatformStyle::Windows
-                            | crate::ZsBaseControlPlatformStyle::Macos => {
-                                ColorRole::SurfaceRaised
-                            }
-                        }),
+                        fill: NativeDrawFill::Role(navigation_profile.pane_color),
                     });
                     cx.draw(NativeDrawCommand::FillRect {
                         rect: Rect {
@@ -1902,11 +1897,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     });
                     if let Some(title_bounds) = layout.title_bounds {
                         let mut style = SemanticTextStyle::body();
-                        style.role = match platform {
-                            crate::ZsBaseControlPlatformStyle::Windows => TextRole::Subtitle,
-                            crate::ZsBaseControlPlatformStyle::Macos
-                            | crate::ZsBaseControlPlatformStyle::Gtk => TextRole::Body,
-                        };
+                        style.role = navigation_profile.title_role;
                         style.weight = crate::TextWeight::Semibold;
                         style.horizontal_align = crate::HorizontalAlign::Start;
                         style.ellipsis = true;
@@ -1936,39 +1927,36 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if let (Some(header), Some(toggle)) =
                         (layout.header_bounds, layout.toggle_bounds)
                     {
-                    let text_x = toggle.x.saturating_add(toggle.width).saturating_add(8);
-                    let mut style = SemanticTextStyle::body();
-                    style.role = TextRole::Body;
-                    style.weight = crate::TextWeight::Semibold;
-                    style.horizontal_align = crate::HorizontalAlign::Start;
-                    style.ellipsis = true;
-                    cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-                        title,
-                        Rect {
-                            x: text_x,
-                            y: header.y,
-                            width: header
-                                .x
-                                .saturating_add(header.width)
-                                .saturating_sub(12)
-                                .saturating_sub(text_x)
-                                .max(0),
-                            height: header.height,
-                        },
-                        style,
-                    )));
+                        let text_x = toggle.x.saturating_add(toggle.width).saturating_add(8);
+                        let mut style = SemanticTextStyle::body();
+                        style.role = TextRole::Body;
+                        style.weight = crate::TextWeight::Semibold;
+                        style.horizontal_align = crate::HorizontalAlign::Start;
+                        style.ellipsis = true;
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            title,
+                            Rect {
+                                x: text_x,
+                                y: header.y,
+                                width: header
+                                    .x
+                                    .saturating_add(header.width)
+                                    .saturating_sub(12)
+                                    .saturating_sub(text_x)
+                                    .max(0),
+                                height: header.height,
+                            },
+                            style,
+                        )));
                     }
                 }
                 if let Some(toggle) = layout.toggle_bounds {
-                    let icon_size = Dp::new(match platform {
-                        crate::ZsBaseControlPlatformStyle::Windows => 20.0,
-                        crate::ZsBaseControlPlatformStyle::Macos
-                        | crate::ZsBaseControlPlatformStyle::Gtk => 16.0,
-                    })
-                    .to_px(cx.dpi)
-                    .round_i32()
-                    .max(1)
-                    .min(toggle.width.min(toggle.height).max(1));
+                    let icon_size = navigation_profile
+                        .toggle_icon_size
+                        .to_px(cx.dpi)
+                        .round_i32()
+                        .max(1)
+                        .min(toggle.width.min(toggle.height).max(1));
                     cx.draw(NativeDrawCommand::Icon(
                         crate::NativeDrawIconCommand::new(
                             crate::ZsIcon::Sidebar,
@@ -2051,26 +2039,19 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             } => {
                 match presentation {
                     ZsButtonPresentation::Standard | ZsButtonPresentation::Icon { .. } => {
-                        let platform = crate::ZsBaseControlPlatformStyle::current();
+                        let platform = self.resolved_platform_style();
+                        let component_profile =
+                            crate::platform_component_profile::PlatformComponentProfile::for_style(
+                                platform,
+                            );
                         let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
                         // Standard buttons deliberately keep their platform
                         // bezel grammar: WinUI uses a bordered control,
                         // AppKit uses a clean bezel without an outline, and
                         // Adwaita keeps a raised surface with a subtle edge.
-                        let (fill, stroke) = match platform {
-                            crate::ZsBaseControlPlatformStyle::Windows => (
-                                NativeDrawFill::Role(ColorRole::Control),
-                                Some(NativeDrawFill::Role(ColorRole::Border)),
-                            ),
-                            crate::ZsBaseControlPlatformStyle::Macos => (
-                                NativeDrawFill::Role(ColorRole::Control),
-                                None,
-                            ),
-                            crate::ZsBaseControlPlatformStyle::Gtk => (
-                                NativeDrawFill::Role(ColorRole::SurfaceRaised),
-                                Some(NativeDrawFill::Role(ColorRole::Border)),
-                            ),
-                        };
+                        let fill = NativeDrawFill::Role(component_profile.button.fill);
+                        let stroke =
+                            component_profile.button.stroke.map(NativeDrawFill::Role);
                         cx.draw(NativeDrawCommand::RoundRect {
                             rect: bounds,
                             fill,
@@ -2127,9 +2108,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         }
                     }
                     ZsButtonPresentation::Primary => {
-                        let metrics = crate::ZsBaseControlMetrics::for_platform(
-                            crate::ZsBaseControlPlatformStyle::current(),
-                        );
+                        let platform = self.resolved_platform_style();
+                        let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
                         cx.draw(NativeDrawCommand::RoundRect {
                             rect: bounds,
                             fill: NativeDrawFill::Role(if *enabled {

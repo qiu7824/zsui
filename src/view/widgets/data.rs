@@ -1,4 +1,9 @@
 
+#[cfg(feature = "label")]
+use crate::platform_component_profile::{
+    PlatformComponentProfile, PlatformNavigationComposition, PlatformSectionComposition,
+};
+
 pub fn row<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     let children = children.into_iter().collect::<Vec<_>>();
     let intrinsic_height = children
@@ -34,7 +39,7 @@ pub fn section<Msg>(
     children: impl IntoIterator<Item = ViewNode<Msg>>,
 ) -> ViewNode<Msg> {
     section_for_style(
-        crate::ZsBaseControlPlatformStyle::current(),
+        PlatformComponentProfile::current().style,
         title,
         children,
     )
@@ -48,6 +53,8 @@ pub(crate) fn section_for_style<Msg>(
     title: impl Into<String>,
     children: impl IntoIterator<Item = ViewNode<Msg>>,
 ) -> ViewNode<Msg> {
+    let component_profile = PlatformComponentProfile::for_style(platform);
+    let section_profile = component_profile.section;
     let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
     let radius = crate::ZsuiRadiusTokens::for_platform(platform);
     let heading = styled_text_for_platform(
@@ -55,11 +62,7 @@ pub(crate) fn section_for_style<Msg>(
         title,
         crate::SemanticTextStyle {
             role: crate::TextRole::Body,
-            color: match platform {
-                crate::ZsBaseControlPlatformStyle::Macos => crate::ColorRole::SecondaryText,
-                crate::ZsBaseControlPlatformStyle::Windows
-                | crate::ZsBaseControlPlatformStyle::Gtk => crate::ColorRole::PrimaryText,
-            },
+            color: section_profile.heading_color,
             weight: crate::TextWeight::Semibold,
             horizontal_align: crate::HorizontalAlign::Start,
             vertical_align: crate::VerticalAlign::Center,
@@ -84,8 +87,8 @@ pub(crate) fn section_for_style<Msg>(
                 .0
         })
         .sum::<f32>();
-    match platform {
-        crate::ZsBaseControlPlatformStyle::Windows => column([
+    match section_profile.composition {
+        PlatformSectionComposition::FluentCard => column([
             heading,
             column(children)
                 .padding(spacing.lg)
@@ -101,7 +104,7 @@ pub(crate) fn section_for_style<Msg>(
                 + child_content_height
                 + spacing.content_gap.0 * child_count.saturating_sub(1) as f32,
         )),
-        crate::ZsBaseControlPlatformStyle::Macos => {
+        PlatformSectionComposition::AppKitForm => {
             column([heading, column(children).gap(spacing.md)])
                 .gap(spacing.md)
                 .native_typography_min_height(Dp::new(
@@ -111,7 +114,7 @@ pub(crate) fn section_for_style<Msg>(
                         + spacing.md.0 * child_count.saturating_sub(1) as f32,
                 ))
         }
-        crate::ZsBaseControlPlatformStyle::Gtk => {
+        PlatformSectionComposition::GtkBoxedList => {
             // GNOME's boxed-list pattern uses padded rows separated by thin
             // dividers. Padding is part of the row's outer geometry; keeping
             // it out of the minimum height makes the content box collapse
@@ -250,7 +253,7 @@ impl<Msg> ZsNavigationViewSpec<Msg> {
 /// the framework owns their information architecture and chrome.
 #[cfg(feature = "label")]
 pub fn navigation_view<Msg>(spec: ZsNavigationViewSpec<Msg>) -> ViewNode<Msg> {
-    navigation_view_impl(crate::ZsBaseControlPlatformStyle::current(), spec)
+    navigation_view_impl(PlatformComponentProfile::current().style, spec)
 }
 
 /// Deterministic navigation composition used by platform proof fixtures.
@@ -267,6 +270,8 @@ fn navigation_view_impl<Msg>(
     platform: crate::ZsBaseControlPlatformStyle,
     spec: ZsNavigationViewSpec<Msg>,
 ) -> ViewNode<Msg> {
+    let component_profile = PlatformComponentProfile::for_style(platform);
+    let navigation_profile = component_profile.navigation;
     let ZsNavigationViewSpec {
         id,
         title,
@@ -301,11 +306,7 @@ fn navigation_view_impl<Msg>(
     let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
     let radius = crate::ZsuiRadiusTokens::for_platform(platform);
     let title_style = crate::SemanticTextStyle {
-        role: match platform {
-            crate::ZsBaseControlPlatformStyle::Windows => crate::TextRole::Subtitle,
-            crate::ZsBaseControlPlatformStyle::Macos
-            | crate::ZsBaseControlPlatformStyle::Gtk => crate::TextRole::Body,
-        },
+        role: navigation_profile.title_role,
         color: crate::ColorRole::PrimaryText,
         weight: crate::TextWeight::Semibold,
         horizontal_align: crate::HorizontalAlign::Start,
@@ -330,13 +331,10 @@ fn navigation_view_impl<Msg>(
     // Keep the navigation composition usable with `label` alone. The
     // interactive navigation row renderer is optional (`button`), but the
     // shell primitive still needs stable pane geometry for static views.
-    let (default_pane_width, horizontal_inset) = match platform {
-        crate::ZsBaseControlPlatformStyle::Windows => (Dp::new(320.0), 32.0),
-        crate::ZsBaseControlPlatformStyle::Macos => (Dp::new(240.0), 24.0),
-        crate::ZsBaseControlPlatformStyle::Gtk => (Dp::new(280.0), 32.0),
-    };
-    let open_pane_width = pane_width.unwrap_or(default_pane_width);
-    let item_width = Dp::new(open_pane_width.0 - horizontal_inset);
+    let open_pane_width = pane_width.unwrap_or(navigation_profile.preferred_pane_width);
+    let item_width = Dp::new(
+        (open_pane_width.0 - navigation_profile.horizontal_inset.0).max(0.0),
+    );
     let items = items
         .into_iter()
         .map(|item| item.width(item_width))
@@ -345,8 +343,9 @@ fn navigation_view_impl<Msg>(
         .into_iter()
         .map(|item| item.width(item_width))
         .collect::<Vec<_>>();
-    let navigation = match platform {
-        crate::ZsBaseControlPlatformStyle::Windows => {
+    let navigation = match navigation_profile.composition {
+        PlatformNavigationComposition::FluentPane
+        | PlatformNavigationComposition::AppKitSourceList => {
             let mut children = vec![heading, subtitle, column(items).gap(spacing.xs)];
             if !footer_items.is_empty() {
                 children.push(spacer());
@@ -357,18 +356,7 @@ fn navigation_view_impl<Msg>(
                 .gap(spacing.sm)
                 .bg(crate::ThemeColorToken::SurfaceRaised)
         }
-        crate::ZsBaseControlPlatformStyle::Macos => {
-            let mut children = vec![heading, subtitle, column(items).gap(spacing.xs)];
-            if !footer_items.is_empty() {
-                children.push(spacer());
-                children.push(column(footer_items).gap(spacing.xs));
-            }
-            column(children)
-                .padding(spacing.lg)
-                .gap(spacing.sm)
-                .bg(crate::ThemeColorToken::SurfaceRaised)
-        }
-        crate::ZsBaseControlPlatformStyle::Gtk => {
+        PlatformNavigationComposition::GtkBoxedSidebar => {
             let mut rows = Vec::with_capacity(items.len().saturating_mul(2));
             for (index, item) in items.into_iter().enumerate() {
                 if index > 0 {
@@ -410,12 +398,8 @@ fn navigation_view_impl<Msg>(
 }
 
 #[cfg(feature = "label")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ZsNavigationViewLayoutMode {
-    Expanded,
-    Compact,
-    Collapsed,
-}
+pub(crate) type ZsNavigationViewLayoutMode =
+    crate::platform_component_profile::PlatformNavigationLayoutMode;
 
 #[cfg(feature = "label")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -444,20 +428,19 @@ pub(crate) fn zs_navigation_view_layout(
     dpi: Dpi,
     typography_scale: f32,
 ) -> ZsNavigationViewLayout {
+    let navigation_profile = PlatformComponentProfile::for_style(platform).navigation;
     let scale = dpi.scale_factor().max(f32::EPSILON);
     let logical_width = bounds.width.max(0) as f32 / scale;
     let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
-    let padding = match platform {
-        crate::ZsBaseControlPlatformStyle::Gtk => spacing.md,
-        crate::ZsBaseControlPlatformStyle::Windows
-        | crate::ZsBaseControlPlatformStyle::Macos => spacing.lg,
-    }
-    .to_px(dpi)
-    .round_i32()
-    .max(0);
+    let padding = navigation_profile
+        .pane_padding(spacing)
+        .to_px(dpi)
+        .round_i32()
+        .max(0);
     let gap = spacing.sm.to_px(dpi).round_i32().max(0);
     let title_line = Dp::new(
-        crate::TextRole::Subtitle
+        navigation_profile
+            .title_role
             .metrics_for(platform.typography())
             .line_height
             * typography_scale,
@@ -475,72 +458,26 @@ pub(crate) fn zs_navigation_view_layout(
     .round_i32()
     .max(1);
 
-    let open_pane_dp = pane_width.map_or_else(
-        || match platform {
-            // NavigationView.OpenPaneLength defaults to 320 epx.
-            crate::ZsBaseControlPlatformStyle::Windows => 320.0,
-            // AppKit's standard sidebar initializer owns its min/max values;
-            // 240 remains ZSUI's preferred thickness until the backend can
-            // feed those runtime values into this profile.
-            crate::ZsBaseControlPlatformStyle::Macos => 240.0,
-            // AdwNavigationSplitView defaults to 25%, constrained to 180sp
-            // through 280sp.
-            crate::ZsBaseControlPlatformStyle::Gtk => {
-                (logical_width * 0.25).clamp(180.0, 280.0)
-            }
-        },
-        |width| width.0.max(0.0),
-    );
+    let open_pane_dp = navigation_profile.open_pane_width(logical_width, pane_width);
     let open_pane_width = Dp::new(open_pane_dp)
         .to_px(dpi)
         .round_i32()
         .clamp(0, bounds.width.max(0));
     let minimum_content_dp = minimum_content_width.0.max(0.0);
-    let mode = match platform {
-        crate::ZsBaseControlPlatformStyle::Windows if logical_width >= 1008.0 => {
-            ZsNavigationViewLayoutMode::Expanded
-        }
-        crate::ZsBaseControlPlatformStyle::Windows if logical_width > 640.0 => {
-            ZsNavigationViewLayoutMode::Compact
-        }
-        crate::ZsBaseControlPlatformStyle::Windows => ZsNavigationViewLayoutMode::Collapsed,
-        crate::ZsBaseControlPlatformStyle::Macos
-            if minimum_content_dp > 0.0
-                && logical_width < open_pane_dp + minimum_content_dp =>
-        {
-            ZsNavigationViewLayoutMode::Collapsed
-        }
-        crate::ZsBaseControlPlatformStyle::Macos => ZsNavigationViewLayoutMode::Expanded,
-        crate::ZsBaseControlPlatformStyle::Gtk => {
-            let constraint_breakpoint = if minimum_content_dp > 0.0 {
-                180.0 + minimum_content_dp
-            } else {
-                0.0
-            };
-            if logical_width <= 400.0_f32.max(constraint_breakpoint) {
-                ZsNavigationViewLayoutMode::Collapsed
-            } else {
-                ZsNavigationViewLayoutMode::Expanded
-            }
-        }
-    };
-    let compact_width = Dp::new(48.0)
+    let mode =
+        navigation_profile.layout_mode(logical_width, open_pane_dp, minimum_content_dp);
+    let compact_width = navigation_profile
+        .compact_width()
         .to_px(dpi)
         .round_i32()
         .clamp(0, bounds.width.max(0));
     let base_control = crate::ZsBaseControlMetrics::for_platform(platform);
-    let collapsed_header_height = match platform {
-        // The NavigationView content header is 52 epx in Minimal mode.
-        crate::ZsBaseControlPlatformStyle::Windows => Dp::new(52.0),
-        crate::ZsBaseControlPlatformStyle::Macos
-        | crate::ZsBaseControlPlatformStyle::Gtk => Dp::new(
-            base_control.button_height.0 + spacing.sm.0 * 2.0,
-        ),
-    }
-    .to_px(dpi)
-    .round_i32()
-    .max(1)
-    .min(bounds.height.max(0));
+    let collapsed_header_height = navigation_profile
+        .collapsed_header_height(base_control.button_height, spacing.sm)
+        .to_px(dpi)
+        .round_i32()
+        .max(1)
+        .min(bounds.height.max(0));
     let overlay_open = mode != ZsNavigationViewLayoutMode::Expanded && pane_open;
     let inline_pane_width = match mode {
         ZsNavigationViewLayoutMode::Expanded => open_pane_width,
@@ -725,7 +662,10 @@ impl<Msg> Default for ZsCommandBarSpec<Msg> {
 
 #[cfg(feature = "button")]
 pub fn command_bar<Msg>(spec: ZsCommandBarSpec<Msg>) -> ViewNode<Msg> {
-    command_bar_for_style(crate::ZsBaseControlPlatformStyle::current(), spec)
+    command_bar_for_style(
+        crate::platform_component_profile::PlatformComponentProfile::current().style,
+        spec,
+    )
 }
 
 /// Builds a command bar using the target desktop's action density.

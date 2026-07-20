@@ -55,12 +55,13 @@
       "required": [
         "src/view/mod.rs",
         "src/view/node.rs",
-        "src/components.rs",
         "src/platform/experience.rs",
+        "src/platform/component_profile.rs",
         "src/widget_render.rs"
       ],
       "optional": [
         "src/view",
+        "src/components.rs",
         "src/native.rs",
         "src/platform/style.rs",
         "src/component_catalog.rs",
@@ -78,6 +79,8 @@
       "purpose": "Navigation, grouped cards, settings rows and scrolling",
       "required": [
         "src/shell_layout.rs",
+        "src/view/widgets/data.rs",
+        "src/platform/component_profile.rs",
         "examples/navigation_shell_layout.rs"
       ],
       "optional": [

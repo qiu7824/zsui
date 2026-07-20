@@ -43,59 +43,14 @@ pub(crate) fn styled_text_for_platform<Msg>(
 }
 
 #[cfg(feature = "button")]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ZsToolbarMetrics {
-    pub bar_height: Dp,
-    pub button_height: Dp,
-    pub icon_size: Dp,
-    pub content_gap: Dp,
-    pub item_gap: Dp,
-    pub label_role: crate::TextRole,
-}
-
-#[cfg(feature = "button")]
-impl ZsToolbarMetrics {
-    pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
-        match platform {
-            crate::ZsBaseControlPlatformStyle::Windows => Self {
-                // WinUI CommandBar with labels on the right keeps the closed
-                // compact 48 epx height, 20 epx primary icon, 8 epx label gap
-                // and the AppBarButton 12 epx label style.
-                bar_height: Dp::new(48.0),
-                button_height: Dp::new(48.0),
-                icon_size: Dp::new(20.0),
-                content_gap: Dp::new(8.0),
-                item_gap: Dp::new(8.0),
-                label_role: crate::TextRole::Caption,
-            },
-            crate::ZsBaseControlPlatformStyle::Macos => Self {
-                bar_height: Dp::new(28.0),
-                button_height: Dp::new(28.0),
-                icon_size: Dp::new(16.0),
-                content_gap: Dp::new(6.0),
-                item_gap: Dp::new(6.0),
-                label_role: crate::TextRole::Button,
-            },
-            crate::ZsBaseControlPlatformStyle::Gtk => Self {
-                // Libadwaita's toolbar class specifies 6 px spacing and
-                // margins; control height and font remain GTK semantic
-                // fallbacks until the backend resolves the active theme.
-                bar_height: Dp::new(34.0),
-                button_height: Dp::new(34.0),
-                icon_size: Dp::new(16.0),
-                content_gap: Dp::new(6.0),
-                item_gap: Dp::new(6.0),
-                label_role: crate::TextRole::Button,
-            },
-        }
-    }
-}
+pub(crate) type ZsToolbarMetrics =
+    crate::platform_component_profile::PlatformCommandBarProfile;
 
 #[cfg(feature = "button")]
 pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
-    let metrics = crate::ZsBaseControlMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    );
+    let platform =
+        crate::platform_component_profile::PlatformComponentProfile::current().style;
+    let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
     let label = label.into();
     let minimum_width = metrics.button_minimum_width_for_label(&label);
     ViewNode::new(ViewNodeKind::Button {
@@ -117,15 +72,19 @@ pub fn button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
 /// action density and grouping.
 #[cfg(feature = "button")]
 pub fn toolbar_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
-    toolbar_button_impl(crate::ZsBaseControlPlatformStyle::current(), label, icon)
+    toolbar_button_impl(
+        crate::platform_component_profile::PlatformComponentProfile::current().style,
+        label,
+        icon,
+    )
 }
 
 /// Creates the platform's emphasized/default action button.
 #[cfg(feature = "button")]
 pub fn primary_button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
-    let metrics = crate::ZsBaseControlMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    );
+    let platform =
+        crate::platform_component_profile::PlatformComponentProfile::current().style;
+    let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
     let label = label.into();
     let minimum_width = metrics.button_minimum_width_for_label(&label);
     ViewNode::new(ViewNodeKind::Button {
@@ -143,9 +102,9 @@ pub fn primary_button<Msg>(label: impl Into<String>) -> ViewNode<Msg> {
 /// accessible text label in the View tree.
 #[cfg(feature = "button")]
 pub fn icon_button<Msg>(label: impl Into<String>, icon: crate::ZsIcon) -> ViewNode<Msg> {
-    let metrics = crate::ZsBaseControlMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    );
+    let platform =
+        crate::platform_component_profile::PlatformComponentProfile::current().style;
+    let metrics = crate::ZsBaseControlMetrics::for_platform(platform);
     ViewNode::new(ViewNodeKind::Button {
         label: label.into(),
         presentation: ZsButtonPresentation::Icon { icon },
@@ -208,9 +167,9 @@ pub fn navigation_item<Msg>(
     icon: crate::ZsIcon,
     selected: bool,
 ) -> ViewNode<Msg> {
-    let metrics = crate::ZsNavigationItemMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    );
+    let platform =
+        crate::platform_component_profile::PlatformComponentProfile::current().style;
+    let metrics = crate::ZsNavigationItemMetrics::for_platform(platform);
     ViewNode::new(ViewNodeKind::Button {
         label: label.into(),
         presentation: ZsButtonPresentation::NavigationItem { icon, selected },

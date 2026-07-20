@@ -474,4 +474,72 @@ mod tests {
         );
         assert!(!experience_core.contains("select_desktop<"));
     }
+
+    #[test]
+    fn semantic_view_composition_resolves_through_one_internal_component_profile() {
+        let profile = include_str!("component_profile.rs");
+        let profile_core = profile
+            .split_once("#[cfg(test)]")
+            .map_or(profile, |(core, _)| core);
+        assert_eq!(
+            profile_core
+                .matches("pub(crate) const fn for_style")
+                .count(),
+            1
+        );
+        for contract in [
+            "PlatformButtonProfile",
+            "PlatformSectionComposition",
+            "PlatformNavigationComposition",
+            "PlatformCommandBarProfile",
+        ] {
+            assert!(
+                profile_core.contains(contract),
+                "component profile is missing {contract}"
+            );
+        }
+        assert!(profile_core.contains("Host/Text/Raster/Presenter/Services"));
+        assert!(!profile_core.contains("BackendProfile"));
+        assert!(!profile_core.contains("NativeUiPlatform"));
+
+        let data = include_str!("../view/widgets/data.rs");
+        let data_core = data
+            .split_once("mod data_tests")
+            .map_or(data, |(core, _)| core);
+        let button = include_str!("../view/widgets/button.rs");
+        let paint = include_str!("../view/paint.rs");
+        let view_impl = paint
+            .find("impl<Msg: Clone> View<Msg> for ViewNode")
+            .expect("View paint implementation should exist");
+        let navigation_start = paint[view_impl..]
+            .find("ViewNodeKind::NavigationView {")
+            .map(|offset| view_impl + offset)
+            .expect("NavigationView paint arm should exist");
+        let navigation_end = paint[navigation_start..]
+            .find("ViewNodeKind::Text { text, style }")
+            .map(|offset| navigation_start + offset)
+            .expect("Text paint arm should follow NavigationView");
+        let navigation_paint = &paint[navigation_start..navigation_end];
+
+        for (name, source) in [
+            ("data", data_core),
+            ("button", button),
+            ("navigation paint", navigation_paint),
+        ] {
+            assert!(
+                source.contains("PlatformComponentProfile::"),
+                "{name} should resolve component defaults through PlatformComponentProfile"
+            );
+            for forbidden in [
+                "ZsBaseControlPlatformStyle::Windows",
+                "ZsBaseControlPlatformStyle::Macos",
+                "ZsBaseControlPlatformStyle::Gtk",
+            ] {
+                assert!(
+                    !source.contains(forbidden),
+                    "{name} contains a platform composition branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
 }
