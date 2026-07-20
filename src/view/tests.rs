@@ -2208,7 +2208,7 @@ mod tests {
                 },
                 row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: true },
                 expanded: false,
-                highlighted: false,
+                highlighted: true,
             }
         )));
         assert!(interaction.hit_targets.iter().any(|target| matches!(

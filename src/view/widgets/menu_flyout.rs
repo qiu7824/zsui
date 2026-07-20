@@ -11,11 +11,20 @@ pub fn menu_flyout<Msg>(
     menu: crate::MenuSpec,
     page: ViewNode<Msg>,
 ) -> ViewNode<Msg> {
+    let highlighted = open.then(|| {
+        crate::ZsMenuFlyoutState {
+            open: true,
+            target,
+            highlighted: None,
+            open_submenu: None,
+        }
+        .first_enabled(&menu)
+    });
     ViewNode::new(ViewNodeKind::MenuFlyout {
         menu,
         open,
         target,
-        highlighted: None,
+        highlighted: highlighted.flatten(),
         open_submenu: None,
         on_command: None,
         on_open_change: None,
