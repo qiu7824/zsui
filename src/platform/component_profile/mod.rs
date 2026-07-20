@@ -82,6 +82,8 @@ pub(crate) struct PlatformComponentProfile {
     pub tabs: PlatformTabProfile,
     #[cfg(feature = "dialog")]
     pub dialog: PlatformDialogProfile,
+    #[cfg(feature = "flyout")]
+    pub flyout: PlatformFlyoutProfile,
     #[cfg(feature = "info-bar")]
     pub info_bar: PlatformInfoBarProfile,
     #[cfg(feature = "teaching-tip")]
@@ -577,6 +579,42 @@ impl PlatformDialogProfile {
             .unwrap_or(0);
         let next = (current as isize + offset).rem_euclid(buttons.len() as isize) as usize;
         buttons[next]
+    }
+}
+
+#[cfg(feature = "flyout")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformFlyoutComposition {
+    FluentFlyout,
+    AppKitPopover,
+    GtkPopover,
+}
+
+#[cfg(feature = "flyout")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformFlyoutProfile {
+    pub composition: PlatformFlyoutComposition,
+    pub viewport_margin: Dp,
+    pub content_padding: Dp,
+    pub surface_radius: Dp,
+    pub target_gap: Dp,
+    pub tail_size: Dp,
+    pub shadow_offset: Dp,
+    pub shadow_alpha: u8,
+    pub automatic_placement: crate::ZsFlyoutPlacement,
+}
+
+#[cfg(feature = "flyout")]
+impl PlatformFlyoutProfile {
+    pub(crate) const fn draws_tail(self) -> bool {
+        matches!(
+            self.composition,
+            PlatformFlyoutComposition::AppKitPopover | PlatformFlyoutComposition::GtkPopover
+        )
+    }
+
+    pub(crate) const fn aligns_to_leading_edge(self) -> bool {
+        matches!(self.composition, PlatformFlyoutComposition::FluentFlyout)
     }
 }
 

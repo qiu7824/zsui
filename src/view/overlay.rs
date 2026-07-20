@@ -46,6 +46,8 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "teaching-tip")]
             (Some(id), ViewEvent::TeachingTipFocused { widget, .. })
             | (Some(id), ViewEvent::TeachingTipResponded { widget, .. }) => id == *widget,
+            #[cfg(feature = "flyout")]
+            (Some(id), ViewEvent::FlyoutDismissed { widget, .. }) => id == *widget,
             #[cfg(feature = "info-bar")]
             (Some(id), ViewEvent::InfoBarFocused { widget, .. })
             | (Some(id), ViewEvent::InfoBarInvoked { widget, .. }) => id == *widget,
@@ -78,6 +80,7 @@ impl<Msg> ViewNode<Msg> {
                 feature = "color-picker",
                 feature = "combo",
                 feature = "date-picker",
+                feature = "flyout",
                 feature = "time-picker"
             ))]
             (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
@@ -94,7 +97,7 @@ impl<Msg> ViewNode<Msg> {
                 .any(|child| child.contains_widget(widget))
     }
 
-    #[cfg(feature = "teaching-tip")]
+    #[cfg(any(feature = "flyout", feature = "teaching-tip"))]
     fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
         if self.id == Some(widget) {
             return self.bounds;
@@ -115,6 +118,7 @@ impl<Msg> ViewNode<Msg> {
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
+            feature = "flyout",
             feature = "teaching-tip",
             feature = "time-picker",
             feature = "toast"
@@ -480,6 +484,21 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_command_palette_state(widget))
     }
 
+    #[cfg(feature = "flyout")]
+    pub fn widget_flyout_state(&self, widget: WidgetId) -> Option<crate::ZsFlyoutState> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::Flyout { open, target, .. } = &self.kind {
+                return Some(crate::ZsFlyoutState {
+                    open: *open,
+                    target: *target,
+                });
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_flyout_state(widget))
+    }
+
     #[cfg(feature = "toast")]
     pub fn widget_toast_state(
         &self,
@@ -840,6 +859,14 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "flyout")]
+        if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
+            if let Some(page) = self.children.first() {
+                page.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
         #[cfg(feature = "label")]
         if let (
             Some(widget),
@@ -1418,6 +1445,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
+        feature = "flyout",
         feature = "teaching-tip",
         feature = "time-picker",
         feature = "toast"
@@ -1427,6 +1455,50 @@ impl<Msg> ViewNode<Msg> {
         hit_targets: &mut Vec<ViewHitTarget>,
         viewport: Option<Rect>,
     ) {
+        #[cfg(feature = "flyout")]
+        if let ViewNodeKind::Flyout {
+            spec,
+            open,
+            target,
+            ..
+        } = &self.kind
+        {
+            let flyout_viewport = viewport.or(self.bounds);
+            if let Some(page) = self.children.first() {
+                page.collect_overlay_hit_targets(hit_targets, flyout_viewport);
+            }
+            let target_bounds = self
+                .children
+                .first()
+                .and_then(|page| page.widget_layout_bounds(*target));
+            if let (true, Some(widget), Some(viewport), Some(target_bounds)) =
+                (*open, self.id, flyout_viewport, target_bounds)
+            {
+                let plan = crate::zs_flyout_render_plan(
+                    viewport,
+                    target_bounds,
+                    *spec,
+                    crate::ZsFlyoutPlatformStyle::current(),
+                    self.layout_dpi,
+                );
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    viewport,
+                    ViewHitTargetKind::FlyoutScrim,
+                ));
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    plan.surface,
+                    ViewHitTargetKind::Flyout,
+                ));
+                if let Some(content) = self.children.get(1) {
+                    content.collect_hit_targets(hit_targets, Some(plan.content));
+                    content.collect_overlay_hit_targets(hit_targets, Some(plan.content));
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "breadcrumb")]
         if let ViewNodeKind::BreadcrumbBar {
             items,
@@ -1947,11 +2019,51 @@ impl<Msg> ViewNode<Msg> {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
+        feature = "flyout",
         feature = "teaching-tip",
         feature = "time-picker",
         feature = "toast"
     ))]
-    fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>) {
+    fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>)
+    where
+        Msg: Clone,
+    {
+        #[cfg(feature = "flyout")]
+        if let ViewNodeKind::Flyout {
+            spec,
+            open,
+            target,
+            ..
+        } = &self.kind
+        {
+            let flyout_viewport = viewport.or(self.bounds);
+            if let Some(page) = self.children.first() {
+                page.paint_overlays(cx, flyout_viewport);
+            }
+            let target_bounds = self
+                .children
+                .first()
+                .and_then(|page| page.widget_layout_bounds(*target));
+            if let (true, Some(viewport), Some(target_bounds)) =
+                (*open, flyout_viewport, target_bounds)
+            {
+                let plan = crate::zs_flyout_render_plan(
+                    viewport,
+                    target_bounds,
+                    *spec,
+                    crate::ZsFlyoutPlatformStyle::current(),
+                    cx.dpi,
+                );
+                for command in crate::zs_flyout_native_draw_plan(&plan).commands {
+                    cx.draw(command);
+                }
+                if let Some(content) = self.children.get(1) {
+                    content.paint(cx);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "breadcrumb")]
         if let ViewNodeKind::BreadcrumbBar {
             items,
@@ -2371,6 +2483,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::DataGrid { .. } => ViewHitTargetKind::DataGrid,
             #[cfg(feature = "dialog")]
             ViewNodeKind::ContentDialog { .. } => ViewHitTargetKind::ContentDialog,
+            #[cfg(feature = "flyout")]
+            ViewNodeKind::Flyout { .. } => ViewHitTargetKind::Flyout,
             #[cfg(feature = "command-palette")]
             ViewNodeKind::CommandPalette { .. } => ViewHitTargetKind::CommandPalette,
             #[cfg(feature = "toast")]

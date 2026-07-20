@@ -54,6 +54,7 @@ mod tests {
         feature = "combo",
         feature = "date-picker",
         feature = "dialog",
+        feature = "flyout",
         feature = "command-palette",
         feature = "info-bar",
         feature = "teaching-tip",
@@ -119,6 +120,8 @@ mod tests {
         TableInvoked(crate::ZsTableRowId),
         #[cfg(feature = "dialog")]
         DialogResult(crate::ZsContentDialogResult),
+        #[cfg(feature = "flyout")]
+        FlyoutDismissed(crate::ZsFlyoutDismissReason),
         #[cfg(feature = "command-palette")]
         CommandQuery(String),
         #[cfg(feature = "command-palette")]
@@ -2048,6 +2051,93 @@ mod tests {
                 .map(|target| target.widget),
             Some(background)
         );
+    }
+
+    #[cfg(all(feature = "button", feature = "flyout", feature = "label"))]
+    #[test]
+    fn flyout_hosts_arbitrary_view_content_and_owns_one_modal_focus_scope() {
+        let presenter = WidgetId::new(191);
+        let target = WidgetId::new(192);
+        let content_action = WidgetId::new(193);
+        let background = WidgetId::new(194);
+        let page = column(vec![
+            button("Open details").id(target),
+            button("Background action").id(background),
+        ]);
+        let content = column(vec![
+            text("Platform popover content"),
+            button("Apply").id(content_action).on_click(Msg::SaveClicked),
+        ]);
+        let mut view = flyout(
+            presenter,
+            true,
+            target,
+            crate::ZsFlyoutSpec::new(Dp::new(220.0), Dp::new(96.0)),
+            content,
+            page,
+        )
+        .on_flyout_dismiss(Msg::FlyoutDismissed);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 400,
+        };
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+
+        let interaction = view.interaction_plan();
+        let surface = interaction
+            .hit_targets
+            .iter()
+            .find(|target| target.kind == ViewHitTargetKind::Flyout)
+            .expect("flyout surface");
+        assert_eq!(
+            interaction.modal_focus_target().map(|target| target.widget),
+            Some(content_action)
+        );
+        assert!(interaction.focus_target_for_widget(background).is_none());
+        assert!(interaction.focus_target_for_widget(content_action).is_some());
+        assert_eq!(
+            interaction.target_kind_at(Point { x: 4, y: 396 }),
+            Some(ViewHitTargetKind::FlyoutScrim)
+        );
+        assert!(surface.bounds.width > 220);
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                rect,
+                fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                ..
+            } if *rect == surface.bounds
+        )));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::Click {
+                widget: content_action,
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::FlyoutDismissed {
+                widget: presenter,
+                reason: crate::ZsFlyoutDismissReason::LightDismiss,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::SaveClicked,
+                Msg::FlyoutDismissed(crate::ZsFlyoutDismissReason::LightDismiss),
+            ]
+        );
+        assert!(view
+            .widget_flyout_state(presenter)
+            .is_some_and(|state| !state.open));
     }
 
     #[cfg(feature = "command-palette")]

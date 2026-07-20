@@ -42,7 +42,7 @@ impl ViewPaintCx {
         self.plan.set_typography_scale(scale);
     }
 
-    fn finish_node<Msg>(&mut self, _root: &ViewNode<Msg>) {
+    fn finish_node<Msg: Clone>(&mut self, _root: &ViewNode<Msg>) {
         self.paint_depth = self.paint_depth.saturating_sub(1);
         #[cfg(any(
             feature = "auto-suggest",
@@ -52,6 +52,7 @@ impl ViewPaintCx {
             feature = "combo",
             feature = "date-picker",
             feature = "dialog",
+            feature = "flyout",
             feature = "teaching-tip",
             feature = "time-picker",
             feature = "toast"
@@ -103,6 +104,69 @@ impl<Msg: Clone> ViewNode<Msg> {
                 typography_scale_per_mille: cx.typography_scale_per_mille,
             };
             children.extend(child.layout(&mut child_cx).children);
+        }
+        LayoutOutput {
+            bounds: cx.bounds,
+            children,
+        }
+    }
+}
+
+#[cfg(feature = "flyout")]
+impl<Msg: Clone> ViewNode<Msg> {
+    fn layout_flyout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        self.bounds = Some(cx.bounds);
+        self.layout_dpi = cx.dpi;
+        for child in &mut self.children {
+            child.clear_layout_bounds();
+        }
+
+        let mut children = Vec::new();
+        if let Some(id) = self.id {
+            children.push(LayoutNode {
+                component: id.into(),
+                bounds: cx.bounds,
+            });
+        }
+        let split = 1.min(self.children.len());
+        let (page_children, overlay_children) = self.children.split_at_mut(split);
+        let Some(page) = page_children.first_mut() else {
+            return LayoutOutput {
+                bounds: cx.bounds,
+                children,
+            };
+        };
+        let mut page_cx = ViewLayoutCx {
+            bounds: cx.bounds,
+            dpi: cx.dpi,
+            typography_scale_per_mille: cx.typography_scale_per_mille,
+        };
+        children.extend(page.layout(&mut page_cx).children);
+
+        let (spec, open, target) = match &self.kind {
+            ViewNodeKind::Flyout {
+                spec, open, target, ..
+            } => (*spec, *open, *target),
+            _ => unreachable!("flyout layout requires a flyout node"),
+        };
+        if open {
+            if let (Some(content), Some(target_bounds)) =
+                (overlay_children.first_mut(), page.widget_layout_bounds(target))
+            {
+                let plan = crate::zs_flyout_render_plan(
+                    cx.bounds,
+                    target_bounds,
+                    spec,
+                    crate::ZsFlyoutPlatformStyle::current(),
+                    cx.dpi,
+                );
+                let mut content_cx = ViewLayoutCx {
+                    bounds: plan.content,
+                    dpi: cx.dpi,
+                    typography_scale_per_mille: cx.typography_scale_per_mille,
+                };
+                children.extend(content.layout(&mut content_cx).children);
+            }
         }
         LayoutOutput {
             bounds: cx.bounds,
@@ -357,6 +421,10 @@ impl<Msg: Clone> ViewNode<Msg> {
 
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        #[cfg(feature = "flyout")]
+        if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
+            return self.layout_flyout(cx);
+        }
         #[cfg(feature = "label")]
         if matches!(self.kind, ViewNodeKind::NavigationView { .. }) {
             return self.layout_navigation_view(cx);
@@ -404,6 +472,47 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "flyout")]
+        if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
+            let mut handled = false;
+            let mut route_content = false;
+            if let ViewNodeKind::Flyout {
+                open, on_dismiss, ..
+            } = &mut self.kind
+            {
+                route_content = *open;
+                let reason = match event {
+                    ViewEvent::FlyoutDismissed { widget, reason }
+                        if *open && self.id == Some(*widget) => Some(*reason),
+                    ViewEvent::DismissPopupOverlays { except }
+                        if *open && self.id != *except =>
+                    {
+                        Some(crate::ZsFlyoutDismissReason::LightDismiss)
+                    }
+                    _ => None,
+                };
+                if let Some(reason) = reason {
+                    *open = false;
+                    if let Some(message) = on_dismiss {
+                        cx.emit(message(reason));
+                    }
+                    handled = true;
+                }
+            }
+            if handled {
+                return;
+            }
+            if let Some(page) = self.children.first_mut() {
+                page.event(cx, event);
+            }
+            if route_content {
+                if let Some(content) = self.children.get_mut(1) {
+                    content.event(cx, event);
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "teaching-tip")]
         if matches!(self.kind, ViewNodeKind::TeachingTip { .. }) {
             let mut handled = false;
@@ -2833,6 +2942,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Grid { .. } => {}
             #[cfg(feature = "dialog")]
             ViewNodeKind::ContentDialog { .. } => {}
+            #[cfg(feature = "flyout")]
+            ViewNodeKind::Flyout { .. } => {
+                if let Some(page) = self.children.first() {
+                    page.paint(cx);
+                }
+                cx.finish_node(self);
+                return;
+            }
             #[cfg(feature = "command-palette")]
             ViewNodeKind::CommandPalette { .. } => {}
             #[cfg(feature = "toast")]

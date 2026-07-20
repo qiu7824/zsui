@@ -13,8 +13,8 @@ overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: about 97% complete (47 first-pass runtime surfaces out of
-  48 catalogued component families).
+- Component library: 100% first-pass runtime coverage (48 runtime surfaces out
+  of 48 catalogued component families); readiness gaps remain per component.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
@@ -39,8 +39,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: 47 families have
-a first-pass runtime surface, 1 is contract-only and none are not started. A
+Use `zsui_component_catalog_summary()` for component coverage: all 48 families
+have a first-pass runtime surface; none are contract-only or not started. A
 composite workbench does not make its underlying contract-only controls
 complete. WebView is intentionally outside the v0.2 product boundary.
 
@@ -200,8 +200,8 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 48 component families: 47 have a first-pass
-runtime surface, 1 is contract-only and none are not started. The optional
+`src/component_catalog.rs` tracks 48 component families, all with a first-pass
+runtime surface. The optional
 Canvas surface retains backend-neutral primitives in local `Dp` coordinates,
 uses semantic color and text roles, emits a balanced clipped native draw plan
 and maps pointer or keyboard activation into a typed application message. The

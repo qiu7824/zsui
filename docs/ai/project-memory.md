@@ -622,6 +622,18 @@ history remain authoritative for implementation status.
   visuals and restores the prior valid focus target after close. Accessibility
   dialog semantics, arbitrary ViewNode content, validation/deferrals and
   AppKit/GTK target interaction smoke remain readiness gaps.
+- Flyout is an independent `flyout` Cargo feature over `widgets-base` and wraps
+  one ordinary page plus one arbitrary application View subtree. Applications
+  own `open`, the stable presenter and target IDs, and the content state; the
+  framework owns target lookup, viewport flipping/clamping, the modal focus
+  scope and typed `LightDismiss`/`EscapeKey` results. Pointer input inside the
+  surface stays with the content; the first outside click is absorbed and
+  closes the Flyout. Window focus loss and surface resize also dismiss it.
+  Windows uses a Fluent flyout without a tail, macOS uses an AppKit-popover
+  profile and Linux uses a GTK-popover profile. Application code does not branch
+  on platforms or import native handles. Accessibility popover relationships,
+  nested overlay validation and AppKit/Linux target interaction proof remain
+  readiness gaps.
 - Toast is an independent `toast` Cargo feature over `widgets-base`. It is a
   nonmodal in-window feedback layer, not an imitation of Windows or macOS
   system-notification chrome. Applications own an optional `ZsToastSpec` with a

@@ -184,6 +184,18 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             estimated_glyph_width: Dp::new(0.0),
             estimated_label_padding: Dp::new(0.0),
         },
+        #[cfg(feature = "flyout")]
+        flyout: PlatformFlyoutProfile {
+            composition: PlatformFlyoutComposition::FluentFlyout,
+            viewport_margin: Dp::new(12.0),
+            content_padding: Dp::new(16.0),
+            surface_radius: Dp::new(8.0),
+            target_gap: Dp::new(4.0),
+            tail_size: Dp::new(0.0),
+            shadow_offset: Dp::new(2.0),
+            shadow_alpha: 32,
+            automatic_placement: crate::ZsFlyoutPlacement::Bottom,
+        },
         #[cfg(feature = "info-bar")]
         info_bar: PlatformInfoBarProfile {
             composition: PlatformInfoBarComposition::FluentStatus,

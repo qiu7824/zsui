@@ -152,6 +152,11 @@ const CONTENT_DIALOG_GAPS: &[&str] = &[
     "custom ViewNode body plus validation and asynchronous response deferrals",
     "AppKit and GTK4 target interaction smoke",
 ];
+const FLYOUT_GAPS: &[&str] = &[
+    "accessibility popover relationship and focus restoration announcement",
+    "detachable AppKit popover and nested overlay validation",
+    "AppKit and Linux target interaction smoke",
+];
 const TOAST_GAPS: &[&str] = &[
     "accessibility live-region announcement and reduced-motion transition",
     "hover/focus timeout pause plus multi-toast queue and priority replacement",
@@ -641,10 +646,10 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "flyout",
         "Flyout",
         Overlay,
-        ContractOnly,
-        None,
-        "src/host_protocol.rs",
-        PLATFORM_GAPS
+        FirstPass,
+        Some("flyout"),
+        "src/flyout.rs + src/view/widgets/flyout.rs + src/native.rs + three desktop component profiles",
+        FLYOUT_GAPS
     ),
     component!(
         "menu_flyout",
@@ -763,8 +768,9 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"command_palette"));
         assert!(!summary.missing_component_names.contains(&"image"));
         assert!(!summary.missing_component_names.contains(&"canvas"));
-        assert_eq!(summary.first_pass_count, 47);
-        assert_eq!(summary.contract_only_count, 1);
+        assert!(!summary.missing_component_names.contains(&"flyout"));
+        assert_eq!(summary.first_pass_count, 48);
+        assert_eq!(summary.contract_only_count, 0);
     }
 
     #[test]

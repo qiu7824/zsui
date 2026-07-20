@@ -43,6 +43,8 @@ pub mod desktop_services;
 pub mod document_shell;
 pub mod event_protocol;
 pub mod feature_manifest;
+#[cfg(feature = "flyout")]
+pub mod flyout;
 pub mod framework_goals;
 pub mod geometry;
 #[cfg(feature = "grid-view")]
@@ -305,6 +307,11 @@ pub use event_protocol::{
 pub use feature_manifest::{
     zsui_default_feature_names, zsui_feature_manifest, zsui_optional_dependency_feature_names,
     ZsuiCargoFeature, ZsuiFeatureCategory,
+};
+#[cfg(feature = "flyout")]
+pub use flyout::{
+    zs_flyout_native_draw_plan, zs_flyout_render_plan, ZsFlyoutDismissReason, ZsFlyoutPlacement,
+    ZsFlyoutPlatformStyle, ZsFlyoutRenderPlan, ZsFlyoutSpec, ZsFlyoutState,
 };
 pub use framework_goals::{zsui_rust_first_goal_names, zsui_rust_first_goals, ZsuiRustFirstGoal};
 pub use geometry::{
@@ -618,6 +625,8 @@ pub use view::content_dialog;
 pub use view::data_grid;
 #[cfg(feature = "date-picker")]
 pub use view::date_picker;
+#[cfg(feature = "flyout")]
+pub use view::flyout;
 #[cfg(feature = "grid")]
 pub use view::grid;
 #[cfg(feature = "grid-view")]

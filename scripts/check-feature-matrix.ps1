@@ -15,6 +15,7 @@ $singleFeatures = @(
     "button",
     "breadcrumb",
     "canvas",
+    "flyout",
     "toggle-button",
     "label",
     "grid",
@@ -87,7 +88,7 @@ $singleFeatures = @(
 )
 
 $featureSets = @(
-    "button,breadcrumb,canvas,label,grid",
+    "button,breadcrumb,canvas,flyout,label,grid",
     "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,command-palette,combo,date-picker,time-picker,color-picker,tabs",
     "list,grid-view,tree,table",
     "virtual-list,paged-list,label",

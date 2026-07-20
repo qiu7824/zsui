@@ -701,6 +701,13 @@ pub enum ViewNodeKind<Msg> {
         focused_button: crate::ZsContentDialogButton,
         on_result: Option<fn(crate::ZsContentDialogResult) -> Msg>,
     },
+    #[cfg(feature = "flyout")]
+    Flyout {
+        spec: crate::ZsFlyoutSpec,
+        open: bool,
+        target: WidgetId,
+        on_dismiss: Option<fn(crate::ZsFlyoutDismissReason) -> Msg>,
+    },
     #[cfg(feature = "command-palette")]
     CommandPalette {
         items: Vec<crate::ZsCommandPaletteItem>,
@@ -1050,7 +1057,12 @@ impl<Msg> ViewNode<Msg> {
             .min()
     }
 
-    #[cfg(any(feature = "label", feature = "tabs", feature = "virtual-list"))]
+    #[cfg(any(
+        feature = "flyout",
+        feature = "label",
+        feature = "tabs",
+        feature = "virtual-list"
+    ))]
     fn clear_layout_bounds(&mut self) {
         self.bounds = None;
         for child in &mut self.children {
@@ -1360,6 +1372,17 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_dialog_result(mut self, message: fn(crate::ZsContentDialogResult) -> Msg) -> Self {
         if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
             *on_result = Some(message);
+        }
+        self
+    }
+
+    #[cfg(feature = "flyout")]
+    pub fn on_flyout_dismiss(
+        mut self,
+        message: fn(crate::ZsFlyoutDismissReason) -> Msg,
+    ) -> Self {
+        if let ViewNodeKind::Flyout { on_dismiss, .. } = &mut self.kind {
+            *on_dismiss = Some(message);
         }
         self
     }

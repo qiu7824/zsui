@@ -1194,7 +1194,7 @@ pub(crate) struct NativeViewInputRuntime {
     view_suspended: bool,
     animation_epoch: Option<std::time::Instant>,
     focused_widget: Option<crate::WidgetId>,
-    #[cfg(any(feature = "command-palette", feature = "dialog"))]
+    #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
     modal_restore_focus: Option<crate::WidgetId>,
     #[cfg(feature = "tooltip")]
     tooltip: crate::tooltip::ZsTooltipRuntime,
@@ -1501,7 +1501,7 @@ impl NativeViewInputRuntime {
             view_suspended: false,
             animation_epoch: Some(std::time::Instant::now()),
             focused_widget: None,
-            #[cfg(any(feature = "command-palette", feature = "dialog"))]
+            #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
             modal_restore_focus: None,
             #[cfg(feature = "tooltip")]
             tooltip: crate::tooltip::ZsTooltipRuntime::default(),
@@ -1590,7 +1590,7 @@ impl NativeViewInputRuntime {
         self.interaction_plan = None;
         self.animation_epoch = None;
         self.focused_widget = None;
-        #[cfg(any(feature = "command-palette", feature = "dialog"))]
+        #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
         {
             self.modal_restore_focus = None;
         }
@@ -1858,13 +1858,17 @@ impl NativeViewInputRuntime {
     }
 
     fn reconcile_modal_focus(&mut self, report: &mut NativeViewInputDispatchReport) {
-        #[cfg(any(feature = "command-palette", feature = "dialog"))]
+        #[cfg(any(feature = "command-palette", feature = "dialog", feature = "flyout"))]
         {
             if let Some(modal) = self
                 .current_interaction_plan()
                 .and_then(|plan| plan.modal_focus_target())
             {
-                if self.focused_widget == Some(modal.widget) {
+                if self.focused_widget.is_some_and(|widget| {
+                    self.current_interaction_plan()
+                        .and_then(|plan| plan.focus_target_for_widget(widget))
+                        .is_some()
+                }) {
                     return;
                 }
                 if self.modal_restore_focus.is_none() {
@@ -1909,7 +1913,7 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
             report.focused_widget = self.focused_widget.map(|widget| widget.0);
         }
-        #[cfg(not(any(feature = "command-palette", feature = "dialog")))]
+        #[cfg(not(any(feature = "command-palette", feature = "dialog", feature = "flyout")))]
         let _ = report;
     }
 
@@ -1993,6 +1997,30 @@ impl NativeViewInputRuntime {
             report.ime_caret_rect = self.text_input_caret_rect();
             self.populate_text_report(&mut report);
             return report;
+        }
+
+        #[cfg(feature = "flyout")]
+        {
+            let open_flyout = self.current_interaction_plan().and_then(|plan| {
+                plan.hit_targets
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|target| target.kind == crate::ViewHitTargetKind::Flyout)
+                    .filter(|target| {
+                        self.widget_flyout_state(target.widget)
+                            .is_some_and(|state| state.open)
+                    })
+            });
+            if let Some(target) = open_flyout {
+                report = self.dispatch_view_event(
+                    ViewEvent::FlyoutDismissed {
+                        widget: target.widget,
+                        reason: crate::ZsFlyoutDismissReason::LightDismiss,
+                    },
+                    report,
+                );
+            }
         }
 
         self.surface = Some(surface);
@@ -2147,8 +2175,23 @@ impl NativeViewInputRuntime {
             report.redraw_plan = self.current_composed_draw_plan();
         }
         let interaction_plan = self.current_interaction_plan();
-        let target = interaction_plan.and_then(|plan| plan.hit_target_at(point));
-        report = self.dismiss_popup_overlays_except(target.map(|target| target.widget), report);
+        let target = interaction_plan
+            .as_ref()
+            .and_then(|plan| plan.hit_target_at(point));
+        #[cfg(feature = "flyout")]
+        let dismiss_except = interaction_plan
+            .as_ref()
+            .and_then(|plan| {
+                plan.hit_targets.iter().rev().copied().find(|candidate| {
+                    candidate.kind == crate::ViewHitTargetKind::Flyout
+                        && candidate.bounds.contains(point)
+                })
+            })
+            .map(|target| target.widget)
+            .or_else(|| target.map(|target| target.widget));
+        #[cfg(not(feature = "flyout"))]
+        let dismiss_except = target.map(|target| target.widget);
+        report = self.dismiss_popup_overlays_except(dismiss_except, report);
         #[cfg(any(
             feature = "auto-suggest",
             feature = "button",
@@ -2605,6 +2648,23 @@ impl NativeViewInputRuntime {
             return report;
         };
         report.handled = true;
+        #[cfg(feature = "flyout")]
+        match target.kind {
+            crate::ViewHitTargetKind::FlyoutScrim => {
+                return self.dispatch_view_event(
+                    ViewEvent::FlyoutDismissed {
+                        widget: target.widget,
+                        reason: crate::ZsFlyoutDismissReason::LightDismiss,
+                    },
+                    report,
+                );
+            }
+            crate::ViewHitTargetKind::Flyout => {
+                self.focus_target(target, &mut report);
+                return report;
+            }
+            _ => {}
+        }
         #[cfg(feature = "combo")]
         if matches!(
             target.kind,
@@ -3098,6 +3158,25 @@ impl NativeViewInputRuntime {
         let Some(interaction_plan) = self.current_interaction_plan() else {
             return report;
         };
+        #[cfg(feature = "flyout")]
+        if key == NativeViewKey::Escape {
+            if let Some(target) = interaction_plan
+                .hit_targets
+                .iter()
+                .rev()
+                .copied()
+                .find(|target| target.kind == crate::ViewHitTargetKind::Flyout)
+            {
+                report.handled = true;
+                return self.dispatch_view_event(
+                    ViewEvent::FlyoutDismissed {
+                        widget: target.widget,
+                        reason: crate::ZsFlyoutDismissReason::EscapeKey,
+                    },
+                    report,
+                );
+            }
+        }
         #[cfg(feature = "toast")]
         if let Some(toast_target) = interaction_plan
             .hit_targets
@@ -5998,6 +6077,7 @@ impl NativeViewInputRuntime {
         feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
+        feature = "flyout",
         feature = "time-picker"
     ))]
     fn dismiss_popup_overlays_except(
@@ -6033,6 +6113,10 @@ impl NativeViewInputRuntime {
                 crate::ViewHitTargetKind::ColorPicker => self
                     .widget_color_picker_state(target.widget)
                     .is_some_and(|state| state.expanded),
+                #[cfg(feature = "flyout")]
+                crate::ViewHitTargetKind::Flyout => self
+                    .widget_flyout_state(target.widget)
+                    .is_some_and(|state| state.open),
                 _ => false,
             }
         });
@@ -6080,6 +6164,7 @@ impl NativeViewInputRuntime {
         feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
+        feature = "flyout",
         feature = "time-picker"
     )))]
     fn dismiss_popup_overlays_except(
@@ -6088,6 +6173,21 @@ impl NativeViewInputRuntime {
         report: NativeViewInputDispatchReport,
     ) -> NativeViewInputDispatchReport {
         report
+    }
+
+    #[cfg(feature = "flyout")]
+    pub(crate) fn widget_flyout_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsFlyoutState> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_flyout_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_flyout_state(widget))
+            })
     }
 
     #[cfg(feature = "date-picker")]
@@ -10314,6 +10414,127 @@ mod tests {
                 .map(|target| target.widget),
             Some(background)
         );
+    }
+
+    #[cfg(all(feature = "button", feature = "flyout", feature = "label"))]
+    #[test]
+    fn native_view_runtime_traps_flyout_focus_and_closes_on_all_native_boundaries() {
+        #[derive(Clone)]
+        enum Msg {
+            Action,
+            Dismissed(crate::ZsFlyoutDismissReason),
+        }
+        struct State {
+            open: bool,
+            action_count: usize,
+            dismiss_reason: Option<crate::ZsFlyoutDismissReason>,
+        }
+
+        let presenter = crate::WidgetId::new(201);
+        let target = crate::WidgetId::new(202);
+        let content_action = crate::WidgetId::new(203);
+        let background = crate::WidgetId::new(204);
+        let build = || {
+            native_window("Platform Flyout")
+                .size(640, 400)
+                .stateful_view(
+                    State {
+                        open: true,
+                        action_count: 0,
+                        dismiss_reason: None,
+                    },
+                    move |state| {
+                        crate::flyout(
+                            presenter,
+                            state.open,
+                            target,
+                            crate::ZsFlyoutSpec::new(Dp::new(220.0), Dp::new(96.0)),
+                            crate::column(vec![
+                                crate::text("Platform popover content"),
+                                crate::button("Apply")
+                                    .id(content_action)
+                                    .on_click(Msg::Action),
+                            ]),
+                            crate::column(vec![
+                                crate::button("Open details").id(target),
+                                crate::button("Background action").id(background),
+                            ]),
+                        )
+                        .on_flyout_dismiss(Msg::Dismissed)
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Action => state.action_count = state.action_count.saturating_add(1),
+                        Msg::Dismissed(reason) => {
+                            state.open = false;
+                            state.dismiss_reason = Some(reason);
+                        }
+                    },
+                )
+        };
+
+        let builder = build();
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("open flyout interaction plan");
+        let action = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.widget == content_action)
+            .expect("arbitrary flyout content action");
+        let scrim = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::FlyoutScrim)
+            .expect("flyout light-dismiss surface");
+        let mut runtime = builder.native_view_input_runtime();
+        assert_eq!(runtime.focused_widget(), Some(content_action));
+
+        let invoked = runtime.dispatch_pointer_click(Point {
+            x: action.bounds.x + action.bounds.width / 2,
+            y: action.bounds.y + action.bounds.height / 2,
+        });
+        assert_eq!(invoked.message_count, 1);
+        assert!(runtime
+            .widget_flyout_state(presenter)
+            .is_some_and(|state| state.open));
+        let tabbed = runtime.dispatch_key(NativeViewKey::Tab);
+        assert!(tabbed.handled);
+        assert_ne!(runtime.focused_widget(), Some(background));
+        let escaped = runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(escaped.handled);
+        assert_eq!(escaped.message_count, 1);
+        assert!(runtime
+            .widget_flyout_state(presenter)
+            .is_some_and(|state| !state.open));
+
+        let mut outside_runtime = build().native_view_input_runtime();
+        let outside = outside_runtime.dispatch_pointer_click(Point {
+            x: scrim.bounds.x + 2,
+            y: scrim.bounds.y + scrim.bounds.height - 2,
+        });
+        assert!(outside.handled);
+        assert_eq!(outside.message_count, 1);
+        assert!(outside_runtime
+            .widget_flyout_state(presenter)
+            .is_some_and(|state| !state.open));
+
+        let mut resize_runtime = build().native_view_input_runtime();
+        let resized = resize_runtime.set_surface(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 720,
+                height: 460,
+            },
+            Dpi::standard(),
+        );
+        assert!(resized.surface_changed);
+        assert_eq!(resized.message_count, 1);
+        assert!(resize_runtime
+            .widget_flyout_state(presenter)
+            .is_some_and(|state| !state.open));
     }
 
     #[cfg(feature = "toast")]

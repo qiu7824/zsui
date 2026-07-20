@@ -33,6 +33,9 @@ const DIALOG: WidgetId = WidgetId::new(401);
 const TOAST: WidgetId = WidgetId::new(402);
 const TEACHING_TIP: WidgetId = WidgetId::new(403);
 const TEACHING_TARGET: WidgetId = WidgetId::new(404);
+const FLYOUT: WidgetId = WidgetId::new(405);
+const FLYOUT_TARGET: WidgetId = WidgetId::new(406);
+const FLYOUT_ACTION: WidgetId = WidgetId::new(407);
 const CANVAS_SURFACE: WidgetId = WidgetId::new(501);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +144,7 @@ struct GalleryState {
     palette_open: bool,
     palette_query: String,
     overlay: Option<GalleryOverlay>,
+    flyout_open: bool,
     image_preview: ZsImagePreviewState,
     status: String,
 }
@@ -183,6 +187,7 @@ impl Default for GalleryState {
             palette_open: false,
             palette_query: String::new(),
             overlay: None,
+            flyout_open: false,
             image_preview,
             status: "就绪 / Ready".to_string(),
         }
@@ -235,6 +240,9 @@ enum Msg {
     DialogResult(ZsContentDialogResult),
     ToastResult(ZsToastResult),
     TeachingTipResult(ZsTeachingTipResult),
+    OpenFlyout,
+    FlyoutAction,
+    FlyoutDismissed(ZsFlyoutDismissReason),
     InfoBar(ZsInfoBarEvent),
 }
 
@@ -645,15 +653,21 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
                     button("内容对话框 / Dialog")
                         .on_click(Msg::OpenOverlay(GalleryOverlay::Dialog)),
                     button("轻量通知 / Toast").on_click(Msg::OpenOverlay(GalleryOverlay::Toast)),
+                ])
+                .gap(Dp::new(12.0)),
+                row([
                     button("教学提示 / Tip")
                         .id(TEACHING_TARGET)
                         .on_click(Msg::OpenOverlay(GalleryOverlay::TeachingTip)),
+                    button("弹出视图 / Flyout")
+                        .id(FLYOUT_TARGET)
+                        .on_click(Msg::OpenFlyout),
                 ])
                 .gap(Dp::new(12.0)),
                 column([
-                    text("对话框拥有模态焦点域；通知与教学提示仍在共享视图树中"),
+                    text("对话框与弹出视图拥有受限焦点域；所有浮层仍在共享视图树中"),
                     secondary_text(
-                        "Dialog owns modal focus; toast and tip stay in the shared View tree",
+                        "Dialog and Flyout constrain focus; every overlay stays in the shared View tree",
                         TextRole::Caption,
                     ),
                 ])
@@ -682,6 +696,30 @@ fn feedback_page(state: &GalleryState) -> ViewNode<Msg> {
     ])
     .flex(1.0)
     .gap(Dp::new(16.0));
+
+    let page = flyout(
+        FLYOUT,
+        state.flyout_open,
+        FLYOUT_TARGET,
+        ZsFlyoutSpec::new(Dp::new(360.0), Dp::new(132.0)),
+        column([
+            body_strong("平台弹出视图 / Platform popover"),
+            secondary_text(
+                "同一段 View 内容使用各平台的独立外观参数",
+                TextRole::Caption,
+            ),
+            secondary_text(
+                "One View tree uses platform-specific composition",
+                TextRole::Caption,
+            ),
+            primary_button("应用 / Apply")
+                .id(FLYOUT_ACTION)
+                .on_click(Msg::FlyoutAction),
+        ])
+        .gap(Dp::new(8.0)),
+        page,
+    )
+    .on_flyout_dismiss(Msg::FlyoutDismissed);
 
     let page = teaching_tip(
         TEACHING_TIP,
@@ -925,6 +963,7 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
             state.page = page;
             state.palette_open = false;
             state.overlay = None;
+            state.flyout_open = false;
             state.status = page.title().to_string();
         }
         Msg::Dark(value) => {
@@ -1053,6 +1092,18 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
             state.overlay = None;
             state.status = format!("教学提示 / Teaching tip: {:?}", value.response);
         }
+        Msg::OpenFlyout => {
+            state.overlay = None;
+            state.flyout_open = true;
+            state.status = "弹出视图已打开 / Flyout opened".to_string();
+        }
+        Msg::FlyoutAction => {
+            state.status = "弹出视图操作已执行 / Flyout action invoked".to_string();
+        }
+        Msg::FlyoutDismissed(reason) => {
+            state.flyout_open = false;
+            state.status = format!("弹出视图已关闭 / Flyout dismissed: {reason:?}");
+        }
         Msg::InfoBar(value) => state.status = format!("信息栏 / InfoBar: {value:?}"),
     }
 }
@@ -1091,6 +1142,7 @@ fn main() -> ZsuiResult<()> {
     let mut state = GalleryState::default();
     state.page = initial_page;
     state.dark = dark;
+    state.flyout_open = native_proof && initial_page == GalleryPage::Feedback;
     let default_size = (1180, 780);
     let window_width = proof_dimension(&args, "--width", default_size.0);
     let window_height = proof_dimension(&args, "--height", default_size.1);
@@ -1201,6 +1253,21 @@ fn main() -> ZsuiResult<()> {
                     )
                 })?;
             options = options.native_view_click(point);
+        } else if initial_page == GalleryPage::Feedback {
+            let point = builder
+                .native_view_interaction_plan()
+                .and_then(|plan| plan.hit_target_for_widget(FLYOUT_ACTION))
+                .map(|target| Point {
+                    x: target.bounds.x + target.bounds.width / 2,
+                    y: target.bounds.y + target.bounds.height / 2,
+                })
+                .ok_or_else(|| {
+                    ZsuiError::host(
+                        "gallery_interaction_target",
+                        "missing Flyout gallery action",
+                    )
+                })?;
+            options = options.native_view_click(point);
         }
         let widgets = builder
             .native_view_interaction_plan()
@@ -1213,6 +1280,7 @@ fn main() -> ZsuiResult<()> {
                     vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
                 }
                 GalleryPage::Catalog => vec!["CanvasActivated"],
+                GalleryPage::Feedback => vec!["FlyoutAction"],
                 _ => Vec::new(),
             };
             serde_json::to_value(
@@ -1290,8 +1358,8 @@ mod tests {
     fn gallery_declares_every_catalog_family_and_keeps_contracts_explicit() {
         let summary = zsui_component_catalog_summary();
         assert_eq!(summary.total_count, 48);
-        assert_eq!(summary.runtime_surface_count, 47);
-        assert_eq!(summary.contract_only_count, 1);
+        assert_eq!(summary.runtime_surface_count, 48);
+        assert_eq!(summary.contract_only_count, 0);
     }
 
     #[test]

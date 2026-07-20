@@ -221,6 +221,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         response: crate::ZsTeachingTipResponse,
     },
+    #[cfg(feature = "flyout")]
+    FlyoutDismissed {
+        widget: WidgetId,
+        reason: crate::ZsFlyoutDismissReason,
+    },
     #[cfg(feature = "info-bar")]
     InfoBarFocused {
         widget: WidgetId,
@@ -312,6 +317,7 @@ pub enum ViewEvent {
         feature = "color-picker",
         feature = "combo",
         feature = "date-picker",
+        feature = "flyout",
         feature = "time-picker"
     ))]
     DismissPopupOverlays {
@@ -442,6 +448,10 @@ pub enum ViewHitTargetKind {
     ContentDialogButton {
         button: crate::ZsContentDialogButton,
     },
+    #[cfg(feature = "flyout")]
+    Flyout,
+    #[cfg(feature = "flyout")]
+    FlyoutScrim,
     #[cfg(feature = "command-palette")]
     CommandPalette,
     #[cfg(feature = "command-palette")]
@@ -569,6 +579,12 @@ impl ViewInteractionPlan {
     }
 
     pub fn hit_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
+        #[cfg(feature = "flyout")]
+        if let Some(target) = self.hit_targets.iter().copied().find(|target| {
+            target.widget == widget && target.kind == ViewHitTargetKind::Flyout
+        }) {
+            return Some(target);
+        }
         #[cfg(feature = "command-palette")]
         if let Some(target) = self.hit_targets.iter().copied().find(|target| {
             target.widget == widget && target.kind == ViewHitTargetKind::CommandPalette
@@ -647,6 +663,28 @@ impl ViewInteractionPlan {
     }
 
     pub(crate) fn modal_focus_target(&self) -> Option<ViewHitTarget> {
+        #[cfg(feature = "flyout")]
+        if let Some((surface_index, surface)) = self
+            .hit_targets
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, target)| target.kind == ViewHitTargetKind::Flyout)
+            .map(|(index, target)| (index, *target))
+        {
+            return self
+                .hit_targets
+                .iter()
+                .skip(surface_index.saturating_add(1))
+                .copied()
+                .find(|target| {
+                    target.kind != ViewHitTargetKind::FlyoutScrim
+                        && target.kind != ViewHitTargetKind::Flyout
+                        && target.accepts_focus()
+                        && rect_contains_rect(surface.bounds, target.bounds)
+                })
+                .or(Some(surface));
+        }
         #[cfg(feature = "command-palette")]
         if let Some(target) = self
             .hit_targets
@@ -729,6 +767,20 @@ impl ViewInteractionPlan {
     }
 
     fn accepts_focus_scope(&self, _target: ViewHitTarget) -> bool {
+        #[cfg(feature = "flyout")]
+        if let Some((surface_index, surface)) = self
+            .hit_targets
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, target)| target.kind == ViewHitTargetKind::Flyout)
+            .map(|(index, target)| (index, *target))
+        {
+            return _target.kind == ViewHitTargetKind::Flyout
+                || (rect_contains_rect(surface.bounds, _target.bounds)
+                    && self.hit_targets[surface_index.saturating_add(1)..]
+                        .contains(&_target));
+        }
         if let Some(modal) = self.modal_focus_target() {
             return _target.widget == modal.widget && _target.kind == modal.kind;
         }
@@ -756,6 +808,10 @@ impl ViewHitTarget {
             self.kind,
             ViewHitTargetKind::ContentDialogScrim | ViewHitTargetKind::ContentDialogButton { .. }
         ) {
+            return false;
+        }
+        #[cfg(feature = "flyout")]
+        if self.kind == ViewHitTargetKind::FlyoutScrim {
             return false;
         }
         #[cfg(feature = "toast")]
@@ -855,6 +911,14 @@ impl ViewHitTarget {
         }
         true
     }
+}
+
+#[cfg(feature = "flyout")]
+fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x.saturating_add(inner.width) <= outer.x.saturating_add(outer.width)
+        && inner.y.saturating_add(inner.height) <= outer.y.saturating_add(outer.height)
 }
 
 impl ViewHitTargetKind {
