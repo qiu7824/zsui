@@ -11426,15 +11426,12 @@ mod tests {
 
         let mut runtime = build(true).native_view_input_runtime();
         assert_eq!(runtime.focused_widget(), Some(presenter));
-
-        let first = runtime.dispatch_key(NativeViewKey::Down);
-        assert!(first.handled);
-        assert!(first.menu_flyout_highlight_changed);
         assert!(runtime
             .widget_menu_flyout_state(presenter)
             .is_some_and(|(state, _)| state.highlighted == Some(crate::ZsMenuFlyoutPath::root(0))));
 
         let submenu = runtime.dispatch_key(NativeViewKey::Down);
+        assert!(submenu.handled);
         assert!(submenu.menu_flyout_highlight_changed);
         let opened = runtime.dispatch_key(NativeViewKey::Right);
         assert!(opened.handled);
