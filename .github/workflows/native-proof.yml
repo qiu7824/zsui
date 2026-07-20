@@ -766,6 +766,11 @@ jobs:
 
           deadline = time.monotonic() + 10.0
           snapshot = []
+          required = {
+              "自动保存 / Auto save",
+              "更多 / More",
+              "导出 / Export",
+          }
           while time.monotonic() < deadline:
               snapshot = []
               desktop = pyatspi.Registry.getDesktop(0)
@@ -793,20 +798,16 @@ jobs:
                       except Exception:
                           pass
               by_name = {item["name"]: item for item in snapshot}
-              if {
-                  "自动保存 / Auto save",
-                  "更多 / More",
-                  "导出 / Export",
-              } <= by_name.keys():
+              if (
+                  required <= by_name.keys()
+                  and by_name["自动保存 / Auto save"]["checked"]
+                  and by_name["更多 / More"]["expanded"]
+                  and by_name["导出 / Export"]["expanded"]
+              ):
                   break
               time.sleep(0.1)
 
           by_name = {item["name"]: item for item in snapshot}
-          required = {
-              "自动保存 / Auto save",
-              "更多 / More",
-              "导出 / Export",
-          }
           if not required <= by_name.keys():
               raise SystemExit(
                   f"AT-SPI did not expose MenuFlyout rows: {sorted(by_name)}"

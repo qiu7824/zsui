@@ -67,16 +67,26 @@ impl ZsMenuFlyoutPath {
     }
 
     pub fn parent(self) -> Option<Self> {
-        (self.len > 1).then(|| Self {
-            indices: self.indices,
-            len: self.len - 1,
+        (self.len > 1).then(|| {
+            let mut indices = self.indices;
+            indices[usize::from(self.len - 1)] = 0;
+            Self {
+                indices,
+                len: self.len - 1,
+            }
         })
     }
 
     fn prefix(self, len: usize) -> Option<Self> {
-        (len > 0 && len <= usize::from(self.len)).then(|| Self {
-            indices: self.indices,
-            len: len as u8,
+        (len > 0 && len <= usize::from(self.len)).then(|| {
+            let mut indices = self.indices;
+            for index in len..usize::from(self.len) {
+                indices[index] = 0;
+            }
+            Self {
+                indices,
+                len: len as u8,
+            }
         })
     }
 
@@ -931,6 +941,18 @@ mod tests {
                     .item("One", Command::custom("one"))
                     .item("Unavailable", Command::custom("disabled")),
             )
+    }
+
+    #[test]
+    fn path_ancestors_canonicalize_nonzero_descendant_indices() {
+        let root = ZsMenuFlyoutPath::root(3);
+        let child = root.descendant(2).expect("second-level path");
+        let grandchild = child.descendant(5).expect("third-level path");
+
+        assert_eq!(child.parent(), Some(root));
+        assert_eq!(grandchild.parent(), Some(child));
+        assert_eq!(grandchild.prefix(1), Some(root));
+        assert_eq!(grandchild.prefix(2), Some(child));
     }
 
     #[test]
