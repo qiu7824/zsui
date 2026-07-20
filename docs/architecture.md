@@ -243,14 +243,15 @@ multilingual ranking, recent-command storage, result virtualization,
 search-dialog/result-list accessibility semantics and AppKit/GTK target proof
 remain explicit readiness work.
 
-For the reusable WinUI-style layout pattern, `src/shell_layout.rs` adds
-`ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec`. This is a generic self-drawn
-surface contract, not a settings-storage model: it describes a left navigation
-pane, right content header, grouped cards, rows, description text, row
-accessories and action buttons, then emits stable layout regions and a
-product-neutral `NativeDrawPlan` for host renderers. The layout math is
-centralized here, including the fixed card spacing, viewport mask and scrollbar
-formulas.
+For the reusable platform-adaptive navigation layout,
+`src/shell_layout.rs` adds `ZsShellLayoutSpec` /
+`ZsNavigationScaffoldSpec`. This is a generic self-drawn surface contract, not
+a settings-storage model: it describes semantic navigation, content sections,
+rows, description text, row accessories and action buttons, then emits stable
+layout regions and a product-neutral `NativeDrawPlan` for host renderers. The
+internal component profile resolves that declaration to Fluent pane/cards,
+AppKit source-list/forms or GTK sidebar/boxed-list composition and owns the
+corresponding layout metrics.
 `NativeWindowBuilder::shell_layout(...)` now keeps that shell as live runtime
 state on the direct Win32 path. The normal event loop routes
 navigation hover/selection and scrollbar pointer math, plus product-neutral row
@@ -442,8 +443,9 @@ The first implementation layer lives in `src/view/mod.rs`, `src/style.rs` and
 `src/geometry.rs`: typed `View<Msg>` trees, `WidgetId`, explicit app/event/paint
 contexts, `ViewInteractionPlan`, feature-gated scroll containers, typed list
 selection, `Px`/`Dp`/`Dpi`, `UiLength` and theme tokens.
-`src/shell_layout.rs` adds the generic navigation/card shell layout contract on
-top of those typed units and draw commands with one shared spacing model.
+`src/shell_layout.rs` adds the generic navigation/content shell layout contract
+on top of those typed units and draw commands. One public declaration resolves
+through internal Fluent, AppKit or GTK composition and metric profiles.
 `ProductViewAdapterHost` connects that typed view layer to product adapters, and
 `ZsuiReusableRuntimeHarness::run_view_smoke(...)` verifies the flow from native
 view events to typed messages, `AppCx`, product events and reusable

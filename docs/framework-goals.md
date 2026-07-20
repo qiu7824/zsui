@@ -50,8 +50,11 @@ composition and interaction conventions:
   to component-profile mapping; component modules consume the resolved shared
   profile and never select a target experience themselves.
   `src/platform/component_profile.rs` groups the framework-owned composition
-  and metrics for semantic sections, adaptive navigation, base buttons and
-  command bars while remaining independent from native backend selection.
+  and metrics for semantic sections, adaptive navigation, base buttons,
+  command bars and the legacy navigation/card shell while remaining
+  independent from native backend selection. The same `ZsShellLayoutSpec`
+  resolves to Fluent, AppKit or GTK composition without an application-level
+  platform branch.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.
@@ -285,13 +288,14 @@ This keeps Windows 11 styling, dark mode, high contrast and brand themes
 replaceable without rewriting widgets.
 
 Reusable self-drawn layout patterns should stay product-neutral and preserve
-their verified interaction and rendering invariants. A WinUI-style left-nav/
-right-content shell should be expressed as
-layout data and typed draw commands, not as a product settings screen. Grouped
-cards, row titles, description text, row accessories, viewport masks,
-scrollbars and action-button areas belong in reusable contracts such as
-`ZsShellLayoutSpec`; the product crate owns the actual data and command
-behavior.
+their verified interaction and rendering invariants. A semantic navigation/
+content shell should be expressed as layout data and typed draw commands, not
+as a product settings screen or a fixed platform skin. Grouped cards or forms,
+row titles, description text, row accessories, viewport masks, scrollbars and
+action-button areas belong in reusable contracts such as `ZsShellLayoutSpec`;
+the internal component profile resolves Fluent pane/cards, AppKit source-list/
+forms or GTK sidebar/boxed-list composition. The product crate owns the actual
+data and command behavior.
 
 ## Error And Platform Boundaries
 

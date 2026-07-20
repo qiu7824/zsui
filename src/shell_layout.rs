@@ -1,9 +1,16 @@
 use serde::{Deserialize, Serialize};
 
+use crate::platform_component_profile::{
+    PlatformComponentProfile, PlatformShellNavigationComposition, PlatformShellProfile,
+    PlatformShellSectionComposition,
+};
+#[cfg(test)]
+use crate::ZsPlatformStyle;
 use crate::{
-    zs_toggle_render_plan, ColorRole, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill,
-    NativeDrawPlan, NativeDrawTextCommand, Point, Rect, SemanticTextStyle, TextRole, TextWeight,
-    TextWrap, UiRect, VerticalAlign,
+    zs_toggle_render_plan_for_platform, ColorRole, Dp, Dpi, HorizontalAlign, NativeDrawCommand,
+    NativeDrawFill, NativeDrawIconCommand, NativeDrawPlan, NativeDrawTextCommand,
+    NativeIconColorMode, Point, Rect, SemanticTextStyle, TextRole, TextWeight, TextWrap, UiRect,
+    VerticalAlign, ZsIcon,
 };
 
 pub const ZS_SHELL_BASE_W: i32 = 1100;
@@ -27,6 +34,19 @@ pub const ZS_SHELL_VIEWPORT_MASK_H: i32 = 14;
 pub fn zs_shell_scale(value: i32, dpi: Dpi) -> i32 {
     let dpi = dpi.0.round().max(96.0) as i64;
     (((value as i64) * dpi) + 48) as i32 / 96
+}
+
+fn current_shell_profile() -> PlatformShellProfile {
+    PlatformComponentProfile::current().shell
+}
+
+#[cfg(test)]
+fn shell_profile_for_style(style: ZsPlatformStyle) -> PlatformShellProfile {
+    PlatformComponentProfile::for_style(style).shell
+}
+
+fn shell_dp(value: Dp, dpi: Dpi) -> i32 {
+    value.to_px(dpi).round_i32()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,13 +123,29 @@ impl ZsShellLayoutSpec {
     }
 
     pub fn scroll_layout(&self, bounds: Rect, dpi: Dpi, active: bool) -> ZsShellScrollLayout {
+        self.scroll_layout_with_profile(bounds, dpi, active, current_shell_profile())
+    }
+
+    fn scroll_layout_with_profile(
+        &self,
+        bounds: Rect,
+        dpi: Dpi,
+        active: bool,
+        profile: PlatformShellProfile,
+    ) -> ZsShellScrollLayout {
         let window = rect_to_ui(bounds);
         let bar_width = if active {
-            zs_shell_scale(ZS_SHELL_SCROLL_BAR_W_ACTIVE, dpi)
+            shell_dp(profile.active_scrollbar_width, dpi)
         } else {
-            zs_shell_scale(ZS_SHELL_SCROLL_BAR_W, dpi)
+            shell_dp(profile.scrollbar_width, dpi)
         };
-        zs_shell_scroll_layout_for_window(window, self.content_total_h(window, dpi), bar_width, dpi)
+        zs_shell_scroll_layout_for_window_with_profile(
+            window,
+            self.content_total_h_with_profile(window, dpi, profile),
+            bar_width,
+            dpi,
+            profile,
+        )
     }
 
     pub fn max_scroll(&self, bounds: Rect, dpi: Dpi) -> i32 {
@@ -117,7 +153,7 @@ impl ZsShellLayoutSpec {
     }
 
     pub fn layout_plan(&self, bounds: Rect, dpi: Dpi) -> ZsShellLayoutPlan {
-        self.layout_plan_with_metrics(bounds, dpi, ZsShellLayoutMetrics::default())
+        self.layout_plan_with_profile(bounds, dpi, current_shell_profile())
     }
 
     pub fn layout_plan_with_metrics(
@@ -126,9 +162,28 @@ impl ZsShellLayoutSpec {
         dpi: Dpi,
         _metrics: ZsShellLayoutMetrics,
     ) -> ZsShellLayoutPlan {
+        self.layout_plan_with_profile(bounds, dpi, current_shell_profile())
+    }
+
+    #[cfg(test)]
+    fn layout_plan_for_style(
+        &self,
+        bounds: Rect,
+        dpi: Dpi,
+        style: ZsPlatformStyle,
+    ) -> ZsShellLayoutPlan {
+        self.layout_plan_with_profile(bounds, dpi, shell_profile_for_style(style))
+    }
+
+    fn layout_plan_with_profile(
+        &self,
+        bounds: Rect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> ZsShellLayoutPlan {
         let mut regions = Vec::new();
         let window = rect_to_ui(bounds);
-        let chrome = zs_shell_chrome_render_plan(window, dpi);
+        let chrome = zs_shell_chrome_render_plan_with_profile(window, dpi, profile);
 
         regions.push(ZsShellLayoutRegion::new(
             self.id.clone(),
@@ -143,7 +198,9 @@ impl ZsShellLayoutSpec {
         regions.push(ZsShellLayoutRegion::new(
             "content",
             ZsShellLayoutRegionKind::ContentPane,
-            ui_to_rect(zs_shell_viewport_rect_for_window(window, dpi)),
+            ui_to_rect(zs_shell_viewport_rect_for_window_with_profile(
+                window, dpi, profile,
+            )),
         ));
         regions.push(ZsShellLayoutRegion::new(
             "content.header",
@@ -160,18 +217,23 @@ impl ZsShellLayoutSpec {
             regions.push(ZsShellLayoutRegion::new(
                 item.id.clone(),
                 ZsShellLayoutRegionKind::NavItem,
-                ui_to_rect(zs_shell_nav_item_rect(window, index, dpi)),
+                ui_to_rect(zs_shell_nav_item_rect_with_profile(
+                    window, index, dpi, profile,
+                )),
             ));
         }
 
-        for section in self.sections(window, dpi) {
+        for section in self.sections_with_profile(window, dpi, profile) {
             regions.push(ZsShellLayoutRegion::new(
                 section.id.clone(),
                 ZsShellLayoutRegionKind::GroupCard,
                 ui_to_rect(section.rect.offset_y(self.scroll_y)),
             ));
-            let layout =
-                ZsShellFormSectionLayout::from_section(section.rect.offset_y(self.scroll_y), dpi);
+            let layout = ZsShellFormSectionLayout::from_section_with_profile(
+                section.rect.offset_y(self.scroll_y),
+                dpi,
+                profile,
+            );
             if let Some(card) = self.cards.iter().find(|card| card.id == section.id) {
                 for (row_index, row) in card.rows.iter().enumerate() {
                     let row_rect = layout.row_rect(row_index as i32);
@@ -180,9 +242,10 @@ impl ZsShellLayoutSpec {
                         ZsShellLayoutRegionKind::ContentRow,
                         ui_to_rect(row_rect),
                     ));
-                    if let Some(accessory_rect) =
-                        layout.accessory_rect(row_index as i32, row.accessory.width(dpi))
-                    {
+                    if let Some(accessory_rect) = layout.accessory_rect(
+                        row_index as i32,
+                        row.accessory.width_with_profile(dpi, profile),
+                    ) {
                         regions.push(ZsShellLayoutRegion::new(
                             format!("{}.accessory", row.id),
                             ZsShellLayoutRegionKind::RowAccessory,
@@ -193,13 +256,17 @@ impl ZsShellLayoutSpec {
             }
         }
 
-        if let Some(action_rect) = zs_shell_action_area_rect(window, &self.action_area, dpi) {
+        if let Some(action_rect) =
+            zs_shell_action_area_rect_with_profile(window, &self.action_area, dpi, profile)
+        {
             regions.push(ZsShellLayoutRegion::new(
                 "actions",
                 ZsShellLayoutRegionKind::ActionArea,
                 ui_to_rect(action_rect),
             ));
-            for (id, rect) in zs_shell_action_button_rects(window, &self.action_area, dpi) {
+            for (id, rect) in
+                zs_shell_action_button_rects_with_profile(window, &self.action_area, dpi, profile)
+            {
                 regions.push(ZsShellLayoutRegion::new(
                     id,
                     ZsShellLayoutRegionKind::ActionButton,
@@ -208,7 +275,7 @@ impl ZsShellLayoutSpec {
             }
         }
 
-        if let Some(scrollbar) = self.scrollbar_render_plan(window, dpi) {
+        if let Some(scrollbar) = self.scrollbar_render_plan_with_profile(window, dpi, profile) {
             if let Some(track) = scrollbar.track_rect {
                 regions.push(ZsShellLayoutRegion::new(
                     "scrollbar.track",
@@ -227,15 +294,49 @@ impl ZsShellLayoutSpec {
     }
 
     pub fn paint_plan(&self, bounds: Rect, dpi: Dpi) -> ZsShellPaintPlan {
-        let (mut chrome_and_nav, content, trailing, _) = self.paint_plan_parts(bounds, dpi);
+        let (mut chrome_and_nav, content, trailing, _) =
+            self.paint_plan_parts_with_profile(bounds, dpi, current_shell_profile());
+        chrome_and_nav.extend(content);
+        chrome_and_nav.extend(trailing);
+        chrome_and_nav
+    }
+
+    #[cfg(test)]
+    fn paint_plan_for_style(
+        &self,
+        bounds: Rect,
+        dpi: Dpi,
+        style: ZsPlatformStyle,
+    ) -> ZsShellPaintPlan {
+        let (mut chrome_and_nav, content, trailing, _) =
+            self.paint_plan_parts_with_profile(bounds, dpi, shell_profile_for_style(style));
         chrome_and_nav.extend(content);
         chrome_and_nav.extend(trailing);
         chrome_and_nav
     }
 
     pub fn native_draw_plan(&self, bounds: Rect, dpi: Dpi) -> NativeDrawPlan {
+        self.native_draw_plan_with_profile(bounds, dpi, current_shell_profile())
+    }
+
+    #[cfg(test)]
+    fn native_draw_plan_for_style(
+        &self,
+        bounds: Rect,
+        dpi: Dpi,
+        style: ZsPlatformStyle,
+    ) -> NativeDrawPlan {
+        self.native_draw_plan_with_profile(bounds, dpi, shell_profile_for_style(style))
+    }
+
+    fn native_draw_plan_with_profile(
+        &self,
+        bounds: Rect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> NativeDrawPlan {
         let (chrome_and_nav, content, trailing, content_clip_rect) =
-            self.paint_plan_parts(bounds, dpi);
+            self.paint_plan_parts_with_profile(bounds, dpi, profile);
         let mut plan = chrome_and_nav.to_native_draw_plan();
         plan.push(NativeDrawCommand::PushClip {
             rect: ui_to_rect(content_clip_rect),
@@ -247,53 +348,55 @@ impl ZsShellLayoutSpec {
         plan
     }
 
-    fn paint_plan_parts(
+    fn paint_plan_parts_with_profile(
         &self,
         bounds: Rect,
         dpi: Dpi,
+        profile: PlatformShellProfile,
     ) -> (ZsShellPaintPlan, ZsShellPaintPlan, ZsShellPaintPlan, UiRect) {
         let window = rect_to_ui(bounds);
-        let chrome = zs_shell_chrome_render_plan(window, dpi);
+        let chrome = zs_shell_chrome_render_plan_with_profile(window, dpi, profile);
         let mut chrome_and_nav = ZsShellPaintPlan::default();
-        chrome_and_nav.extend(zs_shell_chrome_paint_plan(
+        chrome_and_nav.extend(zs_shell_chrome_paint_plan_with_profile(
             &chrome,
             self.app_title.clone(),
             self.title.clone(),
+            profile,
         ));
 
         let selected_id = self.selected_nav_id.as_deref();
         let hovered_id = self.hovered_nav_id.as_deref();
         for (index, item) in self.nav_items.iter().enumerate() {
+            let item_rect = zs_shell_nav_item_rect_with_profile(window, index, dpi, profile);
             chrome_and_nav.extend(zs_shell_nav_item_paint_plan(
                 &ZsShellNavItemRender {
                     id: item.id.clone(),
                     index,
                     label: item.label.clone(),
                     icon: item.icon,
-                    rect: zs_shell_nav_item_rect(window, index, dpi),
+                    rect: item_rect,
                     selected: selected_id == Some(item.id.as_str())
                         || (selected_id.is_none() && index == 0),
                     hovered: hovered_id == Some(item.id.as_str()),
-                    badge_rect: item.badge.then(|| {
-                        zs_shell_nav_badge_rect(zs_shell_nav_item_rect(window, index, dpi), dpi)
-                    }),
+                    badge_rect: item.badge.then(|| zs_shell_nav_badge_rect(item_rect, dpi)),
                 },
                 dpi,
+                profile,
             ));
         }
 
         let content = ZsShellContentRenderPlan {
-            sections: self.sections(window, dpi),
+            sections: self.sections_with_profile(window, dpi, profile),
             scroll_y: self.scroll_y,
         };
-        let mut content_plan = zs_shell_content_paint_plan(&content, dpi);
-        content_plan.extend(self.row_paint_plan(window, dpi));
+        let mut content_plan = zs_shell_content_paint_plan(&content, dpi, profile);
+        content_plan.extend(self.row_paint_plan_with_profile(window, dpi, profile));
 
         let mut trailing = ZsShellPaintPlan::default();
-        if let Some(action_plan) = self.action_area_paint_plan(window, dpi) {
+        if let Some(action_plan) = self.action_area_paint_plan_with_profile(window, dpi, profile) {
             trailing.extend(action_plan);
         }
-        if let Some(scrollbar) = self.scrollbar_render_plan(window, dpi) {
+        if let Some(scrollbar) = self.scrollbar_render_plan_with_profile(window, dpi, profile) {
             trailing.extend(zs_shell_scrollbar_paint_plan(&scrollbar));
         }
         trailing.extend(zs_shell_viewport_mask_paint_plan(&chrome));
@@ -312,7 +415,7 @@ impl ZsShellLayoutSpec {
         metrics: ZsShellLayoutMetrics,
     ) -> NativeDrawPlan {
         let _ = metrics;
-        self.native_draw_plan(bounds, dpi)
+        self.native_draw_plan_with_profile(bounds, dpi, current_shell_profile())
     }
 
     pub fn audit(&self) -> ZsShellLayoutAudit {
@@ -363,23 +466,32 @@ impl ZsShellLayoutSpec {
         }
     }
 
-    fn sections(&self, window: UiRect, dpi: Dpi) -> Vec<ZsShellSection> {
+    fn sections_with_profile(
+        &self,
+        window: UiRect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> Vec<ZsShellSection> {
         let mut out = Vec::with_capacity(self.cards.len());
-        let mut top = zs_shell_scale(ZS_SHELL_CONTENT_TOP_GAP, dpi);
-        let gap = zs_shell_scale(ZS_SHELL_FORM_SECTION_GAP, dpi);
-        let content_x = zs_shell_content_x(window, dpi);
-        let content_w = zs_shell_content_w(window, dpi);
+        let mut top = shell_dp(profile.content_top_gap, dpi);
+        let gap = shell_dp(profile.section_gap, dpi);
+        let content_x = zs_shell_content_x_with_profile(window, dpi, profile);
+        let content_w = zs_shell_content_w_with_profile(window, dpi, profile);
         for card in &self.cards {
-            let h =
-                zs_shell_form_section_height_with_extra(card.rows.len() as i32, card.extra_px, dpi);
+            let h = zs_shell_form_section_height_with_extra_profile(
+                card.rows.len() as i32,
+                card.extra_px,
+                dpi,
+                profile,
+            );
             out.push(ZsShellSection {
                 id: card.id.clone(),
                 title: card.title.clone(),
                 rect: UiRect::new(
                     content_x,
-                    window.top + zs_shell_content_y(dpi) + top,
+                    window.top + zs_shell_content_y_with_profile(dpi, profile) + top,
                     content_x + content_w,
-                    window.top + zs_shell_content_y(dpi) + top + h,
+                    window.top + zs_shell_content_y_with_profile(dpi, profile) + top + h,
                 ),
             });
             top += h + gap;
@@ -387,43 +499,59 @@ impl ZsShellLayoutSpec {
         out
     }
 
-    fn content_total_h(&self, window: UiRect, dpi: Dpi) -> i32 {
-        self.sections(window, dpi)
+    fn content_total_h_with_profile(
+        &self,
+        window: UiRect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> i32 {
+        self.sections_with_profile(window, dpi, profile)
             .iter()
             .map(|section| {
-                section.rect.bottom - window.top - zs_shell_content_y(dpi) + zs_shell_scale(16, dpi)
+                section.rect.bottom - window.top - zs_shell_content_y_with_profile(dpi, profile)
+                    + shell_dp(profile.content_top_gap, dpi)
             })
             .max()
             .unwrap_or(0)
             .max(0)
     }
 
-    fn scrollbar_render_plan(
+    fn scrollbar_render_plan_with_profile(
         &self,
         window: UiRect,
         dpi: Dpi,
+        profile: PlatformShellProfile,
     ) -> Option<ZsShellScrollbarRenderPlan> {
-        zs_shell_scrollbar_render_plan(
+        zs_shell_scrollbar_render_plan_with_profile(
             window,
-            self.content_total_h(window, dpi),
+            self.content_total_h_with_profile(window, dpi, profile),
             self.scroll_y,
             self.scrollbar_visible,
             self.scrollbar_dragging,
             dpi,
+            profile,
         )
     }
 
-    fn row_paint_plan(&self, window: UiRect, dpi: Dpi) -> ZsShellPaintPlan {
+    fn row_paint_plan_with_profile(
+        &self,
+        window: UiRect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> ZsShellPaintPlan {
         let mut plan = ZsShellPaintPlan::default();
-        for section in self.sections(window, dpi) {
+        for section in self.sections_with_profile(window, dpi, profile) {
             let Some(card) = self.cards.iter().find(|card| card.id == section.id) else {
                 continue;
             };
-            let layout =
-                ZsShellFormSectionLayout::from_section(section.rect.offset_y(self.scroll_y), dpi);
+            let layout = ZsShellFormSectionLayout::from_section_with_profile(
+                section.rect.offset_y(self.scroll_y),
+                dpi,
+                profile,
+            );
             for (index, row) in card.rows.iter().enumerate() {
                 let row_rect = layout.row_rect(index as i32);
-                let accessory_width = row.accessory.width(dpi).unwrap_or(0);
+                let accessory_width = row.accessory.width_with_profile(dpi, profile).unwrap_or(0);
                 let text_right = if accessory_width > 0 {
                     row_rect.right - accessory_width - zs_shell_scale(16, dpi)
                 } else {
@@ -459,44 +587,60 @@ impl ZsShellLayoutSpec {
                         align: ZsShellTextAlign::Left,
                     });
                 }
-                if index + 1 < card.rows.len() {
+                if profile.draw_row_separators && index + 1 < card.rows.len() {
+                    let separator_top = row_rect.bottom
+                        + if profile.sections == PlatformShellSectionComposition::FluentCards {
+                            zs_shell_scale(3, dpi)
+                        } else {
+                            0
+                        };
                     plan.paint_commands.push(ZsShellPaintCommand::FillRect {
                         rect: UiRect::new(
                             row_rect.left,
-                            row_rect.bottom + zs_shell_scale(3, dpi),
+                            separator_top,
                             row_rect.right,
-                            row_rect.bottom + zs_shell_scale(4, dpi),
+                            separator_top + 1,
                         ),
                         fill: ZsShellThemeRole::Stroke,
                     });
                 }
-                if let Some(accessory_rect) =
-                    layout.accessory_rect(index as i32, row.accessory.width(dpi))
+                if let Some(accessory_rect) = layout
+                    .accessory_rect(index as i32, row.accessory.width_with_profile(dpi, profile))
                 {
-                    plan.extend(row.accessory.paint_plan(accessory_rect, dpi));
+                    plan.extend(row.accessory.paint_plan_with_profile(
+                        accessory_rect,
+                        dpi,
+                        profile,
+                    ));
                 }
             }
         }
         plan
     }
 
-    fn action_area_paint_plan(&self, window: UiRect, dpi: Dpi) -> Option<ZsShellPaintPlan> {
+    fn action_area_paint_plan_with_profile(
+        &self,
+        window: UiRect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> Option<ZsShellPaintPlan> {
         if self.action_area.is_empty() {
             return None;
         }
         let mut plan = ZsShellPaintPlan::default();
         for (button, rect) in self.action_area.buttons().zip(
-            zs_shell_action_button_rects(window, &self.action_area, dpi)
+            zs_shell_action_button_rects_with_profile(window, &self.action_area, dpi, profile)
                 .into_iter()
                 .map(|(_, rect)| rect),
         ) {
-            plan.extend(zs_shell_button_paint_plan(
+            plan.extend(zs_shell_button_paint_plan_with_profile(
                 rect,
                 button.label.clone(),
                 button.kind.into(),
                 false,
                 false,
                 dpi,
+                profile,
             ));
         }
         Some(plan)
@@ -569,6 +713,17 @@ impl ZsShellNavIconKind {
             Self::Group => "\u{E8A5}",
             Self::Sync => "\u{E753}",
             Self::About => "\u{E946}",
+        }
+    }
+
+    pub const fn semantic_icon(self) -> ZsIcon {
+        match self {
+            Self::General => ZsIcon::Settings,
+            Self::Hotkey => ZsIcon::Tool,
+            Self::Plugin => ZsIcon::Code,
+            Self::Group => ZsIcon::Folder,
+            Self::Sync => ZsIcon::Refresh,
+            Self::About => ZsIcon::Info,
         }
     }
 }
@@ -696,7 +851,7 @@ impl ZsShellRowAccessory {
         }
     }
 
-    fn width(&self, dpi: Dpi) -> Option<i32> {
+    fn width_with_profile(&self, dpi: Dpi, _profile: PlatformShellProfile) -> Option<i32> {
         match self {
             Self::None => None,
             Self::Value { .. } => Some(zs_shell_scale(168, dpi)),
@@ -706,7 +861,12 @@ impl ZsShellRowAccessory {
         }
     }
 
-    fn paint_plan(&self, rect: UiRect, dpi: Dpi) -> ZsShellPaintPlan {
+    fn paint_plan_with_profile(
+        &self,
+        rect: UiRect,
+        dpi: Dpi,
+        profile: PlatformShellProfile,
+    ) -> ZsShellPaintPlan {
         match self {
             Self::None => ZsShellPaintPlan::default(),
             Self::Value { value } => ZsShellPaintPlan {
@@ -721,30 +881,35 @@ impl ZsShellRowAccessory {
                     align: ZsShellTextAlign::Right,
                 }],
             },
-            Self::Toggle { checked } => zs_shell_toggle_paint_plan(rect, false, *checked, dpi),
-            Self::Button { label, .. } => zs_shell_button_paint_plan(
+            Self::Toggle { checked } => {
+                zs_shell_toggle_paint_plan_with_profile(rect, false, *checked, dpi, profile)
+            }
+            Self::Button { label, .. } => zs_shell_button_paint_plan_with_profile(
                 rect,
                 label.clone(),
                 ZsShellComponentKind::Button,
                 false,
                 false,
                 dpi,
+                profile,
             ),
-            Self::AccentButton { label, .. } => zs_shell_button_paint_plan(
+            Self::AccentButton { label, .. } => zs_shell_button_paint_plan_with_profile(
                 rect,
                 label.clone(),
                 ZsShellComponentKind::AccentButton,
                 false,
                 false,
                 dpi,
+                profile,
             ),
-            Self::Dropdown { selected, .. } => zs_shell_button_paint_plan(
+            Self::Dropdown { selected, .. } => zs_shell_button_paint_plan_with_profile(
                 rect,
                 selected.clone(),
                 ZsShellComponentKind::Dropdown,
                 false,
                 false,
                 dpi,
+                profile,
             ),
         }
     }
@@ -1367,17 +1532,6 @@ pub enum ZsShellTextContent {
     DropdownArrow,
 }
 
-impl ZsShellTextContent {
-    fn text(&self) -> String {
-        match self {
-            Self::Label(label) => label.clone(),
-            Self::NavIcon(icon) => icon.glyph().to_string(),
-            Self::ChromeMenuIcon => "\u{E700}".to_string(),
-            Self::DropdownArrow => "\u{25BE}".to_string(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsShellPaintCommand {
     FillRect {
@@ -1457,11 +1611,45 @@ impl ZsShellPaintPlan {
             }
         }
         for command in &self.text_commands {
-            plan.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-                command.content.text(),
-                ui_to_rect(command.rect),
-                shell_text_style(command),
-            )));
+            match &command.content {
+                ZsShellTextContent::Label(label) => {
+                    plan.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                        label,
+                        ui_to_rect(command.rect),
+                        shell_text_style(command),
+                    )));
+                }
+                ZsShellTextContent::NavIcon(icon) => {
+                    plan.push(NativeDrawCommand::Icon(
+                        NativeDrawIconCommand::new(
+                            icon.semantic_icon(),
+                            ui_to_rect(command.rect),
+                            NativeIconColorMode::ThemeAware,
+                        )
+                        .with_color(shell_role_to_color_role(command.color)),
+                    ));
+                }
+                ZsShellTextContent::ChromeMenuIcon => {
+                    plan.push(NativeDrawCommand::Icon(
+                        NativeDrawIconCommand::new(
+                            ZsIcon::Sidebar,
+                            ui_to_rect(command.rect),
+                            NativeIconColorMode::ThemeAware,
+                        )
+                        .with_color(shell_role_to_color_role(command.color)),
+                    ));
+                }
+                ZsShellTextContent::DropdownArrow => {
+                    plan.push(NativeDrawCommand::Icon(
+                        NativeDrawIconCommand::new(
+                            ZsIcon::ChevronDown,
+                            ui_to_rect(command.rect),
+                            NativeIconColorMode::ThemeAware,
+                        )
+                        .with_color(shell_role_to_color_role(command.color)),
+                    ));
+                }
+            }
         }
         plan
     }
@@ -1506,30 +1694,44 @@ pub struct ZsShellChromeRenderPlan {
 }
 
 pub fn zs_shell_chrome_render_plan(window: UiRect, dpi: Dpi) -> ZsShellChromeRenderPlan {
-    let viewport_mask_rect = zs_shell_viewport_mask_rect_for_window(window, dpi);
-    let nav_w = zs_shell_nav_w(dpi);
+    zs_shell_chrome_render_plan_with_profile(window, dpi, current_shell_profile())
+}
+
+fn zs_shell_chrome_render_plan_with_profile(
+    window: UiRect,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> ZsShellChromeRenderPlan {
+    let viewport_mask_rect =
+        zs_shell_viewport_mask_rect_for_window_with_profile(window, dpi, profile);
+    let nav_w = zs_shell_nav_w_with_profile(window, dpi, profile);
+    let menu_left = window.left + shell_dp(profile.menu_icon_x, dpi);
+    let menu_top = window.top + shell_dp(profile.menu_icon_y, dpi);
+    let menu_size = shell_dp(profile.menu_icon_size, dpi);
+    let app_title_left = window.left + shell_dp(profile.app_title_x, dpi);
+    let app_title_top = window.top + shell_dp(profile.app_title_y, dpi);
     ZsShellChromeRenderPlan {
         window_rect: window,
         nav_rect: UiRect::new(window.left, window.top, window.left + nav_w, window.bottom),
         divider_x: window.left + nav_w,
         menu_icon_rect: UiRect::new(
-            window.left + zs_shell_scale(22, dpi),
-            window.top + zs_shell_scale(18, dpi),
-            window.left + zs_shell_scale(50, dpi),
-            window.top + zs_shell_scale(46, dpi),
+            menu_left,
+            menu_top,
+            menu_left + menu_size,
+            menu_top + menu_size,
         ),
         app_title_rect: UiRect::new(
-            window.left + zs_shell_scale(56, dpi),
-            window.top + zs_shell_scale(18, dpi),
-            window.left + zs_shell_scale(220, dpi),
-            window.top + zs_shell_scale(50, dpi),
+            app_title_left,
+            app_title_top,
+            app_title_left + shell_dp(profile.app_title_width, dpi),
+            app_title_top + shell_dp(profile.app_title_height, dpi),
         ),
-        page_title_rect: zs_shell_title_rect(window, dpi),
-        content_clip_rect: zs_shell_safe_paint_rect_for_window(window, dpi),
+        page_title_rect: zs_shell_title_rect_with_profile(window, dpi, profile),
+        content_clip_rect: zs_shell_safe_paint_rect_for_window_with_profile(window, dpi, profile),
         viewport_mask_separator_rect: UiRect::new(
-            viewport_mask_rect.left + zs_shell_scale(12, dpi),
+            viewport_mask_rect.left + shell_dp(profile.section_horizontal_padding, dpi),
             viewport_mask_rect.bottom - 1,
-            viewport_mask_rect.right - zs_shell_scale(12, dpi),
+            viewport_mask_rect.right - shell_dp(profile.section_horizontal_padding, dpi),
             viewport_mask_rect.bottom,
         ),
         viewport_mask_rect,
@@ -1541,11 +1743,56 @@ pub fn zs_shell_chrome_paint_plan(
     app_title: String,
     page_title: String,
 ) -> ZsShellPaintPlan {
+    zs_shell_chrome_paint_plan_with_profile(plan, app_title, page_title, current_shell_profile())
+}
+
+fn zs_shell_chrome_paint_plan_with_profile(
+    plan: &ZsShellChromeRenderPlan,
+    app_title: String,
+    page_title: String,
+    profile: PlatformShellProfile,
+) -> ZsShellPaintPlan {
+    let mut text_commands = Vec::with_capacity(3);
+    if profile.show_menu_icon {
+        text_commands.push(ZsShellTextCommand {
+            rect: plan.menu_icon_rect,
+            content: ZsShellTextContent::ChromeMenuIcon,
+            color: ZsShellThemeRole::TextMuted,
+            size: 16,
+            bold: false,
+            font: ZsShellTextFontRole::FluentIcon,
+            align: ZsShellTextAlign::Center,
+        });
+    }
+    text_commands.push(ZsShellTextCommand {
+        rect: plan.app_title_rect,
+        content: ZsShellTextContent::Label(app_title),
+        color: ZsShellThemeRole::Text,
+        size: 15,
+        bold: true,
+        font: ZsShellTextFontRole::UiText,
+        align: ZsShellTextAlign::Left,
+    });
+    text_commands.push(ZsShellTextCommand {
+        rect: plan.page_title_rect,
+        content: ZsShellTextContent::Label(page_title),
+        color: ZsShellThemeRole::Text,
+        size: 24,
+        bold: true,
+        font: ZsShellTextFontRole::Display,
+        align: ZsShellTextAlign::Left,
+    });
     ZsShellPaintPlan {
         paint_commands: vec![
             ZsShellPaintCommand::FillRect {
                 rect: plan.nav_rect,
-                fill: ZsShellThemeRole::NavBackground,
+                fill: match profile.navigation {
+                    PlatformShellNavigationComposition::GtkSidebar => ZsShellThemeRole::Background,
+                    PlatformShellNavigationComposition::FluentPane
+                    | PlatformShellNavigationComposition::AppKitSourceList => {
+                        ZsShellThemeRole::NavBackground
+                    }
+                },
             },
             ZsShellPaintCommand::FillRect {
                 rect: UiRect::new(
@@ -1557,63 +1804,47 @@ pub fn zs_shell_chrome_paint_plan(
                 fill: ZsShellThemeRole::Stroke,
             },
         ],
-        text_commands: vec![
-            ZsShellTextCommand {
-                rect: plan.menu_icon_rect,
-                content: ZsShellTextContent::ChromeMenuIcon,
-                color: ZsShellThemeRole::TextMuted,
-                size: 16,
-                bold: false,
-                font: ZsShellTextFontRole::FluentIcon,
-                align: ZsShellTextAlign::Center,
-            },
-            ZsShellTextCommand {
-                rect: plan.app_title_rect,
-                content: ZsShellTextContent::Label(app_title),
-                color: ZsShellThemeRole::Text,
-                size: 15,
-                bold: true,
-                font: ZsShellTextFontRole::UiText,
-                align: ZsShellTextAlign::Left,
-            },
-            ZsShellTextCommand {
-                rect: plan.page_title_rect,
-                content: ZsShellTextContent::Label(page_title),
-                color: ZsShellThemeRole::Text,
-                size: 24,
-                bold: true,
-                font: ZsShellTextFontRole::Display,
-                align: ZsShellTextAlign::Left,
-            },
-        ],
+        text_commands,
     }
 }
 
-fn zs_shell_nav_item_paint_plan(item: &ZsShellNavItemRender, dpi: Dpi) -> ZsShellPaintPlan {
+fn zs_shell_nav_item_paint_plan(
+    item: &ZsShellNavItemRender,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> ZsShellPaintPlan {
     let mut paint_commands = Vec::new();
     if item.selected {
         paint_commands.push(ZsShellPaintCommand::RoundFill {
             rect: item.rect,
-            fill: ZsShellThemeRole::NavSelectedFill,
-            radius: zs_shell_scale(6, dpi),
+            fill: match profile.navigation {
+                PlatformShellNavigationComposition::AppKitSourceList => ZsShellThemeRole::Accent,
+                PlatformShellNavigationComposition::FluentPane
+                | PlatformShellNavigationComposition::GtkSidebar => {
+                    ZsShellThemeRole::NavSelectedFill
+                }
+            },
+            radius: shell_dp(profile.navigation_item_radius, dpi),
         });
-        let bar_h = zs_shell_scale(16, dpi);
-        let bar_cy = (item.rect.top + item.rect.bottom) / 2;
-        paint_commands.push(ZsShellPaintCommand::RoundFill {
-            rect: UiRect::new(
-                item.rect.left + zs_shell_scale(3, dpi),
-                bar_cy - bar_h / 2,
-                item.rect.left + zs_shell_scale(6, dpi),
-                bar_cy + bar_h / 2,
-            ),
-            fill: ZsShellThemeRole::Accent,
-            radius: zs_shell_scale(2, dpi),
-        });
+        if profile.navigation == PlatformShellNavigationComposition::FluentPane {
+            let bar_h = zs_shell_scale(16, dpi);
+            let bar_cy = (item.rect.top + item.rect.bottom) / 2;
+            paint_commands.push(ZsShellPaintCommand::RoundFill {
+                rect: UiRect::new(
+                    item.rect.left + zs_shell_scale(3, dpi),
+                    bar_cy - bar_h / 2,
+                    item.rect.left + zs_shell_scale(6, dpi),
+                    bar_cy + bar_h / 2,
+                ),
+                fill: ZsShellThemeRole::Accent,
+                radius: zs_shell_scale(2, dpi),
+            });
+        }
     } else if item.hovered {
         paint_commands.push(ZsShellPaintCommand::RoundFill {
             rect: item.rect,
             fill: ZsShellThemeRole::NavHoverFill,
-            radius: zs_shell_scale(6, dpi),
+            radius: shell_dp(profile.navigation_item_radius, dpi),
         });
     }
     if let Some(rect) = item.badge_rect {
@@ -1624,26 +1855,37 @@ fn zs_shell_nav_item_paint_plan(item: &ZsShellNavItemRender, dpi: Dpi) -> ZsShel
         });
     }
 
-    let icon_color = if item.selected {
-        ZsShellThemeRole::Accent
+    let appkit_selected =
+        item.selected && profile.navigation == PlatformShellNavigationComposition::AppKitSourceList;
+    let icon_color = if appkit_selected {
+        ZsShellThemeRole::White
+    } else if item.selected {
+        match profile.navigation {
+            PlatformShellNavigationComposition::FluentPane => ZsShellThemeRole::Accent,
+            PlatformShellNavigationComposition::GtkSidebar => ZsShellThemeRole::Text,
+            PlatformShellNavigationComposition::AppKitSourceList => unreachable!(),
+        }
     } else if item.hovered {
         ZsShellThemeRole::Text
     } else {
         ZsShellThemeRole::TextMuted
     };
-    let label_color = if item.selected || item.hovered {
+    let label_color = if appkit_selected {
+        ZsShellThemeRole::White
+    } else if item.selected || item.hovered {
         ZsShellThemeRole::Text
     } else {
         ZsShellThemeRole::TextMuted
     };
+    let icon_column = (item.rect.bottom - item.rect.top).min(zs_shell_scale(28, dpi));
     let icon_rect = UiRect::new(
-        item.rect.left + zs_shell_scale(10, dpi),
+        item.rect.left + zs_shell_scale(6, dpi),
         item.rect.top,
-        item.rect.left + zs_shell_scale(38, dpi),
+        item.rect.left + zs_shell_scale(6, dpi) + icon_column,
         item.rect.bottom,
     );
     let label_rect = UiRect::new(
-        item.rect.left + zs_shell_scale(40, dpi),
+        icon_rect.right + zs_shell_scale(4, dpi),
         item.rect.top,
         item.rect.right - zs_shell_scale(8, dpi),
         item.rect.bottom,
@@ -1674,23 +1916,52 @@ fn zs_shell_nav_item_paint_plan(item: &ZsShellNavItemRender, dpi: Dpi) -> ZsShel
     }
 }
 
-fn zs_shell_content_paint_plan(plan: &ZsShellContentRenderPlan, dpi: Dpi) -> ZsShellPaintPlan {
+fn zs_shell_content_paint_plan(
+    plan: &ZsShellContentRenderPlan,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> ZsShellPaintPlan {
     let mut paint_commands = Vec::with_capacity(plan.sections.len());
     let mut text_commands = Vec::with_capacity(plan.sections.len());
     for section in &plan.sections {
         let rect = section.rect.offset_y(plan.scroll_y);
-        paint_commands.push(ZsShellPaintCommand::RoundRect {
-            rect,
-            fill: ZsShellThemeRole::Surface,
-            stroke: ZsShellThemeRole::Stroke,
-            radius: zs_shell_scale(8, dpi),
-        });
+        match profile.sections {
+            PlatformShellSectionComposition::FluentCards => {
+                paint_commands.push(ZsShellPaintCommand::RoundRect {
+                    rect,
+                    fill: ZsShellThemeRole::Surface,
+                    stroke: ZsShellThemeRole::Stroke,
+                    radius: shell_dp(profile.section_radius, dpi),
+                });
+            }
+            PlatformShellSectionComposition::AppKitForms => {}
+            PlatformShellSectionComposition::GtkBoxedLists => {
+                let surface_top = rect.top + shell_dp(profile.section_header_height, dpi);
+                paint_commands.push(ZsShellPaintCommand::RoundRect {
+                    rect: UiRect::new(rect.left, surface_top, rect.right, rect.bottom),
+                    fill: ZsShellThemeRole::Surface,
+                    stroke: ZsShellThemeRole::Stroke,
+                    radius: shell_dp(profile.section_radius, dpi),
+                });
+            }
+        }
+        let horizontal_padding = match profile.sections {
+            PlatformShellSectionComposition::FluentCards => zs_shell_scale(16, dpi),
+            PlatformShellSectionComposition::AppKitForms
+            | PlatformShellSectionComposition::GtkBoxedLists => 0,
+        };
+        let title_top = rect.top
+            + match profile.sections {
+                PlatformShellSectionComposition::FluentCards => zs_shell_scale(12, dpi),
+                PlatformShellSectionComposition::AppKitForms
+                | PlatformShellSectionComposition::GtkBoxedLists => 0,
+            };
         text_commands.push(ZsShellTextCommand {
             rect: UiRect::new(
-                rect.left + zs_shell_scale(16, dpi),
-                rect.top + zs_shell_scale(12, dpi),
-                rect.right - zs_shell_scale(16, dpi),
-                rect.top + zs_shell_scale(34, dpi),
+                rect.left + horizontal_padding,
+                title_top,
+                rect.right - horizontal_padding,
+                rect.top + shell_dp(profile.section_header_height, dpi),
             ),
             content: ZsShellTextContent::Label(section.title.clone()),
             color: ZsShellThemeRole::TextMuted,
@@ -1877,6 +2148,26 @@ pub fn zs_shell_scrollbar_render_plan(
     dragging: bool,
     dpi: Dpi,
 ) -> Option<ZsShellScrollbarRenderPlan> {
+    zs_shell_scrollbar_render_plan_with_profile(
+        window,
+        content_height,
+        scroll_y,
+        visible,
+        dragging,
+        dpi,
+        current_shell_profile(),
+    )
+}
+
+fn zs_shell_scrollbar_render_plan_with_profile(
+    window: UiRect,
+    content_height: i32,
+    scroll_y: i32,
+    visible: bool,
+    dragging: bool,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> Option<ZsShellScrollbarRenderPlan> {
     if !visible {
         return None;
     }
@@ -1886,11 +2177,17 @@ pub fn zs_shell_scrollbar_render_plan(
         ZsShellScrollbarVisualState::Normal
     };
     let bar_width = if dragging {
-        zs_shell_scale(ZS_SHELL_SCROLL_BAR_W_ACTIVE, dpi)
+        shell_dp(profile.active_scrollbar_width, dpi)
     } else {
-        zs_shell_scale(ZS_SHELL_SCROLL_BAR_W, dpi)
+        shell_dp(profile.scrollbar_width, dpi)
     };
-    let layout = zs_shell_scroll_layout_for_window(window, content_height, bar_width, dpi);
+    let layout = zs_shell_scroll_layout_for_window_with_profile(
+        window,
+        content_height,
+        bar_width,
+        dpi,
+        profile,
+    );
     let thumb_rect = layout.thumb_rect(scroll_y)?;
     Some(ZsShellScrollbarRenderPlan {
         state,
@@ -1926,12 +2223,20 @@ pub fn zs_shell_scrollbar_paint_plan(plan: &ZsShellScrollbarRenderPlan) -> ZsShe
 }
 
 pub fn zs_shell_form_section_height_with_extra(rows: i32, extra_px: i32, dpi: Dpi) -> i32 {
+    zs_shell_form_section_height_with_extra_profile(rows, extra_px, dpi, current_shell_profile())
+}
+
+fn zs_shell_form_section_height_with_extra_profile(
+    rows: i32,
+    extra_px: i32,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> i32 {
     let rows = rows.max(1);
-    zs_shell_scale(ZS_SHELL_FORM_HEADER_H, dpi)
-        + rows * zs_shell_scale(ZS_SHELL_FORM_ROW_H, dpi)
-        + (rows - 1) * zs_shell_scale(ZS_SHELL_FORM_ROW_GAP, dpi)
-        + zs_shell_scale(ZS_SHELL_FORM_SECTION_PAD, dpi)
-        + zs_shell_scale(ZS_SHELL_FORM_BOTTOM_SAFE_H, dpi)
+    shell_dp(profile.section_header_height, dpi)
+        + rows * shell_dp(profile.section_row_height, dpi)
+        + (rows - 1) * shell_dp(profile.section_row_gap, dpi)
+        + shell_dp(profile.section_height_extra, dpi)
         + zs_shell_scale(extra_px.max(0), dpi)
 }
 
@@ -1939,27 +2244,33 @@ pub fn zs_shell_form_section_height_with_extra(rows: i32, extra_px: i32, dpi: Dp
 pub struct ZsShellFormSectionLayout {
     body: UiRect,
     dpi: Dpi,
+    profile: PlatformShellProfile,
 }
 
 impl ZsShellFormSectionLayout {
     pub fn from_section(section: UiRect, dpi: Dpi) -> Self {
-        let pad = zs_shell_scale(ZS_SHELL_FORM_SECTION_PAD, dpi);
+        Self::from_section_with_profile(section, dpi, current_shell_profile())
+    }
+
+    fn from_section_with_profile(section: UiRect, dpi: Dpi, profile: PlatformShellProfile) -> Self {
+        let pad = shell_dp(profile.section_horizontal_padding, dpi);
         Self {
             body: UiRect::new(
                 section.left + pad,
-                section.top + zs_shell_scale(ZS_SHELL_FORM_HEADER_H, dpi),
+                section.top + shell_dp(profile.section_header_height, dpi),
                 section.right - pad,
-                section.bottom - pad,
+                section.bottom - shell_dp(profile.section_body_bottom_inset, dpi),
             ),
             dpi,
+            profile,
         }
     }
 
     pub fn row_y(&self, row: i32) -> i32 {
         self.body.top
             + row
-                * (zs_shell_scale(ZS_SHELL_FORM_ROW_H, self.dpi)
-                    + zs_shell_scale(ZS_SHELL_FORM_ROW_GAP, self.dpi))
+                * (shell_dp(self.profile.section_row_height, self.dpi)
+                    + shell_dp(self.profile.section_row_gap, self.dpi))
     }
 
     pub fn row_rect(&self, row: i32) -> UiRect {
@@ -1968,7 +2279,7 @@ impl ZsShellFormSectionLayout {
             self.body.left,
             y,
             self.body.right,
-            y + zs_shell_scale(ZS_SHELL_FORM_ROW_H, self.dpi),
+            y + shell_dp(self.profile.section_row_height, self.dpi),
         )
     }
 
@@ -1984,17 +2295,19 @@ impl ZsShellFormSectionLayout {
     }
 }
 
-fn zs_shell_toggle_paint_plan(
+fn zs_shell_toggle_paint_plan_with_profile(
     rect: UiRect,
     hover: bool,
     checked: bool,
     dpi: Dpi,
+    profile: PlatformShellProfile,
 ) -> ZsShellPaintPlan {
     let mut paint_commands = vec![ZsShellPaintCommand::FillRect {
         rect,
         fill: ZsShellThemeRole::Surface,
     }];
-    let plan = zs_toggle_render_plan(ui_to_rect(rect), hover, checked, dpi);
+    let plan =
+        zs_toggle_render_plan_for_platform(ui_to_rect(rect), hover, checked, profile.style, dpi);
     let track = rect_to_ui(plan.track);
     let knob = rect_to_ui(plan.knob);
 
@@ -2043,13 +2356,14 @@ fn zs_shell_toggle_paint_plan(
     }
 }
 
-fn zs_shell_button_paint_plan(
+fn zs_shell_button_paint_plan_with_profile(
     rect: UiRect,
     text: String,
     kind: ZsShellComponentKind,
     hover: bool,
     pressed: bool,
     dpi: Dpi,
+    profile: PlatformShellProfile,
 ) -> ZsShellPaintPlan {
     let rr = UiRect::new(rect.left + 1, rect.top + 1, rect.right - 1, rect.bottom - 1);
     let mut paint_commands = Vec::new();
@@ -2067,7 +2381,10 @@ fn zs_shell_button_paint_plan(
                     ZsShellThemeRole::Surface
                 },
                 stroke: ZsShellThemeRole::ControlStroke,
-                radius: zs_shell_scale(6, dpi),
+                radius: crate::ZsBaseControlMetrics::for_platform(profile.style)
+                    .button_radius
+                    .to_px(dpi)
+                    .round_i32(),
             });
             text_commands.push(ZsShellTextCommand {
                 rect: UiRect::new(rr.left + text_pad, rr.top, rr.right - arrow_w, rr.bottom),
@@ -2133,7 +2450,10 @@ fn zs_shell_button_paint_plan(
                 rect: rr,
                 fill,
                 stroke,
-                radius: zs_shell_scale(4, dpi),
+                radius: crate::ZsBaseControlMetrics::for_platform(profile.style)
+                    .button_radius
+                    .to_px(dpi)
+                    .round_i32(),
             });
             text_commands.push(ZsShellTextCommand {
                 rect: rr,
@@ -2152,30 +2472,32 @@ fn zs_shell_button_paint_plan(
     }
 }
 
-fn zs_shell_action_area_rect(
+fn zs_shell_action_area_rect_with_profile(
     window: UiRect,
     action_area: &ZsShellActionAreaSpec,
     dpi: Dpi,
+    profile: PlatformShellProfile,
 ) -> Option<UiRect> {
     if action_area.is_empty() {
         return None;
     }
-    let rects = zs_shell_action_button_rects(window, action_area, dpi);
+    let rects = zs_shell_action_button_rects_with_profile(window, action_area, dpi, profile);
     let first = rects.first()?.1;
     let last = rects.last()?.1;
     Some(UiRect::new(first.left, first.top, last.right, last.bottom))
 }
 
-fn zs_shell_action_button_rects(
+fn zs_shell_action_button_rects_with_profile(
     window: UiRect,
     action_area: &ZsShellActionAreaSpec,
     dpi: Dpi,
+    profile: PlatformShellProfile,
 ) -> Vec<(String, UiRect)> {
-    let top_margin = zs_shell_scale(24, dpi);
-    let btn_h = zs_shell_scale(32, dpi);
-    let save_w = zs_shell_scale(72, dpi);
-    let close_w = zs_shell_scale(64, dpi);
-    let gap = zs_shell_scale(20, dpi);
+    let top_margin = shell_dp(profile.action_margin, dpi);
+    let btn_h = shell_dp(profile.action_height, dpi);
+    let save_w = shell_dp(profile.primary_action_width, dpi);
+    let close_w = shell_dp(profile.secondary_action_width, dpi);
+    let gap = shell_dp(profile.action_gap, dpi);
     let right = window.right - top_margin;
     let mut rects = Vec::new();
     let mut cursor_right = right;
@@ -2202,43 +2524,67 @@ fn zs_shell_action_button_rects(
     rects
 }
 
-fn zs_shell_nav_w(dpi: Dpi) -> i32 {
-    zs_shell_scale(ZS_SHELL_NAV_W, dpi)
+fn zs_shell_content_y_with_profile(dpi: Dpi, profile: PlatformShellProfile) -> i32 {
+    shell_dp(profile.top_height, dpi)
 }
 
-fn zs_shell_content_y(dpi: Dpi) -> i32 {
-    zs_shell_scale(ZS_SHELL_TOP_H, dpi)
+fn zs_shell_nav_w_with_profile(window: UiRect, dpi: Dpi, profile: PlatformShellProfile) -> i32 {
+    let logical_width =
+        (window.right - window.left).max(0) as f32 / dpi.scale_factor().max(f32::EPSILON);
+    shell_dp(profile.navigation_width(logical_width), dpi)
 }
 
-fn zs_shell_content_x(window: UiRect, dpi: Dpi) -> i32 {
-    window.left + zs_shell_nav_w(dpi) + zs_shell_scale(ZS_SHELL_CONTENT_GAP, dpi)
+fn zs_shell_content_x_with_profile(window: UiRect, dpi: Dpi, profile: PlatformShellProfile) -> i32 {
+    window.left
+        + zs_shell_nav_w_with_profile(window, dpi, profile)
+        + shell_dp(profile.content_gap, dpi)
 }
 
-fn zs_shell_content_w(window: UiRect, dpi: Dpi) -> i32 {
+fn zs_shell_content_w_with_profile(window: UiRect, dpi: Dpi, profile: PlatformShellProfile) -> i32 {
     (window.right
         - window.left
-        - zs_shell_nav_w(dpi)
-        - zs_shell_scale(ZS_SHELL_CONTENT_GAP * 2, dpi))
+        - zs_shell_nav_w_with_profile(window, dpi, profile)
+        - shell_dp(Dp::new(profile.content_gap.0 * 2.0), dpi))
     .max(0)
 }
 
-fn zs_shell_title_rect(window: UiRect, dpi: Dpi) -> UiRect {
+fn zs_shell_title_rect_with_profile(
+    window: UiRect,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> UiRect {
+    let left = window.left
+        + zs_shell_nav_w_with_profile(window, dpi, profile)
+        + shell_dp(profile.title_x, dpi);
+    let top = window.top + shell_dp(profile.title_y, dpi);
     UiRect::new(
-        window.left + zs_shell_nav_w(dpi) + zs_shell_scale(36, dpi),
-        window.top + zs_shell_scale(32, dpi),
-        window.left + zs_shell_nav_w(dpi) + zs_shell_scale(360, dpi),
-        window.top + zs_shell_scale(62, dpi),
+        left,
+        top,
+        left + shell_dp(profile.title_width, dpi),
+        top + shell_dp(profile.title_height, dpi),
     )
 }
 
 fn zs_shell_nav_item_rect(window: UiRect, index: usize, dpi: Dpi) -> UiRect {
-    let x = window.left + zs_shell_scale(10, dpi);
-    let y = window.top + zs_shell_scale(ZS_SHELL_NAV_Y + 8 + (index as i32) * 44, dpi);
+    zs_shell_nav_item_rect_with_profile(window, index, dpi, current_shell_profile())
+}
+
+fn zs_shell_nav_item_rect_with_profile(
+    window: UiRect,
+    index: usize,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> UiRect {
+    let inset = shell_dp(profile.navigation_item_inset, dpi);
+    let x = window.left + inset;
+    let y = window.top
+        + shell_dp(profile.navigation_start, dpi)
+        + index as i32 * shell_dp(profile.navigation_item_stride, dpi);
     UiRect::new(
         x,
         y,
-        window.left + zs_shell_nav_w(dpi) - zs_shell_scale(10, dpi),
-        y + zs_shell_scale(36, dpi),
+        window.left + zs_shell_nav_w_with_profile(window, dpi, profile) - inset,
+        y + shell_dp(profile.navigation_item_height, dpi),
     )
 }
 
@@ -2251,44 +2597,59 @@ fn zs_shell_nav_badge_rect(item_rect: UiRect, dpi: Dpi) -> UiRect {
     )
 }
 
-fn zs_shell_viewport_rect_for_window(window: UiRect, dpi: Dpi) -> UiRect {
+fn zs_shell_viewport_rect_for_window_with_profile(
+    window: UiRect,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> UiRect {
     UiRect::new(
-        window.left + zs_shell_nav_w(dpi),
-        window.top + zs_shell_content_y(dpi),
+        window.left + zs_shell_nav_w_with_profile(window, dpi, profile),
+        window.top + zs_shell_content_y_with_profile(dpi, profile),
         window.right,
         window.bottom,
     )
 }
 
-fn zs_shell_viewport_mask_rect_for_window(window: UiRect, dpi: Dpi) -> UiRect {
+fn zs_shell_viewport_mask_rect_for_window_with_profile(
+    window: UiRect,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> UiRect {
+    let top = window.top + zs_shell_content_y_with_profile(dpi, profile);
     UiRect::new(
-        window.left + zs_shell_nav_w(dpi),
-        window.top + zs_shell_content_y(dpi),
+        window.left + zs_shell_nav_w_with_profile(window, dpi, profile),
+        top,
         window.right,
-        window.top + zs_shell_content_y(dpi) + zs_shell_scale(ZS_SHELL_VIEWPORT_MASK_H, dpi),
+        top + shell_dp(profile.viewport_mask_height, dpi),
     )
 }
 
-fn zs_shell_safe_paint_rect_for_window(window: UiRect, dpi: Dpi) -> UiRect {
-    let mask = zs_shell_viewport_mask_rect_for_window(window, dpi);
+fn zs_shell_safe_paint_rect_for_window_with_profile(
+    window: UiRect,
+    dpi: Dpi,
+    profile: PlatformShellProfile,
+) -> UiRect {
+    let mask = zs_shell_viewport_mask_rect_for_window_with_profile(window, dpi, profile);
     UiRect::new(mask.left, mask.bottom, mask.right, window.bottom)
 }
 
-fn zs_shell_scroll_layout_for_window(
+fn zs_shell_scroll_layout_for_window_with_profile(
     window: UiRect,
     content_height: i32,
     bar_width: i32,
     dpi: Dpi,
+    profile: PlatformShellProfile,
 ) -> ZsShellScrollLayout {
-    let content_y = window.top + zs_shell_content_y(dpi);
-    let view_h = (window.bottom - window.top) - zs_shell_content_y(dpi);
+    let content_offset = zs_shell_content_y_with_profile(dpi, profile);
+    let content_y = window.top + content_offset;
+    let view_h = (window.bottom - window.top) - content_offset;
     ZsShellScrollLayout::new(
         content_y,
         window.bottom,
         content_height,
         view_h,
         window.right,
-        zs_shell_scale(ZS_SHELL_SCROLL_BAR_MARGIN, dpi),
+        shell_dp(profile.scrollbar_margin, dpi),
         bar_width,
         dpi,
     )
@@ -2472,6 +2833,69 @@ mod tests {
             }
         );
         assert_eq!(plan.region("capture").unwrap().rect.y, 152);
+    }
+
+    #[test]
+    fn one_shell_spec_resolves_distinct_platform_compositions() {
+        let spec = shell();
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 1100,
+            height: 740,
+        };
+        let windows = spec.layout_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Windows);
+        let macos = spec.layout_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Macos);
+        let gtk = spec.layout_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Gtk);
+
+        assert_eq!(windows.region("navigation").unwrap().rect.width, 236);
+        assert_eq!(macos.region("navigation").unwrap().rect.width, 240);
+        assert_eq!(gtk.region("navigation").unwrap().rect.width, 275);
+        assert_ne!(
+            windows.region("clipboard").unwrap().rect,
+            macos.region("clipboard").unwrap().rect
+        );
+        assert_ne!(
+            macos.region("clipboard").unwrap().rect,
+            gtk.region("clipboard").unwrap().rect
+        );
+
+        let windows_paint =
+            spec.paint_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Windows);
+        let macos_paint =
+            spec.paint_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Macos);
+        let gtk_paint = spec.paint_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Gtk);
+        let windows_section = rect_to_ui(windows.region("clipboard").unwrap().rect);
+        let macos_section = rect_to_ui(macos.region("clipboard").unwrap().rect);
+        let gtk_section = rect_to_ui(gtk.region("clipboard").unwrap().rect);
+
+        assert!(windows_paint.paint_commands.iter().any(|command| matches!(
+            command,
+            ZsShellPaintCommand::RoundRect { rect, .. } if *rect == windows_section
+        )));
+        assert!(!macos_paint.paint_commands.iter().any(|command| matches!(
+            command,
+            ZsShellPaintCommand::RoundRect { rect, .. } if *rect == macos_section
+        )));
+        assert!(gtk_paint.paint_commands.iter().any(|command| matches!(
+            command,
+            ZsShellPaintCommand::RoundRect { rect, .. }
+                if rect.top > gtk_section.top && rect.bottom == gtk_section.bottom
+        )));
+
+        let draw = spec.native_draw_plan_for_style(bounds, Dpi::standard(), ZsPlatformStyle::Macos);
+        assert!(draw
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::Icon(_))));
+        for private_glyph in [
+            "\u{E700}", "\u{E713}", "\u{E76C}", "\u{E8D4}", "\u{E8A5}", "\u{E753}", "\u{E946}",
+        ] {
+            assert!(!draw.commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::Text(text) if text.text == private_glyph
+            )));
+        }
     }
 
     #[test]

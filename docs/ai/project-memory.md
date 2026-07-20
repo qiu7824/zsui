@@ -325,9 +325,12 @@ history remain authoritative for implementation status.
   platform-experience to component-profile mapper; component modules consume
   `ZsPlatformStyle` defaults and do not call `PlatformExperience` themselves.
   `src/platform/component_profile.rs` owns framework composition and metrics
-  for semantic sections, adaptive navigation, base buttons and command bars;
-  View construction, layout and paint consume that profile instead of
-  repeating platform matches.
+  for semantic sections, adaptive navigation, base buttons, command bars and
+  the legacy navigation/card shell; View and Shell construction, layout and
+  paint consume that profile instead of repeating platform matches. One
+  `ZsShellLayoutSpec` therefore resolves to a Fluent pane/card composition,
+  AppKit source-list/forms composition or GTK sidebar/boxed-list composition
+  without exposing a platform selector in the application API.
   Built-in component-specific `Zs*PlatformStyle` names are compatibility
   aliases of the shared type, not separate selectors.
   `src/platform/backend_profile.rs` keeps Host, Text, Raster, Presenter and

@@ -492,6 +492,7 @@ mod tests {
             "PlatformSectionComposition",
             "PlatformNavigationComposition",
             "PlatformCommandBarProfile",
+            "PlatformShellProfile",
         ] {
             assert!(
                 profile_core.contains(contract),
@@ -538,6 +539,36 @@ mod tests {
                 assert!(
                     !source.contains(forbidden),
                     "{name} contains a platform composition branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_shell_authoring_is_platform_neutral_and_profile_resolved() {
+        let shell = include_str!("../shell_layout.rs");
+        let shell_core = shell
+            .find("mod tests {")
+            .map_or(shell, |offset| &shell[..offset]);
+
+        assert!(shell_core.contains("current_shell_profile()"));
+        assert!(shell_core.contains("PlatformShellProfile"));
+        for forbidden in [
+            "PlatformExperience::",
+            "NativeUiPlatform",
+            "cfg!(target_os",
+            "#[cfg(target_os",
+        ] {
+            assert!(
+                !shell_core.contains(forbidden),
+                "legacy shell contains a public platform branch: {forbidden}"
+            );
+        }
+        for line in shell_core.lines().map(str::trim_start) {
+            if line.starts_with("pub fn ") {
+                assert!(
+                    !line.contains("PlatformStyle"),
+                    "legacy shell exposes platform selection in its public API: {line}"
                 );
             }
         }

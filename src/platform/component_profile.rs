@@ -1,8 +1,10 @@
 #[cfg(any(feature = "label", feature = "button"))]
 use crate::ColorRole;
+#[cfg(any(feature = "label", feature = "button"))]
+use crate::TextRole;
 #[cfg(feature = "label")]
 use crate::ZsuiSpacingTokens;
-use crate::{Dp, TextRole, ZsPlatformStyle};
+use crate::{Dp, ZsPlatformStyle};
 
 /// Framework-owned component composition and metric defaults for one design
 /// profile.
@@ -21,6 +23,7 @@ pub(crate) struct PlatformComponentProfile {
     pub button: PlatformButtonProfile,
     #[cfg(feature = "button")]
     pub command_bar: PlatformCommandBarProfile,
+    pub shell: PlatformShellProfile,
 }
 
 impl PlatformComponentProfile {
@@ -58,6 +61,50 @@ impl PlatformComponentProfile {
                     item_gap: Dp::new(8.0),
                     label_role: TextRole::Caption,
                 },
+                shell: PlatformShellProfile {
+                    style: ZsPlatformStyle::Windows,
+                    navigation: PlatformShellNavigationComposition::FluentPane,
+                    sections: PlatformShellSectionComposition::FluentCards,
+                    preferred_navigation_width: Dp::new(236.0),
+                    top_height: Dp::new(84.0),
+                    navigation_start: Dp::new(80.0),
+                    content_gap: Dp::new(28.0),
+                    content_top_gap: Dp::new(16.0),
+                    viewport_mask_height: Dp::new(14.0),
+                    scrollbar_width: Dp::new(3.0),
+                    active_scrollbar_width: Dp::new(5.0),
+                    scrollbar_margin: Dp::new(3.0),
+                    section_header_height: Dp::new(52.0),
+                    section_row_height: Dp::new(32.0),
+                    section_row_gap: Dp::new(8.0),
+                    section_gap: Dp::new(12.0),
+                    section_horizontal_padding: Dp::new(18.0),
+                    section_height_extra: Dp::new(42.0),
+                    section_body_bottom_inset: Dp::new(18.0),
+                    navigation_item_height: Dp::new(36.0),
+                    navigation_item_stride: Dp::new(44.0),
+                    navigation_item_inset: Dp::new(10.0),
+                    navigation_item_radius: Dp::new(6.0),
+                    section_radius: Dp::new(8.0),
+                    title_x: Dp::new(36.0),
+                    title_y: Dp::new(32.0),
+                    title_width: Dp::new(324.0),
+                    title_height: Dp::new(30.0),
+                    menu_icon_x: Dp::new(22.0),
+                    menu_icon_y: Dp::new(18.0),
+                    menu_icon_size: Dp::new(28.0),
+                    show_menu_icon: true,
+                    app_title_x: Dp::new(56.0),
+                    app_title_y: Dp::new(18.0),
+                    app_title_width: Dp::new(164.0),
+                    app_title_height: Dp::new(32.0),
+                    action_margin: Dp::new(24.0),
+                    action_height: Dp::new(32.0),
+                    primary_action_width: Dp::new(72.0),
+                    secondary_action_width: Dp::new(64.0),
+                    action_gap: Dp::new(20.0),
+                    draw_row_separators: true,
+                },
             },
             ZsPlatformStyle::Macos => Self {
                 style,
@@ -91,6 +138,50 @@ impl PlatformComponentProfile {
                     item_gap: Dp::new(6.0),
                     label_role: TextRole::Button,
                 },
+                shell: PlatformShellProfile {
+                    style: ZsPlatformStyle::Macos,
+                    navigation: PlatformShellNavigationComposition::AppKitSourceList,
+                    sections: PlatformShellSectionComposition::AppKitForms,
+                    preferred_navigation_width: Dp::new(240.0),
+                    top_height: Dp::new(64.0),
+                    navigation_start: Dp::new(52.0),
+                    content_gap: Dp::new(24.0),
+                    content_top_gap: Dp::new(12.0),
+                    viewport_mask_height: Dp::new(8.0),
+                    scrollbar_width: Dp::new(2.0),
+                    active_scrollbar_width: Dp::new(4.0),
+                    scrollbar_margin: Dp::new(4.0),
+                    section_header_height: Dp::new(28.0),
+                    section_row_height: Dp::new(36.0),
+                    section_row_gap: Dp::new(8.0),
+                    section_gap: Dp::new(16.0),
+                    section_horizontal_padding: Dp::new(0.0),
+                    section_height_extra: Dp::new(12.0),
+                    section_body_bottom_inset: Dp::new(0.0),
+                    navigation_item_height: Dp::new(28.0),
+                    navigation_item_stride: Dp::new(32.0),
+                    navigation_item_inset: Dp::new(8.0),
+                    navigation_item_radius: Dp::new(6.0),
+                    section_radius: Dp::new(0.0),
+                    title_x: Dp::new(24.0),
+                    title_y: Dp::new(20.0),
+                    title_width: Dp::new(360.0),
+                    title_height: Dp::new(28.0),
+                    menu_icon_x: Dp::new(0.0),
+                    menu_icon_y: Dp::new(0.0),
+                    menu_icon_size: Dp::new(0.0),
+                    show_menu_icon: false,
+                    app_title_x: Dp::new(16.0),
+                    app_title_y: Dp::new(16.0),
+                    app_title_width: Dp::new(208.0),
+                    app_title_height: Dp::new(24.0),
+                    action_margin: Dp::new(20.0),
+                    action_height: Dp::new(28.0),
+                    primary_action_width: Dp::new(72.0),
+                    secondary_action_width: Dp::new(64.0),
+                    action_gap: Dp::new(8.0),
+                    draw_row_separators: false,
+                },
             },
             ZsPlatformStyle::Gtk => Self {
                 style,
@@ -123,6 +214,50 @@ impl PlatformComponentProfile {
                     content_gap: Dp::new(6.0),
                     item_gap: Dp::new(6.0),
                     label_role: TextRole::Button,
+                },
+                shell: PlatformShellProfile {
+                    style: ZsPlatformStyle::Gtk,
+                    navigation: PlatformShellNavigationComposition::GtkSidebar,
+                    sections: PlatformShellSectionComposition::GtkBoxedLists,
+                    preferred_navigation_width: Dp::new(280.0),
+                    top_height: Dp::new(64.0),
+                    navigation_start: Dp::new(52.0),
+                    content_gap: Dp::new(32.0),
+                    content_top_gap: Dp::new(16.0),
+                    viewport_mask_height: Dp::new(8.0),
+                    scrollbar_width: Dp::new(6.0),
+                    active_scrollbar_width: Dp::new(8.0),
+                    scrollbar_margin: Dp::new(6.0),
+                    section_header_height: Dp::new(30.0),
+                    section_row_height: Dp::new(40.0),
+                    section_row_gap: Dp::new(1.0),
+                    section_gap: Dp::new(18.0),
+                    section_horizontal_padding: Dp::new(12.0),
+                    section_height_extra: Dp::new(24.0),
+                    section_body_bottom_inset: Dp::new(12.0),
+                    navigation_item_height: Dp::new(36.0),
+                    navigation_item_stride: Dp::new(40.0),
+                    navigation_item_inset: Dp::new(12.0),
+                    navigation_item_radius: Dp::new(6.0),
+                    section_radius: Dp::new(12.0),
+                    title_x: Dp::new(32.0),
+                    title_y: Dp::new(18.0),
+                    title_width: Dp::new(360.0),
+                    title_height: Dp::new(28.0),
+                    menu_icon_x: Dp::new(0.0),
+                    menu_icon_y: Dp::new(0.0),
+                    menu_icon_size: Dp::new(0.0),
+                    show_menu_icon: false,
+                    app_title_x: Dp::new(16.0),
+                    app_title_y: Dp::new(16.0),
+                    app_title_width: Dp::new(248.0),
+                    app_title_height: Dp::new(24.0),
+                    action_margin: Dp::new(18.0),
+                    action_height: Dp::new(34.0),
+                    primary_action_width: Dp::new(84.0),
+                    secondary_action_width: Dp::new(76.0),
+                    action_gap: Dp::new(8.0),
+                    draw_row_separators: true,
                 },
             },
         }
@@ -284,6 +419,80 @@ impl PlatformCommandBarProfile {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformShellNavigationComposition {
+    FluentPane,
+    AppKitSourceList,
+    GtkSidebar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformShellSectionComposition {
+    FluentCards,
+    AppKitForms,
+    GtkBoxedLists,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformShellProfile {
+    pub style: ZsPlatformStyle,
+    pub navigation: PlatformShellNavigationComposition,
+    pub sections: PlatformShellSectionComposition,
+    pub preferred_navigation_width: Dp,
+    pub top_height: Dp,
+    pub navigation_start: Dp,
+    pub content_gap: Dp,
+    pub content_top_gap: Dp,
+    pub viewport_mask_height: Dp,
+    pub scrollbar_width: Dp,
+    pub active_scrollbar_width: Dp,
+    pub scrollbar_margin: Dp,
+    pub section_header_height: Dp,
+    pub section_row_height: Dp,
+    pub section_row_gap: Dp,
+    pub section_gap: Dp,
+    pub section_horizontal_padding: Dp,
+    pub section_height_extra: Dp,
+    pub section_body_bottom_inset: Dp,
+    pub navigation_item_height: Dp,
+    pub navigation_item_stride: Dp,
+    pub navigation_item_inset: Dp,
+    pub navigation_item_radius: Dp,
+    pub section_radius: Dp,
+    pub title_x: Dp,
+    pub title_y: Dp,
+    pub title_width: Dp,
+    pub title_height: Dp,
+    pub menu_icon_x: Dp,
+    pub menu_icon_y: Dp,
+    pub menu_icon_size: Dp,
+    pub show_menu_icon: bool,
+    pub app_title_x: Dp,
+    pub app_title_y: Dp,
+    pub app_title_width: Dp,
+    pub app_title_height: Dp,
+    pub action_margin: Dp,
+    pub action_height: Dp,
+    pub primary_action_width: Dp,
+    pub secondary_action_width: Dp,
+    pub action_gap: Dp,
+    pub draw_row_separators: bool,
+}
+
+impl PlatformShellProfile {
+    pub(crate) fn navigation_width(self, logical_window_width: f32) -> Dp {
+        match self.navigation {
+            PlatformShellNavigationComposition::GtkSidebar => Dp::new(
+                (logical_window_width * 0.25).clamp(180.0, self.preferred_navigation_width.0),
+            ),
+            PlatformShellNavigationComposition::FluentPane
+            | PlatformShellNavigationComposition::AppKitSourceList => {
+                self.preferred_navigation_width
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +533,20 @@ mod tests {
             assert_eq!(macos.command_bar.bar_height, Dp::new(28.0));
             assert_eq!(gtk.command_bar.item_gap, Dp::new(6.0));
         }
+
+        assert_eq!(
+            windows.shell.navigation,
+            PlatformShellNavigationComposition::FluentPane
+        );
+        assert_eq!(
+            macos.shell.sections,
+            PlatformShellSectionComposition::AppKitForms
+        );
+        assert_eq!(
+            gtk.shell.sections,
+            PlatformShellSectionComposition::GtkBoxedLists
+        );
+        assert_eq!(gtk.shell.navigation_width(800.0), Dp::new(200.0));
     }
 
     #[cfg(feature = "label")]
