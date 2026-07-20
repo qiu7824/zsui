@@ -3503,7 +3503,9 @@ impl NativeViewInputRuntime {
                 _ => None,
             };
             if let Some(offset) = focus_offset {
-                let button = spec.relative_button(state.focused_button, offset);
+                let button = crate::platform_component_profile::PlatformComponentProfile::current()
+                    .dialog
+                    .relative_button(&spec, state.focused_button, offset);
                 report.handled = true;
                 report.content_dialog_focus_changed = button != state.focused_button;
                 return self.dispatch_view_event(

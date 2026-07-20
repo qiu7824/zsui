@@ -55,6 +55,26 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             supports_home_end_focus: false,
             cycle_shortcut: PlatformTabCycleShortcut::ControlTab,
         },
+        #[cfg(feature = "dialog")]
+        dialog: PlatformDialogProfile {
+            composition: PlatformDialogComposition::FluentEqualActions,
+            metrics: ZsContentDialogMetrics {
+                minimum_width: Dp::new(320.0),
+                maximum_width: Dp::new(548.0),
+                viewport_margin: Dp::new(24.0),
+                content_padding: Dp::new(24.0),
+                title_gap: Dp::new(12.0),
+                action_gap: Dp::new(24.0),
+                button_gap: Dp::new(8.0),
+                button_height: Dp::new(40.0),
+                minimum_button_width: Dp::new(88.0),
+                surface_radius: Dp::new(8.0),
+                button_radius: Dp::new(4.0),
+            },
+            scrim_alpha: 88,
+            estimated_glyph_width: Dp::new(0.0),
+            estimated_label_padding: Dp::new(0.0),
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Windows,
             navigation: PlatformShellNavigationComposition::FluentPane,

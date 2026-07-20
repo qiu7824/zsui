@@ -55,6 +55,26 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             supports_home_end_focus: false,
             cycle_shortcut: PlatformTabCycleShortcut::None,
         },
+        #[cfg(feature = "dialog")]
+        dialog: PlatformDialogProfile {
+            composition: PlatformDialogComposition::AppKitTrailingActions,
+            metrics: ZsContentDialogMetrics {
+                minimum_width: Dp::new(360.0),
+                maximum_width: Dp::new(480.0),
+                viewport_margin: Dp::new(28.0),
+                content_padding: Dp::new(20.0),
+                title_gap: Dp::new(8.0),
+                action_gap: Dp::new(20.0),
+                button_gap: Dp::new(8.0),
+                button_height: Dp::new(28.0),
+                minimum_button_width: Dp::new(82.0),
+                surface_radius: Dp::new(12.0),
+                button_radius: Dp::new(6.0),
+            },
+            scrim_alpha: 56,
+            estimated_glyph_width: Dp::new(7.0),
+            estimated_label_padding: Dp::new(28.0),
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Macos,
             navigation: PlatformShellNavigationComposition::AppKitSourceList,

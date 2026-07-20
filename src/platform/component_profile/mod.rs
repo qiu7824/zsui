@@ -5,6 +5,8 @@ use crate::ZsuiSpacingTokens;
 #[cfg(any(feature = "label", feature = "button", feature = "tabs"))]
 use crate::{ColorRole, TextRole};
 use crate::{Dp, ZsPlatformStyle};
+#[cfg(feature = "dialog")]
+use crate::{ZsContentDialogButton, ZsContentDialogMetrics, ZsContentDialogSpec};
 
 mod gtk;
 mod macos;
@@ -29,6 +31,8 @@ pub(crate) struct PlatformComponentProfile {
     pub command_bar: PlatformCommandBarProfile,
     #[cfg(feature = "tabs")]
     pub tabs: PlatformTabProfile,
+    #[cfg(feature = "dialog")]
+    pub dialog: PlatformDialogProfile,
     pub shell: PlatformShellProfile,
 }
 
@@ -270,6 +274,90 @@ impl PlatformTabProfile {
     }
 }
 
+#[cfg(feature = "dialog")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformDialogComposition {
+    FluentEqualActions,
+    AppKitTrailingActions,
+    GtkTrailingActions,
+}
+
+#[cfg(feature = "dialog")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformDialogProfile {
+    pub composition: PlatformDialogComposition,
+    pub metrics: ZsContentDialogMetrics,
+    pub scrim_alpha: u8,
+    pub estimated_glyph_width: Dp,
+    pub estimated_label_padding: Dp,
+}
+
+#[cfg(feature = "dialog")]
+impl PlatformDialogProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).dialog
+    }
+
+    pub(crate) const fn equal_action_widths(self) -> bool {
+        matches!(
+            self.composition,
+            PlatformDialogComposition::FluentEqualActions
+        )
+    }
+
+    pub(crate) const fn trailing_actions(self) -> bool {
+        matches!(
+            self.composition,
+            PlatformDialogComposition::AppKitTrailingActions
+                | PlatformDialogComposition::GtkTrailingActions
+        )
+    }
+
+    pub(crate) fn visual_buttons(self, spec: &ZsContentDialogSpec) -> Vec<ZsContentDialogButton> {
+        use ZsContentDialogButton::{Close, Primary, Secondary};
+
+        let order = match self.composition {
+            PlatformDialogComposition::FluentEqualActions => [Primary, Secondary, Close],
+            PlatformDialogComposition::AppKitTrailingActions
+            | PlatformDialogComposition::GtkTrailingActions => [Close, Secondary, Primary],
+        };
+        let mut buttons = order
+            .into_iter()
+            .filter(|button| spec.has_button(*button))
+            .collect::<Vec<_>>();
+        if matches!(
+            self.composition,
+            PlatformDialogComposition::AppKitTrailingActions
+        ) {
+            if let Some(default) = spec.default_response() {
+                if let Some(index) = buttons.iter().position(|button| *button == default) {
+                    buttons.remove(index);
+                    buttons.push(default);
+                }
+            }
+        }
+        buttons
+    }
+
+    pub(crate) fn relative_button(
+        self,
+        spec: &ZsContentDialogSpec,
+        current: ZsContentDialogButton,
+        offset: isize,
+    ) -> ZsContentDialogButton {
+        let buttons = self.visual_buttons(spec);
+        if buttons.is_empty() {
+            return ZsContentDialogButton::Close;
+        }
+        let current = buttons
+            .iter()
+            .position(|button| *button == current)
+            .unwrap_or(0);
+        let next = (current as isize + offset).rem_euclid(buttons.len() as isize) as usize;
+        buttons[next]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformShellNavigationComposition {
     FluentPane,
@@ -399,6 +487,46 @@ mod tests {
             assert_eq!(windows.tabs.label_role, TextRole::Body);
             assert!(macos.tabs.arrow_selects);
             assert!(gtk.tabs.supports_home_end_focus);
+        }
+
+        #[cfg(feature = "dialog")]
+        {
+            use ZsContentDialogButton::{Close, Primary, Secondary};
+
+            assert_eq!(
+                windows.dialog.composition,
+                PlatformDialogComposition::FluentEqualActions
+            );
+            assert_eq!(
+                macos.dialog.composition,
+                PlatformDialogComposition::AppKitTrailingActions
+            );
+            assert_eq!(
+                gtk.dialog.composition,
+                PlatformDialogComposition::GtkTrailingActions
+            );
+            assert!(windows.dialog.equal_action_widths());
+            assert!(macos.dialog.trailing_actions());
+            assert!(gtk.dialog.trailing_actions());
+
+            let dialog = ZsContentDialogSpec::new("Body", "Close")
+                .primary_button("Primary")
+                .secondary_button("Secondary")
+                .default_button(Secondary);
+            assert_eq!(
+                windows.dialog.visual_buttons(&dialog),
+                vec![Primary, Secondary, Close]
+            );
+            assert_eq!(
+                macos.dialog.visual_buttons(&dialog),
+                vec![Close, Primary, Secondary]
+            );
+            assert_eq!(
+                gtk.dialog.visual_buttons(&dialog),
+                vec![Close, Secondary, Primary]
+            );
+            assert_eq!(macos.dialog.relative_button(&dialog, Close, 1), Primary);
+            assert_eq!(gtk.dialog.relative_button(&dialog, Close, 1), Secondary);
         }
 
         assert_eq!(

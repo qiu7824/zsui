@@ -55,6 +55,26 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             supports_home_end_focus: true,
             cycle_shortcut: PlatformTabCycleShortcut::ControlPage,
         },
+        #[cfg(feature = "dialog")]
+        dialog: PlatformDialogProfile {
+            composition: PlatformDialogComposition::GtkTrailingActions,
+            metrics: ZsContentDialogMetrics {
+                minimum_width: Dp::new(340.0),
+                maximum_width: Dp::new(480.0),
+                viewport_margin: Dp::new(24.0),
+                content_padding: Dp::new(24.0),
+                title_gap: Dp::new(8.0),
+                action_gap: Dp::new(24.0),
+                button_gap: Dp::new(8.0),
+                button_height: Dp::new(34.0),
+                minimum_button_width: Dp::new(86.0),
+                surface_radius: Dp::new(12.0),
+                button_radius: Dp::new(6.0),
+            },
+            scrim_alpha: 104,
+            estimated_glyph_width: Dp::new(8.0),
+            estimated_label_padding: Dp::new(28.0),
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Gtk,
             navigation: PlatformShellNavigationComposition::GtkSidebar,

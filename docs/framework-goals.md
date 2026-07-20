@@ -52,10 +52,11 @@ composition and interaction conventions:
   `src/platform/component_profile/` defines the shared component-profile
   contracts and resolver while keeping each desktop platform's defaults in a
   separately maintainable module. The profiles own semantic sections,
-  adaptive navigation, base buttons, command bars, tabs and the legacy
-  navigation/card shell while remaining independent from native backend
-  selection. The same semantic declaration resolves to Fluent, AppKit or GTK
-  composition without an application-level platform branch.
+  adaptive navigation, base buttons, command bars, tabs, content-dialog action
+  composition and the legacy navigation/card shell while remaining independent
+  from native backend selection. The same semantic declaration resolves to
+  Fluent, AppKit or GTK composition without an application-level platform
+  branch.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.

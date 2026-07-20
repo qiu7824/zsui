@@ -7220,47 +7220,7 @@ pub struct ZsContentDialogMetrics {
 #[cfg(feature = "dialog")]
 impl ZsContentDialogMetrics {
     pub const fn for_platform(platform: ZsContentDialogPlatformStyle) -> Self {
-        match platform {
-            ZsContentDialogPlatformStyle::Windows => Self {
-                minimum_width: Dp::new(320.0),
-                maximum_width: Dp::new(548.0),
-                viewport_margin: Dp::new(24.0),
-                content_padding: Dp::new(24.0),
-                title_gap: Dp::new(12.0),
-                action_gap: Dp::new(24.0),
-                button_gap: Dp::new(8.0),
-                button_height: Dp::new(40.0),
-                minimum_button_width: Dp::new(88.0),
-                surface_radius: Dp::new(8.0),
-                button_radius: Dp::new(4.0),
-            },
-            ZsContentDialogPlatformStyle::Macos => Self {
-                minimum_width: Dp::new(360.0),
-                maximum_width: Dp::new(480.0),
-                viewport_margin: Dp::new(28.0),
-                content_padding: Dp::new(20.0),
-                title_gap: Dp::new(8.0),
-                action_gap: Dp::new(20.0),
-                button_gap: Dp::new(8.0),
-                button_height: Dp::new(28.0),
-                minimum_button_width: Dp::new(82.0),
-                surface_radius: Dp::new(12.0),
-                button_radius: Dp::new(6.0),
-            },
-            ZsContentDialogPlatformStyle::Gtk => Self {
-                minimum_width: Dp::new(340.0),
-                maximum_width: Dp::new(480.0),
-                viewport_margin: Dp::new(24.0),
-                content_padding: Dp::new(24.0),
-                title_gap: Dp::new(8.0),
-                action_gap: Dp::new(24.0),
-                button_gap: Dp::new(8.0),
-                button_height: Dp::new(34.0),
-                minimum_button_width: Dp::new(86.0),
-                surface_radius: Dp::new(12.0),
-                button_radius: Dp::new(6.0),
-            },
-        }
+        crate::platform_component_profile::PlatformDialogProfile::for_platform(platform).metrics
     }
 }
 
@@ -7289,33 +7249,6 @@ pub struct ZsContentDialogRenderPlan {
 }
 
 #[cfg(feature = "dialog")]
-fn content_dialog_visual_buttons(
-    spec: &crate::ZsContentDialogSpec,
-    platform: ZsContentDialogPlatformStyle,
-) -> Vec<crate::ZsContentDialogButton> {
-    use crate::ZsContentDialogButton::{Close, Primary, Secondary};
-    let order = match platform {
-        ZsContentDialogPlatformStyle::Windows => [Primary, Secondary, Close],
-        ZsContentDialogPlatformStyle::Macos | ZsContentDialogPlatformStyle::Gtk => {
-            [Close, Secondary, Primary]
-        }
-    };
-    let mut buttons = order
-        .into_iter()
-        .filter(|button| spec.has_button(*button))
-        .collect::<Vec<_>>();
-    if platform == ZsContentDialogPlatformStyle::Macos {
-        if let Some(default) = spec.default_response() {
-            if let Some(index) = buttons.iter().position(|button| *button == default) {
-                buttons.remove(index);
-                buttons.push(default);
-            }
-        }
-    }
-    buttons
-}
-
-#[cfg(feature = "dialog")]
 pub fn zs_content_dialog_render_plan(
     viewport: Rect,
     spec: &crate::ZsContentDialogSpec,
@@ -7323,7 +7256,8 @@ pub fn zs_content_dialog_render_plan(
     platform: ZsContentDialogPlatformStyle,
     dpi: Dpi,
 ) -> ZsContentDialogRenderPlan {
-    let metrics = ZsContentDialogMetrics::for_platform(platform);
+    let dialog = crate::platform_component_profile::PlatformDialogProfile::for_platform(platform);
+    let metrics = dialog.metrics;
     let margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
     let available_width = viewport
         .width
@@ -7401,7 +7335,7 @@ pub fn zs_content_dialog_render_plan(
             .max(0),
     };
 
-    let visual_buttons = content_dialog_visual_buttons(spec, platform);
+    let visual_buttons = dialog.visual_buttons(spec);
     let total_gap = button_gap.saturating_mul(visual_buttons.len().saturating_sub(1) as i32);
     let minimum_button_width = metrics.minimum_button_width.to_px(dpi).round_i32().max(1);
     let available_button_width = inner_width.saturating_sub(total_gap).max(1);
@@ -7413,18 +7347,14 @@ pub fn zs_content_dialog_render_plan(
         .into_iter()
         .filter_map(|button| {
             let label = spec.button_label(button)?.to_owned();
-            let width = match platform {
-                ZsContentDialogPlatformStyle::Windows => equal_width,
-                ZsContentDialogPlatformStyle::Macos | ZsContentDialogPlatformStyle::Gtk => {
-                    let glyph_width = if platform == ZsContentDialogPlatformStyle::Macos {
-                        scale(7, dpi)
-                    } else {
-                        scale(8, dpi)
-                    };
-                    let label_width = zs_estimated_text_width_px(&label, glyph_width)
-                        .saturating_add(scale(28, dpi));
-                    label_width.max(minimum_button_width)
-                }
+            let width = if dialog.equal_action_widths() {
+                equal_width
+            } else {
+                let glyph_width = dialog.estimated_glyph_width.to_px(dpi).round_i32().max(1);
+                let label_padding = dialog.estimated_label_padding.to_px(dpi).round_i32().max(1);
+                let label_width =
+                    zs_estimated_text_width_px(&label, glyph_width).saturating_add(label_padding);
+                label_width.max(minimum_button_width)
             };
             Some((button, label, width))
         })
@@ -7442,13 +7372,14 @@ pub fn zs_content_dialog_render_plan(
         .fold(total_gap, |total, (_, _, width)| {
             total.saturating_add(*width)
         });
-    let mut button_x = match platform {
-        ZsContentDialogPlatformStyle::Windows => content_left,
-        ZsContentDialogPlatformStyle::Macos | ZsContentDialogPlatformStyle::Gtk => surface
+    let mut button_x = if dialog.trailing_actions() {
+        surface
             .x
             .saturating_add(surface.width)
             .saturating_sub(padding)
-            .saturating_sub(buttons_width),
+            .saturating_sub(buttons_width)
+    } else {
+        content_left
     };
     let buttons = button_layout
         .into_iter()
@@ -7490,11 +7421,9 @@ pub fn zs_content_dialog_native_draw_plan(
     plan: &ZsContentDialogRenderPlan,
     spec: &crate::ZsContentDialogSpec,
 ) -> NativeDrawPlan {
-    let scrim_alpha = match plan.platform {
-        ZsContentDialogPlatformStyle::Windows => 88,
-        ZsContentDialogPlatformStyle::Macos => 56,
-        ZsContentDialogPlatformStyle::Gtk => 104,
-    };
+    let dialog =
+        crate::platform_component_profile::PlatformDialogProfile::for_platform(plan.platform);
+    let scrim_alpha = dialog.scrim_alpha;
     let shadow = Rect {
         x: plan.surface.x.saturating_sub(4),
         y: plan.surface.y.saturating_add(2),

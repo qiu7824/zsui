@@ -493,6 +493,7 @@ mod tests {
             "PlatformNavigationComposition",
             "PlatformCommandBarProfile",
             "PlatformTabProfile",
+            "PlatformDialogProfile",
             "PlatformShellProfile",
         ] {
             assert!(
@@ -627,6 +628,52 @@ mod tests {
                 "ZsTabPlatformStyle::Windows",
                 "ZsTabPlatformStyle::Macos",
                 "ZsTabPlatformStyle::Gtk",
+            ] {
+                assert!(
+                    !source.contains(forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "dialog")]
+    #[test]
+    fn content_dialog_layout_paint_and_keyboard_behavior_consume_one_internal_profile() {
+        let render = include_str!("../widget_render.rs");
+        let dialog_start = render
+            .find("pub type ZsContentDialogPlatformStyle")
+            .expect("content dialog render section should exist");
+        let dialog_end = render[dialog_start..]
+            .find("fn place_popup(")
+            .map(|offset| dialog_start + offset)
+            .expect("popup placement helper should follow content dialog");
+        let dialog_render = &render[dialog_start..dialog_end];
+        assert!(dialog_render.contains("PlatformDialogProfile::for_platform"));
+
+        let native = include_str!("../native.rs");
+        let keyboard_start = native
+            .find("if let Some(dialog_target) = interaction_plan")
+            .expect("content dialog keyboard route should exist");
+        let keyboard_end = native[keyboard_start..]
+            .find("if key == NativeViewKey::Tab && !control")
+            .map(|offset| keyboard_start + offset)
+            .expect("ordinary focus traversal should follow content dialog");
+        let dialog_keyboard = &native[keyboard_start..keyboard_end];
+        assert!(dialog_keyboard.contains("PlatformComponentProfile::current()"));
+
+        let model = include_str!("../content_dialog.rs");
+        for (name, source) in [
+            ("dialog render", dialog_render),
+            ("dialog keyboard", dialog_keyboard),
+            ("dialog public model", model),
+        ] {
+            for forbidden in [
+                "ZsContentDialogPlatformStyle::Windows",
+                "ZsContentDialogPlatformStyle::Macos",
+                "ZsContentDialogPlatformStyle::Gtk",
+                "NativeUiPlatform",
+                "target_os",
             ] {
                 assert!(
                     !source.contains(forbidden),
