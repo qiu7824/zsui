@@ -1398,7 +1398,7 @@ fn main() -> ZsuiResult<()> {
                 .find(|target| {
                     matches!(
                         target.kind,
-                        ViewHitTargetKind::MenuFlyoutItem { path }
+                        ViewHitTargetKind::MenuFlyoutItem { path, .. }
                             if path == ZsMenuFlyoutPath::root(0)
                     )
                 })

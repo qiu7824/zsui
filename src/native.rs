@@ -2634,7 +2634,7 @@ impl NativeViewInputRuntime {
             .current_interaction_plan()
             .and_then(|plan| plan.hit_target_at(point))
         {
-            if let crate::ViewHitTargetKind::MenuFlyoutItem { path } = target.kind {
+            if let crate::ViewHitTargetKind::MenuFlyoutItem { path, .. } = target.kind {
                 if self
                     .widget_menu_flyout_state(target.widget)
                     .is_some_and(|(state, _)| state.highlighted != Some(path))
@@ -3047,7 +3047,7 @@ impl NativeViewInputRuntime {
         report.handled = true;
         #[cfg(feature = "menu-flyout")]
         match target.kind {
-            crate::ViewHitTargetKind::MenuFlyoutItem { path } => {
+            crate::ViewHitTargetKind::MenuFlyoutItem { path, .. } => {
                 if let Some(submenu) =
                     self.widget_menu_flyout_state(target.widget)
                         .and_then(|(_, menu)| {

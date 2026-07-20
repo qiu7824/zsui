@@ -1551,10 +1551,18 @@ impl<Msg> ViewNode<Msg> {
                     ));
                 }
                 hit_targets.extend(plan.rows.into_iter().filter(|row| row.enabled).map(|row| {
+                    let expanded = matches!(row.kind, crate::ZsMenuFlyoutRowKind::Submenu)
+                        && row.path.parent.is_none()
+                        && *open_submenu == Some(row.path.item);
                     ViewHitTarget::with_kind(
                         widget,
                         row.bounds,
-                        ViewHitTargetKind::MenuFlyoutItem { path: row.path },
+                        ViewHitTargetKind::MenuFlyoutItem {
+                            path: row.path,
+                            row_kind: row.kind,
+                            expanded,
+                            highlighted: row.highlighted,
+                        },
                     )
                 }));
             }

@@ -2165,13 +2165,16 @@ mod tests {
     fn menu_flyout_routes_typed_commands_submenus_and_modal_keyboard_surface() {
         let presenter = WidgetId::new(195);
         let target = WidgetId::new(196);
-        let menu = crate::MenuSpec::new()
-            .item("Open / 打开", crate::Command::custom("document.open"))
-            .separator()
-            .submenu(
-                "Recent / 最近",
-                crate::MenuSpec::new().item("One", crate::Command::custom("recent.one")),
-            );
+        let mut menu = crate::MenuSpec::new();
+        menu.items.push(
+            crate::MenuItemSpec::command("Open / 打开", crate::Command::custom("document.open"))
+                .checked(true),
+        );
+        menu.items.push(crate::MenuItemSpec::Separator);
+        menu = menu.submenu(
+            "Recent / 最近",
+            crate::MenuSpec::new().item("One", crate::Command::custom("recent.one")),
+        );
         let mut view = menu_flyout(
             presenter,
             true,
@@ -2202,7 +2205,10 @@ mod tests {
                 path: crate::ZsMenuFlyoutPath {
                     parent: None,
                     item: 0
-                }
+                },
+                row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: true },
+                expanded: false,
+                highlighted: false,
             }
         )));
         assert!(interaction.hit_targets.iter().any(|target| matches!(
@@ -2211,7 +2217,10 @@ mod tests {
                 path: crate::ZsMenuFlyoutPath {
                     parent: None,
                     item: 2
-                }
+                },
+                row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
+                expanded: false,
+                highlighted: false,
             }
         )));
 
@@ -2237,6 +2246,31 @@ mod tests {
             |(state, _)| state.open_submenu == Some(2)
                 && state.highlighted == Some(crate::ZsMenuFlyoutPath::child(2, 0))
         ));
+        let submenu_interaction = view.interaction_plan();
+        assert!(submenu_interaction.hit_targets.iter().any(|target| matches!(
+            target.kind,
+            ViewHitTargetKind::MenuFlyoutItem {
+                path: crate::ZsMenuFlyoutPath {
+                    parent: None,
+                    item: 2
+                },
+                row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
+                expanded: true,
+                highlighted: false,
+            }
+        )));
+        assert!(submenu_interaction.hit_targets.iter().any(|target| matches!(
+            target.kind,
+            ViewHitTargetKind::MenuFlyoutItem {
+                path: crate::ZsMenuFlyoutPath {
+                    parent: Some(2),
+                    item: 0
+                },
+                row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: false },
+                expanded: false,
+                highlighted: true,
+            }
+        )));
         view.event(
             &mut events,
             &ViewEvent::MenuFlyoutInvoked {

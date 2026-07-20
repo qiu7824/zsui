@@ -484,6 +484,9 @@ pub enum ViewHitTargetKind {
     #[cfg(feature = "menu-flyout")]
     MenuFlyoutItem {
         path: crate::ZsMenuFlyoutPath,
+        row_kind: crate::ZsMenuFlyoutRowKind,
+        expanded: bool,
+        highlighted: bool,
     },
     #[cfg(feature = "command-palette")]
     CommandPalette,

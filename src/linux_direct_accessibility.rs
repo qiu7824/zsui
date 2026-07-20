@@ -5,8 +5,8 @@ use std::sync::{
 };
 
 use accesskit::{
-    Action, ActionHandler, ActionRequest, ActivationHandler, Affine, DeactivationHandler, Node,
-    NodeId, Rect as AccessRect, Role, Toggled, Tree, TreeId, TreeUpdate,
+    Action, ActionHandler, ActionRequest, ActivationHandler, Affine, DeactivationHandler, HasPopup,
+    Node, NodeId, Rect as AccessRect, Role, Toggled, Tree, TreeId, TreeUpdate,
 };
 use accesskit_winit::Adapter;
 use winit::event::WindowEvent;
@@ -196,6 +196,7 @@ fn build_tree_update(
         }));
         node.set_author_id(format!("zsui-widget-{}", target.widget.0));
         node.set_label(accessible_label(plan, target));
+        apply_view_accessibility_state(&mut node, target.kind);
         if target.kind.accepts_text_input() {
             node.add_action(Action::SetValue);
             node.add_action(Action::ReplaceSelectedText);
@@ -204,7 +205,21 @@ fn build_tree_update(
             node.add_action(Action::Focus);
             node.add_action(Action::Click);
         }
-        if focused_widget == Some(target.widget) {
+        #[cfg(feature = "menu-flyout")]
+        let menu_item_highlighted = matches!(
+            target.kind,
+            ViewHitTargetKind::MenuFlyoutItem {
+                highlighted: true,
+                ..
+            }
+        );
+        #[cfg(not(feature = "menu-flyout"))]
+        let menu_item_highlighted = false;
+        #[cfg(feature = "menu-flyout")]
+        let is_menu_item = matches!(target.kind, ViewHitTargetKind::MenuFlyoutItem { .. });
+        #[cfg(not(feature = "menu-flyout"))]
+        let is_menu_item = false;
+        if menu_item_highlighted || (focused_widget == Some(target.widget) && !is_menu_item) {
             focused_node = node_id;
         }
         child_ids.push(node_id);
@@ -304,6 +319,30 @@ fn menu_accessibility_node(item: &crate::linux_direct_menu::LinuxMenuAccessibili
         node.add_action(Action::Click);
     }
     node
+}
+
+fn apply_view_accessibility_state(node: &mut Node, kind: ViewHitTargetKind) {
+    #[cfg(feature = "menu-flyout")]
+    if let ViewHitTargetKind::MenuFlyoutItem {
+        row_kind,
+        expanded,
+        highlighted,
+        ..
+    } = kind
+    {
+        match row_kind {
+            crate::ZsMenuFlyoutRowKind::Command { checked: true } => {
+                node.set_toggled(Toggled::True);
+            }
+            crate::ZsMenuFlyoutRowKind::Submenu => {
+                node.set_expanded(expanded);
+                node.set_has_popup(HasPopup::Menu);
+            }
+            crate::ZsMenuFlyoutRowKind::Command { checked: false }
+            | crate::ZsMenuFlyoutRowKind::Separator => {}
+        }
+        node.set_selected(highlighted);
+    }
 }
 
 fn accesskit_rect(rect: Rect) -> AccessRect {
@@ -443,7 +482,12 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         #[cfg(feature = "menu-flyout")]
         ViewHitTargetKind::MenuFlyoutScrim => Role::GenericContainer,
         #[cfg(feature = "menu-flyout")]
-        ViewHitTargetKind::MenuFlyoutItem { .. } => Role::MenuItem,
+        ViewHitTargetKind::MenuFlyoutItem { row_kind, .. } => match row_kind {
+            crate::ZsMenuFlyoutRowKind::Command { checked: true } => Role::MenuItemCheckBox,
+            crate::ZsMenuFlyoutRowKind::Submenu => Role::Menu,
+            crate::ZsMenuFlyoutRowKind::Command { checked: false }
+            | crate::ZsMenuFlyoutRowKind::Separator => Role::MenuItem,
+        },
         #[cfg(feature = "command-palette")]
         ViewHitTargetKind::CommandPalette => Role::SearchInput,
         #[cfg(feature = "command-palette")]
@@ -539,5 +583,34 @@ mod tests {
             accesskit_role(ViewHitTargetKind::FlyoutScrim),
             Role::GenericContainer
         );
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    #[test]
+    fn menu_flyout_items_expose_checked_submenu_and_highlight_state() {
+        let checked_kind = ViewHitTargetKind::MenuFlyoutItem {
+            path: crate::ZsMenuFlyoutPath::root(1),
+            row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: true },
+            expanded: false,
+            highlighted: true,
+        };
+        let mut checked = Node::new(accesskit_role(checked_kind));
+        apply_view_accessibility_state(&mut checked, checked_kind);
+        assert_eq!(checked.role(), Role::MenuItemCheckBox);
+        assert_eq!(checked.toggled(), Some(Toggled::True));
+        assert_eq!(checked.is_selected(), Some(true));
+
+        let submenu_kind = ViewHitTargetKind::MenuFlyoutItem {
+            path: crate::ZsMenuFlyoutPath::root(2),
+            row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
+            expanded: true,
+            highlighted: false,
+        };
+        let mut submenu = Node::new(accesskit_role(submenu_kind));
+        apply_view_accessibility_state(&mut submenu, submenu_kind);
+        assert_eq!(submenu.role(), Role::Menu);
+        assert_eq!(submenu.is_expanded(), Some(true));
+        assert_eq!(submenu.has_popup(), Some(HasPopup::Menu));
+        assert_eq!(submenu.is_selected(), Some(false));
     }
 }

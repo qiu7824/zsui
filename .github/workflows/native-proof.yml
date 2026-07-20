@@ -703,7 +703,7 @@ jobs:
           set -e
           wait "$gallery_pid"
 
-          ZSUI_NATIVE_PROOF_DURATION_MS=2000 \
+          ZSUI_NATIVE_PROOF_DURATION_MS=15000 \
             ./target/release/examples/component_gallery \
               --native-proof \
               --page feedback \
@@ -711,7 +711,116 @@ jobs:
               --width 1180 \
               --height 780 \
               --output "$root" \
-              >"$root/gallery-feedback-light.log" 2>&1
+              >"$root/gallery-feedback-light.log" 2>&1 &
+          feedback_pid=$!
+
+          sleep 1.0
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<false>' \
+            >>"$root/atspi-status.log"
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<true>' \
+            >>"$root/atspi-status.log"
+
+          /usr/bin/python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          import pyatspi
+
+          def children(node):
+              for index in range(node.childCount):
+                  try:
+                      yield node.getChildAtIndex(index)
+                  except Exception:
+                      pass
+
+          def walk(root, limit=1500):
+              queue = [root]
+              seen = 0
+              while queue and seen < limit:
+                  node = queue.pop(0)
+                  seen += 1
+                  yield node
+                  queue.extend(children(node))
+
+          deadline = time.monotonic() + 10.0
+          snapshot = []
+          while time.monotonic() < deadline:
+              snapshot = []
+              desktop = pyatspi.Registry.getDesktop(0)
+              for application in children(desktop):
+                  try:
+                      nodes = list(walk(application))
+                  except Exception:
+                      continue
+                  names = [node.name or "" for node in nodes]
+                  if not any("Component Gallery" in name for name in names):
+                      continue
+                  for node in nodes:
+                      try:
+                          state = node.getState()
+                          snapshot.append(
+                              {
+                                  "name": node.name or "",
+                                  "role": node.getRoleName(),
+                                  "checked": state.contains(pyatspi.STATE_CHECKED),
+                                  "expandable": state.contains(pyatspi.STATE_EXPANDABLE),
+                                  "expanded": state.contains(pyatspi.STATE_EXPANDED),
+                                  "focused": state.contains(pyatspi.STATE_FOCUSED),
+                                  "selected": state.contains(pyatspi.STATE_SELECTED),
+                              }
+                          )
+                      except Exception:
+                          pass
+              by_name = {item["name"]: item for item in snapshot}
+              if {
+                  "保存 / Save",
+                  "自动保存 / Auto save",
+                  "更多 / More",
+              } <= by_name.keys():
+                  break
+              time.sleep(0.1)
+
+          by_name = {item["name"]: item for item in snapshot}
+          required = {"保存 / Save", "自动保存 / Auto save", "更多 / More"}
+          if not required <= by_name.keys():
+              raise SystemExit(
+                  f"AT-SPI did not expose MenuFlyout rows: {sorted(by_name)}"
+              )
+          checked = by_name["自动保存 / Auto save"]
+          submenu = by_name["更多 / More"]
+          highlighted = by_name["保存 / Save"]
+          if not checked["checked"]:
+              raise SystemExit(f"checked MenuFlyout state is missing: {checked}")
+          if not submenu["expandable"] or submenu["expanded"]:
+              raise SystemExit(f"collapsed submenu state is missing: {submenu}")
+          if not highlighted["selected"] or not highlighted["focused"]:
+              raise SystemExit(f"highlighted MenuFlyout state is missing: {highlighted}")
+
+          Path(
+              "target/native-proof/ubuntu-24.04-wayland-x86_64/menu-flyout-atspi-proof.json"
+          ).write_text(
+              json.dumps(
+                  {
+                      "backend": "accesskit_atspi",
+                      "rows": [by_name[name] for name in sorted(required)],
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          PY
+          wait "$feedback_pid"
 
           ZSUI_NATIVE_PROOF_DURATION_MS=20000 \
           ZSUI_NATIVE_PROOF_OPEN_MENU=1 \
@@ -856,6 +965,9 @@ jobs:
           feedback = json.loads((root / "gallery-feedback-light.json").read_text("utf-8"))
           notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
           atspi = json.loads((root / "atspi-proof.json").read_text("utf-8"))
+          menu_atspi = json.loads(
+              (root / "menu-flyout-atspi-proof.json").read_text("utf-8")
+          )
 
           for proof in (gallery, feedback, notepad):
               capture = proof["runtime"]["native_view_capture"]
@@ -867,7 +979,7 @@ jobs:
               assert proof["errors"] == []
               assert proof["unhandled_commands"] == []
 
-          for proof in (gallery, notepad):
+          for proof in (gallery, feedback, notepad):
               assert proof["runtime"]["native_accessibility_backend"] == "accesskit_atspi"
               assert proof["runtime"]["native_accessibility_node_count"] >= 5
 
@@ -885,6 +997,13 @@ jobs:
           assert atspi["backend"] == "accesskit_atspi"
           assert atspi["node_count"] >= 5
           assert atspi["action_invoked"] is True
+          assert menu_atspi["backend"] == "accesskit_atspi"
+          menu_rows = {row["name"]: row for row in menu_atspi["rows"]}
+          assert menu_rows["自动保存 / Auto save"]["checked"] is True
+          assert menu_rows["更多 / More"]["expandable"] is True
+          assert menu_rows["更多 / More"]["expanded"] is False
+          assert menu_rows["保存 / Save"]["selected"] is True
+          assert menu_rows["保存 / Save"]["focused"] is True
 
           runtime = notepad["runtime"]
           assert runtime["window_menu_surface_created"] is True
