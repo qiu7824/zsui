@@ -779,6 +779,7 @@ jobs:
                                   "name": node.name or "",
                                   "role": node.getRoleName(),
                                   "checked": state.contains(pyatspi.STATE_CHECKED),
+                                  "expanded": state.contains(pyatspi.STATE_EXPANDED),
                                   "focused": state.contains(pyatspi.STATE_FOCUSED),
                                   "selected": state.contains(pyatspi.STATE_SELECTED),
                               }
@@ -789,24 +790,40 @@ jobs:
               if {
                   "自动保存 / Auto save",
                   "更多 / More",
+                  "导出 / Export",
               } <= by_name.keys():
                   break
               time.sleep(0.1)
 
           by_name = {item["name"]: item for item in snapshot}
-          required = {"自动保存 / Auto save", "更多 / More"}
+          required = {
+              "自动保存 / Auto save",
+              "更多 / More",
+              "导出 / Export",
+          }
           if not required <= by_name.keys():
               raise SystemExit(
                   f"AT-SPI did not expose MenuFlyout rows: {sorted(by_name)}"
               )
           checked = by_name["自动保存 / Auto save"]
           submenu = by_name["更多 / More"]
+          nested_submenu = by_name["导出 / Export"]
           if not checked["checked"]:
               raise SystemExit(f"checked MenuFlyout state is missing: {checked}")
           if checked["role"] not in {"check menu item", "checkmenuitem"}:
               raise SystemExit(f"checked MenuFlyout role is missing: {checked}")
           if submenu["role"] != "menu":
               raise SystemExit(f"submenu MenuFlyout role is missing: {submenu}")
+          if not submenu["expanded"]:
+              raise SystemExit(f"submenu expanded state is missing: {submenu}")
+          if nested_submenu["role"] != "menu":
+              raise SystemExit(
+                  f"nested submenu MenuFlyout role is missing: {nested_submenu}"
+              )
+          if not nested_submenu["expanded"]:
+              raise SystemExit(
+                  f"nested submenu expanded state is missing: {nested_submenu}"
+              )
 
           Path(
               "target/native-proof/ubuntu-24.04-wayland-x86_64/menu-flyout-atspi-proof.json"
@@ -1010,6 +1027,9 @@ jobs:
               "checkmenuitem",
           }
           assert menu_rows["更多 / More"]["role"] == "menu"
+          assert menu_rows["更多 / More"]["expanded"] is True
+          assert menu_rows["导出 / Export"]["role"] == "menu"
+          assert menu_rows["导出 / Export"]["expanded"] is True
 
           runtime = notepad["runtime"]
           assert runtime["window_menu_surface_created"] is True
