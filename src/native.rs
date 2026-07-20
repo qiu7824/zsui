@@ -588,12 +588,20 @@ fn native_tab_cycle_offset(
     shift: bool,
     control: bool,
 ) -> Option<isize> {
-    match (platform, key, control) {
-        (crate::ZsTabPlatformStyle::Windows, NativeViewKey::Tab, true) => {
+    use crate::platform_component_profile::PlatformTabCycleShortcut;
+
+    if !control {
+        return None;
+    }
+    let shortcut = crate::platform_component_profile::PlatformComponentProfile::for_style(platform)
+        .tabs
+        .cycle_shortcut;
+    match (shortcut, key) {
+        (PlatformTabCycleShortcut::ControlTab, NativeViewKey::Tab) => {
             Some(if shift { -1 } else { 1 })
         }
-        (crate::ZsTabPlatformStyle::Gtk, NativeViewKey::PageUp, true) => Some(-1),
-        (crate::ZsTabPlatformStyle::Gtk, NativeViewKey::PageDown, true) => Some(1),
+        (PlatformTabCycleShortcut::ControlPage, NativeViewKey::PageUp) => Some(-1),
+        (PlatformTabCycleShortcut::ControlPage, NativeViewKey::PageDown) => Some(1),
         _ => None,
     }
 }
@@ -4155,16 +4163,17 @@ impl NativeViewInputRuntime {
             let Some(state) = self.widget_tab_header_state(widget) else {
                 return report;
             };
-            let platform = crate::ZsTabPlatformStyle::current();
+            let tab_profile =
+                crate::platform_component_profile::PlatformComponentProfile::current().tabs;
             let next_widget = match key {
                 NativeViewKey::Left => state.previous,
                 NativeViewKey::Right => state.next,
-                NativeViewKey::Home if platform.supports_home_end_focus() => Some(state.first),
-                NativeViewKey::End if platform.supports_home_end_focus() => Some(state.last),
+                NativeViewKey::Home if tab_profile.supports_home_end_focus => Some(state.first),
+                NativeViewKey::End if tab_profile.supports_home_end_focus => Some(state.last),
                 _ => None,
             };
             let navigation_key = matches!(key, NativeViewKey::Left | NativeViewKey::Right)
-                || (platform.supports_home_end_focus()
+                || (tab_profile.supports_home_end_focus
                     && matches!(key, NativeViewKey::Home | NativeViewKey::End));
             if navigation_key {
                 report.handled = true;
@@ -4183,7 +4192,7 @@ impl NativeViewInputRuntime {
                 let Some(next_state) = self.widget_tab_header_state(next_widget) else {
                     return report;
                 };
-                if platform.arrow_selects() {
+                if tab_profile.arrow_selects {
                     report.tab_selection_changed = !next_state.selected;
                     report.tab_keyboard_selection_changed = !next_state.selected;
                     if !next_state.selected {

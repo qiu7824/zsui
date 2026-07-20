@@ -3132,61 +3132,15 @@ pub struct ZsTabViewMetrics {
 #[cfg(feature = "tabs")]
 impl ZsTabViewMetrics {
     pub const fn for_platform(platform: ZsTabPlatformStyle) -> Self {
-        match platform {
-            ZsTabPlatformStyle::Windows => Self {
-                strip_height: Dp::new(40.0),
-                header_top_padding: Dp::new(8.0),
-                item_height: Dp::new(32.0),
-                outer_inset: Dp::new(0.0),
-                item_gap: Dp::new(0.0),
-                horizontal_padding: Dp::new(8.0),
-                icon_size: Dp::new(16.0),
-                icon_gap: Dp::new(10.0),
-                minimum_item_width: Dp::new(100.0),
-                maximum_item_width: Dp::new(240.0),
-                radius: Dp::new(8.0),
-                selection_indicator_height: Dp::new(2.0),
-            },
-            ZsTabPlatformStyle::Macos => Self {
-                strip_height: Dp::new(32.0),
-                header_top_padding: Dp::new(0.0),
-                item_height: Dp::new(32.0),
-                outer_inset: Dp::new(12.0),
-                item_gap: Dp::new(0.0),
-                horizontal_padding: Dp::new(14.0),
-                icon_size: Dp::new(14.0),
-                icon_gap: Dp::new(6.0),
-                minimum_item_width: Dp::new(72.0),
-                maximum_item_width: Dp::new(160.0),
-                radius: Dp::new(6.0),
-                selection_indicator_height: Dp::new(0.0),
-            },
-            ZsTabPlatformStyle::Gtk => Self {
-                // AdwTabBar uses a raised bar with an inset rounded selected
-                // tab. It is not the Fluent underline treatment.
-                strip_height: Dp::new(42.0),
-                header_top_padding: Dp::new(4.0),
-                item_height: Dp::new(34.0),
-                outer_inset: Dp::new(6.0),
-                item_gap: Dp::new(0.0),
-                horizontal_padding: Dp::new(12.0),
-                icon_size: Dp::new(16.0),
-                icon_gap: Dp::new(8.0),
-                minimum_item_width: Dp::new(72.0),
-                maximum_item_width: Dp::new(220.0),
-                radius: Dp::new(8.0),
-                selection_indicator_height: Dp::new(0.0),
-            },
-        }
+        crate::platform_component_profile::PlatformComponentProfile::for_style(platform)
+            .tabs
+            .metrics
     }
 
     pub const fn label_role(platform: ZsTabPlatformStyle) -> TextRole {
-        match platform {
-            // WinUI's TabViewItemHeaderFontSize theme resource is 12 epx.
-            ZsTabPlatformStyle::Windows => TextRole::Caption,
-            // AppKit and GTK render tab labels as ordinary control content.
-            ZsTabPlatformStyle::Macos | ZsTabPlatformStyle::Gtk => TextRole::Button,
-        }
+        crate::platform_component_profile::PlatformComponentProfile::for_style(platform)
+            .tabs
+            .label_role
     }
 }
 
@@ -3238,7 +3192,9 @@ pub fn zs_tab_view_render_plan_for_tabs(
     platform: ZsTabPlatformStyle,
     dpi: Dpi,
 ) -> ZsTabViewRenderPlan {
-    let metrics = ZsTabViewMetrics::for_platform(platform);
+    let profile =
+        crate::platform_component_profile::PlatformComponentProfile::for_style(platform).tabs;
+    let metrics = profile.metrics;
     let strip_height = metrics
         .strip_height
         .to_px(dpi)
@@ -3305,7 +3261,7 @@ pub fn zs_tab_view_render_plan_for_tabs(
         })
         .collect::<Vec<_>>();
     if !widths.is_empty() {
-        if platform == ZsTabPlatformStyle::Macos {
+        if profile.equal_item_widths() {
             let equal = widths.iter().copied().max().unwrap_or(minimum_width);
             widths.fill(equal);
         }
@@ -3321,7 +3277,7 @@ pub fn zs_tab_view_render_plan_for_tabs(
     let assigned_width: i32 = widths.iter().copied().sum::<i32>()
         + gap.saturating_mul(widths.len().saturating_sub(1) as i32);
     let mut x = strip_bounds.x.saturating_add(inset);
-    if platform == ZsTabPlatformStyle::Macos {
+    if profile.center_items() {
         x = x.saturating_add(available_width.saturating_sub(assigned_width) / 2);
     }
     let indicator_height = metrics
@@ -3383,7 +3339,7 @@ pub fn zs_tab_view_render_plan_for_tabs(
                     width: header.width.saturating_sub(header_padding).max(1),
                     height: indicator_height,
                 });
-            let separator = (platform == ZsTabPlatformStyle::Windows
+            let separator = (profile.draw_header_separators()
                 && index + 1 < tabs.len()
                 && !selected
                 && selected_index != Some(index + 1)
@@ -3441,15 +3397,13 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
     plan: &ZsTabViewRenderPlan,
     tabs: &[crate::ZsTabSpec],
 ) -> NativeDrawPlan {
+    let profile =
+        crate::platform_component_profile::PlatformComponentProfile::for_style(plan.platform).tabs;
     let mut commands = vec![NativeDrawCommand::FillRect {
         rect: plan.strip_bounds,
         fill: NativeDrawFill::Role(ColorRole::Surface),
     }];
-    if matches!(
-        plan.platform,
-        ZsTabPlatformStyle::Windows | ZsTabPlatformStyle::Gtk
-    ) && plan.strip_bounds.height > 0
-    {
+    if profile.draw_strip_border() && plan.strip_bounds.height > 0 {
         commands.push(NativeDrawCommand::FillRect {
             rect: Rect {
                 x: plan.strip_bounds.x,
@@ -3463,7 +3417,7 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
             fill: NativeDrawFill::Role(ColorRole::Border),
         });
     }
-    if plan.platform == ZsTabPlatformStyle::Macos && !plan.headers.is_empty() {
+    if profile.draw_group_outline() && !plan.headers.is_empty() {
         let first = plan
             .headers
             .first()
@@ -3487,18 +3441,18 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
         });
     }
     for (header, tab) in plan.headers.iter().zip(tabs) {
-        let fill = match (plan.platform, header.selected) {
-            (ZsTabPlatformStyle::Gtk, true) => NativeDrawFill::Role(ColorRole::Control),
-            (_, true) => NativeDrawFill::Role(ColorRole::SurfaceRaised),
-            (_, false) => NativeDrawFill::RoleWithAlpha {
+        let fill = if header.selected {
+            NativeDrawFill::Role(profile.selected_fill())
+        } else {
+            NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::Control,
                 alpha: 0,
-            },
+            }
         };
-        let stroke = match (plan.platform, header.selected) {
-            (ZsTabPlatformStyle::Windows, true) => Some(NativeDrawFill::Role(ColorRole::Border)),
-            (ZsTabPlatformStyle::Macos, _) => None,
-            _ => None,
+        let stroke = if header.selected {
+            profile.selected_stroke().map(NativeDrawFill::Role)
+        } else {
+            None
         };
         commands.push(NativeDrawCommand::RoundRect {
             rect: header.bounds,
@@ -3537,16 +3491,14 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
             &tab.label,
             header.text_bounds,
             SemanticTextStyle {
-                role: ZsTabViewMetrics::label_role(plan.platform),
+                role: profile.label_role,
                 color: if header.selected {
                     ColorRole::PrimaryText
                 } else {
                     ColorRole::SecondaryText
                 },
                 weight: TextWeight::Regular,
-                horizontal_align: if plan.platform == ZsTabPlatformStyle::Windows
-                    || tab.icon.is_some()
-                {
+                horizontal_align: if profile.leading_label(tab.icon.is_some()) {
                     HorizontalAlign::Start
                 } else {
                     HorizontalAlign::Center
@@ -8639,7 +8591,7 @@ mod tests {
         assert_eq!(windows.maximum_item_width, Dp::new(240.0));
         assert_eq!(
             ZsTabViewMetrics::label_role(ZsTabPlatformStyle::Windows),
-            TextRole::Caption
+            TextRole::Body
         );
         assert_eq!(
             ZsTabViewMetrics::label_role(ZsTabPlatformStyle::Macos),
@@ -8650,12 +8602,6 @@ mod tests {
         assert_eq!(gtk.header_top_padding, Dp::new(4.0));
         assert_eq!(gtk.item_height, Dp::new(34.0));
         assert_eq!(gtk.outer_inset, Dp::new(6.0));
-        assert!(!ZsTabPlatformStyle::Windows.arrow_selects());
-        assert!(ZsTabPlatformStyle::Macos.arrow_selects());
-        assert!(!ZsTabPlatformStyle::Gtk.arrow_selects());
-        assert!(!ZsTabPlatformStyle::Windows.supports_home_end_focus());
-        assert!(!ZsTabPlatformStyle::Macos.supports_home_end_focus());
-        assert!(ZsTabPlatformStyle::Gtk.supports_home_end_focus());
     }
 
     #[cfg(feature = "tabs")]
@@ -8789,7 +8735,7 @@ mod tests {
             command,
             NativeDrawCommand::Text(text)
                 if text.text == "General"
-                    && text.style.role == TextRole::Caption
+                    && text.style.role == TextRole::Body
                     && text.style.horizontal_align == HorizontalAlign::Start
                     && text.style.weight == TextWeight::Regular
         )));

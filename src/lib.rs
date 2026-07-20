@@ -148,7 +148,7 @@ mod native_text_edit;
 pub mod paged_list;
 #[cfg(feature = "password-box")]
 pub mod password_box;
-#[path = "platform/component_profile.rs"]
+#[path = "platform/component_profile/mod.rs"]
 mod platform_component_profile;
 #[path = "platform/experience.rs"]
 mod platform_experience;

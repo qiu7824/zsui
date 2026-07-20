@@ -477,7 +477,7 @@ mod tests {
 
     #[test]
     fn semantic_view_composition_resolves_through_one_internal_component_profile() {
-        let profile = include_str!("component_profile.rs");
+        let profile = include_str!("component_profile/mod.rs");
         let profile_core = profile
             .split_once("#[cfg(test)]")
             .map_or(profile, |(core, _)| core);
@@ -492,6 +492,7 @@ mod tests {
             "PlatformSectionComposition",
             "PlatformNavigationComposition",
             "PlatformCommandBarProfile",
+            "PlatformTabProfile",
             "PlatformShellProfile",
         ] {
             assert!(
@@ -539,6 +540,97 @@ mod tests {
                 assert!(
                     !source.contains(forbidden),
                     "{name} contains a platform composition branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn component_defaults_are_owned_by_separate_platform_modules() {
+        let resolver = include_str!("component_profile/mod.rs");
+        for (module, style, forbidden_styles) in [
+            (
+                include_str!("component_profile/windows.rs"),
+                "ZsPlatformStyle::Windows",
+                ["ZsPlatformStyle::Macos", "ZsPlatformStyle::Gtk"],
+            ),
+            (
+                include_str!("component_profile/macos.rs"),
+                "ZsPlatformStyle::Macos",
+                ["ZsPlatformStyle::Windows", "ZsPlatformStyle::Gtk"],
+            ),
+            (
+                include_str!("component_profile/gtk.rs"),
+                "ZsPlatformStyle::Gtk",
+                ["ZsPlatformStyle::Windows", "ZsPlatformStyle::Macos"],
+            ),
+        ] {
+            assert_eq!(module.matches("const fn profile()").count(), 1);
+            assert!(module.contains(style));
+            assert!(!module.contains("BackendProfile"));
+            assert!(!module.contains("NativeUiPlatform"));
+            assert!(!module.contains("target_os"));
+            for forbidden in forbidden_styles {
+                assert!(
+                    !module.contains(forbidden),
+                    "{style} component module contains another platform profile: {forbidden}"
+                );
+            }
+        }
+        for delegation in [
+            "ZsPlatformStyle::Windows => windows::profile()",
+            "ZsPlatformStyle::Macos => macos::profile()",
+            "ZsPlatformStyle::Gtk => gtk::profile()",
+        ] {
+            assert!(resolver.contains(delegation));
+        }
+    }
+
+    #[test]
+    fn tab_layout_paint_and_keyboard_behavior_consume_one_internal_profile() {
+        let render = include_str!("../widget_render.rs");
+        let tab_start = render
+            .find("pub type ZsTabPlatformStyle")
+            .expect("tab render section should exist");
+        let tab_end = render[tab_start..]
+            .find("pub const ZS_AUTO_SUGGEST_MAX_VISIBLE_ITEMS")
+            .map(|offset| tab_start + offset)
+            .expect("auto-suggest section should follow tabs");
+        let tab_render = &render[tab_start..tab_end];
+        assert!(tab_render.contains("PlatformComponentProfile::for_style"));
+
+        let native = include_str!("../native.rs");
+        let cycle_start = native
+            .find("fn native_tab_cycle_offset")
+            .expect("tab cycle helper should exist");
+        let cycle_end = native[cycle_start..]
+            .find("#[cfg(feature = \"combo\")]")
+            .map(|offset| cycle_start + offset)
+            .expect("combo section should follow tab cycle helper");
+        let keyboard_start = native
+            .find("if matches!(target.kind, crate::ViewHitTargetKind::Tab")
+            .expect("tab keyboard route should exist");
+        let keyboard_end = native[keyboard_start..]
+            .find("#[cfg(feature = \"date-picker\")]")
+            .map(|offset| keyboard_start + offset)
+            .expect("date picker route should follow tabs");
+        for (name, source) in [
+            ("tab render", tab_render),
+            ("tab cycle", &native[cycle_start..cycle_end]),
+            ("tab keyboard", &native[keyboard_start..keyboard_end]),
+        ] {
+            assert!(
+                source.contains("PlatformComponentProfile::"),
+                "{name} should consume PlatformComponentProfile"
+            );
+            for forbidden in [
+                "ZsTabPlatformStyle::Windows",
+                "ZsTabPlatformStyle::Macos",
+                "ZsTabPlatformStyle::Gtk",
+            ] {
+                assert!(
+                    !source.contains(forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
                 );
             }
         }

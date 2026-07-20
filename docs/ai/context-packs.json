@@ -56,7 +56,7 @@
         "src/view/mod.rs",
         "src/view/node.rs",
         "src/platform/experience.rs",
-        "src/platform/component_profile.rs",
+        "src/platform/component_profile",
         "src/widget_render.rs"
       ],
       "optional": [
@@ -80,7 +80,7 @@
       "required": [
         "src/shell_layout.rs",
         "src/view/widgets/data.rs",
-        "src/platform/component_profile.rs",
+        "src/platform/component_profile",
         "examples/navigation_shell_layout.rs"
       ],
       "optional": [

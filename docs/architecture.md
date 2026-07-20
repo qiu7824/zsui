@@ -522,6 +522,15 @@ by render contracts and deterministic proof. Component-specific
 than independent platform selectors. Ordinary View construction never accepts
 the profile; applications continue to change semantic specs and theme tokens
 once, while `PlatformExperience` resolves the target profile.
+`src/platform/component_profile/mod.rs` defines the typed
+component-composition contracts and the single style-to-profile resolver.
+Platform-owned defaults live separately in
+`src/platform/component_profile/windows.rs`, `macos.rs` and `gtk.rs`; they
+contain component composition, metrics and interaction conventions but no
+native host or renderer implementation.
+Tabs, navigation, command bars and shells consume those profiles for layout,
+paint, hit testing and keyboard behavior instead of matching platforms in
+shared component code.
 `src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
 Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single

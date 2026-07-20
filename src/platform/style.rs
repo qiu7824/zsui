@@ -33,12 +33,18 @@ impl ZsPlatformStyle {
         self
     }
 
+    #[cfg(feature = "tabs")]
     pub const fn arrow_selects(self) -> bool {
-        matches!(self, Self::Macos)
+        crate::platform_component_profile::PlatformComponentProfile::for_style(self)
+            .tabs
+            .arrow_selects
     }
 
+    #[cfg(feature = "tabs")]
     pub const fn supports_home_end_focus(self) -> bool {
-        matches!(self, Self::Gtk)
+        crate::platform_component_profile::PlatformComponentProfile::for_style(self)
+            .tabs
+            .supports_home_end_focus
     }
 
     #[cfg(feature = "time-picker")]
@@ -63,11 +69,16 @@ mod tests {
     use super::ZsPlatformStyle;
 
     #[test]
-    fn shared_profile_preserves_platform_interaction_conventions() {
+    fn shared_profile_preserves_typography_identity() {
         assert_eq!(
             ZsPlatformStyle::Windows.typography(),
             ZsPlatformStyle::Windows
         );
+    }
+
+    #[cfg(feature = "tabs")]
+    #[test]
+    fn shared_profile_delegates_tab_interaction_conventions() {
         assert!(!ZsPlatformStyle::Windows.arrow_selects());
         assert!(ZsPlatformStyle::Macos.arrow_selects());
         assert!(!ZsPlatformStyle::Gtk.arrow_selects());
