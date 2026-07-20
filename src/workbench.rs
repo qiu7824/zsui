@@ -2299,6 +2299,7 @@ mod tests {
     #[test]
     fn layout_scales_stable_shell_dimensions_for_high_dpi() {
         let spec = sample_spec();
+        let dpi = Dpi::new(144.0);
         let plan = spec.layout(
             Rect {
                 x: 0,
@@ -2306,10 +2307,11 @@ mod tests {
                 width: 1920,
                 height: 1200,
             },
-            Dpi::new(144.0),
+            dpi,
         );
+        let expected_radius = scale_dp(workbench_style_tokens().radius.medium, dpi);
 
-        assert_eq!(plan.dpi, Dpi::new(144.0));
+        assert_eq!(plan.dpi, dpi);
         assert_eq!(plan.metrics.sidebar.width, 408);
         assert_eq!(plan.metrics.top_bar.height, 96);
         assert_eq!(plan.metrics.composer_band.height, 180);
@@ -2317,12 +2319,16 @@ mod tests {
             .native_draw_plan(plan.metrics.surface, plan.dpi)
             .commands
             .iter()
-            .any(|command| matches!(command, NativeDrawCommand::RoundRect { radius: 12, .. })));
+            .any(|command| matches!(
+                command,
+                NativeDrawCommand::RoundRect { radius, .. } if *radius == expected_radius
+            )));
     }
 
     #[test]
     fn paint_plan_contains_navigation_messages_tools_and_composer() {
         let spec = sample_spec();
+        let dpi = Dpi::standard();
         let draw = spec.native_draw_plan(
             Rect {
                 x: 0,
@@ -2330,15 +2336,16 @@ mod tests {
                 width: 1280,
                 height: 800,
             },
-            Dpi::standard(),
+            dpi,
         );
+        let expected_radius = scale_dp(workbench_style_tokens().radius.medium, dpi);
 
         assert!(draw.command_count() >= 30);
         assert!(draw.text_count() >= 15);
-        assert!(draw
-            .commands
-            .iter()
-            .any(|command| matches!(command, NativeDrawCommand::RoundRect { radius: 8, .. })));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect { radius, .. } if *radius == expected_radius
+        )));
         assert!(draw
             .commands
             .iter()

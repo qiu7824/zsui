@@ -10163,6 +10163,16 @@ mod tests {
 
         let widget = crate::WidgetId::new(187);
         let background = crate::WidgetId::new(188);
+        let dialog_spec =
+            crate::ZsContentDialogSpec::new("Choose whether to continue or cancel.", "Cancel")
+                .title("Continue operation?")
+                .primary_button("Continue")
+                .secondary_button("Review")
+                .default_button(crate::ZsContentDialogButton::Primary);
+        let expected_after_tab =
+            crate::platform_component_profile::PlatformComponentProfile::current()
+                .dialog
+                .relative_button(&dialog_spec, crate::ZsContentDialogButton::Primary, 1);
         let builder = native_window("Platform Dialog")
             .size(640, 400)
             .stateful_view(
@@ -10174,14 +10184,7 @@ mod tests {
                     crate::content_dialog(
                         widget,
                         state.open,
-                        crate::ZsContentDialogSpec::new(
-                            "Choose whether to continue or cancel.",
-                            "Cancel",
-                        )
-                        .title("Continue operation?")
-                        .primary_button("Continue")
-                        .secondary_button("Review")
-                        .default_button(crate::ZsContentDialogButton::Primary),
+                        dialog_spec.clone(),
                         crate::spacer().id(background),
                     )
                     .on_dialog_result(Msg::Responded)
@@ -10225,7 +10228,7 @@ mod tests {
             runtime
                 .widget_content_dialog_state(widget)
                 .map(|(state, _)| state.focused_button),
-            Some(crate::ZsContentDialogButton::Secondary)
+            Some(expected_after_tab)
         );
 
         let responded = runtime.dispatch_key(NativeViewKey::Enter);

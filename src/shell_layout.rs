@@ -2795,7 +2795,7 @@ mod tests {
 
     #[test]
     fn shell_layout_preserves_window_nav_content_and_card_metrics() {
-        let plan = shell().layout_plan(
+        let plan = shell().layout_plan_for_style(
             Rect {
                 x: 0,
                 y: 0,
@@ -2803,6 +2803,7 @@ mod tests {
                 height: 740,
             },
             Dpi::standard(),
+            ZsPlatformStyle::Windows,
         );
 
         assert_eq!(
@@ -2923,7 +2924,7 @@ mod tests {
             )
             .scroll_y(20)
             .scrollbar(true, true);
-        let plan = spec.paint_plan(
+        let plan = spec.paint_plan_for_style(
             Rect {
                 x: 0,
                 y: 0,
@@ -2931,6 +2932,7 @@ mod tests {
                 height: 740,
             },
             Dpi::standard(),
+            ZsPlatformStyle::Windows,
         );
 
         assert!(plan.paint_commands.iter().any(|command| matches!(
@@ -3009,13 +3011,23 @@ mod tests {
             height: 740,
         };
         let mut runtime = ZsShellRuntime::new(shell(), bounds, Dpi::standard());
+        let sync = runtime
+            .spec
+            .layout_plan(bounds, Dpi::standard())
+            .region("sync")
+            .expect("sync navigation item")
+            .rect;
+        let sync_center = Point {
+            x: sync.x + sync.width / 2,
+            y: sync.y + sync.height / 2,
+        };
 
-        let hover = runtime.pointer_move(Point { x: 40, y: 140 });
+        let hover = runtime.pointer_move(sync_center);
         assert!(hover.redraw);
         assert_eq!(runtime.spec.hovered_nav_id.as_deref(), Some("sync"));
         assert_eq!(hover.invalidate_rects.len(), 1);
 
-        let selected = runtime.pointer_down(Point { x: 40, y: 140 });
+        let selected = runtime.pointer_down(sync_center);
         assert_eq!(runtime.spec.selected_nav_id.as_deref(), Some("sync"));
         assert_eq!(
             selected.events,
