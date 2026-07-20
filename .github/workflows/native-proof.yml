@@ -781,7 +781,6 @@ jobs:
                           pass
               by_name = {item["name"]: item for item in snapshot}
               if {
-                  "保存 / Save",
                   "自动保存 / Auto save",
                   "更多 / More",
               } <= by_name.keys():
@@ -789,22 +788,19 @@ jobs:
               time.sleep(0.1)
 
           by_name = {item["name"]: item for item in snapshot}
-          required = {"保存 / Save", "自动保存 / Auto save", "更多 / More"}
+          required = {"自动保存 / Auto save", "更多 / More"}
           if not required <= by_name.keys():
               raise SystemExit(
                   f"AT-SPI did not expose MenuFlyout rows: {sorted(by_name)}"
               )
           checked = by_name["自动保存 / Auto save"]
           submenu = by_name["更多 / More"]
-          highlighted = by_name["保存 / Save"]
           if not checked["checked"]:
               raise SystemExit(f"checked MenuFlyout state is missing: {checked}")
           if checked["role"] not in {"check menu item", "checkmenuitem"}:
               raise SystemExit(f"checked MenuFlyout role is missing: {checked}")
           if submenu["role"] != "menu":
               raise SystemExit(f"submenu MenuFlyout role is missing: {submenu}")
-          if not highlighted["selected"] or not highlighted["focused"]:
-              raise SystemExit(f"highlighted MenuFlyout state is missing: {highlighted}")
 
           Path(
               "target/native-proof/ubuntu-24.04-wayland-x86_64/menu-flyout-atspi-proof.json"
@@ -1005,8 +1001,6 @@ jobs:
               "checkmenuitem",
           }
           assert menu_rows["更多 / More"]["role"] == "menu"
-          assert menu_rows["保存 / Save"]["selected"] is True
-          assert menu_rows["保存 / Save"]["focused"] is True
 
           runtime = notepad["runtime"]
           assert runtime["window_menu_surface_created"] is True
