@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let report = builder.run_smoke(
             NativeWindowSmokeRunOptions::new(1200)
                 .screenshot_file(format!("{artifact_dir}/window.png"))
-                .require_screenshot(cfg!(windows))
+                .require_screenshot(true)
                 .native_view_click(Point { x: 260, y: 68 })
                 .native_view_text_input(" Native")
                 .native_view_click(Point { x: 476, y: 112 })

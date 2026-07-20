@@ -330,12 +330,18 @@ history remain authoritative for implementation status.
   adaptive navigation, foundational controls and navigation rows, command
   bars, tabs, content-dialog action order/sizing/alignment/scrim/focus
   traversal, feature-gated InfoBar/TeachingTip/Toast/BreadcrumbBar/
-  ToggleButton/NumberBox/AutoSuggestBox/GridView/TreeView/DataGrid/TimePicker/
-  ColorPicker/CommandPalette metrics and interaction treatments, and the
-  legacy navigation/card shell. View, Shell and shared keyboard routing
-  consume the resolved profile instead of repeating platform matches.
-  Production `widget_render.rs` contains no direct Windows, macOS or GTK
-  variant branch.
+  ToggleButton/NumberBox/PasswordBox/ToolTip/ProgressRing/AutoSuggestBox/
+  GridView/TreeView/DataGrid/TimePicker/ColorPicker/CommandPalette metrics and
+  interaction treatments, global radius/spacing/control-density tokens,
+  semantic typography defaults and shared focus visuals, and the legacy
+  navigation/card shell. Feature-gated Document Shell and Calculator Shell
+  direct-draw compatibility layouts also resolve through dedicated profiles.
+  View, Shell, typography and shared keyboard/input routing consume the
+  resolved profile instead of repeating platform matches.
+  Target backends continue to own installed-font discovery, shaping,
+  rasterization and native resources. Production shared component, token,
+  typography and focus code contains no direct Windows, macOS or GTK variant
+  branch.
   One `ZsShellLayoutSpec` therefore resolves to a Fluent pane/card composition,
   AppKit source-list/forms composition or GTK sidebar/boxed-list composition
   without exposing a platform selector in the application API.
@@ -394,8 +400,9 @@ history remain authoritative for implementation status.
   Text, Linux Direct Pango, Linux Direct Lite Cosmic Text and GTK Pango inject
   backend-owned shapers into the input runtime; their native contexts and
   platform variants must not return to `native_input_visuals.rs` or the public
-  View API. A new platform supplies another shaper implementation without
-  extending a shared platform enum.
+  View API. Target execution constraints belong in
+  `platform/text_shaper_boundary.rs`. A new platform supplies another shaper
+  implementation without extending a shared platform enum.
 - Typography, clipping or composition corrections found in Gallery, Notepad or
   another acceptance application must be implemented as reusable framework
   rules before the example consumes them. Measure, paint, hit testing,

@@ -58,9 +58,13 @@ composition and interaction conventions:
   DataGrid, TimePicker, ColorPicker, CommandPalette and the legacy
   navigation/card shell while remaining independent from native backend
   selection. Shared component rendering consumes those resolved profiles
-  without direct desktop-platform variant branches. The same semantic
-  declaration resolves to Fluent, AppKit or GTK composition without an
-  application-level platform branch.
+  without direct desktop-platform variant branches. Shared composite surfaces
+  such as Workbench consume the same tokens instead of Windows-specific
+  compatibility constants. Feature-gated compatibility layouts for Document
+  Shell and Calculator Shell resolve through dedicated desktop profiles rather
+  than embedding one platform's dimensions. The same semantic declaration
+  resolves to Fluent, AppKit or GTK composition without an application-level
+  platform branch.
 - A compile-time backend profile owns `Host`, `Text`, `Raster`, `Presenter` and
   `Services`. Windows, AppKit and Linux implementations remain independent and
   can use different event loops, text stacks, rasterizers and system services.
@@ -292,6 +296,11 @@ theme.spacing.md;
 
 This keeps Windows 11 styling, dark mode, high contrast and brand themes
 replaceable without rewriting widgets.
+The internal platform component profile owns each desktop family's radius,
+spacing, control density, semantic type ramp, fallback font identity and focus
+treatment. Shared widgets consume those resolved values; Win32, AppKit and
+Linux backends remain responsible for system font discovery, shaping,
+rasterization and native resources.
 
 Reusable self-drawn layout patterns should stay product-neutral and preserve
 their verified interaction and rendering invariants. A semantic navigation/

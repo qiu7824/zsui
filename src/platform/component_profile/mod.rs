@@ -6,11 +6,10 @@
     feature = "tree",
     feature = "table",
     feature = "time-picker",
-    feature = "color-picker"
+    feature = "color-picker",
+    feature = "progress-ring"
 ))]
 use crate::ColorRole;
-#[cfg(any(feature = "label", feature = "button", feature = "tabs"))]
-use crate::TextRole;
 #[cfg(feature = "auto-suggest")]
 use crate::ZsAutoSuggestMetrics;
 #[cfg(feature = "breadcrumb")]
@@ -33,19 +32,26 @@ use crate::ZsTabViewMetrics;
 use crate::ZsTableMetrics;
 #[cfg(feature = "teaching-tip")]
 use crate::ZsTeachingTipMetrics;
-#[cfg(feature = "time-picker")]
-use crate::ZsTimePickerMetrics;
 #[cfg(feature = "toast")]
 use crate::ZsToastMetrics;
 #[cfg(feature = "toggle-button")]
 use crate::ZsToggleButtonMetrics;
+#[cfg(feature = "tooltip")]
+use crate::ZsTooltipMetrics;
 #[cfg(feature = "tree")]
 use crate::ZsTreeViewMetrics;
-#[cfg(feature = "label")]
-use crate::ZsuiSpacingTokens;
-use crate::{Dp, ZsBaseControlMetrics, ZsPlatformStyle};
+use crate::{
+    Dp, TextRole, TextWeight, ZsBaseControlMetrics, ZsPlatformStyle, ZsTypographyMetrics,
+    ZsuiControlMetrics, ZsuiRadiusTokens, ZsuiSpacingTokens,
+};
+#[cfg(feature = "time-picker")]
+use crate::{ZsClockFormat, ZsTimePickerMetrics};
 #[cfg(feature = "dialog")]
 use crate::{ZsContentDialogButton, ZsContentDialogMetrics, ZsContentDialogSpec};
+#[cfg(feature = "password-box")]
+use crate::{ZsPasswordBoxMetrics, ZsPasswordRevealMode};
+#[cfg(feature = "progress-ring")]
+use crate::{ZsProgressRingMetrics, ZsProgressRingSize};
 
 mod gtk;
 mod macos;
@@ -60,6 +66,9 @@ mod windows;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlatformComponentProfile {
     pub style: ZsPlatformStyle,
+    pub style_tokens: PlatformStyleTokenProfile,
+    pub typography: PlatformTypographyProfile,
+    pub focus_visuals: PlatformFocusVisualProfile,
     pub base_control: PlatformBaseControlProfile,
     #[cfg(feature = "label")]
     pub section: PlatformSectionProfile,
@@ -85,6 +94,12 @@ pub(crate) struct PlatformComponentProfile {
     pub toggle_button: PlatformToggleButtonProfile,
     #[cfg(feature = "number-box")]
     pub number_box: PlatformNumberBoxProfile,
+    #[cfg(feature = "password-box")]
+    pub password_box: PlatformPasswordBoxProfile,
+    #[cfg(feature = "tooltip")]
+    pub tooltip: PlatformTooltipProfile,
+    #[cfg(feature = "progress-ring")]
+    pub progress_ring: PlatformProgressRingProfile,
     #[cfg(feature = "auto-suggest")]
     pub auto_suggest: PlatformAutoSuggestProfile,
     #[cfg(feature = "grid-view")]
@@ -99,6 +114,10 @@ pub(crate) struct PlatformComponentProfile {
     pub color_picker: PlatformColorPickerProfile,
     #[cfg(feature = "command-palette")]
     pub command_palette: PlatformCommandPaletteProfile,
+    #[cfg(feature = "document-shell")]
+    pub document_shell: PlatformDocumentShellProfile,
+    #[cfg(feature = "calculator")]
+    pub calculator_shell: PlatformCalculatorShellProfile,
     pub shell: PlatformShellProfile,
 }
 
@@ -113,6 +132,83 @@ impl PlatformComponentProfile {
 
     pub(crate) const fn current() -> Self {
         Self::for_style(ZsPlatformStyle::current())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformStyleTokenProfile {
+    pub radius: ZsuiRadiusTokens,
+    pub spacing: ZsuiSpacingTokens,
+    pub controls: ZsuiControlMetrics,
+}
+
+impl PlatformStyleTokenProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).style_tokens
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformTypographyProfile {
+    body: ZsTypographyMetrics,
+    caption: ZsTypographyMetrics,
+    body_large: ZsTypographyMetrics,
+    subtitle: ZsTypographyMetrics,
+    title: ZsTypographyMetrics,
+    title_large: ZsTypographyMetrics,
+    display: ZsTypographyMetrics,
+    button: ZsTypographyMetrics,
+    icon: ZsTypographyMetrics,
+    monospace: ZsTypographyMetrics,
+    fallback: PlatformTypographyFallbackProfile,
+}
+
+impl PlatformTypographyProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).typography
+    }
+
+    pub(crate) const fn metrics(self, role: TextRole) -> ZsTypographyMetrics {
+        match role {
+            TextRole::Body => self.body,
+            TextRole::Caption => self.caption,
+            TextRole::BodyLarge => self.body_large,
+            TextRole::Subtitle => self.subtitle,
+            TextRole::Title => self.title,
+            TextRole::TitleLarge => self.title_large,
+            TextRole::Display => self.display,
+            TextRole::Button => self.button,
+            TextRole::Icon => self.icon,
+            TextRole::Monospace => self.monospace,
+        }
+    }
+
+    pub(crate) const fn fallback(self) -> PlatformTypographyFallbackProfile {
+        self.fallback
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlatformTypographyFallbackProfile {
+    pub source: &'static str,
+    pub ui_font_family: &'static str,
+    pub small_font_family: &'static str,
+    pub display_font_family: &'static str,
+    pub monospace_font_family: &'static str,
+    pub icon_font_family: &'static str,
+    pub rasterization: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformFocusVisualProfile {
+    pub text_input_indicator_height: Option<Dp>,
+    pub outline_inset: Dp,
+    pub outline_width: Dp,
+}
+
+impl PlatformFocusVisualProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).focus_visuals
     }
 }
 
@@ -664,6 +760,75 @@ impl PlatformNumberBoxProfile {
     }
 }
 
+#[cfg(feature = "password-box")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformPasswordBoxProfile {
+    pub metrics: ZsPasswordBoxMetrics,
+    pub default_reveal_mode: ZsPasswordRevealMode,
+}
+
+#[cfg(feature = "password-box")]
+impl PlatformPasswordBoxProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).password_box
+    }
+}
+
+#[cfg(feature = "tooltip")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformTooltipProfile {
+    pub metrics: ZsTooltipMetrics,
+}
+
+#[cfg(feature = "tooltip")]
+impl PlatformTooltipProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).tooltip
+    }
+}
+
+#[cfg(feature = "progress-ring")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformProgressRingProfile {
+    small: PlatformProgressRingSizeProfile,
+    medium: PlatformProgressRingSizeProfile,
+    large: PlatformProgressRingSizeProfile,
+    indeterminate_sweep_degrees: i16,
+    revolution_ms: u64,
+    indicator_role: ColorRole,
+    track_role: ColorRole,
+}
+
+#[cfg(feature = "progress-ring")]
+impl PlatformProgressRingProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).progress_ring
+    }
+
+    pub(crate) const fn metrics(self, size: ZsProgressRingSize) -> ZsProgressRingMetrics {
+        let size = match size {
+            ZsProgressRingSize::Small => self.small,
+            ZsProgressRingSize::Medium => self.medium,
+            ZsProgressRingSize::Large => self.large,
+        };
+        ZsProgressRingMetrics {
+            diameter: size.diameter,
+            stroke_width: size.stroke_width,
+            indeterminate_sweep_degrees: self.indeterminate_sweep_degrees,
+            revolution_ms: self.revolution_ms,
+            indicator_role: self.indicator_role,
+            track_role: self.track_role,
+        }
+    }
+}
+
+#[cfg(feature = "progress-ring")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformProgressRingSizeProfile {
+    diameter: Dp,
+    stroke_width: Dp,
+}
+
 #[cfg(feature = "auto-suggest")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlatformAutoSuggestProfile {
@@ -752,6 +917,7 @@ impl PlatformTableProfile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlatformTimePickerProfile {
     pub metrics: ZsTimePickerMetrics,
+    pub default_clock: ZsClockFormat,
     pub header_fill: ColorRole,
     pub selection: PlatformCollectionSelectionProfile,
 }
@@ -805,6 +971,89 @@ pub(crate) enum PlatformShellSectionComposition {
     FluentCards,
     AppKitForms,
     GtkBoxedLists,
+}
+
+#[cfg(feature = "document-shell")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformDocumentShellProfile {
+    pub tab_strip_height: Dp,
+    pub command_bar_height: Dp,
+    pub status_bar_height: Dp,
+    pub surface_margin: Dp,
+    pub editor_inset: Dp,
+    pub editor_vertical_gap: Dp,
+    pub compact_threshold: Dp,
+    pub regular_tab_width: Dp,
+    pub compact_tab_width: Dp,
+    pub minimum_tab_width: Dp,
+    pub reserved_tab_action_width: Dp,
+    pub tab_top_inset: Dp,
+    pub tab_height: Dp,
+    pub tab_action_size: Dp,
+    pub tab_action_inset: Dp,
+    pub tab_action_gap: Dp,
+    pub tab_radius: Dp,
+    pub tab_icon_leading: Dp,
+    pub tab_icon_size: Dp,
+    pub tab_label_leading: Dp,
+    pub clean_title_reserve: Dp,
+    pub dirty_title_reserve: Dp,
+    pub dirty_indicator_size: Dp,
+    pub dirty_indicator_gap: Dp,
+    pub command_height: Dp,
+    pub command_gap: Dp,
+    pub command_group_gap: Dp,
+    pub command_radius: Dp,
+    pub command_icon_size: Dp,
+    pub command_icon_leading: Dp,
+    pub command_label_gap: Dp,
+    pub command_label_trailing: Dp,
+    pub separator_vertical_inset: Dp,
+    pub editor_radius: Dp,
+    pub status_horizontal_inset: Dp,
+}
+
+#[cfg(feature = "calculator")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformCalculatorShellProfile {
+    pub header_height: Dp,
+    pub display_block_height: Dp,
+    pub memory_row_height: Dp,
+    pub surface_margin: Dp,
+    pub button_gap: Dp,
+    pub expression_top_gap: Dp,
+    pub expression_height: Dp,
+    pub display_bottom_gap: Dp,
+    pub memory_indicator_width: Dp,
+    pub header_action_size: Dp,
+    pub header_icon_leading: Dp,
+    pub header_icon_size: Dp,
+    pub header_title_leading: Dp,
+    pub header_title_trailing_reserve: Dp,
+    pub history_clear_width: Dp,
+    pub history_clear_height: Dp,
+    pub history_clear_top_inset: Dp,
+    pub history_clear_trailing_inset: Dp,
+    pub history_radius: Dp,
+    pub history_horizontal_inset: Dp,
+    pub history_title_top_inset: Dp,
+    pub history_title_height: Dp,
+    pub history_title_trailing_reserve: Dp,
+    pub history_empty_top_inset: Dp,
+    pub history_empty_height: Dp,
+    pub history_entries_top_inset: Dp,
+    pub history_expression_height: Dp,
+    pub history_result_height: Dp,
+    pub history_entry_gap: Dp,
+    pub button_radius: Dp,
+    pub button_icon_size: Dp,
+    pub number_fill: ColorRole,
+    pub function_fill: ColorRole,
+    pub operator_fill: ColorRole,
+    pub draw_neutral_button_border: bool,
+    pub title_weight: TextWeight,
+    pub display_weight: TextWeight,
+    pub accent_weight: TextWeight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -880,6 +1129,33 @@ mod tests {
         assert_eq!(windows.style, ZsPlatformStyle::Windows);
         assert_eq!(macos.style, ZsPlatformStyle::Macos);
         assert_eq!(gtk.style, ZsPlatformStyle::Gtk);
+        assert_eq!(windows.style_tokens.radius.medium, Dp::new(8.0));
+        assert_eq!(macos.style_tokens.spacing.page_padding, Dp::new(20.0));
+        assert_eq!(gtk.style_tokens.controls.standard_height, Dp::new(34.0));
+        assert_eq!(
+            windows.typography.metrics(TextRole::Body),
+            ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            macos.typography.metrics(TextRole::Title),
+            ZsTypographyMetrics::new(22.0, 26.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            gtk.typography.metrics(TextRole::BodyLarge),
+            ZsTypographyMetrics::new(16.5, 22.0, TextWeight::Bold)
+        );
+        assert_eq!(
+            windows.typography.fallback().small_font_family,
+            "Segoe UI Variable Small"
+        );
+        assert_eq!(macos.typography.fallback().monospace_font_family, "Menlo");
+        assert_eq!(gtk.typography.fallback().rasterization, "pango_cairo");
+        assert_eq!(
+            windows.focus_visuals.text_input_indicator_height,
+            Some(Dp::new(2.0))
+        );
+        assert_eq!(macos.focus_visuals.text_input_indicator_height, None);
+        assert_eq!(gtk.focus_visuals.outline_width, Dp::new(2.0));
         assert_eq!(windows.base_control.metrics.button_height, Dp::new(32.0));
         assert_eq!(macos.base_control.metrics.button_height, Dp::new(28.0));
         assert_eq!(gtk.base_control.metrics.button_height, Dp::new(34.0));
@@ -1076,6 +1352,51 @@ mod tests {
             assert_eq!(macos.number_box.button_icon_size, Dp::new(10.0));
         }
 
+        #[cfg(feature = "password-box")]
+        {
+            assert_eq!(windows.password_box.metrics.minimum_height, Dp::new(32.0));
+            assert_eq!(
+                windows.password_box.default_reveal_mode,
+                ZsPasswordRevealMode::Peek
+            );
+            assert_eq!(macos.password_box.metrics.radius, Dp::new(5.0));
+            assert_eq!(
+                gtk.password_box.default_reveal_mode,
+                ZsPasswordRevealMode::Hidden
+            );
+        }
+
+        #[cfg(feature = "tooltip")]
+        {
+            assert_eq!(windows.tooltip.metrics.maximum_width, Dp::new(320.0));
+            assert_eq!(macos.tooltip.metrics.line_height, Dp::new(15.0));
+            assert_eq!(gtk.tooltip.metrics.radius, Dp::new(6.0));
+        }
+
+        #[cfg(feature = "progress-ring")]
+        {
+            assert_eq!(
+                windows
+                    .progress_ring
+                    .metrics(ZsProgressRingSize::Small)
+                    .diameter,
+                Dp::new(20.0)
+            );
+            assert_eq!(
+                macos
+                    .progress_ring
+                    .metrics(ZsProgressRingSize::Medium)
+                    .revolution_ms,
+                900
+            );
+            assert_eq!(
+                gtk.progress_ring
+                    .metrics(ZsProgressRingSize::Large)
+                    .indicator_role,
+                ColorRole::PrimaryText
+            );
+        }
+
         #[cfg(feature = "auto-suggest")]
         {
             assert!(!windows.auto_suggest.metrics.leading_search_icon);
@@ -1115,6 +1436,11 @@ mod tests {
 
         #[cfg(feature = "time-picker")]
         {
+            assert_eq!(windows.time_picker.default_clock, ZsClockFormat::TwelveHour);
+            assert_eq!(
+                macos.time_picker.default_clock,
+                ZsClockFormat::TwentyFourHour
+            );
             assert_eq!(windows.time_picker.header_fill, ColorRole::Control);
             assert_eq!(macos.time_picker.header_fill, ColorRole::Surface);
             assert_eq!(
@@ -1139,6 +1465,26 @@ mod tests {
             );
             assert_eq!(macos.command_palette.scrim_alpha, 44);
             assert_eq!(gtk.command_palette.scrim_alpha, 72);
+        }
+
+        #[cfg(feature = "document-shell")]
+        {
+            assert_eq!(windows.document_shell.tab_strip_height, Dp::new(48.0));
+            assert_eq!(macos.document_shell.tab_strip_height, Dp::new(32.0));
+            assert_eq!(gtk.document_shell.tab_strip_height, Dp::new(42.0));
+            assert_eq!(windows.document_shell.command_height, Dp::new(32.0));
+            assert_eq!(macos.document_shell.command_height, Dp::new(28.0));
+            assert_eq!(gtk.document_shell.command_height, Dp::new(34.0));
+        }
+
+        #[cfg(feature = "calculator")]
+        {
+            assert_eq!(windows.calculator_shell.header_height, Dp::new(56.0));
+            assert_eq!(macos.calculator_shell.header_height, Dp::new(40.0));
+            assert_eq!(gtk.calculator_shell.header_height, Dp::new(48.0));
+            assert!(windows.calculator_shell.draw_neutral_button_border);
+            assert!(!macos.calculator_shell.draw_neutral_button_border);
+            assert_eq!(gtk.calculator_shell.button_radius, Dp::new(9.0));
         }
 
         assert_eq!(

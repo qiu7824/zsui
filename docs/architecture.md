@@ -273,6 +273,11 @@ the DPI-aware tab strip, command bar, editor-frame inset, status surface,
 semantic icon commands and pointer hit regions. A host can place a native text
 service inside `ZsDocumentShellLayout::editor_content`, preserving IME and
 accessibility while the surrounding surface uses the buffered self-draw path.
+Its compatibility layout and draw-plan entry points resolve tab, toolbar,
+status, editor and command geometry from the internal Windows, AppKit or GTK
+document-shell profile rather than fixed Fluent dimensions. Normal
+applications compose the same semantics with `command_bar`, `tab_view` and
+`text_editor` in one shared View.
 The shell does not own files, encodings, accelerator dispatch or platform
 handles; those remain host/application services.
 
@@ -284,13 +289,17 @@ history from shared View primitives. `ZsCalculatorViewIds` supplies a stable
 per-instance action namespace. The unchanged acceptance source uses
 `native_window(...).stateful_view(...)` on Win32, AppKit and Linux; target
 selection, native lifecycle, text shaping and presentation remain in the
-desktop backends. Scientific, programmer, graphing and conversion modes remain
-separate future surfaces.
+desktop backends. The low-level direct-draw compatibility shell resolves its
+header, display, history and button treatment from a separate platform profile;
+it does not place Windows dimensions in the application-facing View path.
+Scientific, programmer, graphing and conversion modes remain separate future
+surfaces.
 
 The workbench does not own private glyph strings or an independent visual
-palette. `src/style.rs` defines the shared Fluent grid, control/card radii,
-control metrics, type ramp and semantic colors. `src/icon.rs` defines semantic
-`ZsIcon` values and platform symbol names. A workbench draw plan emits
+palette. The internal component profile supplies the active platform's spacing,
+control/card radii, control metrics and semantic type ramp; the public Fluent
+constants in `src/style.rs` remain compatibility exports only. `src/icon.rs`
+defines semantic `ZsIcon` values and platform symbol names. A workbench draw plan emits
 `NativeDrawCommand::Icon`; the Windows GDI sink resolves that command with
 Segoe Fluent Icons and uses a raster asset only when `Original` color mode is
 requested. This mirrors the IconElement/IconSource boundary without exposing a
@@ -528,19 +537,30 @@ Platform-owned defaults live separately in
 `src/platform/component_profile/windows.rs`, `macos.rs` and `gtk.rs`; they
 contain component composition, metrics and interaction conventions but no
 native host or renderer implementation.
+The same profile boundary owns global radius, spacing and control-size tokens,
+the semantic typography ramp and fallback family identity, and text-input focus
+treatment. Backends still resolve installed font families, live font metrics
+and rasterization resources; those target operations do not move into the
+component profile.
 Base controls, navigation rows, tabs, command bars, content dialogs, feedback
-surfaces, breadcrumbs, toggle buttons, number boxes, search fields, grid/tree/
-table collections and shells consume those profiles for layout, paint, hit
-testing and keyboard behavior instead of matching platforms in shared
-component code. The dialog profile owns action order, equal-versus-intrinsic
-sizing, trailing alignment, modal scrim strength and visual-order focus
-traversal; the public dialog model retains only semantic Primary, Secondary
-and Close responses. Feature-gated profiles independently own InfoBar,
-TeachingTip, Toast, BreadcrumbBar, ToggleButton, NumberBox, AutoSuggestBox,
-GridView, TreeView, DataGrid, TimePicker, ColorPicker and CommandPalette
-composition, metrics and interaction treatments. Production
-`widget_render.rs` therefore consumes resolved profiles and contains no direct
-Windows, macOS or GTK variant branches.
+surfaces, breadcrumbs, toggle buttons, number and password boxes, tooltips,
+progress rings, search fields, grid/tree/table collections and shells consume
+those profiles for layout, paint, hit testing and keyboard behavior instead of
+matching platforms in shared component code. The dialog profile owns action
+order, equal-versus-intrinsic sizing, trailing alignment, modal scrim strength
+and visual-order focus traversal; the public dialog model retains only semantic
+Primary, Secondary and Close responses. Feature-gated profiles independently
+own InfoBar, TeachingTip, Toast, BreadcrumbBar, ToggleButton, NumberBox,
+PasswordBox, ToolTip, ProgressRing, AutoSuggestBox, GridView, TreeView,
+DataGrid, TimePicker, ColorPicker and CommandPalette composition, metrics and
+interaction treatments. The direct-draw Document Shell and Calculator Shell
+compatibility surfaces have dedicated feature-gated profiles as well.
+Production `widget_render.rs`, `password_box.rs`, `tooltip.rs`, `progress.rs`,
+`style.rs`, `render_protocol.rs` and the native input focus decorator therefore
+consume resolved profiles rather than direct Windows, macOS or GTK variant
+branches. The reusable Workbench shell also resolves control heights, icon
+sizes and surface radii through the same token profile; it does not depend on
+Fluent compatibility constants.
 `src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
 Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single
@@ -591,9 +611,9 @@ projects AppKit key equivalents and GTK accelerator strings for their native
 menu adapters.
 
 Regression tests scan the
-Gallery, Notepad and desktop showcase authoring slices so target `cfg`, platform
-enums and raw native handles cannot silently return to ordinary `view`/`update`
-code.
+Gallery, Notepad, Calculator, Workbench and other ordinary desktop application
+sources so target `cfg`, platform enums and raw native handles cannot silently
+return to application authoring or smoke setup.
 
 The shared text-input geometry owns only the `NativeTextShaper` contract, its
 bounded shaped-line cache and the platform-neutral logical-cell fallback.
@@ -602,7 +622,9 @@ Cosmic Text and GTK Pango construct backend-owned shapers and inject them into
 the per-window input runtime. Their contexts, scale queries and shaping calls
 do not appear as variants in the shared input core, so another platform adds a
 shaper implementation without extending a cross-platform enum or matching on
-its native context type.
+its native context type. `src/platform/text_shaper_boundary.rs` contains the
+target execution constraint needed by the owning event loop; the shared input
+module contains no target compile gate.
 
 The retained public View payload is semantic as well: toolbar buttons and
 adaptive navigation nodes store icons, labels, item counts and state, but no

@@ -328,26 +328,7 @@ impl Default for ZsuiRadiusTokens {
 
 impl ZsuiRadiusTokens {
     pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
-        match platform {
-            crate::ZsBaseControlPlatformStyle::Windows => Self {
-                small: Dp::new(ZSUI_FLUENT_CONTROL_RADIUS as f32),
-                medium: Dp::new(ZSUI_FLUENT_CARD_RADIUS as f32),
-                large: Dp::new(12.0),
-                pill: Dp::new(999.0),
-            },
-            crate::ZsBaseControlPlatformStyle::Macos => Self {
-                small: Dp::new(5.0),
-                medium: Dp::new(6.0),
-                large: Dp::new(10.0),
-                pill: Dp::new(999.0),
-            },
-            crate::ZsBaseControlPlatformStyle::Gtk => Self {
-                small: Dp::new(6.0),
-                medium: Dp::new(12.0),
-                large: Dp::new(18.0),
-                pill: Dp::new(999.0),
-            },
-        }
+        crate::platform_component_profile::PlatformStyleTokenProfile::for_platform(platform).radius
     }
 }
 
@@ -362,38 +343,7 @@ impl ZsuiSpacingTokens {
     /// desktop family. Normal applications use [`Default`] and never select a
     /// platform; the explicit form exists for framework proofs.
     pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
-        match platform {
-            crate::ZsBaseControlPlatformStyle::Windows => Self {
-                xs: Dp::new(ZSUI_FLUENT_GRID_UNIT as f32),
-                sm: Dp::new((ZSUI_FLUENT_GRID_UNIT * 2) as f32),
-                md: Dp::new((ZSUI_FLUENT_GRID_UNIT * 3) as f32),
-                lg: Dp::new((ZSUI_FLUENT_GRID_UNIT * 4) as f32),
-                xl: Dp::new((ZSUI_FLUENT_GRID_UNIT * 6) as f32),
-                content_gap: Dp::new(10.0),
-                content_padding: Dp::new(12.0),
-                page_padding: Dp::new(24.0),
-            },
-            crate::ZsBaseControlPlatformStyle::Macos => Self {
-                xs: Dp::new(2.0),
-                sm: Dp::new(6.0),
-                md: Dp::new(8.0),
-                lg: Dp::new(12.0),
-                xl: Dp::new(20.0),
-                content_gap: Dp::new(8.0),
-                content_padding: Dp::new(12.0),
-                page_padding: Dp::new(20.0),
-            },
-            crate::ZsBaseControlPlatformStyle::Gtk => Self {
-                xs: Dp::new(4.0),
-                sm: Dp::new(8.0),
-                md: Dp::new(12.0),
-                lg: Dp::new(16.0),
-                xl: Dp::new(24.0),
-                content_gap: Dp::new(12.0),
-                content_padding: Dp::new(16.0),
-                page_padding: Dp::new(24.0),
-            },
-        }
+        crate::platform_component_profile::PlatformStyleTokenProfile::for_platform(platform).spacing
     }
 }
 
@@ -446,32 +396,8 @@ impl Default for ZsuiControlMetrics {
 
 impl ZsuiControlMetrics {
     pub(crate) const fn for_platform(platform: crate::ZsBaseControlPlatformStyle) -> Self {
-        match platform {
-            crate::ZsBaseControlPlatformStyle::Windows => Self {
-                compact_height: Dp::new(ZSUI_FLUENT_COMPACT_CONTROL_HEIGHT as f32),
-                standard_height: Dp::new(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT as f32),
-                touch_target: Dp::new(ZSUI_FLUENT_TOUCH_TARGET as f32),
-                navigation_row_height: Dp::new(36.0),
-                small_icon: Dp::new(ZSUI_FLUENT_SMALL_ICON_SIZE as f32),
-                standard_icon: Dp::new(ZSUI_FLUENT_STANDARD_ICON_SIZE as f32),
-            },
-            crate::ZsBaseControlPlatformStyle::Macos => Self {
-                compact_height: Dp::new(22.0),
-                standard_height: Dp::new(28.0),
-                touch_target: Dp::new(32.0),
-                navigation_row_height: Dp::new(28.0),
-                small_icon: Dp::new(16.0),
-                standard_icon: Dp::new(16.0),
-            },
-            crate::ZsBaseControlPlatformStyle::Gtk => Self {
-                compact_height: Dp::new(30.0),
-                standard_height: Dp::new(34.0),
-                touch_target: Dp::new(40.0),
-                navigation_row_height: Dp::new(34.0),
-                small_icon: Dp::new(16.0),
-                standard_icon: Dp::new(18.0),
-            },
-        }
+        crate::platform_component_profile::PlatformStyleTokenProfile::for_platform(platform)
+            .controls
     }
 }
 

@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let report = builder.run_smoke(
             NativeWindowSmokeRunOptions::new(1_800)
                 .screenshot_file(screenshot)
-                .require_screenshot(cfg!(windows))
+                .require_screenshot(true)
                 .native_view_click(Point { x: 120, y: 184 })
                 .native_view_scroll(Point { x: 820, y: 430 }, 48),
         )?;

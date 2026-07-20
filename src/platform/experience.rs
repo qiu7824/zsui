@@ -325,6 +325,67 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_desktop_examples_do_not_select_targets_for_smoke_or_rendering() {
+        let applications = [
+            (
+                "desktop_native_showcase",
+                include_str!("../../examples/desktop_native_showcase.rs"),
+            ),
+            (
+                "component_gallery",
+                include_str!("../../examples/component_gallery.rs"),
+            ),
+            (
+                "zsui_notepad",
+                include_str!("../../examples/zsui_notepad.rs"),
+            ),
+            (
+                "zsui_calculator",
+                include_str!("../../examples/zsui_calculator.rs"),
+            ),
+            ("codex_zsui", include_str!("../../examples/codex_zsui.rs")),
+            (
+                "invoice_workbench",
+                include_str!("../../examples/invoice_workbench.rs"),
+            ),
+            (
+                "navigation_shell_layout",
+                include_str!("../../examples/navigation_shell_layout.rs"),
+            ),
+            (
+                "rust_first_view",
+                include_str!("../../examples/rust_first_view.rs"),
+            ),
+            (
+                "workbench_shell",
+                include_str!("../../examples/workbench_shell.rs"),
+            ),
+        ];
+
+        for (name, source) in applications {
+            let production = source
+                .split_once("#[cfg(test)]")
+                .map_or(source, |(production, _)| production);
+            for forbidden in [
+                "cfg!(",
+                "#[cfg(",
+                "target_os",
+                "NativeUiPlatform",
+                "windows_sys",
+                "objc2",
+                "GtkWidget",
+                "HWND",
+                "NSView",
+            ] {
+                assert!(
+                    !production.contains(forbidden),
+                    "{name} must leave target selection to the framework: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn public_view_builders_do_not_accept_platform_style_parameters() {
         let view_sources = [
             include_str!("../view/widgets/button.rs"),
@@ -488,6 +549,9 @@ mod tests {
             1
         );
         for contract in [
+            "PlatformStyleTokenProfile",
+            "PlatformTypographyProfile",
+            "PlatformFocusVisualProfile",
             "PlatformBaseControlProfile",
             "PlatformButtonProfile",
             "PlatformNavigationItemProfile",
@@ -502,6 +566,9 @@ mod tests {
             "PlatformBreadcrumbProfile",
             "PlatformToggleButtonProfile",
             "PlatformNumberBoxProfile",
+            "PlatformPasswordBoxProfile",
+            "PlatformTooltipProfile",
+            "PlatformProgressRingProfile",
             "PlatformAutoSuggestProfile",
             "PlatformGridViewProfile",
             "PlatformTreeViewProfile",
@@ -802,6 +869,98 @@ mod tests {
     }
 
     #[test]
+    fn shared_tokens_typography_and_focus_visuals_consume_platform_profiles() {
+        let style = include_str!("../style.rs");
+        let style_core = style
+            .split_once("#[cfg(test)]")
+            .map_or(style, |(core, _)| core);
+        assert!(style_core.contains("PlatformStyleTokenProfile::for_platform"));
+
+        let render = include_str!("../render_protocol.rs");
+        let render_core = render
+            .split_once("#[cfg(test)]")
+            .map_or(render, |(core, _)| core);
+        assert!(render_core.contains("PlatformTypographyProfile::for_platform"));
+
+        let input = include_str!("../native_input_visuals.rs");
+        let input_core = input
+            .split_once("mod tests {")
+            .map_or(input, |(core, _)| core);
+        assert!(input_core.contains("PlatformFocusVisualProfile::for_platform"));
+        assert!(!input_core.contains("#[cfg(windows)]"));
+        assert!(!input_core.contains("#[cfg(not(windows))]"));
+        assert!(include_str!("text_shaper_boundary.rs").contains("#[cfg(windows)]"));
+
+        let shared_platform_style = include_str!("style.rs");
+        let shared_platform_style_core = shared_platform_style
+            .split_once("#[cfg(test)]")
+            .map_or(shared_platform_style, |(core, _)| core);
+        assert!(shared_platform_style_core.contains("PlatformTimePickerProfile::for_platform"));
+        assert!(shared_platform_style_core.contains("PlatformPasswordBoxProfile::for_platform"));
+
+        for (name, source) in [
+            ("style tokens", style_core),
+            ("typography", render_core),
+            ("input focus", input_core),
+            ("shared platform behavior", shared_platform_style_core),
+        ] {
+            for platform in ["Windows", "Macos", "Gtk"] {
+                let forbidden = format!("PlatformStyle::{platform}");
+                assert!(
+                    !source.contains(&forbidden),
+                    "{name} contains a desktop platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn password_tooltip_and_progress_ring_consume_internal_component_profiles() {
+        for (name, source, profile, style_alias) in [
+            (
+                "password box",
+                include_str!("../password_box.rs"),
+                "PlatformPasswordBoxProfile::for_platform",
+                "ZsPasswordBoxPlatformStyle",
+            ),
+            (
+                "tooltip",
+                include_str!("../tooltip.rs"),
+                "PlatformTooltipProfile::for_platform",
+                "ZsTooltipPlatformStyle",
+            ),
+            (
+                "progress ring",
+                include_str!("../progress.rs"),
+                "PlatformProgressRingProfile::for_platform",
+                "ZsProgressRingPlatformStyle",
+            ),
+        ] {
+            let production = source
+                .split_once("#[cfg(test)]")
+                .map_or(source, |(production, _)| production);
+            assert!(
+                production.contains(profile),
+                "{name} should resolve through {profile}"
+            );
+            for platform in ["Windows", "Macos", "Gtk"] {
+                let forbidden = format!("{style_alias}::{platform}");
+                assert!(
+                    !production.contains(&forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+
+        let platform_style = include_str!("style.rs");
+        let reveal_start = platform_style
+            .find("pub const fn default_password_reveal_mode")
+            .expect("password reveal default should exist");
+        let reveal = &platform_style[reveal_start..];
+        assert!(reveal.contains("PlatformPasswordBoxProfile::for_platform"));
+    }
+
+    #[test]
     fn search_and_collection_controls_consume_internal_component_profiles() {
         let render = include_str!("../widget_render.rs");
         for (name, start_marker, end_marker, profile, style_alias) in [
@@ -915,6 +1074,65 @@ mod tests {
             assert!(
                 !production.contains(&forbidden),
                 "shared widget renderer contains a desktop branch outside profiles: {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn workbench_consumes_platform_tokens_without_fluent_constants() {
+        let workbench = include_str!("../workbench.rs");
+        let production = workbench
+            .split_once("#[cfg(test)]")
+            .map_or(workbench, |(production, _)| production);
+
+        assert!(production.contains("PlatformComponentProfile::current().style_tokens"));
+        assert!(!production.contains("ZSUI_FLUENT_"));
+        assert!(!production.contains("cfg!(target_os"));
+        assert!(!production.contains("#[cfg(target_os"));
+    }
+
+    #[test]
+    fn document_shell_consumes_the_internal_platform_profile() {
+        let shell = include_str!("../document_shell.rs");
+        let production = shell
+            .split_once("#[cfg(test)]")
+            .map_or(shell, |(production, _)| production);
+
+        assert!(production.contains("PlatformComponentProfile::current()"));
+        assert!(production.contains("PlatformDocumentShellProfile"));
+        for forbidden in [
+            "TAB_STRIP_HEIGHT_DP",
+            "COMMAND_BAR_HEIGHT_DP",
+            "ZSUI_FLUENT_",
+            "cfg!(target_os",
+            "#[cfg(target_os",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "document shell bypasses the platform profile: {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn calculator_shell_consumes_the_internal_platform_profile() {
+        let calculator = include_str!("../calculator.rs");
+        let production = calculator
+            .split_once("#[cfg(test)]")
+            .map_or(calculator, |(production, _)| production);
+
+        assert!(production.contains("PlatformComponentProfile::current().calculator_shell"));
+        assert!(production.contains("PlatformCalculatorShellProfile"));
+        for forbidden in [
+            "HEADER_HEIGHT_DP",
+            "DISPLAY_HEIGHT_DP",
+            "ZSUI_FLUENT_",
+            "cfg!(target_os",
+            "#[cfg(target_os",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "calculator shell bypasses the platform profile: {forbidden}"
             );
         }
     }

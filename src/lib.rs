@@ -163,6 +163,8 @@ mod platform_identity;
 mod platform_menu_accelerator;
 #[path = "platform/style.rs"]
 mod platform_style;
+#[path = "platform/text_shaper_boundary.rs"]
+mod platform_text_shaper;
 pub mod product_adapter;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
 pub mod progress;

@@ -1113,7 +1113,7 @@ fn main() -> ZsuiResult<()> {
             .max(250);
         let mut options = NativeWindowSmokeRunOptions::new(proof_duration_ms)
             .screenshot_file(&screenshot)
-            .require_screenshot(native_proof || cfg!(windows));
+            .require_screenshot(true);
         if initial_page == GalleryPage::Inputs {
             let click_points = {
                 let interaction = builder.native_view_interaction_plan().ok_or_else(|| {

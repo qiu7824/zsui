@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let report = builder.run_smoke(
             NativeWindowSmokeRunOptions::new(1400)
                 .screenshot_file(format!("{artifact_dir}/window.png"))
-                .require_screenshot(cfg!(windows)),
+                .require_screenshot(true),
         )?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());

@@ -63,24 +63,15 @@ pub(crate) trait NativeTextShaper {
     fn shape_line(&self, text: &str) -> Option<NativeShapedTextLine>;
 }
 
-#[cfg(windows)]
-pub(crate) trait NativePlatformTextShaper: NativeTextShaper + Send + Sync {}
-
-#[cfg(windows)]
-impl<T> NativePlatformTextShaper for T where T: NativeTextShaper + Send + Sync {}
-
-#[cfg(not(windows))]
-pub(crate) trait NativePlatformTextShaper: NativeTextShaper {}
-
-#[cfg(not(windows))]
-impl<T> NativePlatformTextShaper for T where T: NativeTextShaper {}
-
 #[allow(dead_code)]
 #[derive(Clone, Default)]
 pub(crate) enum NativeTextShapingBackend {
     #[default]
     LogicalCells,
-    Platform(Arc<dyn NativePlatformTextShaper>, NativeTextShapingCache),
+    Platform(
+        Arc<dyn crate::platform_text_shaper::NativePlatformTextShaper>,
+        NativeTextShapingCache,
+    ),
     #[cfg(test)]
     Test(fn(&str, i32) -> Option<NativeShapedTextLine>),
 }
@@ -98,7 +89,9 @@ impl std::fmt::Debug for NativeTextShapingBackend {
 
 impl NativeTextShapingBackend {
     #[allow(dead_code)]
-    pub(crate) fn platform(shaper: impl NativePlatformTextShaper + 'static) -> Self {
+    pub(crate) fn platform(
+        shaper: impl crate::platform_text_shaper::NativePlatformTextShaper + 'static,
+    ) -> Self {
         Self::Platform(Arc::new(shaper), NativeTextShapingCache::default())
     }
 
@@ -1434,62 +1427,47 @@ pub(crate) fn decorate_native_focus_ring(
     ) {
         return None;
     }
-    #[cfg(feature = "auto-suggest")]
-    if target.kind == ViewHitTargetKind::AutoSuggestBox
-        && crate::ZsAutoSuggestPlatformStyle::current()
-            == crate::ZsAutoSuggestPlatformStyle::Windows
-    {
-        let height = Dp::new(2.0).to_px(dpi).round_i32().max(1);
-        let indicator = Rect {
-            x: target.bounds.x,
-            y: target
-                .bounds
-                .y
-                .saturating_add(target.bounds.height)
-                .saturating_sub(height),
-            width: target.bounds.width,
-            height,
-        };
-        plan.push(NativeDrawCommand::FillRect {
-            rect: indicator,
-            fill: NativeDrawFill::Role(ColorRole::Accent),
-        });
-        return Some(indicator);
-    }
+    let focus_profile = crate::platform_component_profile::PlatformFocusVisualProfile::for_platform(
+        crate::ZsPlatformStyle::current(),
+    );
     #[allow(unused_mut)]
-    let mut uses_windows_text_indicator = matches!(
+    let mut uses_text_input_indicator = matches!(
         target.kind,
         ViewHitTargetKind::Textbox | ViewHitTargetKind::TextEditor
     );
+    #[cfg(feature = "auto-suggest")]
+    {
+        uses_text_input_indicator |= target.kind == ViewHitTargetKind::AutoSuggestBox;
+    }
     #[cfg(feature = "password-box")]
     {
-        uses_windows_text_indicator |= target.kind == ViewHitTargetKind::PasswordBox;
+        uses_text_input_indicator |= target.kind == ViewHitTargetKind::PasswordBox;
     }
     #[cfg(feature = "number-box")]
     {
-        uses_windows_text_indicator |= target.kind == ViewHitTargetKind::NumberBox;
+        uses_text_input_indicator |= target.kind == ViewHitTargetKind::NumberBox;
     }
-    if crate::ZsBaseControlPlatformStyle::current() == crate::ZsBaseControlPlatformStyle::Windows
-        && uses_windows_text_indicator
-    {
-        let height = Dp::new(2.0).to_px(dpi).round_i32().max(1);
-        let indicator = Rect {
-            x: target.bounds.x,
-            y: target
-                .bounds
-                .y
-                .saturating_add(target.bounds.height)
-                .saturating_sub(height),
-            width: target.bounds.width,
-            height,
-        };
-        plan.push(NativeDrawCommand::FillRect {
-            rect: indicator,
-            fill: NativeDrawFill::Role(ColorRole::Accent),
-        });
-        return Some(indicator);
+    if uses_text_input_indicator {
+        if let Some(height) = focus_profile.text_input_indicator_height {
+            let height = height.to_px(dpi).round_i32().max(1);
+            let indicator = Rect {
+                x: target.bounds.x,
+                y: target
+                    .bounds
+                    .y
+                    .saturating_add(target.bounds.height)
+                    .saturating_sub(height),
+                width: target.bounds.width,
+                height,
+            };
+            plan.push(NativeDrawCommand::FillRect {
+                rect: indicator,
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+            });
+            return Some(indicator);
+        }
     }
-    let requested_inset = Dp::new(1.0).to_px(dpi).round_i32().max(1);
+    let requested_inset = focus_profile.outline_inset.to_px(dpi).round_i32().max(1);
     let maximum_inset = (target.bounds.width.min(target.bounds.height).max(1) - 1) / 2;
     let inset = requested_inset.min(maximum_inset.max(0));
     let ring = Rect {
@@ -1498,7 +1476,7 @@ pub(crate) fn decorate_native_focus_ring(
         width: target.bounds.width.saturating_sub(inset.saturating_mul(2)),
         height: target.bounds.height.saturating_sub(inset.saturating_mul(2)),
     };
-    let width = Dp::new(2.0).to_px(dpi).round_i32().max(1);
+    let width = focus_profile.outline_width.to_px(dpi).round_i32().max(1);
     plan.push(NativeDrawCommand::StrokeRect {
         rect: ring,
         stroke: NativeDrawFill::Role(ColorRole::Accent),
@@ -2246,8 +2224,10 @@ mod tests {
             .find("pub(crate) struct NativeShapedTextCluster")
             .expect("shared shaped cluster should follow the backend contract");
         let contract = &source[contract_start..contract_end];
-        assert!(contract.contains("Platform(Arc<dyn NativePlatformTextShaper>"));
+        assert!(contract.contains("platform_text_shaper::NativePlatformTextShaper"));
         for forbidden in [
+            "#[cfg(windows)]",
+            "#[cfg(not(windows))]",
             "WindowsGdi(",
             "AppKit(",
             "LinuxDirect(",

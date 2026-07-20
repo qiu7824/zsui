@@ -162,38 +162,8 @@ pub const fn zs_progress_ring_metrics(
     style: ZsProgressRingPlatformStyle,
     size: ZsProgressRingSize,
 ) -> ZsProgressRingMetrics {
-    let (diameter, stroke_width) = match (style, size) {
-        (ZsProgressRingPlatformStyle::Windows, ZsProgressRingSize::Small) => (20.0, 2.0),
-        (ZsProgressRingPlatformStyle::Windows, ZsProgressRingSize::Medium) => (32.0, 3.0),
-        (ZsProgressRingPlatformStyle::Windows, ZsProgressRingSize::Large) => (48.0, 4.0),
-        (ZsProgressRingPlatformStyle::Macos, ZsProgressRingSize::Small) => (16.0, 2.0),
-        (ZsProgressRingPlatformStyle::Macos, ZsProgressRingSize::Medium) => (20.0, 2.0),
-        (ZsProgressRingPlatformStyle::Macos, ZsProgressRingSize::Large) => (32.0, 3.0),
-        (ZsProgressRingPlatformStyle::Gtk, ZsProgressRingSize::Small) => (16.0, 2.0),
-        (ZsProgressRingPlatformStyle::Gtk, ZsProgressRingSize::Medium) => (24.0, 2.0),
-        (ZsProgressRingPlatformStyle::Gtk, ZsProgressRingSize::Large) => (32.0, 3.0),
-    };
-    ZsProgressRingMetrics {
-        diameter: Dp::new(diameter),
-        stroke_width: Dp::new(stroke_width),
-        indeterminate_sweep_degrees: match style {
-            ZsProgressRingPlatformStyle::Windows => 110,
-            ZsProgressRingPlatformStyle::Macos => 90,
-            ZsProgressRingPlatformStyle::Gtk => 80,
-        },
-        revolution_ms: match style {
-            ZsProgressRingPlatformStyle::Windows => 1_000,
-            ZsProgressRingPlatformStyle::Macos => 900,
-            ZsProgressRingPlatformStyle::Gtk => 800,
-        },
-        indicator_role: match style {
-            ZsProgressRingPlatformStyle::Windows => ColorRole::Accent,
-            ZsProgressRingPlatformStyle::Macos | ZsProgressRingPlatformStyle::Gtk => {
-                ColorRole::PrimaryText
-            }
-        },
-        track_role: ColorRole::Control,
-    }
+    crate::platform_component_profile::PlatformProgressRingProfile::for_platform(style)
+        .metrics(size)
 }
 
 #[cfg(feature = "progress-ring")]

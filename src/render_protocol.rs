@@ -173,36 +173,19 @@ impl NativeTypographyProfile {
     }
 
     pub fn fallback(platform: ZsTypographyPlatformStyle, typography_scale: f32) -> Self {
-        match platform {
-            ZsTypographyPlatformStyle::Windows => Self::new(
-                platform,
-                "windows_semantic_fallback",
-                "Segoe UI Variable Text",
-                "Consolas",
-                "Segoe Fluent Icons",
-                typography_scale,
-                "gdi_cleartype",
-            )
-            .with_role_families("Segoe UI Variable Small", "Segoe UI Variable Display"),
-            ZsTypographyPlatformStyle::Macos => Self::new(
-                platform,
-                "appkit_semantic_fallback",
-                ".AppleSystemUIFont",
-                "Menlo",
-                ".AppleSystemUIFont",
-                typography_scale,
-                "appkit_nsstring_coretext",
-            ),
-            ZsTypographyPlatformStyle::Gtk => Self::new(
-                platform,
-                "gtk_semantic_fallback",
-                "Adwaita Sans",
-                "Monospace",
-                "Adwaita Sans",
-                typography_scale,
-                "pango_cairo",
-            ),
-        }
+        let fallback =
+            crate::platform_component_profile::PlatformTypographyProfile::for_platform(platform)
+                .fallback();
+        Self::new(
+            platform,
+            fallback.source,
+            fallback.ui_font_family,
+            fallback.monospace_font_family,
+            fallback.icon_font_family,
+            typography_scale,
+            fallback.rasterization,
+        )
+        .with_role_families(fallback.small_font_family, fallback.display_font_family)
     }
 
     pub fn with_configured_ui_font(mut self, configured_ui_font: impl Into<String>) -> Self {
@@ -329,42 +312,8 @@ impl TextRole {
     /// libadwaita relative type classes over the standard 14-logical-pixel UI
     /// base; the GTK renderer can still select the actual configured family.
     pub const fn metrics_for(self, platform: ZsTypographyPlatformStyle) -> ZsTypographyMetrics {
-        match platform {
-            ZsTypographyPlatformStyle::Windows => {
-                ZsTypographyMetrics::new(self.size(), self.line_height(), self.default_weight())
-            }
-            ZsTypographyPlatformStyle::Macos => match self {
-                Self::Caption => ZsTypographyMetrics::new(10.0, 13.0, TextWeight::Regular),
-                Self::Body | Self::Button | Self::Monospace => {
-                    ZsTypographyMetrics::new(13.0, 16.0, TextWeight::Regular)
-                }
-                Self::BodyLarge => ZsTypographyMetrics::new(15.0, 20.0, TextWeight::Regular),
-                Self::Subtitle => ZsTypographyMetrics::new(17.0, 22.0, TextWeight::Regular),
-                Self::Title => ZsTypographyMetrics::new(22.0, 26.0, TextWeight::Regular),
-                Self::TitleLarge | Self::Display => {
-                    ZsTypographyMetrics::new(26.0, 32.0, TextWeight::Regular)
-                }
-                Self::Icon => ZsTypographyMetrics::new(16.0, 20.0, TextWeight::Regular),
-            },
-            ZsTypographyPlatformStyle::Gtk => match self {
-                // libadwaita caption is 82% of the configured UI font and
-                // uses 140% leading. These rounded logical metrics preserve
-                // that relationship for the standard 14 px UI base.
-                Self::Caption => ZsTypographyMetrics::new(11.5, 16.0, TextWeight::Regular),
-                Self::Body | Self::Button => {
-                    ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular)
-                }
-                Self::Monospace => ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular),
-                Self::BodyLarge => ZsTypographyMetrics::new(16.5, 22.0, TextWeight::Bold),
-                Self::Subtitle | Self::Title => {
-                    ZsTypographyMetrics::new(19.0, 24.0, TextWeight::Bold)
-                }
-                Self::TitleLarge | Self::Display => {
-                    ZsTypographyMetrics::new(25.5, 32.0, TextWeight::Bold)
-                }
-                Self::Icon => ZsTypographyMetrics::new(16.0, 20.0, TextWeight::Regular),
-            },
-        }
+        crate::platform_component_profile::PlatformTypographyProfile::for_platform(platform)
+            .metrics(self)
     }
 }
 

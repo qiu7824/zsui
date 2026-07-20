@@ -99,29 +99,8 @@ pub struct ZsPasswordBoxMetrics {
 
 impl ZsPasswordBoxMetrics {
     pub const fn for_platform(platform: ZsPasswordBoxPlatformStyle) -> Self {
-        match platform {
-            ZsPasswordBoxPlatformStyle::Windows => Self {
-                minimum_height: Dp::new(32.0),
-                radius: Dp::new(4.0),
-                text_inset: Dp::new(8.0),
-                reveal_width: Dp::new(32.0),
-                reveal_icon_size: Dp::new(16.0),
-            },
-            ZsPasswordBoxPlatformStyle::Macos => Self {
-                minimum_height: Dp::new(28.0),
-                radius: Dp::new(5.0),
-                text_inset: Dp::new(7.0),
-                reveal_width: Dp::new(28.0),
-                reveal_icon_size: Dp::new(15.0),
-            },
-            ZsPasswordBoxPlatformStyle::Gtk => Self {
-                minimum_height: Dp::new(34.0),
-                radius: Dp::new(5.0),
-                text_inset: Dp::new(8.0),
-                reveal_width: Dp::new(34.0),
-                reveal_icon_size: Dp::new(16.0),
-            },
-        }
+        crate::platform_component_profile::PlatformPasswordBoxProfile::for_platform(platform)
+            .metrics
     }
 }
 

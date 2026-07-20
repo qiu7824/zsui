@@ -82,35 +82,7 @@ pub struct ZsTooltipMetrics {
 
 impl ZsTooltipMetrics {
     pub const fn for_platform(platform: ZsTooltipPlatformStyle) -> Self {
-        match platform {
-            ZsTooltipPlatformStyle::Windows => Self {
-                maximum_width: Dp::new(320.0),
-                horizontal_padding: Dp::new(8.0),
-                vertical_padding: Dp::new(6.0),
-                gap: Dp::new(8.0),
-                radius: Dp::new(4.0),
-                line_height: Dp::new(16.0),
-                average_character_width: Dp::new(6.5),
-            },
-            ZsTooltipPlatformStyle::Macos => Self {
-                maximum_width: Dp::new(300.0),
-                horizontal_padding: Dp::new(7.0),
-                vertical_padding: Dp::new(5.0),
-                gap: Dp::new(6.0),
-                radius: Dp::new(5.0),
-                line_height: Dp::new(15.0),
-                average_character_width: Dp::new(6.2),
-            },
-            ZsTooltipPlatformStyle::Gtk => Self {
-                maximum_width: Dp::new(320.0),
-                horizontal_padding: Dp::new(8.0),
-                vertical_padding: Dp::new(6.0),
-                gap: Dp::new(8.0),
-                radius: Dp::new(6.0),
-                line_height: Dp::new(17.0),
-                average_character_width: Dp::new(6.7),
-            },
-        }
+        crate::platform_component_profile::PlatformTooltipProfile::for_platform(platform).metrics
     }
 }
 

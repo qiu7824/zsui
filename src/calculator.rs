@@ -9,11 +9,7 @@ use crate::{
     TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon,
 };
 
-const HEADER_HEIGHT_DP: f32 = 56.0;
-const DISPLAY_HEIGHT_DP: f32 = 124.0;
-const MEMORY_HEIGHT_DP: f32 = 36.0;
-const SURFACE_MARGIN_DP: f32 = 8.0;
-const BUTTON_GAP_DP: f32 = 4.0;
+use crate::platform_component_profile::{PlatformCalculatorShellProfile, PlatformComponentProfile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsCalculatorBinaryOperator {
@@ -595,11 +591,24 @@ impl ZsCalculatorShellSpec {
     }
 
     pub fn layout(&self, surface: Rect, dpi: Dpi) -> ZsCalculatorLayout {
-        let margin = px(SURFACE_MARGIN_DP, dpi);
-        let gap = px(BUTTON_GAP_DP, dpi);
-        let header_height = px(HEADER_HEIGHT_DP, dpi);
-        let display_height = px(DISPLAY_HEIGHT_DP, dpi);
-        let memory_height = px(MEMORY_HEIGHT_DP, dpi);
+        self.layout_with_profile(
+            surface,
+            dpi,
+            PlatformComponentProfile::current().calculator_shell,
+        )
+    }
+
+    fn layout_with_profile(
+        &self,
+        surface: Rect,
+        dpi: Dpi,
+        profile: PlatformCalculatorShellProfile,
+    ) -> ZsCalculatorLayout {
+        let margin = px_dp(profile.surface_margin, dpi);
+        let gap = px_dp(profile.button_gap, dpi);
+        let header_height = px_dp(profile.header_height, dpi);
+        let display_height = px_dp(profile.display_block_height, dpi);
+        let memory_height = px_dp(profile.memory_row_height, dpi);
         let header = Rect {
             x: surface.x,
             y: surface.y,
@@ -608,15 +617,16 @@ impl ZsCalculatorShellSpec {
         };
         let expression = Rect {
             x: surface.x + margin,
-            y: header.y + header.height + px(8.0, dpi),
+            y: header.y + header.height + px_dp(profile.expression_top_gap, dpi),
             width: (surface.width - margin * 2).max(0),
-            height: px(24.0, dpi),
+            height: px_dp(profile.expression_height, dpi),
         };
         let display = Rect {
             x: expression.x,
             y: expression.y + expression.height,
             width: expression.width,
-            height: (display_height - expression.height - px(8.0, dpi)).max(0),
+            height: (display_height - expression.height - px_dp(profile.display_bottom_gap, dpi))
+                .max(0),
         };
         let memory_row = Rect {
             x: surface.x + margin,
@@ -638,26 +648,30 @@ impl ZsCalculatorShellSpec {
             height: (surface.height - header.height - margin).max(0),
         };
 
+        let header_action_size = px_dp(profile.header_action_size, dpi);
         let mut button_regions = vec![ZsCalculatorButtonRegion {
             action: ZsCalculatorAction::ToggleHistory,
             bounds: Rect {
-                x: surface.x + surface.width - margin - px(36.0, dpi),
-                y: surface.y + (header_height - px(36.0, dpi)) / 2,
-                width: px(36.0, dpi),
-                height: px(36.0, dpi),
+                x: surface.x + surface.width - margin - header_action_size,
+                y: surface.y + (header_height - header_action_size) / 2,
+                width: header_action_size,
+                height: header_action_size,
             },
             kind: ZsCalculatorButtonKind::Header,
             enabled: true,
         }];
 
         if self.history_visible {
+            let clear_width = px_dp(profile.history_clear_width, dpi);
             button_regions.push(ZsCalculatorButtonRegion {
                 action: ZsCalculatorAction::ClearHistory,
                 bounds: Rect {
-                    x: history_panel.x + history_panel.width - px(78.0, dpi),
-                    y: history_panel.y + px(10.0, dpi),
-                    width: px(68.0, dpi),
-                    height: px(30.0, dpi),
+                    x: history_panel.x + history_panel.width
+                        - clear_width
+                        - px_dp(profile.history_clear_trailing_inset, dpi),
+                    y: history_panel.y + px_dp(profile.history_clear_top_inset, dpi),
+                    width: clear_width,
+                    height: px_dp(profile.history_clear_height, dpi),
                 },
                 kind: ZsCalculatorButtonKind::Function,
                 enabled: !self.history.is_empty(),
@@ -685,31 +699,33 @@ impl ZsCalculatorShellSpec {
         dpi: Dpi,
         interaction: ZsCalculatorInteraction,
     ) -> NativeDrawPlan {
-        let layout = self.layout(surface, dpi);
+        let profile = PlatformComponentProfile::current().calculator_shell;
+        let layout = self.layout_with_profile(surface, dpi, profile);
         let mut commands = vec![fill(surface, NativeDrawFill::Role(ColorRole::Surface))];
 
         commands.push(icon(
             ZsIcon::Calculator,
             Rect {
-                x: surface.x + px(14.0, dpi),
-                y: surface.y + (layout.header.height - px(20.0, dpi)) / 2,
-                width: px(20.0, dpi),
-                height: px(20.0, dpi),
+                x: surface.x + px_dp(profile.header_icon_leading, dpi),
+                y: surface.y + (layout.header.height - px_dp(profile.header_icon_size, dpi)) / 2,
+                width: px_dp(profile.header_icon_size, dpi),
+                height: px_dp(profile.header_icon_size, dpi),
             },
             ColorRole::Accent,
         ));
         commands.push(text(
             &self.title,
             Rect {
-                x: surface.x + px(44.0, dpi),
+                x: surface.x + px_dp(profile.header_title_leading, dpi),
                 y: layout.header.y,
-                width: (layout.header.width - px(96.0, dpi)).max(0),
+                width: (layout.header.width - px_dp(profile.header_title_trailing_reserve, dpi))
+                    .max(0),
                 height: layout.header.height,
             },
             text_style(
                 TextRole::Subtitle,
                 ColorRole::PrimaryText,
-                TextWeight::Semibold,
+                profile.title_weight,
                 HorizontalAlign::Start,
             ),
         ));
@@ -719,10 +735,10 @@ impl ZsCalculatorShellSpec {
             .iter()
             .find(|region| region.action == ZsCalculatorAction::ToggleHistory)
             .expect("history button is always present");
-        paint_button(history_button, interaction, dpi, &mut commands);
+        paint_button(history_button, interaction, dpi, profile, &mut commands);
 
         if self.history_visible {
-            paint_history(self, &layout, interaction, dpi, &mut commands);
+            paint_history(self, &layout, interaction, dpi, profile, &mut commands);
         } else {
             if self.memory_active {
                 commands.push(text(
@@ -730,13 +746,13 @@ impl ZsCalculatorShellSpec {
                     Rect {
                         x: layout.expression.x,
                         y: layout.expression.y,
-                        width: px(20.0, dpi),
+                        width: px_dp(profile.memory_indicator_width, dpi),
                         height: layout.expression.height,
                     },
                     text_style(
                         TextRole::Caption,
                         ColorRole::Accent,
-                        TextWeight::Semibold,
+                        profile.accent_weight,
                         HorizontalAlign::Start,
                     ),
                 ));
@@ -762,7 +778,7 @@ impl ZsCalculatorShellSpec {
                 text_style(
                     display_role,
                     ColorRole::PrimaryText,
-                    TextWeight::Semibold,
+                    profile.display_weight,
                     HorizontalAlign::End,
                 ),
             ));
@@ -771,7 +787,7 @@ impl ZsCalculatorShellSpec {
                 .iter()
                 .filter(|region| region.action != ZsCalculatorAction::ToggleHistory)
             {
-                paint_button(region, interaction, dpi, &mut commands);
+                paint_button(region, interaction, dpi, profile, &mut commands);
             }
         }
 
@@ -885,26 +901,30 @@ fn paint_history(
     layout: &ZsCalculatorLayout,
     interaction: ZsCalculatorInteraction,
     dpi: Dpi,
+    profile: PlatformCalculatorShellProfile,
     commands: &mut Vec<NativeDrawCommand>,
 ) {
     commands.push(round_rect(
         layout.history_panel,
         NativeDrawFill::Role(ColorRole::SurfaceRaised),
         Some(NativeDrawFill::Role(ColorRole::Border)),
-        px(8.0, dpi),
+        px_dp(profile.history_radius, dpi),
     ));
+    let horizontal_inset = px_dp(profile.history_horizontal_inset, dpi);
     commands.push(text(
         "History",
         Rect {
-            x: layout.history_panel.x + px(16.0, dpi),
-            y: layout.history_panel.y + px(8.0, dpi),
-            width: (layout.history_panel.width - px(108.0, dpi)).max(0),
-            height: px(36.0, dpi),
+            x: layout.history_panel.x + horizontal_inset,
+            y: layout.history_panel.y + px_dp(profile.history_title_top_inset, dpi),
+            width: (layout.history_panel.width
+                - px_dp(profile.history_title_trailing_reserve, dpi))
+            .max(0),
+            height: px_dp(profile.history_title_height, dpi),
         },
         text_style(
             TextRole::Subtitle,
             ColorRole::PrimaryText,
-            TextWeight::Semibold,
+            profile.title_weight,
             HorizontalAlign::Start,
         ),
     ));
@@ -913,17 +933,17 @@ fn paint_history(
         .iter()
         .find(|region| region.action == ZsCalculatorAction::ClearHistory)
     {
-        paint_button(clear, interaction, dpi, commands);
+        paint_button(clear, interaction, dpi, profile, commands);
     }
 
     if spec.history.is_empty() {
         commands.push(text(
             "No history yet",
             Rect {
-                x: layout.history_panel.x + px(16.0, dpi),
-                y: layout.history_panel.y + px(72.0, dpi),
-                width: (layout.history_panel.width - px(32.0, dpi)).max(0),
-                height: px(28.0, dpi),
+                x: layout.history_panel.x + horizontal_inset,
+                y: layout.history_panel.y + px_dp(profile.history_empty_top_inset, dpi),
+                width: (layout.history_panel.width - horizontal_inset * 2).max(0),
+                height: px_dp(profile.history_empty_height, dpi),
             },
             text_style(
                 TextRole::Body,
@@ -935,15 +955,18 @@ fn paint_history(
         return;
     }
 
-    let mut y = layout.history_panel.y + px(58.0, dpi);
+    let expression_height = px_dp(profile.history_expression_height, dpi);
+    let result_height = px_dp(profile.history_result_height, dpi);
+    let entry_gap = px_dp(profile.history_entry_gap, dpi);
+    let mut y = layout.history_panel.y + px_dp(profile.history_entries_top_inset, dpi);
     for entry in spec.history.iter().rev().take(7) {
         commands.push(text(
             &entry.expression,
             Rect {
-                x: layout.history_panel.x + px(16.0, dpi),
+                x: layout.history_panel.x + horizontal_inset,
                 y,
-                width: (layout.history_panel.width - px(32.0, dpi)).max(0),
-                height: px(22.0, dpi),
+                width: (layout.history_panel.width - horizontal_inset * 2).max(0),
+                height: expression_height,
             },
             text_style(
                 TextRole::Caption,
@@ -952,23 +975,23 @@ fn paint_history(
                 HorizontalAlign::End,
             ),
         ));
-        y += px(22.0, dpi);
+        y += expression_height;
         commands.push(text(
             &entry.result,
             Rect {
-                x: layout.history_panel.x + px(16.0, dpi),
+                x: layout.history_panel.x + horizontal_inset,
                 y,
-                width: (layout.history_panel.width - px(32.0, dpi)).max(0),
-                height: px(30.0, dpi),
+                width: (layout.history_panel.width - horizontal_inset * 2).max(0),
+                height: result_height,
             },
             text_style(
                 TextRole::BodyLarge,
                 ColorRole::PrimaryText,
-                TextWeight::Semibold,
+                profile.display_weight,
                 HorizontalAlign::End,
             ),
         ));
-        y += px(42.0, dpi);
+        y += result_height + entry_gap;
     }
 }
 
@@ -976,15 +999,15 @@ fn paint_button(
     region: &ZsCalculatorButtonRegion,
     interaction: ZsCalculatorInteraction,
     dpi: Dpi,
+    profile: PlatformCalculatorShellProfile,
     commands: &mut Vec<NativeDrawCommand>,
 ) {
     let hovered = interaction.hovered == Some(region.action) && region.enabled;
     let pressed = interaction.pressed == Some(region.action) && region.enabled;
     let base_fill = match region.kind {
-        ZsCalculatorButtonKind::Number => Some(NativeDrawFill::Role(ColorRole::SurfaceRaised)),
-        ZsCalculatorButtonKind::Function | ZsCalculatorButtonKind::Operator => {
-            Some(NativeDrawFill::Role(ColorRole::Control))
-        }
+        ZsCalculatorButtonKind::Number => Some(NativeDrawFill::Role(profile.number_fill)),
+        ZsCalculatorButtonKind::Function => Some(NativeDrawFill::Role(profile.function_fill)),
+        ZsCalculatorButtonKind::Operator => Some(NativeDrawFill::Role(profile.operator_fill)),
         ZsCalculatorButtonKind::Accent => Some(NativeDrawFill::Role(ColorRole::Accent)),
         ZsCalculatorButtonKind::Memory | ZsCalculatorButtonKind::Header => None,
     };
@@ -1021,12 +1044,13 @@ fn paint_button(
                 ZsCalculatorButtonKind::Number
                     | ZsCalculatorButtonKind::Function
                     | ZsCalculatorButtonKind::Operator
-            ) {
+            ) && profile.draw_neutral_button_border
+            {
                 Some(NativeDrawFill::Role(ColorRole::Border))
             } else {
                 None
             },
-            px(6.0, dpi),
+            px_dp(profile.button_radius, dpi),
         ));
     }
 
@@ -1038,7 +1062,7 @@ fn paint_button(
         ColorRole::PrimaryText
     };
     if let Some(icon_value) = region.action.icon() {
-        let size = px(18.0, dpi);
+        let size = px_dp(profile.button_icon_size, dpi);
         commands.push(icon(
             icon_value,
             Rect {
@@ -1061,7 +1085,7 @@ fn paint_button(
                 },
                 color,
                 if region.kind == ZsCalculatorButtonKind::Accent {
-                    TextWeight::Semibold
+                    profile.accent_weight
                 } else {
                     TextWeight::Regular
                 },
@@ -1071,8 +1095,8 @@ fn paint_button(
     }
 }
 
-fn px(value: f32, dpi: Dpi) -> i32 {
-    Dp::new(value).to_px(dpi).round_i32().max(1)
+fn px_dp(value: Dp, dpi: Dpi) -> i32 {
+    value.to_px(dpi).round_i32()
 }
 
 fn fill(rect: Rect, fill: NativeDrawFill) -> NativeDrawCommand {
@@ -1350,5 +1374,39 @@ mod tests {
             NativeDrawCommand::Text(command)
                 if command.text == engine.display() && command.style.role == TextRole::Title
         )));
+    }
+
+    #[test]
+    fn legacy_shell_layout_resolves_platform_profiles_internally() {
+        let spec = ZsCalculatorShellSpec::from_engine(&ZsCalculatorEngine::new());
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: 420,
+            height: 640,
+        };
+        let windows = spec.layout_with_profile(
+            surface,
+            Dpi::standard(),
+            PlatformComponentProfile::for_style(crate::ZsPlatformStyle::Windows).calculator_shell,
+        );
+        let macos = spec.layout_with_profile(
+            surface,
+            Dpi::standard(),
+            PlatformComponentProfile::for_style(crate::ZsPlatformStyle::Macos).calculator_shell,
+        );
+        let gtk = spec.layout_with_profile(
+            surface,
+            Dpi::standard(),
+            PlatformComponentProfile::for_style(crate::ZsPlatformStyle::Gtk).calculator_shell,
+        );
+
+        assert_eq!(windows.header.height, 56);
+        assert_eq!(macos.header.height, 40);
+        assert_eq!(gtk.header.height, 48);
+        assert_eq!(windows.memory_row.height, 36);
+        assert_eq!(macos.memory_row.height, 28);
+        assert_eq!(gtk.memory_row.height, 34);
+        assert_ne!(windows.keypad.x, gtk.keypad.x);
     }
 }

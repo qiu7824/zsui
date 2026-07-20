@@ -8,20 +8,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ColorRole, Command, Dp, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill,
     NativeDrawIconCommand, NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, Point, Rect,
-    SemanticTextStyle, TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon, ZsuiError,
-    ZsuiResult,
+    SemanticTextStyle, TextRole, TextWeight, TextWrap, VerticalAlign, ZsBaseControlMetrics, ZsIcon,
+    ZsuiError, ZsuiResult,
 };
 
-const TAB_STRIP_HEIGHT_DP: f32 = 48.0;
-const COMMAND_BAR_HEIGHT_DP: f32 = 48.0;
-const STATUS_BAR_HEIGHT_DP: f32 = 32.0;
-const SURFACE_MARGIN_DP: f32 = 12.0;
-const EDITOR_INSET_DP: f32 = 8.0;
-const COMMAND_HEIGHT_DP: f32 = 32.0;
-const COMMAND_GAP_DP: f32 = 4.0;
-const GROUP_GAP_DP: f32 = 12.0;
-const ICON_SIZE_DP: f32 = 16.0;
-const COMPACT_THRESHOLD_DP: f32 = 760.0;
+use crate::platform_component_profile::{PlatformComponentProfile, PlatformDocumentShellProfile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsTextDocumentEncoding {
@@ -445,16 +436,32 @@ impl ZsDocumentShellSpec {
     }
 
     pub fn layout(&self, surface: Rect, dpi: Dpi) -> ZsDocumentShellLayout {
-        let tab_height = px(TAB_STRIP_HEIGHT_DP, dpi);
-        let command_bar_height = px(COMMAND_BAR_HEIGHT_DP, dpi);
+        let component_profile = PlatformComponentProfile::current();
+        self.layout_with_profiles(
+            surface,
+            dpi,
+            component_profile.document_shell,
+            component_profile.base_control.metrics,
+        )
+    }
+
+    fn layout_with_profiles(
+        &self,
+        surface: Rect,
+        dpi: Dpi,
+        profile: PlatformDocumentShellProfile,
+        base_control: ZsBaseControlMetrics,
+    ) -> ZsDocumentShellLayout {
+        let tab_height = px_dp(profile.tab_strip_height, dpi);
+        let command_bar_height = px_dp(profile.command_bar_height, dpi);
         let status_height = if self.show_status {
-            px(STATUS_BAR_HEIGHT_DP, dpi)
+            px_dp(profile.status_bar_height, dpi)
         } else {
             0
         };
-        let margin = px(SURFACE_MARGIN_DP, dpi);
-        let editor_inset = px(EDITOR_INSET_DP, dpi);
-        let compact = surface.width < px(COMPACT_THRESHOLD_DP, dpi);
+        let margin = px_dp(profile.surface_margin, dpi);
+        let editor_inset = px_dp(profile.editor_inset, dpi);
+        let compact = surface.width < px_dp(profile.compact_threshold, dpi);
 
         let tab_strip = Rect {
             x: surface.x,
@@ -462,13 +469,23 @@ impl ZsDocumentShellSpec {
             width: surface.width.max(0),
             height: tab_height,
         };
-        let tab_width = px(if compact { 210.0 } else { 280.0 }, dpi)
-            .min((surface.width - margin * 3 - px(36.0, dpi)).max(px(140.0, dpi)));
+        let tab_width = px_dp(
+            if compact {
+                profile.compact_tab_width
+            } else {
+                profile.regular_tab_width
+            },
+            dpi,
+        )
+        .min(
+            (surface.width - margin * 3 - px_dp(profile.reserved_tab_action_width, dpi))
+                .max(px_dp(profile.minimum_tab_width, dpi)),
+        );
         let selected_tab = Rect {
             x: surface.x + margin,
-            y: surface.y + px(7.0, dpi),
+            y: surface.y + px_dp(profile.tab_top_inset, dpi),
             width: tab_width,
-            height: px(38.0, dpi),
+            height: px_dp(profile.tab_height, dpi),
         };
         let command_bar = Rect {
             x: surface.x,
@@ -476,8 +493,9 @@ impl ZsDocumentShellSpec {
             width: surface.width.max(0),
             height: command_bar_height,
         };
-        let editor_top = command_bar.y + command_bar.height + px(4.0, dpi);
-        let editor_bottom = surface.y + surface.height - status_height - px(4.0, dpi);
+        let editor_gap = px_dp(profile.editor_vertical_gap, dpi);
+        let editor_top = command_bar.y + command_bar.height + editor_gap;
+        let editor_bottom = surface.y + surface.height - status_height - editor_gap;
         let editor_frame = Rect {
             x: surface.x + margin,
             y: editor_top,
@@ -493,12 +511,13 @@ impl ZsDocumentShellSpec {
         });
 
         let mut command_regions = Vec::new();
-        let tab_button_size = px(30.0, dpi);
+        let tab_button_size = px_dp(profile.tab_action_size, dpi);
+        let tab_button_inset = px_dp(profile.tab_action_inset, dpi);
         command_regions.push(ZsDocumentShellCommandRegion {
             command: ZsDocumentShellCommand::Close,
             bounds: Rect {
-                x: selected_tab.x + selected_tab.width - tab_button_size - px(4.0, dpi),
-                y: selected_tab.y + px(4.0, dpi),
+                x: selected_tab.x + selected_tab.width - tab_button_size - tab_button_inset,
+                y: selected_tab.y + tab_button_inset,
                 width: tab_button_size,
                 height: tab_button_size,
             },
@@ -508,8 +527,8 @@ impl ZsDocumentShellSpec {
         command_regions.push(ZsDocumentShellCommandRegion {
             command: ZsDocumentShellCommand::New,
             bounds: Rect {
-                x: selected_tab.x + selected_tab.width + px(6.0, dpi),
-                y: selected_tab.y + px(4.0, dpi),
+                x: selected_tab.x + selected_tab.width + px_dp(profile.tab_action_gap, dpi),
+                y: selected_tab.y + tab_button_inset,
                 width: tab_button_size,
                 height: tab_button_size,
             },
@@ -519,10 +538,10 @@ impl ZsDocumentShellSpec {
 
         let mut separators = Vec::new();
         let mut cursor = surface.x + margin;
-        let command_y = command_bar.y + (command_bar.height - px(COMMAND_HEIGHT_DP, dpi)) / 2;
-        let command_height = px(COMMAND_HEIGHT_DP, dpi);
-        let gap = px(COMMAND_GAP_DP, dpi);
-        let group_gap = px(GROUP_GAP_DP, dpi);
+        let command_height = px_dp(profile.command_height, dpi);
+        let command_y = command_bar.y + (command_bar.height - command_height) / 2;
+        let gap = px_dp(profile.command_gap, dpi);
+        let group_gap = px_dp(profile.command_group_gap, dpi);
 
         for command in [
             ZsDocumentShellCommand::Open,
@@ -538,13 +557,15 @@ impl ZsDocumentShellSpec {
                 compact,
                 self,
                 dpi,
+                profile,
+                base_control,
             ) + gap;
         }
         separators.push(separator_at(
             cursor + group_gap / 2,
             command_y,
             command_height,
-            dpi,
+            px_dp(profile.separator_vertical_inset, dpi),
         ));
         cursor += group_gap;
 
@@ -563,13 +584,15 @@ impl ZsDocumentShellSpec {
                 true,
                 self,
                 dpi,
+                profile,
+                base_control,
             ) + gap;
         }
         separators.push(separator_at(
             cursor + group_gap / 2,
             command_y,
             command_height,
-            dpi,
+            px_dp(profile.separator_vertical_inset, dpi),
         ));
         cursor += group_gap;
 
@@ -586,10 +609,12 @@ impl ZsDocumentShellSpec {
                 compact,
                 self,
                 dpi,
+                profile,
+                base_control,
             ) + gap;
         }
 
-        let about_width = px(COMMAND_HEIGHT_DP, dpi);
+        let about_width = command_height;
         command_regions.push(ZsDocumentShellCommandRegion {
             command: ZsDocumentShellCommand::About,
             bounds: Rect {
@@ -622,23 +647,31 @@ impl ZsDocumentShellSpec {
         dpi: Dpi,
         interaction: ZsDocumentShellInteraction,
     ) -> NativeDrawPlan {
-        let layout = self.layout(surface, dpi);
+        let component_profile = PlatformComponentProfile::current();
+        let profile = component_profile.document_shell;
+        let layout = self.layout_with_profiles(
+            surface,
+            dpi,
+            profile,
+            component_profile.base_control.metrics,
+        );
         let mut commands = vec![fill(surface, ColorRole::Surface)];
 
         commands.push(round_rect(
             layout.selected_tab,
             ColorRole::SurfaceRaised,
             Some(ColorRole::Border),
-            px(8.0, dpi),
+            px_dp(profile.tab_radius, dpi),
         ));
         commands.push(NativeDrawCommand::Icon(
             NativeDrawIconCommand::new(
                 ZsIcon::File,
                 Rect {
-                    x: layout.selected_tab.x + px(12.0, dpi),
-                    y: layout.selected_tab.y + (layout.selected_tab.height - px(16.0, dpi)) / 2,
-                    width: px(16.0, dpi),
-                    height: px(16.0, dpi),
+                    x: layout.selected_tab.x + px_dp(profile.tab_icon_leading, dpi),
+                    y: layout.selected_tab.y
+                        + (layout.selected_tab.height - px_dp(profile.tab_icon_size, dpi)) / 2,
+                    width: px_dp(profile.tab_icon_size, dpi),
+                    height: px_dp(profile.tab_icon_size, dpi),
                 },
                 NativeIconColorMode::ThemeAware,
             )
@@ -652,21 +685,28 @@ impl ZsDocumentShellSpec {
         commands.push(text(
             self.document_title.clone(),
             Rect {
-                x: layout.selected_tab.x + px(36.0, dpi),
+                x: layout.selected_tab.x + px_dp(profile.tab_label_leading, dpi),
                 y: layout.selected_tab.y,
                 width: (close_region.bounds.x
                     - layout.selected_tab.x
-                    - px(if self.dirty { 52.0 } else { 44.0 }, dpi))
+                    - px_dp(
+                        if self.dirty {
+                            profile.dirty_title_reserve
+                        } else {
+                            profile.clean_title_reserve
+                        },
+                        dpi,
+                    ))
                 .max(0),
                 height: layout.selected_tab.height,
             },
             body_style(ColorRole::PrimaryText, TextWeight::Regular),
         ));
         if self.dirty {
-            let indicator = px(6.0, dpi);
+            let indicator = px_dp(profile.dirty_indicator_size, dpi);
             commands.push(NativeDrawCommand::RoundFill {
                 rect: Rect {
-                    x: close_region.bounds.x - px(10.0, dpi),
+                    x: close_region.bounds.x - px_dp(profile.dirty_indicator_gap, dpi),
                     y: layout.selected_tab.y + (layout.selected_tab.height - indicator) / 2,
                     width: indicator,
                     height: indicator,
@@ -677,7 +717,7 @@ impl ZsDocumentShellSpec {
         }
 
         for region in &layout.command_regions {
-            paint_command_region(region, interaction, dpi, &mut commands);
+            paint_command_region(region, interaction, dpi, profile, &mut commands);
         }
         for separator in &layout.separators {
             commands.push(fill_rect(*separator, ColorRole::Border));
@@ -687,7 +727,7 @@ impl ZsDocumentShellSpec {
             layout.editor_frame,
             ColorRole::SurfaceRaised,
             Some(ColorRole::Border),
-            px(8.0, dpi),
+            px_dp(profile.editor_radius, dpi),
         ));
 
         if let Some(status) = layout.status_bar {
@@ -697,7 +737,7 @@ impl ZsDocumentShellSpec {
                     self.line, self.column, self.character_count
                 ),
                 Rect {
-                    x: status.x + px(16.0, dpi),
+                    x: status.x + px_dp(profile.status_horizontal_inset, dpi),
                     y: status.y,
                     width: (status.width * 2 / 3).max(0),
                     height: status.height,
@@ -713,7 +753,7 @@ impl ZsDocumentShellSpec {
                 Rect {
                     x: status.x + status.width / 2,
                     y: status.y,
-                    width: (status.width / 2 - px(16.0, dpi)).max(0),
+                    width: (status.width / 2 - px_dp(profile.status_horizontal_inset, dpi)).max(0),
                     height: status.height,
                 },
                 caption_style(ColorRole::SecondaryText, HorizontalAlign::End),
@@ -733,21 +773,20 @@ fn push_command_region(
     compact: bool,
     spec: &ZsDocumentShellSpec,
     dpi: Dpi,
+    profile: PlatformDocumentShellProfile,
+    base_control: ZsBaseControlMetrics,
 ) -> i32 {
     let width = if compact {
-        px(COMMAND_HEIGHT_DP, dpi)
+        px_dp(profile.command_height, dpi)
     } else {
-        px(
-            match command {
-                ZsDocumentShellCommand::Open => 76.0,
-                ZsDocumentShellCommand::Save => 70.0,
-                ZsDocumentShellCommand::SaveAs => 92.0,
-                ZsDocumentShellCommand::ToggleStatus => 76.0,
-                ZsDocumentShellCommand::ToggleWrap => 70.0,
-                _ => 68.0,
-            },
-            dpi,
-        )
+        let content_width = profile.command_icon_leading.0
+            + profile.command_icon_size.0
+            + profile.command_label_gap.0
+            + base_control
+                .estimated_text_width_with_shaping_reserve(command.label())
+                .0
+            + profile.command_label_trailing.0;
+        px_dp(Dp::new(content_width.max(profile.command_height.0)), dpi)
     };
     regions.push(ZsDocumentShellCommandRegion {
         command,
@@ -771,6 +810,7 @@ fn paint_command_region(
     region: &ZsDocumentShellCommandRegion,
     interaction: ZsDocumentShellInteraction,
     dpi: Dpi,
+    profile: PlatformDocumentShellProfile,
     commands: &mut Vec<NativeDrawCommand>,
 ) {
     let fill = if interaction.pressed == Some(region.command) {
@@ -792,14 +832,14 @@ fn paint_command_region(
         commands.push(NativeDrawCommand::RoundFill {
             rect: region.bounds,
             fill,
-            radius: px(4.0, dpi),
+            radius: px_dp(profile.command_radius, dpi),
         });
     }
 
-    let icon_size = px(ICON_SIZE_DP, dpi);
+    let icon_size = px_dp(profile.command_icon_size, dpi);
     let has_label = region.label.is_some();
     let icon_x = if has_label {
-        region.bounds.x + px(10.0, dpi)
+        region.bounds.x + px_dp(profile.command_icon_leading, dpi)
     } else {
         region.bounds.x + (region.bounds.width - icon_size) / 2
     };
@@ -824,10 +864,13 @@ fn paint_command_region(
         commands.push(text(
             label,
             Rect {
-                x: icon_x + icon_size + px(7.0, dpi),
+                x: icon_x + icon_size + px_dp(profile.command_label_gap, dpi),
                 y: region.bounds.y,
-                width: (region.bounds.x + region.bounds.width - icon_x - icon_size - px(11.0, dpi))
-                    .max(0),
+                width: (region.bounds.x + region.bounds.width
+                    - icon_x
+                    - icon_size
+                    - px_dp(profile.command_label_trailing, dpi))
+                .max(0),
                 height: region.bounds.height,
             },
             button_style(if region.selected {
@@ -839,12 +882,12 @@ fn paint_command_region(
     }
 }
 
-fn separator_at(x: i32, y: i32, height: i32, dpi: Dpi) -> Rect {
+fn separator_at(x: i32, y: i32, height: i32, vertical_inset: i32) -> Rect {
     Rect {
         x,
-        y: y + px(7.0, dpi),
+        y: y + vertical_inset,
         width: 1,
-        height: (height - px(14.0, dpi)).max(0),
+        height: (height - vertical_inset * 2).max(0),
     }
 }
 
@@ -857,8 +900,8 @@ fn inset_rect(rect: Rect, inset: i32) -> Rect {
     }
 }
 
-fn px(value: f32, dpi: Dpi) -> i32 {
-    Dp::new(value).to_px(dpi).round_i32().max(1)
+fn px_dp(value: Dp, dpi: Dpi) -> i32 {
+    value.to_px(dpi).round_i32()
 }
 
 fn fill(rect: Rect, role: ColorRole) -> NativeDrawCommand {
@@ -1179,5 +1222,51 @@ mod tests {
             .iter()
             .filter(|region| region.bounds.y >= layout.command_bar.y)
             .all(|region| region.label.is_none()));
+    }
+
+    #[test]
+    fn legacy_shell_layout_resolves_platform_profiles_internally() {
+        let spec = ZsDocumentShellSpec::new("Editor", "notes.txt");
+        let windows_profile = PlatformComponentProfile::for_style(crate::ZsPlatformStyle::Windows);
+        let macos_profile = PlatformComponentProfile::for_style(crate::ZsPlatformStyle::Macos);
+        let gtk_profile = PlatformComponentProfile::for_style(crate::ZsPlatformStyle::Gtk);
+
+        let windows = spec.layout_with_profiles(
+            surface(),
+            Dpi::standard(),
+            windows_profile.document_shell,
+            windows_profile.base_control.metrics,
+        );
+        let macos = spec.layout_with_profiles(
+            surface(),
+            Dpi::standard(),
+            macos_profile.document_shell,
+            macos_profile.base_control.metrics,
+        );
+        let gtk = spec.layout_with_profiles(
+            surface(),
+            Dpi::standard(),
+            gtk_profile.document_shell,
+            gtk_profile.base_control.metrics,
+        );
+
+        assert_eq!(windows.tab_strip.height, 48);
+        assert_eq!(macos.tab_strip.height, 32);
+        assert_eq!(gtk.tab_strip.height, 42);
+        assert_eq!(windows.command_bar.height, 48);
+        assert_eq!(macos.command_bar.height, 28);
+        assert_eq!(gtk.command_bar.height, 34);
+        assert_ne!(windows.selected_tab.width, macos.selected_tab.width);
+        assert_ne!(macos.editor_frame.x, gtk.editor_frame.x);
+
+        for layout in [windows, macos, gtk] {
+            for region in layout
+                .command_regions
+                .iter()
+                .filter(|region| region.label.is_some())
+            {
+                assert!(region.bounds.width >= region.bounds.height);
+            }
+        }
     }
 }

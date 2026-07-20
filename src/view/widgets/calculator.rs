@@ -146,10 +146,7 @@ fn calculator_keypad_view<Msg: Clone>(
         memory_items,
     )
     .column_gap(spacing.xs)
-    .height(crate::ZsBaseControlMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    )
-    .button_height)
+    .height(crate::ZsBaseControlMetrics::current().button_height)
     .flex(0.0);
 
     let keypad_items = crate::calculator::KEYPAD_ACTIONS

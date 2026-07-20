@@ -1,11 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ColorRole, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
+    ColorRole, Dp, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
     NativeDrawPlan, NativeDrawTextCommand, NativeIconColorMode, Point, Rect, SemanticTextStyle,
-    TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon, ZSUI_FLUENT_CARD_RADIUS,
-    ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT,
-    ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
+    TextRole, TextWeight, TextWrap, VerticalAlign, ZsIcon,
 };
 
 pub const ZS_WORKBENCH_BASE_SIDEBAR_WIDTH: i32 = 272;
@@ -18,6 +16,14 @@ pub const ZS_WORKBENCH_FLOATING_RADIUS: i32 = 12;
 
 fn scale(value: i32, dpi: Dpi) -> i32 {
     ((value as f32) * dpi.scale_factor()).round() as i32
+}
+
+fn scale_dp(value: Dp, dpi: Dpi) -> i32 {
+    value.to_px(dpi).round_i32()
+}
+
+fn workbench_style_tokens() -> crate::platform_component_profile::PlatformStyleTokenProfile {
+    crate::platform_component_profile::PlatformComponentProfile::current().style_tokens
 }
 
 pub type ZsWorkbenchIcon = ZsIcon;
@@ -793,15 +799,17 @@ fn layout_sidebar_regions(
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
     let pad = scale(12, dpi);
-    let row_height = scale(ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, dpi);
+    let style = workbench_style_tokens();
+    let row_height = scale_dp(style.controls.navigation_row_height, dpi);
+    let touch_target = scale_dp(style.controls.touch_target, dpi);
     regions.push(ZsWorkbenchLayoutRegion {
         kind: ZsWorkbenchRegionKind::SidebarToggle,
         id: "sidebar.toggle".to_string(),
         bounds: Rect {
             x: metrics.sidebar.x + pad,
             y: metrics.sidebar.y + scale(12, dpi),
-            width: scale(ZSUI_FLUENT_TOUCH_TARGET, dpi),
-            height: scale(ZSUI_FLUENT_TOUCH_TARGET, dpi),
+            width: touch_target,
+            height: touch_target,
         },
         enabled: true,
     });
@@ -866,7 +874,7 @@ fn layout_toolbar_regions(
     dpi: Dpi,
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
-    let button = scale(ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, dpi);
+    let button = scale_dp(workbench_style_tokens().controls.standard_height, dpi);
     let mut x = metrics.top_bar.x + metrics.top_bar.width - scale(16, dpi) - button;
     for action in spec.toolbar_actions.iter().rev() {
         regions.push(ZsWorkbenchLayoutRegion {
@@ -1069,6 +1077,9 @@ fn paint_sidebar(
 ) {
     let dpi = layout.dpi;
     let bounds = layout.metrics.sidebar;
+    let style = workbench_style_tokens();
+    let card_radius = scale_dp(style.radius.medium, dpi);
+    let navigation_row_height = scale_dp(style.controls.navigation_row_height, dpi);
     if !spec.sidebar.collapsed {
         commands.push(text_command(
             &spec.sidebar.title,
@@ -1110,7 +1121,7 @@ fn paint_sidebar(
                     role: ColorRole::Accent,
                     alpha: 22,
                 },
-                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                card_radius,
             ));
         }
         let icon_bounds =
@@ -1155,8 +1166,7 @@ fn paint_sidebar(
     }
     let mut group_label_y = bounds.y
         + scale(68, dpi)
-        + spec.sidebar.primary_actions.len() as i32
-            * (scale(ZSUI_FLUENT_NAVIGATION_ROW_HEIGHT, dpi) + scale(4, dpi))
+        + spec.sidebar.primary_actions.len() as i32 * (navigation_row_height + scale(4, dpi))
         + scale(14, dpi);
     for group in &spec.sidebar.groups {
         commands.push(text_command(
@@ -1186,7 +1196,7 @@ fn paint_sidebar(
                             role: ColorRole::Border,
                             alpha: 30,
                         }),
-                        scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                        card_radius,
                     ));
                     commands.push(round_fill(
                         Rect {
@@ -1343,6 +1353,7 @@ fn paint_messages(
     commands: &mut Vec<NativeDrawCommand>,
 ) {
     let dpi = layout.dpi;
+    let card_radius = scale_dp(workbench_style_tokens().radius.medium, dpi);
     commands.push(NativeDrawCommand::PushClip {
         rect: layout.metrics.timeline,
     });
@@ -1375,7 +1386,7 @@ fn paint_messages(
                     role: ColorRole::SecondaryText,
                     alpha: 32,
                 }),
-                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                card_radius,
             )),
             ZsWorkbenchMessageRole::Assistant => commands.push(round_rect(
                 message_layout.bounds,
@@ -1460,6 +1471,7 @@ fn paint_message_block(
     dpi: Dpi,
     commands: &mut Vec<NativeDrawCommand>,
 ) {
+    let card_radius = scale_dp(workbench_style_tokens().radius.medium, dpi);
     match block {
         ZsWorkbenchContentBlock::Paragraph { text } => commands.push(text_command(
             text,
@@ -1478,7 +1490,7 @@ fn paint_message_block(
                     role: ColorRole::Border,
                     alpha: 26,
                 }),
-                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                card_radius,
             ));
             commands.push(text_command(
                 language,
@@ -1518,7 +1530,7 @@ fn paint_message_block(
                 commands,
                 bounds,
                 dpi,
-                ZSUI_FLUENT_CARD_RADIUS,
+                workbench_style_tokens().radius.medium,
                 NativeDrawFill::role(ColorRole::Surface),
             );
             commands.push(icon_command(
@@ -1595,7 +1607,7 @@ fn paint_message_block(
                 bounds,
                 NativeDrawFill::RoleWithAlpha { role, alpha: 20 },
                 Some(NativeDrawFill::RoleWithAlpha { role, alpha: 42 }),
-                scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+                card_radius,
             ));
             commands.push(round_fill(
                 Rect {
@@ -1636,7 +1648,7 @@ fn paint_composer(
         commands,
         bounds,
         dpi,
-        ZS_WORKBENCH_FLOATING_RADIUS,
+        Dp::new(ZS_WORKBENCH_FLOATING_RADIUS as f32),
         NativeDrawFill::role(ColorRole::SurfaceRaised),
     );
     let input = layout
@@ -1811,7 +1823,7 @@ fn paint_inspector(
         commands,
         panel,
         dpi,
-        ZS_WORKBENCH_FLOATING_RADIUS,
+        Dp::new(ZS_WORKBENCH_FLOATING_RADIUS as f32),
         NativeDrawFill::role(ColorRole::SurfaceRaised),
     );
     commands.push(stroke(
@@ -1909,7 +1921,7 @@ fn paint_inspector(
             role: ColorRole::Border,
             alpha: 22,
         }),
-        scale(ZSUI_FLUENT_CARD_RADIUS, dpi),
+        scale_dp(workbench_style_tokens().radius.medium, dpi),
     ));
     commands.push(text_command(
         &inspector.body,
@@ -1961,7 +1973,7 @@ fn paint_elevated_surface(
     commands: &mut Vec<NativeDrawCommand>,
     rect: Rect,
     dpi: Dpi,
-    radius: i32,
+    radius: Dp,
     fill: NativeDrawFill,
 ) {
     commands.push(round_fill(
@@ -1974,7 +1986,7 @@ fn paint_elevated_surface(
             role: ColorRole::SecondaryText,
             alpha: 15,
         },
-        scale(radius, dpi),
+        scale_dp(radius, dpi),
     ));
     commands.push(round_rect(
         rect,
@@ -1983,7 +1995,7 @@ fn paint_elevated_surface(
             role: ColorRole::Border,
             alpha: 28,
         }),
-        scale(radius, dpi),
+        scale_dp(radius, dpi),
     ));
 }
 
@@ -1994,7 +2006,7 @@ fn icon_command(icon: ZsWorkbenchIcon, bounds: Rect, color: ColorRole) -> Native
 }
 
 fn icon_bounds(bounds: Rect, dpi: Dpi) -> Rect {
-    let size = scale(ZSUI_FLUENT_STANDARD_ICON_SIZE, dpi);
+    let size = scale_dp(workbench_style_tokens().controls.standard_icon, dpi);
     Rect {
         x: bounds.x + (bounds.width - size) / 2,
         y: bounds.y + (bounds.height - size) / 2,

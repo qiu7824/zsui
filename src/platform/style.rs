@@ -49,18 +49,14 @@ impl ZsPlatformStyle {
 
     #[cfg(feature = "time-picker")]
     pub const fn default_clock(self) -> crate::ZsClockFormat {
-        match self {
-            Self::Windows => crate::ZsClockFormat::TwelveHour,
-            Self::Macos | Self::Gtk => crate::ZsClockFormat::TwentyFourHour,
-        }
+        crate::platform_component_profile::PlatformTimePickerProfile::for_platform(self)
+            .default_clock
     }
 
     #[cfg(feature = "password-box")]
     pub const fn default_password_reveal_mode(self) -> crate::ZsPasswordRevealMode {
-        match self {
-            Self::Windows => crate::ZsPasswordRevealMode::Peek,
-            Self::Macos | Self::Gtk => crate::ZsPasswordRevealMode::Hidden,
-        }
+        crate::platform_component_profile::PlatformPasswordBoxProfile::for_platform(self)
+            .default_reveal_mode
     }
 }
 
