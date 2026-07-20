@@ -614,9 +614,11 @@ impl ApplicationHandler for LinuxDirectApp {
                 };
                 window.apply_report(report, event_loop);
             }
-            WindowEvent::Focused(false) => {
-                let report = window.runtime.blur_focus();
-                window.apply_report(report, event_loop);
+            WindowEvent::Focused(focused) => {
+                if focus_transition_lost(&mut window.window_focused, focused) {
+                    let report = window.runtime.blur_focus();
+                    window.apply_report(report, event_loop);
+                }
             }
             WindowEvent::Occluded(true) => {
                 if window.runtime.suspend_view_when_hidden() {
@@ -677,6 +679,8 @@ struct LinuxDirectWindow {
     cursor: Point,
     modifiers: ModifiersState,
     pointer_down: bool,
+    window_focused: bool,
+    presented_once: bool,
     theme: WinitTheme,
     retain_frame: bool,
     last_frame: Vec<u32>,
@@ -748,6 +752,8 @@ impl LinuxDirectWindow {
             cursor: Point { x: 0, y: 0 },
             modifiers: ModifiersState::default(),
             pointer_down: false,
+            window_focused: false,
+            presented_once: false,
             theme,
             retain_frame,
             last_frame: Vec::new(),
@@ -765,7 +771,7 @@ impl LinuxDirectWindow {
     }
 
     fn resize(&mut self, physical_size: PhysicalSize<u32>) {
-        self.update_surface(physical_size, false);
+        self.update_surface(physical_size, !self.presented_once);
     }
 
     fn update_surface(&mut self, physical_size: PhysicalSize<u32>, initial_attachment: bool) {
@@ -1149,6 +1155,7 @@ impl LinuxDirectWindow {
         buffer
             .present()
             .map_err(|error| format!("could not present software buffer: {error}"))?;
+        self.presented_once = true;
         Ok(())
     }
 
@@ -1265,6 +1272,12 @@ fn accelerator_matches(accelerator: ZsAccelerator, key: &Key, modifiers: Modifie
         | (ZsAcceleratorKey::PageDown, Key::Named(NamedKey::PageDown)) => true,
         _ => false,
     }
+}
+
+fn focus_transition_lost(previously_focused: &mut bool, focused: bool) -> bool {
+    let lost = *previously_focused && !focused;
+    *previously_focused = focused;
+    lost
 }
 
 #[derive(Clone)]
@@ -2333,6 +2346,15 @@ mod tests {
             &Key::Character("s".into()),
             modifiers,
         ));
+    }
+
+    #[test]
+    fn initial_unfocused_event_is_not_a_focus_loss() {
+        let mut focused = false;
+        assert!(!focus_transition_lost(&mut focused, false));
+        assert!(!focus_transition_lost(&mut focused, true));
+        assert!(focus_transition_lost(&mut focused, false));
+        assert!(!focus_transition_lost(&mut focused, false));
     }
 
     #[cfg(feature = "linux-direct")]
