@@ -528,12 +528,14 @@ Platform-owned defaults live separately in
 `src/platform/component_profile/windows.rs`, `macos.rs` and `gtk.rs`; they
 contain component composition, metrics and interaction conventions but no
 native host or renderer implementation.
-Tabs, navigation, command bars, content dialogs and shells consume those
-profiles for layout, paint, hit testing and keyboard behavior instead of
-matching platforms in shared component code. The dialog profile owns action
-order, equal-versus-intrinsic sizing, trailing alignment, modal scrim strength
-and visual-order focus traversal; the public dialog model retains only
-semantic Primary, Secondary and Close responses.
+Tabs, navigation, command bars, content dialogs, feedback surfaces and shells
+consume those profiles for layout, paint, hit testing and keyboard behavior
+instead of matching platforms in shared component code. The dialog profile
+owns action order, equal-versus-intrinsic sizing, trailing alignment, modal
+scrim strength and visual-order focus traversal; the public dialog model
+retains only semantic Primary, Secondary and Close responses. InfoBar,
+TeachingTip and Toast keep independent feature-gated profiles for their Fluent,
+AppKit and GTK composition, metrics, action treatment and surface emphasis.
 `src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
 Services choices independently.
 `src/platform/desktop_runtime/` is the production adapter contract: its single

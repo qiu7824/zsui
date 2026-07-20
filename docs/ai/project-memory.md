@@ -328,9 +328,10 @@ history remain authoritative for implementation status.
   contracts and sole style resolver and keeps Windows, macOS and GTK defaults
   in separate internal modules. Those profiles own semantic sections,
   adaptive navigation, base buttons, command bars, tabs, content-dialog action
-  order/sizing/alignment/scrim/focus traversal and the legacy navigation/card
-  shell. View, Shell and shared keyboard routing consume the resolved profile
-  instead of repeating platform matches.
+  order/sizing/alignment/scrim/focus traversal, feature-gated
+  InfoBar/TeachingTip/Toast metrics and action treatments, and the legacy
+  navigation/card shell. View, Shell and shared keyboard routing consume the
+  resolved profile instead of repeating platform matches.
   One `ZsShellLayoutSpec` therefore resolves to a Fluent pane/card composition,
   AppKit source-list/forms composition or GTK sidebar/boxed-list composition
   without exposing a platform selector in the application API.

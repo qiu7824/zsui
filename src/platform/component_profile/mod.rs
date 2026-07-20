@@ -1,5 +1,11 @@
+#[cfg(feature = "info-bar")]
+use crate::ZsInfoBarMetrics;
 #[cfg(feature = "tabs")]
 use crate::ZsTabViewMetrics;
+#[cfg(feature = "teaching-tip")]
+use crate::ZsTeachingTipMetrics;
+#[cfg(feature = "toast")]
+use crate::ZsToastMetrics;
 #[cfg(feature = "label")]
 use crate::ZsuiSpacingTokens;
 #[cfg(any(feature = "label", feature = "button", feature = "tabs"))]
@@ -33,6 +39,12 @@ pub(crate) struct PlatformComponentProfile {
     pub tabs: PlatformTabProfile,
     #[cfg(feature = "dialog")]
     pub dialog: PlatformDialogProfile,
+    #[cfg(feature = "info-bar")]
+    pub info_bar: PlatformInfoBarProfile,
+    #[cfg(feature = "teaching-tip")]
+    pub teaching_tip: PlatformTeachingTipProfile,
+    #[cfg(feature = "toast")]
+    pub toast: PlatformToastProfile,
     pub shell: PlatformShellProfile,
 }
 
@@ -358,6 +370,123 @@ impl PlatformDialogProfile {
     }
 }
 
+#[cfg(any(feature = "info-bar", feature = "teaching-tip", feature = "toast"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformFeedbackActionTreatment {
+    NeutralControl,
+    #[cfg(any(feature = "info-bar", feature = "toast"))]
+    TransparentAccent,
+    #[cfg(feature = "teaching-tip")]
+    AccentFilled,
+}
+
+#[cfg(feature = "info-bar")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformInfoBarComposition {
+    FluentStatus,
+    AppKitStatus,
+    GtkBanner,
+}
+
+#[cfg(feature = "info-bar")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformInfoBarProfile {
+    pub composition: PlatformInfoBarComposition,
+    pub metrics: ZsInfoBarMetrics,
+    pub surface_alpha: u8,
+}
+
+#[cfg(feature = "info-bar")]
+impl PlatformInfoBarProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).info_bar
+    }
+
+    pub(crate) const fn action_treatment(self) -> PlatformFeedbackActionTreatment {
+        match self.composition {
+            PlatformInfoBarComposition::FluentStatus => {
+                PlatformFeedbackActionTreatment::NeutralControl
+            }
+            PlatformInfoBarComposition::AppKitStatus | PlatformInfoBarComposition::GtkBanner => {
+                PlatformFeedbackActionTreatment::TransparentAccent
+            }
+        }
+    }
+}
+
+#[cfg(feature = "teaching-tip")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformTeachingTipComposition {
+    FluentTeachingTip,
+    AppKitPopover,
+    GtkPopover,
+}
+
+#[cfg(feature = "teaching-tip")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformTeachingTipProfile {
+    pub composition: PlatformTeachingTipComposition,
+    pub metrics: ZsTeachingTipMetrics,
+    pub shadow_alpha: u8,
+}
+
+#[cfg(feature = "teaching-tip")]
+impl PlatformTeachingTipProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).teaching_tip
+    }
+
+    pub(crate) const fn action_treatment(self) -> PlatformFeedbackActionTreatment {
+        match self.composition {
+            PlatformTeachingTipComposition::FluentTeachingTip => {
+                PlatformFeedbackActionTreatment::NeutralControl
+            }
+            PlatformTeachingTipComposition::AppKitPopover
+            | PlatformTeachingTipComposition::GtkPopover => {
+                PlatformFeedbackActionTreatment::AccentFilled
+            }
+        }
+    }
+}
+
+#[cfg(feature = "toast")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformToastComposition {
+    FluentForeground,
+    AppKitForeground,
+    GtkToast,
+}
+
+#[cfg(feature = "toast")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformToastProfile {
+    pub composition: PlatformToastComposition,
+    pub metrics: ZsToastMetrics,
+    pub shadow_alpha: u8,
+}
+
+#[cfg(feature = "toast")]
+impl PlatformToastProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).toast
+    }
+
+    pub(crate) const fn action_treatment(self) -> PlatformFeedbackActionTreatment {
+        match self.composition {
+            PlatformToastComposition::FluentForeground => {
+                PlatformFeedbackActionTreatment::NeutralControl
+            }
+            PlatformToastComposition::AppKitForeground | PlatformToastComposition::GtkToast => {
+                PlatformFeedbackActionTreatment::TransparentAccent
+            }
+        }
+    }
+
+    pub(crate) const fn emphasizes_message(self) -> bool {
+        matches!(self.composition, PlatformToastComposition::GtkToast)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformShellNavigationComposition {
     FluentPane,
@@ -527,6 +656,79 @@ mod tests {
             );
             assert_eq!(macos.dialog.relative_button(&dialog, Close, 1), Primary);
             assert_eq!(gtk.dialog.relative_button(&dialog, Close, 1), Secondary);
+        }
+
+        #[cfg(feature = "info-bar")]
+        {
+            assert_eq!(
+                windows.info_bar.composition,
+                PlatformInfoBarComposition::FluentStatus
+            );
+            assert_eq!(
+                macos.info_bar.composition,
+                PlatformInfoBarComposition::AppKitStatus
+            );
+            assert_eq!(
+                gtk.info_bar.composition,
+                PlatformInfoBarComposition::GtkBanner
+            );
+            assert_eq!(
+                windows.info_bar.action_treatment(),
+                PlatformFeedbackActionTreatment::NeutralControl
+            );
+            assert_eq!(
+                gtk.info_bar.action_treatment(),
+                PlatformFeedbackActionTreatment::TransparentAccent
+            );
+            assert_eq!(macos.info_bar.surface_alpha, 18);
+        }
+
+        #[cfg(feature = "teaching-tip")]
+        {
+            assert_eq!(
+                windows.teaching_tip.composition,
+                PlatformTeachingTipComposition::FluentTeachingTip
+            );
+            assert_eq!(
+                macos.teaching_tip.composition,
+                PlatformTeachingTipComposition::AppKitPopover
+            );
+            assert_eq!(
+                gtk.teaching_tip.composition,
+                PlatformTeachingTipComposition::GtkPopover
+            );
+            assert_eq!(
+                windows.teaching_tip.action_treatment(),
+                PlatformFeedbackActionTreatment::NeutralControl
+            );
+            assert_eq!(
+                macos.teaching_tip.action_treatment(),
+                PlatformFeedbackActionTreatment::AccentFilled
+            );
+            assert_eq!(gtk.teaching_tip.shadow_alpha, 34);
+        }
+
+        #[cfg(feature = "toast")]
+        {
+            assert_eq!(
+                windows.toast.composition,
+                PlatformToastComposition::FluentForeground
+            );
+            assert_eq!(
+                macos.toast.composition,
+                PlatformToastComposition::AppKitForeground
+            );
+            assert_eq!(gtk.toast.composition, PlatformToastComposition::GtkToast);
+            assert_eq!(
+                windows.toast.action_treatment(),
+                PlatformFeedbackActionTreatment::NeutralControl
+            );
+            assert_eq!(
+                macos.toast.action_treatment(),
+                PlatformFeedbackActionTreatment::TransparentAccent
+            );
+            assert!(!windows.toast.emphasizes_message());
+            assert!(gtk.toast.emphasizes_message());
         }
 
         assert_eq!(

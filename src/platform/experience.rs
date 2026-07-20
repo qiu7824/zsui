@@ -494,6 +494,9 @@ mod tests {
             "PlatformCommandBarProfile",
             "PlatformTabProfile",
             "PlatformDialogProfile",
+            "PlatformInfoBarProfile",
+            "PlatformTeachingTipProfile",
+            "PlatformToastProfile",
             "PlatformShellProfile",
         ] {
             assert!(
@@ -677,6 +680,54 @@ mod tests {
             ] {
                 assert!(
                     !source.contains(forbidden),
+                    "{name} contains a platform branch outside the profile: {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn feedback_layout_and_paint_consume_internal_component_profiles() {
+        let render = include_str!("../widget_render.rs");
+        for (name, start_marker, end_marker, profile, style_alias) in [
+            (
+                "info bar",
+                "pub type ZsInfoBarPlatformStyle",
+                "pub type ZsTeachingTipPlatformStyle",
+                "PlatformInfoBarProfile::for_platform",
+                "ZsInfoBarPlatformStyle",
+            ),
+            (
+                "teaching tip",
+                "pub type ZsTeachingTipPlatformStyle",
+                "pub type ZsToastPlatformStyle",
+                "PlatformTeachingTipProfile::for_platform",
+                "ZsTeachingTipPlatformStyle",
+            ),
+            (
+                "toast",
+                "pub type ZsToastPlatformStyle",
+                "pub type ZsBreadcrumbPlatformStyle",
+                "PlatformToastProfile::for_platform",
+                "ZsToastPlatformStyle",
+            ),
+        ] {
+            let start = render
+                .find(start_marker)
+                .unwrap_or_else(|| panic!("{name} render section should exist"));
+            let end = render[start..]
+                .find(end_marker)
+                .map(|offset| start + offset)
+                .unwrap_or_else(|| panic!("{end_marker} should follow {name}"));
+            let section = &render[start..end];
+            assert!(
+                section.contains(profile),
+                "{name} should resolve through {profile}"
+            );
+            for platform in ["Windows", "Macos", "Gtk"] {
+                let forbidden = format!("{style_alias}::{platform}");
+                assert!(
+                    !section.contains(&forbidden),
                     "{name} contains a platform branch outside the profile: {forbidden}"
                 );
             }

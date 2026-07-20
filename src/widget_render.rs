@@ -588,6 +588,47 @@ pub fn zs_navigation_item_native_draw_plan(
 #[cfg(feature = "info-bar")]
 pub type ZsInfoBarPlatformStyle = crate::ZsPlatformStyle;
 
+#[cfg(any(feature = "info-bar", feature = "teaching-tip", feature = "toast"))]
+fn feedback_action_fill(
+    treatment: crate::platform_component_profile::PlatformFeedbackActionTreatment,
+) -> NativeDrawFill {
+    #[cfg(feature = "teaching-tip")]
+    use crate::platform_component_profile::PlatformFeedbackActionTreatment::AccentFilled;
+    use crate::platform_component_profile::PlatformFeedbackActionTreatment::NeutralControl;
+    #[cfg(any(feature = "info-bar", feature = "toast"))]
+    use crate::platform_component_profile::PlatformFeedbackActionTreatment::TransparentAccent;
+
+    match treatment {
+        NeutralControl => NativeDrawFill::Role(ColorRole::Control),
+        #[cfg(any(feature = "info-bar", feature = "toast"))]
+        TransparentAccent => NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::Accent,
+            alpha: 0,
+        },
+        #[cfg(feature = "teaching-tip")]
+        AccentFilled => NativeDrawFill::Role(ColorRole::Accent),
+    }
+}
+
+#[cfg(any(feature = "info-bar", feature = "teaching-tip", feature = "toast"))]
+const fn feedback_action_text_color(
+    treatment: crate::platform_component_profile::PlatformFeedbackActionTreatment,
+) -> ColorRole {
+    match treatment {
+        #[cfg(feature = "teaching-tip")]
+        crate::platform_component_profile::PlatformFeedbackActionTreatment::AccentFilled => {
+            ColorRole::AccentText
+        }
+        crate::platform_component_profile::PlatformFeedbackActionTreatment::NeutralControl => {
+            ColorRole::Accent
+        }
+        #[cfg(any(feature = "info-bar", feature = "toast"))]
+        crate::platform_component_profile::PlatformFeedbackActionTreatment::TransparentAccent => {
+            ColorRole::Accent
+        }
+    }
+}
+
 #[cfg(feature = "info-bar")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ZsInfoBarMetrics {
@@ -609,53 +650,7 @@ pub struct ZsInfoBarMetrics {
 #[cfg(feature = "info-bar")]
 impl ZsInfoBarMetrics {
     pub const fn for_platform(platform: ZsInfoBarPlatformStyle) -> Self {
-        match platform {
-            ZsInfoBarPlatformStyle::Windows => Self {
-                minimum_height: Dp::new(48.0),
-                horizontal_padding: Dp::new(16.0),
-                vertical_padding: Dp::new(10.0),
-                content_gap: Dp::new(12.0),
-                control_gap: Dp::new(8.0),
-                control_height: Dp::new(32.0),
-                icon_size: Dp::new(20.0),
-                accent_width: Dp::new(4.0),
-                surface_radius: Dp::new(4.0),
-                control_radius: Dp::new(4.0),
-                title_line_height: Dp::new(20.0),
-                message_line_height: Dp::new(18.0),
-                average_character_width: Dp::new(7.2),
-            },
-            ZsInfoBarPlatformStyle::Macos => Self {
-                minimum_height: Dp::new(56.0),
-                horizontal_padding: Dp::new(14.0),
-                vertical_padding: Dp::new(8.0),
-                content_gap: Dp::new(10.0),
-                control_gap: Dp::new(6.0),
-                control_height: Dp::new(28.0),
-                icon_size: Dp::new(18.0),
-                accent_width: Dp::new(0.0),
-                surface_radius: Dp::new(8.0),
-                control_radius: Dp::new(6.0),
-                title_line_height: Dp::new(18.0),
-                message_line_height: Dp::new(16.0),
-                average_character_width: Dp::new(6.8),
-            },
-            ZsInfoBarPlatformStyle::Gtk => Self {
-                minimum_height: Dp::new(48.0),
-                horizontal_padding: Dp::new(12.0),
-                vertical_padding: Dp::new(6.0),
-                content_gap: Dp::new(10.0),
-                control_gap: Dp::new(8.0),
-                control_height: Dp::new(34.0),
-                icon_size: Dp::new(18.0),
-                accent_width: Dp::new(0.0),
-                surface_radius: Dp::new(0.0),
-                control_radius: Dp::new(17.0),
-                title_line_height: Dp::new(18.0),
-                message_line_height: Dp::new(16.0),
-                average_character_width: Dp::new(7.2),
-            },
-        }
+        crate::platform_component_profile::PlatformInfoBarProfile::for_platform(platform).metrics
     }
 
     pub fn desired_height(self, spec: &crate::ZsInfoBarSpec) -> Dp {
@@ -701,7 +696,8 @@ pub fn zs_info_bar_render_plan(
     platform: ZsInfoBarPlatformStyle,
     dpi: Dpi,
 ) -> ZsInfoBarRenderPlan {
-    let metrics = ZsInfoBarMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformInfoBarProfile::for_platform(platform).metrics;
     let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
     let vertical_padding = metrics.vertical_padding.to_px(dpi).round_i32().max(0);
     let content_gap = metrics.content_gap.to_px(dpi).round_i32().max(0);
@@ -841,23 +837,20 @@ pub fn zs_info_bar_native_draw_plan(
     plan: &ZsInfoBarRenderPlan,
     spec: &crate::ZsInfoBarSpec,
 ) -> NativeDrawPlan {
+    let profile =
+        crate::platform_component_profile::PlatformInfoBarProfile::for_platform(plan.platform);
     let severity_role = match spec.info_bar_severity() {
         crate::ZsInfoBarSeverity::Informational => ColorRole::Accent,
         crate::ZsInfoBarSeverity::Success => ColorRole::Success,
         crate::ZsInfoBarSeverity::Warning => ColorRole::Warning,
         crate::ZsInfoBarSeverity::Error => ColorRole::Danger,
     };
-    let surface_alpha = match plan.platform {
-        ZsInfoBarPlatformStyle::Windows => 24,
-        ZsInfoBarPlatformStyle::Macos => 18,
-        ZsInfoBarPlatformStyle::Gtk => 28,
-    };
     let mut commands = vec![
         NativeDrawCommand::RoundRect {
             rect: plan.surface,
             fill: NativeDrawFill::RoleWithAlpha {
                 role: severity_role,
-                alpha: surface_alpha,
+                alpha: profile.surface_alpha,
             },
             stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
             radius: plan.surface_radius,
@@ -909,16 +902,10 @@ pub fn zs_info_bar_native_draw_plan(
     }
     if let (Some(label), Some(bounds)) = (spec.action_label(), plan.action_bounds) {
         let focused = plan.focused_control == Some(crate::ZsInfoBarControl::Action);
+        let action_treatment = profile.action_treatment();
         commands.push(NativeDrawCommand::RoundRect {
             rect: bounds,
-            fill: if plan.platform == ZsInfoBarPlatformStyle::Windows {
-                NativeDrawFill::Role(ColorRole::Control)
-            } else {
-                NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 0,
-                }
-            },
+            fill: feedback_action_fill(action_treatment),
             stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
             radius: plan.control_radius,
         });
@@ -927,7 +914,7 @@ pub fn zs_info_bar_native_draw_plan(
             bounds,
             SemanticTextStyle {
                 role: TextRole::Button,
-                color: ColorRole::Accent,
+                color: feedback_action_text_color(action_treatment),
                 weight: TextWeight::Semibold,
                 horizontal_align: HorizontalAlign::Center,
                 vertical_align: crate::VerticalAlign::Center,
@@ -988,59 +975,8 @@ pub struct ZsTeachingTipMetrics {
 #[cfg(feature = "teaching-tip")]
 impl ZsTeachingTipMetrics {
     pub const fn for_platform(platform: ZsTeachingTipPlatformStyle) -> Self {
-        match platform {
-            ZsTeachingTipPlatformStyle::Windows => Self {
-                minimum_width: Dp::new(240.0),
-                maximum_width: Dp::new(320.0),
-                viewport_margin: Dp::new(12.0),
-                horizontal_padding: Dp::new(16.0),
-                vertical_padding: Dp::new(14.0),
-                content_gap: Dp::new(8.0),
-                control_gap: Dp::new(12.0),
-                control_height: Dp::new(32.0),
-                title_line_height: Dp::new(22.0),
-                subtitle_height: Dp::new(40.0),
-                average_character_width: Dp::new(7.2),
-                surface_radius: Dp::new(8.0),
-                control_radius: Dp::new(4.0),
-                tail_size: Dp::new(12.0),
-                target_gap: Dp::new(4.0),
-            },
-            ZsTeachingTipPlatformStyle::Macos => Self {
-                minimum_width: Dp::new(220.0),
-                maximum_width: Dp::new(300.0),
-                viewport_margin: Dp::new(12.0),
-                horizontal_padding: Dp::new(16.0),
-                vertical_padding: Dp::new(12.0),
-                content_gap: Dp::new(6.0),
-                control_gap: Dp::new(10.0),
-                control_height: Dp::new(28.0),
-                title_line_height: Dp::new(20.0),
-                subtitle_height: Dp::new(36.0),
-                average_character_width: Dp::new(6.8),
-                surface_radius: Dp::new(10.0),
-                control_radius: Dp::new(6.0),
-                tail_size: Dp::new(10.0),
-                target_gap: Dp::new(4.0),
-            },
-            ZsTeachingTipPlatformStyle::Gtk => Self {
-                minimum_width: Dp::new(240.0),
-                maximum_width: Dp::new(320.0),
-                viewport_margin: Dp::new(12.0),
-                horizontal_padding: Dp::new(16.0),
-                vertical_padding: Dp::new(12.0),
-                content_gap: Dp::new(6.0),
-                control_gap: Dp::new(10.0),
-                control_height: Dp::new(34.0),
-                title_line_height: Dp::new(20.0),
-                subtitle_height: Dp::new(38.0),
-                average_character_width: Dp::new(7.2),
-                surface_radius: Dp::new(12.0),
-                control_radius: Dp::new(8.0),
-                tail_size: Dp::new(10.0),
-                target_gap: Dp::new(4.0),
-            },
-        }
+        crate::platform_component_profile::PlatformTeachingTipProfile::for_platform(platform)
+            .metrics
     }
 }
 
@@ -1071,7 +1007,9 @@ pub fn zs_teaching_tip_render_plan(
     platform: ZsTeachingTipPlatformStyle,
     dpi: Dpi,
 ) -> ZsTeachingTipRenderPlan {
-    let metrics = ZsTeachingTipMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformTeachingTipProfile::for_platform(platform)
+            .metrics;
     let margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
     let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
     let vertical_padding = metrics.vertical_padding.to_px(dpi).round_i32().max(0);
@@ -1419,11 +1357,8 @@ pub fn zs_teaching_tip_native_draw_plan(
     plan: &ZsTeachingTipRenderPlan,
     spec: &crate::ZsTeachingTipSpec,
 ) -> NativeDrawPlan {
-    let shadow_alpha = match plan.platform {
-        ZsTeachingTipPlatformStyle::Windows => 32,
-        ZsTeachingTipPlatformStyle::Macos => 26,
-        ZsTeachingTipPlatformStyle::Gtk => 34,
-    };
+    let profile =
+        crate::platform_component_profile::PlatformTeachingTipProfile::for_platform(plan.platform);
     let shadow_surface = Rect {
         x: plan.surface.x.saturating_sub(4),
         y: plan.surface.y.saturating_add(3),
@@ -1439,7 +1374,7 @@ pub fn zs_teaching_tip_native_draw_plan(
             rect: shadow_surface,
             fill: NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::PrimaryText,
-                alpha: shadow_alpha,
+                alpha: profile.shadow_alpha,
             },
             radius: plan.surface_radius.saturating_add(4),
         },
@@ -1447,7 +1382,7 @@ pub fn zs_teaching_tip_native_draw_plan(
             points: shadow_tail,
             fill: NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::PrimaryText,
-                alpha: shadow_alpha,
+                alpha: profile.shadow_alpha,
             },
         },
         NativeDrawCommand::FillTriangle {
@@ -1491,14 +1426,10 @@ pub fn zs_teaching_tip_native_draw_plan(
     }
     if let (Some(label), Some(bounds)) = (spec.action_label(), plan.action_bounds) {
         let focused = plan.focused_control == crate::ZsTeachingTipControl::Action;
-        let native_filled = plan.platform != ZsTeachingTipPlatformStyle::Windows;
+        let action_treatment = profile.action_treatment();
         commands.push(NativeDrawCommand::RoundRect {
             rect: bounds,
-            fill: if native_filled {
-                NativeDrawFill::Role(ColorRole::Accent)
-            } else {
-                NativeDrawFill::Role(ColorRole::Control)
-            },
+            fill: feedback_action_fill(action_treatment),
             stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
             radius: plan.control_radius,
         });
@@ -1507,11 +1438,7 @@ pub fn zs_teaching_tip_native_draw_plan(
             bounds,
             SemanticTextStyle {
                 role: TextRole::Button,
-                color: if native_filled {
-                    ColorRole::AccentText
-                } else {
-                    ColorRole::Accent
-                },
+                color: feedback_action_text_color(action_treatment),
                 weight: TextWeight::Semibold,
                 horizontal_align: HorizontalAlign::Center,
                 vertical_align: crate::VerticalAlign::Center,
@@ -1572,47 +1499,7 @@ pub struct ZsToastMetrics {
 #[cfg(feature = "toast")]
 impl ZsToastMetrics {
     pub const fn for_platform(platform: ZsToastPlatformStyle) -> Self {
-        match platform {
-            ZsToastPlatformStyle::Windows => Self {
-                maximum_width: Dp::new(420.0),
-                viewport_margin: Dp::new(24.0),
-                bottom_margin: Dp::new(24.0),
-                horizontal_padding: Dp::new(16.0),
-                vertical_padding: Dp::new(12.0),
-                control_gap: Dp::new(8.0),
-                control_height: Dp::new(32.0),
-                surface_radius: Dp::new(8.0),
-                control_radius: Dp::new(4.0),
-                line_height: Dp::new(20.0),
-                average_character_width: Dp::new(7.2),
-            },
-            ZsToastPlatformStyle::Macos => Self {
-                maximum_width: Dp::new(380.0),
-                viewport_margin: Dp::new(20.0),
-                bottom_margin: Dp::new(20.0),
-                horizontal_padding: Dp::new(14.0),
-                vertical_padding: Dp::new(10.0),
-                control_gap: Dp::new(6.0),
-                control_height: Dp::new(28.0),
-                surface_radius: Dp::new(10.0),
-                control_radius: Dp::new(6.0),
-                line_height: Dp::new(18.0),
-                average_character_width: Dp::new(6.8),
-            },
-            ZsToastPlatformStyle::Gtk => Self {
-                maximum_width: Dp::new(440.0),
-                viewport_margin: Dp::new(24.0),
-                bottom_margin: Dp::new(24.0),
-                horizontal_padding: Dp::new(16.0),
-                vertical_padding: Dp::new(10.0),
-                control_gap: Dp::new(8.0),
-                control_height: Dp::new(34.0),
-                surface_radius: Dp::new(12.0),
-                control_radius: Dp::new(17.0),
-                line_height: Dp::new(20.0),
-                average_character_width: Dp::new(7.2),
-            },
-        }
+        crate::platform_component_profile::PlatformToastProfile::for_platform(platform).metrics
     }
 }
 
@@ -1637,7 +1524,8 @@ pub fn zs_toast_render_plan(
     platform: ZsToastPlatformStyle,
     dpi: Dpi,
 ) -> ZsToastRenderPlan {
-    let metrics = ZsToastMetrics::for_platform(platform);
+    let metrics =
+        crate::platform_component_profile::PlatformToastProfile::for_platform(platform).metrics;
     let viewport_margin = metrics.viewport_margin.to_px(dpi).round_i32().max(0);
     let bottom_margin = metrics.bottom_margin.to_px(dpi).round_i32().max(0);
     let horizontal_padding = metrics.horizontal_padding.to_px(dpi).round_i32().max(0);
@@ -1734,11 +1622,8 @@ pub fn zs_toast_native_draw_plan(
     plan: &ZsToastRenderPlan,
     spec: &crate::ZsToastSpec,
 ) -> NativeDrawPlan {
-    let shadow_alpha = match plan.platform {
-        ZsToastPlatformStyle::Windows => 30,
-        ZsToastPlatformStyle::Macos => 24,
-        ZsToastPlatformStyle::Gtk => 34,
-    };
+    let profile =
+        crate::platform_component_profile::PlatformToastProfile::for_platform(plan.platform);
     let shadow = Rect {
         x: plan.surface.x.saturating_sub(3),
         y: plan.surface.y.saturating_add(2),
@@ -1750,7 +1635,7 @@ pub fn zs_toast_native_draw_plan(
             rect: shadow,
             fill: NativeDrawFill::RoleWithAlpha {
                 role: ColorRole::PrimaryText,
-                alpha: shadow_alpha,
+                alpha: profile.shadow_alpha,
             },
             radius: plan.surface_radius.saturating_add(3),
         },
@@ -1766,7 +1651,7 @@ pub fn zs_toast_native_draw_plan(
             SemanticTextStyle {
                 role: TextRole::Body,
                 color: ColorRole::PrimaryText,
-                weight: if plan.platform == ZsToastPlatformStyle::Gtk {
+                weight: if profile.emphasizes_message() {
                     TextWeight::Semibold
                 } else {
                     TextWeight::Regular
@@ -1780,16 +1665,10 @@ pub fn zs_toast_native_draw_plan(
     ];
     if let (Some(label), Some(bounds)) = (spec.action_label(), plan.action_bounds) {
         let focused = plan.focused_control == crate::ZsToastControl::Action;
+        let action_treatment = profile.action_treatment();
         commands.push(NativeDrawCommand::RoundRect {
             rect: bounds,
-            fill: if plan.platform == ZsToastPlatformStyle::Windows {
-                NativeDrawFill::Role(ColorRole::Control)
-            } else {
-                NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 0,
-                }
-            },
+            fill: feedback_action_fill(action_treatment),
             stroke: focused.then_some(NativeDrawFill::Role(ColorRole::Accent)),
             radius: plan.control_radius,
         });
@@ -1798,7 +1677,7 @@ pub fn zs_toast_native_draw_plan(
             bounds,
             SemanticTextStyle {
                 role: TextRole::Button,
-                color: ColorRole::Accent,
+                color: feedback_action_text_color(action_treatment),
                 weight: TextWeight::Semibold,
                 horizontal_align: HorizontalAlign::Center,
                 vertical_align: crate::VerticalAlign::Center,
