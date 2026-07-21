@@ -195,6 +195,8 @@ pub mod tooltip;
 pub mod tray;
 #[cfg(feature = "tree")]
 pub mod tree;
+#[cfg(feature = "ui-document")]
+pub mod ui_document;
 pub mod ui_surface_protocol;
 pub mod view;
 pub mod widget_render;

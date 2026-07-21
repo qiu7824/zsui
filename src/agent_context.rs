@@ -415,13 +415,11 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "reloadable_ui_authoring",
-            percent_complete: 0,
-            status_name: "v0_2_goal_defined_implementation_not_started",
+            percent_complete: 20,
+            status_name: "schema_typed_binding_manifest_and_uic_validation_first_pass",
             source_path: "docs/v0.2-desktop-native.md",
             missing_before_complete: vec![
-                "versioned semantic UiDocument schema",
-                "typed State/Msg binding manifest and validation",
-                "zsui-uic document checker",
+                "complete component and property coverage in the versioned UiDocument schema",
                 "prebuilt native auto-reload Viewer",
                 "stable-ID focus, selection and scroll state preservation",
                 "deterministic AI handoff",
@@ -940,7 +938,7 @@ mod tests {
             .iter()
             .find(|area| area.area_name == "reloadable_ui_authoring")
             .expect("reloadable UI authoring completion area should exist");
-        assert_eq!(reloadable_authoring.percent_complete, 0);
+        assert_eq!(reloadable_authoring.percent_complete, 20);
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert_eq!(context.readiness.platform_capability_readiness.len(), 4);
         let macos = context
@@ -1167,7 +1165,7 @@ mod tests {
         let packs = manifest["packs"]
             .as_array()
             .expect("AI context packs should be an array");
-        assert_eq!(packs.len(), 16);
+        assert_eq!(packs.len(), 17);
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut ids = HashSet::new();
         for pack in packs {

@@ -456,6 +456,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "product adapter runtime harness and AI/tool boundary contracts",
         ),
         ZsuiCargoFeature::new(
+            "ui-document",
+            Tooling,
+            false,
+            Vec::new(),
+            Vec::new(),
+            "versioned semantic UI document schema, typed binding manifest and validation tooling",
+        ),
+        ZsuiCargoFeature::new(
             "android",
             Platform,
             false,
@@ -717,6 +725,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "mobile",
                 "native-smoke",
                 "product-adapter",
+                "ui-document",
                 "settings",
                 "style",
                 "tray",
@@ -849,6 +858,23 @@ mod tests {
         );
         assert!(!all_widgets.enables.contains(&"localization"));
         assert!(full.enables.contains(&"localization"));
+    }
+
+    #[test]
+    fn ui_document_tooling_is_opt_in_and_included_by_full() {
+        let manifest = zsui_feature_manifest();
+        let ui_document = manifest
+            .iter()
+            .find(|feature| feature.name == "ui-document")
+            .expect("UI document feature should be listed");
+        let full = manifest
+            .iter()
+            .find(|feature| feature.name == "full")
+            .expect("full feature should be listed");
+
+        assert!(!ui_document.default_enabled);
+        assert!(ui_document.optional_dependency_names.is_empty());
+        assert!(full.enables.contains(&"ui-document"));
     }
 
     #[test]

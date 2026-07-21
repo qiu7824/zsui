@@ -109,6 +109,7 @@ tray = ["shell"]
 hotkey = ["shell"]
 settings = ["widgets-input", "widgets-list", "toggle"]
 product-adapter = []
+ui-document = []
 android = []
 mobile = ["android"]
 clipboard = ["dep:arboard"]
@@ -146,6 +147,7 @@ full = [
     "mobile",
     "native-smoke",
     "product-adapter",
+    "ui-document",
     "settings",
     "style",
     "tray",
@@ -241,3 +243,8 @@ required-features = ["button", "label"]
 name = "localization"
 path = "examples/localization.rs"
 required-features = ["localization"]
+
+[[bin]]
+name = "zsui-uic"
+path = "src/bin/zsui-uic.rs"
+required-features = ["ui-document"]

@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "window_title": "string"
+  },
+  "actions": {
+    "save": "null"
+  }
+}

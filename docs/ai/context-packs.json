@@ -50,6 +50,27 @@
       ]
     },
     {
+      "id": "ui-document",
+      "purpose": "Versioned semantic UI documents, typed State/Msg bindings and zsui-uic validation",
+      "required": [
+        "Cargo.toml",
+        "src/ui_document.rs",
+        "src/bin/zsui-uic.rs",
+        "docs/ui-document.md",
+        "examples/ui-documents"
+      ],
+      "optional": [
+        "src/component_catalog.rs",
+        "src/feature_manifest.rs",
+        "src/view",
+        "src/native.rs"
+      ],
+      "verify": [
+        "cargo test --no-default-features --features ui-document --quiet",
+        "cargo run --bin zsui-uic --no-default-features --features ui-document,button,label -- check examples/ui-documents/basic.json --bindings examples/ui-documents/basic.bindings.json"
+      ]
+    },
+    {
       "id": "view-widgets",
       "purpose": "Typed View, State/Msg/update and basic widget behavior",
       "required": [

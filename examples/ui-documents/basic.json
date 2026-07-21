@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "root",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding": 16.0,
+      "gap": 8.0
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "property_bindings": {
+          "text": "window_title"
+        },
+        "theme_tokens": {
+          "foreground": "text.primary"
+        },
+        "accessibility": {
+          "role": "heading",
+          "label": "Document title"
+        }
+      },
+      {
+        "id": "save-button",
+        "component": "button",
+        "properties": {
+          "label": "Save",
+          "enabled": true
+        },
+        "action_bindings": {
+          "click": "save"
+        }
+      }
+    ]
+  }
+}

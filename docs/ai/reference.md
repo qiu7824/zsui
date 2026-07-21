@@ -9,9 +9,10 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 ZSUI is roughly 64% complete as a standalone framework product, including the
 still-scaffolded Android target. The previously measured desktop-only native
 application areas are roughly 75% complete, but v0.2 now also contains a new
-reloadable UI authoring gate whose implementation has not started. Do not use
-the previous 75% as a recalibrated total for the expanded milestone, and do not
-use component-level milestones as overall framework readiness.
+reloadable UI authoring gate with only its schema and validator first pass
+implemented. Do not use the previous 75% as a recalibrated total for the
+expanded milestone, and do not use component-level milestones as overall
+framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
@@ -20,9 +21,10 @@ use component-level milestones as overall framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: 0% complete; the schema, typed binding validator,
-  native auto-reload Viewer, state-preserving patches, AI handoff and release
-  embedding remain to be implemented.
+- Reloadable UI authoring: about 20% complete; schema version 1, the typed
+  `State`/`Msg` binding manifest and `zsui-uic check` have a first pass.
+  Complete component coverage, the native auto-reload Viewer,
+  state-preserving patches, AI handoff and release embedding remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.

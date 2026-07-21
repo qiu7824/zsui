@@ -63,6 +63,7 @@ $singleFeatures = @(
     "hotkey",
     "settings",
     "product-adapter",
+    "ui-document",
     "android",
     "mobile",
     "clipboard",
