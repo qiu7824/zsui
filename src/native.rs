@@ -7841,6 +7841,17 @@ pub(crate) fn record_native_view_text_input_script_evidence(
         }));
 }
 
+pub(crate) fn native_view_smoke_input_dispatch_count(inputs: &[NativeViewSmokeInput]) -> usize {
+    inputs
+        .iter()
+        .map(|input| match input {
+            NativeViewSmokeInput::Click(_) => 2,
+            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. } => 3,
+            _ => 1,
+        })
+        .sum()
+}
+
 #[allow(dead_code)]
 pub(crate) fn record_native_view_input_reports(
     report: &mut NativeWindowSmokeRunReport,

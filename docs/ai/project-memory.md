@@ -313,7 +313,9 @@ history remain authoritative for implementation status.
   real IME candidate-window session. Visual insertion positions come from the
   directed edges of shaped grapheme clusters, not from a platform API's strong
   caret alone; AppKit resolves ambiguous Core Text edges with Unicode bidi
-  levels before the shared navigation code consumes them.
+  levels before the shared navigation code consumes them. Backend proof reports
+  must correspond exactly to scripted inputs; native menu acceptance is tracked
+  separately and must never be prepended to that positional report stream.
 - Native typography is a backend-resolved `NativeTypographyProfile`, not a
   demo-owned type ramp. Native layout, paint and proof must share the resolved
   families, role metrics, accessibility scale and rasterization identity.

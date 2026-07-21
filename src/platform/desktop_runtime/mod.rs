@@ -277,6 +277,19 @@ pub(super) fn complete_native_smoke(
         shell_runtime,
         options,
     } = request;
+    let expected_proof_input_reports =
+        crate::native::native_view_smoke_input_dispatch_count(&options.native_view_inputs);
+    if outcome.proof_input_reports.len() != expected_proof_input_reports {
+        return Err(ZsuiError::host(
+            "native_window_smoke_proof_inputs",
+            format!(
+                "backend `{}` returned {} scripted input reports; expected {}",
+                metadata.proof_backend,
+                outcome.proof_input_reports.len(),
+                expected_proof_input_reports
+            ),
+        ));
+    }
     let _backend_owned_state = (view_runtime, shell_runtime);
     let mut report = NativeWindowSmokeRunReport {
         requested_window_count: windows.len(),
@@ -463,6 +476,48 @@ mod tests {
         assert!(report.status_menu_command_routed);
         assert!(report.status_menu_popup_created);
         assert!(report.status_menu_popup_destroyed);
+    }
+
+    #[test]
+    fn shared_smoke_report_rejects_unaligned_scripted_input_reports() {
+        let options =
+            NativeWindowSmokeRunOptions::quick().native_view_key_down(crate::NativeViewKey::Right);
+        let error = complete_native_smoke(
+            DesktopSmokeRequest {
+                windows: vec![WindowSpec::new("Input proof")],
+                draw_plans: vec![None],
+                view_runtime: NativeViewInputRuntime::default(),
+                shell_runtime: None,
+                options,
+            },
+            DesktopNativeSmokeOutcome {
+                created_window_count: 1,
+                proof_input_reports: Vec::new(),
+                native_view_capture: None,
+                menu_command_routed: false,
+                menu_surface_created: false,
+                menu_surface_height: 0,
+                menu_surface_open_at_capture: false,
+                status_item_created: false,
+                status_menu_native_command_count: 0,
+                status_menu_command_routed: false,
+                status_menu_popup_created: false,
+                status_menu_popup_destroyed: false,
+                process_memory: None,
+                accessibility_backend: None,
+                accessibility_node_count: 0,
+                accessibility_action_count: 0,
+            },
+            DesktopNativeSmokeMetadata {
+                proof_backend: "misaligned-test",
+                screenshot_backend: "test",
+                missing_capture_error: "not requested",
+            },
+        )
+        .expect_err("missing scripted input reports must fail the native proof");
+
+        assert!(error.to_string().contains("expected 1"));
+        assert!(error.to_string().contains("misaligned-test"));
     }
 
     #[test]

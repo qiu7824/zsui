@@ -610,7 +610,8 @@ target-native shapers. The shared movement path orders directed grapheme-cluster
 edges; it does not mistake Core Text/Pango/Cosmic Text's strong caret for the
 only insertion edge at a bidi boundary. These scripted routes do not replace
 real IME candidate window testing. Resize screenshot artifacts remain a later
-runtime gate. The
+runtime gate. The generic proof host rejects report-count mismatches so a
+separate native-menu command cannot shift input-to-caret attribution. The
 `--date-picker-view` path also posts real
 pointer down/up input through the Win32 host and records
 `native_view_pointer_visual_change_count`; a nonzero count proves that the

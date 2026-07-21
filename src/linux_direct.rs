@@ -297,8 +297,7 @@ impl LinuxDirectApp {
             .flatten();
         if let Some(command) = proof_menu_command {
             let report = window.runtime.dispatch_app_command(command);
-            self.proof_input_reports
-                .push(window.apply_report(report, event_loop));
+            let _ = window.apply_report(report, event_loop);
             window.menu_surface_command_count = window.menu_surface_command_count.saturating_add(1);
             self.menu_command_routed = true;
         }
