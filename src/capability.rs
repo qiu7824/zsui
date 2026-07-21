@@ -253,6 +253,9 @@ impl HostCapabilities {
         capabilities.file_picker = CapabilitySupport::supported(
             "Win32 common open-file dialog is connected through the native host",
         );
+        capabilities.native_dialogs = CapabilitySupport::partial(
+            "owner-bound MessageBoxW dialogs map typed levels, button sets and responses; target interaction proof is pending",
+        );
         capabilities.clipboard_text = native_text_clipboard_support();
         capabilities.clipboard_image =
             CapabilitySupport::unsupported("the native image clipboard service is not connected");
@@ -347,6 +350,13 @@ impl HostCapabilities {
             CapabilitySupport::unsupported(
                 "enable macos-appkit to compile NSOpenPanel and NSSavePanel services",
             )
+        };
+        capabilities.native_dialogs = if cfg!(feature = "macos-appkit") {
+            CapabilitySupport::partial(
+                "owner-bound NSAlert sheets map typed levels, platform action order and responses; target interaction proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported("enable macos-appkit to compile native NSAlert dialogs")
         };
         capabilities
     }
@@ -466,6 +476,19 @@ impl HostCapabilities {
         } else {
             CapabilitySupport::unsupported(
                 "enable linux-direct or linux-gtk to compile Linux file dialog services",
+            )
+        };
+        capabilities.native_dialogs = if cfg!(feature = "linux-direct-host") {
+            CapabilitySupport::partial(
+                "typed message dialogs use the desktop-provided Zenity surface; provider availability and Wayland/X11 interaction proof are required",
+            )
+        } else if cfg!(feature = "linux-gtk") {
+            CapabilitySupport::partial(
+                "GTK 4.10 AlertDialog maps typed actions and responses; Wayland/X11 interaction proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable linux-direct or linux-gtk to compile Linux native message dialogs",
             )
         };
         capabilities

@@ -3,8 +3,8 @@ use super::{
     DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
 };
 use crate::{
-    DesktopCapabilities, FileDialogSpec, HostCapabilities, NativeWindowSmokeRunReport,
-    SaveFileDialogSpec, ZsuiResult,
+    DesktopCapabilities, DialogResponse, FileDialogSpec, HostCapabilities, NativeDialogSpec,
+    NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiResult,
 };
 
 #[derive(Default)]
@@ -147,5 +147,9 @@ impl DesktopRuntimeBackend for Backend {
         spec: &SaveFileDialogSpec,
     ) -> ZsuiResult<Option<std::path::PathBuf>> {
         crate::macos_appkit_services::macos_appkit_save_file_dialog(spec)
+    }
+
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        crate::macos_appkit_services::macos_appkit_show_native_dialog(spec)
     }
 }

@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
 use crate::{
-    native::NativeViewInputRuntime, ClipboardData, DesktopCapabilities, FileDialogSpec,
-    HostCapabilities, NativeDrawPlan, NativeProofProcessMemoryEvidence, NativeTypographyProfile,
-    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec,
-    WindowSpec, ZsShellRuntime, ZsuiError, ZsuiResult,
+    native::NativeViewInputRuntime, ClipboardData, DesktopCapabilities, DialogResponse,
+    FileDialogSpec, HostCapabilities, NativeDialogSpec, NativeDrawPlan,
+    NativeProofProcessMemoryEvidence, NativeTypographyProfile, NativeWindowSmokeRunOptions,
+    NativeWindowSmokeRunReport, SaveFileDialogSpec, TraySpec, WindowSpec, ZsShellRuntime,
+    ZsuiError, ZsuiResult,
 };
 
 mod process_memory;
@@ -173,6 +174,13 @@ pub(super) trait DesktopRuntimeBackend: Default {
         Err(ZsuiError::unsupported(
             "save_file_dialog",
             "the selected desktop backend does not implement a native save dialog",
+        ))
+    }
+
+    fn show_native_dialog(&mut self, _spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        Err(ZsuiError::unsupported(
+            "native_dialogs",
+            "the selected desktop backend does not implement native message dialogs",
         ))
     }
 }
@@ -402,6 +410,10 @@ pub(crate) fn save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<P
     SelectedDesktopRuntimeBackend::default().save_file_dialog(spec)
 }
 
+pub(crate) fn show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+    SelectedDesktopRuntimeBackend::default().show_native_dialog(spec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,6 +522,7 @@ mod tests {
         assert!(source.contains("crate::desktop_runtime::run_event_loop("));
         assert!(source.contains("crate::desktop_runtime::open_file_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::save_file_dialog(spec)"));
+        assert!(source.contains("crate::desktop_runtime::show_native_dialog(spec)"));
         assert!(source.contains("crate::desktop_runtime::run_smoke_event_loop("));
         assert!(desktop_services_core.contains("crate::desktop_runtime::desktop_capabilities()"));
         let capability_source = include_str!("../../capability.rs");
@@ -539,6 +552,7 @@ mod tests {
         assert!(desktop_services_core
             .contains("crate::desktop_runtime::open_file_dialog_required(spec)"));
         assert!(desktop_services_core.contains("crate::desktop_runtime::save_file_dialog(spec)"));
+        assert!(desktop_services_core.contains("crate::desktop_runtime::show_native_dialog(spec)"));
         for forbidden in [
             "#[cfg(",
             "cfg!(target_os",

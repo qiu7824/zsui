@@ -75,6 +75,15 @@ history remain authoritative for implementation status.
   `hwndOwner`, AppKit presents an `NSOpenPanel`/`NSSavePanel` sheet, and the
   default lightweight Linux host uses the XDG desktop portal. The optional
   `linux-gtk` compatibility backend retains `FileChooserNative`.
+- Native message dialogs flow from one `NativeDialogSpec` through
+  `NativeDesktopDialogService` or `NativeWindowHost` into the selected private
+  desktop-runtime adapter. Win32 owns owner-bound `MessageBoxW`, AppKit prefers
+  an active-window `NSAlert` sheet, GTK uses `GtkAlertDialog`, and linux-direct
+  uses the desktop-provided Zenity surface while reporting `Unsupported` when
+  that provider is absent. Applications receive only `DialogResponse` and do
+  not choose platform action order or import native dialog types. Capability
+  status remains partial until target interaction and non-Windows localization
+  proof exist.
 - Menu accelerators use the strong `ZsAccelerator` / `ZsAcceleratorKey`
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent

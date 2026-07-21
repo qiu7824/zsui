@@ -98,6 +98,62 @@ pub fn windows_win32_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<O
         .map(PathBuf::from))
 }
 
+#[derive(Debug, Default)]
+pub struct WindowsWin32DialogService;
+
+impl NativeDialogService for WindowsWin32DialogService {
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        windows_win32_show_native_dialog(spec)
+    }
+}
+
+pub fn windows_win32_show_native_dialog(
+    spec: &NativeDialogSpec,
+) -> ZsuiResult<DialogResponse> {
+    let owner = unsafe { GetActiveWindow() };
+    let mut style = windows_native_dialog_button_style(spec.buttons)
+        | windows_native_dialog_level_style(spec.level);
+    if owner.is_null() {
+        style |= MB_TASKMODAL;
+    }
+    let title = wide_null(&spec.title);
+    let message = wide_null(&spec.message);
+    let response = unsafe { MessageBoxW(owner, message.as_ptr(), title.as_ptr(), style) };
+    match response {
+        IDOK => Ok(DialogResponse::Ok),
+        IDCANCEL => Ok(DialogResponse::Cancel),
+        IDYES => Ok(DialogResponse::Yes),
+        IDNO => Ok(DialogResponse::No),
+        0 => Err(ZsuiError::host(
+            "windows_native_dialog",
+            format!("MessageBoxW failed with Win32 error {}", unsafe {
+                GetLastError()
+            }),
+        )),
+        other => Err(ZsuiError::host(
+            "windows_native_dialog",
+            format!("MessageBoxW returned unexpected response {other}"),
+        )),
+    }
+}
+
+fn windows_native_dialog_button_style(buttons: DialogButtons) -> u32 {
+    match buttons {
+        DialogButtons::Ok => MB_OK,
+        DialogButtons::OkCancel => MB_OKCANCEL,
+        DialogButtons::YesNo => MB_YESNO,
+        DialogButtons::YesNoCancel => MB_YESNOCANCEL,
+    }
+}
+
+fn windows_native_dialog_level_style(level: DialogLevel) -> u32 {
+    match level {
+        DialogLevel::Info | DialogLevel::Question => MB_ICONINFORMATION,
+        DialogLevel::Warning => MB_ICONWARNING,
+        DialogLevel::Error => MB_ICONERROR,
+    }
+}
+
 fn windows_common_dialog_cancel_or_error<T>(operation: &'static str) -> ZsuiResult<Option<T>> {
     let error = unsafe { CommDlgExtendedError() };
     if error == 0 {

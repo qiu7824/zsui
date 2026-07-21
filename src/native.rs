@@ -8854,7 +8854,7 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
-        self.inner.show_native_dialog(spec)
+        crate::desktop_runtime::show_native_dialog(spec)
     }
 
     fn poll_event(&mut self) -> ZsuiResult<Option<AppEvent>> {
@@ -8897,6 +8897,12 @@ impl crate::FileDialogService for NativeWindowHost {
         spec: &crate::SaveFileDialogSpec,
     ) -> ZsuiResult<Option<std::path::PathBuf>> {
         crate::desktop_runtime::save_file_dialog(spec)
+    }
+}
+
+impl crate::NativeDialogService for NativeWindowHost {
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        <Self as ZsuiHost>::show_native_dialog(self, spec)
     }
 }
 

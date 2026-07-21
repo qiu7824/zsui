@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::native_icons::NativeIconSource;
 use crate::{
-    CapabilityStatus, CapabilitySupport, ClipboardData, Command, Dpi, FileDialogSpec, MenuSpec,
-    PlatformName, Rect, WidgetId, WindowId, WindowSpec, ZsIcon, ZsuiError, ZsuiResult,
+    CapabilityStatus, CapabilitySupport, ClipboardData, Command, DialogResponse, Dpi,
+    FileDialogSpec, MenuSpec, NativeDialogSpec, PlatformName, Rect, WidgetId, WindowId, WindowSpec,
+    ZsIcon, ZsuiError, ZsuiResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,6 +22,7 @@ pub enum DesktopCapability {
     ClipboardText,
     OpenFileDialog,
     SaveFileDialog,
+    NativeDialog,
     SystemTheme,
     NativeIcons,
 }
@@ -39,13 +41,14 @@ impl DesktopCapability {
             Self::ClipboardText => "clipboard_text",
             Self::OpenFileDialog => "open_file_dialog",
             Self::SaveFileDialog => "save_file_dialog",
+            Self::NativeDialog => "native_dialog",
             Self::SystemTheme => "system_theme",
             Self::NativeIcons => "native_icons",
         }
     }
 }
 
-pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 13] = [
+pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 14] = [
     DesktopCapability::NativeWindow,
     DesktopCapability::WindowResize,
     DesktopCapability::ScaleFactor,
@@ -57,6 +60,7 @@ pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 13] = [
     DesktopCapability::ClipboardText,
     DesktopCapability::OpenFileDialog,
     DesktopCapability::SaveFileDialog,
+    DesktopCapability::NativeDialog,
     DesktopCapability::SystemTheme,
     DesktopCapability::NativeIcons,
 ];
@@ -214,6 +218,12 @@ impl DesktopCapabilities {
                 ),
             )
             .with_support(
+                DesktopCapability::NativeDialog,
+                CapabilitySupport::partial(
+                    "owner-bound Win32 MessageBoxW dialogs map typed levels, buttons and responses; target interaction proof is pending",
+                ),
+            )
+            .with_support(
                 DesktopCapability::SystemTheme,
                 CapabilitySupport::partial(
                     "light/dark and SPI_GETHIGHCONTRAST detection, user-selected GetSysColor pairs and repaint on system color/theme changes are connected; live OS setting-change proof is pending",
@@ -358,6 +368,18 @@ impl DesktopCapabilities {
                 } else {
                     CapabilitySupport::unsupported(
                         "enable macos-appkit to compile NSSavePanel",
+                    )
+                },
+            )
+            .with_support(
+                DesktopCapability::NativeDialog,
+                if cfg!(feature = "macos-appkit") {
+                    CapabilitySupport::partial(
+                        "owner-bound NSAlert sheets map typed levels, platform action order and responses; target interaction proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable macos-appkit to compile native NSAlert dialogs",
                     )
                 },
             )
@@ -522,6 +544,18 @@ impl DesktopCapabilities {
                 },
             )
             .with_support(
+                DesktopCapability::NativeDialog,
+                if cfg!(feature = "linux-gtk") {
+                    CapabilitySupport::partial(
+                        "GTK 4.10 AlertDialog maps typed buttons and responses with GTK-owned action order; Wayland/X11 interaction proof is pending",
+                    )
+                } else {
+                    CapabilitySupport::unsupported(
+                        "enable linux-gtk to compile GTK AlertDialog support",
+                    )
+                },
+            )
+            .with_support(
                 DesktopCapability::SystemTheme,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
@@ -630,6 +664,13 @@ impl DesktopCapabilities {
                 support(
                     "the XDG desktop portal save-file dialog is connected without GTK; target interaction proof is pending",
                     "enable linux-direct to compile XDG portal file dialogs",
+                ),
+            )
+            .with_support(
+                DesktopCapability::NativeDialog,
+                support(
+                    "the lightweight host maps typed message dialogs through the desktop-provided Zenity surface; provider and target interaction proof are required",
+                    "enable linux-direct to compile Linux message-dialog support",
                 ),
             )
             .with_support(
@@ -834,6 +875,27 @@ pub trait FileDialogService {
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>>;
 }
 
+pub trait NativeDialogService {
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse>;
+}
+
+/// Target-dispatched native message dialog. The selected desktop backend owns
+/// its platform action order, modality and response mapping.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NativeDesktopDialogService;
+
+impl NativeDesktopDialogService {
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl NativeDialogService for NativeDesktopDialogService {
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        crate::desktop_runtime::show_native_dialog(spec)
+    }
+}
+
 /// Target-dispatched file dialogs bound to the active native window when one
 /// is available, with application-modal fallback when no owner exists.
 #[derive(Debug, Clone, Copy, Default)]
@@ -892,6 +954,12 @@ pub trait DesktopHost:
 mod tests {
     use super::*;
     use crate::native_icons::native_icon_candidates;
+
+    #[test]
+    fn native_dialog_facade_implements_the_safe_service_contract() {
+        fn assert_service<T: NativeDialogService>() {}
+        assert_service::<NativeDesktopDialogService>();
+    }
 
     struct ContractHost {
         capabilities: DesktopCapabilities,

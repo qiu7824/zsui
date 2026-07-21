@@ -10,9 +10,11 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType,
-    NSFloatingWindowLevel, NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString,
-    NSSavePanel, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+    NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
+    NSAlertThirdButtonReturn, NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
+    NSBackingStoreType, NSFloatingWindowLevel, NSModalResponseCancel, NSModalResponseOK,
+    NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow, NSWindowDelegate,
+    NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSArray, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
@@ -25,7 +27,8 @@ use crate::native_file_dialog::{
     native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, DesktopEvent, FileDialogService, FileDialogSpec, MenuService,
+    ClipboardData, ClipboardService, DesktopEvent, DialogButtons, DialogLevel, DialogResponse,
+    FileDialogService, FileDialogSpec, MenuService, NativeDialogService, NativeDialogSpec,
     SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
 
@@ -557,6 +560,15 @@ impl FileDialogService for MacosAppKitFileDialogService {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MacosAppKitDialogService;
+
+impl NativeDialogService for MacosAppKitDialogService {
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        macos_appkit_show_native_dialog(spec)
+    }
+}
+
 pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
     let mtm = appkit_main_thread_marker("NSOpenPanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
@@ -632,6 +644,92 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
         .transpose()
 }
 
+pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+    let mtm = appkit_main_thread_marker("NSAlert")?;
+    let owner = appkit_active_file_dialog_owner(mtm);
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(&spec.title));
+    alert.setInformativeText(&NSString::from_str(&spec.message));
+    alert.setAlertStyle(match spec.level {
+        DialogLevel::Info | DialogLevel::Question => NSAlertStyle::Informational,
+        DialogLevel::Warning => NSAlertStyle::Warning,
+        DialogLevel::Error => NSAlertStyle::Critical,
+    });
+    for label in appkit_native_dialog_button_labels(spec.buttons) {
+        alert.addButtonWithTitle(&NSString::from_str(label));
+    }
+
+    let response = appkit_run_alert(&alert, owner.as_deref());
+    appkit_native_dialog_response(spec.buttons, response).ok_or_else(|| {
+        ZsuiError::host(
+            "macos_native_dialog",
+            format!("NSAlert returned unexpected response {response}"),
+        )
+    })
+}
+
+fn appkit_native_dialog_button_labels(buttons: DialogButtons) -> &'static [&'static str] {
+    match buttons {
+        DialogButtons::Ok => &["OK"],
+        DialogButtons::OkCancel => &["OK", "Cancel"],
+        DialogButtons::YesNo => &["Yes", "No"],
+        DialogButtons::YesNoCancel => &["Yes", "No", "Cancel"],
+    }
+}
+
+fn appkit_native_dialog_response(
+    buttons: DialogButtons,
+    response: objc2_app_kit::NSModalResponse,
+) -> Option<DialogResponse> {
+    if response == NSModalResponseCancel {
+        return Some(DialogResponse::Cancel);
+    }
+    match (buttons, response) {
+        (DialogButtons::Ok, value) if value == NSAlertFirstButtonReturn => Some(DialogResponse::Ok),
+        (DialogButtons::OkCancel, value) if value == NSAlertFirstButtonReturn => {
+            Some(DialogResponse::Ok)
+        }
+        (DialogButtons::OkCancel, value) if value == NSAlertSecondButtonReturn => {
+            Some(DialogResponse::Cancel)
+        }
+        (DialogButtons::YesNo | DialogButtons::YesNoCancel, value)
+            if value == NSAlertFirstButtonReturn =>
+        {
+            Some(DialogResponse::Yes)
+        }
+        (DialogButtons::YesNo | DialogButtons::YesNoCancel, value)
+            if value == NSAlertSecondButtonReturn =>
+        {
+            Some(DialogResponse::No)
+        }
+        (DialogButtons::YesNoCancel, value) if value == NSAlertThirdButtonReturn => {
+            Some(DialogResponse::Cancel)
+        }
+        _ => None,
+    }
+}
+
+fn appkit_run_alert(alert: &NSAlert, owner: Option<&NSWindow>) -> objc2_app_kit::NSModalResponse {
+    let Some(owner) = owner else {
+        return alert.runModal();
+    };
+
+    let response = Rc::new(Cell::new(None));
+    let completed_response = Rc::clone(&response);
+    let completion = RcBlock::new(move |value: objc2_app_kit::NSModalResponse| {
+        completed_response.set(Some(value));
+    });
+    alert.beginSheetModalForWindow_completionHandler(owner, Some(&completion));
+
+    let run_loop = NSRunLoop::currentRunLoop();
+    while response.get().is_none() {
+        run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
+    }
+    response
+        .get()
+        .expect("AppKit sheet completion set an alert response")
+}
+
 fn appkit_active_file_dialog_owner(mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
     let application = NSApplication::sharedApplication(mtm);
     application.keyWindow().or_else(|| application.mainWindow())
@@ -702,6 +800,25 @@ mod tests {
     fn appkit_file_dialog_service_implements_safe_public_contract() {
         fn assert_service<T: FileDialogService>() {}
         assert_service::<MacosAppKitFileDialogService>();
+    }
+
+    #[test]
+    fn appkit_native_dialog_uses_semantic_prominence_order_and_response_mapping() {
+        fn assert_service<T: NativeDialogService>() {}
+        assert_service::<MacosAppKitDialogService>();
+
+        assert_eq!(
+            appkit_native_dialog_button_labels(DialogButtons::YesNoCancel),
+            &["Yes", "No", "Cancel"]
+        );
+        assert_eq!(
+            appkit_native_dialog_response(DialogButtons::YesNoCancel, NSAlertFirstButtonReturn,),
+            Some(DialogResponse::Yes)
+        );
+        assert_eq!(
+            appkit_native_dialog_response(DialogButtons::YesNoCancel, NSAlertThirdButtonReturn,),
+            Some(DialogResponse::Cancel)
+        );
     }
 
     #[test]

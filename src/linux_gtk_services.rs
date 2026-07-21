@@ -8,7 +8,7 @@ use gtk::gio;
 use gtk::glib::MainContext;
 use gtk::prelude::*;
 #[allow(deprecated)]
-use gtk::{gdk, FileChooserAction, FileChooserNative, FileFilter, ResponseType};
+use gtk::{gdk, AlertDialog, FileChooserAction, FileChooserNative, FileFilter, ResponseType};
 use gtk4 as gtk;
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
@@ -16,7 +16,8 @@ use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, DesktopEvent, FileDialogService, FileDialogSpec, MenuService,
+    ClipboardData, ClipboardService, DesktopEvent, DialogButtons, DialogResponse,
+    FileDialogService, FileDialogSpec, MenuService, NativeDialogService, NativeDialogSpec,
     SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
 };
 
@@ -459,6 +460,15 @@ impl FileDialogService for LinuxGtkFileDialogService {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LinuxGtkDialogService;
+
+impl NativeDialogService for LinuxGtkDialogService {
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        linux_gtk_show_native_dialog(spec)
+    }
+}
+
 #[allow(deprecated)]
 pub fn linux_gtk_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
     ensure_gtk_main_thread("gtk_open_file_dialog")?;
@@ -531,6 +541,54 @@ pub fn linux_gtk_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Optio
     };
     dialog.destroy();
     result
+}
+
+pub fn linux_gtk_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+    ensure_gtk_main_thread("gtk_native_dialog")?;
+    let (labels, cancel_button, default_button) = gtk_native_dialog_buttons(spec.buttons);
+    let dialog = AlertDialog::builder()
+        .message(&spec.title)
+        .detail(&spec.message)
+        .modal(true)
+        .build();
+    dialog.set_buttons(labels);
+    dialog.set_cancel_button(cancel_button);
+    dialog.set_default_button(default_button);
+    let owner = gio::Application::default()
+        .and_then(|application| application.downcast::<gtk::Application>().ok())
+        .and_then(|application| application.active_window());
+    let response = MainContext::default()
+        .block_on(dialog.choose_future(owner.as_ref()))
+        .map_err(|error| ZsuiError::host("gtk_native_dialog", error.to_string()))?;
+    gtk_native_dialog_response(spec.buttons, response).ok_or_else(|| {
+        ZsuiError::host(
+            "gtk_native_dialog",
+            format!("GtkAlertDialog returned unexpected button index {response}"),
+        )
+    })
+}
+
+fn gtk_native_dialog_buttons(buttons: DialogButtons) -> (&'static [&'static str], i32, i32) {
+    match buttons {
+        DialogButtons::Ok => (&["OK"], 0, 0),
+        DialogButtons::OkCancel => (&["Cancel", "OK"], 0, 1),
+        DialogButtons::YesNo => (&["No", "Yes"], 0, 1),
+        DialogButtons::YesNoCancel => (&["Cancel", "No", "Yes"], 0, 2),
+    }
+}
+
+fn gtk_native_dialog_response(buttons: DialogButtons, response: i32) -> Option<DialogResponse> {
+    match (buttons, response) {
+        (DialogButtons::Ok, 0) => Some(DialogResponse::Ok),
+        (DialogButtons::OkCancel, 0) => Some(DialogResponse::Cancel),
+        (DialogButtons::OkCancel, 1) => Some(DialogResponse::Ok),
+        (DialogButtons::YesNo, 0) => Some(DialogResponse::No),
+        (DialogButtons::YesNo, 1) => Some(DialogResponse::Yes),
+        (DialogButtons::YesNoCancel, 0) => Some(DialogResponse::Cancel),
+        (DialogButtons::YesNoCancel, 1) => Some(DialogResponse::No),
+        (DialogButtons::YesNoCancel, 2) => Some(DialogResponse::Yes),
+        _ => None,
+    }
 }
 
 pub(crate) fn ensure_gtk_main_thread(operation: &'static str) -> ZsuiResult<()> {
@@ -608,6 +666,25 @@ mod tests {
     fn gtk_file_dialog_service_implements_safe_public_contract() {
         fn assert_service<T: FileDialogService>() {}
         assert_service::<LinuxGtkFileDialogService>();
+    }
+
+    #[test]
+    fn gtk_native_dialog_uses_platform_action_order_and_response_mapping() {
+        fn assert_service<T: NativeDialogService>() {}
+        assert_service::<LinuxGtkDialogService>();
+
+        assert_eq!(
+            gtk_native_dialog_buttons(DialogButtons::YesNoCancel),
+            (&["Cancel", "No", "Yes"][..], 0, 2)
+        );
+        assert_eq!(
+            gtk_native_dialog_response(DialogButtons::YesNoCancel, 0),
+            Some(DialogResponse::Cancel)
+        );
+        assert_eq!(
+            gtk_native_dialog_response(DialogButtons::YesNoCancel, 2),
+            Some(DialogResponse::Yes)
+        );
     }
 
     #[test]

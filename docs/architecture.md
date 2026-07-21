@@ -656,6 +656,14 @@ Applications call `ZsuiHost` operations:
 - show native dialogs
 - poll events and run the host event loop
 
+`NativeDesktopDialogService` and `NativeWindowHost` both delegate
+`NativeDialogSpec` through the private selected desktop-runtime adapter.
+Win32 owns `MessageBoxW` modality and localized system buttons, AppKit presents
+`NSAlert` as an active-window sheet when possible, GTK uses `GtkAlertDialog`,
+and the lightweight Linux host reports `Unsupported` when its desktop-provided
+Zenity surface is absent. Application code receives only `DialogResponse` and
+never chooses an action order or imports a native dialog type.
+
 Unsupported features return `ZsuiError::Unsupported` or appear in
 `HostCapabilities` degradation reports. A host may accept a window declaration
 and still downgrade unsupported traits such as transparency or always-on-top.

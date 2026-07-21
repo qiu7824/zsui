@@ -305,9 +305,9 @@ pub use date::{days_in_month, is_leap_year, ZsDate};
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
     DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
-    MenuService, NativeClipboardService, NativeFileDialogService, SaveFileDialogSpec,
-    TextInputRequest, TextInputService, ThemePreference, ThemeService, WindowService,
-    REQUIRED_DESKTOP_CAPABILITIES,
+    MenuService, NativeClipboardService, NativeDesktopDialogService, NativeDialogService,
+    NativeFileDialogService, SaveFileDialogSpec, TextInputRequest, TextInputService,
+    ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 pub use document_shell::{

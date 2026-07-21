@@ -441,6 +441,26 @@ native_window("Monitor")
 
 窗口最小化或隐藏后，ZSUI 会释放 `View` 树、绘制/命中计划和临时输入缓存；应用状态、命令路由及应用持有的监控服务继续存活。窗口重新显示时，界面从保留的状态重新构建。
 
+原生消息对话框也使用同一套安全类型：
+
+```rust,no_run
+use zsui::{
+    DialogButtons, DialogLevel, NativeDesktopDialogService, NativeDialogService,
+    NativeDialogSpec,
+};
+
+let response = NativeDesktopDialogService::new().show_native_dialog(
+    &NativeDialogSpec::message("Save changes?", "Unsaved edits will be lost.")
+        .level(DialogLevel::Warning)
+        .buttons(DialogButtons::YesNoCancel),
+)?;
+# Ok::<(), zsui::ZsuiError>(())
+```
+
+应用只处理 `DialogResponse`；Windows 使用有所有者的 `MessageBoxW`，macOS 使用
+`NSAlert` 窗口 Sheet，GTK 兼容后端使用 `GtkAlertDialog`。默认 Linux 轻量宿主调用
+桌面提供的 Zenity 表面，并在提供者不存在时明确返回 `ZsuiError::Unsupported`。
+
 ## 按需编译
 
 从 crates.io 使用：

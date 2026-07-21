@@ -83,6 +83,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn native_dialog_maps_typed_buttons_and_levels_to_win32_flags() {
+        assert_eq!(
+            windows_native_dialog_button_style(DialogButtons::Ok),
+            MB_OK
+        );
+        assert_eq!(
+            windows_native_dialog_button_style(DialogButtons::OkCancel),
+            MB_OKCANCEL
+        );
+        assert_eq!(
+            windows_native_dialog_button_style(DialogButtons::YesNoCancel),
+            MB_YESNOCANCEL
+        );
+        assert_eq!(
+            windows_native_dialog_level_style(DialogLevel::Warning),
+            MB_ICONWARNING
+        );
+        assert_eq!(
+            windows_native_dialog_level_style(DialogLevel::Question),
+            MB_ICONINFORMATION
+        );
+
+        fn assert_service<T: NativeDialogService>() {}
+        assert_service::<WindowsWin32DialogService>();
+    }
+
     fn view_input_route_test_lock() -> std::sync::MutexGuard<'static, ()> {
         windows_win32_view_input_route_test_lock()
     }

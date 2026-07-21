@@ -33,7 +33,7 @@ winit = { version = "0.30", optional = true }
 block2 = { version = "0.6", optional = true }
 libc = { version = "0.2", optional = true }
 objc2 = { version = "0.6", optional = true }
-objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSCell", "NSColor", "NSColorSpace", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStatusBar", "NSStatusItem", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAlert", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSButton", "NSCell", "NSColor", "NSColorSpace", "NSControl", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStatusBar", "NSStatusItem", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
 objc2-foundation = { version = "0.3", optional = true }
 
 [target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
@@ -123,7 +123,7 @@ desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
 macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
-linux-gtk = ["dep:gtk4"]
+linux-gtk = ["dep:gtk4", "gtk4/v4_10"]
 linux-direct-host = ["dep:rfd", "dep:softbuffer", "dep:winit"]
 linux-direct = ["linux-direct-host", "dep:cairo-rs", "dep:pango", "dep:pangocairo"]
 linux-direct-lite = ["linux-direct-host", "dep:cosmic-text", "dep:tiny-skia"]

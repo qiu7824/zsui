@@ -3,8 +3,8 @@ use super::{
     DesktopRuntimeBackend, DesktopRuntimeRequest, DesktopSmokeRequest,
 };
 use crate::{
-    DesktopCapabilities, FileDialogSpec, HostCapabilities, NativeWindowSmokeRunReport,
-    SaveFileDialogSpec, ZsuiError, ZsuiResult,
+    DesktopCapabilities, DialogResponse, FileDialogSpec, HostCapabilities, NativeDialogSpec,
+    NativeWindowSmokeRunReport, SaveFileDialogSpec, ZsuiError, ZsuiResult,
 };
 
 #[derive(Default)]
@@ -141,5 +141,9 @@ impl DesktopRuntimeBackend for Backend {
         spec: &SaveFileDialogSpec,
     ) -> ZsuiResult<Option<std::path::PathBuf>> {
         crate::linux_direct::linux_direct_save_file_dialog(spec)
+    }
+
+    fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+        crate::linux_direct::linux_direct_show_native_dialog(spec)
     }
 }

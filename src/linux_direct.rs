@@ -2341,6 +2341,62 @@ pub(crate) fn linux_direct_save_file_dialog(
     Ok(dialog.save_file())
 }
 
+pub(crate) fn linux_direct_show_native_dialog(
+    spec: &crate::NativeDialogSpec,
+) -> ZsuiResult<crate::DialogResponse> {
+    let availability = std::process::Command::new("zenity")
+        .arg("--version")
+        .output();
+    match availability {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            return Err(ZsuiError::unsupported(
+                "native_dialogs",
+                format!(
+                    "the Linux direct message-dialog provider `zenity` is unavailable (exit status {})",
+                    output.status
+                ),
+            ));
+        }
+        Err(error) => {
+            return Err(ZsuiError::unsupported(
+                "native_dialogs",
+                format!(
+                    "the Linux direct message-dialog provider `zenity` is unavailable: {error}"
+                ),
+            ));
+        }
+    }
+
+    let level = match spec.level {
+        crate::DialogLevel::Info | crate::DialogLevel::Question => rfd::MessageLevel::Info,
+        crate::DialogLevel::Warning => rfd::MessageLevel::Warning,
+        crate::DialogLevel::Error => rfd::MessageLevel::Error,
+    };
+    let buttons = match spec.buttons {
+        crate::DialogButtons::Ok => rfd::MessageButtons::Ok,
+        crate::DialogButtons::OkCancel => rfd::MessageButtons::OkCancel,
+        crate::DialogButtons::YesNo => rfd::MessageButtons::YesNo,
+        crate::DialogButtons::YesNoCancel => rfd::MessageButtons::YesNoCancel,
+    };
+    let response = rfd::MessageDialog::new()
+        .set_title(&spec.title)
+        .set_description(&spec.message)
+        .set_level(level)
+        .set_buttons(buttons)
+        .show();
+    match response {
+        rfd::MessageDialogResult::Ok => Ok(crate::DialogResponse::Ok),
+        rfd::MessageDialogResult::Cancel => Ok(crate::DialogResponse::Cancel),
+        rfd::MessageDialogResult::Yes => Ok(crate::DialogResponse::Yes),
+        rfd::MessageDialogResult::No => Ok(crate::DialogResponse::No),
+        rfd::MessageDialogResult::Custom(label) => Err(ZsuiError::host(
+            "linux_direct_native_dialog",
+            format!("unexpected custom message-dialog response `{label}`"),
+        )),
+    }
+}
+
 #[cfg(feature = "clipboard")]
 pub(crate) fn linux_direct_read_clipboard() -> ZsuiResult<Option<crate::ClipboardData>> {
     let mut clipboard = arboard::Clipboard::new()

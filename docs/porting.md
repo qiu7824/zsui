@@ -117,6 +117,14 @@ When an active native window exists, Win32 assigns it to `hwndOwner` and AppKit
 presents the panel as a window sheet. Linux delegates ownership and modality to
 the desktop portal.
 
+Use `NativeDesktopDialogService` for blocking system messages and confirmations.
+`NativeDialogSpec` carries only semantic level and button roles; the selected
+adapter owns modality, platform action order and native response conversion.
+Win32 uses the active window as the `MessageBoxW` owner, AppKit prefers an
+`NSAlert` sheet, GTK uses `GtkAlertDialog`, and Linux direct uses the optional
+desktop Zenity provider. Missing providers return `ZsuiError::Unsupported`
+instead of a fabricated response.
+
 The unified native-window path also attaches backend-neutral `NativeDrawPlan`
 content to both platforms. AppKit uses a flipped custom `NSView`,
 `NSBezierPath`, semantic `NSString` attributes and SF Symbols. Linux uses a
