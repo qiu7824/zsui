@@ -715,6 +715,18 @@ jobs:
           set -e
           wait "$gallery_pid"
 
+          # Keep this application's adapter inactive while the scripted proof
+          # interaction opens the nested MenuFlyout. Enabling AT-SPI afterwards
+          # makes its initial tree reflect the final state instead of a cached
+          # startup snapshot.
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<false>' \
+            >>"$root/atspi-status.log"
+
           ZSUI_NATIVE_PROOF_DURATION_MS=20000 \
             ./target/release/examples/component_gallery \
               --native-proof \
@@ -727,16 +739,8 @@ jobs:
           feedback_pid=$!
 
           # The Linux proof driver dispatches scripted inputs at half of the
-          # requested duration. Activate this process's adapter afterwards so
-          # the AT-SPI initial tree is already the final recursive menu state.
+          # requested duration. Activate this process's adapter afterwards.
           sleep 11.0
-          gdbus call \
-            --session \
-            --dest org.a11y.Bus \
-            --object-path /org/a11y/bus \
-            --method org.freedesktop.DBus.Properties.Set \
-            org.a11y.Status IsEnabled '<false>' \
-            >>"$root/atspi-status.log"
           gdbus call \
             --session \
             --dest org.a11y.Bus \
