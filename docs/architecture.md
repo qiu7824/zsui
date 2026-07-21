@@ -356,6 +356,12 @@ now have native command-id table routing, RAII popup-menu creation/cleanup and
 `TrackPopupMenu` selection routing, but a target-smoke artifact that exercises
 real user popup selection is still required before the native backend can be
 called complete.
+AppKit status items use the same shared `TraySpec` declaration. The AppKit
+backend retains `NSStatusItem` resources from `NSStatusBar`, installs detached
+native `NSMenu` trees, loads optional template images and routes status commands
+through the shared application command path. Required status smoke runs on the
+fixed macOS 15 Runner and verifies creation, command lowering/routing and RAII
+menu/status-item teardown rather than inferring support from a target check.
 Target proof still requires the platform smoke artifacts in
 `docs/native-host-smoke.md`.
 

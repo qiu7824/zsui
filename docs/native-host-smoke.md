@@ -46,13 +46,21 @@ desktop paths capture their final native surface into the same evidence schema;
 target-smoke completion still requires reviewing the generated image and
 interaction report.
 
-Windows can also request a real status item during the same smoke run:
+Windows and macOS can also request a real status item during the same smoke
+run:
 
 ```powershell
 cargo run --example native_smoke_run -- windows --tray
 ```
 
-That path uses the `Shell_NotifyIconW` backed `WindowsWin32StatusItemHost` and
+On macOS, use the current target with an explicit artifact root:
+
+```bash
+cargo run --example native_smoke_run -- current target/native-proof/macos-status-item --status-item --view
+```
+
+The Windows path uses the `Shell_NotifyIconW` backed
+`WindowsWin32StatusItemHost` and
 records status-item fields in `interaction.json`. It also exercises the
 native status-menu command table and records `status_menu_command_routed`.
 It creates and destroys a native popup menu and records
@@ -60,6 +68,11 @@ It creates and destroys a native popup menu and records
 proof before the tray surface is system-complete; the Win32 host exposes the
 `TrackPopupMenu` selection route, but the auto-closing smoke runner does not
 block waiting for manual selection.
+The AppKit path owns a real `NSStatusItem`, attaches a detached native `NSMenu`,
+routes the first enabled command through the shared typed update path and
+removes the status item during teardown. Fixed macOS 15 Native UI Proof run
+`29793379808` requires and verifies creation, recursive command count, command
+routing and native menu attachment/cleanup.
 
 The native window-menu smoke path is:
 
@@ -71,9 +84,9 @@ On Windows this installs an owned `HMENU` plus `HACCEL`, preserves nested and
 disabled item state, and records typed window-menu command routing in
 `interaction.json`. The same `MenuSpec` uses `Primary+O`/`Primary+S`. AppKit
 and the optional GTK4 compatibility service lower those accelerators to native
-menu forms. `linux-direct` routes the typed accelerator/command path, but its
-visible desktop-shell native menu surface remains unsupported and must not be
-claimed from command-routing proof alone.
+menu forms. `linux-direct` owns a self-drawn desktop menu surface and routes
+pointer, keyboard and accelerator commands through the same model; its proof
+does not claim a compositor-owned global menu.
 
 All three direct desktop hosts attach a typed Rust view draw plan to their
 native content surface. Win32 paints through its buffered GDI sink, AppKit

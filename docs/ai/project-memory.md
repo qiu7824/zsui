@@ -241,6 +241,16 @@ history remain authoritative for implementation status.
   value and 2/2 expanded submenu states. MenuFlyout paths canonicalize every
   truncated ancestor so nonzero sibling indices remain attached to the correct
   recursive provider; no ZSUI-owned catalog accessibility gap remains.
+- AppKit status items are a real target service behind the shared `TraySpec`
+  and native host API. The backend creates and retains `NSStatusItem` objects
+  through `NSStatusBar`, attaches detached native `NSMenu` trees, treats loaded
+  images as template icons, routes commands into the same typed application
+  path and keeps tray applications alive after their last window closes.
+  Built-in show/hide/toggle/quit commands also retain native host behavior.
+  Required status-item smoke must report native creation, recursive command
+  count, menu attachment/cleanup and routed command evidence. Fixed macOS 15
+  Native UI Proof run `29793379808` passed those gates on commit `d835b7a`;
+  cross-compilation alone is not status-item evidence.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB
