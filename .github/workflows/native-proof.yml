@@ -726,7 +726,10 @@ jobs:
               >"$root/gallery-feedback-light.log" 2>&1 &
           feedback_pid=$!
 
-          sleep 1.0
+          # The Linux proof driver dispatches scripted inputs at half of the
+          # requested duration. Activate this process's adapter afterwards so
+          # the AT-SPI initial tree is already the final recursive menu state.
+          sleep 11.0
           gdbus call \
             --session \
             --dest org.a11y.Bus \
@@ -764,7 +767,7 @@ jobs:
                   yield node
                   queue.extend(children(node))
 
-          deadline = time.monotonic() + 17.0
+          deadline = time.monotonic() + 6.0
           snapshot = []
           required = {
               "自动保存 / Auto save",
