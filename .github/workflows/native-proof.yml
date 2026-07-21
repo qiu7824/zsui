@@ -871,6 +871,14 @@ jobs:
           PY
           wait "$feedback_pid"
 
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<false>' \
+            >>"$root/atspi-status.log" 2>&1
+
           ZSUI_NATIVE_PROOF_DURATION_MS=20000 \
           ZSUI_NATIVE_PROOF_OPEN_MENU=1 \
             ./target/release/examples/zsui_notepad \
@@ -882,11 +890,10 @@ jobs:
               >"$root/notepad.log" 2>&1 &
           notepad_pid=$!
 
-          # AccessKit watches the AT-SPI status transition per process. Give
-          # the second process time to create its native window, then drive the
-          # real session property once. This avoids racing adapter activation
-          # with repeated status changes in a headless session.
-          sleep 4.0
+          # The proof driver opens the native desktop menu at half duration.
+          # Activate this process's adapter afterwards so its initial tree
+          # contains the real menu-item rows rather than only the menu bar.
+          sleep 11.0
           set +e
           python3 comparisons/scripts/capture_linux_smaps.py \
             --pid "$notepad_pid" \
@@ -895,13 +902,6 @@ jobs:
           notepad_smaps_status=$?
           set -e
           echo "notepad_smaps_status=$notepad_smaps_status" >>"$root/notepad-smaps.log"
-          gdbus call \
-            --session \
-            --dest org.a11y.Bus \
-            --object-path /org/a11y/bus \
-            --method org.freedesktop.DBus.Properties.Set \
-            org.a11y.Status IsEnabled '<false>' \
-            >>"$root/atspi-status.log" 2>&1
           gdbus call \
             --session \
             --dest org.a11y.Bus \
@@ -917,7 +917,7 @@ jobs:
           from pathlib import Path
           import pyatspi
 
-          deadline = time.monotonic() + 10.0
+          deadline = time.monotonic() + 6.0
           application = None
 
           def children(node):
@@ -993,6 +993,9 @@ jobs:
           set -e
           echo "notepad_atspi_status=$notepad_atspi_status" >>"$root/notepad-atspi.log"
           wait "$notepad_pid"
+          if [ "$notepad_atspi_status" -ne 0 ]; then
+            exit "$notepad_atspi_status"
+          fi
           PROOF
 
       - name: Summarize Wayland proof failure
@@ -1016,6 +1019,9 @@ jobs:
           atspi = json.loads((root / "atspi-proof.json").read_text("utf-8"))
           menu_atspi = json.loads(
               (root / "menu-flyout-atspi-proof.json").read_text("utf-8")
+          )
+          notepad_atspi = json.loads(
+              (root / "notepad-atspi-proof.json").read_text("utf-8")
           )
 
           for proof in (gallery, feedback, notepad):
@@ -1057,9 +1063,21 @@ jobs:
               "checkmenuitem",
           }
           assert menu_rows["更多 / More"]["role"] == "menu"
-          assert menu_rows["更多 / More"]["expanded"] is True
           assert menu_rows["导出 / Export"]["role"] == "menu"
-          assert menu_rows["导出 / Export"]["expanded"] is True
+          assert menu_rows["导出 / Export"]["parent"] == "更多 / More"
+          assert (
+              menu_rows["PDF 文档 / PDF document"]["parent"]
+              == "导出 / Export"
+          )
+          assert menu_atspi["recursive_expansion"] == {
+              "source": "visible_atspi_parent_child_tree",
+              "submenu": "更多 / More",
+              "nested_submenu": "导出 / Export",
+              "nested_command": "PDF 文档 / PDF document",
+          }
+          assert notepad_atspi["backend"] == "accesskit_atspi"
+          assert notepad_atspi["node_count"] >= 5
+          assert {"menu bar", "menu item"} <= set(notepad_atspi["roles"])
 
           runtime = notepad["runtime"]
           assert runtime["window_menu_surface_created"] is True
