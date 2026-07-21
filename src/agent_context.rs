@@ -414,6 +414,21 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             ],
         },
         ZsuiCompletionArea {
+            area_name: "reloadable_ui_authoring",
+            percent_complete: 0,
+            status_name: "v0_2_goal_defined_implementation_not_started",
+            source_path: "docs/v0.2-desktop-native.md",
+            missing_before_complete: vec![
+                "versioned semantic UiDocument schema",
+                "typed State/Msg binding manifest and validation",
+                "zsui-uic document checker",
+                "prebuilt native auto-reload Viewer",
+                "stable-ID focus, selection and scroll state preservation",
+                "deterministic AI handoff",
+                "release embedding without development-only dependencies",
+            ],
+        },
+        ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
             percent_complete: 94,
             status_name: "three_native_event_loops_renderers_final_surface_captures_shaped_text_visual_bidi_selection_focus_visuals_and_resize",
@@ -916,6 +931,16 @@ mod tests {
             .readiness
             .rust_first_goal_names
             .contains(&"crate_split_architecture"));
+        assert!(context
+            .readiness
+            .rust_first_goal_names
+            .contains(&"reloadable_ui_documents"));
+        let reloadable_authoring = context
+            .completion_areas
+            .iter()
+            .find(|area| area.area_name == "reloadable_ui_authoring")
+            .expect("reloadable UI authoring completion area should exist");
+        assert_eq!(reloadable_authoring.percent_complete, 0);
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert_eq!(context.readiness.platform_capability_readiness.len(), 4);
         let macos = context

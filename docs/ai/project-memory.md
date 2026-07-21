@@ -24,6 +24,19 @@ history remain authoritative for implementation status.
   contract. The real objective is a complete native application loop.
 - Controls and advanced capabilities should remain Cargo-feature selectable so
   unused surfaces and heavy dependencies can be omitted.
+- v0.2 additionally requires a versioned semantic UI document, typed binding
+  validation and a prebuilt native Viewer that can reload visual-only changes
+  without invoking Cargo. Existing Rust builders remain supported and may mix
+  with document-backed subtrees; the document format must not introduce
+  reflection, a global string event bus or platform types into application UI.
+- The reloadable authoring path must emit deterministic structured data for AI
+  editing and support release embedding without file watchers, preview
+  transport, another mandatory process or other development-only dependencies.
+  Stable IDs preserve compatible focus, selection, scrolling and control state.
+- A browser/WASM projection is an optional approximate design tool, never
+  native platform evidence. A full drag-and-drop designer is outside the v0.2
+  completion gate. This added authoring goal does not remove any existing
+  native service, IME, accessibility, interaction, trimming or proof gate.
 - WebView is outside the ZSUI product boundary. Do not add WebView2, WKWebView,
   WebKitGTK, Wry, Tauri or another browser-shell dependency. Keep the isolated
   Tauri benchmark under `comparisons/` out of the root package graph. Enforce

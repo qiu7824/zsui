@@ -160,6 +160,14 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "add tuple/array ergonomics and product adapter examples for declarative views",
         ),
         ZsuiRustFirstGoal::new(
+            "reloadable_ui_documents",
+            "Allow visual-only UI changes to reload without invoking Cargo while preserving Rust-first typed state, messages and release trimming.",
+            "a versioned semantic UiDocument, explicit typed binding manifest, schema validator, prebuilt native Viewer, stable-ID patches and release-time embedding",
+            "a global string event bus, arbitrary reflection, browser pixels presented as native proof, development watchers in release builds or a mandatory two-process application runtime",
+            "docs/v0.2-desktop-native.md, src/view/mod.rs, src/native.rs",
+            "implement the document schema and zsui-uic validation first, then native auto-reload, compatible state retention, deterministic AI handoff and release embedding; defer the full drag-and-drop editor",
+        ),
+        ZsuiRustFirstGoal::new(
             "result_error_handling",
             "Return Result<T, ZsuiError> for host/backend failures instead of panicking.",
             "fallible app/window/icon/font/backend construction returning Result<T, ZsuiError>",
@@ -234,7 +242,7 @@ mod tests {
     fn rust_first_goal_manifest_tracks_core_direction() {
         let names = zsui_rust_first_goal_names();
 
-        assert_eq!(names.len(), 23);
+        assert_eq!(names.len(), 24);
         assert!(names.contains(&"unified_application_authoring"));
         assert!(names.contains(&"native_proof_ci"));
         assert!(names.contains(&"runnable_vertical_slices"));
@@ -249,6 +257,7 @@ mod tests {
         assert!(names.contains(&"crate_split_architecture"));
         assert!(names.contains(&"platform_api_on_demand"));
         assert!(names.contains(&"strong_typed_ids"));
+        assert!(names.contains(&"reloadable_ui_documents"));
 
         let goals = zsui_rust_first_goals();
         let unified_authoring = goals
@@ -264,5 +273,12 @@ mod tests {
             .expect("typed message goal should exist");
         assert!(typed_messages.prefer.contains("enum Msg"));
         assert!(typed_messages.avoid.contains("button.on"));
+
+        let reloadable = goals
+            .iter()
+            .find(|goal| goal.goal_name == "reloadable_ui_documents")
+            .expect("reloadable UI document goal should exist");
+        assert!(reloadable.prefer.contains("UiDocument"));
+        assert!(reloadable.avoid.contains("browser pixels"));
     }
 }

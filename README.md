@@ -503,6 +503,12 @@ UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，`linu
 这些路径均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择
 时才会打包全部能力。
 
+v0.2 的开发体验目标还包括一个版本化的语义 UI 文档、强类型绑定校验器和预编译
+原生 Viewer：仅修改文字、token、布局和兼容组件树时，可以保存后直接重载，不调用
+Cargo。验证后的文档可生成确定性的 AI 交接数据，并在发布时编译或嵌入；文件监听、
+预览传输和诊断解析器不会进入默认发布包。现有 Rust `view` builder 继续保留，完整
+拖放式设计器不属于 v0.2 完成门槛，浏览器模拟也不能替代三平台真实运行证据。
+
 多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
 ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；切换语言走普通的
 强类型状态更新与 View 重建，不依赖全局可变翻译表。完整用法见

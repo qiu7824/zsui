@@ -7,9 +7,11 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 ## Current Completion
 
 ZSUI is roughly 64% complete as a standalone framework product, including the
-still-scaffolded Android target. The desktop-only v0.2 native application
-closure is roughly 75% complete. Component-level milestones must not be used as
-overall framework readiness.
+still-scaffolded Android target. The previously measured desktop-only native
+application areas are roughly 75% complete, but v0.2 now also contains a new
+reloadable UI authoring gate whose implementation has not started. Do not use
+the previous 75% as a recalibrated total for the expanded milestone, and do not
+use component-level milestones as overall framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
@@ -18,6 +20,9 @@ overall framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
+- Reloadable UI authoring: 0% complete; the schema, typed binding validator,
+  native auto-reload Viewer, state-preserving patches, AI handoff and release
+  embedding remain to be implemented.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.
@@ -164,7 +169,11 @@ messages, RAII native resources, typed units, compile-time builder constraints
 where useful, explicit contexts, isolated unsafe, explicit app state, theme
 tokens, declarative Rust builders, `Result<T, ZsuiError>`, capability traits,
 feature-gated platform backends, split-crate/module trimming and strong typed
-IDs. It also records the larger framework target: keep
+IDs. The expanded v0.2 target also requires versioned semantic UI documents,
+typed binding validation, a prebuilt native auto-reload Viewer, deterministic
+AI handoff and release embedding without development-only dependencies. It
+explicitly defers a full drag-and-drop designer and does not accept browser
+projection as native proof. It also records the larger framework target: keep
 `zsui::native_window(...).run()?` as the normal native-window entry, make
 buffered no-flicker self-draw the Windows baseline, treat Android as a real
 Activity host target, and add `windows-rs` or

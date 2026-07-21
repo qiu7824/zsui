@@ -83,6 +83,28 @@ host, execute the same semantic scenario and emit final-surface screenshots and
 structured evidence. Example-only platform adjustments do not satisfy this
 goal; reusable corrections belong in framework contracts and backends first.
 
+## v0.2 Authoring Addition: Reloadable UI Documents
+
+The existing Rust `State`/`Msg`/`view`/`update` API remains the ordinary,
+fully typed application surface. v0.2 additionally requires a versioned
+platform-neutral `UiDocument` for semantic component trees and an explicit
+typed binding manifest that connects document action/property slots to Rust
+state and messages without reflection or a global string event bus.
+
+A prebuilt native Viewer must validate and reload compatible document changes
+without invoking Cargo. Stable IDs preserve focus, text selection, scrolling
+and compatible component state. The same validated document must enter Win32,
+AppKit and Linux hosts, produce deterministic structured data for AI editing,
+and support release-time compilation or embedding without shipping file
+watchers, preview transport or another mandatory process.
+
+This is an additional v0.2 gate, not a replacement for any unfinished native
+runtime, service, IME, accessibility, interaction, feature-trimming or target-
+proof requirement. A browser/WASM projection may later provide fast simulated
+platform comparison, but it is not target-native proof. A complete drag-and-
+drop designer, collaboration system and arbitrary Rust-logic visual editor are
+outside the v0.2 completion definition.
+
 ## v0.3 Core Milestone: Native Proof CI
 
 ZSUI 0.3.0 prioritizes repeatable native runtime evidence over adding more
@@ -211,6 +233,12 @@ button("Save").on_click(Msg::SaveClicked)
 This keeps event handling exhaustive, refactorable and visible to
 rust-analyzer. Do not introduce string event APIs such as
 `button.on("click", callback)` for framework-level controls.
+
+Document-backed UI uses the same rule. A serialized action key is accepted
+only when a generated or explicit binding manifest maps it to a typed message;
+the document format is not permission to add reflective property mutation or
+an unvalidated string event bus. Existing Rust builders remain supported and
+may host document-backed subtrees through typed component slots.
 
 ## Ownership And State
 
