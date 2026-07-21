@@ -104,6 +104,24 @@ geometry instead of stretching a startup snapshot. Pointer/Tab focus appends
 the same semantic accent focus ring on all three draw sinks, while native focus
 loss rebuilds the clean plan.
 
+Native resize proof is opt-in through
+`NativeWindowSmokeRunOptions::native_window_resize(Size)` and becomes a hard
+gate with `require_native_window_resize(true)`. The selected backend must resize
+the actual top-level content surface and observe a platform resize callback;
+changing only the shared View surface is not evidence. Win32 uses `SetWindowPos`
+and counts `WM_SIZE` surface changes, AppKit uses `setContentSize:` and counts
+`windowDidResize:`, and `linux-direct` uses Winit `request_inner_size` and counts
+`WindowEvent::Resized`. `NativeWindowResizeEvidence` records the backend,
+requested size, observed initial/final sizes, native-event count and whether the
+exact target was applied before final-surface capture. The Gallery native-proof
+suite fixes two platform-safe scenarios: `resized-small` ends at `800x520`, and
+`resized-large` grows from `960x560` to `1180x640`. Native UI Proof run
+`29809658203` on commit `ee49c40` passed both scenarios on AppKit, X11 and real
+Weston Wayland, including exact final dimensions, at least one native resize
+event, final platform PNGs, post-resize widget bounds, empty message/error lists
+and backend-specific evidence identities. CI run `29809658198` passed the
+locked feature matrix and all desktop target checks for the same commit.
+
 The local Windows command for that shared view-input route is:
 
 ```powershell
@@ -609,8 +627,8 @@ the AppKit, X11 and Wayland jobs enforce the same structured trace against their
 target-native shapers. The shared movement path orders directed grapheme-cluster
 edges; it does not mistake Core Text/Pango/Cosmic Text's strong caret for the
 only insertion edge at a bidi boundary. These scripted routes do not replace
-real IME candidate window testing. Resize screenshot artifacts remain a later
-runtime gate. The generic proof host rejects report-count mismatches so a
+real IME candidate window testing. The generic proof host rejects report-count
+mismatches so a
 separate native-menu command cannot shift input-to-caret attribution. Native UI
 Proof run `29801544191` passed this exact trace on AppKit, X11 and Weston
 Wayland. The

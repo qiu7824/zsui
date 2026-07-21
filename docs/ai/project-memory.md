@@ -320,6 +320,22 @@ history remain authoritative for implementation status.
   CJK/RTL script traits and relative `1, 4, 3, 2` caret/selection trace on real
   AppKit, X11 and Weston Wayland hosts. CI run `29801544136` and UI Memory
   Comparison run `29801544149` also passed for the same commit.
+- Native resize evidence must call the real top-level window API, observe a
+  platform resize callback and capture the final platform surface after shared
+  relayout. Resizing only the shared View surface is not native proof. The
+  common `NativeWindowSmokeRunOptions` contract exposes an optional resize
+  target plus an explicit required flag, while `NativeWindowResizeEvidence`
+  records the backend, requested size, observed initial/final sizes, native
+  event count and exact-application result. Win32 proves `SetWindowPos` plus
+  `WM_SIZE`; AppKit proves `setContentSize:` plus `windowDidResize:`;
+  `linux-direct` proves Winit `request_inner_size` plus
+  `WindowEvent::Resized`. The fixed Gallery scenarios end at `800x520` and
+  `1180x640`, export post-resize widget bounds and reject messages/errors.
+  Native UI Proof run `29809658203` on commit `ee49c40` passed the AppKit, X11
+  and real Weston Wayland resize gates; local Win32 proof recorded one surface
+  change and the exact `960x560 -> 1180x640` result. CI run `29809658198`
+  passed the locked feature matrix and all desktop target checks for the same
+  commit.
 - Native typography is a backend-resolved `NativeTypographyProfile`, not a
   demo-owned type ramp. Native layout, paint and proof must share the resolved
   families, role metrics, accessibility scale and rasterization identity.
