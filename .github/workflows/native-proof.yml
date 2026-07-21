@@ -136,14 +136,30 @@ jobs:
             --status-item \
             --view \
             > target/native-proof/macos-status-item/status-item-run.json
+
+      - name: Run real AppKit Viewer proof
+        id: appkit-viewer
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-scroll
           ./target/release/zsui-viewer \
-            examples/ui-documents/scrolling.json \
-            --bindings examples/ui-documents/scrolling.bindings.json \
-            --values examples/ui-documents/scrolling.values.json \
-            --width 720 \
-            --height 560 \
-            --smoke target/native-proof/macos-15-arm64/ui-viewer-scroll \
-            --smoke-scroll 360 260 96
+              examples/ui-documents/scrolling.json \
+              --bindings examples/ui-documents/scrolling.bindings.json \
+              --values examples/ui-documents/scrolling.values.json \
+              --width 720 \
+              --height 560 \
+              --smoke target/native-proof/macos-15-arm64/ui-viewer-scroll \
+              --smoke-scroll 360 260 96 \
+            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-scroll/viewer.log
+
+      - name: Summarize AppKit Viewer proof failure
+        if: failure() && steps.appkit-viewer.outcome == 'failure'
+        shell: bash
+        run: |
+          log=target/native-proof/macos-15-arm64/ui-viewer-scroll/viewer.log
+          summary="$(tail -50 "$log" | tr '\n' ' ' || true)"
+          echo "::error title=AppKit Viewer proof failure::$summary"
 
       - name: Validate AppKit artifacts
         shell: python
@@ -523,16 +539,6 @@ jobs:
               --height 640 \
               --output target/native-proof/ubuntu-24.04-x86_64-lite \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-lite/notepad.log
-          dbus-run-session -- xvfb-run -a \
-            ./target/release/zsui-viewer \
-              examples/ui-documents/scrolling.json \
-              --bindings examples/ui-documents/scrolling.bindings.json \
-              --values examples/ui-documents/scrolling.values.json \
-              --width 720 \
-              --height 560 \
-              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll \
-              --smoke-scroll 360 260 96 \
-            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll.log
 
       - name: Summarize Linux proof failure
         if: failure() && steps.linux-scenes.outcome == 'failure'
@@ -543,6 +549,29 @@ jobs:
             summary="$(tail -30 "$root"/*.log | tr '\n' ' ' || true)"
           fi
           echo "::error title=Linux proof scene failure::$summary"
+
+      - name: Run real Linux Viewer proof
+        id: linux-viewer
+        run: |
+          set -o pipefail
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/zsui-viewer \
+              examples/ui-documents/scrolling.json \
+              --bindings examples/ui-documents/scrolling.bindings.json \
+              --values examples/ui-documents/scrolling.values.json \
+              --width 720 \
+              --height 560 \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll \
+              --smoke-scroll 360 260 96 \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll/viewer.log
+
+      - name: Summarize Linux Viewer proof failure
+        if: failure() && steps.linux-viewer.outcome == 'failure'
+        run: |
+          log=target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll/viewer.log
+          summary="$(tail -50 "$log" | tr '\n' ' ' || true)"
+          echo "::error title=Linux Viewer proof failure::$summary"
 
       - name: Validate Linux artifacts
         shell: python
