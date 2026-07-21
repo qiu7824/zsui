@@ -21,11 +21,14 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 35% complete; schema version 1, the typed
+- Reloadable UI authoring: about 42% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
-  auto-reload Viewer have a first pass. Complete component and value-action
-  coverage, full focus/selection/scroll retention, fixed AppKit/Linux proof,
-  AI handoff and release embedding remain.
+  auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
+  compatibility, preserve native focus/text selection/editor viewport for
+  compatible controls, and clear incompatible focus/text/drag/IME state.
+  Complete component and value-action coverage, general-scroll and
+  advanced-control state retention, fixed AppKit/Linux proof, AI handoff and
+  release embedding remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.

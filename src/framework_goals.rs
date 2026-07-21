@@ -165,7 +165,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "a versioned semantic UiDocument, explicit typed binding manifest, schema validator, prebuilt native Viewer, stable-ID patches and release-time embedding",
             "a global string event bus, arbitrary reflection, browser pixels presented as native proof, development watchers in release builds or a mandatory two-process application runtime",
             "src/ui_document.rs, src/ui_viewer.rs, src/bin/zsui-uic.rs, src/bin/zsui-viewer.rs, docs/ui-document.md",
-            "expand schema and typed action coverage beyond the first eleven Viewer components, complete compatible focus/selection/scroll retention, then add deterministic AI handoff and release embedding; defer the full drag-and-drop editor",
+            "expand schema and typed action coverage beyond the first eleven Viewer components, extend stable-ID retention from focus and text-editor state to general scroll and advanced controls, then add deterministic AI handoff and release embedding; defer the full drag-and-drop editor",
         ),
         ZsuiRustFirstGoal::new(
             "result_error_handling",

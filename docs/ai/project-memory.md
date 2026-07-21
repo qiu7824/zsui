@@ -43,10 +43,14 @@ history remain authoritative for implementation status.
   `ui-viewer` feature. `zsui-viewer` polls document and binding files inside the
   existing native live-View refresh loop, keeps the last valid document after
   invalid edits, retains ordinary `UiViewerState`, and derives stable WidgetIds
-  from author IDs in a reserved namespace. It does not add a reactive runtime,
-  browser shell or global widget registry. Full component/value-action
-  coverage, complete focus/selection/scroll retention, fixed AppKit/Linux
-  proof, AI handoff and release embedding remain unfinished.
+  from author IDs in a reserved namespace. Accepted reloads expose a
+  deterministic preserved/added/reset report. The native input runtime keeps
+  focus, text selection and text-editor viewport for compatible stable IDs and
+  clears stale focus, selection, drag and IME state after removal or control
+  class changes. It does not add a reactive runtime, browser shell or global
+  widget registry. Full component/value-action coverage, general-scroll and
+  advanced-control state retention, fixed AppKit/Linux proof, AI handoff and
+  release embedding remain unfinished.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing

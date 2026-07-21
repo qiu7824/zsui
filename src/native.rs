@@ -1950,6 +1950,12 @@ impl NativeViewInputRuntime {
         self.text_edit.map(|state| state.selection)
     }
 
+    #[cfg(test)]
+    pub(crate) fn text_edit_viewport(&self) -> Option<(usize, usize)> {
+        self.text_edit
+            .map(|state| (state.first_visible_visual_row, state.horizontal_scroll_px))
+    }
+
     pub(crate) fn dispatch_accessibility_focus(
         &mut self,
         widget: crate::WidgetId,
@@ -6034,6 +6040,8 @@ impl NativeViewInputRuntime {
         #[cfg(not(any(feature = "tooltip", feature = "toast", feature = "menu-flyout")))]
         let _ = now;
         let mut changed = false;
+        let previous_interaction_plan = self.current_interaction_plan();
+        let mut reload_report = NativeViewInputDispatchReport::default();
         if self
             .live_view
             .as_ref()
@@ -6045,6 +6053,8 @@ impl NativeViewInputRuntime {
                 self.interaction_plan = Some(runtime.interaction_plan());
                 changed |= update.redraw;
             }
+            self.reconcile_live_view_state(previous_interaction_plan.as_ref(), &mut reload_report);
+            changed |= reload_report.handled;
         }
         changed |= self
             .ui_command_view
@@ -6057,14 +6067,12 @@ impl NativeViewInputRuntime {
         }
         #[cfg(feature = "menu-flyout")]
         if let Some((widget, submenu)) = self.menu_flyout_hover.take_due(now) {
-            let report = NativeViewInputDispatchReport {
-                handled: true,
-                menu_flyout_submenu_changed: true,
-                hit_target_count: self.hit_target_count(),
-                focused_widget: self.focused_widget.map(|widget| widget.0),
-                redraw_plan: changed.then(|| self.current_composed_draw_plan()).flatten(),
-                ..NativeViewInputDispatchReport::default()
-            };
+            let mut report = reload_report;
+            report.handled = true;
+            report.menu_flyout_submenu_changed = true;
+            report.hit_target_count = self.hit_target_count();
+            report.focused_widget = self.focused_widget.map(|widget| widget.0);
+            report.redraw_plan = changed.then(|| self.current_composed_draw_plan()).flatten();
             return self.dispatch_view_event(
                 ViewEvent::MenuFlyoutSubmenuChanged { widget, submenu },
                 report,
@@ -6072,13 +6080,11 @@ impl NativeViewInputRuntime {
         }
         #[cfg(feature = "toast")]
         if let Some((widget, toast)) = self.toast.take_expired(now) {
-            let mut report = NativeViewInputDispatchReport {
-                handled: true,
-                toast_responded: true,
-                hit_target_count: self.hit_target_count(),
-                focused_widget: self.focused_widget.map(|widget| widget.0),
-                ..NativeViewInputDispatchReport::default()
-            };
+            let mut report = reload_report;
+            report.handled = true;
+            report.toast_responded = true;
+            report.hit_target_count = self.hit_target_count();
+            report.focused_widget = self.focused_widget.map(|widget| widget.0);
             if changed {
                 report.redraw_plan = self.current_composed_draw_plan();
             }
@@ -6093,13 +6099,18 @@ impl NativeViewInputRuntime {
                 report,
             );
         }
-        let report = NativeViewInputDispatchReport {
-            handled: changed,
-            hit_target_count: self.hit_target_count(),
-            focused_widget: self.focused_widget.map(|widget| widget.0),
-            redraw_plan: changed.then(|| self.current_composed_draw_plan()).flatten(),
-            ..NativeViewInputDispatchReport::default()
-        };
+        let mut report = reload_report;
+        report.handled |= changed;
+        report.hit_target_count = self.hit_target_count();
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.redraw_plan = changed.then(|| self.current_composed_draw_plan()).flatten();
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        report.ime_caret_rect = self.text_input_caret_rect();
+        self.populate_text_report(&mut report);
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(now);
         report
@@ -6292,6 +6303,64 @@ impl NativeViewInputRuntime {
             return;
         };
         self.ensure_text_edit_for_target(target);
+    }
+
+    fn reconcile_live_view_state(
+        &mut self,
+        previous_plan: Option<&ViewInteractionPlan>,
+        report: &mut NativeViewInputDispatchReport,
+    ) {
+        if let Some(widget) = self.focused_widget {
+            let previous_target =
+                previous_plan.and_then(|plan| plan.focus_target_for_widget(widget));
+            let current_target = self
+                .current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(widget));
+            let compatible =
+                previous_target
+                    .zip(current_target)
+                    .is_some_and(|(previous, current)| {
+                        std::mem::discriminant(&previous.kind)
+                            == std::mem::discriminant(&current.kind)
+                    });
+            if !compatible {
+                let had_text_state = self.text_edit.is_some();
+                self.focused_widget = None;
+                self.text_edit = None;
+                self.text_drag = None;
+                self.ime_preedit = None;
+                #[cfg(feature = "textbox")]
+                {
+                    self.text_history = NativeTextHistory::default();
+                    self.processing_text_edit_commands = false;
+                }
+                #[cfg(feature = "canvas")]
+                {
+                    self.canvas_pointer = None;
+                }
+                #[cfg(feature = "combo")]
+                self.combo_type_ahead.reset();
+                #[cfg(feature = "slider")]
+                {
+                    self.slider_drag = None;
+                }
+                #[cfg(feature = "color-picker")]
+                {
+                    self.color_picker_drag = None;
+                }
+                #[cfg(feature = "password-box")]
+                {
+                    self.password_peek = None;
+                }
+                report.handled = true;
+                report.focus_visual_changed = true;
+                report.text_selection_changed |= had_text_state;
+            }
+        }
+        self.reconcile_modal_focus(report);
+        self.sync_text_edit();
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        self.populate_text_report(report);
     }
 
     fn populate_text_report(&self, report: &mut NativeViewInputDispatchReport) {

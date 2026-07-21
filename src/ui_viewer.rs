@@ -72,6 +72,43 @@ pub struct UiViewerSourceSnapshot {
     pub binding_path: Option<PathBuf>,
     pub node_count: usize,
     pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reload: Option<UiViewerReloadReport>,
+}
+
+/// Deterministic compatibility result for one accepted source reload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiViewerReloadReport {
+    pub from_revision: u64,
+    pub to_revision: u64,
+    pub preserved_node_ids: Vec<String>,
+    pub added_node_ids: Vec<String>,
+    pub state_resets: Vec<UiViewerStateReset>,
+}
+
+impl UiViewerReloadReport {
+    pub fn preserves_all_existing_state(&self) -> bool {
+        self.state_resets.is_empty()
+    }
+}
+
+/// One stable author identity whose previous transient state cannot be reused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiViewerStateReset {
+    pub node_id: String,
+    pub previous_component: String,
+    pub current_component: Option<String>,
+    pub reason: UiViewerStateResetReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiViewerStateResetReason {
+    NodeRemoved,
+    ComponentChanged,
+    ComponentConfigurationChanged,
 }
 
 #[derive(Clone)]
@@ -99,6 +136,7 @@ struct UiViewerSourceState {
     revision: u64,
     last_error: Option<String>,
     error_source_hash: Option<u64>,
+    last_reload: Option<UiViewerReloadReport>,
 }
 
 impl UiViewerSource {
@@ -125,6 +163,7 @@ impl UiViewerSource {
                 revision: 1,
                 last_error: None,
                 error_source_hash: None,
+                last_reload: None,
             })),
             poll_interval_ms: ZSUI_UI_VIEWER_DEFAULT_POLL_INTERVAL_MS,
         })
@@ -169,12 +208,20 @@ impl UiViewerSource {
         ) {
             Ok((document, bindings)) => {
                 let mut state = self.lock();
+                let next_revision = state.revision.saturating_add(1);
+                let reload = reload_compatibility_report(
+                    &state.document,
+                    &document,
+                    state.revision,
+                    next_revision,
+                );
                 state.last_seen_hash = sources.hash;
                 state.document = Arc::new(document);
                 state.bindings = bindings;
-                state.revision = state.revision.saturating_add(1);
+                state.revision = next_revision;
                 state.last_error = None;
                 state.error_source_hash = None;
+                state.last_reload = Some(reload);
                 true
             }
             Err(error) => {
@@ -192,18 +239,35 @@ impl UiViewerSource {
             binding_path: state.binding_path.clone(),
             node_count: count_nodes(&state.document.root),
             last_error: state.last_error.clone(),
+            last_reload: state.last_reload.clone(),
         }
     }
 
     pub fn view(&self, viewer_state: &UiViewerState) -> ViewNode<UiViewerMessage> {
         self.refresh();
-        let (document, last_error) = {
+        let (document, last_error, state_reset_count) = {
             let state = self.lock();
-            (Arc::clone(&state.document), state.last_error.clone())
+            (
+                Arc::clone(&state.document),
+                state.last_error.clone(),
+                state
+                    .last_reload
+                    .as_ref()
+                    .map(|reload| reload.state_resets.len())
+                    .unwrap_or(0),
+            )
         };
         let content = compile_node(&document.root, viewer_state);
         let mut root = if let Some(error) = last_error {
             column([text(format!("UI document reload error: {error}")), content]).gap(Dp::new(8.0))
+        } else if state_reset_count > 0 {
+            column([
+                text(format!(
+                    "UI reload reset state for {state_reset_count} incompatible node(s)"
+                )),
+                content,
+            ])
+            .gap(Dp::new(8.0))
         } else {
             content
         };
@@ -521,6 +585,98 @@ fn count_nodes(node: &UiNode) -> usize {
     1 + node.children.iter().map(count_nodes).sum::<usize>()
 }
 
+fn reload_compatibility_report(
+    previous: &UiDocument,
+    current: &UiDocument,
+    from_revision: u64,
+    to_revision: u64,
+) -> UiViewerReloadReport {
+    let mut previous_nodes = BTreeMap::new();
+    let mut current_nodes = BTreeMap::new();
+    collect_node_components(&previous.root, &mut previous_nodes);
+    collect_node_components(&current.root, &mut current_nodes);
+
+    let mut preserved_node_ids = Vec::new();
+    let mut state_resets = Vec::new();
+    for (node_id, previous_node) in &previous_nodes {
+        match current_nodes.get(node_id) {
+            Some(current_node) if current_node.state_class == previous_node.state_class => {
+                preserved_node_ids.push(node_id.clone());
+            }
+            Some(current_node) => state_resets.push(UiViewerStateReset {
+                node_id: node_id.clone(),
+                previous_component: previous_node.component.clone(),
+                current_component: Some(current_node.component.clone()),
+                reason: if current_node.component == previous_node.component {
+                    UiViewerStateResetReason::ComponentConfigurationChanged
+                } else {
+                    UiViewerStateResetReason::ComponentChanged
+                },
+            }),
+            None => state_resets.push(UiViewerStateReset {
+                node_id: node_id.clone(),
+                previous_component: previous_node.component.clone(),
+                current_component: None,
+                reason: UiViewerStateResetReason::NodeRemoved,
+            }),
+        }
+    }
+    let added_node_ids = current_nodes
+        .keys()
+        .filter(|node_id| !previous_nodes.contains_key(*node_id))
+        .cloned()
+        .collect();
+
+    UiViewerReloadReport {
+        from_revision,
+        to_revision,
+        preserved_node_ids,
+        added_node_ids,
+        state_resets,
+    }
+}
+
+#[derive(Clone)]
+struct UiViewerNodeCompatibility {
+    component: String,
+    state_class: String,
+}
+
+fn collect_node_components(
+    node: &UiNode,
+    output: &mut BTreeMap<String, UiViewerNodeCompatibility>,
+) {
+    output.insert(
+        node.id.as_str().to_owned(),
+        UiViewerNodeCompatibility {
+            component: node.component.clone(),
+            state_class: node_state_class(node),
+        },
+    );
+    for child in &node.children {
+        collect_node_components(child, output);
+    }
+}
+
+fn node_state_class(node: &UiNode) -> String {
+    if node.component != "textbox" {
+        return node.component.clone();
+    }
+    if let Some(binding) = node.property_bindings.get("multiline") {
+        return format!("textbox:multiline-binding:{binding}");
+    }
+    if node
+        .properties
+        .get("multiline")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        "textbox:multiline".to_owned()
+    } else {
+        "textbox:singleline".to_owned()
+    }
+}
+
 fn fnv1a(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in bytes {
@@ -575,8 +731,198 @@ mod tests {
         fs::write(&document_path, updated).unwrap();
 
         assert!(source.refresh());
-        assert_eq!(source.snapshot().revision, 2);
-        assert!(source.snapshot().last_error.is_none());
+        let snapshot = source.snapshot();
+        assert_eq!(snapshot.revision, 2);
+        assert!(snapshot.last_error.is_none());
+        let reload = snapshot.last_reload.unwrap();
+        assert!(reload.preserves_all_existing_state());
+        assert_eq!(reload.preserved_node_ids, ["root", "save-button", "title"]);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn viewer_reports_removed_and_component_changed_state() {
+        let directory = fixture_directory("compatibility");
+        let (document_path, binding_path) = write_fixtures(&directory);
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        let updated = r#"{
+          "schema_version": 1,
+          "root": {
+            "id": "root",
+            "component": "stack",
+            "children": [
+              {
+                "id": "title",
+                "component": "button",
+                "properties": { "label": "Title" }
+              }
+            ]
+          }
+        }"#;
+        fs::write(&document_path, updated).unwrap();
+
+        assert!(source.refresh());
+        let reload = source.snapshot().last_reload.unwrap();
+        assert_eq!(reload.from_revision, 1);
+        assert_eq!(reload.to_revision, 2);
+        assert_eq!(reload.preserved_node_ids, ["root"]);
+        assert_eq!(reload.state_resets.len(), 2);
+        assert!(reload.state_resets.iter().any(|reset| {
+            reset.node_id == "title"
+                && reset.reason == UiViewerStateResetReason::ComponentChanged
+                && reset.current_component.as_deref() == Some("button")
+        }));
+        assert!(reload.state_resets.iter().any(|reset| {
+            reset.node_id == "save-button"
+                && reset.reason == UiViewerStateResetReason::NodeRemoved
+                && reset.current_component.is_none()
+        }));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn viewer_reports_textbox_control_class_changes() {
+        let directory = fixture_directory("textbox-class");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("textbox.json");
+        let binding_path = directory.join("textbox.bindings.json");
+        let document = |multiline| {
+            format!(
+                r#"{{
+                  "schema_version": 1,
+                  "root": {{
+                    "id": "editor",
+                    "component": "textbox",
+                    "properties": {{ "value": "Text", "multiline": {multiline} }}
+                  }}
+                }}"#
+            )
+        };
+        fs::write(&document_path, document(true)).unwrap();
+        fs::write(&binding_path, "{}").unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+
+        fs::write(&document_path, document(false)).unwrap();
+        assert!(source.refresh());
+
+        let reload = source.snapshot().last_reload.unwrap();
+        assert_eq!(reload.state_resets.len(), 1);
+        assert_eq!(
+            reload.state_resets[0].reason,
+            UiViewerStateResetReason::ComponentConfigurationChanged
+        );
+        assert_eq!(reload.state_resets[0].previous_component, "textbox");
+        assert_eq!(
+            reload.state_resets[0].current_component.as_deref(),
+            Some("textbox")
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_reload_preserves_compatible_text_state_and_resets_changed_controls() {
+        let directory = fixture_directory("native-state");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("state.json");
+        let binding_path = directory.join("state.bindings.json");
+        let document = |padding: u32, component: &str| {
+            let properties = if component == "textbox" {
+                r#""value": "row0\nrow1\nrow2\nrow3\nrow4\nrow5", "multiline": true"#
+            } else {
+                r#""label": "Replaced""#
+            };
+            format!(
+                r#"{{
+                  "schema_version": 1,
+                  "root": {{
+                    "id": "root",
+                    "component": "stack",
+                    "layout": {{ "padding": {padding} }},
+                    "children": [
+                      {{
+                        "id": "editor",
+                        "component": "{component}",
+                        "layout": {{ "height": 52.0 }},
+                        "properties": {{ {properties} }}
+                      }}
+                    ]
+                  }}
+                }}"#
+            )
+        };
+        fs::write(&document_path, document(16, "textbox")).unwrap();
+        fs::write(&binding_path, "{}").unwrap();
+
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        let live_source = source.clone();
+        let surface = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 400,
+            height: 220,
+        };
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::default(),
+            move |state| live_source.view(state),
+            ui_viewer_update,
+            surface,
+            crate::Dpi::standard(),
+        );
+        let editor = crate::ui_document::UiNodeId::new("editor")
+            .unwrap()
+            .widget_id();
+        let target = live_view
+            .interaction_plan()
+            .focus_target_for_widget(editor)
+            .expect("editor should expose a native focus target");
+        let mut runtime = crate::native::NativeViewInputRuntime::new(
+            surface,
+            Some(live_view.interaction_plan()),
+            None,
+            Some(live_view),
+            crate::native::NativeWindowResourcePolicy::default(),
+            None,
+            None,
+            None,
+        );
+        runtime.dispatch_pointer_click(crate::Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        runtime.dispatch_key(crate::NativeViewKey::Home);
+        runtime.dispatch_key_with_shift(crate::NativeViewKey::Right, true);
+        runtime.dispatch_key_with_shift(crate::NativeViewKey::Right, true);
+        assert_eq!(runtime.text_edit_selection().unwrap().ordered(), (0, 2));
+        runtime.dispatch_pointer_scroll(
+            crate::Point {
+                x: target.bounds.x + target.bounds.width / 2,
+                y: target.bounds.y + target.bounds.height / 2,
+            },
+            Dp::new(48.0),
+        );
+        let viewport = runtime.text_edit_viewport().unwrap();
+        assert!(viewport.0 > 0);
+
+        fs::write(&document_path, document(24, "textbox")).unwrap();
+        let compatible = runtime.refresh_transient_view();
+        assert_eq!(compatible.focused_widget, Some(editor.0));
+        assert_eq!(compatible.text_selection, Some((0, 2)));
+        assert_eq!(runtime.text_edit_viewport(), Some(viewport));
+        assert!(source
+            .snapshot()
+            .last_reload
+            .unwrap()
+            .preserves_all_existing_state());
+
+        fs::write(&document_path, document(24, "button")).unwrap();
+        let incompatible = runtime.refresh_transient_view();
+        assert!(incompatible.focus_visual_changed);
+        assert_eq!(incompatible.focused_widget, None);
+        assert_eq!(runtime.text_edit_selection(), None);
+        let reload = source.snapshot().last_reload.unwrap();
+        assert!(reload.state_resets.iter().any(|reset| {
+            reset.node_id == "editor" && reset.reason == UiViewerStateResetReason::ComponentChanged
+        }));
         fs::remove_dir_all(directory).unwrap();
     }
 
