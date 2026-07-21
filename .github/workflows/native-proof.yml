@@ -70,6 +70,12 @@ jobs:
             --example zsui_notepad \
             --no-default-features \
             --features notepad-demo,accessibility
+          cargo build \
+            --release \
+            --locked \
+            --example native_smoke_run \
+            --no-default-features \
+            --features macos-appkit,native-smoke,button,label
 
       - name: Run real AppKit proof scenes
         run: |
@@ -95,6 +101,13 @@ jobs:
             --width 960 \
             --height 640 \
             --output target/native-proof/macos-15-arm64
+          mkdir -p target/native-proof/macos-status-item
+          ./target/release/examples/native_smoke_run \
+            current \
+            target/native-proof/macos-status-item \
+            --status-item \
+            --view \
+            > target/native-proof/macos-status-item/status-item-run.json
 
       - name: Validate AppKit artifacts
         shell: python
@@ -179,6 +192,7 @@ jobs:
                   assert runtime["native_view_menu_flyout_submenu_change_count"] == 4
                   assert runtime["native_view_key_down_count"] == 9
                   assert runtime["native_view_keyboard_activation_count"] == 1
+
                   assert runtime["native_view_focused_widget"] == 408
                   assert runtime["native_view_unhandled_click_count"] == 0
                   assert runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
@@ -197,12 +211,27 @@ jobs:
                   assert runtime["native_view_canvas_pointer_drag_count"] == 1
                   assert runtime["native_view_unhandled_click_count"] == 0
 
+          status = json.loads(
+              Path("target/native-proof/macos-status-item/status-item-run.json")
+              .read_text(encoding="utf-8")
+          )["run"]
+          assert status["status_item_requested"] is True
+          assert status["status_item_required"] is True
+          assert status["status_item_created"] is True
+          assert status["status_item_error"] is None
+          assert status["status_menu_native_command_count"] == 2
+          assert status["status_menu_command_routed"] is True
+          assert status["status_menu_popup_created"] is True
+          assert status["status_menu_popup_destroyed"] is True
+
       - name: Upload AppKit proof
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: zsui-appkit-native-proof
-          path: target/native-proof/macos-15-arm64
+          path: |
+            target/native-proof/macos-15-arm64
+            target/native-proof/macos-status-item
           if-no-files-found: error
           retention-days: 30
 

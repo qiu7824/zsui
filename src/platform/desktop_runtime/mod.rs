@@ -104,6 +104,11 @@ pub(super) struct DesktopNativeSmokeOutcome {
     pub(super) menu_surface_created: bool,
     pub(super) menu_surface_height: u32,
     pub(super) menu_surface_open_at_capture: bool,
+    pub(super) status_item_created: bool,
+    pub(super) status_menu_native_command_count: usize,
+    pub(super) status_menu_command_routed: bool,
+    pub(super) status_menu_popup_created: bool,
+    pub(super) status_menu_popup_destroyed: bool,
     pub(super) process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
     pub(super) accessibility_backend: Option<&'static str>,
     pub(super) accessibility_node_count: usize,
@@ -303,6 +308,11 @@ pub(super) fn complete_native_smoke(
     report.window_menu_surface_created = outcome.menu_surface_created;
     report.window_menu_surface_height = outcome.menu_surface_height;
     report.window_menu_surface_open_at_capture = outcome.menu_surface_open_at_capture;
+    report.status_item_created = outcome.status_item_created;
+    report.status_menu_native_command_count = outcome.status_menu_native_command_count;
+    report.status_menu_command_routed = outcome.status_menu_command_routed;
+    report.status_menu_popup_created = outcome.status_menu_popup_created;
+    report.status_menu_popup_destroyed = outcome.status_menu_popup_destroyed;
     report.process_memory_during_runtime = outcome.process_memory;
     report.native_accessibility_backend = outcome.accessibility_backend;
     report.native_accessibility_node_count = outcome.accessibility_node_count;
@@ -338,11 +348,28 @@ pub(super) fn complete_native_smoke(
         }
         None => {}
     }
-    if options.status_item.is_some() {
+    if options.status_item.is_some() && !outcome.status_item_created {
         report.status_item_error = Some(
             "status-item smoke is not connected to the selected native event loop".to_string(),
         );
         report.events.push("status_item_unsupported".to_string());
+    } else if outcome.status_item_created {
+        report.events.push("status_item_created".to_string());
+        report.events.push(format!(
+            "status_menu_native_commands:{}",
+            outcome.status_menu_native_command_count
+        ));
+        if outcome.status_menu_command_routed {
+            report.events.push("status_menu_command_routed".to_string());
+        }
+        if outcome.status_menu_popup_created {
+            report.events.push("status_menu_popup_created".to_string());
+        }
+        if outcome.status_menu_popup_destroyed {
+            report
+                .events
+                .push("status_menu_popup_destroyed".to_string());
+        }
     }
     if options.require_visible_window && !report.visible_window_was_created() {
         return Err(ZsuiError::host(
@@ -359,7 +386,7 @@ pub(super) fn complete_native_smoke(
                 .unwrap_or_else(|| "window screenshot was not captured".to_string()),
         ));
     }
-    if options.require_status_item {
+    if options.require_status_item && !report.status_item_created {
         return Err(ZsuiError::unsupported(
             "native_window_smoke_status_item",
             report
@@ -378,6 +405,53 @@ pub(crate) fn save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<P
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_smoke_report_accepts_native_status_item_evidence() {
+        let options = NativeWindowSmokeRunOptions::quick()
+            .status_item(TraySpec::new().item("Quit", crate::Command::Quit))
+            .require_status_item(true);
+        let report = complete_native_smoke(
+            DesktopSmokeRequest {
+                windows: vec![WindowSpec::new("Status item proof")],
+                draw_plans: vec![None],
+                view_runtime: NativeViewInputRuntime::default(),
+                shell_runtime: None,
+                options,
+            },
+            DesktopNativeSmokeOutcome {
+                created_window_count: 1,
+                proof_input_reports: Vec::new(),
+                native_view_capture: None,
+                menu_command_routed: false,
+                menu_surface_created: false,
+                menu_surface_height: 0,
+                menu_surface_open_at_capture: false,
+                status_item_created: true,
+                status_menu_native_command_count: 1,
+                status_menu_command_routed: true,
+                status_menu_popup_created: true,
+                status_menu_popup_destroyed: true,
+                process_memory: None,
+                accessibility_backend: None,
+                accessibility_node_count: 0,
+                accessibility_action_count: 0,
+            },
+            DesktopNativeSmokeMetadata {
+                proof_backend: "test",
+                screenshot_backend: "test",
+                missing_capture_error: "not requested",
+            },
+        )
+        .expect("native status item evidence should satisfy the required smoke gate");
+
+        assert!(report.status_item_created);
+        assert_eq!(report.status_item_error, None);
+        assert_eq!(report.status_menu_native_command_count, 1);
+        assert!(report.status_menu_command_routed);
+        assert!(report.status_menu_popup_created);
+        assert!(report.status_menu_popup_destroyed);
+    }
 
     #[test]
     fn selected_backend_has_a_stable_identity() {

@@ -137,6 +137,26 @@ impl MacosAppKitMenuService {
         }));
     }
 
+    pub(crate) fn set_command_handler(&mut self, handler: impl Fn(crate::Command) + 'static) {
+        let model = self.model.clone();
+        *self.command_handler.borrow_mut() = Some(Rc::new(move |native_id| {
+            if let Some(command) = model
+                .as_ref()
+                .and_then(|model| model.command_for_native_id(native_id))
+            {
+                handler(command);
+            }
+        }));
+    }
+
+    pub(crate) fn set_detached_menu(&mut self, menu: &MenuSpec) -> ZsuiResult<()> {
+        self.set_menu(None, Some(menu), false)
+    }
+
+    pub(crate) fn native_menu(&self) -> Option<&NSMenu> {
+        self.menu.as_deref()
+    }
+
     pub(crate) fn invoke_first_enabled_command_for_proof(&self) -> bool {
         self.menu
             .as_deref()
@@ -165,11 +185,22 @@ fn perform_first_enabled_appkit_menu_action(menu: &NSMenu) -> bool {
 
 impl MenuService for MacosAppKitMenuService {
     fn set_window_menu(&mut self, window: WindowId, menu: Option<&MenuSpec>) -> ZsuiResult<()> {
+        self.set_menu(Some(window), menu, true)
+    }
+}
+
+impl MacosAppKitMenuService {
+    fn set_menu(
+        &mut self,
+        window: Option<WindowId>,
+        menu: Option<&MenuSpec>,
+        install_as_main_menu: bool,
+    ) -> ZsuiResult<()> {
         let mtm = appkit_menu_main_thread_marker()?;
         let application = NSApplication::sharedApplication(mtm);
         self.command_handler.borrow_mut().take();
+        detach_owned_appkit_menu(&application, self.menu.as_ref());
         let Some(menu_spec) = menu else {
-            detach_owned_appkit_menu(&application, self.menu.as_ref());
             self.window = None;
             self.model = None;
             self.menu = None;
@@ -178,9 +209,11 @@ impl MenuService for MacosAppKitMenuService {
 
         let model = NativeMenuModel::lower(menu_spec, self.next_native_id)?;
         let native_menu = build_appkit_menu(&model, &self.target, mtm);
-        application.setMainMenu(Some(&native_menu));
+        if install_as_main_menu {
+            application.setMainMenu(Some(&native_menu));
+        }
         self.next_native_id = model.next_native_id();
-        self.window = Some(window);
+        self.window = window;
         self.model = Some(model);
         self.menu = Some(native_menu);
         Ok(())

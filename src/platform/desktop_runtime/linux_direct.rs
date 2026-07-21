@@ -64,6 +64,11 @@ impl DesktopRuntimeBackend for Backend {
                 menu_surface_created: run.menu_surface_created,
                 menu_surface_height: run.menu_surface_height,
                 menu_surface_open_at_capture: run.menu_surface_open_at_capture,
+                status_item_created: false,
+                status_menu_native_command_count: 0,
+                status_menu_command_routed: false,
+                status_menu_popup_created: false,
+                status_menu_popup_destroyed: false,
                 process_memory: run.process_memory,
                 accessibility_backend: run
                     .accessibility_bridge_created

@@ -449,7 +449,10 @@ fn run_smoke(
                     .separator()
                     .item("Quit", Command::Quit),
             )
-            .require_status_item(platform == NativeUiPlatform::Windows);
+            .require_status_item(matches!(
+                platform,
+                NativeUiPlatform::Windows | NativeUiPlatform::Macos
+            ));
     }
     #[cfg(all(feature = "button", feature = "label"))]
     if include_typed_view && !include_scroll_view {

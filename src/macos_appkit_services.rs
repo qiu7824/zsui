@@ -31,6 +31,7 @@ use crate::{
 
 struct ZsuiAppKitRuntimeDelegateIvars {
     open_windows: Cell<usize>,
+    keep_running_without_windows: bool,
     close_handlers: HashMap<usize, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
     capture_handler: Option<crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
     capture_path: Option<PathBuf>,
@@ -62,7 +63,7 @@ define_class!(
         fn window_will_close(&self, _notification: &NSNotification) {
             let remaining = self.ivars().open_windows.get().saturating_sub(1);
             self.ivars().open_windows.set(remaining);
-            if remaining == 0 {
+            if remaining == 0 && !self.ivars().keep_running_without_windows {
                 NSApplication::sharedApplication(self.mtm()).stop(None);
             }
         }
@@ -108,6 +109,7 @@ impl ZsuiAppKitRuntimeDelegate {
     fn new(
         mtm: MainThreadMarker,
         open_windows: usize,
+        keep_running_without_windows: bool,
         close_handlers: HashMap<usize, crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
         capture_handler: Option<crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
         capture_path: Option<PathBuf>,
@@ -115,6 +117,7 @@ impl ZsuiAppKitRuntimeDelegate {
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitRuntimeDelegateIvars {
             open_windows: Cell::new(open_windows),
+            keep_running_without_windows,
             close_handlers,
             capture_handler,
             capture_path,
@@ -132,6 +135,9 @@ pub(crate) struct MacosAppKitNativeWindowRunReport {
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub menu_command_routed: bool,
+    pub status_item_created_count: usize,
+    pub status_menu_native_command_count: usize,
+    pub status_menu_command_routed: bool,
     pub accessibility_backend: Option<&'static str>,
     pub accessibility_node_count: usize,
     pub accessibility_evidence_event: Option<String>,
@@ -139,18 +145,22 @@ pub(crate) struct MacosAppKitNativeWindowRunReport {
 
 pub(crate) fn run_macos_appkit_native_window_event_loop(
     specs: &[WindowSpec],
+    trays: &[crate::TraySpec],
     draw_plans: &[Option<crate::NativeDrawPlan>],
     view_runtimes: &[crate::native::NativeViewInputRuntime],
     auto_close_after_ms: Option<u64>,
     capture_path: Option<&Path>,
     proof_inputs: &[crate::NativeViewSmokeInput],
 ) -> ZsuiResult<MacosAppKitNativeWindowRunReport> {
-    if specs.is_empty() {
+    if specs.is_empty() && trays.is_empty() {
         return Ok(MacosAppKitNativeWindowRunReport {
             created_window_count: 0,
             native_view_capture: None,
             proof_input_reports: Vec::new(),
             menu_command_routed: false,
+            status_item_created_count: 0,
+            status_menu_native_command_count: 0,
+            status_menu_command_routed: false,
             accessibility_backend: None,
             accessibility_node_count: 0,
             accessibility_evidence_event: None,
@@ -187,6 +197,55 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         }
     }
 
+    let application = window_service._application.clone();
+    let status_command_handler = (!trays.is_empty()).then(|| {
+        let application = application.clone();
+        let window = ids
+            .first()
+            .and_then(|id| window_service.windows.get(id))
+            .cloned();
+        let view_host = ids
+            .first()
+            .and_then(|id| window_service.view_hosts.get(id))
+            .cloned();
+        Rc::new(move |command: crate::Command| {
+            match &command {
+                crate::Command::ShowMainWindow => {
+                    if let Some(window) = window.as_deref() {
+                        window.makeKeyAndOrderFront(None);
+                        #[allow(deprecated)]
+                        application.activateIgnoringOtherApps(true);
+                    }
+                }
+                crate::Command::HideMainWindow => {
+                    if let Some(window) = window.as_deref() {
+                        window.orderOut(None);
+                    }
+                }
+                crate::Command::ToggleMainWindow => {
+                    if let Some(window) = window.as_deref() {
+                        if window.isVisible() {
+                            window.orderOut(None);
+                        } else {
+                            window.makeKeyAndOrderFront(None);
+                        }
+                    }
+                }
+                crate::Command::Quit => application.stop(None),
+                _ => {}
+            }
+            if let Some(view_host) = view_host.as_ref() {
+                view_host.dispatch_app_command(command);
+            }
+        }) as Rc<dyn Fn(crate::Command)>
+    });
+    let status_items = crate::macos_appkit_status_item::MacosAppKitStatusItemHost::create(
+        trays,
+        status_command_handler,
+    )?;
+    let status_item_created_count = status_items.item_count();
+    let status_menu_native_command_count = status_items.native_command_count();
+
     let close_handlers = ids
         .iter()
         .filter_map(|id| {
@@ -204,12 +263,12 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let delegate = ZsuiAppKitRuntimeDelegate::new(
         mtm,
         ids.len(),
+        !trays.is_empty(),
         close_handlers,
         capture_handler,
         capture_path.map(Path::to_path_buf),
         proof_inputs.to_vec(),
     );
-    let application = window_service._application.clone();
     let application_delegate: &ProtocolObject<dyn NSApplicationDelegate> =
         ProtocolObject::from_ref(&*delegate);
     let window_delegate: &ProtocolObject<dyn NSWindowDelegate> =
@@ -227,6 +286,8 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     }
     let menu_command_routed =
         auto_close_after_ms.is_some() && menu_service.invoke_first_enabled_command_for_proof();
+    let status_menu_command_routed =
+        auto_close_after_ms.is_some() && status_items.invoke_first_enabled_command_for_proof();
 
     if let Some(delay) = auto_close_after_ms {
         application.finishLaunching();
@@ -257,6 +318,9 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         native_view_capture,
         proof_input_reports,
         menu_command_routed,
+        status_item_created_count,
+        status_menu_native_command_count,
+        status_menu_command_routed,
         accessibility_backend: accessibility_evidence
             .as_ref()
             .is_some_and(|evidence| evidence.verified())

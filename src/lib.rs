@@ -103,6 +103,8 @@ pub mod macos_appkit_menu;
 mod macos_appkit_renderer;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 pub mod macos_appkit_services;
+#[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+mod macos_appkit_status_item;
 pub mod menu;
 #[cfg(feature = "menu-flyout")]
 pub mod menu_flyout;

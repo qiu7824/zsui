@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     DesktopCapabilities, FileDialogSpec, HostCapabilities, NativeWindowSmokeRunReport,
-    SaveFileDialogSpec, ZsuiError, ZsuiResult,
+    SaveFileDialogSpec, ZsuiResult,
 };
 
 #[derive(Default)]
@@ -18,14 +18,9 @@ impl DesktopRuntimeBackend for Backend {
 
     fn run_event_loop(self, request: DesktopRuntimeRequest) -> ZsuiResult<()> {
         let _shell_runtimes = request.shell_runtimes;
-        if !request.trays.is_empty() {
-            return Err(ZsuiError::unsupported(
-                "native_window_status_item",
-                "the AppKit NSStatusItem runtime is not connected to the unified event loop",
-            ));
-        }
         crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
             &request.windows,
+            &request.trays,
             &request.draw_plans,
             &request.view_runtimes,
             None,
@@ -42,8 +37,15 @@ impl DesktopRuntimeBackend for Backend {
         if request.windows.is_empty() {
             return Ok(NativeWindowSmokeRunReport::empty(request.options));
         }
+        let status_items = request
+            .options
+            .status_item
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         let run = crate::macos_appkit_services::run_macos_appkit_native_window_event_loop(
             &request.windows,
+            &status_items,
             &request.draw_plans,
             std::slice::from_ref(&request.view_runtime),
             Some(request.options.auto_close_after_ms),
@@ -65,6 +67,12 @@ impl DesktopRuntimeBackend for Backend {
                 menu_surface_created: false,
                 menu_surface_height: 0,
                 menu_surface_open_at_capture: false,
+                status_item_created: run.status_item_created_count == status_items.len()
+                    && !status_items.is_empty(),
+                status_menu_native_command_count: run.status_menu_native_command_count,
+                status_menu_command_routed: run.status_menu_command_routed,
+                status_menu_popup_created: run.status_item_created_count > 0,
+                status_menu_popup_destroyed: run.status_item_created_count > 0,
                 process_memory: None,
                 accessibility_backend: run.accessibility_backend,
                 accessibility_node_count: run.accessibility_node_count,
