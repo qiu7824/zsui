@@ -198,6 +198,8 @@ pub mod tree;
 #[cfg(feature = "ui-document")]
 pub mod ui_document;
 pub mod ui_surface_protocol;
+#[cfg(feature = "ui-viewer")]
+pub mod ui_viewer;
 pub mod view;
 pub mod widget_render;
 pub mod window;

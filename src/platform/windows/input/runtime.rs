@@ -176,8 +176,6 @@ impl WindowsWin32ViewInputRoute {
         Some(revision)
     }
 
-    #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
-
     #[cfg(test)]
     fn widget_text_value(&self, widget: crate::WidgetId) -> Option<String> {
         self.shared_runtime.widget_text_value(widget)

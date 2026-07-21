@@ -110,6 +110,7 @@ hotkey = ["shell"]
 settings = ["widgets-input", "widgets-list", "toggle"]
 product-adapter = []
 ui-document = []
+ui-viewer = ["ui-document", "window", "button", "label", "checkbox", "toggle", "toggle-button", "textbox", "radio", "slider", "progress", "native-smoke"]
 android = []
 mobile = ["android"]
 clipboard = ["dep:arboard"]
@@ -148,6 +149,7 @@ full = [
     "native-smoke",
     "product-adapter",
     "ui-document",
+    "ui-viewer",
     "settings",
     "style",
     "tray",
@@ -248,3 +250,8 @@ required-features = ["localization"]
 name = "zsui-uic"
 path = "src/bin/zsui-uic.rs"
 required-features = ["ui-document"]
+
+[[bin]]
+name = "zsui-viewer"
+path = "src/bin/zsui-viewer.rs"
+required-features = ["ui-viewer"]

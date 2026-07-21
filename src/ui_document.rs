@@ -16,6 +16,8 @@ use serde_json::Value;
 
 /// Schema version accepted by this ZSUI release.
 pub const ZSUI_UI_DOCUMENT_SCHEMA_VERSION: u32 = 1;
+const DOCUMENT_WIDGET_ID_NAMESPACE: u64 = 1 << 62;
+const DOCUMENT_WIDGET_ID_MASK: u64 = DOCUMENT_WIDGET_ID_NAMESPACE - 1;
 
 /// A validated, stable author-facing identity.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -34,6 +36,16 @@ impl UiNodeId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Maps an author ID to the reserved document-backed `WidgetId` namespace.
+    pub fn widget_id(&self) -> crate::view::WidgetId {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for byte in self.0.as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        crate::view::WidgetId::new(DOCUMENT_WIDGET_ID_NAMESPACE | (hash & DOCUMENT_WIDGET_ID_MASK))
     }
 }
 
@@ -463,6 +475,7 @@ pub enum UiDiagnosticCode {
     IncompatibleSchema,
     InvalidNodeId,
     DuplicateNodeId,
+    WidgetIdCollision,
     UnknownComponent,
     ComponentNotDocumentReady,
     MissingFeature,
@@ -552,7 +565,14 @@ impl<'a> UiDocumentValidator<'a> {
         }
 
         let mut node_ids = BTreeMap::new();
-        self.validate_node(&document.root, "$.root", &mut node_ids, &mut diagnostics);
+        let mut widget_ids = BTreeMap::new();
+        self.validate_node(
+            &document.root,
+            "$.root",
+            &mut node_ids,
+            &mut widget_ids,
+            &mut diagnostics,
+        );
         UiValidationReport { diagnostics }
     }
 
@@ -561,6 +581,7 @@ impl<'a> UiDocumentValidator<'a> {
         node: &UiNode,
         path: &str,
         node_ids: &mut BTreeMap<String, String>,
+        widget_ids: &mut BTreeMap<u64, (String, String)>,
         diagnostics: &mut Vec<UiDiagnostic>,
     ) {
         if !is_valid_node_id(node.id.as_str()) {
@@ -580,6 +601,22 @@ impl<'a> UiDocumentValidator<'a> {
                     node.id.as_str()
                 ),
             );
+        }
+        let widget_id = node.id.widget_id().0;
+        if let Some((first_node_id, first_path)) =
+            widget_ids.insert(widget_id, (node.id.0.clone(), path.to_owned()))
+        {
+            if first_node_id != node.id.0 {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::WidgetIdCollision,
+                    format!("{path}.id"),
+                    format!(
+                        "node id {:?} collides with {first_node_id:?} at {first_path}",
+                        node.id.as_str()
+                    ),
+                );
+            }
         }
 
         let catalog = crate::component_catalog::zsui_component_catalog();
@@ -633,6 +670,7 @@ impl<'a> UiDocumentValidator<'a> {
                 child,
                 &format!("{path}.children[{index}]"),
                 node_ids,
+                widget_ids,
                 diagnostics,
             );
         }
@@ -1168,6 +1206,21 @@ mod tests {
             Some(Value::String("Notes".to_owned()))
         );
         assert_eq!(manifest.map_action("save", Value::Null), Ok(Msg::Save));
+    }
+
+    #[test]
+    fn document_widget_ids_are_stable_distinct_and_reserved() {
+        let root = UiNodeId::new("root").unwrap().widget_id();
+        let root_again = UiNodeId::new("root").unwrap().widget_id();
+        let child = UiNodeId::new("root.child").unwrap().widget_id();
+
+        assert_eq!(root, root_again);
+        assert_ne!(root, child);
+        assert_eq!(
+            root.0 & DOCUMENT_WIDGET_ID_NAMESPACE,
+            DOCUMENT_WIDGET_ID_NAMESPACE
+        );
+        assert_eq!(root.0 & (1 << 63), 0);
     }
 
     #[test]

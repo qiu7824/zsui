@@ -164,8 +164,8 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Allow visual-only UI changes to reload without invoking Cargo while preserving Rust-first typed state, messages and release trimming.",
             "a versioned semantic UiDocument, explicit typed binding manifest, schema validator, prebuilt native Viewer, stable-ID patches and release-time embedding",
             "a global string event bus, arbitrary reflection, browser pixels presented as native proof, development watchers in release builds or a mandatory two-process application runtime",
-            "src/ui_document.rs, src/bin/zsui-uic.rs, docs/ui-document.md",
-            "expand schema coverage, then implement native auto-reload, compatible state retention, deterministic AI handoff and release embedding; defer the full drag-and-drop editor",
+            "src/ui_document.rs, src/ui_viewer.rs, src/bin/zsui-uic.rs, src/bin/zsui-viewer.rs, docs/ui-document.md",
+            "expand schema and typed action coverage beyond the first eleven Viewer components, complete compatible focus/selection/scroll retention, then add deterministic AI handoff and release embedding; defer the full drag-and-drop editor",
         ),
         ZsuiRustFirstGoal::new(
             "result_error_handling",

@@ -33,13 +33,20 @@ history remain authoritative for implementation status.
   editing and support release embedding without file watchers, preview
   transport, another mandatory process or other development-only dependencies.
   Stable IDs preserve compatible focus, selection, scrolling and control state.
-- The first authoring slice lives behind the optional `ui-document` feature.
+- Authoring contracts live behind the optional `ui-document` feature.
   `src/ui_document.rs` owns schema version 1, typed layout/theme/localization/
   accessibility fields, `UiBindingManifest<State, Msg>` and deterministic
   validation. `zsui-uic check` consumes an application-exported binding schema;
   component availability remains tied to Cargo features and the framework
-  component catalog. Native Viewer and reload state migration remain separate
-  unfinished slices.
+  component catalog.
+- The prebuilt native development host lives behind the separate optional
+  `ui-viewer` feature. `zsui-viewer` polls document and binding files inside the
+  existing native live-View refresh loop, keeps the last valid document after
+  invalid edits, retains ordinary `UiViewerState`, and derives stable WidgetIds
+  from author IDs in a reserved namespace. It does not add a reactive runtime,
+  browser shell or global widget registry. Full component/value-action
+  coverage, complete focus/selection/scroll retention, fixed AppKit/Linux
+  proof, AI handoff and release embedding remain unfinished.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing

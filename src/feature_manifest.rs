@@ -464,6 +464,27 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "versioned semantic UI document schema, typed binding manifest and validation tooling",
         ),
         ZsuiCargoFeature::new(
+            "ui-viewer",
+            Tooling,
+            false,
+            Vec::new(),
+            vec![
+                "ui-document",
+                "window",
+                "button",
+                "label",
+                "checkbox",
+                "toggle",
+                "toggle-button",
+                "textbox",
+                "radio",
+                "slider",
+                "progress",
+                "native-smoke",
+            ],
+            "prebuilt target-native development viewer with validated file reload and final-surface smoke",
+        ),
+        ZsuiCargoFeature::new(
             "android",
             Platform,
             false,
@@ -726,6 +747,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "native-smoke",
                 "product-adapter",
                 "ui-document",
+                "ui-viewer",
                 "settings",
                 "style",
                 "tray",
@@ -875,6 +897,13 @@ mod tests {
         assert!(!ui_document.default_enabled);
         assert!(ui_document.optional_dependency_names.is_empty());
         assert!(full.enables.contains(&"ui-document"));
+        let ui_viewer = manifest
+            .iter()
+            .find(|feature| feature.name == "ui-viewer")
+            .expect("UI viewer feature should be listed");
+        assert!(ui_viewer.enables.contains(&"ui-document"));
+        assert!(ui_viewer.enables.contains(&"window"));
+        assert!(full.enables.contains(&"ui-viewer"));
     }
 
     #[test]

@@ -48,7 +48,8 @@ and is not part of normal task context.
 | --- | --- |
 | `quickstart` | Public entry points, one-line windows, basic examples |
 | `features` | Cargo features, optional dependencies, compile trimming |
-| `ui-document` | Versioned UI documents, typed bindings, validation and authoring tools |
+| `ui-document` | Versioned UI documents, typed bindings and validation tools |
+| `ui-viewer` | Prebuilt native UI document Viewer, stable IDs and source reload |
 | `view-widgets` | `View<Msg>`, state/update, basic controls, input routing |
 | `long-list` | Virtual rows, background pagination, prefetch and LRU caching |
 | `image-preview` | Retained raster frames, background PNG decode and no-flicker presentation |

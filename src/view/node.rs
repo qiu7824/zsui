@@ -884,6 +884,8 @@ pub struct ViewNode<Msg> {
     pub(crate) typography_scaled_height: bool,
     #[cfg(feature = "combo")]
     combo_first_visible_option: Option<usize>,
+    #[cfg(feature = "ui-viewer")]
+    document_poll_interval_ms: Option<u64>,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -903,6 +905,8 @@ impl<Msg> ViewNode<Msg> {
             typography_scaled_height: false,
             #[cfg(feature = "combo")]
             combo_first_visible_option: None,
+            #[cfg(feature = "ui-viewer")]
+            document_poll_interval_ms: None,
             message: PhantomData,
         }
     }
@@ -1170,6 +1174,10 @@ impl<Msg> ViewNode<Msg> {
     }
 
     pub fn background_poll_interval_ms(&self) -> Option<u64> {
+        #[cfg(feature = "ui-viewer")]
+        if let Some(interval_ms) = self.document_poll_interval_ms {
+            return Some(interval_ms);
+        }
         #[cfg(feature = "progress-ring")]
         if matches!(
             self.kind,
@@ -1195,6 +1203,12 @@ impl<Msg> ViewNode<Msg> {
             .iter()
             .filter_map(ViewNode::background_poll_interval_ms)
             .min()
+    }
+
+    #[cfg(feature = "ui-viewer")]
+    pub(crate) fn with_document_poll_interval_ms(mut self, interval_ms: u64) -> Self {
+        self.document_poll_interval_ms = Some(interval_ms.max(16));
+        self
     }
 
     #[cfg(any(

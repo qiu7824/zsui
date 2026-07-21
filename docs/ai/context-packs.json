@@ -71,6 +71,27 @@
       ]
     },
     {
+      "id": "ui-viewer",
+      "purpose": "Prebuilt target-native UI document Viewer, stable IDs and source reload",
+      "required": [
+        "Cargo.toml",
+        "src/ui_document.rs",
+        "src/ui_viewer.rs",
+        "src/bin/zsui-viewer.rs",
+        "docs/ui-document.md"
+      ],
+      "optional": [
+        "examples/ui-documents",
+        "src/view",
+        "src/native.rs",
+        "src/feature_manifest.rs"
+      ],
+      "verify": [
+        "cargo test --no-default-features --features ui-viewer --quiet",
+        "cargo check --bin zsui-viewer --no-default-features --features ui-viewer"
+      ]
+    },
+    {
       "id": "view-widgets",
       "purpose": "Typed View, State/Msg/update and basic widget behavior",
       "required": [
