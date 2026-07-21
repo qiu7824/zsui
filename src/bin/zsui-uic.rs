@@ -7,8 +7,8 @@ use std::{
 
 use serde_json::Value;
 use zsui::ui_document::{
-    validate_ui_binding_values, UiAiHandoffPackage, UiBindingSchema, UiDocument, UiFeatureSet,
-    UiValidationReport,
+    validate_ui_binding_values, UiAiHandoffPackage, UiBindingSchema, UiDocument,
+    UiDocumentReleaseArtifact, UiFeatureSet, UiValidationReport,
 };
 
 fn main() -> ExitCode {
@@ -43,6 +43,12 @@ fn run(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
             preview_path,
             force,
         ),
+        Command::Embed {
+            document_path,
+            bindings_path,
+            output_path,
+            force,
+        } => embed(document_path, bindings_path, output_path, force),
     }
 }
 
@@ -59,6 +65,12 @@ enum Command {
         values_path: Option<PathBuf>,
         output_path: PathBuf,
         preview_path: Option<PathBuf>,
+        force: bool,
+    },
+    Embed {
+        document_path: PathBuf,
+        bindings_path: Option<PathBuf>,
+        output_path: PathBuf,
         force: bool,
     },
 }
@@ -117,6 +129,30 @@ fn parse_command(arguments: impl IntoIterator<Item = String>) -> Result<Command,
                 output_path: output_path
                     .ok_or_else(|| format!("--output is required\n{}", usage()))?,
                 preview_path,
+                force,
+            })
+        }
+        "embed" => {
+            let mut bindings_path = None;
+            let mut output_path = None;
+            let mut force = false;
+            while let Some(argument) = arguments.next() {
+                match argument.as_str() {
+                    "--bindings" => {
+                        bindings_path = Some(required_path(&mut arguments, "--bindings")?);
+                    }
+                    "--output" => {
+                        output_path = Some(required_path(&mut arguments, "--output")?);
+                    }
+                    "--force" => force = true,
+                    _ => return Err(format!("unknown argument {argument:?}\n{}", usage())),
+                }
+            }
+            Ok(Command::Embed {
+                document_path,
+                bindings_path,
+                output_path: output_path
+                    .ok_or_else(|| format!("--output is required\n{}", usage()))?,
                 force,
             })
         }
@@ -200,6 +236,36 @@ fn handoff(
     Ok(())
 }
 
+fn embed(
+    document_path: PathBuf,
+    bindings_path: Option<PathBuf>,
+    output_path: PathBuf,
+    force: bool,
+) -> Result<(), String> {
+    let document = read_document(&document_path)?;
+    let bindings = read_bindings(bindings_path.as_deref())?;
+    let features = UiFeatureSet::compiled();
+    let report = document.validate(&features, &bindings);
+    if !report.is_valid() {
+        print_report(&document_path, &report, false)?;
+        return Err(format!(
+            "UI document embed failed with {} diagnostic(s)",
+            report.diagnostics.len()
+        ));
+    }
+    let artifact = UiDocumentReleaseArtifact::compile(&document, &features, &bindings)
+        .map_err(|error| error.to_string())?;
+    prepare_output_file(&output_path, force)?;
+    fs::write(&output_path, artifact.as_bytes())
+        .map_err(|error| format!("cannot write {}: {error}", output_path.display()))?;
+    println!(
+        "{}: embedded UI artifact ready ({})",
+        output_path.display(),
+        artifact.content_fingerprint()
+    );
+    Ok(())
+}
+
 fn read_document(path: &Path) -> Result<UiDocument, String> {
     let source = read_text(path, "UI document")?;
     UiDocument::from_json(&source)
@@ -248,6 +314,28 @@ fn prepare_output_directory(path: &Path, force: bool) -> Result<(), String> {
     } else {
         fs::create_dir_all(path)
             .map_err(|error| format!("cannot create output {}: {error}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn prepare_output_file(path: &Path, force: bool) -> Result<(), String> {
+    if path.exists() {
+        if !path.is_file() {
+            return Err(format!("output {} is not a file", path.display()));
+        }
+        if !force {
+            return Err(format!(
+                "output {} already exists; pass --force to replace it",
+                path.display()
+            ));
+        }
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create output {}: {error}", parent.display()))?;
     }
     Ok(())
 }
@@ -310,7 +398,9 @@ fn usage() -> String {
         "  zsui-uic check <document.json> [--bindings <bindings.json>] [--json]\n",
         "  zsui-uic handoff <document.json> [--bindings <bindings.json>] ",
         "[--values <values.json>] --output <directory> ",
-        "[--preview <preview.png>] [--force]"
+        "[--preview <preview.png>] [--force]\n",
+        "  zsui-uic embed <document.json> [--bindings <bindings.json>] ",
+        "--output <document.zsui> [--force]"
     )
     .to_owned()
 }
@@ -357,5 +447,29 @@ mod tests {
     fn handoff_requires_output_path() {
         let error = parse_command(args(&["handoff", "view.json"])).unwrap_err();
         assert!(error.contains("--output is required"));
+    }
+
+    #[test]
+    fn parses_release_embed_arguments() {
+        let command = parse_command(args(&[
+            "embed",
+            "view.json",
+            "--bindings",
+            "bindings.json",
+            "--output",
+            "view.zsui",
+            "--force",
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            command,
+            Command::Embed {
+                document_path: PathBuf::from("view.json"),
+                bindings_path: Some(PathBuf::from("bindings.json")),
+                output_path: PathBuf::from("view.zsui"),
+                force: true,
+            }
+        );
     }
 }

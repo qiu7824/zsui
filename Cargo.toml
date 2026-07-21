@@ -110,7 +110,8 @@ hotkey = ["shell"]
 settings = ["widgets-input", "widgets-list", "toggle"]
 product-adapter = []
 ui-document = []
-ui-viewer = ["ui-document", "window", "button", "label", "checkbox", "toggle", "toggle-button", "textbox", "radio", "slider", "progress", "native-smoke"]
+ui-document-runtime = ["ui-document"]
+ui-viewer = ["ui-document-runtime", "window", "button", "label", "checkbox", "toggle", "toggle-button", "textbox", "radio", "slider", "progress", "native-smoke"]
 android = []
 mobile = ["android"]
 clipboard = ["dep:arboard"]
@@ -149,6 +150,7 @@ full = [
     "native-smoke",
     "product-adapter",
     "ui-document",
+    "ui-document-runtime",
     "ui-viewer",
     "settings",
     "style",

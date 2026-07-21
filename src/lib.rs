@@ -197,6 +197,8 @@ pub mod tray;
 pub mod tree;
 #[cfg(feature = "ui-document")]
 pub mod ui_document;
+#[cfg(feature = "ui-document-runtime")]
+pub mod ui_document_runtime;
 pub mod ui_surface_protocol;
 #[cfg(feature = "ui-viewer")]
 pub mod ui_viewer;

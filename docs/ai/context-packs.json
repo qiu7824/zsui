@@ -51,23 +51,25 @@
     },
     {
       "id": "ui-document",
-      "purpose": "Versioned semantic UI documents, typed State/Msg bindings and deterministic zsui-uic validation/handoff",
+      "purpose": "Versioned UI documents, typed bindings, deterministic handoff and release embedding/runtime",
       "required": [
         "Cargo.toml",
         "src/ui_document.rs",
+        "src/ui_document_runtime.rs",
         "src/bin/zsui-uic.rs",
-        "docs/ui-document.md",
-        "examples/ui-documents"
+        "docs/ui-document.md"
       ],
       "optional": [
+        "examples/ui-documents",
         "src/component_catalog.rs",
         "src/feature_manifest.rs",
         "src/view",
         "src/native.rs"
       ],
       "verify": [
-        "cargo test --no-default-features --features ui-document --quiet",
-        "cargo run --bin zsui-uic --no-default-features --features ui-document,button,label -- check examples/ui-documents/basic.json --bindings examples/ui-documents/basic.bindings.json"
+        "cargo test --no-default-features --features ui-document-runtime,button,label --quiet",
+        "cargo run --bin zsui-uic --no-default-features --features ui-document,button,label -- check examples/ui-documents/basic.json --bindings examples/ui-documents/basic.bindings.json",
+        "cargo run --bin zsui-uic --no-default-features --features ui-document,button,label -- embed examples/ui-documents/basic.json --bindings examples/ui-documents/basic.bindings.json --output target/ui-document/basic.zsui --force"
       ]
     },
     {

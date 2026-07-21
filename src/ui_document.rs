@@ -18,6 +18,10 @@ use serde_json::Value;
 pub const ZSUI_UI_DOCUMENT_SCHEMA_VERSION: u32 = 1;
 /// Schema version of the deterministic AI authoring handoff manifest.
 pub const ZSUI_UI_AI_HANDOFF_SCHEMA_VERSION: u32 = 1;
+/// Binary format version for release-embedded validated documents.
+pub const ZSUI_UI_DOCUMENT_ARTIFACT_VERSION: u32 = 1;
+const UI_DOCUMENT_ARTIFACT_MAGIC: &[u8; 8] = b"ZSUIUID\0";
+const UI_DOCUMENT_ARTIFACT_HEADER_LENGTH: usize = 32;
 const DOCUMENT_WIDGET_ID_NAMESPACE: u64 = 1 << 62;
 const DOCUMENT_WIDGET_ID_MASK: u64 = DOCUMENT_WIDGET_ID_NAMESPACE - 1;
 
@@ -516,6 +520,212 @@ impl From<serde_json::Error> for UiAiHandoffBuildError {
     fn from(error: serde_json::Error) -> Self {
         Self::Serialize(error)
     }
+}
+
+/// Deterministic release artifact produced after schema, feature and binding
+/// validation. It contains no source path, watcher state, preview or timestamp.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiDocumentReleaseArtifact {
+    bytes: Vec<u8>,
+    content_fingerprint: String,
+}
+
+impl UiDocumentReleaseArtifact {
+    pub fn compile(
+        document: &UiDocument,
+        features: &UiFeatureSet,
+        bindings: &UiBindingSchema,
+    ) -> Result<Self, UiDocumentArtifactError> {
+        let report = document.validate(features, bindings);
+        if !report.is_valid() {
+            return Err(UiDocumentArtifactError::Validation(report));
+        }
+        let document_json = canonical_pretty_json(document)?;
+        let bindings_json = canonical_pretty_json(bindings)?;
+        let document_length = u32::try_from(document_json.len())
+            .map_err(|_| UiDocumentArtifactError::ArtifactTooLarge)?;
+        let bindings_length = u32::try_from(bindings_json.len())
+            .map_err(|_| UiDocumentArtifactError::ArtifactTooLarge)?;
+        let payload_length = document_json
+            .len()
+            .checked_add(bindings_json.len())
+            .ok_or(UiDocumentArtifactError::ArtifactTooLarge)?;
+        let total_length = UI_DOCUMENT_ARTIFACT_HEADER_LENGTH
+            .checked_add(payload_length)
+            .ok_or(UiDocumentArtifactError::ArtifactTooLarge)?;
+        let mut bytes = Vec::with_capacity(total_length);
+        bytes.extend_from_slice(UI_DOCUMENT_ARTIFACT_MAGIC);
+        bytes.extend_from_slice(&ZSUI_UI_DOCUMENT_ARTIFACT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&document.schema_version.to_le_bytes());
+        bytes.extend_from_slice(&document_length.to_le_bytes());
+        bytes.extend_from_slice(&bindings_length.to_le_bytes());
+        let payload_fingerprint = fnv1a64_two(document_json.as_bytes(), bindings_json.as_bytes());
+        bytes.extend_from_slice(&payload_fingerprint.to_le_bytes());
+        bytes.extend_from_slice(document_json.as_bytes());
+        bytes.extend_from_slice(bindings_json.as_bytes());
+        let content_fingerprint = format!("fnv1a64:{:016x}", fnv1a64(&bytes));
+        Ok(Self {
+            bytes,
+            content_fingerprint,
+        })
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+
+    /// Stable change fingerprint; this is not a cryptographic integrity hash.
+    pub fn content_fingerprint(&self) -> &str {
+        &self.content_fingerprint
+    }
+}
+
+/// Decoded release document ready for the optional `ui-document-runtime`
+/// compiler or another application-owned typed integration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiEmbeddedDocument {
+    pub document: UiDocument,
+    pub bindings: UiBindingSchema,
+}
+
+impl UiEmbeddedDocument {
+    pub fn decode(
+        bytes: &[u8],
+        features: &UiFeatureSet,
+        expected_bindings: &UiBindingSchema,
+    ) -> Result<Self, UiDocumentArtifactError> {
+        if bytes.len() < UI_DOCUMENT_ARTIFACT_HEADER_LENGTH
+            || &bytes[..UI_DOCUMENT_ARTIFACT_MAGIC.len()] != UI_DOCUMENT_ARTIFACT_MAGIC
+        {
+            return Err(UiDocumentArtifactError::InvalidHeader);
+        }
+        let artifact_version = read_artifact_u32(bytes, 8);
+        if artifact_version != ZSUI_UI_DOCUMENT_ARTIFACT_VERSION {
+            return Err(UiDocumentArtifactError::UnsupportedArtifactVersion(
+                artifact_version,
+            ));
+        }
+        let header_document_schema = read_artifact_u32(bytes, 12);
+        let document_length = read_artifact_u32(bytes, 16) as usize;
+        let bindings_length = read_artifact_u32(bytes, 20) as usize;
+        let payload_fingerprint = read_artifact_u64(bytes, 24);
+        let payload_length = document_length
+            .checked_add(bindings_length)
+            .ok_or(UiDocumentArtifactError::InvalidLength)?;
+        if UI_DOCUMENT_ARTIFACT_HEADER_LENGTH.checked_add(payload_length) != Some(bytes.len()) {
+            return Err(UiDocumentArtifactError::InvalidLength);
+        }
+        let document_start = UI_DOCUMENT_ARTIFACT_HEADER_LENGTH;
+        let document_end = document_start + document_length;
+        let document_bytes = &bytes[document_start..document_end];
+        let bindings_bytes = &bytes[document_end..];
+        if fnv1a64_two(document_bytes, bindings_bytes) != payload_fingerprint {
+            return Err(UiDocumentArtifactError::FingerprintMismatch);
+        }
+        let document = serde_json::from_slice::<UiDocument>(document_bytes)
+            .map_err(UiDocumentArtifactError::ParseDocument)?;
+        let bindings = serde_json::from_slice::<UiBindingSchema>(bindings_bytes)
+            .map_err(UiDocumentArtifactError::ParseBindings)?;
+        if document.schema_version != header_document_schema {
+            return Err(UiDocumentArtifactError::DocumentSchemaMismatch {
+                header: header_document_schema,
+                document: document.schema_version,
+            });
+        }
+        if &bindings != expected_bindings {
+            return Err(UiDocumentArtifactError::BindingSchemaMismatch);
+        }
+        let report = document.validate(features, &bindings);
+        if !report.is_valid() {
+            return Err(UiDocumentArtifactError::Validation(report));
+        }
+        Ok(Self { document, bindings })
+    }
+}
+
+#[derive(Debug)]
+pub enum UiDocumentArtifactError {
+    Serialize(serde_json::Error),
+    Validation(UiValidationReport),
+    ArtifactTooLarge,
+    InvalidHeader,
+    UnsupportedArtifactVersion(u32),
+    InvalidLength,
+    FingerprintMismatch,
+    ParseDocument(serde_json::Error),
+    ParseBindings(serde_json::Error),
+    DocumentSchemaMismatch { header: u32, document: u32 },
+    BindingSchemaMismatch,
+}
+
+impl fmt::Display for UiDocumentArtifactError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Serialize(error) => write!(formatter, "cannot serialize UI document: {error}"),
+            Self::Validation(report) => write!(
+                formatter,
+                "UI document artifact validation failed with {} diagnostic(s)",
+                report.diagnostics.len()
+            ),
+            Self::ArtifactTooLarge => formatter.write_str("UI document artifact is too large"),
+            Self::InvalidHeader => formatter.write_str("invalid UI document artifact header"),
+            Self::UnsupportedArtifactVersion(version) => write!(
+                formatter,
+                "UI document artifact version {version} is not supported"
+            ),
+            Self::InvalidLength => formatter.write_str("invalid UI document artifact length"),
+            Self::FingerprintMismatch => {
+                formatter.write_str("UI document artifact payload fingerprint mismatch")
+            }
+            Self::ParseDocument(error) => {
+                write!(formatter, "cannot parse embedded UI document: {error}")
+            }
+            Self::ParseBindings(error) => {
+                write!(formatter, "cannot parse embedded binding schema: {error}")
+            }
+            Self::DocumentSchemaMismatch { header, document } => write!(
+                formatter,
+                "embedded document schema {document} does not match artifact header {header}"
+            ),
+            Self::BindingSchemaMismatch => formatter.write_str(
+                "embedded binding schema does not match the application binding manifest",
+            ),
+        }
+    }
+}
+
+impl Error for UiDocumentArtifactError {}
+
+impl From<serde_json::Error> for UiDocumentArtifactError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Serialize(error)
+    }
+}
+
+fn read_artifact_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
+}
+
+fn read_artifact_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+        bytes[offset + 4],
+        bytes[offset + 5],
+        bytes[offset + 6],
+        bytes[offset + 7],
+    ])
 }
 
 fn collect_handoff_nodes(node: &UiNode, path: &str, output: &mut Vec<UiAiHandoffNode>) {
@@ -1508,6 +1718,15 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
+fn fnv1a64_two(first: &[u8], second: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in first.iter().chain(second) {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1787,6 +2006,50 @@ mod tests {
                 None
             ),
             Err(UiAiHandoffBuildError::InvalidValues(_))
+        ));
+    }
+
+    #[test]
+    fn release_artifact_is_deterministic_and_validates_on_decode() {
+        let document = valid_document();
+        let features = UiFeatureSet::new(["button", "label"]);
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("window_title".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::from([("save".to_owned(), UiValueType::Null)]),
+        };
+
+        let first = UiDocumentReleaseArtifact::compile(&document, &features, &bindings).unwrap();
+        let second = UiDocumentReleaseArtifact::compile(&document, &features, &bindings).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(&first.as_bytes()[..8], UI_DOCUMENT_ARTIFACT_MAGIC);
+
+        let embedded = UiEmbeddedDocument::decode(first.as_bytes(), &features, &bindings).unwrap();
+        assert_eq!(embedded.document, document);
+        assert_eq!(embedded.bindings, bindings);
+        assert!(first.content_fingerprint().starts_with("fnv1a64:"));
+    }
+
+    #[test]
+    fn release_artifact_rejects_tampering_and_binding_drift() {
+        let document = valid_document();
+        let features = UiFeatureSet::new(["button", "label"]);
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("window_title".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::from([("save".to_owned(), UiValueType::Null)]),
+        };
+        let artifact = UiDocumentReleaseArtifact::compile(&document, &features, &bindings).unwrap();
+
+        let mut tampered = artifact.as_bytes().to_vec();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 1;
+        assert!(matches!(
+            UiEmbeddedDocument::decode(&tampered, &features, &bindings),
+            Err(UiDocumentArtifactError::FingerprintMismatch)
+        ));
+
+        assert!(matches!(
+            UiEmbeddedDocument::decode(artifact.as_bytes(), &features, &UiBindingSchema::default()),
+            Err(UiDocumentArtifactError::BindingSchemaMismatch)
         ));
     }
 }

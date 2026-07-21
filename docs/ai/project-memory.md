@@ -57,9 +57,19 @@ history remain authoritative for implementation status.
   records content-change fingerprints, required features, node indexes and
   component contracts without timestamps, absolute paths or random IDs; the
   FNV fingerprint is not a cryptographic integrity hash. This does not add a
-  reactive runtime, browser shell or global widget registry. Full component
+  reactive runtime, browser shell or global widget registry.
+- Release embedding remains separately feature-pruned: `zsui-uic embed`
+  validates and emits a deterministic versioned `.zsui` artifact containing
+  only canonical document and binding data. `UiEmbeddedDocument::decode`
+  rechecks the header, lengths, payload fingerprint, schema, application
+  binding schema and compiled features. The `ui-document-runtime` feature
+  depends only on `ui-document`; applications explicitly enable only the
+  component features used by the artifact and compile it to typed
+  `ViewNode<Msg>` through `ui_document_view`. It does not link `ui-viewer`,
+  file polling, preview transport, native smoke code or another process.
+  Full component
   coverage, general-scroll and advanced-control state retention, fixed
-  AppKit/Linux proof and release embedding remain unfinished.
+  AppKit/Linux proof remain unfinished.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing

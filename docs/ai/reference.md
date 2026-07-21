@@ -21,7 +21,7 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 58% complete; schema version 1, the typed
+- Reloadable UI authoring: about 68% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
   auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
   compatibility, preserve native focus/text selection/editor viewport for
@@ -30,9 +30,12 @@ framework readiness.
   explicit bound Viewer state across rebuilds. `zsui-uic handoff` now emits a
   deterministic canonical package with document, binding/value snapshots,
   optional final native PNG metadata, stable node indexes, feature requirements
-  and component contracts. Complete component coverage,
+  and component contracts. `zsui-uic embed` and the feature-pruned
+  `ui-document-runtime` now provide a deterministic, versioned embedded
+  artifact plus reusable `UiDocument`-to-`ViewNode<Msg>` compilation without
+  linking Viewer, watcher or preview code. Complete component coverage,
   general-scroll and advanced-control state retention, fixed AppKit/Linux
-  proof and release embedding remain.
+  proof remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.

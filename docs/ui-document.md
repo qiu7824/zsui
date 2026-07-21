@@ -124,5 +124,61 @@ cargo run --bin zsui-uic `
 内容。AI 或可视化工具修改 `document.json` 后，可以直接用 `zsui-uic check` 校验，并由
 已编译 Viewer 热重载；交接包不引入 WebView、平台类型、文件监听服务或全局控件注册表。
 
-完整组件覆盖、通用滚动容器及高级控件状态迁移、三平台固定 Runner Viewer 基准和发布期
-文档嵌入仍是后续 v0.2 切片。浏览器投影不能替代原生运行证据。
+浏览器投影不能替代原生运行证据。
+
+## 发布嵌入
+
+发布构建可先把文档与绑定 schema 编译为确定性的 `.zsui` 制品：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,label,checkbox,textbox,slider `
+  -- embed examples/ui-documents/interactive.json `
+  --bindings examples/ui-documents/interactive.bindings.json `
+  --output target/release-ui/interactive.zsui `
+  --force
+```
+
+`embed` 在写入前执行与 Viewer 相同的 schema、组件 feature、稳定 ID、属性和绑定校验。
+制品头包含固定 magic、制品版本、文档 schema、分段长度和 payload 变更指纹，payload
+只含规范化文档与绑定 schema；不含源文件路径、时间、截图、文件监听状态或诊断历史。
+payload 指纹使用 FNV-1a 检测意外变更，不是密码学完整性或签名机制。
+
+应用使用 `include_bytes!` 把制品放进最终二进制，并用应用真实的强类型绑定清单校验和
+解码：
+
+```rust
+use zsui::ui_document::{UiEmbeddedDocument, UiFeatureSet};
+use zsui::ui_document_runtime::{ui_document_view, UiDocumentAction};
+
+static MAIN_UI: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/main.zsui"));
+
+#[derive(Clone)]
+enum Msg {
+    Ui(UiDocumentAction),
+}
+
+let binding_schema = binding_manifest.schema();
+let embedded = UiEmbeddedDocument::decode(
+    MAIN_UI,
+    &UiFeatureSet::compiled(),
+    &binding_schema,
+)?;
+let view = ui_document_view(
+    &embedded.document,
+    &embedded.bindings,
+    &state.ui_values,
+    Msg::Ui,
+)?;
+```
+
+发布应用启用 `ui-document-runtime` 以及文档实际使用的组件 features；
+`ui-document-runtime` 自身只依赖 `ui-document`，不会自动启用全部控件。解码时会检查
+制品版本、长度、payload 指纹、文档 schema、应用绑定 schema 和当前编译 features，
+再把文档编译为共享 `ViewNode<Msg>`。平台宿主继续按 Win32、AppKit 或 Linux experience
+profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
+原生 smoke 驱动或强制额外进程。
+
+完整组件覆盖、通用滚动容器及高级控件状态迁移和三平台固定 Runner Viewer 基准仍是
+后续 v0.2 切片。浏览器投影不能替代原生运行证据。

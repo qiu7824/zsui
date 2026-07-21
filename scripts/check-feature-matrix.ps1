@@ -64,6 +64,7 @@ $singleFeatures = @(
     "settings",
     "product-adapter",
     "ui-document",
+    "ui-document-runtime",
     "ui-viewer",
     "android",
     "mobile",

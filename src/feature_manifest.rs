@@ -76,7 +76,7 @@ pub fn zsui_optional_dependency_feature_names() -> Vec<&'static str> {
 }
 
 pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
-    use ZsuiFeatureCategory::{Backend, Platform, Profile, Service, Shell, Tooling, Widget};
+    use ZsuiFeatureCategory::{Backend, Core, Platform, Profile, Service, Shell, Tooling, Widget};
 
     vec![
         ZsuiCargoFeature::new(
@@ -464,12 +464,20 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "versioned semantic UI document schema, typed binding manifest and validation tooling",
         ),
         ZsuiCargoFeature::new(
+            "ui-document-runtime",
+            Core,
+            false,
+            Vec::new(),
+            vec!["ui-document"],
+            "release-safe UI document to View compiler without file watching or preview transport",
+        ),
+        ZsuiCargoFeature::new(
             "ui-viewer",
             Tooling,
             false,
             Vec::new(),
             vec![
-                "ui-document",
+                "ui-document-runtime",
                 "window",
                 "button",
                 "label",
@@ -747,6 +755,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "native-smoke",
                 "product-adapter",
                 "ui-document",
+                "ui-document-runtime",
                 "ui-viewer",
                 "settings",
                 "style",
@@ -897,11 +906,17 @@ mod tests {
         assert!(!ui_document.default_enabled);
         assert!(ui_document.optional_dependency_names.is_empty());
         assert!(full.enables.contains(&"ui-document"));
+        let ui_document_runtime = manifest
+            .iter()
+            .find(|feature| feature.name == "ui-document-runtime")
+            .expect("UI document runtime feature should be listed");
+        assert_eq!(ui_document_runtime.enables, vec!["ui-document"]);
+        assert!(full.enables.contains(&"ui-document-runtime"));
         let ui_viewer = manifest
             .iter()
             .find(|feature| feature.name == "ui-viewer")
             .expect("UI viewer feature should be listed");
-        assert!(ui_viewer.enables.contains(&"ui-document"));
+        assert!(ui_viewer.enables.contains(&"ui-document-runtime"));
         assert!(ui_viewer.enables.contains(&"window"));
         assert!(full.enables.contains(&"ui-viewer"));
     }

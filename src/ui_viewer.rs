@@ -11,24 +11,12 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ui_document::{UiAxis, UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet, UiNode};
-use crate::{
-    button, checkbox, column, progress_bar, radio_button, row, slider, styled_text, text,
-    text_editor, textbox, toggle, toggle_button, AppCx, ColorRole, Dp, ProgressRange,
-    SemanticTextStyle, SliderRange, TextRole, ThemeColorToken, ViewNode,
-};
+use crate::ui_document::{UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet, UiNode};
+use crate::ui_document_runtime::ui_document_view;
+pub use crate::ui_document_runtime::UiDocumentAction as UiViewerAction;
+use crate::{column, text, AppCx, Dp, ViewNode};
 
 pub const ZSUI_UI_VIEWER_DEFAULT_POLL_INTERVAL_MS: u64 = 250;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UiViewerAction {
-    pub node_id: String,
-    pub binding: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub property_binding: Option<String>,
-    pub payload: Value,
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -252,10 +240,11 @@ impl UiViewerSource {
 
     pub fn view(&self, viewer_state: &UiViewerState) -> ViewNode<UiViewerMessage> {
         self.refresh();
-        let (document, last_error, state_reset_count) = {
+        let (document, bindings, last_error, state_reset_count) = {
             let state = self.lock();
             (
                 Arc::clone(&state.document),
+                state.bindings.clone(),
                 state.last_error.clone(),
                 state
                     .last_reload
@@ -264,7 +253,13 @@ impl UiViewerSource {
                     .unwrap_or(0),
             )
         };
-        let content = compile_node(&document.root, viewer_state);
+        let content = ui_document_view(
+            &document,
+            &bindings,
+            &viewer_state.properties,
+            UiViewerMessage::Action,
+        )
+        .unwrap_or_else(|error| text(format!("UI document runtime error: {error}")));
         let mut root = if let Some(error) = last_error {
             column([text(format!("UI document reload error: {error}")), content]).gap(Dp::new(8.0))
         } else if state_reset_count > 0 {
@@ -392,295 +387,6 @@ fn parse_and_validate_sources(
             path: document_path.to_owned(),
             diagnostics: report.diagnostics,
         })
-    }
-}
-
-fn compile_node(node: &UiNode, state: &UiViewerState) -> ViewNode<UiViewerMessage> {
-    let children = node
-        .children
-        .iter()
-        .map(|child| compile_node(child, state))
-        .collect::<Vec<_>>();
-    let mut view = match node.component.as_str() {
-        "stack" => match node.layout.direction.unwrap_or(UiAxis::Vertical) {
-            UiAxis::Horizontal => row(children),
-            UiAxis::Vertical => column(children),
-        },
-        "border" => column(children),
-        "text" => {
-            let value = string_property(node, state, "text", "");
-            styled_text(value, semantic_text_style(node))
-        }
-        "button" => {
-            let mut control = button(string_property(node, state, "label", "Button"))
-                .enabled(bool_property(node, state, "enabled", true));
-            if let Some(binding) = node.action_bindings.get("click") {
-                control = control.on_click(UiViewerMessage::Action(UiViewerAction {
-                    node_id: node.id.as_str().to_owned(),
-                    binding: binding.clone(),
-                    property_binding: None,
-                    payload: Value::Null,
-                }));
-            }
-            control
-        }
-        "toggle_button" => {
-            let mut control = toggle_button(
-                string_property(node, state, "label", "Toggle"),
-                bool_property(node, state, "checked", false),
-            );
-            if let Some(binding) = node.action_bindings.get("toggle") {
-                let node_id = node.id.as_str().to_owned();
-                let binding = binding.clone();
-                let property_binding = node.property_bindings.get("checked").cloned();
-                control = control.on_toggle_with(move |checked| {
-                    UiViewerMessage::Action(UiViewerAction {
-                        node_id: node_id.clone(),
-                        binding: binding.clone(),
-                        property_binding: property_binding.clone(),
-                        payload: Value::Bool(checked),
-                    })
-                });
-            }
-            control
-        }
-        "checkbox" => {
-            let mut control = checkbox(
-                string_property(node, state, "label", "Check box"),
-                bool_property(node, state, "checked", false),
-            );
-            if let Some(binding) = node.action_bindings.get("toggle") {
-                let node_id = node.id.as_str().to_owned();
-                let binding = binding.clone();
-                let property_binding = node.property_bindings.get("checked").cloned();
-                control = control.on_toggle_with(move |checked| {
-                    UiViewerMessage::Action(UiViewerAction {
-                        node_id: node_id.clone(),
-                        binding: binding.clone(),
-                        property_binding: property_binding.clone(),
-                        payload: Value::Bool(checked),
-                    })
-                });
-            }
-            control
-        }
-        "toggle" => {
-            let mut control = toggle(bool_property(node, state, "checked", false));
-            if let Some(binding) = node.action_bindings.get("toggle") {
-                let node_id = node.id.as_str().to_owned();
-                let binding = binding.clone();
-                let property_binding = node.property_bindings.get("checked").cloned();
-                control = control.on_toggle_with(move |checked| {
-                    UiViewerMessage::Action(UiViewerAction {
-                        node_id: node_id.clone(),
-                        binding: binding.clone(),
-                        property_binding: property_binding.clone(),
-                        payload: Value::Bool(checked),
-                    })
-                });
-            }
-            control
-        }
-        "textbox" if bool_property(node, state, "multiline", false) => {
-            let mut control = text_editor(string_property(node, state, "value", ""));
-            if let Some(binding) = node.action_bindings.get("change") {
-                let node_id = node.id.as_str().to_owned();
-                let binding = binding.clone();
-                let property_binding = node.property_bindings.get("value").cloned();
-                control = control.on_change_with(move |value| {
-                    UiViewerMessage::Action(UiViewerAction {
-                        node_id: node_id.clone(),
-                        binding: binding.clone(),
-                        property_binding: property_binding.clone(),
-                        payload: Value::String(value),
-                    })
-                });
-            }
-            control
-        }
-        "textbox" => {
-            let mut control = textbox(string_property(node, state, "value", ""));
-            if let Some(binding) = node.action_bindings.get("change") {
-                let node_id = node.id.as_str().to_owned();
-                let binding = binding.clone();
-                let property_binding = node.property_bindings.get("value").cloned();
-                control = control.on_change_with(move |value| {
-                    UiViewerMessage::Action(UiViewerAction {
-                        node_id: node_id.clone(),
-                        binding: binding.clone(),
-                        property_binding: property_binding.clone(),
-                        payload: Value::String(value),
-                    })
-                });
-            }
-            control
-        }
-        "radio_button" => {
-            let mut control = radio_button(
-                string_property(node, state, "label", "Option"),
-                bool_property(node, state, "selected", false),
-            );
-            if let Some(binding) = node.action_bindings.get("choose") {
-                control = control.on_choose(UiViewerMessage::Action(UiViewerAction {
-                    node_id: node.id.as_str().to_owned(),
-                    binding: binding.clone(),
-                    property_binding: None,
-                    payload: Value::Null,
-                }));
-            }
-            control
-        }
-        "slider" => {
-            let mut control = slider(
-                number_property(node, state, "value", 0.0) as f32,
-                SliderRange::new(0.0, 100.0),
-            );
-            if let Some(binding) = node.action_bindings.get("slide") {
-                let node_id = node.id.as_str().to_owned();
-                let binding = binding.clone();
-                let property_binding = node.property_bindings.get("value").cloned();
-                control = control.on_slide_with(move |value| {
-                    UiViewerMessage::Action(UiViewerAction {
-                        node_id: node_id.clone(),
-                        binding: binding.clone(),
-                        property_binding: property_binding.clone(),
-                        payload: Value::from(value),
-                    })
-                });
-            }
-            control
-        }
-        "progress_bar" => progress_bar(
-            number_property(node, state, "value", 0.0) as f32,
-            ProgressRange::new(0.0, 100.0),
-        ),
-        _ => text(format!(
-            "Unsupported UiDocument component: {}",
-            node.component
-        )),
-    };
-    view = view.id(node.id.widget_id());
-    apply_layout(view, node)
-}
-
-fn apply_layout(mut view: ViewNode<UiViewerMessage>, node: &UiNode) -> ViewNode<UiViewerMessage> {
-    if let Some(value) = node.layout.width {
-        view = view.width(Dp::new(value));
-    }
-    if let Some(value) = node.layout.height {
-        view = view.height(Dp::new(value));
-    }
-    if let Some(value) = node.layout.min_width {
-        view = view.min_width(Dp::new(value));
-    }
-    if let Some(value) = node.layout.min_height {
-        view = view.min_height(Dp::new(value));
-    }
-    if let Some(value) = node.layout.padding {
-        view = view.padding(Dp::new(value));
-    }
-    if let Some(value) = node.layout.gap {
-        view = view.gap(Dp::new(value));
-    }
-    if let Some(value) = node.layout.flex {
-        view = view.flex(value);
-    }
-    if let Some(token) = node
-        .theme_tokens
-        .get("background")
-        .and_then(|token| theme_color_token(token))
-    {
-        view = view.bg(token);
-    }
-    view
-}
-
-fn property_value(node: &UiNode, state: &UiViewerState, property: &str) -> Option<Value> {
-    if let Some(value) = node.properties.get(property) {
-        return Some(value.clone());
-    }
-    if let Some(binding) = node.property_bindings.get(property) {
-        return state
-            .properties
-            .get(binding)
-            .cloned()
-            .or_else(|| Some(Value::String(format!("{{binding:{binding}}}"))));
-    }
-    node.localization
-        .get(property)
-        .map(|key| Value::String(format!("{{message:{key}}}")))
-}
-
-fn string_property(node: &UiNode, state: &UiViewerState, property: &str, fallback: &str) -> String {
-    property_value(node, state, property)
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .unwrap_or_else(|| fallback.to_owned())
-}
-
-fn bool_property(node: &UiNode, state: &UiViewerState, property: &str, fallback: bool) -> bool {
-    property_value(node, state, property)
-        .and_then(|value| value.as_bool())
-        .unwrap_or(fallback)
-}
-
-fn number_property(node: &UiNode, state: &UiViewerState, property: &str, fallback: f64) -> f64 {
-    property_value(node, state, property)
-        .and_then(|value| value.as_f64())
-        .unwrap_or(fallback)
-}
-
-fn semantic_text_style(node: &UiNode) -> SemanticTextStyle {
-    let role = match node.properties.get("text_role").and_then(Value::as_str) {
-        Some("caption") => TextRole::Caption,
-        Some("body_large") => TextRole::BodyLarge,
-        Some("subtitle") => TextRole::Subtitle,
-        Some("title") => TextRole::Title,
-        Some("title_large") => TextRole::TitleLarge,
-        Some("display") => TextRole::Display,
-        _ => TextRole::Body,
-    };
-    let mut style = SemanticTextStyle::for_role(role);
-    if let Some(color) = node
-        .theme_tokens
-        .get("foreground")
-        .and_then(|token| color_role(token))
-    {
-        style.color = color;
-    }
-    style
-}
-
-fn theme_color_token(token: &str) -> Option<ThemeColorToken> {
-    match token {
-        "surface" => Some(ThemeColorToken::Surface),
-        "surface.raised" => Some(ThemeColorToken::SurfaceRaised),
-        "text.primary" => Some(ThemeColorToken::TextPrimary),
-        "text.secondary" => Some(ThemeColorToken::TextSecondary),
-        "accent" => Some(ThemeColorToken::Accent),
-        "control" => Some(ThemeColorToken::Control),
-        "border" => Some(ThemeColorToken::Border),
-        "accent.text" => Some(ThemeColorToken::AccentText),
-        "success" => Some(ThemeColorToken::Success),
-        "warning" => Some(ThemeColorToken::Warning),
-        "danger" => Some(ThemeColorToken::Danger),
-        _ => None,
-    }
-}
-
-fn color_role(token: &str) -> Option<ColorRole> {
-    match token {
-        "surface" => Some(ColorRole::Surface),
-        "surface.raised" => Some(ColorRole::SurfaceRaised),
-        "text.primary" => Some(ColorRole::PrimaryText),
-        "text.secondary" => Some(ColorRole::SecondaryText),
-        "accent" => Some(ColorRole::Accent),
-        "control" => Some(ColorRole::Control),
-        "border" => Some(ColorRole::Border),
-        "accent.text" => Some(ColorRole::AccentText),
-        "success" => Some(ColorRole::Success),
-        "warning" => Some(ColorRole::Warning),
-        "danger" => Some(ColorRole::Danger),
-        _ => None,
     }
 }
 
