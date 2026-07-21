@@ -268,6 +268,23 @@ jobs:
                   )
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
+              if stem == "gallery-navigation-light":
+                  assert proof["messages"] == ["TabSelected"]
+                  assert runtime["native_view_message_count"] == 2
+                  assert runtime["native_view_event_count"] == 2
+                  assert runtime["native_view_tab_selection_count"] == 2
+                  assert runtime["native_view_tab_keyboard_selection_count"] == 1
+                  assert runtime["native_view_tab_keyboard_focus_only_count"] == 0
+                  assert runtime["native_view_key_down_count"] == 1
+                  assert runtime["native_view_unhandled_key_count"] == 0
+                  assert runtime["native_view_unhandled_click_count"] == 0
+                  assert runtime["native_view_focused_widget"] == 3
+                  assert any(
+                      item["backend"] == "appkit"
+                      and item["key"] == "Right"
+                      and item["handled"]
+                      for item in runtime["native_view_text_navigation_evidence"]
+                  )
               if stem == "gallery-catalog-light":
                   assert runtime["native_view_pointer_down_count"] == 2
                   assert runtime["native_view_pointer_move_count"] == 1
@@ -586,6 +603,23 @@ jobs:
                   assert runtime["native_view_unhandled_click_count"] == 0
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
+              if stem == "gallery-navigation-light":
+                  assert proof["messages"] == ["TabSelected"]
+                  assert runtime["native_view_message_count"] == 1
+                  assert runtime["native_view_event_count"] == 1
+                  assert runtime["native_view_tab_selection_count"] == 1
+                  assert runtime["native_view_tab_keyboard_selection_count"] == 0
+                  assert runtime["native_view_tab_keyboard_focus_only_count"] == 1
+                  assert runtime["native_view_key_down_count"] == 1
+                  assert runtime["native_view_unhandled_key_count"] == 0
+                  assert runtime["native_view_unhandled_click_count"] == 0
+                  assert runtime["native_view_focused_widget"] == 3
+                  assert any(
+                      item["backend"] == "linux_direct"
+                      and item["key"] == "Right"
+                      and item["handled"]
+                      for item in runtime["native_view_text_navigation_evidence"]
+                  )
               if stem == "gallery-catalog-light":
                   assert runtime["native_view_pointer_down_count"] == 2
                   assert runtime["native_view_pointer_move_count"] == 1
@@ -882,6 +916,15 @@ jobs:
           PY
           set -e
           wait "$gallery_pid"
+
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page navigation \
+            --theme light \
+            --width 1180 \
+            --height 780 \
+            --output "$root" \
+            >"$root/gallery-navigation-light.log" 2>&1
 
           ./target/release/examples/component_gallery \
             --native-proof \
@@ -1236,6 +1279,7 @@ jobs:
               )
 
           gallery = json.loads((root / "gallery-inputs-light.json").read_text("utf-8"))
+          navigation = json.loads((root / "gallery-navigation-light.json").read_text("utf-8"))
           feedback = json.loads((root / "gallery-feedback-light.json").read_text("utf-8"))
           notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
           resized_small = json.loads((root / "resized-small.json").read_text("utf-8"))
@@ -1248,7 +1292,7 @@ jobs:
               (root / "notepad-atspi-proof.json").read_text("utf-8")
           )
 
-          for proof in (gallery, feedback, notepad, resized_small, resized_large):
+          for proof in (gallery, navigation, feedback, notepad, resized_small, resized_large):
               capture = proof["runtime"]["native_view_capture"]
               assert proof["schema"] == "zsui.native-proof/v1"
               assert proof["platform"] == "linux"
@@ -1282,6 +1326,23 @@ jobs:
               assert proof["runtime"]["native_accessibility_node_count"] >= 5
 
           assert gallery["runtime"]["native_accessibility_action_count"] >= 1
+          navigation_runtime = navigation["runtime"]
+          assert navigation["messages"] == ["TabSelected"]
+          assert navigation_runtime["native_view_message_count"] == 1
+          assert navigation_runtime["native_view_event_count"] == 1
+          assert navigation_runtime["native_view_tab_selection_count"] == 1
+          assert navigation_runtime["native_view_tab_keyboard_selection_count"] == 0
+          assert navigation_runtime["native_view_tab_keyboard_focus_only_count"] == 1
+          assert navigation_runtime["native_view_key_down_count"] == 1
+          assert navigation_runtime["native_view_unhandled_key_count"] == 0
+          assert navigation_runtime["native_view_unhandled_click_count"] == 0
+          assert navigation_runtime["native_view_focused_widget"] == 3
+          assert any(
+              item["backend"] == "linux_direct"
+              and item["key"] == "Right"
+              and item["handled"]
+              for item in navigation_runtime["native_view_text_navigation_evidence"]
+          )
           feedback_runtime = feedback["runtime"]
           assert feedback["messages"] == ["MenuFlyoutCommand", "MenuFlyoutOpenChanged", "OpenMenuFlyout"]
           assert feedback_runtime["native_view_message_count"] >= 3
@@ -1333,6 +1394,9 @@ jobs:
           ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
           assert (
               root / "gallery-feedback-light.png"
+          ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+          assert (
+              root / "gallery-navigation-light.png"
           ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
           assert (
               root / "notepad-interaction.png"

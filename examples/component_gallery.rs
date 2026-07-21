@@ -1421,6 +1421,34 @@ fn main() -> ZsuiResult<()> {
                 ZsPointerButton::Secondary,
                 ZsPointerModifiers::default(),
             );
+        } else if resize_target.is_none() && initial_page == GalleryPage::Navigation {
+            let target = builder
+                .native_view_interaction_plan()
+                .and_then(|plan| {
+                    plan.hit_targets.iter().find(|target| {
+                        matches!(
+                            target.kind,
+                            ViewHitTargetKind::Tab {
+                                tab_view: TABS,
+                                tab,
+                                ..
+                            } if tab == ZsTabId::new(2)
+                        )
+                    })
+                })
+                .ok_or_else(|| {
+                    ZsuiError::host(
+                        "gallery_interaction_target",
+                        "missing Advanced gallery tab header",
+                    )
+                })?;
+            let point = Point {
+                x: target.bounds.x + target.bounds.width / 2,
+                y: target.bounds.y + target.bounds.height / 2,
+            };
+            options = options
+                .native_view_click(point)
+                .native_view_key_down(NativeViewKey::Right);
         } else if resize_target.is_none() && initial_page == GalleryPage::Feedback {
             let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
                 ZsuiError::host("gallery_interaction_plan", "missing View input plan")
@@ -1472,6 +1500,7 @@ fn main() -> ZsuiResult<()> {
                         vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
                     }
                     GalleryPage::Catalog => vec!["CanvasActivated", "CanvasPointer"],
+                    GalleryPage::Navigation => vec!["TabSelected"],
                     GalleryPage::Feedback => {
                         vec![
                             "MenuFlyoutCommand",
@@ -1479,7 +1508,7 @@ fn main() -> ZsuiResult<()> {
                             "OpenMenuFlyout",
                         ]
                     }
-                    _ => Vec::new(),
+                    GalleryPage::Collections => Vec::new(),
                 }
             };
             serde_json::to_value(
@@ -1650,5 +1679,42 @@ mod tests {
             .hit_target_for_widget(NAVIGATION_VIEW)
             .is_none());
         assert!(wide_interaction.hit_target_for_widget(NAV_INPUTS).is_some());
+    }
+
+    #[test]
+    fn gallery_navigation_page_exposes_typed_tab_headers_for_native_proof() {
+        let mut state = GalleryState::default();
+        state.page = GalleryPage::Navigation;
+        let mut gallery = view(&state);
+        View::layout(
+            &mut gallery,
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1180,
+                    height: 780,
+                },
+                Dpi::standard(),
+            ),
+        );
+        let interaction = gallery.interaction_plan();
+        let tab_ids = interaction
+            .hit_targets
+            .iter()
+            .filter_map(|target| match target.kind {
+                ViewHitTargetKind::Tab {
+                    tab_view: TABS,
+                    tab,
+                    ..
+                } => Some(tab),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            tab_ids,
+            vec![ZsTabId::new(1), ZsTabId::new(2), ZsTabId::new(3)]
+        );
     }
 }
