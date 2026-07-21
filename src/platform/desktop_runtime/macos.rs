@@ -77,7 +77,7 @@ impl DesktopRuntimeBackend for Backend {
                 status_menu_command_routed: run.status_menu_command_routed,
                 status_menu_popup_created: run.status_item_created_count > 0,
                 status_menu_popup_destroyed: run.status_item_created_count > 0,
-                process_memory: None,
+                process_memory: run.process_memory,
                 accessibility_backend: run.accessibility_backend,
                 accessibility_node_count: run.accessibility_node_count,
                 accessibility_action_count: 0,

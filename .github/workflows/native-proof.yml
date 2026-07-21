@@ -76,6 +76,12 @@ jobs:
             --example native_smoke_run \
             --no-default-features \
             --features macos-appkit,native-smoke,button,label
+          cargo build \
+            --release \
+            --locked \
+            --bin zsui-viewer \
+            --no-default-features \
+            --features ui-viewer
 
       - name: Run real AppKit proof scenes
         run: |
@@ -130,6 +136,14 @@ jobs:
             --status-item \
             --view \
             > target/native-proof/macos-status-item/status-item-run.json
+          ./target/release/zsui-viewer \
+            examples/ui-documents/scrolling.json \
+            --bindings examples/ui-documents/scrolling.bindings.json \
+            --values examples/ui-documents/scrolling.values.json \
+            --width 720 \
+            --height 560 \
+            --smoke target/native-proof/macos-15-arm64/ui-viewer-scroll \
+            --smoke-scroll 360 260 96
 
       - name: Validate AppKit artifacts
         shell: python
@@ -295,6 +309,49 @@ jobs:
               if stem == "notepad-interaction":
                   validate_notepad_text(runtime, "appkit")
 
+          viewer_root = root / "ui-viewer-scroll"
+          viewer_png = viewer_root / "window.png"
+          if viewer_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+              raise SystemExit(f"{viewer_png} is not a PNG")
+          viewer = json.loads(
+              (viewer_root / "proof.json").read_text(encoding="utf-8")
+          )
+          assert viewer["schema"] == "zsui.ui-viewer-proof/v1"
+          assert viewer["schema_version"] == 1
+          assert viewer["platform"] == "macos"
+          assert viewer["capture_backend"] == "appkit_nsview_bitmap_cache"
+          assert viewer["display_server"] is None
+          assert viewer["window"]["logical_width"] == 720
+          assert viewer["window"]["logical_height"] == 560
+          assert viewer["window"]["pixel_width"] > 0
+          assert viewer["window"]["pixel_height"] > 0
+          assert viewer["window"]["scale_factor"] > 0.0
+          source = viewer["source"]
+          assert source["revision"] == 1
+          assert source["document_schema_version"] == 1
+          assert source["document_path"] == "examples/ui-documents/scrolling.json"
+          assert source["binding_path"] == "examples/ui-documents/scrolling.bindings.json"
+          assert source["node_count"] == 15
+          assert len(source["nodes"]) == 15
+          assert len({node["id"] for node in source["nodes"]}) == 15
+          scroll = next(
+              node for node in source["nodes"] if node["id"] == "results-scroll"
+          )
+          assert scroll["component"] == "scroll"
+          assert scroll["child_count"] == 1
+          assert scroll["layout"]["height"] == 392.0
+          runtime = viewer["runtime"]
+          assert runtime["created_window_count"] == 1
+          assert runtime["screenshot_captured"] is True
+          assert runtime["native_view_capture"]["backend"] == viewer["capture_backend"]
+          assert runtime["native_view_scroll_count"] == 1
+          assert runtime["native_view_unhandled_scroll_count"] == 0
+          assert runtime["native_view_event_count"] >= 1
+          assert runtime["native_view_message_count"] >= 1
+          assert runtime["process_memory_during_runtime"]["source"] == "macos_mach_task_basic_info"
+          assert runtime["process_memory_during_runtime"]["resident_bytes"] > 0
+          assert "appkit_proof_input:scroll:handled" in runtime["events"]
+
           status = json.loads(
               Path("target/native-proof/macos-status-item/status-item-run.json")
               .read_text(encoding="utf-8")
@@ -384,6 +441,12 @@ jobs:
             --example zsui_notepad_lite \
             --no-default-features \
             --features notepad-demo-lite
+          cargo build \
+            --release \
+            --locked \
+            --bin zsui-viewer \
+            --no-default-features \
+            --features ui-viewer
 
       - name: Verify lite renderer linkage
         run: |
@@ -460,6 +523,16 @@ jobs:
               --height 640 \
               --output target/native-proof/ubuntu-24.04-x86_64-lite \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-lite/notepad.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/zsui-viewer \
+              examples/ui-documents/scrolling.json \
+              --bindings examples/ui-documents/scrolling.bindings.json \
+              --values examples/ui-documents/scrolling.values.json \
+              --width 720 \
+              --height 560 \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll \
+              --smoke-scroll 360 260 96 \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll.log
 
       - name: Summarize Linux proof failure
         if: failure() && steps.linux-scenes.outcome == 'failure'
@@ -629,6 +702,49 @@ jobs:
                   assert runtime["native_view_unhandled_click_count"] == 0
               if stem == "notepad-interaction":
                   validate_notepad_text(runtime, "linux_direct")
+
+          viewer_root = root / "ui-viewer-scroll"
+          viewer_png = viewer_root / "window.png"
+          if viewer_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+              raise SystemExit(f"{viewer_png} is not a PNG")
+          viewer = json.loads(
+              (viewer_root / "proof.json").read_text(encoding="utf-8")
+          )
+          assert viewer["schema"] == "zsui.ui-viewer-proof/v1"
+          assert viewer["schema_version"] == 1
+          assert viewer["platform"] == "linux"
+          assert viewer["capture_backend"] == "winit_softbuffer_pango_cairo"
+          assert viewer["display_server"] == "x11"
+          assert viewer["window"]["logical_width"] == 720
+          assert viewer["window"]["logical_height"] == 560
+          assert viewer["window"]["pixel_width"] > 0
+          assert viewer["window"]["pixel_height"] > 0
+          assert viewer["window"]["scale_factor"] > 0.0
+          source = viewer["source"]
+          assert source["revision"] == 1
+          assert source["document_schema_version"] == 1
+          assert source["document_path"] == "examples/ui-documents/scrolling.json"
+          assert source["binding_path"] == "examples/ui-documents/scrolling.bindings.json"
+          assert source["node_count"] == 15
+          assert len(source["nodes"]) == 15
+          assert len({node["id"] for node in source["nodes"]}) == 15
+          scroll = next(
+              node for node in source["nodes"] if node["id"] == "results-scroll"
+          )
+          assert scroll["component"] == "scroll"
+          assert scroll["child_count"] == 1
+          assert scroll["layout"]["height"] == 392.0
+          runtime = viewer["runtime"]
+          assert runtime["created_window_count"] == 1
+          assert runtime["screenshot_captured"] is True
+          assert runtime["native_view_capture"]["backend"] == viewer["capture_backend"]
+          assert runtime["native_view_scroll_count"] == 1
+          assert runtime["native_view_unhandled_scroll_count"] == 0
+          assert runtime["native_view_event_count"] >= 1
+          assert runtime["native_view_message_count"] >= 1
+          assert runtime["process_memory_during_runtime"]["source"] == "linux_procfs_status_smaps_rollup"
+          assert runtime["process_memory_during_runtime"]["resident_bytes"] > 0
+          assert "linux_direct_proof_input:scroll:handled" in runtime["events"]
 
           lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
           lite_png = lite_root / "notepad-interaction.png"

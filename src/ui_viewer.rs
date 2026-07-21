@@ -11,12 +11,16 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ui_document::{UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet, UiNode};
+use crate::ui_document::{
+    UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet, UiLayout, UiNode,
+};
 use crate::ui_document_runtime::ui_document_view;
 pub use crate::ui_document_runtime::UiDocumentAction as UiViewerAction;
 use crate::{column, text, AppCx, Dp, ViewNode};
 
 pub const ZSUI_UI_VIEWER_DEFAULT_POLL_INTERVAL_MS: u64 = 250;
+pub const ZSUI_UI_VIEWER_PROOF_SCHEMA: &str = "zsui.ui-viewer-proof/v1";
+pub const ZSUI_UI_VIEWER_PROOF_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -59,16 +63,29 @@ pub fn ui_viewer_update(state: &mut UiViewerState, message: UiViewerMessage, _cx
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UiViewerSourceSnapshot {
     pub revision: u64,
+    pub document_schema_version: u32,
     pub document_path: PathBuf,
     pub binding_path: Option<PathBuf>,
     pub node_count: usize,
+    pub nodes: Vec<UiViewerNodeSnapshot>,
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_reload: Option<UiViewerReloadReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiViewerNodeSnapshot {
+    pub path: String,
+    pub id: String,
+    pub widget_id: u64,
+    pub component: String,
+    pub layout: UiLayout,
+    pub child_count: usize,
 }
 
 /// Deterministic compatibility result for one accepted source reload.
@@ -228,11 +245,15 @@ impl UiViewerSource {
 
     pub fn snapshot(&self) -> UiViewerSourceSnapshot {
         let state = self.lock();
+        let mut nodes = Vec::new();
+        collect_viewer_nodes(&state.document.root, "$.root", &mut nodes);
         UiViewerSourceSnapshot {
             revision: state.revision,
+            document_schema_version: state.document.schema_version,
             document_path: state.document_path.clone(),
             binding_path: state.binding_path.clone(),
-            node_count: count_nodes(&state.document.root),
+            node_count: nodes.len(),
+            nodes,
             last_error: state.last_error.clone(),
             last_reload: state.last_reload.clone(),
         }
@@ -290,6 +311,20 @@ impl UiViewerSource {
         self.inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+fn collect_viewer_nodes(node: &UiNode, path: &str, output: &mut Vec<UiViewerNodeSnapshot>) {
+    output.push(UiViewerNodeSnapshot {
+        path: path.to_owned(),
+        id: node.id.as_str().to_owned(),
+        widget_id: node.id.widget_id().0,
+        component: node.component.clone(),
+        layout: node.layout,
+        child_count: node.children.len(),
+    });
+    for (index, child) in node.children.iter().enumerate() {
+        collect_viewer_nodes(child, &format!("{path}.children[{index}]"), output);
     }
 }
 
@@ -388,10 +423,6 @@ fn parse_and_validate_sources(
             diagnostics: report.diagnostics,
         })
     }
-}
-
-fn count_nodes(node: &UiNode) -> usize {
-    1 + node.children.iter().map(count_nodes).sum::<usize>()
 }
 
 fn reload_compatibility_report(
@@ -1005,6 +1036,30 @@ mod tests {
         assert_eq!(
             view.background_poll_interval_ms(),
             Some(ZSUI_UI_VIEWER_DEFAULT_POLL_INTERVAL_MS)
+        );
+        let snapshot = source.snapshot();
+        assert_eq!(snapshot.document_schema_version, 1);
+        assert_eq!(snapshot.node_count, 3);
+        assert_eq!(
+            snapshot
+                .nodes
+                .iter()
+                .map(|node| (
+                    node.path.as_str(),
+                    node.id.as_str(),
+                    node.component.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("$.root", "root", "stack"),
+                ("$.root.children[0]", "title", "text"),
+                ("$.root.children[1]", "save-button", "button"),
+            ]
+        );
+        assert_eq!(snapshot.nodes[0].widget_id, view.id.unwrap().0);
+        assert_eq!(
+            serde_json::to_vec(&snapshot).unwrap(),
+            serde_json::to_vec(&source.snapshot()).unwrap()
         );
         fs::remove_dir_all(directory).unwrap();
     }

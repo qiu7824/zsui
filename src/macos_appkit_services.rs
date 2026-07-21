@@ -190,6 +190,7 @@ impl ZsuiAppKitRuntimeDelegate {
 pub(crate) struct MacosAppKitNativeWindowRunReport {
     pub created_window_count: usize,
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub native_window_resize: Option<crate::NativeWindowResizeEvidence>,
     pub native_window_resize_error: Option<String>,
@@ -216,6 +217,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         return Ok(MacosAppKitNativeWindowRunReport {
             created_window_count: 0,
             native_view_capture: None,
+            process_memory: None,
             proof_input_reports: Vec::new(),
             native_window_resize: None,
             native_window_resize_error: None,
@@ -360,6 +362,9 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     } else {
         application.run();
     }
+    let process_memory = auto_close_after_ms.and_then(|_| {
+        crate::desktop_runtime::capture_process_memory("native_window_before_teardown")
+    });
     for window in window_service.windows.values() {
         window.setDelegate(None);
     }
@@ -381,6 +386,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     Ok(MacosAppKitNativeWindowRunReport {
         created_window_count: ids.len(),
         native_view_capture,
+        process_memory,
         proof_input_reports,
         native_window_resize,
         native_window_resize_error,

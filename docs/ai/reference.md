@@ -34,10 +34,13 @@ framework readiness.
   `ui-document-runtime` now provide a deterministic, versioned embedded
   artifact plus reusable `UiDocument`-to-`ViewNode<Msg>` compilation without
   linking Viewer, watcher or preview code. Controlled scroll offset now
-  survives View rebuilds through explicit number
-  bindings, and Win32 Viewer smoke routes a fixed native scroll before final
-  capture. Complete component coverage, advanced-control state retention and
-  fixed AppKit/Linux proof remain.
+  survives View rebuilds through explicit number bindings, and Win32 Viewer
+  smoke routes a fixed native scroll before final capture. Viewer proof now
+  has a versioned target identity, logical/pixel window metrics and
+  deterministic node/layout snapshot; the native-proof workflow defines the
+  same controlled-scroll scene for AppKit and Linux. Complete component
+  coverage, advanced-control state retention and a passing fixed AppKit/Linux
+  Viewer target run remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.

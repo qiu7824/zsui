@@ -39,6 +39,12 @@ history remain authoritative for implementation status.
   layout clamps restored offsets to the current content range. Native scroll
   smoke must travel through the host input route rather than mutating the
   shared View directly.
+  Viewer smoke reports use the versioned `zsui.ui-viewer-proof/v1` schema and
+  include target capture identity, logical/pixel window metrics and a
+  deterministic preorder node/layout snapshot. Fixed AppKit and Linux proof
+  must execute the same document and typed scroll input, retain the final
+  platform-surface PNG, and reject missing messages, memory or handled-scroll
+  evidence.
 - Authoring contracts live behind the optional `ui-document` feature.
   `src/ui_document.rs` owns schema version 1, typed layout/theme/localization/
   accessibility fields, `UiBindingManifest<State, Msg>` and deterministic

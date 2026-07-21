@@ -115,6 +115,15 @@ cargo run --bin zsui-viewer `
 `proof.json`。`--smoke-scroll x y delta-y` 可选；提供后，smoke 只有在目标原生宿主
 真实路由该滚动输入并增加 `native_view_scroll_count` 时才通过。
 
+`proof.json` 使用 `zsui.ui-viewer-proof/v1`。顶层记录实际平台、最终视图捕获后端、
+显示服务器以及逻辑/像素窗口尺寸；`source.nodes` 按组件树先序稳定输出文档路径、节点 ID、
+确定性 `WidgetId`、组件、布局约束和子节点数量；`runtime` 继续记录焦点、事件、消息、
+滚动处理、字体、最终平台视图捕获和进程内存。该报告索引 UiDocument 结构，但截图必须
+来自 AppKit `NSView` 或 Linux 最终呈现表面，不能用共享 DrawPlan PNG 代替。
+
+固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
+`scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。
+
 ## 确定性 AI 交接包
 
 `zsui-uic handoff` 把已校验的文档、绑定 schema、可选值快照和可选原生最终视图 PNG

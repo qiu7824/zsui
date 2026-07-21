@@ -12,7 +12,10 @@ use serde::Serialize;
 use serde_json::Value;
 use zsui::{
     native_window,
-    ui_viewer::{ui_viewer_update, UiViewerSource, UiViewerSourceSnapshot, UiViewerState},
+    ui_viewer::{
+        ui_viewer_update, UiViewerSource, UiViewerSourceSnapshot, UiViewerState,
+        ZSUI_UI_VIEWER_PROOF_SCHEMA, ZSUI_UI_VIEWER_PROOF_SCHEMA_VERSION,
+    },
     NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, Point, ZsuiError,
 };
 
@@ -30,8 +33,24 @@ struct Arguments {
 
 #[derive(Serialize)]
 struct ViewerProof {
+    schema: &'static str,
+    schema_version: u32,
+    platform: &'static str,
+    capture_backend: &'static str,
+    display_server: Option<&'static str>,
+    window: ViewerProofWindow,
     source: UiViewerSourceSnapshot,
     runtime: NativeWindowSmokeRunReport,
+}
+
+#[derive(Serialize)]
+struct ViewerProofWindow {
+    logical_width: u32,
+    logical_height: u32,
+    pixel_width: u32,
+    pixel_height: u32,
+    scale_factor: f64,
+    typography_scale: f32,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -184,7 +203,26 @@ fn run_smoke(
             "the native Viewer did not route the requested scroll input",
         )));
     }
+    let capture = runtime.native_view_capture.as_ref().ok_or_else(|| {
+        ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer did not report its final platform-surface capture",
+        )
+    })?;
     let proof = ViewerProof {
+        schema: ZSUI_UI_VIEWER_PROOF_SCHEMA,
+        schema_version: ZSUI_UI_VIEWER_PROOF_SCHEMA_VERSION,
+        platform: capture.platform,
+        capture_backend: capture.backend,
+        display_server: capture.display_server,
+        window: ViewerProofWindow {
+            logical_width: capture.logical_width,
+            logical_height: capture.logical_height,
+            pixel_width: capture.pixel_width,
+            pixel_height: capture.pixel_height,
+            scale_factor: capture.scale_factor,
+            typography_scale: capture.typography_scale,
+        },
         source: source.snapshot(),
         runtime,
     };
