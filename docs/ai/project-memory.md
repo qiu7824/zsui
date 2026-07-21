@@ -250,7 +250,8 @@ history remain authoritative for implementation status.
   Required status-item smoke must report native creation, recursive command
   count, menu attachment/cleanup and routed command evidence. Fixed macOS 15
   Native UI Proof run `29793379808` passed those gates on commit `d835b7a`;
-  cross-compilation alone is not status-item evidence.
+  cross-compilation alone is not status-item evidence, and the automated
+  selector invocation does not replace a release-time manual menu-bar click.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB

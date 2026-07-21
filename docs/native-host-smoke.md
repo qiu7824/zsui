@@ -72,7 +72,8 @@ The AppKit path owns a real `NSStatusItem`, attaches a detached native `NSMenu`,
 routes the first enabled command through the shared typed update path and
 removes the status item during teardown. Fixed macOS 15 Native UI Proof run
 `29793379808` requires and verifies creation, recursive command count, command
-routing and native menu attachment/cleanup.
+routing and native menu attachment/cleanup. A release-time manual menu-bar
+click remains separate from the deterministic selector invocation.
 
 The native window-menu smoke path is:
 

@@ -317,6 +317,9 @@ impl HostCapabilities {
             capabilities.window_always_on_top = CapabilitySupport::partial(
                 "NSFloatingWindowLevel is connected; target interaction proof is pending",
             );
+            capabilities.tray_or_status_menu = CapabilitySupport::partial(
+                "NSStatusItem and detached NSMenu resources are RAII-owned and command-routed by the AppKit event loop; fixed macOS 15 runtime smoke passed, while manual menu-bar interaction remains a release gate",
+            );
         }
         capabilities.clipboard_text = if cfg!(feature = "macos-appkit") {
             CapabilitySupport::partial(

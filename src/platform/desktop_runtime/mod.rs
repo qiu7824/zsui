@@ -476,6 +476,30 @@ mod tests {
     }
 
     #[test]
+    fn appkit_host_capabilities_match_the_native_status_item_backend() {
+        let capabilities = HostCapabilities::macos_native_window_host();
+        if cfg!(feature = "macos-appkit") {
+            assert_eq!(
+                capabilities.tray_or_status_menu.status,
+                crate::CapabilityStatus::Partial
+            );
+            assert!(capabilities
+                .tray_or_status_menu
+                .detail
+                .contains("NSStatusItem"));
+            assert!(capabilities
+                .tray_or_status_menu
+                .detail
+                .contains("macOS 15 runtime smoke passed"));
+        } else {
+            assert_eq!(
+                capabilities.tray_or_status_menu.status,
+                crate::CapabilityStatus::Unsupported
+            );
+        }
+    }
+
+    #[test]
     fn native_core_delegates_production_runtime_and_dialog_selection() {
         let source = include_str!("../../native.rs");
         let desktop_services = include_str!("../../desktop_services.rs");
