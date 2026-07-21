@@ -13,7 +13,7 @@ use serde_json::Value;
 use zsui::{
     native_window,
     ui_viewer::{ui_viewer_update, UiViewerSource, UiViewerSourceSnapshot, UiViewerState},
-    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, ZsuiError,
+    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, Point, ZsuiError,
 };
 
 #[derive(Debug)]
@@ -25,6 +25,7 @@ struct Arguments {
     height: u32,
     poll_ms: u64,
     smoke_output: Option<PathBuf>,
+    smoke_scroll: Option<(Point, i32)>,
 }
 
 #[derive(Serialize)]
@@ -52,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
 
     if let Some(output_directory) = arguments.smoke_output {
-        run_smoke(builder, &source, &output_directory)?;
+        run_smoke(builder, &source, &output_directory, arguments.smoke_scroll)?;
     } else {
         builder.run()?;
     }
@@ -67,6 +68,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut height = 520_u32;
     let mut poll_ms = 250_u64;
     let mut smoke_output = None;
+    let mut smoke_scroll = None;
     let mut arguments = arguments.into_iter();
 
     while let Some(argument) = arguments.next() {
@@ -77,6 +79,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             "--height" => height = number_argument(&mut arguments, "--height")?,
             "--poll-ms" => poll_ms = number_argument(&mut arguments, "--poll-ms")?,
             "--smoke" => smoke_output = Some(path_argument(&mut arguments, "--smoke")?),
+            "--smoke-scroll" => {
+                let x = number_argument(&mut arguments, "--smoke-scroll x")?;
+                let y = number_argument(&mut arguments, "--smoke-scroll y")?;
+                let delta_y = number_argument(&mut arguments, "--smoke-scroll delta-y")?;
+                smoke_scroll = Some((Point { x, y }, delta_y));
+            }
             "--help" | "-h" => return Err(usage().to_owned()),
             value if value.starts_with('-') => {
                 return Err(format!("unknown option `{value}`\n{}", usage()));
@@ -99,6 +107,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         height,
         poll_ms: poll_ms.max(16),
         smoke_output,
+        smoke_scroll,
     })
 }
 
@@ -129,7 +138,8 @@ where
 
 fn usage() -> &'static str {
     "usage: zsui-viewer <document.json> [--bindings path] [--values path] \
-     [--width pixels] [--height pixels] [--poll-ms milliseconds] [--smoke output-directory]"
+     [--width pixels] [--height pixels] [--poll-ms milliseconds] [--smoke output-directory] \
+     [--smoke-scroll x y delta-y]"
 }
 
 fn inferred_binding_path(document: &Path) -> Option<PathBuf> {
@@ -151,18 +161,27 @@ fn run_smoke(
     builder: zsui::NativeWindowBuilder,
     source: &UiViewerSource,
     output_directory: &Path,
+    smoke_scroll: Option<(Point, i32)>,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_directory)?;
     let screenshot = output_directory.join("window.png");
-    let runtime = builder.run_smoke(
-        NativeWindowSmokeRunOptions::new(900)
-            .screenshot_file(screenshot.to_string_lossy())
-            .require_screenshot(true),
-    )?;
+    let mut options = NativeWindowSmokeRunOptions::new(900)
+        .screenshot_file(screenshot.to_string_lossy())
+        .require_screenshot(true);
+    if let Some((point, delta_y)) = smoke_scroll {
+        options = options.native_view_scroll(point, delta_y);
+    }
+    let runtime = builder.run_smoke(options)?;
     if !runtime.visible_window_was_created() || !runtime.screenshot_captured {
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
             "the native Viewer did not create and capture a visible window",
+        )));
+    }
+    if smoke_scroll.is_some() && runtime.native_view_scroll_count == 0 {
+        return Err(Box::new(ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer did not route the requested scroll input",
         )));
     }
     let proof = ViewerProof {
@@ -194,5 +213,21 @@ mod tests {
         assert_eq!(arguments.document, PathBuf::from("ui.json"));
         assert_eq!(arguments.bindings, Some(PathBuf::from("ui.bindings.json")));
         assert_eq!(arguments.poll_ms, 40);
+    }
+
+    #[test]
+    fn parser_accepts_native_scroll_smoke_input() {
+        let arguments = parse_arguments([
+            "ui.json".to_owned(),
+            "--smoke".to_owned(),
+            "proof".to_owned(),
+            "--smoke-scroll".to_owned(),
+            "120".to_owned(),
+            "240".to_owned(),
+            "96".to_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(arguments.smoke_scroll, Some((Point { x: 120, y: 240 }, 96)));
     }
 }

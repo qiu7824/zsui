@@ -488,6 +488,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "radio",
                 "slider",
                 "progress",
+                "scroll",
                 "native-smoke",
             ],
             "prebuilt target-native development viewer with validated file reload and final-surface smoke",

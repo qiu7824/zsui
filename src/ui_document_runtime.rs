@@ -39,7 +39,8 @@ pub struct UiDocumentAction {
         feature = "toggle",
         feature = "textbox",
         feature = "radio",
-        feature = "slider"
+        feature = "slider",
+        feature = "scroll"
     )),
     allow(dead_code)
 )]
@@ -88,7 +89,8 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "toggle",
             feature = "textbox",
             feature = "radio",
-            feature = "slider"
+            feature = "slider",
+            feature = "scroll"
         )),
         allow(dead_code)
     )]
@@ -150,8 +152,17 @@ fn compile_validated_document<Msg: Clone + 'static>(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiDocumentRuntimeError {
-    Validation { diagnostics: Vec<UiDiagnostic> },
-    UnsupportedComponent { component: String },
+    Validation {
+        diagnostics: Vec<UiDiagnostic>,
+    },
+    UnsupportedComponent {
+        component: String,
+    },
+    InvalidChildCount {
+        component: String,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl fmt::Display for UiDocumentRuntimeError {
@@ -165,6 +176,14 @@ impl fmt::Display for UiDocumentRuntimeError {
             Self::UnsupportedComponent { component } => write!(
                 formatter,
                 "UI document component {component:?} has no compiled View runtime"
+            ),
+            Self::InvalidChildCount {
+                component,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "UI document component {component:?} requires {expected} child node(s), found {actual}"
             ),
         }
     }
@@ -188,6 +207,47 @@ fn compile_node<Msg: Clone + 'static>(
             UiAxis::Vertical => column(children),
         },
         "border" => column(children),
+        #[cfg(feature = "scroll")]
+        "scroll" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(child) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+            let mut control = crate::scroll(child)
+                .scroll_y(Dp::new(
+                    number_property(node, properties, "offset_y", 0.0).max(0.0) as f32,
+                ))
+                .content_height(Dp::new(
+                    number_property(node, properties, "content_height", 0.0).max(0.0) as f32,
+                ));
+            if let Some(binding) = node.action_bindings.get("scroll") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("offset_y").cloned();
+                control = control.on_scroll_with(move |offset| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::from(offset.0),
+                    })
+                });
+            }
+            control
+        }
         #[cfg(feature = "label")]
         "text" => {
             let value = string_property(node, properties, "text", "");
@@ -402,7 +462,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "textbox",
     feature = "radio",
     feature = "slider",
-    feature = "progress"
+    feature = "progress",
+    feature = "scroll"
 ))]
 fn property_value(
     node: &UiNode,
@@ -461,7 +522,7 @@ fn bool_property(
         .unwrap_or(fallback)
 }
 
-#[cfg(any(feature = "slider", feature = "progress"))]
+#[cfg(any(feature = "slider", feature = "progress", feature = "scroll"))]
 fn number_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,

@@ -699,7 +699,8 @@ pub use view::tree_view;
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
-    feature = "slider"
+    feature = "slider",
+    feature = "scroll"
 ))]
 #[doc(hidden)]
 pub use view::ViewMessageMapper;

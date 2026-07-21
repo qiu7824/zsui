@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "root",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding": 20.0,
+      "gap": 12.0
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "layout": { "height": 32.0 },
+        "properties": { "text": "可重载滚动视图 / Reloadable Scroll View" },
+        "accessibility": { "role": "heading", "label": "滚动视图示例" }
+      },
+      {
+        "id": "summary",
+        "component": "text",
+        "layout": { "height": 24.0 },
+        "properties": { "text": "滚动位置通过稳定 ID 与显式绑定在重建后保留。" }
+      },
+      {
+        "id": "results-scroll",
+        "component": "scroll",
+        "layout": { "height": 392.0 },
+        "properties": { "content_height": 680.0 },
+        "property_bindings": { "offset_y": "scroll_offset" },
+        "action_bindings": { "scroll": "scroll_changed" },
+        "children": [
+          {
+            "id": "results",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "height": 680.0,
+              "padding": 16.0,
+              "gap": 8.0
+            },
+            "children": [
+              {
+                "id": "row-01",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "01  共享 UiDocument 组件树" }
+              },
+              {
+                "id": "row-02",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "02  强类型属性与动作绑定" }
+              },
+              {
+                "id": "row-03",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "03  稳定节点 ID" }
+              },
+              {
+                "id": "row-04",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "04  保存后无编译重载" }
+              },
+              {
+                "id": "row-05",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "05  受控滚动偏移" }
+              },
+              {
+                "id": "row-06",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "06  Win32 原生输入路由" }
+              },
+              {
+                "id": "row-07",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "07  AppKit 原生后端目标" }
+              },
+              {
+                "id": "row-08",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "08  Linux 原生后端目标" }
+              },
+              {
+                "id": "row-09",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "09  确定性 AI 交接数据" }
+              },
+              {
+                "id": "row-10",
+                "component": "text",
+                "layout": { "height": 48.0 },
+                "properties": { "text": "10  发布时嵌入裁剪" }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

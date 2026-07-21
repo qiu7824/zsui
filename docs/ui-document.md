@@ -32,8 +32,13 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider` 和 `progress_bar`。其他已存在的 ZSUI 组件会被识别为
+`radio_button`、`slider`、`progress_bar` 和 `scroll`。其他已存在的 ZSUI 组件会被识别为
 “尚未进入 UiDocument schema”，不会被误报为未知组件。
+
+`scroll` 必须有且只有一个内容子节点，并要求非负的 `content_height` 数值属性。
+`offset_y` 是可选的非负数值属性；需要在 View 重建后保留位置时，将它绑定到 number
+属性，同时把 `scroll` 动作绑定到 number 动作。滚动事件产生的新偏移会更新该显式
+属性状态，下一棵 View 树继续使用同一偏移；布局会按当前视口和内容高度夹取越界值。
 
 ## 原生 Viewer
 
@@ -71,12 +76,27 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle` 和 `slider.slide` 均走类型化 Viewer 消息。带值控件
+`checkbox.toggle`、`toggle.toggle`、`slider.slide` 和 `scroll.scroll` 均走类型化 Viewer
+消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
 通过 binding schema 校验后记录在 `UiViewerState`；存在对应属性绑定时，Viewer 同步
-更新该显式状态值，使受控文本、开关和滑块交互不会在 View 重建后回退。这里没有全局
-注册表、反射属性或字符串事件总线。
+更新该显式状态值，使受控文本、开关、滑块和滚动交互不会在 View 重建后回退。这里没有
+全局注册表、反射属性或字符串事件总线。
+
+受控滚动示例使用相同的机制：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/scrolling.json `
+  --bindings examples/ui-documents/scrolling.bindings.json `
+  --values examples/ui-documents/scrolling.values.json
+```
+
+`scroll.offset_y` 与 `scroll.scroll` 的 number 绑定使原生滚轮输入、显式 Viewer 状态和
+重建后的新 View 树形成闭环。
 
 原生证明可由同一可执行文件生成：
 
@@ -84,13 +104,16 @@ cargo run --bin zsui-viewer `
 cargo run --bin zsui-viewer `
   --no-default-features `
   --features ui-viewer `
-  -- examples/ui-documents/basic.json `
-  --values examples/ui-documents/basic.values.json `
-  --smoke target/ui-viewer-proof
+  -- examples/ui-documents/scrolling.json `
+  --bindings examples/ui-documents/scrolling.bindings.json `
+  --values examples/ui-documents/scrolling.values.json `
+  --smoke target/ui-viewer-proof `
+  --smoke-scroll 360 260 96
 ```
 
 输出包含平台最终窗口截图 `window.png` 和带窗口、字体、内存、绘制及输入证据的
-`proof.json`。
+`proof.json`。`--smoke-scroll x y delta-y` 可选；提供后，smoke 只有在目标原生宿主
+真实路由该滚动输入并增加 `native_view_scroll_count` 时才通过。
 
 ## 确定性 AI 交接包
 
@@ -105,7 +128,7 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/interactive.bindings.json `
   --values examples/ui-documents/interactive.values.json `
   --output target/ui-ai-handoff `
-  --screenshot target/ui-viewer-proof/window.png `
+  --preview target/ui-viewer-proof/window.png `
   --force
 ```
 
@@ -180,5 +203,5 @@ let view = ui_document_view(
 profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
 原生 smoke 驱动或强制额外进程。
 
-完整组件覆盖、通用滚动容器及高级控件状态迁移和三平台固定 Runner Viewer 基准仍是
+完整组件覆盖、高级控件状态迁移和三平台固定 Runner Viewer 基准仍是
 后续 v0.2 切片。浏览器投影不能替代原生运行证据。

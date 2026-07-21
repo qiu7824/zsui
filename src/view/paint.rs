@@ -441,8 +441,24 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             });
         }
 
+        let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
+        #[cfg(feature = "scroll")]
+        if let ViewNodeKind::Scroll {
+            offset_y,
+            content_height,
+            ..
+        } = &mut self.kind
+        {
+            let max_offset = scroll_max_offset_y(Some(content_bounds), *content_height, cx.dpi);
+            let requested = if offset_y.0.is_finite() {
+                offset_y.0.max(0.0)
+            } else {
+                0.0
+            };
+            *offset_y = Dp::new(requested.min(max_offset.0));
+        }
         let child_bounds = split_child_bounds(
-            inset_bounds(cx.bounds, self.style.padding, cx.dpi),
+            content_bounds,
             &self.kind,
             &self.children,
             self.style.gap,
@@ -1965,7 +1981,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     let next = Dp::new((offset_y.0 + delta_y.0).clamp(0.0, max_offset.0));
                     *offset_y = next;
                     if let Some(message) = on_scroll {
-                        cx.emit(message(next));
+                        cx.emit(message.map(next));
                     }
                 }
                 #[cfg(feature = "virtual-list")]

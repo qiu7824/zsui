@@ -48,6 +48,7 @@ mod tests {
         feature = "checkbox",
         feature = "toggle",
         feature = "slider",
+        feature = "scroll",
         feature = "number-box",
         feature = "radio",
         feature = "breadcrumb",

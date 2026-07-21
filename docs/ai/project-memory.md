@@ -33,6 +33,12 @@ history remain authoritative for implementation status.
   editing and support release embedding without file watchers, preview
   transport, another mandatory process or other development-only dependencies.
   Stable IDs preserve compatible focus, selection, scrolling and control state.
+  UiDocument `scroll` owns exactly one child, nonnegative `content_height`, an
+  optional controlled `offset_y` number property and a typed `scroll` number
+  action. Viewer updates the explicit offset binding before rebuilding, and
+  layout clamps restored offsets to the current content range. Native scroll
+  smoke must travel through the host input route rather than mutating the
+  shared View directly.
 - Authoring contracts live behind the optional `ui-document` feature.
   `src/ui_document.rs` owns schema version 1, typed layout/theme/localization/
   accessibility fields, `UiBindingManifest<State, Msg>` and deterministic
@@ -47,9 +53,10 @@ history remain authoritative for implementation status.
   deterministic preserved/added/reset report. The native input runtime keeps
   focus, text selection and text-editor viewport for compatible stable IDs and
   clears stale focus, selection, drag and IME state after removal or control
-  class changes. Text, toggle and slider actions capture node/action/property
-  identities in per-control `ViewMessageMapper` callbacks, carry typed JSON
-  payloads and update explicit property bindings across View rebuilds. Ordinary
+  class changes. Text, toggle, slider and scroll actions capture
+  node/action/property identities in per-control `ViewMessageMapper` callbacks,
+  carry typed JSON payloads and update explicit property bindings across View
+  rebuilds. Ordinary
   function-pointer handlers remain allocation-free; shared owned closures are
   allocated only through explicit `*_with` builders. `zsui-uic handoff`
   canonicalizes the validated document, binding schema, optional value snapshot
@@ -67,8 +74,7 @@ history remain authoritative for implementation status.
   component features used by the artifact and compile it to typed
   `ViewNode<Msg>` through `ui_document_view`. It does not link `ui-viewer`,
   file polling, preview transport, native smoke code or another process.
-  Full component
-  coverage, general-scroll and advanced-control state retention, fixed
+  Full component coverage, advanced-control state retention and fixed
   AppKit/Linux proof remain unfinished.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2

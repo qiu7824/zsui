@@ -16,7 +16,8 @@ impl WidgetId {
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
-    feature = "slider"
+    feature = "slider",
+    feature = "scroll"
 ))]
 #[doc(hidden)]
 pub struct ViewMessageMapper<Input, Msg> {
@@ -28,7 +29,8 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
-    feature = "slider"
+    feature = "slider",
+    feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
     Function(fn(Input) -> Msg),
@@ -40,7 +42,8 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
-    feature = "slider"
+    feature = "slider",
+    feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     fn from_function(mapper: fn(Input) -> Msg) -> Self {
@@ -70,7 +73,8 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
-    feature = "slider"
+    feature = "slider",
+    feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     fn clone(&self) -> Self {
@@ -92,7 +96,8 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
-    feature = "slider"
+    feature = "slider",
+    feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -900,7 +905,7 @@ pub enum ViewNodeKind<Msg> {
     Scroll {
         offset_y: Dp,
         content_height: Option<Dp>,
-        on_scroll: Option<fn(Dp) -> Msg>,
+        on_scroll: Option<ViewMessageMapper<Dp, Msg>>,
     },
     #[cfg(feature = "virtual-list")]
     VirtualList {
@@ -2109,7 +2114,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "scroll")]
     pub fn on_scroll(mut self, message: fn(Dp) -> Msg) -> Self {
         if let ViewNodeKind::Scroll { on_scroll, .. } = &mut self.kind {
-            *on_scroll = Some(message);
+            *on_scroll = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "scroll")]
+    pub fn on_scroll_with(
+        mut self,
+        message: impl Fn(Dp) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Scroll { on_scroll, .. } = &mut self.kind {
+            *on_scroll = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

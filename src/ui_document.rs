@@ -311,6 +311,7 @@ pub struct UiAiHandoffActionContract {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UiAiHandoffChildPolicy {
     Any,
+    Exactly { count: usize },
     AtMost { maximum: usize },
     None,
 }
@@ -436,6 +437,7 @@ impl UiAiHandoffPackage {
                     actions,
                     children: match schema.children {
                         ChildPolicy::Any => UiAiHandoffChildPolicy::Any,
+                        ChildPolicy::Exactly(count) => UiAiHandoffChildPolicy::Exactly { count },
                         ChildPolicy::AtMost(maximum) => UiAiHandoffChildPolicy::AtMost { maximum },
                         ChildPolicy::None => UiAiHandoffChildPolicy::None,
                     },
@@ -1059,6 +1061,7 @@ pub enum UiDiagnosticCode {
     BindingTypeMismatch,
     UnknownBindingValue,
     BindingValueTypeMismatch,
+    InvalidPropertyValue,
     InvalidLayout,
     InvalidThemeToken,
     InvalidLocalization,
@@ -1256,6 +1259,15 @@ impl<'a> UiDocumentValidator<'a> {
         diagnostics: &mut Vec<UiDiagnostic>,
     ) {
         match schema.children {
+            ChildPolicy::Exactly(count) if node.children.len() != count => push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidChildCount,
+                format!("{path}.children"),
+                format!(
+                    "component {:?} requires exactly {count} child node(s)",
+                    node.component
+                ),
+            ),
             ChildPolicy::None if !node.children.is_empty() => push_diagnostic(
                 diagnostics,
                 UiDiagnosticCode::InvalidChildCount,
@@ -1271,7 +1283,10 @@ impl<'a> UiDocumentValidator<'a> {
                     node.component
                 ),
             ),
-            ChildPolicy::Any | ChildPolicy::AtMost(_) | ChildPolicy::None => {}
+            ChildPolicy::Any
+            | ChildPolicy::Exactly(_)
+            | ChildPolicy::AtMost(_)
+            | ChildPolicy::None => {}
         }
 
         for (name, value) in &node.properties {
@@ -1292,6 +1307,24 @@ impl<'a> UiDocumentValidator<'a> {
                     format!("{path}.properties.{name}"),
                     format!("property {name:?} is not valid on {:?}", node.component),
                 ),
+            }
+        }
+
+        if node.component == "scroll" {
+            for name in ["offset_y", "content_height"] {
+                if node
+                    .properties
+                    .get(name)
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| value < 0.0)
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("scroll property {name:?} must not be negative"),
+                    );
+                }
             }
         }
 
@@ -1437,6 +1470,7 @@ struct ActionSpec {
 #[derive(Clone, Copy)]
 enum ChildPolicy {
     Any,
+    Exactly(usize),
     AtMost(usize),
     None,
 }
@@ -1540,6 +1574,22 @@ const SLIDER_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "slide",
     payload_type: UiValueType::Number,
 }];
+const SCROLL_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "offset_y",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "content_height",
+        value_type: UiValueType::Number,
+        required: true,
+    },
+];
+const SCROLL_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "scroll",
+    payload_type: UiValueType::Number,
+}];
 
 fn component_schema(component: &str) -> Option<ComponentSchema> {
     let leaf = |properties, actions| ComponentSchema {
@@ -1557,6 +1607,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: NO_PROPERTIES,
             actions: NO_ACTIONS,
             children: ChildPolicy::AtMost(1),
+        }),
+        "scroll" => Some(ComponentSchema {
+            properties: SCROLL_PROPERTIES,
+            actions: SCROLL_ACTIONS,
+            children: ChildPolicy::Exactly(1),
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
@@ -1858,6 +1913,81 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::UnknownComponent));
+    }
+
+    #[test]
+    fn scroll_contract_requires_one_child_and_nonnegative_geometry() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "viewport",
+                "component": "scroll",
+                "properties": { "content_height": 480.0 },
+                "property_bindings": { "offset_y": "scroll_offset" },
+                "action_bindings": { "scroll": "scroll_changed" },
+                "children": [
+                  {
+                    "id": "content",
+                    "component": "text",
+                    "properties": { "text": "Content" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("scroll_offset".to_owned(), UiValueType::Number)]),
+            actions: BTreeMap::from([("scroll_changed".to_owned(), UiValueType::Number)]),
+        };
+        assert!(valid
+            .validate(&UiFeatureSet::new(["scroll", "label"]), &bindings)
+            .is_valid());
+        let handoff = UiAiHandoffPackage::build(
+            &valid,
+            &UiFeatureSet::new(["scroll", "label"]),
+            &bindings,
+            None,
+            None,
+        )
+        .unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "scroll")
+            .unwrap();
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::Exactly { count: 1 }
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "viewport",
+                "component": "scroll",
+                "properties": { "offset_y": -1.0, "content_height": -20.0 },
+                "children": []
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&UiFeatureSet::new(["scroll"]), &UiBindingSchema::default());
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidChildCount));
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| { diagnostic.code == UiDiagnosticCode::InvalidPropertyValue })
+                .count(),
+            2
+        );
     }
 
     #[test]

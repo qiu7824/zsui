@@ -856,6 +856,100 @@ mod tests {
     }
 
     #[test]
+    fn viewer_preserves_controlled_scroll_offset_across_view_rebuilds() {
+        let directory = fixture_directory("controlled-scroll");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("scroll.json");
+        let binding_path = directory.join("scroll.bindings.json");
+        fs::write(
+            &document_path,
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "results-scroll",
+                "component": "scroll",
+                "properties": { "content_height": 360.0 },
+                "property_bindings": { "offset_y": "scroll_offset" },
+                "action_bindings": { "scroll": "scroll_changed" },
+                "children": [
+                  {
+                    "id": "results",
+                    "component": "stack",
+                    "layout": { "height": 360.0 },
+                    "children": [
+                      {
+                        "id": "result-title",
+                        "component": "text",
+                        "properties": { "text": "Scrollable results" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            r#"{
+              "properties": { "scroll_offset": "number" },
+              "actions": { "scroll_changed": "number" }
+            }"#,
+        )
+        .unwrap();
+
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        let live_source = source.clone();
+        let actions = Arc::new(Mutex::new(Vec::new()));
+        let captured_actions = Arc::clone(&actions);
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::with_properties(BTreeMap::from([(
+                "scroll_offset".to_owned(),
+                Value::from(20.0),
+            )])),
+            move |state| live_source.view(state),
+            move |state, message, cx| {
+                let UiViewerMessage::Action(action) = &message;
+                captured_actions.lock().unwrap().push(action.clone());
+                ui_viewer_update(state, message, cx);
+            },
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 120,
+            },
+            crate::Dpi::standard(),
+        );
+        let scroll = crate::ui_document::UiNodeId::new("results-scroll")
+            .unwrap()
+            .widget_id();
+
+        let first = live_view.dispatch_event(&crate::ViewEvent::ScrollBy {
+            widget: scroll,
+            delta_y: Dp::new(30.0),
+        });
+        let second = live_view.dispatch_event(&crate::ViewEvent::ScrollBy {
+            widget: scroll,
+            delta_y: Dp::new(10.0),
+        });
+
+        assert_eq!(first.message_count, 1);
+        assert_eq!(second.message_count, 1);
+        let actions = actions.lock().unwrap();
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0].binding, "scroll_changed");
+        assert_eq!(
+            actions[0].property_binding.as_deref(),
+            Some("scroll_offset")
+        );
+        assert_eq!(actions[0].payload, Value::from(50.0));
+        assert_eq!(actions[1].payload, Value::from(60.0));
+        drop(actions);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn viewer_keeps_last_valid_document_after_invalid_edit() {
         let directory = fixture_directory("invalid");
         let (document_path, binding_path) = write_fixtures(&directory);
