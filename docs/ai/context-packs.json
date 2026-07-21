@@ -51,7 +51,7 @@
     },
     {
       "id": "ui-document",
-      "purpose": "Versioned semantic UI documents, typed State/Msg bindings and zsui-uic validation",
+      "purpose": "Versioned semantic UI documents, typed State/Msg bindings and deterministic zsui-uic validation/handoff",
       "required": [
         "Cargo.toml",
         "src/ui_document.rs",

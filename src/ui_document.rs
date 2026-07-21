@@ -16,6 +16,8 @@ use serde_json::Value;
 
 /// Schema version accepted by this ZSUI release.
 pub const ZSUI_UI_DOCUMENT_SCHEMA_VERSION: u32 = 1;
+/// Schema version of the deterministic AI authoring handoff manifest.
+pub const ZSUI_UI_AI_HANDOFF_SCHEMA_VERSION: u32 = 1;
 const DOCUMENT_WIDGET_ID_NAMESPACE: u64 = 1 << 62;
 const DOCUMENT_WIDGET_ID_MASK: u64 = DOCUMENT_WIDGET_ID_NAMESPACE - 1;
 
@@ -40,11 +42,7 @@ impl UiNodeId {
 
     /// Maps an author ID to the reserved document-backed `WidgetId` namespace.
     pub fn widget_id(&self) -> crate::view::WidgetId {
-        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-        for byte in self.0.as_bytes() {
-            hash ^= u64::from(*byte);
-            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        }
+        let hash = fnv1a64(self.0.as_bytes());
         crate::view::WidgetId::new(DOCUMENT_WIDGET_ID_NAMESPACE | (hash & DOCUMENT_WIDGET_ID_MASK))
     }
 }
@@ -205,6 +203,368 @@ pub struct UiBindingSchema {
     pub properties: BTreeMap<String, UiValueType>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub actions: BTreeMap<String, UiValueType>,
+}
+
+/// Validates an authoring value snapshot against declared property bindings.
+///
+/// Missing values are permitted so a preview can expose unresolved data. Extra
+/// values and values of the wrong JSON shape are rejected deterministically.
+pub fn validate_ui_binding_values(
+    bindings: &UiBindingSchema,
+    values: &BTreeMap<String, Value>,
+) -> UiValidationReport {
+    let mut diagnostics = Vec::new();
+    for (name, value) in values {
+        match bindings.properties.get(name) {
+            None => push_diagnostic(
+                &mut diagnostics,
+                UiDiagnosticCode::UnknownBindingValue,
+                format!("$.{name}"),
+                format!("property binding value {name:?} is not declared"),
+            ),
+            Some(value_type) if !value_type.matches(value) => push_diagnostic(
+                &mut diagnostics,
+                UiDiagnosticCode::BindingValueTypeMismatch,
+                format!("$.{name}"),
+                format!("property binding value {name:?} must be {value_type:?}"),
+            ),
+            Some(_) => {}
+        }
+    }
+    UiValidationReport { diagnostics }
+}
+
+/// One deterministic file entry in an AI authoring handoff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffFile {
+    pub path: String,
+    pub byte_length: u64,
+    /// Stable change fingerprint; this is not a cryptographic integrity hash.
+    pub content_fingerprint: String,
+}
+
+/// Optional final native-view PNG attached to an authoring handoff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffPreview {
+    #[serde(flatten)]
+    pub file: UiAiHandoffFile,
+    pub media_type: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffFiles {
+    pub document: UiAiHandoffFile,
+    pub bindings: UiAiHandoffFile,
+    pub values: Option<UiAiHandoffFile>,
+    pub preview: Option<UiAiHandoffPreview>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffFramework {
+    pub name: String,
+    pub version: String,
+    pub producer: String,
+}
+
+/// Stable node index that lets an authoring tool address structure without
+/// understanding any platform backend implementation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffNode {
+    pub path: String,
+    pub id: String,
+    pub widget_id: u64,
+    pub component: String,
+    pub inline_properties: Vec<String>,
+    pub property_bindings: BTreeMap<String, String>,
+    pub action_bindings: BTreeMap<String, String>,
+    pub child_count: usize,
+    pub has_accessibility: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffPropertyContract {
+    pub name: String,
+    pub value_type: UiValueType,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffActionContract {
+    pub name: String,
+    pub payload_type: UiValueType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UiAiHandoffChildPolicy {
+    Any,
+    AtMost { maximum: usize },
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffComponentContract {
+    pub component: String,
+    pub cargo_feature: Option<String>,
+    pub properties: Vec<UiAiHandoffPropertyContract>,
+    pub actions: Vec<UiAiHandoffActionContract>,
+    pub children: UiAiHandoffChildPolicy,
+}
+
+/// Deterministic machine-readable index accompanying an editable UI document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAiHandoffManifest {
+    pub handoff_schema_version: u32,
+    pub document_schema_version: u32,
+    pub framework: UiAiHandoffFramework,
+    pub files: UiAiHandoffFiles,
+    pub required_features: Vec<String>,
+    pub provided_values: Vec<String>,
+    pub missing_values: Vec<String>,
+    pub nodes: Vec<UiAiHandoffNode>,
+    pub component_contracts: Vec<UiAiHandoffComponentContract>,
+}
+
+/// Fully canonicalized in-memory handoff. File I/O remains the caller's
+/// responsibility so library users can store it in any build or release flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiAiHandoffPackage {
+    pub manifest: UiAiHandoffManifest,
+    pub handoff_json: String,
+    pub document_json: String,
+    pub bindings_json: String,
+    pub values_json: Option<String>,
+    pub preview_png: Option<Vec<u8>>,
+}
+
+impl UiAiHandoffPackage {
+    pub fn build(
+        document: &UiDocument,
+        features: &UiFeatureSet,
+        bindings: &UiBindingSchema,
+        values: Option<&BTreeMap<String, Value>>,
+        preview_png: Option<&[u8]>,
+    ) -> Result<Self, UiAiHandoffBuildError> {
+        let document_report = document.validate(features, bindings);
+        if !document_report.is_valid() {
+            return Err(UiAiHandoffBuildError::InvalidDocument(document_report));
+        }
+        if let Some(values) = values {
+            let report = validate_ui_binding_values(bindings, values);
+            if !report.is_valid() {
+                return Err(UiAiHandoffBuildError::InvalidValues(report));
+            }
+        }
+        let document_json = canonical_pretty_json(document)?;
+        let bindings_json = canonical_pretty_json(bindings)?;
+        let values_json = values.map(canonical_pretty_json).transpose()?;
+
+        let document_file = handoff_file("document.json", document_json.as_bytes());
+        let bindings_file = handoff_file("bindings.json", bindings_json.as_bytes());
+        let values_file = values_json
+            .as_ref()
+            .map(|source| handoff_file("values.json", source.as_bytes()));
+        let preview = preview_png
+            .map(|bytes| {
+                let (width, height) = png_dimensions(bytes)?;
+                Ok::<_, UiAiHandoffBuildError>(UiAiHandoffPreview {
+                    file: handoff_file("preview.png", bytes),
+                    media_type: "image/png".to_owned(),
+                    width,
+                    height,
+                })
+            })
+            .transpose()?;
+
+        let mut nodes = Vec::new();
+        collect_handoff_nodes(&document.root, "$.root", &mut nodes);
+        let component_names = nodes
+            .iter()
+            .map(|node| node.component.clone())
+            .collect::<BTreeSet<_>>();
+        let catalog = crate::component_catalog::zsui_component_catalog();
+        let mut required_features = BTreeSet::from(["ui-document".to_owned()]);
+        let mut component_contracts = Vec::with_capacity(component_names.len());
+        for component in component_names {
+            let cargo_feature = catalog
+                .iter()
+                .find(|descriptor| descriptor.component_name == component)
+                .and_then(|descriptor| descriptor.feature_name)
+                .map(str::to_owned);
+            if let Some(feature) = &cargo_feature {
+                required_features.insert(feature.clone());
+            }
+            if let Some(schema) = component_schema(&component) {
+                let mut properties = schema
+                    .properties
+                    .iter()
+                    .map(|property| UiAiHandoffPropertyContract {
+                        name: property.name.to_owned(),
+                        value_type: property.value_type,
+                        required: property.required,
+                    })
+                    .collect::<Vec<_>>();
+                properties.sort_by(|left, right| left.name.cmp(&right.name));
+                let mut actions = schema
+                    .actions
+                    .iter()
+                    .map(|action| UiAiHandoffActionContract {
+                        name: action.name.to_owned(),
+                        payload_type: action.payload_type,
+                    })
+                    .collect::<Vec<_>>();
+                actions.sort_by(|left, right| left.name.cmp(&right.name));
+                component_contracts.push(UiAiHandoffComponentContract {
+                    component,
+                    cargo_feature,
+                    properties,
+                    actions,
+                    children: match schema.children {
+                        ChildPolicy::Any => UiAiHandoffChildPolicy::Any,
+                        ChildPolicy::AtMost(maximum) => UiAiHandoffChildPolicy::AtMost { maximum },
+                        ChildPolicy::None => UiAiHandoffChildPolicy::None,
+                    },
+                });
+            }
+        }
+
+        let provided_values = values
+            .into_iter()
+            .flat_map(|values| values.keys().cloned())
+            .collect::<Vec<_>>();
+        let missing_values = bindings
+            .properties
+            .keys()
+            .filter(|name| values.is_none_or(|values| !values.contains_key(*name)))
+            .cloned()
+            .collect();
+        let manifest = UiAiHandoffManifest {
+            handoff_schema_version: ZSUI_UI_AI_HANDOFF_SCHEMA_VERSION,
+            document_schema_version: document.schema_version,
+            framework: UiAiHandoffFramework {
+                name: "zsui".to_owned(),
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+                producer: "zsui-uic".to_owned(),
+            },
+            files: UiAiHandoffFiles {
+                document: document_file,
+                bindings: bindings_file,
+                values: values_file,
+                preview,
+            },
+            required_features: required_features.into_iter().collect(),
+            provided_values,
+            missing_values,
+            nodes,
+            component_contracts,
+        };
+        let handoff_json = canonical_pretty_json(&manifest)?;
+        Ok(Self {
+            manifest,
+            handoff_json,
+            document_json,
+            bindings_json,
+            values_json,
+            preview_png: preview_png.map(<[u8]>::to_vec),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum UiAiHandoffBuildError {
+    Serialize(serde_json::Error),
+    InvalidDocument(UiValidationReport),
+    InvalidValues(UiValidationReport),
+    InvalidPreviewPng,
+}
+
+impl fmt::Display for UiAiHandoffBuildError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Serialize(error) => write!(formatter, "cannot serialize AI handoff: {error}"),
+            Self::InvalidDocument(report) => write!(
+                formatter,
+                "AI handoff document failed validation with {} diagnostic(s)",
+                report.diagnostics.len()
+            ),
+            Self::InvalidValues(report) => write!(
+                formatter,
+                "AI handoff values failed validation with {} diagnostic(s)",
+                report.diagnostics.len()
+            ),
+            Self::InvalidPreviewPng => {
+                formatter.write_str("AI handoff preview must be a PNG with a valid IHDR")
+            }
+        }
+    }
+}
+
+impl Error for UiAiHandoffBuildError {}
+
+impl From<serde_json::Error> for UiAiHandoffBuildError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Serialize(error)
+    }
+}
+
+fn collect_handoff_nodes(node: &UiNode, path: &str, output: &mut Vec<UiAiHandoffNode>) {
+    output.push(UiAiHandoffNode {
+        path: path.to_owned(),
+        id: node.id.as_str().to_owned(),
+        widget_id: node.id.widget_id().0,
+        component: node.component.clone(),
+        inline_properties: node.properties.keys().cloned().collect(),
+        property_bindings: node.property_bindings.clone(),
+        action_bindings: node.action_bindings.clone(),
+        child_count: node.children.len(),
+        has_accessibility: node.accessibility.is_some(),
+    });
+    for (index, child) in node.children.iter().enumerate() {
+        collect_handoff_nodes(child, &format!("{path}.children[{index}]"), output);
+    }
+}
+
+fn canonical_pretty_json<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(value).map(|mut source| {
+        source.push('\n');
+        source
+    })
+}
+
+fn handoff_file(path: &str, bytes: &[u8]) -> UiAiHandoffFile {
+    UiAiHandoffFile {
+        path: path.to_owned(),
+        byte_length: bytes.len() as u64,
+        content_fingerprint: format!("fnv1a64:{:016x}", fnv1a64(bytes)),
+    }
+}
+
+fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), UiAiHandoffBuildError> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < 33
+        || &bytes[..8] != PNG_SIGNATURE
+        || u32::from_be_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) != 13
+        || &bytes[12..16] != b"IHDR"
+    {
+        return Err(UiAiHandoffBuildError::InvalidPreviewPng);
+    }
+    let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+    let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+    if width == 0 || height == 0 {
+        return Err(UiAiHandoffBuildError::InvalidPreviewPng);
+    }
+    Ok((width, height))
 }
 
 type UiStateReader<State> = Arc<dyn Fn(&State) -> Value + Send + Sync + 'static>;
@@ -487,6 +847,8 @@ pub enum UiDiagnosticCode {
     UnresolvedPropertyBinding,
     UnresolvedActionBinding,
     BindingTypeMismatch,
+    UnknownBindingValue,
+    BindingValueTypeMismatch,
     InvalidLayout,
     InvalidThemeToken,
     InvalidLocalization,
@@ -1137,6 +1499,15 @@ fn push_diagnostic(
     });
 }
 
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1281,5 +1652,141 @@ mod tests {
         .expect_err("unknown schema fields must fail parsing");
 
         assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn binding_value_validation_rejects_unknown_and_mismatched_values() {
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("enabled".to_owned(), UiValueType::Boolean),
+                ("title".to_owned(), UiValueType::String),
+            ]),
+            actions: BTreeMap::new(),
+        };
+        let values = BTreeMap::from([
+            ("enabled".to_owned(), Value::String("yes".to_owned())),
+            ("extra".to_owned(), Value::Null),
+        ]);
+
+        let report = validate_ui_binding_values(&bindings, &values);
+        assert_eq!(report.diagnostics.len(), 2);
+        assert_eq!(
+            report.diagnostics[0].code,
+            UiDiagnosticCode::BindingValueTypeMismatch
+        );
+        assert_eq!(
+            report.diagnostics[1].code,
+            UiDiagnosticCode::UnknownBindingValue
+        );
+    }
+
+    #[test]
+    fn ai_handoff_is_deterministic_and_round_trips_authoring_files() {
+        let document = valid_document();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("window_title".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::from([("save".to_owned(), UiValueType::Null)]),
+        };
+        let values =
+            BTreeMap::from([("window_title".to_owned(), Value::String("Notes".to_owned()))]);
+
+        let features = UiFeatureSet::new(["button", "label"]);
+        let first = UiAiHandoffPackage::build(&document, &features, &bindings, Some(&values), None)
+            .unwrap();
+        let second =
+            UiAiHandoffPackage::build(&document, &features, &bindings, Some(&values), None)
+                .unwrap();
+
+        assert_eq!(first, second);
+        assert!(first.document_json.ends_with('\n'));
+        assert!(first.handoff_json.ends_with('\n'));
+        assert_eq!(
+            UiDocument::from_json(&first.document_json).unwrap(),
+            document
+        );
+        assert_eq!(
+            serde_json::from_str::<UiBindingSchema>(&first.bindings_json).unwrap(),
+            bindings
+        );
+        assert_eq!(
+            serde_json::from_str::<BTreeMap<String, Value>>(first.values_json.as_ref().unwrap())
+                .unwrap(),
+            values
+        );
+        assert_eq!(
+            first.manifest.required_features,
+            vec![
+                "button".to_owned(),
+                "label".to_owned(),
+                "ui-document".to_owned()
+            ]
+        );
+        assert_eq!(first.manifest.nodes.len(), 3);
+        assert_eq!(first.manifest.nodes[1].path, "$.root.children[0]");
+        assert_eq!(first.manifest.component_contracts.len(), 3);
+        assert!(first.manifest.missing_values.is_empty());
+    }
+
+    #[test]
+    fn ai_handoff_records_png_dimensions_and_rejects_invalid_preview() {
+        let mut png = vec![0_u8; 33];
+        png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        png[8..12].copy_from_slice(&13_u32.to_be_bytes());
+        png[12..16].copy_from_slice(b"IHDR");
+        png[16..20].copy_from_slice(&960_u32.to_be_bytes());
+        png[20..24].copy_from_slice(&640_u32.to_be_bytes());
+
+        let package = UiAiHandoffPackage::build(
+            &valid_document(),
+            &UiFeatureSet::new(["button", "label"]),
+            &UiBindingSchema {
+                properties: BTreeMap::from([("window_title".to_owned(), UiValueType::String)]),
+                actions: BTreeMap::from([("save".to_owned(), UiValueType::Null)]),
+            },
+            None,
+            Some(&png),
+        )
+        .unwrap();
+        let preview = package.manifest.files.preview.as_ref().unwrap();
+        assert_eq!((preview.width, preview.height), (960, 640));
+        assert_eq!(preview.file.byte_length, 33);
+        assert_eq!(package.preview_png.as_deref(), Some(png.as_slice()));
+
+        assert!(matches!(
+            UiAiHandoffPackage::build(
+                &valid_document(),
+                &UiFeatureSet::new(["button", "label"]),
+                &UiBindingSchema {
+                    properties: BTreeMap::from([("window_title".to_owned(), UiValueType::String)]),
+                    actions: BTreeMap::from([("save".to_owned(), UiValueType::Null)]),
+                },
+                None,
+                Some(b"not a PNG"),
+            ),
+            Err(UiAiHandoffBuildError::InvalidPreviewPng)
+        ));
+    }
+
+    #[test]
+    fn ai_handoff_rejects_invalid_binding_value_snapshot() {
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("title".to_owned(), UiValueType::String),
+                ("window_title".to_owned(), UiValueType::String),
+            ]),
+            actions: BTreeMap::from([("save".to_owned(), UiValueType::Null)]),
+        };
+        let values = BTreeMap::from([("title".to_owned(), Value::Bool(true))]);
+
+        assert!(matches!(
+            UiAiHandoffPackage::build(
+                &valid_document(),
+                &UiFeatureSet::new(["button", "label"]),
+                &bindings,
+                Some(&values),
+                None
+            ),
+            Err(UiAiHandoffBuildError::InvalidValues(_))
+        ));
     }
 }

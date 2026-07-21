@@ -51,10 +51,15 @@ history remain authoritative for implementation status.
   identities in per-control `ViewMessageMapper` callbacks, carry typed JSON
   payloads and update explicit property bindings across View rebuilds. Ordinary
   function-pointer handlers remain allocation-free; shared owned closures are
-  allocated only through explicit `*_with` builders. This does not add a
+  allocated only through explicit `*_with` builders. `zsui-uic handoff`
+  canonicalizes the validated document, binding schema, optional value snapshot
+  and optional native PNG into a deterministic directory. Its stable manifest
+  records content-change fingerprints, required features, node indexes and
+  component contracts without timestamps, absolute paths or random IDs; the
+  FNV fingerprint is not a cryptographic integrity hash. This does not add a
   reactive runtime, browser shell or global widget registry. Full component
   coverage, general-scroll and advanced-control state retention, fixed
-  AppKit/Linux proof, AI handoff and release embedding remain unfinished.
+  AppKit/Linux proof and release embedding remain unfinished.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing

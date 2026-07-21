@@ -90,6 +90,39 @@ cargo run --bin zsui-viewer `
 ```
 
 输出包含平台最终窗口截图 `window.png` 和带窗口、字体、内存、绘制及输入证据的
-`proof.json`。完整组件覆盖、通用滚动容器及高级控件状态迁移、确定性 AI 交接包、
-三平台固定 Runner 基准和发布期文档嵌入仍是后续 v0.2 切片。浏览器投影不能替代原生
-运行证据。
+`proof.json`。
+
+## 确定性 AI 交接包
+
+`zsui-uic handoff` 把已校验的文档、绑定 schema、可选值快照和可选原生最终视图 PNG
+整理为一个稳定目录：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-viewer `
+  -- handoff examples/ui-documents/interactive.json `
+  --bindings examples/ui-documents/interactive.bindings.json `
+  --values examples/ui-documents/interactive.values.json `
+  --output target/ui-ai-handoff `
+  --screenshot target/ui-viewer-proof/window.png `
+  --force
+```
+
+输出目录固定包含 `document.json`、`bindings.json` 和 `handoff.json`，按输入情况增加
+`values.json` 与 `preview.png`。`handoff.json` 使用稳定排序且不写入时间、绝对路径或
+随机 ID，记录：
+
+- 文件字节数和 `fnv1a64` 内容变更指纹；该指纹用于确定性变更检测，不作为密码学完整性校验；
+- ZSUI 与文档 schema 版本、所需 Cargo features；
+- 每个节点的文档路径、稳定 ID、`WidgetId`、属性、绑定和子节点数量；
+- 实际用到的组件属性、动作 payload 与子节点契约；
+- 已提供和缺失的属性值，以及可选 PNG 的尺寸和媒体类型。
+
+交接前会再次执行文档、feature、绑定和值类型校验；非法 PNG 也会被拒绝。已存在的非空
+输出目录默认不会覆盖，显式 `--force` 只替换上述固定交接文件，不递归删除目录中的其他
+内容。AI 或可视化工具修改 `document.json` 后，可以直接用 `zsui-uic check` 校验，并由
+已编译 Viewer 热重载；交接包不引入 WebView、平台类型、文件监听服务或全局控件注册表。
+
+完整组件覆盖、通用滚动容器及高级控件状态迁移、三平台固定 Runner Viewer 基准和发布期
+文档嵌入仍是后续 v0.2 切片。浏览器投影不能替代原生运行证据。
