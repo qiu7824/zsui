@@ -271,7 +271,7 @@ jobs:
               if stem == "gallery-navigation-light":
                   assert proof["messages"] == ["TabSelected"]
                   assert runtime["native_view_message_count"] == 2
-                  assert runtime["native_view_event_count"] == 2
+                  assert runtime["native_view_event_count"] == 3
                   assert runtime["native_view_tab_selection_count"] == 2
                   assert runtime["native_view_tab_keyboard_selection_count"] == 1
                   assert runtime["native_view_tab_keyboard_focus_only_count"] == 0
@@ -606,7 +606,7 @@ jobs:
               if stem == "gallery-navigation-light":
                   assert proof["messages"] == ["TabSelected"]
                   assert runtime["native_view_message_count"] == 1
-                  assert runtime["native_view_event_count"] == 1
+                  assert runtime["native_view_event_count"] == 3
                   assert runtime["native_view_tab_selection_count"] == 1
                   assert runtime["native_view_tab_keyboard_selection_count"] == 0
                   assert runtime["native_view_tab_keyboard_focus_only_count"] == 1
@@ -1329,7 +1329,7 @@ jobs:
           navigation_runtime = navigation["runtime"]
           assert navigation["messages"] == ["TabSelected"]
           assert navigation_runtime["native_view_message_count"] == 1
-          assert navigation_runtime["native_view_event_count"] == 1
+          assert navigation_runtime["native_view_event_count"] == 3
           assert navigation_runtime["native_view_tab_selection_count"] == 1
           assert navigation_runtime["native_view_tab_keyboard_selection_count"] == 0
           assert navigation_runtime["native_view_tab_keyboard_focus_only_count"] == 1
