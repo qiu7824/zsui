@@ -4296,6 +4296,7 @@ dependencies = [
  "sys-locale",
  "tiny-skia",
  "unic-langid",
+ "unicode-bidi",
  "unicode-segmentation",
  "windows",
  "windows-core",

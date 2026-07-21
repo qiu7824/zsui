@@ -310,7 +310,10 @@ history remain authoritative for implementation status.
   shaped movement. The shared Notepad acceptance route must reject a backend
   unless four Right keys over `abאב` produce relative visual-order carets
   `1, 4, 3, 2`; this proves the target-injected shaper path without claiming a
-  real IME candidate-window session.
+  real IME candidate-window session. Visual insertion positions come from the
+  directed edges of shaped grapheme clusters, not from a platform API's strong
+  caret alone; AppKit resolves ambiguous Core Text edges with Unicode bidi
+  levels before the shared navigation code consumes them.
 - Native typography is a backend-resolved `NativeTypographyProfile`, not a
   demo-owned type ramp. Native layout, paint and proof must share the resolved
   families, role metrics, accessibility scale and rasterization identity.

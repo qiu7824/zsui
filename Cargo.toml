@@ -23,6 +23,7 @@ rust_decimal = { version = "1.42.1", default-features = false, features = ["math
 sys-locale = { version = "0.3.2", optional = true }
 tiny-skia = { version = "0.11.4", optional = true }
 unic-langid = { version = "0.9.6", optional = true }
+unicode-bidi = { version = "0.3.18", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
 zeroize = { version = "1.8", features = ["alloc"], optional = true }
 
@@ -69,7 +70,7 @@ grid-view = ["widgets-list"]
 widgets-base = []
 widgets-input = []
 widgets-list = []
-text-input-core = ["widgets-input", "dep:unicode-segmentation"]
+text-input-core = ["widgets-input", "dep:unicode-bidi", "dep:unicode-segmentation"]
 scroll = []
 list = ["widgets-list", "scroll"]
 virtual-list = ["list", "scroll"]

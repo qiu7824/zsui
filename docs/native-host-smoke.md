@@ -606,8 +606,11 @@ caret and typed selection. The Notepad process rejects any backend that does
 not produce relative Right-key carets `1, 4, 3, 2` for `abאב`. The Win32 probe
 is recorded in `docs/platform-proof/windows/bidi-navigation-smoke-report.json`;
 the AppKit, X11 and Wayland jobs enforce the same structured trace against their
-target-native shapers. These scripted routes do not replace real IME candidate
-window testing. Resize screenshot artifacts remain a later runtime gate. The
+target-native shapers. The shared movement path orders directed grapheme-cluster
+edges; it does not mistake Core Text/Pango/Cosmic Text's strong caret for the
+only insertion edge at a bidi boundary. These scripted routes do not replace
+real IME candidate window testing. Resize screenshot artifacts remain a later
+runtime gate. The
 `--date-picker-view` path also posts real
 pointer down/up input through the Win32 host and records
 `native_view_pointer_visual_change_count`; a nonzero count proves that the

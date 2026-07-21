@@ -1731,6 +1731,11 @@ pub(crate) fn shape_macos_appkit_text_line(
             .ok()
         })
         .collect::<Option<Vec<_>>>()?;
+    let bidi = unicode_bidi::BidiInfo::new(text, None);
+    let byte_offsets = boundaries
+        .iter()
+        .map(|index| crate::native_text_edit::char_to_byte_index(text, *index))
+        .collect::<Vec<_>>();
     let carets = boundaries
         .iter()
         .copied()
@@ -1748,8 +1753,10 @@ pub(crate) fn shape_macos_appkit_text_line(
     let clusters = boundaries
         .windows(2)
         .zip(carets.windows(2))
-        .map(|(scalar, caret)| {
-            let (start_x, end_x) = caret[0].closest_cluster_edges(caret[1]);
+        .zip(byte_offsets.iter().copied())
+        .map(|((scalar, caret), byte)| {
+            let right_to_left = bidi.levels.get(byte).is_some_and(|level| level.is_rtl());
+            let (start_x, end_x) = caret[0].closest_cluster_edges(caret[1], right_to_left);
             NativeShapedTextCluster {
                 start: scalar[0],
                 end: scalar[1],

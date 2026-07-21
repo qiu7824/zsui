@@ -168,7 +168,7 @@ pub(crate) struct NativeShapedTextCaret {
 
 impl NativeShapedTextCaret {
     #[allow(dead_code)]
-    pub(crate) fn closest_cluster_edges(self, next: Self) -> (i32, i32) {
+    pub(crate) fn closest_cluster_edges(self, next: Self, right_to_left: bool) -> (i32, i32) {
         [
             (self.primary_x, next.primary_x),
             (self.primary_x, next.secondary_x),
@@ -176,7 +176,14 @@ impl NativeShapedTextCaret {
             (self.secondary_x, next.secondary_x),
         ]
         .into_iter()
-        .min_by_key(|(start, end)| start.abs_diff(*end))
+        .min_by_key(|(start, end)| {
+            let direction_mismatch = if right_to_left {
+                start < end
+            } else {
+                start > end
+            };
+            (direction_mismatch, start.abs_diff(*end))
+        })
         .unwrap_or((self.primary_x, next.primary_x))
     }
 }
@@ -1777,19 +1784,36 @@ struct NativeTextVisualCaretStop {
 }
 
 impl NativeTextLine {
-    fn caret_x(&self, index: usize) -> i32 {
-        self.carets
-            .binary_search_by_key(&index, |caret| caret.index)
-            .ok()
-            .and_then(|position| self.carets.get(position))
-            .map(|caret| caret.primary_x)
-            .unwrap_or_else(|| {
+    fn visual_x_for_index(&self, index: usize) -> i32 {
+        self.clusters
+            .iter()
+            .find(|cluster| cluster.start == index)
+            .map(|cluster| cluster.start_x)
+            .or_else(|| {
+                self.clusters
+                    .iter()
+                    .find(|cluster| cluster.end == index)
+                    .map(|cluster| cluster.end_x)
+            })
+            .or_else(|| {
                 self.carets
                     .iter()
-                    .min_by_key(|caret| caret.index.abs_diff(index))
+                    .find(|caret| caret.index == index)
                     .map(|caret| caret.primary_x)
-                    .unwrap_or(0)
             })
+            .unwrap_or(0)
+    }
+
+    fn caret_x(&self, index: usize) -> i32 {
+        if self.carets.iter().any(|caret| caret.index == index) {
+            self.visual_x_for_index(index)
+        } else {
+            self.carets
+                .iter()
+                .min_by_key(|caret| caret.index.abs_diff(index))
+                .map(|caret| self.visual_x_for_index(caret.index))
+                .unwrap_or(0)
+        }
     }
 
     fn index_for_x(&self, x: i32) -> usize {
@@ -1825,7 +1849,7 @@ impl NativeTextLine {
             .iter()
             .map(|caret| NativeTextVisualCaretStop {
                 index: caret.index,
-                x: caret.primary_x,
+                x: self.visual_x_for_index(caret.index),
             })
             .collect::<Vec<_>>();
         stops.sort_by_key(|stop| (stop.x, stop.index));
@@ -2365,8 +2389,8 @@ mod tests {
                 },
                 NativeShapedTextCaret {
                     index: 2,
-                    primary_x: 40,
-                    secondary_x: 20,
+                    primary_x: 20,
+                    secondary_x: 40,
                 },
                 NativeShapedTextCaret {
                     index: 3,
@@ -2375,7 +2399,7 @@ mod tests {
                 },
                 NativeShapedTextCaret {
                     index: 4,
-                    primary_x: 20,
+                    primary_x: 40,
                     secondary_x: 20,
                 },
             ],
@@ -3078,20 +3102,41 @@ mod tests {
         );
 
         let shaped = mixed_direction_test_shape("abאב", 8).expect("test line should shape");
-        assert_eq!(shaped.carets[2].primary_x, 40);
-        assert_eq!(shaped.carets[2].secondary_x, 20);
+        assert_eq!(shaped.carets[2].primary_x, 20);
+        assert_eq!(shaped.carets[2].secondary_x, 40);
+        assert_eq!(shaped.clusters[2].start_x, 40);
+        assert_eq!(shaped.clusters[3].end_x, 20);
         assert_eq!(
             NativeShapedTextCaret {
                 index: 6,
                 primary_x: 50,
                 secondary_x: 50,
             }
-            .closest_cluster_edges(NativeShapedTextCaret {
-                index: 7,
-                primary_x: 70,
-                secondary_x: 40,
-            }),
+            .closest_cluster_edges(
+                NativeShapedTextCaret {
+                    index: 7,
+                    primary_x: 70,
+                    secondary_x: 40,
+                },
+                true
+            ),
             (50, 40)
+        );
+        assert_eq!(
+            NativeShapedTextCaret {
+                index: 6,
+                primary_x: 50,
+                secondary_x: 50,
+            }
+            .closest_cluster_edges(
+                NativeShapedTextCaret {
+                    index: 7,
+                    primary_x: 70,
+                    secondary_x: 40,
+                },
+                false,
+            ),
+            (50, 70)
         );
     }
 
