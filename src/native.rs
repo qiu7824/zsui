@@ -63,7 +63,7 @@ use crate::{
         AppEvent, Command, DialogResponse, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId,
         WindowId, ZsuiError, ZsuiResult,
     },
-    geometry::{Dp, Dpi, Point, Rect},
+    geometry::{Dp, Dpi, Point, Rect, Size},
     host::{MemoryHost, TrayRecord, WindowRecord, ZsuiHost},
     hotkey::HotkeySpec,
     menu::{MenuItemSpec, MenuSpec},
@@ -853,6 +853,8 @@ pub struct NativeWindowSmokeRunOptions {
     pub require_screenshot: bool,
     pub status_item: Option<TraySpec>,
     pub require_status_item: bool,
+    pub native_window_resize: Option<Size>,
+    pub require_native_window_resize: bool,
     pub native_view_click_points: Vec<Point>,
     pub native_view_text_inputs: Vec<String>,
     pub native_view_key_downs: Vec<NativeViewKey>,
@@ -869,6 +871,8 @@ impl NativeWindowSmokeRunOptions {
             require_screenshot: false,
             status_item: None,
             require_status_item: false,
+            native_window_resize: None,
+            require_native_window_resize: false,
             native_view_click_points: Vec::new(),
             native_view_text_inputs: Vec::new(),
             native_view_key_downs: Vec::new(),
@@ -903,6 +907,23 @@ impl NativeWindowSmokeRunOptions {
 
     pub const fn require_status_item(mut self, require_status_item: bool) -> Self {
         self.require_status_item = require_status_item;
+        self
+    }
+
+    /// Requests one real native client-area resize during the smoke run.
+    ///
+    /// The selected desktop backend must resize its actual top-level window;
+    /// directly changing the shared View surface does not satisfy this proof.
+    pub const fn native_window_resize(mut self, size: Size) -> Self {
+        self.native_window_resize = Some(Size {
+            width: if size.width < 1 { 1 } else { size.width },
+            height: if size.height < 1 { 1 } else { size.height },
+        });
+        self
+    }
+
+    pub const fn require_native_window_resize(mut self, required: bool) -> Self {
+        self.require_native_window_resize = required;
         self
     }
 
@@ -1023,6 +1044,16 @@ pub struct NativeViewCaptureEvidence {
     pub typography: crate::NativeTypographyProfile,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NativeWindowResizeEvidence {
+    pub backend: &'static str,
+    pub requested_size: Size,
+    pub initial_size: Option<Size>,
+    pub final_size: Option<Size>,
+    pub native_event_count: usize,
+    pub applied: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NativeWindowSmokeRunReport {
     pub requested_window_count: usize,
@@ -1045,6 +1076,9 @@ pub struct NativeWindowSmokeRunReport {
     pub screenshot_captured: bool,
     pub screenshot_error: Option<String>,
     pub native_view_capture: Option<NativeViewCaptureEvidence>,
+    pub native_window_resize_required: bool,
+    pub native_window_resize: Option<NativeWindowResizeEvidence>,
+    pub native_window_resize_error: Option<String>,
     pub process_memory_during_runtime: Option<crate::NativeProofProcessMemoryEvidence>,
     pub native_accessibility_backend: Option<&'static str>,
     pub native_accessibility_node_count: usize,
@@ -1202,6 +1236,9 @@ impl NativeWindowSmokeRunReport {
             screenshot_captured: false,
             screenshot_error: None,
             native_view_capture: None,
+            native_window_resize_required: options.require_native_window_resize,
+            native_window_resize: None,
+            native_window_resize_error: None,
             process_memory_during_runtime: None,
             native_accessibility_backend: None,
             native_accessibility_node_count: 0,
@@ -13101,6 +13138,8 @@ mod tests {
         assert!(!options.require_screenshot);
         assert_eq!(options.status_item, None);
         assert!(!options.require_status_item);
+        assert_eq!(options.native_window_resize, None);
+        assert!(!options.require_native_window_resize);
         assert_eq!(report.created_window_count, 0);
         assert_eq!(report.native_view_window_close_request_count, 0);
         assert_eq!(report.native_view_window_close_veto_count, 0);
@@ -13130,6 +13169,9 @@ mod tests {
         assert_eq!(report.native_view_focus_traversal_count, 0);
         assert_eq!(report.native_view_focused_widget, None);
         assert_eq!(report.native_view_capture, None);
+        assert!(!report.native_window_resize_required);
+        assert_eq!(report.native_window_resize, None);
+        assert_eq!(report.native_window_resize_error, None);
         assert_eq!(report.native_view_text_input_count, 0);
         assert!(report.native_view_text_input_script_evidence.is_empty());
         assert_eq!(report.native_view_text_navigation_count, 0);
@@ -13157,6 +13199,27 @@ mod tests {
         assert_eq!(report.native_view_scroll_count, 0);
         assert_eq!(report.native_view_unhandled_scroll_count, 0);
         assert!(!report.visible_window_was_created());
+    }
+
+    #[test]
+    fn native_window_smoke_resize_is_typed_clamped_and_explicitly_required() {
+        let options = NativeWindowSmokeRunOptions::quick()
+            .native_window_resize(Size {
+                width: 0,
+                height: -20,
+            })
+            .require_native_window_resize(true);
+        let report = NativeWindowSmokeRunReport::empty(options.clone());
+
+        assert_eq!(
+            options.native_window_resize,
+            Some(Size {
+                width: 1,
+                height: 1,
+            })
+        );
+        assert!(options.require_native_window_resize);
+        assert!(report.native_window_resize_required);
     }
 
     #[test]

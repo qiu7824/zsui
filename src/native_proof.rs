@@ -280,6 +280,10 @@ fn native_proof_errors(runtime: &NativeWindowSmokeRunReport) -> Vec<String> {
     for (name, error) in [
         ("startup", runtime.startup_error.as_deref()),
         ("screenshot", runtime.screenshot_error.as_deref()),
+        (
+            "native_window_resize",
+            runtime.native_window_resize_error.as_deref(),
+        ),
         ("window_menu", runtime.window_menu_command_error.as_deref()),
         ("status_item", runtime.status_item_error.as_deref()),
         ("status_menu", runtime.status_menu_command_error.as_deref()),

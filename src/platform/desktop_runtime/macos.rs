@@ -26,6 +26,7 @@ impl DesktopRuntimeBackend for Backend {
             None,
             None,
             &[],
+            None,
         )
         .map(|_| ())
     }
@@ -55,6 +56,7 @@ impl DesktopRuntimeBackend for Backend {
                 .as_deref()
                 .map(std::path::Path::new),
             &request.options.native_view_inputs,
+            request.options.native_window_resize,
         )?;
         let accessibility_evidence_event = run.accessibility_evidence_event.clone();
         let mut report = complete_native_smoke(
@@ -63,6 +65,8 @@ impl DesktopRuntimeBackend for Backend {
                 created_window_count: run.created_window_count,
                 proof_input_reports: run.proof_input_reports,
                 native_view_capture: run.native_view_capture,
+                native_window_resize: run.native_window_resize,
+                native_window_resize_error: run.native_window_resize_error,
                 menu_command_routed: run.menu_command_routed,
                 menu_surface_created: false,
                 menu_surface_height: 0,

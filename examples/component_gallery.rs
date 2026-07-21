@@ -1277,8 +1277,31 @@ fn main() -> ZsuiResult<()> {
     let default_size = (1180, 780);
     let window_width = proof_dimension(&args, "--width", default_size.0);
     let window_height = proof_dimension(&args, "--height", default_size.1);
+    let resize_target = match (
+        optional_proof_dimension(&args, "--resize-width"),
+        optional_proof_dimension(&args, "--resize-height"),
+    ) {
+        (Some(width), Some(height)) => Some(Size {
+            width: width as i32,
+            height: height as i32,
+        }),
+        (None, None) => None,
+        _ => {
+            return Err(ZsuiError::host(
+                "gallery_native_resize_arguments",
+                "--resize-width and --resize-height must be supplied together",
+            ));
+        }
+    };
     let minimum_size = if native_proof {
-        (window_width.min(800), window_height.min(520))
+        (
+            window_width
+                .min(resize_target.map_or(window_width, |size| size.width.max(1) as u32))
+                .min(800),
+            window_height
+                .min(resize_target.map_or(window_height, |size| size.height.max(1) as u32))
+                .min(520),
+        )
     } else {
         (980, 680)
     };
@@ -1341,7 +1364,12 @@ fn main() -> ZsuiResult<()> {
         let mut options = NativeWindowSmokeRunOptions::new(proof_duration_ms)
             .screenshot_file(&screenshot)
             .require_screenshot(true);
-        if initial_page == GalleryPage::Inputs {
+        if let Some(size) = resize_target {
+            options = options
+                .native_window_resize(size)
+                .require_native_window_resize(true);
+        }
+        if resize_target.is_none() && initial_page == GalleryPage::Inputs {
             let click_points = {
                 let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
                     ZsuiError::host("gallery_interaction_plan", "missing View input plan")
@@ -1369,7 +1397,7 @@ fn main() -> ZsuiResult<()> {
             for point in click_points {
                 options = options.native_view_click(point);
             }
-        } else if initial_page == GalleryPage::Catalog {
+        } else if resize_target.is_none() && initial_page == GalleryPage::Catalog {
             let target = builder
                 .native_view_interaction_plan()
                 .and_then(|plan| plan.hit_target_for_widget(CANVAS_SURFACE))
@@ -1393,7 +1421,7 @@ fn main() -> ZsuiResult<()> {
                 ZsPointerButton::Secondary,
                 ZsPointerModifiers::default(),
             );
-        } else if initial_page == GalleryPage::Feedback {
+        } else if resize_target.is_none() && initial_page == GalleryPage::Feedback {
             let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
                 ZsuiError::host("gallery_interaction_plan", "missing View input plan")
             })?;
@@ -1426,30 +1454,41 @@ fn main() -> ZsuiResult<()> {
                     NativeViewKey::Right,
                 ]);
         }
-        let widgets = builder
+        let live_view = builder.native_live_view_runtime().cloned();
+        let initial_widgets = builder
             .native_view_interaction_plan()
             .map(|plan| plan.hit_targets.clone())
             .unwrap_or_default();
         let report = builder.run_smoke(options)?;
+        let widgets = live_view
+            .map(|runtime| runtime.interaction_plan().hit_targets)
+            .unwrap_or(initial_widgets);
         let document = if native_proof {
-            let messages = match initial_page {
-                GalleryPage::Inputs => {
-                    vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
+            let messages = if resize_target.is_some() {
+                Vec::new()
+            } else {
+                match initial_page {
+                    GalleryPage::Inputs => {
+                        vec!["PrimaryAction", "CheckboxChanged", "ToggleChanged"]
+                    }
+                    GalleryPage::Catalog => vec!["CanvasActivated", "CanvasPointer"],
+                    GalleryPage::Feedback => {
+                        vec![
+                            "MenuFlyoutCommand",
+                            "MenuFlyoutOpenChanged",
+                            "OpenMenuFlyout",
+                        ]
+                    }
+                    _ => Vec::new(),
                 }
-                GalleryPage::Catalog => vec!["CanvasActivated", "CanvasPointer"],
-                GalleryPage::Feedback => {
-                    vec![
-                        "MenuFlyoutCommand",
-                        "MenuFlyoutOpenChanged",
-                        "OpenMenuFlyout",
-                    ]
-                }
-                _ => Vec::new(),
             };
             serde_json::to_value(
                 NativeProofDocument::new(
                     "component_gallery",
-                    format!("gallery-{}-{theme}", initial_page.slug()),
+                    args.windows(2)
+                        .find(|pair| pair[0] == "--scenario")
+                        .map(|pair| pair[1].clone())
+                        .unwrap_or_else(|| format!("gallery-{}-{theme}", initial_page.slug())),
                     theme,
                     window_width,
                     window_height,
@@ -1485,6 +1524,13 @@ fn proof_dimension(args: &[String], flag: &str, default: u32) -> u32 {
         .and_then(|pair| pair[1].parse::<u32>().ok())
         .filter(|value| (320..=4096).contains(value))
         .unwrap_or(default)
+}
+
+fn optional_proof_dimension(args: &[String], flag: &str) -> Option<u32> {
+    args.windows(2)
+        .find(|pair| pair[0] == flag)
+        .and_then(|pair| pair[1].parse::<u32>().ok())
+        .filter(|value| (320..=4096).contains(value))
 }
 
 #[cfg(test)]

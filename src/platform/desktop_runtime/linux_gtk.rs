@@ -60,6 +60,11 @@ impl DesktopRuntimeBackend for Backend {
                 created_window_count: run.created_window_count,
                 proof_input_reports: run.proof_input_reports,
                 native_view_capture: run.native_view_capture,
+                native_window_resize: None,
+                native_window_resize_error: request
+                    .options
+                    .native_window_resize
+                    .map(|_| "GTK4 smoke resize proof is not connected".to_string()),
                 menu_command_routed: run.menu_command_routed,
                 menu_surface_created: false,
                 menu_surface_height: 0,

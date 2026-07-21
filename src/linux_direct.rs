@@ -52,6 +52,8 @@ pub(crate) struct LinuxDirectNativeWindowRunReport {
     pub created_window_count: usize,
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    pub native_window_resize: Option<crate::NativeWindowResizeEvidence>,
+    pub native_window_resize_error: Option<String>,
     pub menu_command_routed: bool,
     pub menu_surface_created: bool,
     pub menu_surface_height: u32,
@@ -69,12 +71,15 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
     auto_close_after_ms: Option<u64>,
     capture_path: Option<&Path>,
     proof_inputs: &[crate::NativeViewSmokeInput],
+    proof_resize: Option<crate::Size>,
 ) -> ZsuiResult<LinuxDirectNativeWindowRunReport> {
     if specs.is_empty() {
         return Ok(LinuxDirectNativeWindowRunReport {
             created_window_count: 0,
             native_view_capture: None,
             proof_input_reports: Vec::new(),
+            native_window_resize: None,
+            native_window_resize_error: None,
             menu_command_routed: false,
             menu_surface_created: false,
             menu_surface_height: 0,
@@ -95,6 +100,7 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
         auto_close_after_ms,
         capture_path,
         proof_inputs,
+        proof_resize,
     );
     event_loop
         .run_app(&mut app)
@@ -107,6 +113,8 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
         created_window_count: app.created_window_count,
         native_view_capture: app.capture_result.take(),
         proof_input_reports: std::mem::take(&mut app.proof_input_reports),
+        native_window_resize: app.native_window_resize.take(),
+        native_window_resize_error: app.native_window_resize_error.take(),
         menu_command_routed: app.menu_command_routed,
         menu_surface_created: app.menu_surface_created,
         menu_surface_height: app.menu_surface_height,
@@ -131,6 +139,13 @@ struct LinuxDirectApp {
     proof_dispatched: bool,
     proof_inputs: Vec<crate::NativeViewSmokeInput>,
     proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    proof_resize: Option<crate::Size>,
+    proof_resize_requested: bool,
+    proof_resize_window: Option<WinitWindowId>,
+    proof_resize_initial_size: Option<crate::Size>,
+    proof_resize_event_count: usize,
+    native_window_resize: Option<crate::NativeWindowResizeEvidence>,
+    native_window_resize_error: Option<String>,
     capture_path: Option<PathBuf>,
     capture_result: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     menu_command_routed: bool,
@@ -151,6 +166,7 @@ impl LinuxDirectApp {
         auto_close_after_ms: Option<u64>,
         capture_path: Option<&Path>,
         proof_inputs: &[crate::NativeViewSmokeInput],
+        proof_resize: Option<crate::Size>,
     ) -> Self {
         let started_at = Instant::now();
         let close_after = auto_close_after_ms.map(|delay| Duration::from_millis(delay.max(1)));
@@ -162,13 +178,20 @@ impl LinuxDirectApp {
             context: None,
             created_window_count: 0,
             startup_error: None,
-            proof_at: (!proof_inputs.is_empty())
+            proof_at: (!proof_inputs.is_empty() || proof_resize.is_some())
                 .then(|| close_after.map(|duration| started_at + duration / 2))
                 .flatten(),
             close_at: close_after.map(|duration| started_at + duration),
             proof_dispatched: false,
             proof_inputs: proof_inputs.to_vec(),
             proof_input_reports: Vec::new(),
+            proof_resize,
+            proof_resize_requested: false,
+            proof_resize_window: None,
+            proof_resize_initial_size: None,
+            proof_resize_event_count: 0,
+            native_window_resize: None,
+            native_window_resize_error: None,
             capture_path: capture_path.map(PathBuf::from),
             capture_result: None,
             menu_command_routed: false,
@@ -321,7 +344,65 @@ impl LinuxDirectApp {
         window.window.request_redraw();
     }
 
+    fn request_proof_resize(&mut self) {
+        if self.proof_resize_requested {
+            return;
+        }
+        let Some(requested) = self.proof_resize else {
+            return;
+        };
+        let Some(window_id) = self.windows.keys().next().copied() else {
+            self.native_window_resize_error =
+                Some("the Linux direct proof has no native window to resize".to_string());
+            self.proof_resize_requested = true;
+            return;
+        };
+        let Some(window) = self.windows.get_mut(&window_id) else {
+            return;
+        };
+        self.proof_resize_initial_size = Some(window.logical_window_size());
+        self.proof_resize_window = Some(window_id);
+        self.proof_resize_requested = true;
+        if let Some(physical_size) = window.window.request_inner_size(LogicalSize::new(
+            f64::from(requested.width.max(1)),
+            f64::from(requested.height.max(1)),
+        )) {
+            window.resize(physical_size);
+            window.window.request_redraw();
+            self.proof_resize_event_count = self.proof_resize_event_count.saturating_add(1);
+        }
+    }
+
     fn capture_and_exit(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(requested_size) = self.proof_resize {
+            let final_size = self
+                .proof_resize_window
+                .and_then(|window_id| self.windows.get(&window_id))
+                .map(LinuxDirectWindow::logical_window_size);
+            let applied = final_size == Some(requested_size) && self.proof_resize_event_count > 0;
+            self.native_window_resize = Some(crate::NativeWindowResizeEvidence {
+                backend: "winit_request_inner_size_window_event",
+                requested_size,
+                initial_size: self.proof_resize_initial_size,
+                final_size,
+                native_event_count: self.proof_resize_event_count,
+                applied,
+            });
+            if !applied && self.native_window_resize_error.is_none() {
+                self.native_window_resize_error = Some(match final_size {
+                    Some(final_size) => format!(
+                        "Linux native resize requested {}x{} but finished at {}x{} after {} Resized events",
+                        requested_size.width,
+                        requested_size.height,
+                        final_size.width,
+                        final_size.height,
+                        self.proof_resize_event_count
+                    ),
+                    None => "the Linux direct proof window closed before resize evidence was captured"
+                        .to_string(),
+                });
+            }
+        }
         self.process_memory =
             crate::NativeProofProcessMemoryEvidence::capture_at("native_window_before_teardown");
         #[cfg(feature = "accessibility")]
@@ -444,6 +525,9 @@ impl ApplicationHandler for LinuxDirectApp {
             WindowEvent::Resized(size) => {
                 window.resize(size);
                 window.window.request_redraw();
+                if self.proof_resize_requested && self.proof_resize_window == Some(window_id) {
+                    self.proof_resize_event_count = self.proof_resize_event_count.saturating_add(1);
+                }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window.scale_factor = scale_factor.max(0.1);
@@ -650,7 +734,11 @@ impl ApplicationHandler for LinuxDirectApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         if self.proof_at.is_some_and(|deadline| now >= deadline) {
-            self.dispatch_proof_inputs(event_loop);
+            if self.proof_resize.is_some() && !self.proof_resize_requested {
+                self.request_proof_resize();
+            } else if self.proof_resize.is_none() || self.proof_resize_event_count > 0 {
+                self.dispatch_proof_inputs(event_loop);
+            }
         }
         for window in self.windows.values_mut() {
             #[cfg(feature = "accessibility")]
@@ -696,6 +784,14 @@ struct LinuxDirectWindow {
 }
 
 impl LinuxDirectWindow {
+    fn logical_window_size(&self) -> crate::Size {
+        let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
+        crate::Size {
+            width: logical.width.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+            height: logical.height.round().clamp(1.0, f64::from(i32::MAX)) as i32,
+        }
+    }
+
     fn new(
         event_loop: &ActiveEventLoop,
         title: String,

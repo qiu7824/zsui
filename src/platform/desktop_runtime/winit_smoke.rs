@@ -181,6 +181,11 @@ fn run_native_window_smoke_event_loop(
             .events
             .push("status_item_unsupported".to_string());
     }
+    if options.native_window_resize.is_some() {
+        app.report.native_window_resize_error = Some(
+            "native resize proof is not connected to the desktop transport fallback".to_string(),
+        );
+    }
 
     if let Some(err) = &app.report.startup_error {
         return Err(ZsuiError::host("create_native_window", err.clone()));
@@ -198,6 +203,15 @@ fn run_native_window_smoke_event_loop(
                 .screenshot_error
                 .clone()
                 .unwrap_or_else(|| "window screenshot was not captured".to_string()),
+        ));
+    }
+    if options.require_native_window_resize {
+        return Err(ZsuiError::unsupported(
+            "native_window_smoke_resize",
+            app.report
+                .native_window_resize_error
+                .clone()
+                .unwrap_or_else(|| "native resize proof is unavailable".to_string()),
         ));
     }
     if options.require_status_item && !app.report.status_item_created {

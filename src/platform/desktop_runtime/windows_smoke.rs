@@ -291,6 +291,72 @@ fn windows_wparam_from_native_view_key(key: NativeViewKey) -> usize {
 }
 
 #[cfg(all(windows, feature = "windows-win32"))]
+fn win32_client_size(hwnd: windows_sys::Win32::Foundation::HWND) -> Result<crate::Size, String> {
+    use windows_sys::Win32::{Foundation::RECT, UI::WindowsAndMessaging::GetClientRect};
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if unsafe { GetClientRect(hwnd, &mut rect) } == 0 {
+        return Err("GetClientRect failed while observing the native resize".to_string());
+    }
+    Ok(crate::Size {
+        width: (rect.right - rect.left).max(1),
+        height: (rect.bottom - rect.top).max(1),
+    })
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
+fn request_win32_client_resize(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    requested: crate::Size,
+) -> Result<crate::Size, String> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::{
+        Foundation::RECT,
+        UI::{
+            HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow},
+            WindowsAndMessaging::{
+                GetMenu, GetWindowLongW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_NOACTIVATE,
+                SWP_NOMOVE, SWP_NOZORDER,
+            },
+        },
+    };
+
+    let initial = win32_client_size(hwnd)?;
+    let mut outer = RECT {
+        left: 0,
+        top: 0,
+        right: requested.width.max(1),
+        bottom: requested.height.max(1),
+    };
+    let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+    let has_menu = i32::from(!unsafe { GetMenu(hwnd) }.is_null());
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+    if unsafe { AdjustWindowRectExForDpi(&mut outer, style, has_menu, ex_style, dpi) } == 0 {
+        return Err("AdjustWindowRectExForDpi failed for the native resize".to_string());
+    }
+    if unsafe {
+        SetWindowPos(
+            hwnd,
+            null_mut(),
+            0,
+            0,
+            (outer.right - outer.left).max(1),
+            (outer.bottom - outer.top).max(1),
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    } == 0
+    {
+        return Err("SetWindowPos failed for the native resize".to_string());
+    }
+    Ok(initial)
+}
+
+#[cfg(all(windows, feature = "windows-win32"))]
 fn run_native_window_smoke_event_loop(
     windows: Vec<WindowSpec>,
     draw_plans: Vec<Option<NativeDrawPlan>>,
@@ -502,6 +568,7 @@ fn run_native_window_smoke_event_loop(
         .map(|handles| handles.main() as isize)
         .collect();
     let auto_close_after = Duration::from_millis(options.auto_close_after_ms.max(1));
+    let resize_request = options.native_window_resize;
     let screenshot_file = report.screenshot_file.clone();
     let screenshot_handle = handles[0].main() as isize;
     let typography_scale = draw_plans
@@ -523,18 +590,53 @@ fn run_native_window_smoke_event_loop(
             )
         })
         .unwrap_or_default();
+    let resize_delay = resize_request
+        .map(|_| Duration::from_millis(options.auto_close_after_ms.max(1) / 2))
+        .unwrap_or_default();
     let worker = thread::spawn(move || {
-        if !capture_delay.is_zero() {
-            thread::sleep(capture_delay);
+        if !resize_delay.is_zero() {
+            thread::sleep(resize_delay);
+        }
+        let resize_start = resize_request.map(|requested| {
+            let surface_events_before =
+                crate::windows_win32_host::windows_win32_window_view_input_report(
+                    screenshot_handle as _,
+                )
+                .map(|report| report.surface_change_count)
+                .unwrap_or(0);
+            request_win32_client_resize(screenshot_handle as _, requested)
+                .map(|initial| (requested, initial, surface_events_before))
+        });
+        let capture_after_resize = capture_delay.saturating_sub(resize_delay);
+        if !capture_after_resize.is_zero() {
+            thread::sleep(capture_after_resize);
         }
         let screenshot_result = screenshot_file.map(|path| {
             let result = capture_win32_hwnd_png(screenshot_handle as _, &path, typography_scale);
             (path, result)
         });
-        let remaining = auto_close_after.saturating_sub(capture_delay);
+        let elapsed = capture_delay.max(resize_delay);
+        let remaining = auto_close_after.saturating_sub(elapsed);
         if !remaining.is_zero() {
             thread::sleep(remaining);
         }
+        let resize_result = resize_start.map(|start| {
+            start.and_then(|(requested, initial, surface_events_before)| {
+                let final_size = win32_client_size(screenshot_handle as _)?;
+                let surface_events_after =
+                    crate::windows_win32_host::windows_win32_window_view_input_report(
+                        screenshot_handle as _,
+                    )
+                    .map(|report| report.surface_change_count)
+                    .unwrap_or(surface_events_before);
+                Ok((
+                    requested,
+                    initial,
+                    final_size,
+                    surface_events_after.saturating_sub(surface_events_before),
+                ))
+            })
+        });
         let process_memory =
             crate::desktop_runtime::capture_process_memory("native_window_before_teardown");
         for handle in close_handles {
@@ -543,7 +645,7 @@ fn run_native_window_smoke_event_loop(
                 PostMessageW(handle as _, WM_CLOSE, 0, 0);
             }
         }
-        (screenshot_result, process_memory)
+        (screenshot_result, process_memory, resize_result)
     });
 
     match crate::windows_win32_host::WindowsWin32MessageLoop::run_with_windows(&handles) {
@@ -559,8 +661,34 @@ fn run_native_window_smoke_event_loop(
     }
 
     match worker.join() {
-        Ok((screenshot_result, process_memory)) => {
+        Ok((screenshot_result, process_memory, resize_result)) => {
             report.process_memory_during_runtime = process_memory;
+            if let Some(resize_result) = resize_result {
+                match resize_result {
+                    Ok((requested_size, initial_size, final_size, native_event_count)) => {
+                        let applied = final_size == requested_size && native_event_count > 0;
+                        report.native_window_resize = Some(crate::NativeWindowResizeEvidence {
+                            backend: "win32_set_window_pos_wm_size",
+                            requested_size,
+                            initial_size: Some(initial_size),
+                            final_size: Some(final_size),
+                            native_event_count,
+                            applied,
+                        });
+                        if !applied {
+                            report.native_window_resize_error = Some(format!(
+                                "Win32 resize requested {}x{} but finished at {}x{} after {} WM_SIZE surface changes",
+                                requested_size.width,
+                                requested_size.height,
+                                final_size.width,
+                                final_size.height,
+                                native_event_count
+                            ));
+                        }
+                    }
+                    Err(error) => report.native_window_resize_error = Some(error),
+                }
+            }
             match screenshot_result {
                 Some((path, Ok(capture))) => {
                     report.screenshot_captured = true;
@@ -613,6 +741,20 @@ fn run_native_window_smoke_event_loop(
                 .screenshot_error
                 .clone()
                 .unwrap_or_else(|| "window screenshot was not captured".to_string()),
+        ));
+    }
+    if options.require_native_window_resize
+        && !report
+            .native_window_resize
+            .as_ref()
+            .is_some_and(|evidence| evidence.applied)
+    {
+        return Err(ZsuiError::host(
+            "native_window_smoke_resize",
+            report
+                .native_window_resize_error
+                .clone()
+                .unwrap_or_else(|| "the requested Win32 resize was not observed".to_string()),
         ));
     }
     if options.require_status_item && !report.status_item_created {

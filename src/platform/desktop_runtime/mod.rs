@@ -101,6 +101,8 @@ pub(super) struct DesktopNativeSmokeOutcome {
     pub(super) created_window_count: usize,
     pub(super) proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub(super) native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
+    pub(super) native_window_resize: Option<crate::NativeWindowResizeEvidence>,
+    pub(super) native_window_resize_error: Option<String>,
     pub(super) menu_command_routed: bool,
     pub(super) menu_surface_created: bool,
     pub(super) menu_surface_height: u32,
@@ -335,6 +337,8 @@ pub(super) fn complete_native_smoke(
     report.status_menu_popup_created = outcome.status_menu_popup_created;
     report.status_menu_popup_destroyed = outcome.status_menu_popup_destroyed;
     report.process_memory_during_runtime = outcome.process_memory;
+    report.native_window_resize = outcome.native_window_resize;
+    report.native_window_resize_error = outcome.native_window_resize_error;
     report.native_accessibility_backend = outcome.accessibility_backend;
     report.native_accessibility_node_count = outcome.accessibility_node_count;
     report.native_accessibility_action_count = outcome.accessibility_action_count;
@@ -407,6 +411,22 @@ pub(super) fn complete_native_smoke(
                 .unwrap_or_else(|| "window screenshot was not captured".to_string()),
         ));
     }
+    if options.require_native_window_resize
+        && !report
+            .native_window_resize
+            .as_ref()
+            .is_some_and(|evidence| evidence.applied)
+    {
+        return Err(ZsuiError::host(
+            "native_window_smoke_resize",
+            report
+                .native_window_resize_error
+                .clone()
+                .unwrap_or_else(|| {
+                    "the requested native window resize was not observed".to_string()
+                }),
+        ));
+    }
     if options.require_status_item && !report.status_item_created {
         return Err(ZsuiError::unsupported(
             "native_window_smoke_status_item",
@@ -448,6 +468,8 @@ mod tests {
                 created_window_count: 1,
                 proof_input_reports: Vec::new(),
                 native_view_capture: None,
+                native_window_resize: None,
+                native_window_resize_error: None,
                 menu_command_routed: false,
                 menu_surface_created: false,
                 menu_surface_height: 0,
@@ -494,6 +516,8 @@ mod tests {
                 created_window_count: 1,
                 proof_input_reports: Vec::new(),
                 native_view_capture: None,
+                native_window_resize: None,
+                native_window_resize_error: None,
                 menu_command_routed: false,
                 menu_surface_created: false,
                 menu_surface_height: 0,

@@ -165,6 +165,7 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub ui_command_ids: Vec<&'static str>,
     pub live_view_revision: u64,
     pub background_refresh_count: usize,
+    pub surface_change_count: usize,
     pub quit_requested: bool,
     pub unhandled_click_count: usize,
     pub focus_count: usize,
@@ -286,6 +287,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.ui_command_ids.extend(next.ui_command_ids);
         self.live_view_revision = self.live_view_revision.max(next.live_view_revision);
         self.background_refresh_count += next.background_refresh_count;
+        self.surface_change_count += next.surface_change_count;
         self.quit_requested |= next.quit_requested;
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
@@ -598,6 +600,11 @@ pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
         if !record.route.set_surface(bounds, dpi) {
             return true;
         }
+        record.report.surface_change_count = record.report.surface_change_count.saturating_add(1);
+        record.report.events.push(format!(
+            "win32_native_surface_resized:{}x{}",
+            bounds.width, bounds.height
+        ));
         record.route.take_pending_draw_plan()
     };
     if let Some(draw_plan) = draw_plan {

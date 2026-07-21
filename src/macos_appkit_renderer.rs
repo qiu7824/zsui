@@ -1277,6 +1277,33 @@ impl std::fmt::Debug for MacosAppKitDrawViewHost {
 }
 
 impl MacosAppKitDrawViewHost {
+    pub(crate) fn resize_native_window(
+        &self,
+        requested: crate::Size,
+    ) -> Result<(crate::Size, crate::Size), String> {
+        let window = self
+            .view
+            .window()
+            .ok_or_else(|| "the AppKit proof NSView is not attached to an NSWindow".to_string())?;
+        let logical_size = || {
+            let bounds = self.view.bounds();
+            crate::Size {
+                width: appkit_coordinate(bounds.size.width).max(1),
+                height: appkit_coordinate(bounds.size.height).max(1),
+            }
+        };
+        let initial = logical_size();
+        window.setContentSize(NSSize::new(
+            f64::from(requested.width.max(1)),
+            f64::from(requested.height.max(1)),
+        ));
+        self.view.layoutSubtreeIfNeeded();
+        self.view.setNeedsDisplay(true);
+        self.view.displayIfNeeded();
+        window.displayIfNeeded();
+        Ok((initial, logical_size()))
+    }
+
     pub(crate) fn accessibility_evidence(&self) -> Option<MacosAppKitAccessibilityEvidence> {
         #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
         if let Some(snapshot) = self.view.menu_flyout_accessibility_snapshot() {

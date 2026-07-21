@@ -101,6 +101,28 @@ jobs:
             --width 960 \
             --height 640 \
             --output target/native-proof/macos-15-arm64
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page catalog \
+            --theme light \
+            --width 1180 \
+            --height 780 \
+            --resize-width 800 \
+            --resize-height 520 \
+            --scenario resized-small \
+            --screenshot target/native-proof/macos-15-arm64/resized-small.png \
+            --report target/native-proof/macos-15-arm64/resized-small.json
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page catalog \
+            --theme light \
+            --width 960 \
+            --height 640 \
+            --resize-width 1180 \
+            --resize-height 780 \
+            --scenario resized-large \
+            --screenshot target/native-proof/macos-15-arm64/resized-large.png \
+            --report target/native-proof/macos-15-arm64/resized-large.json
           mkdir -p target/native-proof/macos-status-item
           ./target/release/examples/native_smoke_run \
             current \
@@ -152,6 +174,8 @@ jobs:
               "gallery-navigation-light",
               "gallery-feedback-light",
               "gallery-catalog-light",
+              "resized-small",
+              "resized-large",
               "notepad-interaction",
           )
           for stem in stems:
@@ -193,11 +217,11 @@ jobs:
               assert capture["pixel_height"] > 0
               assert capture["scale_factor"] > 0.0
               assert 0.75 <= capture["typography_scale"] <= 3.0
-              expected = (
-                  {"width": 1024, "height": 640}
-                  if stem.startswith("gallery-")
-                  else {"width": 960, "height": 640}
-              )
+              expected = {
+                  "resized-small": {"width": 800, "height": 520},
+                  "resized-large": {"width": 1180, "height": 780},
+                  "notepad-interaction": {"width": 960, "height": 640},
+              }.get(stem, {"width": 1024, "height": 640})
               assert proof["window"]["width"] == expected["width"]
               assert proof["window"]["height"] == expected["height"]
               assert proof["window"]["logical_width"] == expected["width"]
@@ -212,6 +236,18 @@ jobs:
                   capture["pixel_width"]
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
+              if stem in {"resized-small", "resized-large"}:
+                  resize = runtime["native_window_resize"]
+                  assert proof["scenario"] == stem
+                  assert proof["messages"] == []
+                  assert runtime["native_window_resize_required"] is True
+                  assert runtime["native_window_resize_error"] is None
+                  assert resize["backend"] == "appkit_set_content_size_window_did_resize"
+                  assert resize["requested_size"] == expected
+                  assert resize["final_size"] == expected
+                  assert resize["initial_size"] != expected
+                  assert resize["native_event_count"] >= 1
+                  assert resize["applied"] is True
               if stem == "gallery-feedback-light":
                   assert proof["messages"] == ["MenuFlyoutCommand", "MenuFlyoutOpenChanged", "OpenMenuFlyout"]
                   assert runtime["native_view_message_count"] >= 3
@@ -368,6 +404,32 @@ jobs:
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/gallery-inputs-dark.log
           dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/component_gallery \
+              --native-proof \
+              --page catalog \
+              --theme light \
+              --width 1180 \
+              --height 780 \
+              --resize-width 800 \
+              --resize-height 520 \
+              --scenario resized-small \
+              --screenshot target/native-proof/ubuntu-24.04-x86_64/resized-small.png \
+              --report target/native-proof/ubuntu-24.04-x86_64/resized-small.json \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/resized-small.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/component_gallery \
+              --native-proof \
+              --page catalog \
+              --theme light \
+              --width 960 \
+              --height 640 \
+              --resize-width 1180 \
+              --resize-height 780 \
+              --scenario resized-large \
+              --screenshot target/native-proof/ubuntu-24.04-x86_64/resized-large.png \
+              --report target/native-proof/ubuntu-24.04-x86_64/resized-large.json \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/resized-large.log
+          dbus-run-session -- xvfb-run -a \
             ./target/release/examples/zsui_notepad \
               --native-proof \
               --width 960 \
@@ -435,6 +497,8 @@ jobs:
               "gallery-navigation-light",
               "gallery-feedback-light",
               "gallery-catalog-light",
+              "resized-small",
+              "resized-large",
               "notepad-interaction",
           )
           for stem in stems:
@@ -478,11 +542,11 @@ jobs:
               assert capture["pixel_height"] > 0
               assert capture["scale_factor"] > 0.0
               assert 0.75 <= capture["typography_scale"] <= 3.0
-              expected = (
-                  {"width": 1180, "height": 780}
-                  if stem.startswith("gallery-")
-                  else {"width": 960, "height": 640}
-              )
+              expected = {
+                  "resized-small": {"width": 800, "height": 520},
+                  "resized-large": {"width": 1180, "height": 780},
+                  "notepad-interaction": {"width": 960, "height": 640},
+              }.get(stem, {"width": 1180, "height": 780})
               assert proof["window"]["width"] == expected["width"]
               assert proof["window"]["height"] == expected["height"]
               assert proof["window"]["logical_width"] == expected["width"]
@@ -497,6 +561,18 @@ jobs:
                   capture["pixel_width"]
                   - capture["logical_width"] * capture["scale_factor"]
               ) <= 1.0
+              if stem in {"resized-small", "resized-large"}:
+                  resize = runtime["native_window_resize"]
+                  assert proof["scenario"] == stem
+                  assert proof["messages"] == []
+                  assert runtime["native_window_resize_required"] is True
+                  assert runtime["native_window_resize_error"] is None
+                  assert resize["backend"] == "winit_request_inner_size_window_event"
+                  assert resize["requested_size"] == expected
+                  assert resize["final_size"] == expected
+                  assert resize["initial_size"] != expected
+                  assert resize["native_event_count"] >= 1
+                  assert resize["applied"] is True
               if stem == "gallery-feedback-light":
                   assert proof["messages"] == ["MenuFlyoutCommand", "MenuFlyoutOpenChanged", "OpenMenuFlyout"]
                   assert runtime["native_view_message_count"] >= 3
@@ -806,6 +882,31 @@ jobs:
           PY
           set -e
           wait "$gallery_pid"
+
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page catalog \
+            --theme light \
+            --width 1180 \
+            --height 780 \
+            --resize-width 800 \
+            --resize-height 520 \
+            --scenario resized-small \
+            --screenshot "$root/resized-small.png" \
+            --report "$root/resized-small.json" \
+            >"$root/resized-small.log" 2>&1
+          ./target/release/examples/component_gallery \
+            --native-proof \
+            --page catalog \
+            --theme light \
+            --width 960 \
+            --height 640 \
+            --resize-width 1180 \
+            --resize-height 780 \
+            --scenario resized-large \
+            --screenshot "$root/resized-large.png" \
+            --report "$root/resized-large.json" \
+            >"$root/resized-large.log" 2>&1
 
           # Keep this application's adapter inactive while the scripted proof
           # interaction opens the nested MenuFlyout. Enabling AT-SPI afterwards
@@ -1137,6 +1238,8 @@ jobs:
           gallery = json.loads((root / "gallery-inputs-light.json").read_text("utf-8"))
           feedback = json.loads((root / "gallery-feedback-light.json").read_text("utf-8"))
           notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
+          resized_small = json.loads((root / "resized-small.json").read_text("utf-8"))
+          resized_large = json.loads((root / "resized-large.json").read_text("utf-8"))
           atspi = json.loads((root / "atspi-proof.json").read_text("utf-8"))
           menu_atspi = json.loads(
               (root / "menu-flyout-atspi-proof.json").read_text("utf-8")
@@ -1145,7 +1248,7 @@ jobs:
               (root / "notepad-atspi-proof.json").read_text("utf-8")
           )
 
-          for proof in (gallery, feedback, notepad):
+          for proof in (gallery, feedback, notepad, resized_small, resized_large):
               capture = proof["runtime"]["native_view_capture"]
               assert proof["schema"] == "zsui.native-proof/v1"
               assert proof["platform"] == "linux"
@@ -1154,6 +1257,25 @@ jobs:
               assert capture["display_server"] == "wayland"
               assert proof["errors"] == []
               assert proof["unhandled_commands"] == []
+
+          for proof, expected in (
+              (resized_small, {"width": 800, "height": 520}),
+              (resized_large, {"width": 1180, "height": 780}),
+          ):
+              runtime = proof["runtime"]
+              resize = runtime["native_window_resize"]
+              assert proof["scenario"] in {"resized-small", "resized-large"}
+              assert proof["messages"] == []
+              assert proof["window"]["width"] == expected["width"]
+              assert proof["window"]["height"] == expected["height"]
+              assert runtime["native_window_resize_required"] is True
+              assert runtime["native_window_resize_error"] is None
+              assert resize["backend"] == "winit_request_inner_size_window_event"
+              assert resize["requested_size"] == expected
+              assert resize["final_size"] == expected
+              assert resize["initial_size"] != expected
+              assert resize["native_event_count"] >= 1
+              assert resize["applied"] is True
 
           for proof in (gallery, feedback, notepad):
               assert proof["runtime"]["native_accessibility_backend"] == "accesskit_atspi"
@@ -1215,6 +1337,8 @@ jobs:
           assert (
               root / "notepad-interaction.png"
           ).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+          assert (root / "resized-small.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+          assert (root / "resized-large.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
       - name: Upload Wayland, AT-SPI and menu proof
         if: always()

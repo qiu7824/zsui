@@ -41,6 +41,10 @@ struct ZsuiAppKitRuntimeDelegateIvars {
     capture_result: RefCell<Option<Result<crate::NativeViewCaptureEvidence, String>>>,
     proof_inputs: Vec<crate::NativeViewSmokeInput>,
     proof_input_reports: RefCell<Vec<crate::native::NativeViewInputDispatchReport>>,
+    proof_resize: Option<crate::Size>,
+    proof_resize_event_count: Cell<usize>,
+    proof_resize_evidence: RefCell<Option<crate::NativeWindowResizeEvidence>>,
+    proof_resize_error: RefCell<Option<String>>,
 }
 
 define_class!(
@@ -71,6 +75,16 @@ define_class!(
             }
         }
 
+        #[unsafe(method(windowDidResize:))]
+        fn window_did_resize(&self, _notification: &NSNotification) {
+            self.ivars().proof_resize_event_count.set(
+                self.ivars()
+                    .proof_resize_event_count
+                    .get()
+                    .saturating_add(1),
+            );
+        }
+
         #[unsafe(method(windowDidMiniaturize:))]
         fn window_did_miniaturize(&self, notification: &NSNotification) {
             self.set_window_suspended(notification, true);
@@ -86,6 +100,41 @@ define_class!(
 impl ZsuiAppKitRuntimeDelegate {
     fn run_proof_inputs_and_capture(&self) {
         if let Some(handler) = self.ivars().capture_handler.as_ref() {
+            if let Some(requested_size) = self.ivars().proof_resize {
+                let events_before = self.ivars().proof_resize_event_count.get();
+                match handler.resize_native_window(requested_size) {
+                    Ok((initial_size, final_size)) => {
+                        let native_event_count = self
+                            .ivars()
+                            .proof_resize_event_count
+                            .get()
+                            .saturating_sub(events_before);
+                        let applied = final_size == requested_size && native_event_count > 0;
+                        *self.ivars().proof_resize_evidence.borrow_mut() =
+                            Some(crate::NativeWindowResizeEvidence {
+                                backend: "appkit_set_content_size_window_did_resize",
+                                requested_size,
+                                initial_size: Some(initial_size),
+                                final_size: Some(final_size),
+                                native_event_count,
+                                applied,
+                            });
+                        if !applied {
+                            *self.ivars().proof_resize_error.borrow_mut() = Some(format!(
+                                "AppKit resize requested {}x{} but finished at {}x{} after {} windowDidResize notifications",
+                                requested_size.width,
+                                requested_size.height,
+                                final_size.width,
+                                final_size.height,
+                                native_event_count
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        *self.ivars().proof_resize_error.borrow_mut() = Some(error);
+                    }
+                }
+            }
             *self.ivars().proof_input_reports.borrow_mut() =
                 handler.dispatch_proof_inputs(&self.ivars().proof_inputs);
         }
@@ -117,6 +166,7 @@ impl ZsuiAppKitRuntimeDelegate {
         capture_handler: Option<crate::macos_appkit_renderer::MacosAppKitDrawViewHost>,
         capture_path: Option<PathBuf>,
         proof_inputs: Vec<crate::NativeViewSmokeInput>,
+        proof_resize: Option<crate::Size>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitRuntimeDelegateIvars {
             open_windows: Cell::new(open_windows),
@@ -127,6 +177,10 @@ impl ZsuiAppKitRuntimeDelegate {
             capture_result: RefCell::new(None),
             proof_inputs,
             proof_input_reports: RefCell::new(Vec::new()),
+            proof_resize,
+            proof_resize_event_count: Cell::new(0),
+            proof_resize_evidence: RefCell::new(None),
+            proof_resize_error: RefCell::new(None),
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -137,6 +191,8 @@ pub(crate) struct MacosAppKitNativeWindowRunReport {
     pub created_window_count: usize,
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
+    pub native_window_resize: Option<crate::NativeWindowResizeEvidence>,
+    pub native_window_resize_error: Option<String>,
     pub menu_command_routed: bool,
     pub status_item_created_count: usize,
     pub status_menu_native_command_count: usize,
@@ -154,12 +210,15 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     auto_close_after_ms: Option<u64>,
     capture_path: Option<&Path>,
     proof_inputs: &[crate::NativeViewSmokeInput],
+    proof_resize: Option<crate::Size>,
 ) -> ZsuiResult<MacosAppKitNativeWindowRunReport> {
     if specs.is_empty() && trays.is_empty() {
         return Ok(MacosAppKitNativeWindowRunReport {
             created_window_count: 0,
             native_view_capture: None,
             proof_input_reports: Vec::new(),
+            native_window_resize: None,
+            native_window_resize_error: None,
             menu_command_routed: false,
             status_item_created_count: 0,
             status_menu_native_command_count: 0,
@@ -271,6 +330,7 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         capture_handler,
         capture_path.map(Path::to_path_buf),
         proof_inputs.to_vec(),
+        proof_resize,
     );
     let application_delegate: &ProtocolObject<dyn NSApplicationDelegate> =
         ProtocolObject::from_ref(&*delegate);
@@ -307,6 +367,8 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let native_view_capture = delegate.ivars().capture_result.borrow_mut().take();
     let proof_input_reports =
         std::mem::take(&mut *delegate.ivars().proof_input_reports.borrow_mut());
+    let native_window_resize = delegate.ivars().proof_resize_evidence.borrow_mut().take();
+    let native_window_resize_error = delegate.ivars().proof_resize_error.borrow_mut().take();
     let accessibility_evidence = delegate
         .ivars()
         .capture_handler
@@ -320,6 +382,8 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
         created_window_count: ids.len(),
         native_view_capture,
         proof_input_reports,
+        native_window_resize,
+        native_window_resize_error,
         menu_command_routed,
         status_item_created_count,
         status_menu_native_command_count,

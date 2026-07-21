@@ -394,6 +394,9 @@ impl WindowsWin32ViewInputRoute {
             app_command_count: shared.app_command_count,
             ui_command_ids: shared.ui_command_ids,
             live_view_revision: self.shared_runtime.live_view_revision(),
+            surface_change_count: usize::from(
+                shared.surface_changed && matches!(kind, WindowsSharedInputKind::Surface),
+            ),
             quit_requested: shared.quit_requested,
             focus_count: usize::from(
                 shared.focus_visual_changed && !matches!(kind, WindowsSharedInputKind::Blur),
