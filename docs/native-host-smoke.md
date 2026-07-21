@@ -611,7 +611,9 @@ edges; it does not mistake Core Text/Pango/Cosmic Text's strong caret for the
 only insertion edge at a bidi boundary. These scripted routes do not replace
 real IME candidate window testing. Resize screenshot artifacts remain a later
 runtime gate. The generic proof host rejects report-count mismatches so a
-separate native-menu command cannot shift input-to-caret attribution. The
+separate native-menu command cannot shift input-to-caret attribution. Native UI
+Proof run `29801544191` passed this exact trace on AppKit, X11 and Weston
+Wayland. The
 `--date-picker-view` path also posts real
 pointer down/up input through the Win32 host and records
 `native_view_pointer_visual_change_count`; a nonzero count proves that the

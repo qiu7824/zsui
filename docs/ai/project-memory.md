@@ -316,6 +316,10 @@ history remain authoritative for implementation status.
   levels before the shared navigation code consumes them. Backend proof reports
   must correspond exactly to scripted inputs; native menu acceptance is tracked
   separately and must never be prepended to that positional report stream.
+  Native UI Proof run `29801544191` on commit `c2c775c` passed the enforced
+  CJK/RTL script traits and relative `1, 4, 3, 2` caret/selection trace on real
+  AppKit, X11 and Weston Wayland hosts. CI run `29801544136` and UI Memory
+  Comparison run `29801544149` also passed for the same commit.
 - Native typography is a backend-resolved `NativeTypographyProfile`, not a
   demo-owned type ramp. Native layout, paint and proof must share the resolved
   families, role metrics, accessibility scale and rasterization identity.
