@@ -47,10 +47,14 @@ history remain authoritative for implementation status.
   deterministic preserved/added/reset report. The native input runtime keeps
   focus, text selection and text-editor viewport for compatible stable IDs and
   clears stale focus, selection, drag and IME state after removal or control
-  class changes. It does not add a reactive runtime, browser shell or global
-  widget registry. Full component/value-action coverage, general-scroll and
-  advanced-control state retention, fixed AppKit/Linux proof, AI handoff and
-  release embedding remain unfinished.
+  class changes. Text, toggle and slider actions capture node/action/property
+  identities in per-control `ViewMessageMapper` callbacks, carry typed JSON
+  payloads and update explicit property bindings across View rebuilds. Ordinary
+  function-pointer handlers remain allocation-free; shared owned closures are
+  allocated only through explicit `*_with` builders. This does not add a
+  reactive runtime, browser shell or global widget registry. Full component
+  coverage, general-scroll and advanced-control state retention, fixed
+  AppKit/Linux proof, AI handoff and release embedding remain unfinished.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing

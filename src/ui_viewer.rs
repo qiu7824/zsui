@@ -25,6 +25,8 @@ pub const ZSUI_UI_VIEWER_DEFAULT_POLL_INTERVAL_MS: u64 = 250;
 pub struct UiViewerAction {
     pub node_id: String,
     pub binding: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property_binding: Option<String>,
     pub payload: Value,
 }
 
@@ -56,6 +58,11 @@ pub fn ui_viewer_update(state: &mut UiViewerState, message: UiViewerMessage, _cx
     match message {
         UiViewerMessage::Action(action) => {
             const MAX_ACTION_HISTORY: usize = 64;
+            if let Some(binding) = &action.property_binding {
+                state
+                    .properties
+                    .insert(binding.clone(), action.payload.clone());
+            }
             if state.actions.len() == MAX_ACTION_HISTORY {
                 state.actions.remove(0);
             }
@@ -411,24 +418,103 @@ fn compile_node(node: &UiNode, state: &UiViewerState) -> ViewNode<UiViewerMessag
                 control = control.on_click(UiViewerMessage::Action(UiViewerAction {
                     node_id: node.id.as_str().to_owned(),
                     binding: binding.clone(),
+                    property_binding: None,
                     payload: Value::Null,
                 }));
             }
             control
         }
-        "toggle_button" => toggle_button(
-            string_property(node, state, "label", "Toggle"),
-            bool_property(node, state, "checked", false),
-        ),
-        "checkbox" => checkbox(
-            string_property(node, state, "label", "Check box"),
-            bool_property(node, state, "checked", false),
-        ),
-        "toggle" => toggle(bool_property(node, state, "checked", false)),
-        "textbox" if bool_property(node, state, "multiline", false) => {
-            text_editor(string_property(node, state, "value", ""))
+        "toggle_button" => {
+            let mut control = toggle_button(
+                string_property(node, state, "label", "Toggle"),
+                bool_property(node, state, "checked", false),
+            );
+            if let Some(binding) = node.action_bindings.get("toggle") {
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("checked").cloned();
+                control = control.on_toggle_with(move |checked| {
+                    UiViewerMessage::Action(UiViewerAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(checked),
+                    })
+                });
+            }
+            control
         }
-        "textbox" => textbox(string_property(node, state, "value", "")),
+        "checkbox" => {
+            let mut control = checkbox(
+                string_property(node, state, "label", "Check box"),
+                bool_property(node, state, "checked", false),
+            );
+            if let Some(binding) = node.action_bindings.get("toggle") {
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("checked").cloned();
+                control = control.on_toggle_with(move |checked| {
+                    UiViewerMessage::Action(UiViewerAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(checked),
+                    })
+                });
+            }
+            control
+        }
+        "toggle" => {
+            let mut control = toggle(bool_property(node, state, "checked", false));
+            if let Some(binding) = node.action_bindings.get("toggle") {
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("checked").cloned();
+                control = control.on_toggle_with(move |checked| {
+                    UiViewerMessage::Action(UiViewerAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(checked),
+                    })
+                });
+            }
+            control
+        }
+        "textbox" if bool_property(node, state, "multiline", false) => {
+            let mut control = text_editor(string_property(node, state, "value", ""));
+            if let Some(binding) = node.action_bindings.get("change") {
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("value").cloned();
+                control = control.on_change_with(move |value| {
+                    UiViewerMessage::Action(UiViewerAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::String(value),
+                    })
+                });
+            }
+            control
+        }
+        "textbox" => {
+            let mut control = textbox(string_property(node, state, "value", ""));
+            if let Some(binding) = node.action_bindings.get("change") {
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("value").cloned();
+                control = control.on_change_with(move |value| {
+                    UiViewerMessage::Action(UiViewerAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::String(value),
+                    })
+                });
+            }
+            control
+        }
         "radio_button" => {
             let mut control = radio_button(
                 string_property(node, state, "label", "Option"),
@@ -438,15 +524,32 @@ fn compile_node(node: &UiNode, state: &UiViewerState) -> ViewNode<UiViewerMessag
                 control = control.on_choose(UiViewerMessage::Action(UiViewerAction {
                     node_id: node.id.as_str().to_owned(),
                     binding: binding.clone(),
+                    property_binding: None,
                     payload: Value::Null,
                 }));
             }
             control
         }
-        "slider" => slider(
-            number_property(node, state, "value", 0.0) as f32,
-            SliderRange::new(0.0, 100.0),
-        ),
+        "slider" => {
+            let mut control = slider(
+                number_property(node, state, "value", 0.0) as f32,
+                SliderRange::new(0.0, 100.0),
+            );
+            if let Some(binding) = node.action_bindings.get("slide") {
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("value").cloned();
+                control = control.on_slide_with(move |value| {
+                    UiViewerMessage::Action(UiViewerAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::from(value),
+                    })
+                });
+            }
+            control
+        }
         "progress_bar" => progress_bar(
             number_property(node, state, "value", 0.0) as f32,
             ProgressRange::new(0.0, 100.0),
@@ -923,6 +1026,126 @@ mod tests {
         assert!(reload.state_resets.iter().any(|reset| {
             reset.node_id == "editor" && reset.reason == UiViewerStateResetReason::ComponentChanged
         }));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn viewer_routes_value_actions_through_owned_typed_callbacks() {
+        let directory = fixture_directory("value-actions");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("actions.json");
+        let binding_path = directory.join("actions.bindings.json");
+        fs::write(
+            &document_path,
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "root",
+                "component": "stack",
+                "children": [
+                  {
+                    "id": "name",
+                    "component": "textbox",
+                    "property_bindings": { "value": "name" },
+                    "action_bindings": { "change": "name_changed" }
+                  },
+                  {
+                    "id": "dark",
+                    "component": "toggle",
+                    "property_bindings": { "checked": "dark" },
+                    "action_bindings": { "toggle": "dark_changed" }
+                  },
+                  {
+                    "id": "volume",
+                    "component": "slider",
+                    "property_bindings": { "value": "volume" },
+                    "action_bindings": { "slide": "volume_changed" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            r#"{
+              "properties": {
+                "name": "string",
+                "dark": "boolean",
+                "volume": "number"
+              },
+              "actions": {
+                "name_changed": "string",
+                "dark_changed": "boolean",
+                "volume_changed": "number"
+              }
+            }"#,
+        )
+        .unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        let live_source = source.clone();
+        let actions = Arc::new(Mutex::new(Vec::new()));
+        let captured_actions = Arc::clone(&actions);
+        let surface = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 400,
+            height: 240,
+        };
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::with_properties(BTreeMap::from([
+                ("name".to_owned(), Value::String("A".to_owned())),
+                ("dark".to_owned(), Value::Bool(false)),
+                ("volume".to_owned(), Value::from(10.0)),
+            ])),
+            move |state| live_source.view(state),
+            move |state, message, cx| {
+                let UiViewerMessage::Action(action) = &message;
+                captured_actions.lock().unwrap().push(action.clone());
+                ui_viewer_update(state, message, cx);
+            },
+            surface,
+            crate::Dpi::standard(),
+        );
+        let name = crate::ui_document::UiNodeId::new("name")
+            .unwrap()
+            .widget_id();
+        let dark = crate::ui_document::UiNodeId::new("dark")
+            .unwrap()
+            .widget_id();
+        let volume = crate::ui_document::UiNodeId::new("volume")
+            .unwrap()
+            .widget_id();
+
+        let text_update = live_view.dispatch_event(&crate::ViewEvent::TextChanged {
+            widget: name,
+            value: "AB".to_owned(),
+        });
+        let toggle_update = live_view.dispatch_event(&crate::ViewEvent::Toggled {
+            widget: dark,
+            checked: true,
+        });
+        let slider_update = live_view.dispatch_event(&crate::ViewEvent::SliderChanged {
+            widget: volume,
+            value: 73.0,
+        });
+
+        assert_eq!(text_update.message_count, 1);
+        assert_eq!(toggle_update.message_count, 1);
+        assert_eq!(slider_update.message_count, 1);
+        assert_eq!(live_view.widget_text_value(name).as_deref(), Some("AB"));
+        assert_eq!(live_view.widget_checked_value(dark), Some(true));
+        assert_eq!(live_view.widget_slider_state(volume).unwrap().0, 73.0);
+        let actions = actions.lock().unwrap();
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[0].binding, "name_changed");
+        assert_eq!(actions[0].property_binding.as_deref(), Some("name"));
+        assert_eq!(actions[0].payload, Value::String("AB".to_owned()));
+        assert_eq!(actions[1].binding, "dark_changed");
+        assert_eq!(actions[1].payload, Value::Bool(true));
+        assert_eq!(actions[2].binding, "volume_changed");
+        assert_eq!(actions[2].payload, Value::from(73.0));
+        drop(actions);
         fs::remove_dir_all(directory).unwrap();
     }
 

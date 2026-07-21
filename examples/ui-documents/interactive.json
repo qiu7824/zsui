@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "interactive-root",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding": 20.0,
+      "gap": 12.0
+    },
+    "children": [
+      {
+        "id": "interactive-title",
+        "component": "text",
+        "properties": {
+          "text": "Interactive bindings",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "profile-name",
+        "component": "textbox",
+        "property_bindings": {
+          "value": "profile_name"
+        },
+        "action_bindings": {
+          "change": "profile_name_changed"
+        },
+        "accessibility": {
+          "role": "textbox",
+          "label": "Profile name"
+        }
+      },
+      {
+        "id": "dark-mode",
+        "component": "checkbox",
+        "properties": {
+          "label": "Dark mode"
+        },
+        "property_bindings": {
+          "checked": "dark_mode"
+        },
+        "action_bindings": {
+          "toggle": "dark_mode_changed"
+        }
+      },
+      {
+        "id": "volume",
+        "component": "slider",
+        "property_bindings": {
+          "value": "volume"
+        },
+        "action_bindings": {
+          "slide": "volume_changed"
+        },
+        "accessibility": {
+          "role": "slider",
+          "label": "Volume"
+        }
+      }
+    ]
+  }
+}

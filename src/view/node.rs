@@ -7,6 +7,99 @@ impl WidgetId {
     }
 }
 
+/// An owned, typed value-to-message callback used by controls that emit values.
+///
+/// Function-pointer handlers remain allocation-free. Capturing callbacks are
+/// stored only when an application opts into a `*_with` builder.
+#[cfg(any(
+    feature = "textbox",
+    feature = "checkbox",
+    feature = "toggle",
+    feature = "toggle-button",
+    feature = "slider"
+))]
+#[doc(hidden)]
+pub struct ViewMessageMapper<Input, Msg> {
+    mapper: ViewMessageMapperKind<Input, Msg>,
+}
+
+#[cfg(any(
+    feature = "textbox",
+    feature = "checkbox",
+    feature = "toggle",
+    feature = "toggle-button",
+    feature = "slider"
+))]
+enum ViewMessageMapperKind<Input, Msg> {
+    Function(fn(Input) -> Msg),
+    Shared(Arc<dyn Fn(Input) -> Msg + Send + Sync + 'static>),
+}
+
+#[cfg(any(
+    feature = "textbox",
+    feature = "checkbox",
+    feature = "toggle",
+    feature = "toggle-button",
+    feature = "slider"
+))]
+impl<Input, Msg> ViewMessageMapper<Input, Msg> {
+    fn from_function(mapper: fn(Input) -> Msg) -> Self {
+        Self {
+            mapper: ViewMessageMapperKind::Function(mapper),
+        }
+    }
+
+    fn from_shared(
+        mapper: impl Fn(Input) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            mapper: ViewMessageMapperKind::Shared(Arc::new(mapper)),
+        }
+    }
+
+    pub(crate) fn map(&self, input: Input) -> Msg {
+        match &self.mapper {
+            ViewMessageMapperKind::Function(mapper) => mapper(input),
+            ViewMessageMapperKind::Shared(mapper) => mapper(input),
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "textbox",
+    feature = "checkbox",
+    feature = "toggle",
+    feature = "toggle-button",
+    feature = "slider"
+))]
+impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
+    fn clone(&self) -> Self {
+        Self {
+            mapper: match &self.mapper {
+                ViewMessageMapperKind::Function(mapper) => {
+                    ViewMessageMapperKind::Function(*mapper)
+                }
+                ViewMessageMapperKind::Shared(mapper) => {
+                    ViewMessageMapperKind::Shared(Arc::clone(mapper))
+                }
+            },
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "textbox",
+    feature = "checkbox",
+    feature = "toggle",
+    feature = "toggle-button",
+    feature = "slider"
+))]
+impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ViewMessageMapper(..)")
+    }
+}
+
 const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 1 << 63;
 const AUTOMATIC_WIDGET_ID_MASK: u64 = AUTOMATIC_WIDGET_ID_NAMESPACE - 1;
 const AUTOMATIC_WIDGET_ID_PROBE: u64 = 0x1e37_79b9_7f4a_7c15;
@@ -602,14 +695,14 @@ pub enum ViewNodeKind<Msg> {
     ToggleButton {
         label: String,
         checked: bool,
-        on_toggle: Option<fn(bool) -> Msg>,
+        on_toggle: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "textbox")]
     Textbox {
         value: String,
         multiline: bool,
         wrap: crate::TextWrap,
-        on_change: Option<fn(String) -> Msg>,
+        on_change: Option<ViewMessageMapper<String, Msg>>,
         on_selection_change: Option<fn(ZsTextSelection) -> Msg>,
     },
     #[cfg(feature = "password-box")]
@@ -622,12 +715,12 @@ pub enum ViewNodeKind<Msg> {
     Checkbox {
         label: String,
         checked: bool,
-        on_toggle: Option<fn(bool) -> Msg>,
+        on_toggle: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "toggle")]
     Toggle {
         checked: bool,
-        on_toggle: Option<fn(bool) -> Msg>,
+        on_toggle: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "radio")]
     RadioButton {
@@ -639,7 +732,7 @@ pub enum ViewNodeKind<Msg> {
     Slider {
         value: f32,
         range: SliderRange,
-        on_slide: Option<fn(f32) -> Msg>,
+        on_slide: Option<ViewMessageMapper<f32, Msg>>,
     },
     #[cfg(feature = "number-box")]
     NumberBox {
@@ -1277,7 +1370,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "textbox")]
     pub fn on_change(mut self, message: fn(String) -> Msg) -> Self {
         if let ViewNodeKind::Textbox { on_change, .. } = &mut self.kind {
-            *on_change = Some(message);
+            *on_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn on_change_with(
+        mut self,
+        message: impl Fn(String) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Textbox { on_change, .. } = &mut self.kind {
+            *on_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1329,6 +1433,30 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_toggle(mut self, message: fn(bool) -> Msg) -> Self {
         match &mut self.kind {
             #[cfg(feature = "toggle-button")]
+            ViewNodeKind::ToggleButton { on_toggle, .. } => {
+                *on_toggle = Some(ViewMessageMapper::from_function(message));
+            }
+            #[cfg(feature = "checkbox")]
+            ViewNodeKind::Checkbox { on_toggle, .. } => {
+                *on_toggle = Some(ViewMessageMapper::from_function(message));
+            }
+            #[cfg(feature = "toggle")]
+            ViewNodeKind::Toggle { on_toggle, .. } => {
+                *on_toggle = Some(ViewMessageMapper::from_function(message));
+            }
+            _ => {}
+        }
+        self
+    }
+
+    #[cfg(any(feature = "checkbox", feature = "toggle", feature = "toggle-button"))]
+    pub fn on_toggle_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        let message = ViewMessageMapper::from_shared(message);
+        match &mut self.kind {
+            #[cfg(feature = "toggle-button")]
             ViewNodeKind::ToggleButton { on_toggle, .. } => *on_toggle = Some(message),
             #[cfg(feature = "checkbox")]
             ViewNodeKind::Checkbox { on_toggle, .. } => *on_toggle = Some(message),
@@ -1342,7 +1470,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "slider")]
     pub fn on_slide(mut self, message: fn(f32) -> Msg) -> Self {
         if let ViewNodeKind::Slider { on_slide, .. } = &mut self.kind {
-            *on_slide = Some(message);
+            *on_slide = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "slider")]
+    pub fn on_slide_with(
+        mut self,
+        message: impl Fn(f32) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Slider { on_slide, .. } = &mut self.kind {
+            *on_slide = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

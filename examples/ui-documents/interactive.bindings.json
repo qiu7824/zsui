@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "profile_name": "string",
+    "dark_mode": "boolean",
+    "volume": "number"
+  },
+  "actions": {
+    "profile_name_changed": "string",
+    "dark_mode_changed": "boolean",
+    "volume_changed": "number"
+  }
+}

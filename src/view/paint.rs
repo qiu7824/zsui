@@ -1340,7 +1340,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *checked = *next_checked;
                     if let Some(message) = on_toggle {
-                        cx.emit(message(*next_checked));
+                        cx.emit(message.map(*next_checked));
                     }
                 }
                 #[cfg(feature = "textbox")]
@@ -1354,7 +1354,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *value = next_value.clone();
                     if let Some(message) = on_change {
-                        cx.emit(message(next_value.clone()));
+                        cx.emit(message.map(next_value.clone()));
                     }
                 }
                 #[cfg(feature = "textbox")]
@@ -1373,7 +1373,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *value = next_value.clone();
                     if let Some(message) = on_change {
-                        cx.emit(message(next_value.clone()));
+                        cx.emit(message.map(next_value.clone()));
                     }
                     if let Some(message) = on_selection_change {
                         cx.emit(message(*selection));
@@ -1757,7 +1757,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *checked = *next_checked;
                     if let Some(message) = on_toggle {
-                        cx.emit(message(*next_checked));
+                        cx.emit(message.map(*next_checked));
                     }
                 }
                 #[cfg(feature = "toggle")]
@@ -1770,7 +1770,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *checked = *next_checked;
                     if let Some(message) = on_toggle {
-                        cx.emit(message(*next_checked));
+                        cx.emit(message.map(*next_checked));
                     }
                 }
                 #[cfg(feature = "slider")]
@@ -1786,7 +1786,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *value = range.snap(*next_value);
                     if let Some(message) = on_slide {
-                        cx.emit(message(*value));
+                        cx.emit(message.map(*value));
                     }
                 }
                 #[cfg(feature = "number-box")]

@@ -692,6 +692,15 @@ pub use view::toggle;
 pub use view::toggle_button;
 #[cfg(feature = "tree")]
 pub use view::tree_view;
+#[cfg(any(
+    feature = "textbox",
+    feature = "checkbox",
+    feature = "toggle",
+    feature = "toggle-button",
+    feature = "slider"
+))]
+#[doc(hidden)]
+pub use view::ViewMessageMapper;
 #[cfg(feature = "tooltip")]
 pub use view::ViewTooltipTarget;
 #[cfg(feature = "date-picker")]
