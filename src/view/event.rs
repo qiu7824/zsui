@@ -1000,6 +1000,7 @@ pub struct ViewLayoutCx {
     pub bounds: Rect,
     pub dpi: Dpi,
     pub(crate) typography_scale_per_mille: u16,
+    depth: usize,
 }
 
 impl ViewLayoutCx {
@@ -1009,7 +1010,21 @@ impl ViewLayoutCx {
             dpi,
             typography_scale_per_mille:
                 crate::render_protocol::default_typography_scale_per_mille(),
+            depth: 0,
         }
+    }
+
+    pub(crate) fn child(self, bounds: Rect) -> Self {
+        Self {
+            bounds,
+            dpi: self.dpi,
+            typography_scale_per_mille: self.typography_scale_per_mille,
+            depth: self.depth.saturating_add(1),
+        }
+    }
+
+    pub(crate) const fn is_root(self) -> bool {
+        self.depth == 0
     }
 
     pub(crate) fn with_typography_scale(mut self, scale: f32) -> Self {

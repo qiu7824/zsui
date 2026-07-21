@@ -173,6 +173,46 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn layout_assigns_stable_distinct_ids_without_overwriting_explicit_ids() {
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 120,
+        };
+        let mut first = column([
+            button("First").on_click(Msg::SaveClicked),
+            button("Second").on_click(Msg::SaveClicked),
+        ]);
+        first.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        let first_ids = first
+            .children
+            .iter()
+            .map(|child| child.id.expect("interactive child should receive an ID"))
+            .collect::<Vec<_>>();
+        assert_ne!(first_ids[0], first_ids[1]);
+
+        let mut rebuilt = column([
+            button("First").on_click(Msg::SaveClicked),
+            button("Second").on_click(Msg::SaveClicked),
+        ]);
+        rebuilt.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        assert_eq!(rebuilt.children[0].id, Some(first_ids[0]));
+        assert_eq!(rebuilt.children[1].id, Some(first_ids[1]));
+
+        let mut collision = column([
+            button("Explicit")
+                .id(first_ids[1])
+                .on_click(Msg::SaveClicked),
+            button("Automatic").on_click(Msg::SaveClicked),
+        ]);
+        collision.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        assert_eq!(collision.children[0].id, Some(first_ids[1]));
+        assert_ne!(collision.children[1].id, Some(first_ids[1]));
+    }
+
+    #[test]
     #[cfg(feature = "canvas")]
     fn canvas_layout_paint_hit_target_and_typed_activation_share_one_node() {
         let canvas_id = WidgetId::new(8);
@@ -3669,15 +3709,12 @@ mod tests {
             value: u32,
         }
 
-        let button_id = WidgetId::new(90);
         let runtime = live_view_runtime(
             CounterState { value: 0 },
             move |state| {
                 column([
                     text(format!("Count: {}", state.value)),
-                    button("Increment")
-                        .id(button_id)
-                        .on_click(CounterMsg::Increment),
+                    button("Increment").on_click(CounterMsg::Increment),
                 ])
             },
             |state, message, cx| match message {
@@ -3700,6 +3737,13 @@ mod tests {
             command,
             NativeDrawCommand::Text(text) if text.text == "Count: 0"
         )));
+        let button_id = runtime
+            .interaction_plan()
+            .hit_targets
+            .iter()
+            .find(|target| target.kind == ViewHitTargetKind::Button)
+            .expect("id-less button should expose an automatic hit target")
+            .widget;
 
         let update = runtime.dispatch_event(&ViewEvent::Click { widget: button_id });
 
@@ -3714,6 +3758,16 @@ mod tests {
             command,
             NativeDrawCommand::Text(text) if text.text == "Count: 1"
         )));
+        assert_eq!(
+            runtime
+                .interaction_plan()
+                .hit_targets
+                .iter()
+                .find(|target| target.kind == ViewHitTargetKind::Button)
+                .map(|target| target.widget),
+            Some(button_id),
+            "the automatic ID must survive a same-shape stateful rebuild"
+        );
     }
 
     #[test]

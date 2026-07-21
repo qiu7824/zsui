@@ -512,6 +512,11 @@ history remain authoritative for implementation status.
   construction, paint and hit testing resolve the framework experience
   internally. A private `ViewNode` style override exists only for deterministic
   framework proof; the ordinary public builders leave it unset.
+- Root View layout assigns collision-checked `WidgetId` values to interactive
+  nodes that omit `.id(...)`, using a deterministic tree-path namespace so a
+  same-shape stateful rebuild preserves focus and event routing without a
+  global registry. Explicit IDs always win and remain required for cross-widget
+  references or identity that must survive insertion and reordering.
 - Shared text-input geometry depends on the platform-neutral `NativeTextShaper`
   contract and a bounded per-window cache. Win32 GDI/Uniscribe, AppKit/Core
   Text, Linux Direct Pango, Linux Direct Lite Cosmic Text and GTK Pango inject

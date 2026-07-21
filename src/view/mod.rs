@@ -1,4 +1,3 @@
-#[cfg(feature = "tree")]
 use std::collections::BTreeSet;
 #[cfg(any(feature = "slider", feature = "number-box"))]
 use std::ops::RangeInclusive;

@@ -7,6 +7,10 @@ impl WidgetId {
     }
 }
 
+const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 1 << 63;
+const AUTOMATIC_WIDGET_ID_MASK: u64 = AUTOMATIC_WIDGET_ID_NAMESPACE - 1;
+const AUTOMATIC_WIDGET_ID_PROBE: u64 = 0x1e37_79b9_7f4a_7c15;
+
 impl From<WidgetId> for ComponentId {
     fn from(value: WidgetId) -> Self {
         Self(value.0)
@@ -908,6 +912,131 @@ impl<Msg> ViewNode<Msg> {
         self
     }
 
+    /// Assigns deterministic IDs to event-capable nodes that do not have an
+    /// explicit [`WidgetId`]. Normal layout calls this automatically.
+    ///
+    /// Automatic IDs are stable while the View tree keeps the same structure.
+    /// Keep using [`ViewNode::id`] when application state, another component,
+    /// or a test needs to refer to a widget across insertion or reordering.
+    pub fn assign_automatic_ids(&mut self) {
+        let mut used = BTreeSet::new();
+        self.collect_explicit_widget_ids(&mut used);
+        let mut path = Vec::new();
+        self.assign_automatic_ids_at_path(&mut path, false, &mut used);
+    }
+
+    fn collect_explicit_widget_ids(&self, used: &mut BTreeSet<u64>) {
+        if let Some(id) = self.id {
+            used.insert(id.0);
+        }
+        for child in &self.children {
+            child.collect_explicit_widget_ids(used);
+        }
+    }
+
+    fn assign_automatic_ids_at_path(
+        &mut self,
+        path: &mut Vec<usize>,
+        list_item: bool,
+        used: &mut BTreeSet<u64>,
+    ) {
+        if self.id.is_none() && (list_item || self.accepts_automatic_widget_id()) {
+            let mut candidate = automatic_widget_id_for_path(path);
+            while used.contains(&candidate) {
+                candidate = AUTOMATIC_WIDGET_ID_NAMESPACE
+                    | (candidate
+                        .wrapping_add(AUTOMATIC_WIDGET_ID_PROBE)
+                        & AUTOMATIC_WIDGET_ID_MASK);
+            }
+            self.id = Some(WidgetId(candidate));
+            used.insert(candidate);
+        }
+
+        let children_are_list_items = false;
+        #[cfg(feature = "list")]
+        let children_are_list_items =
+            children_are_list_items || matches!(&self.kind, ViewNodeKind::List { .. });
+        #[cfg(feature = "virtual-list")]
+        let children_are_list_items =
+            children_are_list_items || matches!(&self.kind, ViewNodeKind::VirtualList { .. });
+
+        for (index, child) in self.children.iter_mut().enumerate() {
+            path.push(index);
+            child.assign_automatic_ids_at_path(path, children_are_list_items, used);
+            path.pop();
+        }
+    }
+
+    fn accepts_automatic_widget_id(&self) -> bool {
+        #[cfg(feature = "tooltip")]
+        if self.tooltip.is_some() {
+            return true;
+        }
+        match &self.kind {
+            #[cfg(feature = "label")]
+            ViewNodeKind::NavigationView { .. } => true,
+            #[cfg(feature = "canvas")]
+            ViewNodeKind::Canvas { .. } => true,
+            #[cfg(feature = "button")]
+            ViewNodeKind::Button { .. } => true,
+            #[cfg(feature = "breadcrumb")]
+            ViewNodeKind::BreadcrumbBar { .. } => true,
+            #[cfg(feature = "toggle-button")]
+            ViewNodeKind::ToggleButton { .. } => true,
+            #[cfg(feature = "textbox")]
+            ViewNodeKind::Textbox { .. } => true,
+            #[cfg(feature = "password-box")]
+            ViewNodeKind::PasswordBox { .. } => true,
+            #[cfg(feature = "checkbox")]
+            ViewNodeKind::Checkbox { .. } => true,
+            #[cfg(feature = "toggle")]
+            ViewNodeKind::Toggle { .. } => true,
+            #[cfg(feature = "radio")]
+            ViewNodeKind::RadioButton { .. } => true,
+            #[cfg(feature = "slider")]
+            ViewNodeKind::Slider { .. } => true,
+            #[cfg(feature = "number-box")]
+            ViewNodeKind::NumberBox { .. } => true,
+            #[cfg(feature = "auto-suggest")]
+            ViewNodeKind::AutoSuggestBox { .. } => true,
+            #[cfg(feature = "tree")]
+            ViewNodeKind::TreeView { .. } => true,
+            #[cfg(feature = "grid-view")]
+            ViewNodeKind::GridView { .. } => true,
+            #[cfg(feature = "table")]
+            ViewNodeKind::DataGrid { .. } => true,
+            #[cfg(feature = "dialog")]
+            ViewNodeKind::ContentDialog { .. } => true,
+            #[cfg(feature = "flyout")]
+            ViewNodeKind::Flyout { .. } => true,
+            #[cfg(feature = "menu-flyout")]
+            ViewNodeKind::MenuFlyout { .. } => true,
+            #[cfg(feature = "command-palette")]
+            ViewNodeKind::CommandPalette { .. } => true,
+            #[cfg(feature = "toast")]
+            ViewNodeKind::ToastPresenter { .. } => true,
+            #[cfg(feature = "teaching-tip")]
+            ViewNodeKind::TeachingTip { .. } => true,
+            #[cfg(feature = "info-bar")]
+            ViewNodeKind::InfoBar { .. } => true,
+            #[cfg(feature = "combo")]
+            ViewNodeKind::ComboBox { .. } => true,
+            #[cfg(feature = "date-picker")]
+            ViewNodeKind::DatePicker { .. } => true,
+            #[cfg(feature = "time-picker")]
+            ViewNodeKind::TimePicker { .. } => true,
+            #[cfg(feature = "color-picker")]
+            ViewNodeKind::ColorPicker { .. } => true,
+            #[cfg(feature = "tabs")]
+            ViewNodeKind::Tabs { .. } => true,
+            #[cfg(feature = "scroll")]
+            ViewNodeKind::Scroll { .. } => true,
+            #[cfg(feature = "virtual-list")]
+            ViewNodeKind::VirtualList { .. } => true,
+            _ => false,
+        }
+    }
+
     #[cfg(all(test, any(feature = "button", feature = "label")))]
     pub(crate) fn with_platform_style_override(
         mut self,
@@ -1081,6 +1210,20 @@ impl<Msg> ViewNode<Msg> {
             child.clear_layout_bounds();
         }
     }
+}
+
+fn automatic_widget_id_for_path(path: &[usize]) -> u64 {
+    // FNV-1a keeps the mapping deterministic across processes and Rust versions.
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    hash ^= path.len() as u64;
+    hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    for &index in path {
+        for byte in (index as u64).to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    AUTOMATIC_WIDGET_ID_NAMESPACE | (hash & AUTOMATIC_WIDGET_ID_MASK)
 }
 
 impl<Msg: Clone> ViewNode<Msg> {

@@ -99,11 +99,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             });
         }
         if let Some(child) = selected_index.and_then(|index| self.children.get_mut(index)) {
-            let mut child_cx = ViewLayoutCx {
-                bounds: plan.content_bounds,
-                dpi: cx.dpi,
-                typography_scale_per_mille: cx.typography_scale_per_mille,
-            };
+            let mut child_cx = cx.child(plan.content_bounds);
             children.extend(child.layout(&mut child_cx).children);
         }
         LayoutOutput {
@@ -137,11 +133,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                 children,
             };
         };
-        let mut page_cx = ViewLayoutCx {
-            bounds: cx.bounds,
-            dpi: cx.dpi,
-            typography_scale_per_mille: cx.typography_scale_per_mille,
-        };
+        let mut page_cx = cx.child(cx.bounds);
         children.extend(page.layout(&mut page_cx).children);
 
         let (spec, open, target) = match &self.kind {
@@ -161,11 +153,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                     crate::ZsFlyoutPlatformStyle::current(),
                     cx.dpi,
                 );
-                let mut content_cx = ViewLayoutCx {
-                    bounds: plan.content,
-                    dpi: cx.dpi,
-                    typography_scale_per_mille: cx.typography_scale_per_mille,
-                };
+                let mut content_cx = cx.child(plan.content);
                 children.extend(content.layout(&mut content_cx).children);
             }
         }
@@ -242,16 +230,12 @@ impl<Msg: Clone> ViewNode<Msg> {
                 .saturating_mul(row_height_px as i64)
                 .saturating_sub(offset_px as i64)
                 .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-            let mut child_cx = ViewLayoutCx {
-                bounds: Rect {
+            let mut child_cx = cx.child(Rect {
                     x: content_bounds.x,
                     y: content_bounds.y.saturating_add(row_top),
                     width: content_bounds.width,
                     height: row_height_px,
-                },
-                dpi: cx.dpi,
-                typography_scale_per_mille: cx.typography_scale_per_mille,
-            };
+                });
             children.extend(child.layout(&mut child_cx).children);
         }
         LayoutOutput {
@@ -324,11 +308,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                 children,
             };
         };
-        let mut content_cx = ViewLayoutCx {
-            bounds: layout.content_bounds,
-            dpi: cx.dpi,
-            typography_scale_per_mille: cx.typography_scale_per_mille,
-        };
+        let mut content_cx = cx.child(layout.content_bounds);
         children.extend(content.layout(&mut content_cx).children);
 
         if layout.pane_bounds.is_some() {
@@ -382,32 +362,24 @@ impl<Msg: Clone> ViewNode<Msg> {
                 if y.saturating_add(height) > item_bottom {
                     break;
                 }
-                let mut item_cx = ViewLayoutCx {
-                    bounds: Rect {
+                let mut item_cx = cx.child(Rect {
                         x: layout.item_bounds.x,
                         y,
                         width: layout.item_bounds.width,
                         height,
-                    },
-                    dpi: cx.dpi,
-                    typography_scale_per_mille: cx.typography_scale_per_mille,
-                };
+                    });
                 children.extend(item.layout(&mut item_cx).children);
                 y = y.saturating_add(height).saturating_add(item_gap);
             }
             if show_footer {
                 let mut footer_y = footer_top;
                 for (item, height) in footer_items.iter_mut().zip(footer_heights) {
-                    let mut item_cx = ViewLayoutCx {
-                        bounds: Rect {
+                    let mut item_cx = cx.child(Rect {
                             x: layout.footer_bounds.x,
                             y: footer_y,
                             width: layout.footer_bounds.width,
                             height,
-                        },
-                        dpi: cx.dpi,
-                        typography_scale_per_mille: cx.typography_scale_per_mille,
-                    };
+                        });
                     children.extend(item.layout(&mut item_cx).children);
                     footer_y = footer_y.saturating_add(height).saturating_add(footer_gap);
                 }
@@ -422,6 +394,9 @@ impl<Msg: Clone> ViewNode<Msg> {
 
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        if cx.is_root() {
+            self.assign_automatic_ids();
+        }
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             self.bounds = Some(cx.bounds);
@@ -431,11 +406,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             let mut children = Vec::new();
             if let Some(page) = self.children.first_mut() {
-                let mut page_cx = ViewLayoutCx {
-                    bounds: cx.bounds,
-                    dpi: cx.dpi,
-                    typography_scale_per_mille: cx.typography_scale_per_mille,
-                };
+                let mut page_cx = cx.child(cx.bounds);
                 children.extend(page.layout(&mut page_cx).children);
             }
             return LayoutOutput {
@@ -479,11 +450,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             cx.typography_scale(),
         );
         for (child, bounds) in self.children.iter_mut().zip(child_bounds) {
-            let mut child_cx = ViewLayoutCx {
-                bounds,
-                dpi: cx.dpi,
-                typography_scale_per_mille: cx.typography_scale_per_mille,
-            };
+            let mut child_cx = cx.child(bounds);
             children.extend(child.layout(&mut child_cx).children);
         }
 
