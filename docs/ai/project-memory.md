@@ -231,8 +231,11 @@ history remain authoritative for implementation status.
   the full Windows CI job. AppKit constructs real `NSAccessibilityElement`
   menu-item children from the same semantic snapshot and accepts its backend
   evidence only after reading back the recursive node count, checked value and
-  expanded states. The fixed macOS 15 Native UI Proof is the remaining target
-  gate before this accessibility slice is complete.
+  expanded states. The AppKit job in fixed macOS 15 Native UI Proof run
+  `29788824442` passed with 8/8 native nodes, 1/1 checked value and 2/2 expanded
+  submenu states. MenuFlyout paths canonicalize every truncated ancestor so
+  nonzero sibling indices remain attached to the correct recursive provider;
+  MenuFlyout has no remaining catalog accessibility gap.
 - Linux memory comparison run `29669817180` measured the default X11 Notepad
   at 34.44 MiB median RSS, 21.24 MiB private RSS and 25.03 MiB PSS over five
   runs. Its smaps diagnosis attributed 4.60 MiB RSS to `librsvg` and 5.34 MiB

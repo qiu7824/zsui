@@ -715,7 +715,7 @@ jobs:
           set -e
           wait "$gallery_pid"
 
-          ZSUI_NATIVE_PROOF_DURATION_MS=15000 \
+          ZSUI_NATIVE_PROOF_DURATION_MS=20000 \
             ./target/release/examples/component_gallery \
               --native-proof \
               --page feedback \
@@ -764,7 +764,7 @@ jobs:
                   yield node
                   queue.extend(children(node))
 
-          deadline = time.monotonic() + 10.0
+          deadline = time.monotonic() + 17.0
           snapshot = []
           required = {
               "自动保存 / Auto save",

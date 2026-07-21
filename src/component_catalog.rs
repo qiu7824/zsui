@@ -271,7 +271,7 @@ const CANVAS_GAPS: &[&str] = &[
     "accessibility grouping semantics",
     "path-construction primitives and multi-pointer or touch input",
 ];
-const MENU_FLYOUT_GAPS: &[&str] = &["AppKit target accessibility proof"];
+const MENU_FLYOUT_GAPS: &[&str] = &[];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
     "accessibility tab-list and tab-panel providers",
