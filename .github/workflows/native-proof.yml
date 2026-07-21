@@ -117,9 +117,9 @@ jobs:
             --page catalog \
             --theme light \
             --width 960 \
-            --height 640 \
+            --height 560 \
             --resize-width 1180 \
-            --resize-height 780 \
+            --resize-height 640 \
             --scenario resized-large \
             --screenshot target/native-proof/macos-15-arm64/resized-large.png \
             --report target/native-proof/macos-15-arm64/resized-large.json
@@ -219,7 +219,7 @@ jobs:
               assert 0.75 <= capture["typography_scale"] <= 3.0
               expected = {
                   "resized-small": {"width": 800, "height": 520},
-                  "resized-large": {"width": 1180, "height": 780},
+                  "resized-large": {"width": 1180, "height": 640},
                   "notepad-interaction": {"width": 960, "height": 640},
               }.get(stem, {"width": 1024, "height": 640})
               assert proof["window"]["width"] == expected["width"]
@@ -422,9 +422,9 @@ jobs:
               --page catalog \
               --theme light \
               --width 960 \
-              --height 640 \
+              --height 560 \
               --resize-width 1180 \
-              --resize-height 780 \
+              --resize-height 640 \
               --scenario resized-large \
               --screenshot target/native-proof/ubuntu-24.04-x86_64/resized-large.png \
               --report target/native-proof/ubuntu-24.04-x86_64/resized-large.json \
@@ -544,7 +544,7 @@ jobs:
               assert 0.75 <= capture["typography_scale"] <= 3.0
               expected = {
                   "resized-small": {"width": 800, "height": 520},
-                  "resized-large": {"width": 1180, "height": 780},
+                  "resized-large": {"width": 1180, "height": 640},
                   "notepad-interaction": {"width": 960, "height": 640},
               }.get(stem, {"width": 1180, "height": 780})
               assert proof["window"]["width"] == expected["width"]
@@ -900,9 +900,9 @@ jobs:
             --page catalog \
             --theme light \
             --width 960 \
-            --height 640 \
+            --height 560 \
             --resize-width 1180 \
-            --resize-height 780 \
+            --resize-height 640 \
             --scenario resized-large \
             --screenshot "$root/resized-large.png" \
             --report "$root/resized-large.json" \
@@ -1260,7 +1260,7 @@ jobs:
 
           for proof, expected in (
               (resized_small, {"width": 800, "height": 520}),
-              (resized_large, {"width": 1180, "height": 780}),
+              (resized_large, {"width": 1180, "height": 640}),
           ):
               runtime = proof["runtime"]
               resize = runtime["native_window_resize"]
