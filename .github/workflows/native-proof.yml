@@ -116,6 +116,35 @@ jobs:
           from pathlib import Path
 
           root = Path("target/native-proof/macos-15-arm64")
+
+          def validate_notepad_text(runtime, backend):
+              scripts = runtime["native_view_text_input_script_evidence"]
+              assert any(item["contains_cjk"] for item in scripts)
+              assert any(item["contains_right_to_left"] for item in scripts)
+              assert any(item["contains_combining_mark"] for item in scripts)
+              assert any(item["contains_joiner"] for item in scripts)
+              navigation = runtime["native_view_text_navigation_evidence"]
+              assert navigation
+              assert {item["backend"] for item in navigation} == {backend}
+              home_index = max(
+                  index
+                  for index, item in enumerate(navigation)
+                  if item["key"] == "Home" and item["handled"]
+              )
+              line_start = navigation[home_index]["caret"]
+              rights = [
+                  item
+                  for item in navigation[home_index + 1 :]
+                  if item["key"] == "Right"
+              ][:4]
+              assert len(rights) == 4
+              assert [item["caret"] - line_start for item in rights] == [1, 4, 3, 2]
+              assert all(
+                  item["handled"]
+                  and item["selection"] == [item["caret"], item["caret"]]
+                  for item in rights
+              )
+
           stems = (
               "gallery-inputs-light",
               "gallery-inputs-dark",
@@ -210,6 +239,8 @@ jobs:
                   assert runtime["native_view_canvas_pointer_event_count"] == 5
                   assert runtime["native_view_canvas_pointer_drag_count"] == 1
                   assert runtime["native_view_unhandled_click_count"] == 0
+              if stem == "notepad-interaction":
+                  validate_notepad_text(runtime, "appkit")
 
           status = json.loads(
               Path("target/native-proof/macos-status-item/status-item-run.json")
@@ -368,6 +399,35 @@ jobs:
           from pathlib import Path
 
           root = Path("target/native-proof/ubuntu-24.04-x86_64")
+
+          def validate_notepad_text(runtime, backend):
+              scripts = runtime["native_view_text_input_script_evidence"]
+              assert any(item["contains_cjk"] for item in scripts)
+              assert any(item["contains_right_to_left"] for item in scripts)
+              assert any(item["contains_combining_mark"] for item in scripts)
+              assert any(item["contains_joiner"] for item in scripts)
+              navigation = runtime["native_view_text_navigation_evidence"]
+              assert navigation
+              assert {item["backend"] for item in navigation} == {backend}
+              home_index = max(
+                  index
+                  for index, item in enumerate(navigation)
+                  if item["key"] == "Home" and item["handled"]
+              )
+              line_start = navigation[home_index]["caret"]
+              rights = [
+                  item
+                  for item in navigation[home_index + 1 :]
+                  if item["key"] == "Right"
+              ][:4]
+              assert len(rights) == 4
+              assert [item["caret"] - line_start for item in rights] == [1, 4, 3, 2]
+              assert all(
+                  item["handled"]
+                  and item["selection"] == [item["caret"], item["caret"]]
+                  for item in rights
+              )
+
           stems = (
               "gallery-inputs-light",
               "gallery-inputs-dark",
@@ -457,6 +517,8 @@ jobs:
                   assert runtime["native_view_canvas_pointer_event_count"] == 5
                   assert runtime["native_view_canvas_pointer_drag_count"] == 1
                   assert runtime["native_view_unhandled_click_count"] == 0
+              if stem == "notepad-interaction":
+                  validate_notepad_text(runtime, "linux_direct")
 
           lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
           lite_png = lite_root / "notepad-interaction.png"
@@ -484,6 +546,7 @@ jobs:
           assert proof["process_memory"]["resident_bytes"] > 0
           assert proof["window"]["width"] == 960
           assert proof["window"]["height"] == 640
+          validate_notepad_text(runtime, "linux_direct")
 
       - name: Upload Linux proof
         if: always()
@@ -1042,6 +1105,35 @@ jobs:
           from pathlib import Path
 
           root = Path("target/native-proof/ubuntu-24.04-wayland-x86_64")
+
+          def validate_notepad_text(runtime):
+              scripts = runtime["native_view_text_input_script_evidence"]
+              assert any(item["contains_cjk"] for item in scripts)
+              assert any(item["contains_right_to_left"] for item in scripts)
+              assert any(item["contains_combining_mark"] for item in scripts)
+              assert any(item["contains_joiner"] for item in scripts)
+              navigation = runtime["native_view_text_navigation_evidence"]
+              assert navigation
+              assert {item["backend"] for item in navigation} == {"linux_direct"}
+              home_index = max(
+                  index
+                  for index, item in enumerate(navigation)
+                  if item["key"] == "Home" and item["handled"]
+              )
+              line_start = navigation[home_index]["caret"]
+              rights = [
+                  item
+                  for item in navigation[home_index + 1 :]
+                  if item["key"] == "Right"
+              ][:4]
+              assert len(rights) == 4
+              assert [item["caret"] - line_start for item in rights] == [1, 4, 3, 2]
+              assert all(
+                  item["handled"]
+                  and item["selection"] == [item["caret"], item["caret"]]
+                  for item in rights
+              )
+
           gallery = json.loads((root / "gallery-inputs-light.json").read_text("utf-8"))
           feedback = json.loads((root / "gallery-feedback-light.json").read_text("utf-8"))
           notepad = json.loads((root / "notepad-interaction.json").read_text("utf-8"))
@@ -1109,6 +1201,7 @@ jobs:
           assert {"menu bar", "menu item"} <= set(notepad_atspi["roles"])
 
           runtime = notepad["runtime"]
+          validate_notepad_text(runtime)
           assert runtime["window_menu_surface_created"] is True
           assert runtime["window_menu_surface_height"] == 36
           assert runtime["window_menu_surface_open_at_capture"] is True

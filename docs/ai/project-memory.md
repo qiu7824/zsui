@@ -304,6 +304,13 @@ history remain authoritative for implementation status.
   the framework projects backend identity, runner metadata, logical/pixel
   geometry, scale, focus, widget roles, unhandled commands and runtime errors.
   Examples must not maintain separate per-platform proof schemas.
+- Scripted native text proof stores only scalar/script traits for committed
+  input, never the original payload. Navigation evidence records the backend,
+  semantic key, handled state, scalar caret and typed selection after each
+  shaped movement. The shared Notepad acceptance route must reject a backend
+  unless four Right keys over `abאב` produce relative visual-order carets
+  `1, 4, 3, 2`; this proves the target-injected shaper path without claiming a
+  real IME candidate-window session.
 - Native typography is a backend-resolved `NativeTypographyProfile`, not a
   demo-owned type ramp. Native layout, paint and proof must share the resolved
   families, role metrics, accessibility scale and rasterization identity.

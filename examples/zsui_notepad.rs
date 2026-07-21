@@ -10,10 +10,11 @@ use zsui::{
     column, command_bar, content_dialog, native_window, row, tab_view, text, text_editor,
     toolbar_button, AppCx, Command, Dp, FileDialogService, FileDialogSpec, MenuItemSpec, MenuSpec,
     NativeFileDialogService, NativeProofDocument, NativeViewKey, NativeWindowSmokeRunOptions,
-    Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode, WidgetId, ZsAccelerator,
-    ZsBaseControlMetrics, ZsCommandBarSpec, ZsContentDialogButton, ZsContentDialogResult,
-    ZsContentDialogSpec, ZsDocumentShellCommand, ZsIcon, ZsTabId, ZsTabItem, ZsTextCursorStatus,
-    ZsTextDocument, ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult, ZsuiSpacingTokens,
+    NativeWindowSmokeRunReport, Point, SaveFileDialogSpec, TextWrap, ThemeColorToken, ViewNode,
+    WidgetId, ZsAccelerator, ZsBaseControlMetrics, ZsCommandBarSpec, ZsContentDialogButton,
+    ZsContentDialogResult, ZsContentDialogSpec, ZsDocumentShellCommand, ZsIcon, ZsTabId, ZsTabItem,
+    ZsTextCursorStatus, ZsTextDocument, ZsTextEditCommand, ZsTextSelection, ZsuiError, ZsuiResult,
+    ZsuiSpacingTokens,
 };
 
 const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
@@ -809,6 +810,38 @@ fn main() -> ZsuiResult<()> {
                 "extended grapheme navigation or deletion split a committed text cluster",
             ));
         }
+        if !grapheme_probe.contains("עברית-中文-horizontal-start")
+            || !grapheme_probe.contains("abאב")
+        {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                "the CJK and bidirectional proof text did not reach application-owned document state",
+            ));
+        }
+        let text_scripts = &report.native_view_text_input_script_evidence;
+        if !text_scripts.iter().any(|evidence| evidence.contains_cjk)
+            || !text_scripts
+                .iter()
+                .any(|evidence| evidence.contains_right_to_left)
+            || !text_scripts
+                .iter()
+                .any(|evidence| evidence.contains_combining_mark)
+            || !text_scripts.iter().any(|evidence| evidence.contains_joiner)
+        {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                "native proof did not retain privacy-preserving CJK, RTL and extended-grapheme script evidence",
+            ));
+        }
+        let bidi_visual_order = notepad_bidi_visual_order(&report)?;
+        if bidi_visual_order != [1, 4, 3, 2] {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                format!(
+                    "backend-shaped Right-key traversal did not follow the expected visual order: {bidi_visual_order:?}"
+                ),
+            ));
+        }
         if !menu_proof && lock_state(&shared)?.pending != Some(PendingAction::Close) {
             return Err(ZsuiError::host(
                 "notepad_smoke",
@@ -819,6 +852,62 @@ fn main() -> ZsuiResult<()> {
         builder.run()?;
     }
     Ok(())
+}
+
+fn notepad_bidi_visual_order(report: &NativeWindowSmokeRunReport) -> ZsuiResult<Vec<usize>> {
+    let navigation = &report.native_view_text_navigation_evidence;
+    let home_index = navigation
+        .iter()
+        .rposition(|evidence| {
+            evidence.key == NativeViewKey::Home && evidence.handled && evidence.caret.is_some()
+        })
+        .ok_or_else(|| {
+            ZsuiError::host(
+                "notepad_bidi_proof",
+                "the shaped navigation trace has no handled Home-key caret",
+            )
+        })?;
+    let line_start = navigation[home_index]
+        .caret
+        .expect("the selected Home evidence has a caret");
+    let right_evidence = navigation[home_index + 1..]
+        .iter()
+        .filter(|evidence| evidence.key == NativeViewKey::Right)
+        .take(4)
+        .collect::<Vec<_>>();
+    if right_evidence.len() != 4 {
+        return Err(ZsuiError::host(
+            "notepad_bidi_proof",
+            format!(
+                "expected four Right-key caret samples after Home, found {}",
+                right_evidence.len()
+            ),
+        ));
+    }
+
+    right_evidence
+        .into_iter()
+        .map(|evidence| {
+            let caret = evidence.caret.ok_or_else(|| {
+                ZsuiError::host(
+                    "notepad_bidi_proof",
+                    "a Right-key sample did not expose its shaped caret",
+                )
+            })?;
+            if !evidence.handled || evidence.selection != Some((caret, caret)) {
+                return Err(ZsuiError::host(
+                    "notepad_bidi_proof",
+                    "a Right-key sample was unhandled or did not retain a collapsed typed selection",
+                ));
+            }
+            caret.checked_sub(line_start).ok_or_else(|| {
+                ZsuiError::host(
+                    "notepad_bidi_proof",
+                    "a shaped Right-key caret moved before the probe line start",
+                )
+            })
+        })
+        .collect()
 }
 
 fn proof_dimension(args: &[String], flag: &str, default: u32) -> u32 {

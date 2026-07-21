@@ -765,6 +765,86 @@ pub enum NativeViewSmokeInput {
     WindowCloseRequest,
 }
 
+/// Privacy-preserving metadata for one scripted native text input.
+///
+/// Proof reports intentionally omit the original text so password or product
+/// content cannot leak through a generic host diagnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct NativeTextInputScriptEvidence {
+    pub scalar_count: usize,
+    pub line_break_count: usize,
+    pub contains_cjk: bool,
+    pub contains_right_to_left: bool,
+    pub contains_combining_mark: bool,
+    pub contains_joiner: bool,
+}
+
+impl NativeTextInputScriptEvidence {
+    fn from_text(text: &str) -> Self {
+        Self {
+            scalar_count: text.chars().count(),
+            line_break_count: text.chars().filter(|character| *character == '\n').count(),
+            contains_cjk: text.chars().any(native_proof_character_is_cjk),
+            contains_right_to_left: text.chars().any(native_proof_character_is_right_to_left),
+            contains_combining_mark: text.chars().any(native_proof_character_is_combining_mark),
+            contains_joiner: text.chars().any(|character| character == '\u{200d}'),
+        }
+    }
+}
+
+const fn native_view_key_is_text_navigation(key: NativeViewKey) -> bool {
+    matches!(
+        key,
+        NativeViewKey::Up
+            | NativeViewKey::Down
+            | NativeViewKey::Left
+            | NativeViewKey::Right
+            | NativeViewKey::Home
+            | NativeViewKey::End
+            | NativeViewKey::PageUp
+            | NativeViewKey::PageDown
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NativeTextNavigationEvidence {
+    pub backend: String,
+    pub key: NativeViewKey,
+    pub handled: bool,
+    pub caret: Option<usize>,
+    pub selection: Option<(usize, usize)>,
+}
+
+fn native_proof_character_is_cjk(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x3400..=0x4dbf
+            | 0x4e00..=0x9fff
+            | 0x20000..=0x323af
+            | 0x3040..=0x30ff
+            | 0x31f0..=0x31ff
+            | 0xac00..=0xd7af
+    )
+}
+
+fn native_proof_character_is_right_to_left(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x0590..=0x08ff | 0xfb1d..=0xfdff | 0xfe70..=0xfeff
+    )
+}
+
+fn native_proof_character_is_combining_mark(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x0300..=0x036f
+            | 0x1ab0..=0x1aff
+            | 0x1dc0..=0x1dff
+            | 0x20d0..=0x20ff
+            | 0xfe20..=0xfe2f
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeWindowSmokeRunOptions {
     pub auto_close_after_ms: u64,
@@ -1000,8 +1080,11 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_focus_traversal_count: usize,
     pub native_view_focused_widget: Option<u64>,
     pub native_view_text_input_count: usize,
+    pub native_view_text_input_script_evidence: Vec<NativeTextInputScriptEvidence>,
     pub native_view_text_navigation_count: usize,
+    pub native_view_text_navigation_evidence: Vec<NativeTextNavigationEvidence>,
     pub native_view_text_selection_change_count: usize,
+    pub native_view_text_selection: Option<(usize, usize)>,
     pub native_view_text_caret: Option<usize>,
     pub native_view_text_edit_command_count: usize,
     pub native_view_text_clipboard_read_count: usize,
@@ -1154,8 +1237,11 @@ impl NativeWindowSmokeRunReport {
             native_view_focus_traversal_count: 0,
             native_view_focused_widget: None,
             native_view_text_input_count: 0,
+            native_view_text_input_script_evidence: Vec::new(),
             native_view_text_navigation_count: 0,
+            native_view_text_navigation_evidence: Vec::new(),
             native_view_text_selection_change_count: 0,
+            native_view_text_selection: None,
             native_view_text_caret: None,
             native_view_text_edit_command_count: 0,
             native_view_text_clipboard_read_count: 0,
@@ -7741,12 +7827,28 @@ pub(crate) fn record_native_view_input_smoke(
 }
 
 #[allow(dead_code)]
+pub(crate) fn record_native_view_text_input_script_evidence(
+    report: &mut NativeWindowSmokeRunReport,
+    inputs: &[NativeViewSmokeInput],
+) {
+    report
+        .native_view_text_input_script_evidence
+        .extend(inputs.iter().filter_map(|input| match input {
+            NativeViewSmokeInput::Text(text) => {
+                Some(NativeTextInputScriptEvidence::from_text(text))
+            }
+            _ => None,
+        }));
+}
+
+#[allow(dead_code)]
 pub(crate) fn record_native_view_input_reports(
     report: &mut NativeWindowSmokeRunReport,
     inputs: &[NativeViewSmokeInput],
     dispatches: &[NativeViewInputDispatchReport],
     backend: &str,
 ) {
+    record_native_view_text_input_script_evidence(report, inputs);
     let mut dispatch_index: usize = 0;
     for input in inputs {
         let dispatch_count = match input {
@@ -7807,18 +7909,20 @@ pub(crate) fn record_native_view_input_reports(
             }
             NativeViewSmokeInput::KeyDown(key) => {
                 report.native_view_key_down_count += 1;
+                if native_view_key_is_text_navigation(*key) {
+                    let dispatch = input_dispatches.last();
+                    report.native_view_text_navigation_evidence.push(
+                        NativeTextNavigationEvidence {
+                            backend: backend.to_string(),
+                            key: *key,
+                            handled,
+                            caret: dispatch.and_then(|dispatch| dispatch.text_caret),
+                            selection: dispatch.and_then(|dispatch| dispatch.text_selection),
+                        },
+                    );
+                }
                 if handled {
-                    if matches!(
-                        key,
-                        NativeViewKey::Up
-                            | NativeViewKey::Down
-                            | NativeViewKey::Left
-                            | NativeViewKey::Right
-                            | NativeViewKey::Home
-                            | NativeViewKey::End
-                            | NativeViewKey::PageUp
-                            | NativeViewKey::PageDown
-                    ) {
+                    if native_view_key_is_text_navigation(*key) {
                         report.native_view_text_navigation_count += 1;
                     }
                     if matches!(key, NativeViewKey::Enter | NativeViewKey::Space) {
@@ -7874,6 +7978,9 @@ pub(crate) fn record_native_view_input_reports(
         report.native_view_focus_visual_count += usize::from(dispatch.focus_visual_changed);
         report.native_view_text_selection_change_count +=
             usize::from(dispatch.text_selection_changed);
+        report.native_view_text_selection = dispatch
+            .text_selection
+            .or(report.native_view_text_selection);
         report.native_view_text_caret = dispatch.text_caret.or(report.native_view_text_caret);
         report.native_view_text_drag_scroll_count += dispatch.text_drag_scroll_count;
         report.native_view_quit_requested |= dispatch.quit_requested;
@@ -13013,8 +13120,11 @@ mod tests {
         assert_eq!(report.native_view_focused_widget, None);
         assert_eq!(report.native_view_capture, None);
         assert_eq!(report.native_view_text_input_count, 0);
+        assert!(report.native_view_text_input_script_evidence.is_empty());
         assert_eq!(report.native_view_text_navigation_count, 0);
+        assert!(report.native_view_text_navigation_evidence.is_empty());
         assert_eq!(report.native_view_text_selection_change_count, 0);
+        assert_eq!(report.native_view_text_selection, None);
         assert_eq!(report.native_view_text_caret, None);
         assert_eq!(report.native_view_pointer_down_count, 0);
         assert_eq!(report.native_view_pointer_move_count, 0);
@@ -13077,6 +13187,71 @@ mod tests {
             options.native_view_inputs,
             vec![NativeViewSmokeInput::Drag { start, end }]
         );
+    }
+
+    #[test]
+    fn native_proof_records_script_and_visual_navigation_without_text_payloads() {
+        let secret_probe = "中文\nאב-e\u{301}-👩🏽‍💻";
+        let inputs = [
+            NativeViewSmokeInput::Text(secret_probe.to_string()),
+            NativeViewSmokeInput::KeyDown(NativeViewKey::Home),
+            NativeViewSmokeInput::KeyDown(NativeViewKey::Right),
+        ];
+        let dispatches = [
+            NativeViewInputDispatchReport {
+                handled: true,
+                text_selection: Some((12, 12)),
+                text_caret: Some(12),
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                text_selection: Some((8, 8)),
+                text_caret: Some(8),
+                text_selection_changed: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                text_selection: Some((9, 9)),
+                text_caret: Some(9),
+                text_selection_changed: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+        ];
+        let mut report = NativeWindowSmokeRunReport::empty(NativeWindowSmokeRunOptions::quick());
+
+        record_native_view_input_reports(&mut report, &inputs, &dispatches, "test_shaper");
+
+        let script = report
+            .native_view_text_input_script_evidence
+            .first()
+            .expect("text script evidence should exist");
+        assert!(script.contains_cjk);
+        assert!(script.contains_right_to_left);
+        assert!(script.contains_combining_mark);
+        assert!(script.contains_joiner);
+        assert_eq!(script.line_break_count, 1);
+        assert_eq!(report.native_view_text_navigation_count, 2);
+        assert_eq!(report.native_view_text_selection, Some((9, 9)));
+        assert_eq!(report.native_view_text_caret, Some(9));
+        assert_eq!(
+            report
+                .native_view_text_navigation_evidence
+                .iter()
+                .map(|evidence| (evidence.key, evidence.caret))
+                .collect::<Vec<_>>(),
+            vec![
+                (NativeViewKey::Home, Some(8)),
+                (NativeViewKey::Right, Some(9)),
+            ]
+        );
+        assert!(report
+            .native_view_text_navigation_evidence
+            .iter()
+            .all(|evidence| evidence.backend == "test_shaper" && evidence.handled));
+        let json = serde_json::to_string(&report).expect("proof report should serialize");
+        assert!(!json.contains(secret_probe));
     }
 
     #[test]

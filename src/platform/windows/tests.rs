@@ -998,6 +998,17 @@ mod tests {
             let moved = route.dispatch_key_down(u32::from(VK_RIGHT));
             assert_eq!(moved.text_caret, Some(expected));
             assert_eq!(moved.text_navigation_count, 1);
+            assert_eq!(moved.text_selection, Some((expected, expected)));
+            assert_eq!(moved.text_navigation_evidence.len(), 1);
+            assert_eq!(
+                moved.text_navigation_evidence[0].backend,
+                "win32_wm_keydown"
+            );
+            assert_eq!(
+                moved.text_navigation_evidence[0].key,
+                crate::NativeViewKey::Right
+            );
+            assert_eq!(moved.text_navigation_evidence[0].caret, Some(expected));
         }
         for expected in [3, 4, 1, 0] {
             let moved = route.dispatch_key_down(u32::from(VK_LEFT));

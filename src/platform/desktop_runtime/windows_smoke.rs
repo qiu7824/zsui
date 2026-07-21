@@ -1,6 +1,9 @@
 use super::DesktopSmokeRequest;
 use crate::{
-    native::{menu_command_count, record_draw_plan_smoke, NativeViewInputRuntime},
+    native::{
+        menu_command_count, record_draw_plan_smoke, record_native_view_text_input_script_evidence,
+        NativeViewInputRuntime,
+    },
     NativeDrawPlan, NativeStatusItemHost, NativeStatusItemPresentation, NativeStatusItemRequest,
     NativeStatusMenuCommandResult, NativeViewKey, NativeViewSmokeInput,
     NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, Point, WindowSpec, ZsShellRuntime,
@@ -61,7 +64,11 @@ fn record_windows_win32_view_input_report(
     report.native_view_focused_widget = input.focused_widget.or(report.native_view_focused_widget);
     report.native_view_text_input_count += input.text_input_count;
     report.native_view_text_navigation_count += input.text_navigation_count;
+    report
+        .native_view_text_navigation_evidence
+        .extend(input.text_navigation_evidence.iter().cloned());
     report.native_view_text_selection_change_count += input.text_selection_change_count;
+    report.native_view_text_selection = input.text_selection.or(report.native_view_text_selection);
     report.native_view_text_caret = input.text_caret.or(report.native_view_text_caret);
     #[cfg(feature = "textbox")]
     {
@@ -312,6 +319,7 @@ fn run_native_window_smoke_event_loop(
         auto_close_after_ms: options.auto_close_after_ms,
         ..NativeWindowSmokeRunReport::empty(options.clone())
     };
+    record_native_view_text_input_script_evidence(&mut report, &options.native_view_inputs);
     record_draw_plan_smoke(&mut report, &draw_plans);
     report.native_view_hit_target_count = view_runtime.hit_target_count();
     let input_routes =

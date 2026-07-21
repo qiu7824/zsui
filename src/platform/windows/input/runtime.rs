@@ -401,6 +401,7 @@ impl WindowsWin32ViewInputRoute {
             focus_visual_count: usize::from(shared.focus_visual_changed),
             focused_widget: shared.focused_widget,
             text_selection_change_count: usize::from(shared.text_selection_changed),
+            text_selection: shared.text_selection,
             text_caret: shared.text_caret,
             text_drag_scroll_count: shared.text_drag_scroll_count,
             text_drag_active: shared.text_drag_active,
@@ -476,6 +477,27 @@ impl WindowsWin32ViewInputRoute {
                                 | crate::native::NativeViewKey::PageDown
                         ),
                 );
+                if matches!(
+                    key,
+                    crate::native::NativeViewKey::Up
+                        | crate::native::NativeViewKey::Down
+                        | crate::native::NativeViewKey::Left
+                        | crate::native::NativeViewKey::Right
+                        | crate::native::NativeViewKey::Home
+                        | crate::native::NativeViewKey::End
+                        | crate::native::NativeViewKey::PageUp
+                        | crate::native::NativeViewKey::PageDown
+                ) {
+                    report.text_navigation_evidence.push(
+                        crate::NativeTextNavigationEvidence {
+                            backend: "win32_wm_keydown".to_string(),
+                            key,
+                            handled: shared.handled,
+                            caret: shared.text_caret,
+                            selection: shared.text_selection,
+                        },
+                    );
+                }
                 if target.is_some_and(|target| target.kind == crate::ViewHitTargetKind::Unknown)
                     && shared.message_count > 0
                 {

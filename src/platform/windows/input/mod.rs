@@ -173,7 +173,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub focus_traversal_count: usize,
     pub text_input_count: usize,
     pub text_navigation_count: usize,
+    pub text_navigation_evidence: Vec<crate::NativeTextNavigationEvidence>,
     pub text_selection_change_count: usize,
+    pub text_selection: Option<(usize, usize)>,
     pub text_caret: Option<usize>,
     #[cfg(feature = "textbox")]
     pub text_edit_command_count: usize,
@@ -292,7 +294,10 @@ impl WindowsWin32ViewInputDispatchReport {
         self.focus_traversal_count += next.focus_traversal_count;
         self.text_input_count += next.text_input_count;
         self.text_navigation_count += next.text_navigation_count;
+        self.text_navigation_evidence
+            .extend(next.text_navigation_evidence);
         self.text_selection_change_count += next.text_selection_change_count;
+        self.text_selection = next.text_selection.or(self.text_selection);
         self.text_caret = next.text_caret.or(self.text_caret);
         #[cfg(feature = "textbox")]
         {
