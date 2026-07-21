@@ -213,9 +213,11 @@ layout result for paint and hit testing on Win32/AppKit/GTK4. Windows has a
 real layout/click screenshot artifact; content-sized tracks, baseline
 alignment, accessibility grouping and non-Windows target proof remain open.
 The feature-gated self-drawn Tabs surface uses strong tab IDs, one active page,
-WinUI focus-only arrow navigation on Windows, AppKit selection-style arrows,
-GTK4 focus/selection shortcuts and Windows target smoke; accessibility,
-document-tab close/reorder/overflow and non-Windows target proof remain open.
+WinUI focus-only arrow navigation on Windows, AppKit selection-style arrows and
+GTK4 focus/selection shortcuts. Local Win32 plus GitHub-hosted AppKit, X11 and
+real Weston Wayland target proofs click a typed tab header and exercise the
+platform Right-arrow rule before final-surface capture. Accessibility and
+document-tab close/reorder/overflow remain open.
 The independent `time-picker` feature adds validated `ZsTime` and
 `ZsMinuteIncrement` values, explicit 12/24-hour formatting, shared popup
 placement, and internal WinUI/AppKit/GTK metric profiles on the self-drawn

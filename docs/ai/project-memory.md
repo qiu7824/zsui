@@ -666,6 +666,15 @@ history remain authoritative for implementation status.
   neutral inset rounded selected tab, never the Windows accent underline.
   Static tabs keep their identity and selection semantics but do not imply
   document-tab close, add, reorder or overflow behavior.
+- Tabs target proof must exercise the public stateful View path rather than a
+  backend-only hook. The Gallery navigation scene clicks Advanced and sends
+  Right with the header focused. Local Win32, X11 and real Weston Wayland keep
+  Advanced selected while focusing About; AppKit selects About. Reports require
+  exact typed selection/keyboard counters, focused widget 3, zero unhandled
+  click/key input, the platform key backend and a final platform-surface PNG.
+  Native UI Proof run `29812803034` on commit `06c249f` passed AppKit, X11 and
+  Wayland. Remaining Tabs gates are accessibility providers, header-state
+  polish and document-tab close/reorder/overflow behavior.
 - A Gallery sidebar item is not a centered outlined Button. Navigation rows use
   semantic icons, left-aligned labels, a 36-DIP Windows row and a 3-by-16-DIP
   accent selection indicator. The expanded Windows Gallery pane follows the

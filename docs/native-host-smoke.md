@@ -563,9 +563,14 @@ selection with Space/Enter. The artifact must record nonzero
 `native_view_tab_keyboard_selection_count`, and
 `native_view_tab_keyboard_focus_only_count`, plus zero failed or unhandled UI
 commands. Ctrl+Tab/Ctrl+Shift+Tab cycling is covered by the native route tests.
-AppKit and GTK4 consume the same typed selection path with their platform arrow
-selection behavior, but still require target-machine screenshots and
-interaction artifacts.
+The Gallery navigation proof runs the reusable application-facing path on every
+desktop host: it clicks Advanced and sends Right while that header owns focus.
+Local Win32, X11 and real Weston Wayland retain Advanced and focus About, proving
+the Windows/GTK focus-only rule; AppKit selects About, proving its adjacent-page
+arrow rule. Each target records exact typed selection/keyboard counters, widget
+3 as the final focused header, zero unhandled click/key input, the platform key
+backend and a final platform-surface PNG. Native UI Proof run `29812803034` on
+commit `06c249f` passed the AppKit, X11 and Wayland gates.
 
 The dedicated strongly typed TimePicker smoke path is:
 

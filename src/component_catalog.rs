@@ -276,7 +276,6 @@ const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
     "accessibility tab-list and tab-panel providers",
     "document-tab close, reorder and overflow behavior",
-    "AppKit and GTK4 target interaction smoke",
 ];
 const DOCUMENT_SHELL_GAPS: &[&str] = &[
     "keyboard focus and accessibility provider",
