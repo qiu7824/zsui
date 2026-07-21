@@ -76,6 +76,21 @@ fn menu_flyout_accessibility_hierarchy(
     hierarchy
 }
 
+#[cfg(feature = "menu-flyout")]
+fn menu_flyout_accessibility_author_id(
+    widget: crate::WidgetId,
+    path: crate::ZsMenuFlyoutPath,
+) -> String {
+    let mut indices = Vec::with_capacity(path.level().saturating_add(1));
+    let mut current = Some(path);
+    while let Some(path) = current {
+        indices.push(path.item().to_string());
+        current = path.parent();
+    }
+    indices.reverse();
+    format!("zsui-menu-flyout-{}-{}", widget.0, indices.join("-"))
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct LinuxAccessibilityAction {
     pub request: ActionRequest,
@@ -264,6 +279,17 @@ fn build_tree_update(
             y: target.bounds.y.saturating_add(content_offset_y),
             ..target.bounds
         }));
+        #[cfg(feature = "menu-flyout")]
+        match target.kind {
+            ViewHitTargetKind::MenuFlyout => {
+                node.set_author_id(format!("zsui-menu-flyout-{}", target.widget.0));
+            }
+            ViewHitTargetKind::MenuFlyoutItem { path, .. } => {
+                node.set_author_id(menu_flyout_accessibility_author_id(target.widget, path));
+            }
+            _ => node.set_author_id(format!("zsui-widget-{}", target.widget.0)),
+        }
+        #[cfg(not(feature = "menu-flyout"))]
         node.set_author_id(format!("zsui-widget-{}", target.widget.0));
         #[cfg(feature = "menu-flyout")]
         let is_menu_flyout_surface = target.kind == ViewHitTargetKind::MenuFlyout;
@@ -792,5 +818,17 @@ mod tests {
             Some(&vec![NodeId(6)])
         );
         assert_eq!(hierarchy.parent_by_child.get(&NodeId(6)), Some(&NodeId(5)));
+        assert_eq!(
+            menu_flyout_accessibility_author_id(widget, submenu),
+            "zsui-menu-flyout-42-3"
+        );
+        assert_eq!(
+            menu_flyout_accessibility_author_id(widget, nested),
+            "zsui-menu-flyout-42-3-1"
+        );
+        assert_eq!(
+            menu_flyout_accessibility_author_id(widget, leaf),
+            "zsui-menu-flyout-42-3-1-2"
+        );
     }
 }
