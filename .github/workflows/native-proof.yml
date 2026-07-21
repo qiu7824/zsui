@@ -763,13 +763,16 @@ jobs:
                       pass
 
           def walk(root, limit=1500):
-              queue = [root]
+              queue = [(root, "", 0)]
               seen = 0
               while queue and seen < limit:
-                  node = queue.pop(0)
+                  node, parent_name, depth = queue.pop(0)
                   seen += 1
-                  yield node
-                  queue.extend(children(node))
+                  yield node, parent_name, depth
+                  queue.extend(
+                      (child, node.name or "", depth + 1)
+                      for child in children(node)
+                  )
 
           deadline = time.monotonic() + 6.0
           snapshot = []
@@ -777,6 +780,7 @@ jobs:
               "自动保存 / Auto save",
               "更多 / More",
               "导出 / Export",
+              "PDF 文档 / PDF document",
           }
           while time.monotonic() < deadline:
               snapshot = []
@@ -786,10 +790,10 @@ jobs:
                       nodes = list(walk(application))
                   except Exception:
                       continue
-                  names = [node.name or "" for node in nodes]
+                  names = [node.name or "" for node, _, _ in nodes]
                   if not any("Component Gallery" in name for name in names):
                       continue
-                  for node in nodes:
+                  for node, parent_name, depth in nodes:
                       try:
                           state = node.getState()
                           snapshot.append(
@@ -797,9 +801,12 @@ jobs:
                                   "name": node.name or "",
                                   "role": node.getRoleName(),
                                   "checked": state.contains(pyatspi.STATE_CHECKED),
-                                  "expanded": state.contains(pyatspi.STATE_EXPANDED),
+                                  "atspi_expanded": state.contains(pyatspi.STATE_EXPANDED),
                                   "focused": state.contains(pyatspi.STATE_FOCUSED),
                                   "selected": state.contains(pyatspi.STATE_SELECTED),
+                                  "parent": parent_name,
+                                  "depth": depth,
+                                  "child_count": node.childCount,
                               }
                           )
                       except Exception:
@@ -808,8 +815,8 @@ jobs:
               if (
                   required <= by_name.keys()
                   and by_name["自动保存 / Auto save"]["checked"]
-                  and by_name["更多 / More"]["expanded"]
-                  and by_name["导出 / Export"]["expanded"]
+                  and by_name["导出 / Export"]["parent"] == "更多 / More"
+                  and by_name["PDF 文档 / PDF document"]["parent"] == "导出 / Export"
               ):
                   break
               time.sleep(0.1)
@@ -822,21 +829,24 @@ jobs:
           checked = by_name["自动保存 / Auto save"]
           submenu = by_name["更多 / More"]
           nested_submenu = by_name["导出 / Export"]
+          nested_command = by_name["PDF 文档 / PDF document"]
           if not checked["checked"]:
               raise SystemExit(f"checked MenuFlyout state is missing: {checked}")
           if checked["role"] not in {"check menu item", "checkmenuitem"}:
               raise SystemExit(f"checked MenuFlyout role is missing: {checked}")
           if submenu["role"] != "menu":
               raise SystemExit(f"submenu MenuFlyout role is missing: {submenu}")
-          if not submenu["expanded"]:
-              raise SystemExit(f"submenu expanded state is missing: {submenu}")
           if nested_submenu["role"] != "menu":
               raise SystemExit(
                   f"nested submenu MenuFlyout role is missing: {nested_submenu}"
               )
-          if not nested_submenu["expanded"]:
+          if nested_submenu["parent"] != submenu["name"]:
               raise SystemExit(
-                  f"nested submenu expanded state is missing: {nested_submenu}"
+                  f"nested submenu hierarchy is missing: {nested_submenu}"
+              )
+          if nested_command["parent"] != nested_submenu["name"]:
+              raise SystemExit(
+                  f"nested MenuFlyout command hierarchy is missing: {nested_command}"
               )
 
           Path(
@@ -845,6 +855,12 @@ jobs:
               json.dumps(
                   {
                       "backend": "accesskit_atspi",
+                      "recursive_expansion": {
+                          "source": "visible_atspi_parent_child_tree",
+                          "submenu": submenu["name"],
+                          "nested_submenu": nested_submenu["name"],
+                          "nested_command": nested_command["name"],
+                      },
                       "rows": [by_name[name] for name in sorted(required)],
                   },
                   ensure_ascii=False,

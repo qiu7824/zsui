@@ -22,6 +22,60 @@ use crate::{
 
 const ROOT_NODE_ID: NodeId = NodeId(0);
 
+#[cfg(feature = "menu-flyout")]
+#[derive(Default)]
+struct MenuFlyoutAccessibilityHierarchy {
+    root_by_widget: HashMap<crate::WidgetId, NodeId>,
+    item_by_path: HashMap<(crate::WidgetId, crate::ZsMenuFlyoutPath), NodeId>,
+    parent_by_child: HashMap<NodeId, NodeId>,
+    children_by_parent: HashMap<NodeId, Vec<NodeId>>,
+}
+
+#[cfg(feature = "menu-flyout")]
+fn menu_flyout_accessibility_hierarchy(
+    targets: &[(NodeId, ViewHitTarget)],
+) -> MenuFlyoutAccessibilityHierarchy {
+    let mut hierarchy = MenuFlyoutAccessibilityHierarchy::default();
+    for (node_id, target) in targets {
+        match target.kind {
+            ViewHitTargetKind::MenuFlyout => {
+                hierarchy
+                    .root_by_widget
+                    .entry(target.widget)
+                    .or_insert(*node_id);
+            }
+            ViewHitTargetKind::MenuFlyoutItem { path, .. } => {
+                hierarchy
+                    .item_by_path
+                    .insert((target.widget, path), *node_id);
+            }
+            _ => {}
+        }
+    }
+
+    for (node_id, target) in targets {
+        let ViewHitTargetKind::MenuFlyoutItem { path, .. } = target.kind else {
+            continue;
+        };
+        let parent = match path.parent() {
+            Some(parent) => hierarchy
+                .item_by_path
+                .get(&(target.widget, parent))
+                .copied(),
+            None => hierarchy.root_by_widget.get(&target.widget).copied(),
+        };
+        if let Some(parent) = parent {
+            hierarchy.parent_by_child.insert(*node_id, parent);
+            hierarchy
+                .children_by_parent
+                .entry(parent)
+                .or_default()
+                .push(*node_id);
+        }
+    }
+    hierarchy
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct LinuxAccessibilityAction {
     pub request: ActionRequest,
@@ -182,26 +236,52 @@ fn build_tree_update(
     let targets = interaction
         .map(|interaction| interaction.hit_targets)
         .unwrap_or_default();
+    let targets = targets
+        .into_iter()
+        .enumerate()
+        .map(|(index, target)| (NodeId(index as u64 + 1), target))
+        .collect::<Vec<_>>();
+    #[cfg(feature = "menu-flyout")]
+    let menu_flyout_hierarchy = menu_flyout_accessibility_hierarchy(&targets);
     let mut node_targets = HashMap::with_capacity(targets.len());
     let mut nodes = Vec::with_capacity(targets.len().saturating_add(1));
     let mut child_ids = Vec::with_capacity(targets.len());
     let mut focused_node = ROOT_NODE_ID;
 
-    for (index, target) in targets.into_iter().enumerate() {
-        let node_id = NodeId(index as u64 + 1);
+    for (node_id, target) in targets {
+        #[cfg(feature = "menu-flyout")]
+        match target.kind {
+            ViewHitTargetKind::MenuFlyoutScrim => continue,
+            ViewHitTargetKind::MenuFlyout
+                if menu_flyout_hierarchy.root_by_widget.get(&target.widget) != Some(&node_id) =>
+            {
+                continue;
+            }
+            _ => {}
+        }
         let mut node = Node::new(accesskit_role(target.kind));
         node.set_bounds(accesskit_rect(Rect {
             y: target.bounds.y.saturating_add(content_offset_y),
             ..target.bounds
         }));
         node.set_author_id(format!("zsui-widget-{}", target.widget.0));
-        node.set_label(accessible_label(plan, target));
+        #[cfg(feature = "menu-flyout")]
+        let is_menu_flyout_surface = target.kind == ViewHitTargetKind::MenuFlyout;
+        #[cfg(not(feature = "menu-flyout"))]
+        let is_menu_flyout_surface = false;
+        if !is_menu_flyout_surface {
+            node.set_label(accessible_label(plan, target));
+        }
         apply_view_accessibility_state(&mut node, target.kind);
+        #[cfg(feature = "menu-flyout")]
+        if let Some(children) = menu_flyout_hierarchy.children_by_parent.get(&node_id) {
+            node.set_children(children.clone());
+        }
         if target.kind.accepts_text_input() {
             node.add_action(Action::SetValue);
             node.add_action(Action::ReplaceSelectedText);
         }
-        if accesskit_role(target.kind) != Role::GenericContainer {
+        if accesskit_role(target.kind) != Role::GenericContainer && !is_menu_flyout_surface {
             node.add_action(Action::Focus);
             node.add_action(Action::Click);
         }
@@ -222,7 +302,14 @@ fn build_tree_update(
         if menu_item_highlighted || (focused_widget == Some(target.widget) && !is_menu_item) {
             focused_node = node_id;
         }
-        child_ids.push(node_id);
+        #[cfg(feature = "menu-flyout")]
+        let is_nested_menu_flyout_item =
+            menu_flyout_hierarchy.parent_by_child.contains_key(&node_id);
+        #[cfg(not(feature = "menu-flyout"))]
+        let is_nested_menu_flyout_item = false;
+        if !is_nested_menu_flyout_item {
+            child_ids.push(node_id);
+        }
         node_targets.insert(node_id, LinuxAccessibilityTarget::View(target));
         nodes.push((node_id, node));
     }
@@ -612,5 +699,98 @@ mod tests {
         assert_eq!(submenu.is_expanded(), Some(true));
         assert_eq!(submenu.has_popup(), Some(HasPopup::Menu));
         assert_eq!(submenu.is_selected(), Some(false));
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    #[test]
+    fn menu_flyout_items_form_a_recursive_accessibility_tree() {
+        let widget = crate::WidgetId(42);
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 24,
+        };
+        let submenu = crate::ZsMenuFlyoutPath::root(3);
+        let nested = submenu.descendant(1).expect("nested submenu path");
+        let leaf = nested.descendant(2).expect("nested command path");
+        let targets = [
+            (
+                NodeId(1),
+                ViewHitTarget::with_kind(widget, bounds, ViewHitTargetKind::MenuFlyout),
+            ),
+            (
+                NodeId(2),
+                ViewHitTarget::with_kind(widget, bounds, ViewHitTargetKind::MenuFlyout),
+            ),
+            (
+                NodeId(3),
+                ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::MenuFlyoutItem {
+                        path: crate::ZsMenuFlyoutPath::root(0),
+                        row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: false },
+                        expanded: false,
+                        highlighted: false,
+                    },
+                ),
+            ),
+            (
+                NodeId(4),
+                ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::MenuFlyoutItem {
+                        path: submenu,
+                        row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
+                        expanded: true,
+                        highlighted: false,
+                    },
+                ),
+            ),
+            (
+                NodeId(5),
+                ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::MenuFlyoutItem {
+                        path: nested,
+                        row_kind: crate::ZsMenuFlyoutRowKind::Submenu,
+                        expanded: true,
+                        highlighted: true,
+                    },
+                ),
+            ),
+            (
+                NodeId(6),
+                ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::MenuFlyoutItem {
+                        path: leaf,
+                        row_kind: crate::ZsMenuFlyoutRowKind::Command { checked: false },
+                        expanded: false,
+                        highlighted: false,
+                    },
+                ),
+            ),
+        ];
+
+        let hierarchy = menu_flyout_accessibility_hierarchy(&targets);
+        assert_eq!(hierarchy.root_by_widget.get(&widget), Some(&NodeId(1)));
+        assert_eq!(
+            hierarchy.children_by_parent.get(&NodeId(1)),
+            Some(&vec![NodeId(3), NodeId(4)])
+        );
+        assert_eq!(
+            hierarchy.children_by_parent.get(&NodeId(4)),
+            Some(&vec![NodeId(5)])
+        );
+        assert_eq!(
+            hierarchy.children_by_parent.get(&NodeId(5)),
+            Some(&vec![NodeId(6)])
+        );
+        assert_eq!(hierarchy.parent_by_child.get(&NodeId(6)), Some(&NodeId(5)));
     }
 }
