@@ -12,6 +12,15 @@ impl ZsTabId {
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
+
+    /// Returns the framework-owned identity of this tab's header surface.
+    ///
+    /// The parent identity is part of the mapping, so two TabViews may reuse
+    /// the same strongly typed tab IDs without colliding with each other or
+    /// with application-assigned widget IDs.
+    pub(crate) const fn header_widget_id(self, tab_view: crate::WidgetId) -> crate::WidgetId {
+        crate::WidgetId::synthetic_child(tab_view, self.0)
+    }
 }
 
 #[cfg(feature = "tabs")]

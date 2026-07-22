@@ -3473,7 +3473,9 @@ mod tests {
         let general = ZsTabId::new(201);
         let advanced = ZsTabId::new(202);
         let about = ZsTabId::new(203);
-        let general_content = WidgetId::new(211);
+        // Composite-control identities must not collide with an application
+        // widget that intentionally uses the same raw value as a typed tab ID.
+        let general_content = WidgetId::new(general.0);
         let advanced_content = WidgetId::new(212);
         let mut view = tab_view(
             [
@@ -3517,14 +3519,28 @@ mod tests {
         assert!(interactions
             .hit_target_for_widget(general_content)
             .is_some());
+        assert_ne!(
+            general.header_widget_id(tab_view_id),
+            general_content,
+            "the tab header must live in the synthetic control namespace"
+        );
+        assert_eq!(general.header_widget_id(tab_view_id).0 >> 62, 3);
+        assert_ne!(
+            general.header_widget_id(tab_view_id),
+            general.header_widget_id(WidgetId::new(999)),
+            "the parent TabView must participate in composite identity"
+        );
+        assert!(interactions
+            .hit_target_for_widget(general.header_widget_id(tab_view_id))
+            .is_some());
         assert!(interactions
             .hit_target_for_widget(advanced_content)
             .is_none());
         assert!(view
-            .widget_tab_header_state(WidgetId(general.0))
+            .widget_tab_header_state(general.header_widget_id(tab_view_id))
             .is_some_and(|state| state.selected));
         assert!(view
-            .widget_tab_header_state(WidgetId(advanced.0))
+            .widget_tab_header_state(advanced.header_widget_id(tab_view_id))
             .is_some_and(|state| !state.selected));
         assert_eq!(
             view.widget_tab_cycle_target(general_content, 1),

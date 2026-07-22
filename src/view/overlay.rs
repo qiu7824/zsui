@@ -754,7 +754,7 @@ impl<Msg> ViewNode<Msg> {
             if let Some((index, tab)) = tabs
                 .iter()
                 .enumerate()
-                .find(|(_, tab)| WidgetId(tab.id.0) == widget)
+                .find(|(_, tab)| tab.id.header_widget_id(tab_view) == widget)
             {
                 return Some(ZsTabHeaderState {
                     tab_view,
@@ -763,12 +763,20 @@ impl<Msg> ViewNode<Msg> {
                     previous: index
                         .checked_sub(1)
                         .and_then(|index| tabs.get(index))
-                        .map(|tab| WidgetId(tab.id.0)),
+                        .map(|tab| tab.id.header_widget_id(tab_view)),
                     next: tabs
                         .get(index.saturating_add(1))
-                        .map(|tab| WidgetId(tab.id.0)),
-                    first: WidgetId(tabs.first().expect("matched tab list is non-empty").id.0),
-                    last: WidgetId(tabs.last().expect("matched tab list is non-empty").id.0),
+                        .map(|tab| tab.id.header_widget_id(tab_view)),
+                    first: tabs
+                        .first()
+                        .expect("matched tab list is non-empty")
+                        .id
+                        .header_widget_id(tab_view),
+                    last: tabs
+                        .last()
+                        .expect("matched tab list is non-empty")
+                        .id
+                        .header_widget_id(tab_view),
                 });
             }
             let selected_index = selected
@@ -791,7 +799,9 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(tab_view), ViewNodeKind::Tabs { tabs, selected, .. }) = (self.id, &self.kind) {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let focused_header = tabs.iter().any(|tab| WidgetId(tab.id.0) == focused);
+            let focused_header = tabs
+                .iter()
+                .any(|tab| tab.id.header_widget_id(tab_view) == focused);
             let focused_content = selected_index
                 .and_then(|index| self.children.get(index))
                 .is_some_and(|child| child.contains_widget(focused));
@@ -1166,7 +1176,7 @@ impl<Msg> ViewNode<Msg> {
             hit_targets.extend(plan.headers.iter().zip(tabs).filter_map(|(header, tab)| {
                 clipped_rect(header.bounds, clip).map(|bounds| {
                     ViewHitTarget::with_kind(
-                        WidgetId(tab.id.0),
+                        tab.id.header_widget_id(tab_view),
                         bounds,
                         ViewHitTargetKind::Tab {
                             tab_view,

@@ -236,7 +236,7 @@ jobs:
               assert typography == capture["typography"]
               memory = proof["process_memory"]
               assert memory["source"] == "macos_mach_task_basic_info"
-              assert memory["sample_point"] == "proof_document_serialization"
+              assert memory["sample_point"] == "native_window_before_teardown"
               assert memory["resident_bytes"] > 0
               assert memory["peak_resident_bytes"] >= memory["resident_bytes"]
               assert runtime["created_window_count"] == 1

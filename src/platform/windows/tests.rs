@@ -1819,7 +1819,7 @@ mod tests {
         ));
         let interaction = view.interaction_plan();
         let second = interaction
-            .hit_target_for_widget(crate::WidgetId(advanced.0))
+            .hit_target_for_widget(advanced.header_widget_id(tab_view_id))
             .expect("second tab should expose a hit target");
         let second_point = crate::Point {
             x: second.bounds.x + second.bounds.width / 2,
@@ -1835,7 +1835,10 @@ mod tests {
         assert_eq!(pressed.pointer_visual_change_count, 1);
         assert_eq!(pointer.tab_selection_count, 1);
         assert_eq!(pointer.ui_command_count, 1);
-        assert_eq!(pointer.focused_widget, Some(advanced.0));
+        assert_eq!(
+            pointer.focused_widget,
+            Some(advanced.header_widget_id(tab_view_id).0)
+        );
         assert_eq!(
             route
                 .widget_tab_view_state(tab_view_id)
@@ -1846,7 +1849,10 @@ mod tests {
         let focus_only = route.dispatch_key_down(u32::from(VK_LEFT));
         assert_eq!(focus_only.tab_keyboard_focus_only_count, 1);
         assert_eq!(focus_only.tab_selection_count, 0);
-        assert_eq!(focus_only.focused_widget, Some(general.0));
+        assert_eq!(
+            focus_only.focused_widget,
+            Some(general.header_widget_id(tab_view_id).0)
+        );
 
         let keyboard = route.dispatch_key_down(u32::from(VK_SPACE));
         assert_eq!(keyboard.tab_selection_count, 1);
@@ -1861,7 +1867,10 @@ mod tests {
         let cycled = route.dispatch_key_down_with_modifiers(u32::from(VK_TAB), false, true);
         assert_eq!(cycled.tab_selection_count, 1);
         assert_eq!(cycled.tab_keyboard_selection_count, 1);
-        assert_eq!(cycled.focused_widget, Some(advanced.0));
+        assert_eq!(
+            cycled.focused_widget,
+            Some(advanced.header_widget_id(tab_view_id).0)
+        );
         assert!(route.take_pending_draw_plan().is_some());
     }
 

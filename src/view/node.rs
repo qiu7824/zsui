@@ -105,9 +105,28 @@ impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
     }
 }
 
-const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 1 << 63;
-const AUTOMATIC_WIDGET_ID_MASK: u64 = AUTOMATIC_WIDGET_ID_NAMESPACE - 1;
+const FRAMEWORK_WIDGET_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
+const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
+#[cfg(feature = "tabs")]
+const SYNTHETIC_WIDGET_ID_NAMESPACE: u64 = 3 << 62;
 const AUTOMATIC_WIDGET_ID_PROBE: u64 = 0x1e37_79b9_7f4a_7c15;
+
+impl WidgetId {
+    /// Builds a deterministic identity for an interactive surface owned by a
+    /// composite widget rather than by an application View node.
+    #[cfg(feature = "tabs")]
+    pub(crate) const fn synthetic_child(parent: Self, local: u64) -> Self {
+        let mut hash = parent.0 ^ 0x9e37_79b9_7f4a_7c15;
+        hash = hash
+            .rotate_left(27)
+            .wrapping_mul(0x94d0_49bb_1331_11eb)
+            ^ local;
+        hash ^= hash >> 31;
+        hash = hash.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        hash ^= hash >> 29;
+        Self(SYNTHETIC_WIDGET_ID_NAMESPACE | (hash & FRAMEWORK_WIDGET_ID_PAYLOAD_MASK))
+    }
+}
 
 impl From<WidgetId> for ComponentId {
     fn from(value: WidgetId) -> Self {
@@ -1048,7 +1067,7 @@ impl<Msg> ViewNode<Msg> {
                 candidate = AUTOMATIC_WIDGET_ID_NAMESPACE
                     | (candidate
                         .wrapping_add(AUTOMATIC_WIDGET_ID_PROBE)
-                        & AUTOMATIC_WIDGET_ID_MASK);
+                        & FRAMEWORK_WIDGET_ID_PAYLOAD_MASK);
             }
             self.id = Some(WidgetId(candidate));
             used.insert(candidate);
@@ -1335,7 +1354,7 @@ fn automatic_widget_id_for_path(path: &[usize]) -> u64 {
             hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
         }
     }
-    AUTOMATIC_WIDGET_ID_NAMESPACE | (hash & AUTOMATIC_WIDGET_ID_MASK)
+    AUTOMATIC_WIDGET_ID_NAMESPACE | (hash & FRAMEWORK_WIDGET_ID_PAYLOAD_MASK)
 }
 
 impl<Msg: Clone> ViewNode<Msg> {

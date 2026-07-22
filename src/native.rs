@@ -4505,7 +4505,9 @@ impl NativeViewInputRuntime {
             report.handled = true;
             report.tab_selection_changed = true;
             report.tab_keyboard_selection_changed = true;
-            if let Some(target) = interaction_plan.hit_target_for_widget(crate::WidgetId(tab.0)) {
+            if let Some(target) =
+                interaction_plan.hit_target_for_widget(tab.header_widget_id(tab_view))
+            {
                 self.focus_target(target, &mut report);
                 #[cfg(feature = "tooltip")]
                 self.show_keyboard_tooltip(target.widget, &mut report);
@@ -10889,10 +10891,10 @@ mod tests {
             .native_view_interaction_plan()
             .expect("tabs should expose header interaction geometry");
         let first = interaction
-            .hit_target_for_widget(crate::WidgetId(general.0))
+            .hit_target_for_widget(general.header_widget_id(tab_view_id))
             .expect("first tab should be interactive");
         let second = interaction
-            .hit_target_for_widget(crate::WidgetId(advanced.0))
+            .hit_target_for_widget(advanced.header_widget_id(tab_view_id))
             .expect("second tab should be interactive");
         let second_point = Point {
             x: second.bounds.x + second.bounds.width / 2,
@@ -10907,12 +10909,17 @@ mod tests {
         assert!(hovered.pointer_visual_changed);
         assert!(pressed.pointer_visual_changed);
         assert!(selected.tab_selection_changed);
-        assert_eq!(selected.focused_widget, Some(advanced.0));
+        assert_eq!(
+            selected.focused_widget,
+            Some(advanced.header_widget_id(tab_view_id).0)
+        );
         assert_eq!(
             runtime
                 .live_view
                 .as_ref()
-                .and_then(|view| view.widget_tab_header_state(crate::WidgetId(advanced.0)))
+                .and_then(|view| {
+                    view.widget_tab_header_state(advanced.header_widget_id(tab_view_id))
+                })
                 .map(|state| state.selected),
             Some(true)
         );
@@ -10923,7 +10930,10 @@ mod tests {
 
         let left = runtime.dispatch_key(NativeViewKey::Left);
         assert!(left.handled);
-        assert_eq!(left.focused_widget, Some(general.0));
+        assert_eq!(
+            left.focused_widget,
+            Some(general.header_widget_id(tab_view_id).0)
+        );
 
         match crate::ZsTabPlatformStyle::current() {
             crate::ZsTabPlatformStyle::Windows => {
@@ -10935,14 +10945,20 @@ mod tests {
                 let cycled = runtime.dispatch_key_with_modifiers(NativeViewKey::Tab, false, true);
                 assert!(cycled.handled);
                 assert!(cycled.tab_selection_changed);
-                assert_eq!(cycled.focused_widget, Some(advanced.0));
+                assert_eq!(
+                    cycled.focused_widget,
+                    Some(advanced.header_widget_id(tab_view_id).0)
+                );
             }
             crate::ZsTabPlatformStyle::Macos => {
                 assert!(left.tab_selection_changed);
                 assert!(left.tab_keyboard_selection_changed);
                 let right = runtime.dispatch_key(NativeViewKey::Right);
                 assert!(right.tab_selection_changed);
-                assert_eq!(right.focused_widget, Some(advanced.0));
+                assert_eq!(
+                    right.focused_widget,
+                    Some(advanced.header_widget_id(tab_view_id).0)
+                );
             }
             crate::ZsTabPlatformStyle::Gtk => {
                 assert!(left.tab_keyboard_focus_only);
@@ -10953,7 +10969,10 @@ mod tests {
                     runtime.dispatch_key_with_modifiers(NativeViewKey::PageDown, false, true);
                 assert!(cycled.handled);
                 assert!(cycled.tab_selection_changed);
-                assert_eq!(cycled.focused_widget, Some(advanced.0));
+                assert_eq!(
+                    cycled.focused_widget,
+                    Some(advanced.header_widget_id(tab_view_id).0)
+                );
             }
         }
         assert!(first.bounds.x < second.bounds.x);
