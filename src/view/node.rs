@@ -12,6 +12,7 @@ impl WidgetId {
 /// Function-pointer handlers remain allocation-free. Capturing callbacks are
 /// stored only when an application opts into a `*_with` builder.
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -33,6 +34,7 @@ pub struct ViewMessageMapper<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -54,6 +56,7 @@ enum ViewMessageMapperKind<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -93,6 +96,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -124,6 +128,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -825,10 +830,10 @@ pub enum ViewNodeKind<Msg> {
         placeholder: Option<String>,
         no_results_text: Option<String>,
         query_icon: bool,
-        on_text_change: Option<fn(crate::ZsAutoSuggestTextChange) -> Msg>,
-        on_suggestion_chosen: Option<fn(crate::ZsAutoSuggestionId) -> Msg>,
-        on_query_submit: Option<fn(crate::ZsAutoSuggestSubmission) -> Msg>,
-        on_expanded_change: Option<fn(bool) -> Msg>,
+        on_text_change: Option<ViewMessageMapper<crate::ZsAutoSuggestTextChange, Msg>>,
+        on_suggestion_chosen: Option<ViewMessageMapper<crate::ZsAutoSuggestionId, Msg>>,
+        on_query_submit: Option<ViewMessageMapper<crate::ZsAutoSuggestSubmission, Msg>>,
+        on_expanded_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "tree")]
     TreeView {
@@ -2038,7 +2043,18 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: fn(crate::ZsAutoSuggestTextChange) -> Msg,
     ) -> Self {
         if let ViewNodeKind::AutoSuggestBox { on_text_change, .. } = &mut self.kind {
-            *on_text_change = Some(message);
+            *on_text_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_auto_suggest_text_change_with(
+        mut self,
+        message: impl Fn(crate::ZsAutoSuggestTextChange) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::AutoSuggestBox { on_text_change, .. } = &mut self.kind {
+            *on_text_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2050,7 +2066,22 @@ impl<Msg: Clone> ViewNode<Msg> {
             ..
         } = &mut self.kind
         {
-            *on_suggestion_chosen = Some(message);
+            *on_suggestion_chosen = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_suggestion_chosen_with(
+        mut self,
+        message: impl Fn(crate::ZsAutoSuggestionId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
+            on_suggestion_chosen,
+            ..
+        } = &mut self.kind
+        {
+            *on_suggestion_chosen = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2061,7 +2092,21 @@ impl<Msg: Clone> ViewNode<Msg> {
             on_query_submit, ..
         } = &mut self.kind
         {
-            *on_query_submit = Some(message);
+            *on_query_submit = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_query_submit_with(
+        mut self,
+        message: impl Fn(crate::ZsAutoSuggestSubmission) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
+            on_query_submit, ..
+        } = &mut self.kind
+        {
+            *on_query_submit = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2079,7 +2124,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox {
                 on_expanded_change, ..
-            } => *on_expanded_change = Some(message),
+            } => *on_expanded_change = Some(ViewMessageMapper::from_function(message)),
             #[cfg(feature = "breadcrumb")]
             ViewNodeKind::BreadcrumbBar {
                 on_expanded_change, ..
@@ -2344,6 +2389,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: impl Fn(bool) -> Msg + Send + Sync + 'static,
     ) -> Self {
         if let ViewNodeKind::ComboBox {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    pub fn on_auto_suggest_expanded_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::AutoSuggestBox {
             on_expanded_change, ..
         } = &mut self.kind
         {

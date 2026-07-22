@@ -69,6 +69,7 @@ pub struct UiDocumentSecretAction {
         feature = "date-picker",
         feature = "time-picker",
         feature = "color-picker",
+        feature = "auto-suggest",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -181,6 +182,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "date-picker",
             feature = "time-picker",
             feature = "color-picker",
+            feature = "auto-suggest",
             feature = "list",
             feature = "tabs",
             feature = "scroll"
@@ -743,6 +745,8 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "auto-suggest")]
+        "auto_suggest" => document_auto_suggest(node, properties, mapper)?,
         #[cfg(feature = "date-picker")]
         "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "time-picker")]
@@ -821,6 +825,136 @@ fn compile_node<Msg: Clone + 'static>(
     };
     view = view.id(node.id.widget_id());
     Ok(apply_layout(view, node))
+}
+
+#[cfg(feature = "auto-suggest")]
+fn document_auto_suggest<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let authoring_suggestions = auto_suggestions_property(node, properties)?;
+    let mut author_to_runtime = BTreeMap::new();
+    let mut runtime_to_author = BTreeMap::new();
+    let mut suggestions = Vec::with_capacity(authoring_suggestions.len());
+    for suggestion in authoring_suggestions {
+        let (author_id, text) = suggestion.into_parts();
+        let runtime_id = crate::ui_document::ui_auto_suggestion_runtime_id(&node.id, &author_id);
+        if let Some(first) = runtime_to_author.insert(runtime_id, author_id.as_str().to_owned()) {
+            return Err(invalid_resolved_property(
+                node,
+                "suggestions",
+                format!(
+                    "suggestion ids {first:?} and {:?} collide after stable runtime mapping",
+                    author_id.as_str()
+                ),
+            ));
+        }
+        author_to_runtime.insert(author_id.as_str().to_owned(), runtime_id);
+        suggestions.push(crate::ZsAutoSuggestion::new(runtime_id, text));
+    }
+
+    let highlighted = optional_auto_suggestion_id_property(node, properties, "highlighted")?
+        .map(|highlighted| {
+            author_to_runtime
+                .get(highlighted.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "highlighted",
+                        format!(
+                            "id {:?} does not address an available suggestion",
+                            highlighted.as_str()
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
+
+    let mut control =
+        crate::auto_suggest_box(string_property(node, properties, "query", ""), suggestions)
+            .highlighted_suggestion(highlighted)
+            .expanded(bool_property(node, properties, "expanded", false))
+            .query_icon(bool_property(node, properties, "query_icon", true));
+    if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+        control = control.placeholder(placeholder);
+    }
+    if let Some(no_results_text) = optional_string_property(node, properties, "no_results_text") {
+        control = control.no_results_text(no_results_text);
+    }
+
+    let runtime_to_author = Arc::new(runtime_to_author);
+    if let Some(binding) = node.action_bindings.get("text_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("query").cloned();
+        control = control.on_auto_suggest_text_change_with(move |change| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(change.text),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("choose") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("highlighted").cloned();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_suggestion_chosen_with(move |suggestion| {
+            let author_id = runtime_to_author
+                .get(&suggestion)
+                .cloned()
+                .expect("chosen runtime suggestion must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("submit") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_query_submit_with(move |submission| {
+            let chosen = submission
+                .chosen
+                .and_then(|chosen| runtime_to_author.get(&chosen).cloned())
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: None,
+                payload: serde_json::json!({
+                    "query": submission.query,
+                    "chosen": chosen,
+                }),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("expanded_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("expanded").cloned();
+        control = control.on_auto_suggest_expanded_change_with(move |expanded| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(expanded),
+            })
+        });
+    }
+    Ok(control)
 }
 
 #[cfg(feature = "date-picker")]
@@ -1470,7 +1604,8 @@ fn grid_gap_property(
     feature = "password-box",
     feature = "date-picker",
     feature = "time-picker",
-    feature = "color-picker"
+    feature = "color-picker",
+    feature = "auto-suggest"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -1535,6 +1670,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "date-picker",
     feature = "time-picker",
     feature = "color-picker",
+    feature = "auto-suggest",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -1630,7 +1766,59 @@ fn color_property(
         })
 }
 
+#[cfg(feature = "auto-suggest")]
+fn auto_suggestions_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiAutoSuggestion>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get("suggestions")
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(Vec::new());
+    }
+    let value = property_value(node, properties, "suggestions").ok_or_else(|| {
+        invalid_resolved_property(node, "suggestions", "a suggestion array is required")
+    })?;
+    crate::ui_document::ui_auto_suggestions_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "suggestions",
+            "suggestions must use unique stable ids and string text values",
+        )
+    })
+}
+
+#[cfg(feature = "auto-suggest")]
+fn optional_auto_suggestion_id_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiAutoSuggestionId>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(None);
+    }
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(node, property, "suggestion id must be a string or null")
+    })?;
+    crate::ui_document::UiAutoSuggestionId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
 #[cfg(any(
+    feature = "auto-suggest",
     feature = "label",
     feature = "button",
     feature = "toggle-button",
@@ -1662,6 +1850,7 @@ fn string_property(
     feature = "date-picker",
     feature = "time-picker",
     feature = "color-picker",
+    feature = "auto-suggest",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -1713,7 +1902,8 @@ fn nullable_number_property(
     feature = "progress-ring",
     feature = "password-box",
     feature = "time-picker",
-    feature = "color-picker"
+    feature = "color-picker",
+    feature = "auto-suggest"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -1904,6 +2094,7 @@ mod tests {
     use super::*;
 
     #[cfg(any(
+        feature = "auto-suggest",
         feature = "label",
         feature = "date-picker",
         feature = "time-picker",
@@ -2088,6 +2279,178 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "wrap"
+        ));
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    #[test]
+    fn compiles_controlled_auto_suggest_and_emits_semantic_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "country-search",
+                "component": "auto_suggest",
+                "properties": {
+                  "placeholder": "Search countries",
+                  "no_results_text": "No matches",
+                  "query_icon": true
+                },
+                "property_bindings": {
+                  "suggestions": "country_suggestions",
+                  "query": "country_query",
+                  "highlighted": "country_highlighted",
+                  "expanded": "country_expanded"
+                },
+                "action_bindings": {
+                  "text_change": "country_query_changed",
+                  "choose": "country_chosen",
+                  "submit": "country_submitted",
+                  "expanded_change": "country_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "country_suggestions".to_owned(),
+                    crate::ui_document::UiValueType::AutoSuggestionArray,
+                ),
+                (
+                    "country_query".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "country_highlighted".to_owned(),
+                    crate::ui_document::UiValueType::NullableAutoSuggestionId,
+                ),
+                (
+                    "country_expanded".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "country_query_changed".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "country_chosen".to_owned(),
+                    crate::ui_document::UiValueType::AutoSuggestionId,
+                ),
+                (
+                    "country_submitted".to_owned(),
+                    crate::ui_document::UiValueType::AutoSuggestSubmission,
+                ),
+                (
+                    "country_expanded_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "country_suggestions".to_owned(),
+                serde_json::json!([
+                    { "id": "china", "text": "China" },
+                    { "id": "chile", "text": "Chile" },
+                    { "id": "chicago", "text": "Chicago" }
+                ]),
+            ),
+            ("country_query".to_owned(), Value::String("Ch".to_owned())),
+            ("country_highlighted".to_owned(), Value::Null),
+            ("country_expanded".to_owned(), Value::Bool(true)),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let china_author = crate::ui_document::UiAutoSuggestionId::new("china").unwrap();
+        let china =
+            crate::ui_document::ui_auto_suggestion_runtime_id(&document.root.id, &china_author);
+        assert_eq!(
+            view.widget_auto_suggest_state(widget),
+            Some(crate::ZsAutoSuggestState {
+                query: "Ch".to_owned(),
+                suggestion_ids: vec![
+                    china,
+                    crate::ui_document::ui_auto_suggestion_runtime_id(
+                        &document.root.id,
+                        &crate::ui_document::UiAutoSuggestionId::new("chile").unwrap(),
+                    ),
+                    crate::ui_document::ui_auto_suggestion_runtime_id(
+                        &document.root.id,
+                        &crate::ui_document::UiAutoSuggestionId::new("chicago").unwrap(),
+                    ),
+                ],
+                highlighted: None,
+                expanded: true,
+            })
+        );
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::AutoSuggestHighlighted {
+                widget,
+                suggestion: china,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(query), Msg::Action(chosen)] = messages.as_slice() else {
+            panic!("highlighting must emit query and stable-id actions");
+        };
+        assert_eq!(query.binding, "country_query_changed");
+        assert_eq!(query.property_binding.as_deref(), Some("country_query"));
+        assert_eq!(query.payload, Value::String("China".to_owned()));
+        assert_eq!(chosen.binding, "country_chosen");
+        assert_eq!(
+            chosen.property_binding.as_deref(),
+            Some("country_highlighted")
+        );
+        assert_eq!(chosen.payload, Value::String("china".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::AutoSuggestSubmitted {
+                widget,
+                suggestion: Some(china),
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(submitted), Msg::Action(expanded)] = messages.as_slice() else {
+            panic!("submission must emit structured submit and controlled close actions");
+        };
+        assert_eq!(submitted.binding, "country_submitted");
+        assert_eq!(submitted.property_binding, None);
+        assert_eq!(
+            submitted.payload,
+            serde_json::json!({ "query": "China", "chosen": "china" })
+        );
+        assert_eq!(expanded.binding, "country_expanded_changed");
+        assert_eq!(
+            expanded.property_binding.as_deref(),
+            Some("country_expanded")
+        );
+        assert_eq!(expanded.payload, Value::Bool(false));
+
+        let unknown_highlight = BTreeMap::from([
+            (
+                "country_suggestions".to_owned(),
+                serde_json::json!([{ "id": "china", "text": "China" }]),
+            ),
+            ("country_query".to_owned(), Value::String(String::new())),
+            (
+                "country_highlighted".to_owned(),
+                Value::String("missing".to_owned()),
+            ),
+            ("country_expanded".to_owned(), Value::Bool(false)),
+        ]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &unknown_highlight, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "highlighted"
         ));
     }
 

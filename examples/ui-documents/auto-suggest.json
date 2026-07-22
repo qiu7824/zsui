@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "auto-suggest-demo",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "auto-suggest-title",
+        "component": "text",
+        "properties": {
+          "text": "自动建议 / AutoSuggestBox",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "auto-suggest-description",
+        "component": "text",
+        "properties": {
+          "text": "稳定建议 ID、受控查询与结构化提交 / Stable suggestion IDs, controlled query and structured submission",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
+        }
+      },
+      {
+        "id": "country-search",
+        "component": "auto_suggest",
+        "properties": {
+          "placeholder": "搜索国家或城市 / Search countries or cities",
+          "no_results_text": "没有匹配项 / No matches",
+          "query_icon": true
+        },
+        "property_bindings": {
+          "suggestions": "country_suggestions",
+          "query": "country_query",
+          "highlighted": "country_highlighted",
+          "expanded": "country_expanded"
+        },
+        "action_bindings": {
+          "text_change": "country_query_changed",
+          "choose": "country_chosen",
+          "submit": "country_submitted",
+          "expanded_change": "country_expanded_changed"
+        },
+        "accessibility": {
+          "role": "combobox",
+          "label": "国家和城市搜索 / Country and city search"
+        }
+      }
+    ]
+  }
+}

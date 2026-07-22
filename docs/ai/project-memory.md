@@ -100,6 +100,14 @@ history remain authoritative for implementation status.
   active alpha channel instead of silently normalizing document state. Windows
   Viewer proof changes the active channel and canonical RGBA value through one
   real pointer click and captures the final Win32 surface.
+  Document-ready AutoSuggestBox stores suggestions as a typed array of stable
+  semantic string IDs and display text. Query, nullable highlighted ID and
+  expanded state use independent controlled bindings; choose emits the stable
+  ID and submit emits both query and optional chosen ID. The release runtime
+  derives private numeric `ZsAutoSuggestionId` values from the owning node and
+  semantic item ID, rejects collisions or missing highlights, and never uses
+  declaration order as identity. Windows Viewer proof submits one suggestion
+  through a real pointer click and retains the final Win32 surface.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the

@@ -1,0 +1,10 @@
+{
+  "country_suggestions": [
+    { "id": "china", "text": "中国 / China" },
+    { "id": "chile", "text": "智利 / Chile" },
+    { "id": "chicago", "text": "芝加哥 / Chicago" }
+  ],
+  "country_query": "Ch",
+  "country_highlighted": null,
+  "country_expanded": true
+}

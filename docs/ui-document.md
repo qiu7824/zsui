@@ -32,7 +32,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
@@ -62,6 +62,17 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 混合类型选项和小数索引。`select` 动作发送 `integer`，`expanded_change` 发送 boolean；将
 `selected_index` 和 `expanded` 同时绑定到显式状态后，选择、弹层开关和 View 重建形成
 受控闭环。静态索引超出选项范围会在进入原生宿主前被拒绝。
+
+`auto_suggest.suggestions` 使用 `auto_suggestion_array`，每项由合法且唯一的稳定字符串 ID
+和显示文字组成；项目重排不会改变身份。`query`、`highlighted` 与 `expanded` 分别保存查询、
+可空高亮 ID 和展开状态。`text_change` 发送 string，`choose` 发送
+`auto_suggestion_id`，`submit` 发送同时包含 `query` 与可空 `chosen` 的
+`auto_suggest_submission`，`expanded_change` 发送 boolean。
+`UiBindingManifest::register_auto_suggestions_property`、
+`register_auto_suggestion_id_property`、`register_auto_suggestion_id_action` 和
+`register_auto_suggest_submission_action` 在 Rust 侧保留强类型语义 ID；发布运行时才把
+节点 ID 与建议 ID 确定性映射为私有 `ZsAutoSuggestionId`。重复、非法或不存在的高亮 ID
+会在进入平台宿主前被拒绝，Viewer 受控重建不会依赖数组下标或全局注册表。
 
 `date_picker` 使用独立的 `date` 绑定类型，序列化形式固定为 ISO `YYYY-MM-DD`，不会把
 平台区域日期文本当作状态格式。`UiBindingManifest::register_date_property` 和
@@ -169,7 +180,7 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle`、`slider.slide`、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
+`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
 消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
@@ -224,6 +235,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/color-picker.values.json
 ```
 
+受控自动建议示例使用稳定语义 ID，并由目标平台选择搜索框与建议弹层参数：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/auto-suggest.json `
+  --bindings examples/ui-documents/auto-suggest.bindings.json `
+  --values examples/ui-documents/auto-suggest.values.json
+```
+
 原生证明可由同一可执行文件生成：
 
 ```powershell
@@ -247,6 +269,9 @@ cargo run --bin zsui-viewer `
 确定性 `WidgetId`、组件、布局约束和子节点数量；`runtime` 继续记录焦点、事件、消息、
 滚动处理、字体、最终平台视图捕获和进程内存。该报告索引 UiDocument 结构，但截图必须
 来自 AppKit `NSView` 或 Linux 最终呈现表面，不能用共享 DrawPlan PNG 代替。
+
+Windows AutoSuggestBox 受控示例的本地原生证明使用一次真实建议行点击，记录 1 次已处理
+点击、4 条 Viewer 消息、0 次未处理点击，并在最终 Win32 PNG 中保留提交后的查询。
 
 固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
 `scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。
