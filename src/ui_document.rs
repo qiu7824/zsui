@@ -184,6 +184,7 @@ pub enum UiValueType {
     NullableInteger,
     String,
     StringArray,
+    StringMap,
     Array,
     Object,
     Any,
@@ -202,6 +203,9 @@ impl UiValueType {
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
+            Self::StringMap => value
+                .as_object()
+                .is_some_and(|values| values.values().all(Value::is_string)),
             Self::Array => value.is_array(),
             Self::Object => value.is_object(),
             Self::Any => true,
@@ -321,6 +325,7 @@ pub struct UiAiHandoffActionContract {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UiAiHandoffChildPolicy {
     Any,
+    AtLeast { minimum: usize },
     Exactly { count: usize },
     AtMost { maximum: usize },
     None,
@@ -447,6 +452,9 @@ impl UiAiHandoffPackage {
                     actions,
                     children: match schema.children {
                         ChildPolicy::Any => UiAiHandoffChildPolicy::Any,
+                        ChildPolicy::AtLeast(minimum) => {
+                            UiAiHandoffChildPolicy::AtLeast { minimum }
+                        }
                         ChildPolicy::Exactly(count) => UiAiHandoffChildPolicy::Exactly { count },
                         ChildPolicy::AtMost(maximum) => UiAiHandoffChildPolicy::AtMost { maximum },
                         ChildPolicy::None => UiAiHandoffChildPolicy::None,
@@ -1269,6 +1277,15 @@ impl<'a> UiDocumentValidator<'a> {
         diagnostics: &mut Vec<UiDiagnostic>,
     ) {
         match schema.children {
+            ChildPolicy::AtLeast(minimum) if node.children.len() < minimum => push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidChildCount,
+                format!("{path}.children"),
+                format!(
+                    "component {:?} requires at least {minimum} child node(s)",
+                    node.component
+                ),
+            ),
             ChildPolicy::Exactly(count) if node.children.len() != count => push_diagnostic(
                 diagnostics,
                 UiDiagnosticCode::InvalidChildCount,
@@ -1294,6 +1311,7 @@ impl<'a> UiDocumentValidator<'a> {
                 ),
             ),
             ChildPolicy::Any
+            | ChildPolicy::AtLeast(_)
             | ChildPolicy::Exactly(_)
             | ChildPolicy::AtMost(_)
             | ChildPolicy::None => {}
@@ -1421,6 +1439,72 @@ impl<'a> UiDocumentValidator<'a> {
                         format!("{path}.properties.selected_index"),
                         "combo_box selected_index must address an available option".to_owned(),
                     );
+                }
+            }
+        }
+
+        if node.component == "tabs" {
+            let child_ids = node
+                .children
+                .iter()
+                .map(|child| child.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if let Some(labels) = node.properties.get("labels").and_then(Value::as_object) {
+                for child_id in &child_ids {
+                    if !labels.contains_key(*child_id) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.labels"),
+                            format!("tabs labels must contain child id {child_id:?}"),
+                        );
+                    }
+                }
+                for label_id in labels.keys() {
+                    if !child_ids.contains(label_id.as_str()) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.labels.{label_id}"),
+                            format!("tabs label id {label_id:?} does not address a child"),
+                        );
+                    }
+                }
+            }
+            if let Some(selected) = node.properties.get("selected").and_then(Value::as_str) {
+                if !child_ids.contains(selected) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.selected"),
+                        "tabs selected must address a child id".to_owned(),
+                    );
+                }
+            }
+            if let Some(icons) = node.properties.get("icons").and_then(Value::as_object) {
+                for (icon_id, icon) in icons {
+                    if !child_ids.contains(icon_id.as_str()) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.icons.{icon_id}"),
+                            format!("tabs icon id {icon_id:?} does not address a child"),
+                        );
+                    } else if icon
+                        .as_str()
+                        .and_then(|icon| {
+                            serde_json::from_value::<crate::ZsIcon>(Value::String(icon.to_owned()))
+                                .ok()
+                        })
+                        .is_none()
+                    {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.icons.{icon_id}"),
+                            "tabs icon must name a ZsIcon semantic variant".to_owned(),
+                        );
+                    }
                 }
             }
         }
@@ -1567,6 +1651,7 @@ struct ActionSpec {
 #[derive(Clone, Copy)]
 enum ChildPolicy {
     Any,
+    AtLeast(usize),
     Exactly(usize),
     AtMost(usize),
     None,
@@ -1744,6 +1829,27 @@ const COMBO_BOX_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const TABS_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "labels",
+        value_type: UiValueType::StringMap,
+        required: true,
+    },
+    PropertySpec {
+        name: "icons",
+        value_type: UiValueType::StringMap,
+        required: false,
+    },
+    PropertySpec {
+        name: "selected",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const TABS_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "select",
+    payload_type: UiValueType::String,
+}];
 const SCROLL_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "offset_y",
@@ -1782,6 +1888,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: SCROLL_PROPERTIES,
             actions: SCROLL_ACTIONS,
             children: ChildPolicy::Exactly(1),
+        }),
+        "tabs" => Some(ComponentSchema {
+            properties: TABS_PROPERTIES,
+            actions: TABS_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
@@ -2070,10 +2181,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "tabs".to_owned();
+        document.root.children[0].component = "password_box".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "tabs"]),
+            &UiFeatureSet::new(["button", "label", "password-box"]),
             &UiBindingSchema::default(),
         );
 
@@ -2313,6 +2424,82 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path.ends_with("properties.selected_index")
         }));
+    }
+
+    #[test]
+    fn tabs_contract_uses_child_ids_as_stable_slots_and_selection_values() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "settings-tabs",
+                "component": "tabs",
+                "properties": {
+                  "labels": {
+                    "general": "General",
+                    "advanced": "Advanced"
+                  },
+                  "icons": { "general": "Settings" }
+                },
+                "property_bindings": { "selected": "active_tab" },
+                "action_bindings": { "select": "active_tab_selected" },
+                "children": [
+                  { "id": "general", "component": "stack" },
+                  { "id": "advanced", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("active_tab".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::from([("active_tab_selected".to_owned(), UiValueType::String)]),
+        };
+        assert!(valid
+            .validate(&UiFeatureSet::new(["tabs"]), &bindings)
+            .is_valid());
+        let handoff =
+            UiAiHandoffPackage::build(&valid, &UiFeatureSet::new(["tabs"]), &bindings, None, None)
+                .unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "tabs")
+            .unwrap();
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::AtLeast { minimum: 1 }
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "settings-tabs",
+                "component": "tabs",
+                "properties": {
+                  "labels": { "general": "General", "missing": "Missing" },
+                  "icons": { "general": "NotAnIcon" },
+                  "selected": "missing"
+                },
+                "children": [
+                  { "id": "general", "component": "stack" },
+                  { "id": "advanced", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&UiFeatureSet::new(["tabs"]), &UiBindingSchema::default());
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            4
+        );
     }
 
     #[test]

@@ -40,10 +40,12 @@ framework readiness.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. Fourteen components are document-ready; NumberBox
+  runtime memory evidence. Fifteen components are document-ready; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
-  options plus controlled nullable selection and expanded state. Complete
-  component coverage and broader advanced-control state retention remain.
+  options plus controlled nullable selection and expanded state. Tabs maps each
+  direct child's stable ID to a typed content slot, semantic header and
+  controlled string selection. Complete component coverage and broader
+  advanced-control state retention remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.

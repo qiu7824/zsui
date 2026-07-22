@@ -44,6 +44,7 @@ pub struct UiDocumentAction {
         feature = "slider",
         feature = "number-box",
         feature = "combo",
+        feature = "tabs",
         feature = "scroll"
     )),
     allow(dead_code)
@@ -96,6 +97,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "slider",
             feature = "number-box",
             feature = "combo",
+            feature = "tabs",
             feature = "scroll"
         )),
         allow(dead_code)
@@ -489,6 +491,63 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "tabs")]
+        "tabs" => {
+            let labels = string_map_property(node, properties, "labels");
+            let icons = string_map_property(node, properties, "icons");
+            let tab_ids = node
+                .children
+                .iter()
+                .map(|child| (document_tab_id(child), child.id.as_str().to_owned()))
+                .collect::<Vec<_>>();
+            let items = node
+                .children
+                .iter()
+                .zip(children)
+                .zip(&tab_ids)
+                .map(|((child, content), (tab_id, _))| {
+                    let label = labels
+                        .get(child.id.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| child.id.as_str().to_owned());
+                    let mut item = crate::ZsTabItem::new(*tab_id, label, content);
+                    if let Some(icon) = icons.get(child.id.as_str()).and_then(|icon| {
+                        serde_json::from_value::<crate::ZsIcon>(Value::String(icon.clone())).ok()
+                    }) {
+                        item = item.icon(icon);
+                    }
+                    item
+                })
+                .collect::<Vec<_>>();
+            let selected =
+                optional_string_property(node, properties, "selected").and_then(|selected| {
+                    tab_ids
+                        .iter()
+                        .find(|(_, node_id)| *node_id == selected)
+                        .map(|(tab_id, _)| *tab_id)
+                });
+            let mut control = crate::tab_view(items, selected);
+            if let Some(binding) = node.action_bindings.get("select") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("selected").cloned();
+                control = control.on_tab_select_with(move |selected| {
+                    let selected = tab_ids
+                        .iter()
+                        .find(|(tab_id, _)| *tab_id == selected)
+                        .map(|(_, node_id)| node_id.clone())
+                        .expect("selected document tab must address compiled content");
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::String(selected),
+                    })
+                });
+            }
+            control
+        }
         #[cfg(feature = "progress")]
         "progress_bar" => crate::progress_bar(
             number_property(node, properties, "value", 0.0) as f32,
@@ -547,6 +606,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "tabs",
     feature = "progress",
     feature = "scroll"
 ))]
@@ -638,13 +698,39 @@ fn nullable_number_property(
         .unwrap_or(fallback)
 }
 
-#[cfg(feature = "combo")]
+#[cfg(any(feature = "combo", feature = "tabs"))]
 fn optional_string_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
     property: &str,
 ) -> Option<String> {
     property_value(node, properties, property).and_then(|value| value.as_str().map(str::to_owned))
+}
+
+#[cfg(feature = "tabs")]
+fn string_map_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> BTreeMap<String, String> {
+    property_value(node, properties, property)
+        .and_then(|value| {
+            value.as_object().map(|values| {
+                values
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        value.as_str().map(|value| (key.clone(), value.to_owned()))
+                    })
+                    .collect()
+            })
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "tabs")]
+fn document_tab_id(node: &UiNode) -> crate::ZsTabId {
+    const DOCUMENT_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
+    crate::ZsTabId::new(node.id.widget_id().0 & DOCUMENT_ID_PAYLOAD_MASK)
 }
 
 #[cfg(feature = "combo")]

@@ -4,5 +4,6 @@
   "volume": 42.0,
   "retry_count": 3.0,
   "profile_mode": 0,
-  "profile_mode_expanded": false
+  "profile_mode_expanded": false,
+  "active_tab": "general-settings"
 }

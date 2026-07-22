@@ -5,7 +5,8 @@
     "volume": "number",
     "retry_count": "nullable_number",
     "profile_mode": "nullable_integer",
-    "profile_mode_expanded": "boolean"
+    "profile_mode_expanded": "boolean",
+    "active_tab": "string"
   },
   "actions": {
     "profile_name_changed": "string",
@@ -13,6 +14,7 @@
     "volume_changed": "number",
     "retry_count_changed": "nullable_number",
     "profile_mode_selected": "integer",
-    "profile_mode_expanded_changed": "boolean"
+    "profile_mode_expanded_changed": "boolean",
+    "active_tab_selected": "string"
   }
 }

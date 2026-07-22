@@ -19,6 +19,7 @@ impl WidgetId {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "tabs",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -34,6 +35,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "tabs",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -49,6 +51,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "tabs",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -82,6 +85,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "tabs",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -107,6 +111,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "tabs",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -923,7 +928,7 @@ pub enum ViewNodeKind<Msg> {
     Tabs {
         tabs: Vec<ZsTabSpec>,
         selected: Option<ZsTabId>,
-        on_select: Option<fn(ZsTabId) -> Msg>,
+        on_select: Option<ViewMessageMapper<ZsTabId, Msg>>,
     },
     #[cfg(feature = "list")]
     List {
@@ -2136,7 +2141,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "tabs")]
     pub fn on_tab_select(mut self, message: fn(ZsTabId) -> Msg) -> Self {
         if let ViewNodeKind::Tabs { on_select, .. } = &mut self.kind {
-            *on_select = Some(message);
+            *on_select = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "tabs")]
+    pub fn on_tab_select_with(
+        mut self,
+        message: impl Fn(ZsTabId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Tabs { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

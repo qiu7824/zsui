@@ -32,8 +32,8 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`progress_bar` 和 `scroll`。其他已存在的
-ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
+`radio_button`、`slider`、`number_box`、`combo_box`、`tabs`、`progress_bar` 和 `scroll`。
+其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 `number_box.value` 使用 `nullable_number`，可表示数字或空值；`change` 动作使用相同
 payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`maximum`、`step`、
@@ -44,6 +44,12 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 混合类型选项和小数索引。`select` 动作发送 `integer`，`expanded_change` 发送 boolean；将
 `selected_index` 和 `expanded` 同时绑定到显式状态后，选择、弹层开关和 View 重建形成
 受控闭环。静态索引超出选项范围会在进入原生宿主前被拒绝。
+
+`tabs` 的每个直接子节点都是一个内容槽位，子节点的稳定 `UiNodeId` 同时作为公开选择值
+和内部强类型 `ZsTabId` 的确定性来源。`labels` 使用以子节点 ID 为键的 `string_map`，
+`icons` 可使用相同键映射到 `ZsIcon` 语义枚举名；标签必须完整覆盖子节点，额外键、无效
+图标和不存在的 `selected` 都会被拒绝。`selected` string 属性和 `select` string 动作绑定后，
+切换页面会更新显式状态，热重建继续选中同一稳定槽位。Tabs 至少需要一个内容子节点。
 
 `scroll` 必须有且只有一个内容子节点，并要求非负的 `content_height` 数值属性。
 `offset_y` 是可选的非负数值属性；需要在 View 重建后保留位置时，将它绑定到 number
@@ -180,7 +186,7 @@ cargo run --bin zsui-uic `
 ```powershell
 cargo run --bin zsui-uic `
   --no-default-features `
-  --features ui-document,label,checkbox,textbox,slider,number-box,combo `
+  --features ui-document,label,checkbox,textbox,slider,number-box,combo,tabs `
   -- embed examples/ui-documents/interactive.json `
   --bindings examples/ui-documents/interactive.bindings.json `
   --output target/release-ui/interactive.zsui `

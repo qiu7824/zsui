@@ -99,6 +99,38 @@
           "role": "combobox",
           "label": "Profile mode"
         }
+      },
+      {
+        "id": "settings-tabs",
+        "component": "tabs",
+        "properties": {
+          "labels": {
+            "general-settings": "General",
+            "advanced-settings": "Advanced"
+          },
+          "icons": {
+            "general-settings": "Settings",
+            "advanced-settings": "Tool"
+          }
+        },
+        "property_bindings": {
+          "selected": "active_tab"
+        },
+        "action_bindings": {
+          "select": "active_tab_selected"
+        },
+        "children": [
+          {
+            "id": "general-settings",
+            "component": "text",
+            "properties": { "text": "General settings" }
+          },
+          {
+            "id": "advanced-settings",
+            "component": "text",
+            "properties": { "text": "Advanced settings" }
+          }
+        ]
       }
     ]
   }

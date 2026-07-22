@@ -826,6 +826,23 @@ mod tests {
                       "select": "profile_mode_selected",
                       "expanded_change": "profile_mode_expanded_changed"
                     }
+                  },
+                  {
+                    "id": "settings-tabs",
+                    "component": "tabs",
+                    "properties": {
+                      "labels": {
+                        "general": "General",
+                        "advanced": "Advanced"
+                      },
+                      "icons": { "general": "Settings" }
+                    },
+                    "property_bindings": { "selected": "active_tab" },
+                    "action_bindings": { "select": "active_tab_selected" },
+                    "children": [
+                      { "id": "general", "component": "stack" },
+                      { "id": "advanced", "component": "stack" }
+                    ]
                   }
                 ]
               }
@@ -841,7 +858,8 @@ mod tests {
                 "volume": "number",
                 "retry_count": "nullable_number",
                 "profile_mode": "nullable_integer",
-                "profile_mode_expanded": "boolean"
+                "profile_mode_expanded": "boolean",
+                "active_tab": "string"
               },
               "actions": {
                 "name_changed": "string",
@@ -849,7 +867,8 @@ mod tests {
                 "volume_changed": "number",
                 "retry_count_changed": "nullable_number",
                 "profile_mode_selected": "integer",
-                "profile_mode_expanded_changed": "boolean"
+                "profile_mode_expanded_changed": "boolean",
+                "active_tab_selected": "string"
               }
             }"#,
         )
@@ -872,6 +891,7 @@ mod tests {
                 ("retry_count".to_owned(), Value::from(2.5)),
                 ("profile_mode".to_owned(), Value::from(0_u64)),
                 ("profile_mode_expanded".to_owned(), Value::Bool(false)),
+                ("active_tab".to_owned(), Value::String("general".to_owned())),
             ])),
             move |state| live_source.view(state),
             move |state, message, cx| {
@@ -897,6 +917,16 @@ mod tests {
         let profile_mode = crate::ui_document::UiNodeId::new("profile-mode")
             .unwrap()
             .widget_id();
+        let settings_tabs = crate::ui_document::UiNodeId::new("settings-tabs")
+            .unwrap()
+            .widget_id();
+        let advanced_tab = crate::ZsTabId::new(
+            crate::ui_document::UiNodeId::new("advanced")
+                .unwrap()
+                .widget_id()
+                .0
+                & ((1_u64 << 62) - 1),
+        );
 
         let text_update = live_view.dispatch_event(&crate::ViewEvent::TextChanged {
             widget: name,
@@ -950,8 +980,20 @@ mod tests {
             live_view.widget_combo_state(profile_mode),
             Some((Some(2), 3, false))
         );
+        let tab_update = live_view.dispatch_event(&crate::ViewEvent::TabSelected {
+            widget: settings_tabs,
+            tab: advanced_tab,
+        });
+        assert_eq!(tab_update.message_count, 1);
+        assert_eq!(
+            live_view.widget_tab_view_state(settings_tabs),
+            Some(crate::ZsTabViewState {
+                selected: Some(advanced_tab),
+                tab_count: 2,
+            })
+        );
         let actions = actions.lock().unwrap();
-        assert_eq!(actions.len(), 8);
+        assert_eq!(actions.len(), 9);
         assert_eq!(actions[0].binding, "name_changed");
         assert_eq!(actions[0].property_binding.as_deref(), Some("name"));
         assert_eq!(actions[0].payload, Value::String("AB".to_owned()));
@@ -971,6 +1013,9 @@ mod tests {
         assert_eq!(actions[6].payload, Value::from(2_u64));
         assert_eq!(actions[7].binding, "profile_mode_expanded_changed");
         assert_eq!(actions[7].payload, Value::Bool(false));
+        assert_eq!(actions[8].binding, "active_tab_selected");
+        assert_eq!(actions[8].property_binding.as_deref(), Some("active_tab"));
+        assert_eq!(actions[8].payload, Value::String("advanced".to_owned()));
         drop(actions);
         fs::remove_dir_all(directory).unwrap();
     }

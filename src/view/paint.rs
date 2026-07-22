@@ -980,7 +980,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 {
                     *selected = Some(*tab);
                     if let Some(message) = on_select {
-                        cx.emit(message(*tab));
+                        cx.emit(message.map(*tab));
                     }
                 }
             }

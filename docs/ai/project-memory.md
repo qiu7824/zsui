@@ -72,7 +72,11 @@ history remain authoritative for implementation status.
   and wrapping before compilation. Document-ready ComboBox uses `string_array`,
   `nullable_integer`, `integer` and boolean contracts; selected index and
   expanded state update explicit bindings through owned callbacks so both
-  survive View rebuilds. Ordinary function-pointer handlers remain
+  survive View rebuilds. Document-ready Tabs treats each direct child as one
+  typed content slot: the child's stable `UiNodeId` derives the internal
+  `ZsTabId`, keys its required label and optional semantic icon, and is the
+  string value emitted by the controlled selection action. Ordinary
+  function-pointer handlers remain
   allocation-free; shared owned closures are
   allocated only through explicit `*_with` builders. `zsui-uic handoff`
   canonicalizes the validated document, binding schema, optional value snapshot
