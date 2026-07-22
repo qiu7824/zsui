@@ -32,7 +32,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`date_picker`、`password_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`date_picker`、`time_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
@@ -70,6 +70,14 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 选择、月份导航及弹层开关在 Viewer 重建后继续保留。`minimum`、`maximum` 和可选的固定
 `today` 也使用同一日期类型；校验器与发布运行时都会拒绝非规范日期、倒置范围、越界值，
 以及未使用当月第一天的 `visible_month`。最终日历尺寸、间距和视觉仍由三平台体验参数决定。
+
+`time_picker` 使用独立的 `time` 绑定类型，序列化形式固定为 24 小时制 `HH:MM`，显示时制
+仍由目标平台或显式 `clock_format` 决定。`UiBindingManifest::register_time_property` 和
+`register_time_action` 在 Rust 侧直接读写强类型 `ZsTime`。`value` 与 `expanded` 可分别绑定
+受控状态，`change` 与 `expanded_change` 动作在 Viewer 重建后保留选择和弹层状态。
+`minute_increment` 必须是小于 60 的非零约数，且分钟值必须与步长对齐；`clock_format` 只接受
+`platform_default`、`twelve_hour` 或 `twenty_four_hour`。静态校验和发布运行时都会拒绝非规范
+时间、无效步长、未对齐值及未知时制，不把平台本地化显示文本写入应用状态。
 
 `password_box.value` 只允许绑定到安全状态，禁止写成文档字面量、本地化值或普通
 `values.json`。`UiBindingManifest::register_secret_property` 和
@@ -154,7 +162,7 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle`、`slider.slide`、DatePicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
+`checkbox.toggle`、`toggle.toggle`、`slider.slide`、DatePicker 三类状态动作、TimePicker 两类状态动作和 `scroll.scroll` 均走类型化 Viewer
 消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
@@ -185,6 +193,17 @@ cargo run --bin zsui-viewer `
   -- examples/ui-documents/date-picker.json `
   --bindings examples/ui-documents/date-picker.bindings.json `
   --values examples/ui-documents/date-picker.values.json
+```
+
+受控时间示例使用同一份 Viewer，并保留平台默认显示时制：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/time-picker.json `
+  --bindings examples/ui-documents/time-picker.bindings.json `
+  --values examples/ui-documents/time-picker.values.json
 ```
 
 原生证明可由同一可执行文件生成：

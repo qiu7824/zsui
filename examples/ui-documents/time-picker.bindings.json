@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "meeting_time": "time",
+    "meeting_time_expanded": "boolean"
+  },
+  "actions": {
+    "meeting_time_changed": "time",
+    "meeting_time_expanded_changed": "boolean"
+  }
+}

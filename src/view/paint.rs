@@ -1060,7 +1060,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if *expanded {
                         *expanded = false;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }
@@ -1267,7 +1267,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 if *value != next_value {
                     *value = next_value;
                     if let Some(message) = on_time_change {
-                        cx.emit(message(next_value));
+                        cx.emit(message.map(next_value));
                     }
                 }
             }
@@ -1998,7 +1998,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if *expanded != *next_expanded {
                         *expanded = *next_expanded;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(*next_expanded));
+                            cx.emit(message.map(*next_expanded));
                         }
                     }
                 }

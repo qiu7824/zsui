@@ -287,6 +287,7 @@ pub enum UiValueType {
     NullableInteger,
     String,
     Date,
+    Time,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -307,6 +308,7 @@ impl UiValueType {
             Self::NullableInteger => value.is_null() || value.as_u64().is_some(),
             Self::String => value.is_string(),
             Self::Date => ui_date_from_value(value).is_some(),
+            Self::Time => ui_time_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -385,6 +387,33 @@ const fn ui_document_days_in_month(year: u16, month: u8) -> u8 {
 
 fn ui_date_from_value(value: &Value) -> Option<UiDocumentDate> {
     value.as_str().and_then(UiDocumentDate::parse)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UiDocumentTime {
+    minute: u8,
+}
+
+impl UiDocumentTime {
+    fn parse(value: &str) -> Option<Self> {
+        let bytes = value.as_bytes();
+        if bytes.len() != 5
+            || bytes[2] != b':'
+            || !bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| index == 2 || byte.is_ascii_digit())
+        {
+            return None;
+        }
+        let hour = value[0..2].parse::<u8>().ok()?;
+        let minute = value[3..5].parse::<u8>().ok()?;
+        (hour <= 23 && minute <= 59).then_some(Self { minute })
+    }
+}
+
+fn ui_time_from_value(value: &Value) -> Option<UiDocumentTime> {
+    value.as_str().and_then(UiDocumentTime::parse)
 }
 
 fn grid_tracks_from_value(value: &Value) -> Option<Vec<UiGridTrack>> {
@@ -1212,6 +1241,19 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers a strongly typed time property using the canonical
+    /// platform-independent `HH:MM` 24-hour document representation.
+    #[cfg(feature = "time-picker")]
+    pub fn register_time_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> crate::ZsTime + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::Time, move |state| {
+            Value::String(read(state).to_string())
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -1248,6 +1290,25 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                     crate::ZsDate::parse_iso(value).map_err(|error| error.to_string())
                 })?;
             map(date)
+        })
+    }
+
+    /// Registers a strongly typed wall-clock action. Invalid or noncanonical
+    /// serialized times are rejected before application update.
+    #[cfg(feature = "time-picker")]
+    pub fn register_time_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(crate::ZsTime) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::Time, move |payload| {
+            let time = payload
+                .as_str()
+                .ok_or_else(|| "time payload must be an HH:MM string".to_owned())
+                .and_then(|value| {
+                    crate::ZsTime::parse_24_hour(value).map_err(|error| error.to_string())
+                })?;
+            map(time)
         })
     }
 
@@ -2043,6 +2104,61 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "time_picker" {
+            let static_increment = (!node.property_bindings.contains_key("minute_increment"))
+                .then(|| {
+                    node.properties
+                        .get("minute_increment")
+                        .map(Value::as_u64)
+                        .unwrap_or(Some(1))
+                })
+                .flatten();
+            let valid_increment = static_increment.and_then(|increment| {
+                u8::try_from(increment)
+                    .ok()
+                    .filter(|increment| *increment > 0 && *increment < 60 && 60 % increment == 0)
+            });
+            if static_increment.is_some() && valid_increment.is_none() {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.minute_increment"),
+                    "time_picker minute_increment must be a non-zero divisor of 60 smaller than 60"
+                        .to_owned(),
+                );
+            }
+            if !node.property_bindings.contains_key("clock_format") {
+                if let Some(clock) = node.properties.get("clock_format").and_then(Value::as_str) {
+                    if !matches!(
+                        clock,
+                        "platform_default" | "twelve_hour" | "twenty_four_hour"
+                    ) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.clock_format"),
+                            "time_picker clock_format must be platform_default, twelve_hour or twenty_four_hour"
+                                .to_owned(),
+                        );
+                    }
+                }
+            }
+            let static_value = (!node.property_bindings.contains_key("value"))
+                .then(|| node.properties.get("value").and_then(ui_time_from_value))
+                .flatten();
+            if static_value
+                .zip(valid_increment)
+                .is_some_and(|(time, increment)| time.minute % increment != 0)
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.value"),
+                    "time_picker value minute must align with minute_increment".to_owned(),
+                );
+            }
+        }
+
         if node.component == "tabs" {
             let child_ids = node
                 .children
@@ -2599,6 +2715,38 @@ const DATE_PICKER_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const TIME_PICKER_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::Time,
+        required: true,
+    },
+    PropertySpec {
+        name: "minute_increment",
+        value_type: UiValueType::Integer,
+        required: false,
+    },
+    PropertySpec {
+        name: "clock_format",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const TIME_PICKER_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "change",
+        payload_type: UiValueType::Time,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const TABS_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "labels",
@@ -2747,6 +2895,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
         "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
+        "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
         "progress_bar" => Some(leaf(VALUE_PROPERTIES, NO_ACTIONS)),
         "progress_ring" => Some(leaf(PROGRESS_RING_PROPERTIES, NO_ACTIONS)),
         _ => None,
@@ -3246,6 +3395,45 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "time-picker")]
+    #[test]
+    fn typed_time_bindings_use_canonical_document_values() {
+        struct TimeState {
+            selected: crate::ZsTime,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum TimeMsg {
+            Selected(crate::ZsTime),
+        }
+
+        let time = crate::ZsTime::new(18, 5).unwrap();
+        let mut manifest = UiBindingManifest::<TimeState, TimeMsg>::new();
+        manifest
+            .register_time_property("selected_time", |state| state.selected)
+            .unwrap();
+        manifest
+            .register_time_action("time_changed", |time| Ok(TimeMsg::Selected(time)))
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties["selected_time"],
+            UiValueType::Time
+        );
+        assert_eq!(manifest.schema().actions["time_changed"], UiValueType::Time);
+        assert_eq!(
+            manifest.read_property("selected_time", &TimeState { selected: time }),
+            Some(Value::String("18:05".to_owned()))
+        );
+        assert_eq!(
+            manifest.map_action("time_changed", Value::String("18:05".to_owned())),
+            Ok(TimeMsg::Selected(time))
+        );
+        assert!(matches!(
+            manifest.map_action("time_changed", Value::String("8:05".to_owned())),
+            Err(UiBindingDispatchError::PayloadType { .. })
+        ));
+    }
+
     #[test]
     fn date_picker_contract_validates_range_and_controlled_state() {
         let valid = UiDocument::from_json(
@@ -3348,6 +3536,80 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidLocalization));
+    }
+
+    #[test]
+    fn time_picker_contract_validates_increment_clock_and_controlled_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "meeting-time",
+                "component": "time_picker",
+                "properties": {
+                  "minute_increment": 15,
+                  "clock_format": "twenty_four_hour"
+                },
+                "property_bindings": {
+                  "value": "meeting_time",
+                  "expanded": "meeting_time_expanded"
+                },
+                "action_bindings": {
+                  "change": "meeting_time_changed",
+                  "expanded_change": "meeting_time_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("meeting_time".to_owned(), UiValueType::Time),
+                ("meeting_time_expanded".to_owned(), UiValueType::Boolean),
+            ]),
+            actions: BTreeMap::from([
+                ("meeting_time_changed".to_owned(), UiValueType::Time),
+                (
+                    "meeting_time_expanded_changed".to_owned(),
+                    UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let report = valid.validate(&UiFeatureSet::new(["time-picker"]), &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "invalid-time",
+                "component": "time_picker",
+                "properties": {
+                  "value": "09:17",
+                  "minute_increment": 15,
+                  "clock_format": "windows"
+                },
+                "localization": { "expanded": "time.expanded" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(
+            &UiFeatureSet::new(["time-picker"]),
+            &UiBindingSchema::default(),
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count()
+                >= 2
+        );
         assert!(report
             .diagnostics
             .iter()
@@ -3526,10 +3788,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "time_picker".to_owned();
+        document.root.children[0].component = "color_picker".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "time-picker"]),
+            &UiFeatureSet::new(["button", "label", "color-picker"]),
             &UiBindingSchema::default(),
         );
 
