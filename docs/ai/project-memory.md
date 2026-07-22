@@ -117,6 +117,15 @@ history remain authoritative for implementation status.
   rejects collisions plus unavailable highlights, and never executes product
   commands. Windows Viewer proof invokes one command through a real pointer
   click, closes the controlled overlay and retains the final Win32 surface.
+  Document-ready TreeView stores one recursive typed node array whose stable
+  semantic string IDs are unique across the whole hierarchy. A deduplicated
+  ID array owns the complete expanded set, while a nullable ID owns selection;
+  selection and invocation emit one semantic ID and expansion emits the full
+  next set. The release runtime derives private `ZsTreeNodeId` values from the
+  owning document node plus semantic node ID, rejects collisions, unknown
+  selections and non-expandable entries, and preserves hidden selection when
+  an ancestor collapses. Windows Viewer proof selects and invokes one real row
+  through a pointer click and retains the final Win32 surface.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the
@@ -776,6 +785,11 @@ history remain authoritative for implementation status.
   existing buffered paint path, so modal scrims, selections, hover fills and
   shadows preserve already-painted content. Preblending against the surface is
   only a fallback when the alpha-capable GDI+ operation is unavailable.
+- Win32 must call `GdiFlush` before every transition from queued GDI text/icon
+  output to a GDI+ graphics context. This preserves draw-plan order when a
+  later antialiased selection, hover fill, arc or image follows text in the
+  same buffered frame; otherwise final `WM_PRINTCLIENT` captures may omit
+  already-issued glyphs even though the shared draw plan is complete.
 - DatePicker resolves its today marker from the operating system's local time
   zone when the optional control is constructed, while exposing an explicit
   typed override for deterministic applications and tests.

@@ -94,6 +94,26 @@ pub(crate) fn ui_command_palette_runtime_id(
     crate::ZsCommandPaletteItemId::new(hash)
 }
 
+#[cfg(all(feature = "ui-document-runtime", feature = "tree"))]
+pub(crate) fn ui_tree_runtime_id(
+    node_id: &UiNodeId,
+    tree_node_id: &UiTreeNodeId,
+) -> crate::ZsTreeNodeId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(tree_node_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsTreeNodeId::new(hash)
+}
+
 impl fmt::Display for UiNodeId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
@@ -552,6 +572,118 @@ const fn ui_command_palette_item_enabled_default() -> bool {
     true
 }
 
+/// Stable author-facing identity for one node in a document-backed TreeView.
+///
+/// The identity is independent from hierarchy position and declaration order.
+/// The release runtime derives a private [`crate::ZsTreeNodeId`] from this
+/// value and the owning UiDocument node ID.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiTreeNodeId(String);
+
+impl UiTreeNodeId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiTreeNodeIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiTreeNodeIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiTreeNodeId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiTreeNodeIdError {
+    value: String,
+}
+
+impl fmt::Display for UiTreeNodeIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "tree node id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiTreeNodeIdError {}
+
+/// Application-owned hierarchy metadata for one document-backed TreeView node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiTreeNode {
+    id: UiTreeNodeId,
+    label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<crate::ZsIcon>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    children: Vec<Self>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    has_unrealized_children: bool,
+}
+
+impl UiTreeNode {
+    pub fn new(id: UiTreeNodeId, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            label: label.into(),
+            icon: None,
+            children: Vec::new(),
+            has_unrealized_children: false,
+        }
+    }
+
+    pub fn icon(mut self, icon: crate::ZsIcon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn children(mut self, children: impl IntoIterator<Item = Self>) -> Self {
+        self.children = children.into_iter().collect();
+        self
+    }
+
+    pub const fn unrealized_children(mut self, has_unrealized_children: bool) -> Self {
+        self.has_unrealized_children = has_unrealized_children;
+        self
+    }
+
+    pub fn id(&self) -> &UiTreeNodeId {
+        &self.id
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub const fn semantic_icon(&self) -> Option<crate::ZsIcon> {
+        self.icon
+    }
+
+    pub fn child_nodes(&self) -> &[Self] {
+        &self.children
+    }
+
+    pub const fn has_unrealized_children(&self) -> bool {
+        self.has_unrealized_children
+    }
+
+    pub fn is_expandable(&self) -> bool {
+        self.has_unrealized_children || !self.children.is_empty()
+    }
+}
+
 const fn one_grid_span() -> u16 {
     1
 }
@@ -599,6 +731,10 @@ pub enum UiValueType {
     CommandPaletteItemId,
     NullableCommandPaletteItemId,
     CommandPaletteItemArray,
+    TreeNodeId,
+    NullableTreeNodeId,
+    TreeNodeIdArray,
+    TreeNodeArray,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -635,6 +771,12 @@ impl UiValueType {
                 value.is_null() || ui_command_palette_item_id_from_value(value).is_some()
             }
             Self::CommandPaletteItemArray => ui_command_palette_items_from_value(value).is_some(),
+            Self::TreeNodeId => ui_tree_node_id_from_value(value).is_some(),
+            Self::NullableTreeNodeId => {
+                value.is_null() || ui_tree_node_id_from_value(value).is_some()
+            }
+            Self::TreeNodeIdArray => ui_tree_node_ids_from_value(value).is_some(),
+            Self::TreeNodeArray => ui_tree_nodes_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -712,6 +854,45 @@ pub(crate) fn ui_command_palette_items_from_value(
                     .all(|keyword| !keyword.trim().is_empty())
         })
         .then_some(items)
+}
+
+fn ui_tree_node_id_from_value(value: &Value) -> Option<UiTreeNodeId> {
+    value
+        .as_str()
+        .and_then(|value| UiTreeNodeId::new(value).ok())
+}
+
+pub(crate) fn ui_tree_node_ids_from_value(value: &Value) -> Option<BTreeSet<UiTreeNodeId>> {
+    let ids = serde_json::from_value::<Vec<UiTreeNodeId>>(value.clone()).ok()?;
+    let unique = ids.iter().cloned().collect::<BTreeSet<_>>();
+    (unique.len() == ids.len() && ids.iter().all(|id| is_valid_node_id(id.as_str())))
+        .then_some(unique)
+}
+
+pub(crate) fn ui_tree_nodes_from_value(value: &Value) -> Option<Vec<UiTreeNode>> {
+    fn valid(nodes: &[UiTreeNode], ids: &mut BTreeSet<UiTreeNodeId>) -> bool {
+        nodes.iter().all(|node| {
+            is_valid_node_id(node.id.as_str())
+                && !node.label.trim().is_empty()
+                && ids.insert(node.id.clone())
+                && valid(&node.children, ids)
+        })
+    }
+
+    let nodes = serde_json::from_value::<Vec<UiTreeNode>>(value.clone()).ok()?;
+    valid(&nodes, &mut BTreeSet::new()).then_some(nodes)
+}
+
+fn find_ui_tree_node<'a>(nodes: &'a [UiTreeNode], id: &UiTreeNodeId) -> Option<&'a UiTreeNode> {
+    for node in nodes {
+        if node.id() == id {
+            return Some(node);
+        }
+        if let Some(found) = find_ui_tree_node(node.child_nodes(), id) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1724,6 +1905,46 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         )
     }
 
+    /// Registers application-owned TreeView hierarchy metadata with stable
+    /// semantic node IDs.
+    #[cfg(feature = "tree")]
+    pub fn register_tree_nodes_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiTreeNode> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::TreeNodeArray, move |state| {
+            serde_json::to_value(read(state)).expect("tree authoring metadata must serialize")
+        })
+    }
+
+    /// Registers the complete expanded-node set for a controlled TreeView.
+    #[cfg(feature = "tree")]
+    pub fn register_tree_node_ids_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> BTreeSet<UiTreeNodeId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::TreeNodeIdArray, move |state| {
+            serde_json::to_value(read(state)).expect("tree node ids must serialize")
+        })
+    }
+
+    /// Registers the optional selected TreeView node without exposing the
+    /// runtime's numeric node identity.
+    #[cfg(feature = "tree")]
+    pub fn register_tree_node_id_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiTreeNodeId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableTreeNodeId, move |state| {
+            read(state)
+                .map(|id| Value::String(id.as_str().to_owned()))
+                .unwrap_or(Value::Null)
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -1843,6 +2064,35 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
             let id = ui_command_palette_item_id_from_value(&payload)
                 .ok_or_else(|| "command payload must be a valid stable string id".to_owned())?;
             map(id)
+        })
+    }
+
+    /// Registers a strongly typed TreeView selection or invocation action.
+    #[cfg(feature = "tree")]
+    pub fn register_tree_node_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiTreeNodeId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::TreeNodeId, move |payload| {
+            let id = ui_tree_node_id_from_value(&payload)
+                .ok_or_else(|| "tree payload must be a valid stable string id".to_owned())?;
+            map(id)
+        })
+    }
+
+    /// Registers the complete expanded-node set emitted after one disclosure
+    /// state change.
+    #[cfg(feature = "tree")]
+    pub fn register_tree_node_ids_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(BTreeSet<UiTreeNodeId>) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::TreeNodeIdArray, move |payload| {
+            let ids = ui_tree_node_ids_from_value(&payload)
+                .ok_or_else(|| "tree payload must contain unique stable string ids".to_owned())?;
+            map(ids)
         })
     }
 
@@ -2664,6 +2914,69 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "tree" {
+            let static_nodes = (!node.property_bindings.contains_key("nodes"))
+                .then(|| {
+                    node.properties
+                        .get("nodes")
+                        .and_then(ui_tree_nodes_from_value)
+                })
+                .flatten();
+            let static_expanded = (!node.property_bindings.contains_key("expanded"))
+                .then(|| {
+                    node.properties
+                        .get("expanded")
+                        .and_then(ui_tree_node_ids_from_value)
+                })
+                .flatten();
+            let static_selected = (!node.property_bindings.contains_key("selected"))
+                .then(|| {
+                    node.properties
+                        .get("selected")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_tree_node_id_from_value)
+                })
+                .flatten();
+            if let Some(nodes) = static_nodes.as_ref() {
+                if static_selected
+                    .as_ref()
+                    .is_some_and(|selected| find_ui_tree_node(nodes, selected).is_none())
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.selected"),
+                        "tree selected must address an available node id".to_owned(),
+                    );
+                }
+                if let Some(expanded) = static_expanded.as_ref() {
+                    for id in expanded {
+                        match find_ui_tree_node(nodes, id) {
+                            None => push_diagnostic(
+                                diagnostics,
+                                UiDiagnosticCode::InvalidPropertyValue,
+                                format!("{path}.properties.expanded"),
+                                format!(
+                                    "tree expanded id {:?} does not address an available node",
+                                    id.as_str()
+                                ),
+                            ),
+                            Some(tree_node) if !tree_node.is_expandable() => push_diagnostic(
+                                diagnostics,
+                                UiDiagnosticCode::InvalidPropertyValue,
+                                format!("{path}.properties.expanded"),
+                                format!(
+                                    "tree expanded id {:?} must address an expandable node",
+                                    id.as_str()
+                                ),
+                            ),
+                            Some(_) => {}
+                        }
+                    }
+                }
+            }
+        }
+
         if node.component == "date_picker" {
             let static_date = |name: &str, fallback: Option<UiDocumentDate>| {
                 (!node.property_bindings.contains_key(name))
@@ -3447,6 +3760,37 @@ const COMMAND_PALETTE_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const TREE_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "nodes",
+        value_type: UiValueType::TreeNodeArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::TreeNodeIdArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "selected",
+        value_type: UiValueType::NullableTreeNodeId,
+        required: true,
+    },
+];
+const TREE_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "select",
+        payload_type: UiValueType::TreeNodeId,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::TreeNodeIdArray,
+    },
+    ActionSpec {
+        name: "invoke",
+        payload_type: UiValueType::TreeNodeId,
+    },
+];
 const DATE_PICKER_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "value",
@@ -3714,6 +4058,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: COMMAND_PALETTE_ACTIONS,
             children: ChildPolicy::Exactly(1),
         }),
+        "tree" => Some(leaf(TREE_PROPERTIES, TREE_ACTIONS)),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
         "color_picker" => Some(leaf(COLOR_PICKER_PROPERTIES, COLOR_PICKER_ACTIONS)),
@@ -4479,6 +4824,108 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree")]
+    #[test]
+    fn typed_tree_bindings_preserve_hierarchy_and_semantic_ids() {
+        struct TreeState {
+            nodes: Vec<UiTreeNode>,
+            expanded: BTreeSet<UiTreeNodeId>,
+            selected: Option<UiTreeNodeId>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum TreeMsg {
+            Selected(UiTreeNodeId),
+            Expanded(BTreeSet<UiTreeNodeId>),
+        }
+
+        let workspace = UiTreeNodeId::new("workspace").unwrap();
+        let source = UiTreeNodeId::new("source").unwrap();
+        let mut manifest = UiBindingManifest::<TreeState, TreeMsg>::new();
+        manifest
+            .register_tree_nodes_property("project_nodes", |state| state.nodes.clone())
+            .unwrap();
+        manifest
+            .register_tree_node_ids_property("project_expanded", |state| state.expanded.clone())
+            .unwrap();
+        manifest
+            .register_tree_node_id_property("project_selected", |state| state.selected.clone())
+            .unwrap();
+        manifest
+            .register_tree_node_id_action("project_selected_changed", |id| {
+                Ok(TreeMsg::Selected(id))
+            })
+            .unwrap();
+        manifest
+            .register_tree_node_ids_action("project_expanded_changed", |ids| {
+                Ok(TreeMsg::Expanded(ids))
+            })
+            .unwrap();
+
+        let state = TreeState {
+            nodes: vec![UiTreeNode::new(workspace.clone(), "Workspace")
+                .icon(crate::ZsIcon::Folder)
+                .children([UiTreeNode::new(source.clone(), "src").unrealized_children(true)])],
+            expanded: BTreeSet::from([workspace.clone()]),
+            selected: Some(source.clone()),
+        };
+        assert_eq!(
+            manifest.schema().properties["project_nodes"],
+            UiValueType::TreeNodeArray
+        );
+        assert_eq!(
+            manifest.schema().properties["project_expanded"],
+            UiValueType::TreeNodeIdArray
+        );
+        assert_eq!(
+            manifest.schema().properties["project_selected"],
+            UiValueType::NullableTreeNodeId
+        );
+        assert_eq!(
+            manifest.read_property("project_nodes", &state),
+            Some(serde_json::json!([
+                {
+                    "id": "workspace",
+                    "label": "Workspace",
+                    "icon": "Folder",
+                    "children": [
+                        {
+                            "id": "source",
+                            "label": "src",
+                            "has_unrealized_children": true
+                        }
+                    ]
+                }
+            ]))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "project_selected_changed",
+                Value::String("source".to_owned())
+            ),
+            Ok(TreeMsg::Selected(source))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "project_expanded_changed",
+                serde_json::json!(["source", "workspace"])
+            ),
+            Ok(TreeMsg::Expanded(BTreeSet::from([
+                UiTreeNodeId::new("source").unwrap(),
+                workspace
+            ])))
+        );
+        assert!(!UiValueType::TreeNodeArray.matches(&serde_json::json!([
+            {
+                "id": "root",
+                "label": "Root",
+                "children": [{ "id": "root", "label": "Duplicate" }]
+            }
+        ])));
+        assert!(
+            !UiValueType::TreeNodeIdArray.matches(&serde_json::json!(["workspace", "workspace"]))
+        );
+    }
+
     #[test]
     fn auto_suggest_contract_validates_controlled_semantic_state() {
         let valid = UiDocument::from_json(
@@ -4645,6 +5092,86 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.highlighted"
+        }));
+    }
+
+    #[test]
+    fn tree_contract_validates_controlled_hierarchy_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "project-tree",
+                "component": "tree",
+                "property_bindings": {
+                  "nodes": "project_nodes",
+                  "expanded": "project_expanded",
+                  "selected": "project_selected"
+                },
+                "action_bindings": {
+                  "select": "project_selected_changed",
+                  "expanded_change": "project_expanded_changed",
+                  "invoke": "project_invoked"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("project_nodes".to_owned(), UiValueType::TreeNodeArray),
+                ("project_expanded".to_owned(), UiValueType::TreeNodeIdArray),
+                (
+                    "project_selected".to_owned(),
+                    UiValueType::NullableTreeNodeId,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "project_selected_changed".to_owned(),
+                    UiValueType::TreeNodeId,
+                ),
+                (
+                    "project_expanded_changed".to_owned(),
+                    UiValueType::TreeNodeIdArray,
+                ),
+                ("project_invoked".to_owned(), UiValueType::TreeNodeId),
+            ]),
+        };
+        let features = UiFeatureSet::new(["tree"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "project-tree",
+                "component": "tree",
+                "properties": {
+                  "nodes": [
+                    {
+                      "id": "workspace",
+                      "label": "Workspace",
+                      "children": [{ "id": "readme", "label": "README.md" }]
+                    }
+                  ],
+                  "expanded": ["readme"],
+                  "selected": "missing"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.selected"
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.expanded"
         }));
     }
 
@@ -5095,10 +5622,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "tree".to_owned();
+        document.root.children[0].component = "grid_view".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "tree"]),
+            &UiFeatureSet::new(["button", "label", "grid-view"]),
             &UiBindingSchema::default(),
         );
 

@@ -6,6 +6,9 @@
 
 use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 
+#[cfg(feature = "tree")]
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -71,6 +74,7 @@ pub struct UiDocumentSecretAction {
         feature = "color-picker",
         feature = "auto-suggest",
         feature = "command-palette",
+        feature = "tree",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -750,6 +754,8 @@ fn compile_node<Msg: Clone + 'static>(
         "auto_suggest" => document_auto_suggest(node, properties, mapper)?,
         #[cfg(feature = "command-palette")]
         "command_palette" => document_command_palette(node, properties, children, mapper)?,
+        #[cfg(feature = "tree")]
+        "tree" => document_tree(node, properties, mapper)?,
         #[cfg(feature = "date-picker")]
         "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "time-picker")]
@@ -1128,6 +1134,175 @@ fn document_command_palette<Msg: Clone + 'static>(
                 binding: binding.clone(),
                 property_binding: property_binding.clone(),
                 payload: Value::Bool(open),
+            })
+        });
+    }
+    Ok(control)
+}
+
+#[cfg(feature = "tree")]
+fn document_tree<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    fn compile_nodes(
+        owner: &UiNode,
+        authoring_nodes: &[crate::ui_document::UiTreeNode],
+        author_to_runtime: &mut BTreeMap<String, crate::ZsTreeNodeId>,
+        runtime_to_author: &mut BTreeMap<crate::ZsTreeNodeId, String>,
+        expandable: &mut BTreeSet<String>,
+    ) -> Result<Vec<crate::ZsTreeNode>, UiDocumentRuntimeError> {
+        let mut nodes = Vec::with_capacity(authoring_nodes.len());
+        for authoring_node in authoring_nodes {
+            let author_id = authoring_node.id().as_str().to_owned();
+            let runtime_id = crate::ui_document::ui_tree_runtime_id(&owner.id, authoring_node.id());
+            if let Some(first) = runtime_to_author.insert(runtime_id, author_id.clone()) {
+                return Err(invalid_resolved_property(
+                    owner,
+                    "nodes",
+                    format!(
+                        "tree node ids {first:?} and {author_id:?} collide after stable runtime mapping"
+                    ),
+                ));
+            }
+            author_to_runtime.insert(author_id.clone(), runtime_id);
+            if authoring_node.is_expandable() {
+                expandable.insert(author_id);
+            }
+            let children = compile_nodes(
+                owner,
+                authoring_node.child_nodes(),
+                author_to_runtime,
+                runtime_to_author,
+                expandable,
+            )?;
+            let mut runtime_node = crate::ZsTreeNode::new(runtime_id, authoring_node.label())
+                .children(children)
+                .unrealized_children(authoring_node.has_unrealized_children());
+            if let Some(icon) = authoring_node.semantic_icon() {
+                runtime_node = runtime_node.icon(icon);
+            }
+            nodes.push(runtime_node);
+        }
+        Ok(nodes)
+    }
+
+    let authoring_nodes = tree_nodes_property(node, properties)?;
+    let mut author_to_runtime = BTreeMap::new();
+    let mut runtime_to_author = BTreeMap::new();
+    let mut expandable = BTreeSet::new();
+    let roots = compile_nodes(
+        node,
+        &authoring_nodes,
+        &mut author_to_runtime,
+        &mut runtime_to_author,
+        &mut expandable,
+    )?;
+
+    let expanded_author = tree_node_ids_property(node, properties, "expanded")?;
+    let mut expanded = BTreeSet::new();
+    for author_id in &expanded_author {
+        if !expandable.contains(author_id.as_str()) {
+            return Err(invalid_resolved_property(
+                node,
+                "expanded",
+                format!(
+                    "id {:?} must address an available expandable tree node",
+                    author_id.as_str()
+                ),
+            ));
+        }
+        expanded.insert(
+            *author_to_runtime
+                .get(author_id.as_str())
+                .expect("expandable author tree id must have a runtime mapping"),
+        );
+    }
+    let selected = optional_tree_node_id_property(node, properties, "selected")?
+        .map(|selected| {
+            author_to_runtime
+                .get(selected.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "selected",
+                        format!(
+                            "id {:?} does not address an available tree node",
+                            selected.as_str()
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
+
+    let mut control = crate::tree_view(roots)
+        .expanded_tree_nodes(expanded)
+        .selected_tree_node(selected);
+    let runtime_to_author = Arc::new(runtime_to_author);
+    if let Some(binding) = node.action_bindings.get("select") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("selected").cloned();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_tree_select_with(move |selected| {
+            let author_id = runtime_to_author
+                .get(&selected)
+                .cloned()
+                .expect("selected runtime tree node must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("expanded_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("expanded").cloned();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_tree_expansion_change_with(move |change| {
+            let author_id = runtime_to_author
+                .get(&change.node)
+                .cloned()
+                .expect("expanded runtime tree node must address compiled document data");
+            let author_id = crate::ui_document::UiTreeNodeId::new(author_id)
+                .expect("compiled author tree id must remain valid");
+            let mut next = expanded_author.clone();
+            if change.expanded {
+                next.insert(author_id);
+            } else {
+                next.remove(&author_id);
+            }
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: serde_json::to_value(next)
+                    .expect("validated expanded tree ids must serialize"),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("invoke") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_tree_invoke_with(move |invoked| {
+            let author_id = runtime_to_author
+                .get(&invoked)
+                .cloned()
+                .expect("invoked runtime tree node must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: None,
+                payload: Value::String(author_id),
             })
         });
     }
@@ -1782,7 +1957,9 @@ fn grid_gap_property(
     feature = "date-picker",
     feature = "time-picker",
     feature = "color-picker",
-    feature = "auto-suggest"
+    feature = "auto-suggest",
+    feature = "command-palette",
+    feature = "tree"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -1848,6 +2025,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "time-picker",
     feature = "color-picker",
     feature = "auto-suggest",
+    feature = "command-palette",
+    feature = "tree",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -2041,6 +2220,81 @@ fn optional_command_palette_item_id_property(
         invalid_resolved_property(node, property, "command item id must be a string or null")
     })?;
     crate::ui_document::UiCommandPaletteItemId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
+#[cfg(feature = "tree")]
+fn tree_nodes_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiTreeNode>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get("nodes")
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(Vec::new());
+    }
+    let value = property_value(node, properties, "nodes")
+        .ok_or_else(|| invalid_resolved_property(node, "nodes", "a tree node array is required"))?;
+    crate::ui_document::ui_tree_nodes_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "nodes",
+            "tree nodes must use globally unique stable ids and non-empty labels",
+        )
+    })
+}
+
+#[cfg(feature = "tree")]
+fn tree_node_ids_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<BTreeSet<crate::ui_document::UiTreeNodeId>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(BTreeSet::new());
+    }
+    let value = property_value(node, properties, property).ok_or_else(|| {
+        invalid_resolved_property(node, property, "a tree node id array is required")
+    })?;
+    crate::ui_document::ui_tree_node_ids_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            property,
+            "tree node id arrays must contain unique stable string ids",
+        )
+    })
+}
+
+#[cfg(feature = "tree")]
+fn optional_tree_node_id_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiTreeNodeId>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(None);
+    }
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(node, property, "tree node id must be a string or null")
+    })?;
+    crate::ui_document::UiTreeNodeId::new(value)
         .map(Some)
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
@@ -2331,6 +2585,7 @@ mod tests {
         feature = "time-picker",
         feature = "color-picker",
         feature = "command-palette",
+        feature = "tree",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -2856,6 +3111,161 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "highlighted"
+        ));
+    }
+
+    #[cfg(feature = "tree")]
+    #[test]
+    fn compiles_controlled_tree_and_emits_semantic_state_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "project-tree",
+                "component": "tree",
+                "property_bindings": {
+                  "nodes": "project_nodes",
+                  "expanded": "project_expanded",
+                  "selected": "project_selected"
+                },
+                "action_bindings": {
+                  "select": "project_selected_changed",
+                  "expanded_change": "project_expanded_changed",
+                  "invoke": "project_invoked"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "project_nodes".to_owned(),
+                    crate::ui_document::UiValueType::TreeNodeArray,
+                ),
+                (
+                    "project_expanded".to_owned(),
+                    crate::ui_document::UiValueType::TreeNodeIdArray,
+                ),
+                (
+                    "project_selected".to_owned(),
+                    crate::ui_document::UiValueType::NullableTreeNodeId,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "project_selected_changed".to_owned(),
+                    crate::ui_document::UiValueType::TreeNodeId,
+                ),
+                (
+                    "project_expanded_changed".to_owned(),
+                    crate::ui_document::UiValueType::TreeNodeIdArray,
+                ),
+                (
+                    "project_invoked".to_owned(),
+                    crate::ui_document::UiValueType::TreeNodeId,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "project_nodes".to_owned(),
+                serde_json::json!([
+                    {
+                      "id": "workspace",
+                      "label": "Workspace",
+                      "icon": "Folder",
+                      "children": [
+                        { "id": "readme", "label": "README.md", "icon": "File" },
+                        { "id": "cargo", "label": "Cargo.toml", "icon": "File" }
+                      ]
+                    }
+                ]),
+            ),
+            (
+                "project_expanded".to_owned(),
+                serde_json::json!(["workspace"]),
+            ),
+            (
+                "project_selected".to_owned(),
+                Value::String("readme".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let workspace_author = crate::ui_document::UiTreeNodeId::new("workspace").unwrap();
+        let readme_author = crate::ui_document::UiTreeNodeId::new("readme").unwrap();
+        let cargo_author = crate::ui_document::UiTreeNodeId::new("cargo").unwrap();
+        let workspace =
+            crate::ui_document::ui_tree_runtime_id(&document.root.id, &workspace_author);
+        let readme = crate::ui_document::ui_tree_runtime_id(&document.root.id, &readme_author);
+        let cargo = crate::ui_document::ui_tree_runtime_id(&document.root.id, &cargo_author);
+        let state = view.widget_tree_view_state(widget).expect("tree state");
+        assert_eq!(state.rows.len(), 3);
+        assert_eq!(state.selected, Some(readme));
+        assert!(state.row(workspace).is_some_and(|row| row.expanded));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TreeNodeSelected {
+                widget,
+                node: cargo,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(selected)] = messages.as_slice() else {
+            panic!("tree selection must emit one semantic-id action");
+        };
+        assert_eq!(selected.binding, "project_selected_changed");
+        assert_eq!(
+            selected.property_binding.as_deref(),
+            Some("project_selected")
+        );
+        assert_eq!(selected.payload, Value::String("cargo".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TreeNodeInvoked {
+                widget,
+                node: cargo,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(invoked)] = messages.as_slice() else {
+            panic!("tree invocation must emit one semantic-id action");
+        };
+        assert_eq!(invoked.binding, "project_invoked");
+        assert_eq!(invoked.property_binding, None);
+        assert_eq!(invoked.payload, Value::String("cargo".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TreeNodeExpandedChanged {
+                widget,
+                node: workspace,
+                expanded: false,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(expanded)] = messages.as_slice() else {
+            panic!("tree disclosure must emit the complete expanded-id state");
+        };
+        assert_eq!(expanded.binding, "project_expanded_changed");
+        assert_eq!(
+            expanded.property_binding.as_deref(),
+            Some("project_expanded")
+        );
+        assert_eq!(expanded.payload, serde_json::json!([]));
+
+        let mut invalid_values = values;
+        invalid_values.insert("project_expanded".to_owned(), serde_json::json!(["cargo"]));
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "expanded"
         ));
     }
 

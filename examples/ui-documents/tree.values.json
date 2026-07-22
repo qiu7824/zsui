@@ -1,0 +1,53 @@
+{
+  "project_nodes": [
+    {
+      "id": "workspace",
+      "label": "ZSUI 工作区 / Workspace",
+      "icon": "Folder",
+      "children": [
+        {
+          "id": "source",
+          "label": "源代码 / src",
+          "icon": "Folder",
+          "children": [
+            {
+              "id": "lib-rs",
+              "label": "lib.rs",
+              "icon": "File"
+            },
+            {
+              "id": "ui-document-rs",
+              "label": "ui_document.rs",
+              "icon": "File"
+            }
+          ]
+        },
+        {
+          "id": "examples",
+          "label": "示例 / examples",
+          "icon": "Folder",
+          "children": [
+            {
+              "id": "component-gallery-rs",
+              "label": "component_gallery.rs",
+              "icon": "File"
+            }
+          ]
+        },
+        {
+          "id": "cargo-toml",
+          "label": "Cargo.toml",
+          "icon": "File"
+        },
+        {
+          "id": "documentation",
+          "label": "文档 / docs",
+          "icon": "Folder",
+          "has_unrealized_children": true
+        }
+      ]
+    }
+  ],
+  "project_expanded": ["source", "workspace"],
+  "project_selected": "lib-rs"
+}

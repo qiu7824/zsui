@@ -32,7 +32,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
@@ -82,6 +82,15 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 和 `register_command_palette_item_id_action` 保留强类型语义 ID。发布运行时根据拥有者
 节点和命令 ID 生成私有 `ZsCommandPaletteItemId`，并拒绝碰撞、不存在、被禁用或不匹配
 当前查询的高亮项。命令重排不会改变身份，ZSUI 只返回调用 ID，不执行产品命令。
+
+`tree.nodes` 使用递归 `tree_node_array`，节点包含全树唯一的稳定字符串 ID、非空标签、
+可选语义图标、子节点和惰性子节点标记。`expanded` 使用去重的 `tree_node_id_array` 保存
+完整展开集合，`selected` 使用 `nullable_tree_node_id` 保存允许暂时隐藏的选择；`select`、
+`expanded_change` 与 `invoke` 分别返回稳定语义 ID 或完整的新展开集合。Rust 应用可通过
+`register_tree_nodes_property`、`register_tree_node_ids_property`、
+`register_tree_node_id_property` 及对应 action helper 保持强类型状态。发布运行时根据拥有者
+节点和语义 ID 生成私有 `ZsTreeNodeId`，拒绝碰撞、未知选择以及指向叶节点的展开状态；
+节点重排、折叠和 Viewer 热重建不会把身份降级为路径或数组下标。
 
 `date_picker` 使用独立的 `date` 绑定类型，序列化形式固定为 ISO `YYYY-MM-DD`，不会把
 平台区域日期文本当作状态格式。`UiBindingManifest::register_date_property` 和
@@ -189,7 +198,7 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、CommandPalette 四类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
+`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、CommandPalette 四类状态动作、TreeView 三类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
 消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
@@ -267,6 +276,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/command-palette.values.json
 ```
 
+受控项目树示例使用稳定层级 ID、完整展开集合和平台语义图标：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/tree.json `
+  --bindings examples/ui-documents/tree.bindings.json `
+  --values examples/ui-documents/tree.values.json
+```
+
 原生证明可由同一可执行文件生成：
 
 ```powershell
@@ -295,6 +315,8 @@ Windows AutoSuggestBox 受控示例的本地原生证明使用一次真实建议
 点击、4 条 Viewer 消息、0 次未处理点击，并在最终 Win32 PNG 中保留提交后的查询。
 Windows CommandPalette 受控示例的本地原生证明点击第二个真实命令行，记录 1 次调用、
 1 次关闭、2 条 Viewer 消息和 0 次未处理点击；最终 Win32 PNG 来自关闭后的共享页面。
+Windows TreeView 受控示例点击一个真实文件行，记录 1 次选择、1 次调用、2 条 Viewer
+消息和 0 次未处理点击；最终 Win32 PNG 保留完整页面文字、层级图标和新的稳定 ID 选择。
 
 固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
 `scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。
