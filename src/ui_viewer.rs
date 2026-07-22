@@ -1367,6 +1367,141 @@ mod tests {
     }
 
     #[test]
+    fn viewer_preserves_controlled_tree_state_across_rebuilds() {
+        let directory = fixture_directory("tree-actions");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("tree.json");
+        let binding_path = directory.join("tree.bindings.json");
+        fs::write(
+            &document_path,
+            include_str!("../examples/ui-documents/tree.json"),
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            include_str!("../examples/ui-documents/tree.bindings.json"),
+        )
+        .unwrap();
+        let properties = serde_json::from_str::<BTreeMap<String, Value>>(include_str!(
+            "../examples/ui-documents/tree.values.json"
+        ))
+        .unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        source.validate_properties(&properties).unwrap();
+        let live_source = source.clone();
+        let captured_state = Arc::new(Mutex::new(UiViewerState::default()));
+        let update_state = Arc::clone(&captured_state);
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::with_properties(properties),
+            move |state| live_source.view(state),
+            move |state, message, cx| {
+                ui_viewer_update(state, message, cx);
+                *update_state.lock().unwrap() = state.clone();
+            },
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 900,
+                height: 620,
+            },
+            crate::Dpi::standard(),
+        );
+        let node_id = crate::ui_document::UiNodeId::new("project-tree").unwrap();
+        let widget = node_id.widget_id();
+        let source_node = crate::ui_document::ui_tree_runtime_id(
+            &node_id,
+            &crate::ui_document::UiTreeNodeId::new("source").unwrap(),
+        );
+        let lib = crate::ui_document::ui_tree_runtime_id(
+            &node_id,
+            &crate::ui_document::UiTreeNodeId::new("lib-rs").unwrap(),
+        );
+        let cargo = crate::ui_document::ui_tree_runtime_id(
+            &node_id,
+            &crate::ui_document::UiTreeNodeId::new("cargo-toml").unwrap(),
+        );
+        let state = live_view
+            .widget_tree_view_state(widget)
+            .expect("tree state");
+        assert_eq!(state.rows.len(), 7);
+        assert_eq!(state.selected, Some(lib));
+        assert!(state.row(source_node).is_some_and(|row| row.expanded));
+
+        let collapsed = live_view.dispatch_event(&crate::ViewEvent::TreeNodeExpandedChanged {
+            widget,
+            node: source_node,
+            expanded: false,
+        });
+        assert_eq!(collapsed.message_count, 1);
+        let collapsed_state = live_view
+            .widget_tree_view_state(widget)
+            .expect("collapsed tree state");
+        assert_eq!(collapsed_state.rows.len(), 5);
+        assert_eq!(collapsed_state.selected, Some(lib));
+        assert!(collapsed_state.row(lib).is_none());
+
+        let selected = live_view.dispatch_event(&crate::ViewEvent::TreeNodeSelected {
+            widget,
+            node: cargo,
+        });
+        assert_eq!(selected.message_count, 1);
+        assert_eq!(
+            live_view
+                .widget_tree_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(cargo)
+        );
+        let invoked = live_view.dispatch_event(&crate::ViewEvent::TreeNodeInvoked {
+            widget,
+            node: cargo,
+        });
+        assert_eq!(invoked.message_count, 1);
+        let draw_plan = live_view.draw_plan();
+        let title = draw_plan
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                crate::NativeDrawCommand::Text(text) if text.text.contains("项目树") => {
+                    Some(text)
+                }
+                _ => None,
+            })
+            .expect("tree page title must remain in the rebuilt draw plan");
+        assert!(
+            title.bounds.y < 100,
+            "unexpected title bounds: {:?}",
+            title.bounds
+        );
+
+        let final_state = captured_state.lock().unwrap();
+        assert_eq!(
+            final_state.properties.get("project_expanded"),
+            Some(&serde_json::json!(["workspace"]))
+        );
+        assert_eq!(
+            final_state.properties.get("project_selected"),
+            Some(&Value::String("cargo-toml".to_owned()))
+        );
+        assert_eq!(final_state.actions.len(), 3);
+        assert_eq!(final_state.actions[0].binding, "project_expanded_changed");
+        assert_eq!(
+            final_state.actions[0].payload,
+            serde_json::json!(["workspace"])
+        );
+        assert_eq!(final_state.actions[1].binding, "project_selected_changed");
+        assert_eq!(
+            final_state.actions[1].payload,
+            Value::String("cargo-toml".to_owned())
+        );
+        assert_eq!(final_state.actions[2].binding, "project_invoked");
+        assert_eq!(
+            final_state.actions[2].payload,
+            Value::String("cargo-toml".to_owned())
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn viewer_preserves_controlled_scroll_offset_across_view_rebuilds() {
         let directory = fixture_directory("controlled-scroll");
         fs::create_dir_all(&directory).unwrap();

@@ -14,6 +14,7 @@ impl WidgetId {
 #[cfg(any(
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "tree",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -37,6 +38,7 @@ pub struct ViewMessageMapper<Input, Msg> {
 #[cfg(any(
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "tree",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -60,6 +62,7 @@ enum ViewMessageMapperKind<Input, Msg> {
 #[cfg(any(
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "tree",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -101,6 +104,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
 #[cfg(any(
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "tree",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -134,6 +138,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
 #[cfg(any(
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "tree",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -845,9 +850,9 @@ pub enum ViewNodeKind<Msg> {
         roots: Vec<crate::ZsTreeNode>,
         expanded: BTreeSet<crate::ZsTreeNodeId>,
         selected: Option<crate::ZsTreeNodeId>,
-        on_select: Option<fn(crate::ZsTreeNodeId) -> Msg>,
-        on_expansion_change: Option<fn(crate::ZsTreeExpansionChange) -> Msg>,
-        on_invoke: Option<fn(crate::ZsTreeNodeId) -> Msg>,
+        on_select: Option<ViewMessageMapper<crate::ZsTreeNodeId, Msg>>,
+        on_expansion_change: Option<ViewMessageMapper<crate::ZsTreeExpansionChange, Msg>>,
+        on_invoke: Option<ViewMessageMapper<crate::ZsTreeNodeId, Msg>>,
     },
     #[cfg(feature = "grid-view")]
     GridView {
@@ -1710,7 +1715,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "tree")]
     pub fn on_tree_select(mut self, message: fn(crate::ZsTreeNodeId) -> Msg) -> Self {
         if let ViewNodeKind::TreeView { on_select, .. } = &mut self.kind {
-            *on_select = Some(message);
+            *on_select = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn on_tree_select_with(
+        mut self,
+        message: impl Fn(crate::ZsTreeNodeId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TreeView { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1725,7 +1741,22 @@ impl<Msg: Clone> ViewNode<Msg> {
             ..
         } = &mut self.kind
         {
-            *on_expansion_change = Some(message);
+            *on_expansion_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn on_tree_expansion_change_with(
+        mut self,
+        message: impl Fn(crate::ZsTreeExpansionChange) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TreeView {
+            on_expansion_change,
+            ..
+        } = &mut self.kind
+        {
+            *on_expansion_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1733,7 +1764,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "tree")]
     pub fn on_tree_invoke(mut self, message: fn(crate::ZsTreeNodeId) -> Msg) -> Self {
         if let ViewNodeKind::TreeView { on_invoke, .. } = &mut self.kind {
-            *on_invoke = Some(message);
+            *on_invoke = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "tree")]
+    pub fn on_tree_invoke_with(
+        mut self,
+        message: impl Fn(crate::ZsTreeNodeId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TreeView { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

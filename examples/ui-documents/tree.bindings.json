@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "project_nodes": "tree_node_array",
+    "project_expanded": "tree_node_id_array",
+    "project_selected": "nullable_tree_node_id"
+  },
+  "actions": {
+    "project_selected_changed": "tree_node_id",
+    "project_expanded_changed": "tree_node_id_array",
+    "project_invoked": "tree_node_id"
+  }
+}

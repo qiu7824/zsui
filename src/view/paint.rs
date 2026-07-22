@@ -1626,7 +1626,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         };
                         if changed {
                             if let Some(message) = on_expansion_change {
-                                cx.emit(message(crate::ZsTreeExpansionChange::new(
+                                cx.emit(message.map(crate::ZsTreeExpansionChange::new(
                                     *node,
                                     *next_expanded,
                                 )));
@@ -1652,7 +1652,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if visible && *selected != Some(*node) {
                         *selected = Some(*node);
                         if let Some(message) = on_select {
-                            cx.emit(message(*node));
+                            cx.emit(message.map(*node));
                         }
                     }
                 }
@@ -1673,7 +1673,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         .any(|row| row.node == *node);
                     if visible {
                         if let Some(message) = on_invoke {
-                            cx.emit(message(*node));
+                            cx.emit(message.map(*node));
                         }
                     }
                 }

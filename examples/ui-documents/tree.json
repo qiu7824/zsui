@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "tree-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "tree-title",
+        "component": "text",
+        "properties": {
+          "text": "项目树 / TreeView",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "tree-description",
+        "component": "text",
+        "properties": {
+          "text": "稳定层级 ID、显式展开集合与选择状态 / Stable hierarchy IDs, explicit expansion and selection",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
+        }
+      },
+      {
+        "id": "project-tree",
+        "component": "tree",
+        "layout": {
+          "height": 360.0
+        },
+        "property_bindings": {
+          "nodes": "project_nodes",
+          "expanded": "project_expanded",
+          "selected": "project_selected"
+        },
+        "action_bindings": {
+          "select": "project_selected_changed",
+          "expanded_change": "project_expanded_changed",
+          "invoke": "project_invoked"
+        },
+        "accessibility": {
+          "role": "tree",
+          "label": "项目文件 / Project files"
+        }
+      }
+    ]
+  }
+}

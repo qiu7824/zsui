@@ -17,7 +17,7 @@ use windows_sys::Win32::{
     Foundation::{POINT, RECT},
     Graphics::Gdi::{
         CreateCompatibleDC, CreateFontW, CreatePen, CreateSolidBrush, DeleteDC, DeleteObject,
-        DrawTextW, FillRect, FrameRect, GetDeviceCaps, GetStockObject, GetTextFaceW,
+        DrawTextW, FillRect, FrameRect, GdiFlush, GetDeviceCaps, GetStockObject, GetTextFaceW,
         GetTextMetricsW, IntersectClipRect, Polygon, RestoreDC, RoundRect, SaveDC, SelectObject,
         SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor, StretchDIBits, BITMAPINFO,
         BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
@@ -335,6 +335,7 @@ unsafe fn draw_round_rect_antialiased(
         return true;
     }
     let mut graphics = std::ptr::null_mut();
+    GdiFlush();
     if GdipCreateFromHDC(hdc, &mut graphics) != 0 || graphics.is_null() {
         return false;
     }
@@ -377,6 +378,7 @@ unsafe fn draw_rect_alpha(hdc: HDC, rect: RECT, color: Color) -> bool {
         return false;
     }
     let mut graphics = std::ptr::null_mut();
+    GdiFlush();
     if GdipCreateFromHDC(hdc, &mut graphics) != 0 || graphics.is_null() {
         return false;
     }
@@ -415,6 +417,7 @@ unsafe fn draw_arc_antialiased(
         return false;
     }
     let mut graphics = std::ptr::null_mut();
+    GdiFlush();
     if GdipCreateFromHDC(hdc, &mut graphics) != 0 || graphics.is_null() {
         return false;
     }
@@ -1803,6 +1806,7 @@ unsafe fn draw_image_frame_gdiplus(dc: HDC, command: &NativeDrawImageCommand) ->
         return false;
     }
     let mut graphics = std::ptr::null_mut();
+    GdiFlush();
     let created_graphics = GdipCreateFromHDC(dc, &mut graphics) == 0 && !graphics.is_null();
     let drawn = if created_graphics {
         let interpolation = match command.interpolation {
