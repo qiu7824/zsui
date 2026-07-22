@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "release_date": "date",
+    "release_month": "date",
+    "release_date_expanded": "boolean"
+  },
+  "actions": {
+    "release_date_changed": "date",
+    "release_month_changed": "date",
+    "release_date_expanded_changed": "boolean"
+  }
+}

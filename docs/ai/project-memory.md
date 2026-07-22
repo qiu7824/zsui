@@ -79,7 +79,15 @@ history remain authoritative for implementation status.
   and wrapping before compilation. Document-ready ComboBox uses `string_array`,
   `nullable_integer`, `integer` and boolean contracts; selected index and
   expanded state update explicit bindings through owned callbacks so both
-  survive View rebuilds. Document-ready Tabs treats each direct child as one
+  survive View rebuilds. Document-ready DatePicker represents serialized
+  calendar values with a canonical ISO `date` type. `register_date_property`
+  and `register_date_action` keep application bindings strongly typed as
+  `ZsDate`; selected date, first-of-month navigation state and expanded state
+  use independent controlled property/action loops. Authoring validation and
+  release compilation reject invalid dates, inverted or violated ranges and
+  noncanonical visible months. Viewer native smoke accepts repeatable fixed
+  click sequences and requires typed message evidence before accepting them.
+  Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the
   string value emitted by the controlled selection action. Document-ready Grid

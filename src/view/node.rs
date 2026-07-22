@@ -20,6 +20,7 @@ impl WidgetId {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -38,6 +39,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -56,6 +58,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -92,6 +95,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -120,6 +124,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -915,8 +920,9 @@ pub enum ViewNodeKind<Msg> {
         visible_month: ZsDate,
         today: Option<ZsDate>,
         expanded: bool,
-        on_date_change: Option<fn(ZsDate) -> Msg>,
-        on_expanded_change: Option<fn(bool) -> Msg>,
+        on_date_change: Option<ViewMessageMapper<ZsDate, Msg>>,
+        on_month_change: Option<ViewMessageMapper<ZsDate, Msg>>,
+        on_expanded_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "time-picker")]
     TimePicker {
@@ -2075,7 +2081,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "date-picker")]
             ViewNodeKind::DatePicker {
                 on_expanded_change, ..
-            } => *on_expanded_change = Some(message),
+            } => *on_expanded_change = Some(ViewMessageMapper::from_function(message)),
             #[cfg(feature = "time-picker")]
             ViewNodeKind::TimePicker {
                 on_expanded_change, ..
@@ -2115,7 +2121,59 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "date-picker")]
     pub fn on_date_change(mut self, message: fn(ZsDate) -> Msg) -> Self {
         if let ViewNodeKind::DatePicker { on_date_change, .. } = &mut self.kind {
-            *on_date_change = Some(message);
+            *on_date_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn on_date_change_with(
+        mut self,
+        message: impl Fn(ZsDate) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::DatePicker { on_date_change, .. } = &mut self.kind {
+            *on_date_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    /// Sets the first visible calendar month independently from the selected
+    /// value so controlled document views can retain month navigation.
+    #[cfg(feature = "date-picker")]
+    pub fn visible_month(mut self, month: ZsDate) -> Self {
+        if let ViewNodeKind::DatePicker {
+            minimum,
+            maximum,
+            visible_month,
+            ..
+        } = &mut self.kind
+        {
+            *visible_month = clamp_visible_month(month, *minimum, *maximum);
+        }
+        self
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn on_date_picker_month_change(mut self, message: fn(ZsDate) -> Msg) -> Self {
+        if let ViewNodeKind::DatePicker {
+            on_month_change, ..
+        } = &mut self.kind
+        {
+            *on_month_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn on_date_picker_month_change_with(
+        mut self,
+        message: impl Fn(ZsDate) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::DatePicker {
+            on_month_change, ..
+        } = &mut self.kind
+        {
+            *on_month_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2237,6 +2295,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: impl Fn(bool) -> Msg + Send + Sync + 'static,
     ) -> Self {
         if let ViewNodeKind::ComboBox {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "date-picker")]
+    pub fn on_date_picker_expanded_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::DatePicker {
             on_expanded_change, ..
         } = &mut self.kind
         {

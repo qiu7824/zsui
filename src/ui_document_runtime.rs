@@ -66,6 +66,7 @@ pub struct UiDocumentSecretAction {
         feature = "slider",
         feature = "number-box",
         feature = "combo",
+        feature = "date-picker",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -175,6 +176,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "slider",
             feature = "number-box",
             feature = "combo",
+            feature = "date-picker",
             feature = "list",
             feature = "tabs",
             feature = "scroll"
@@ -737,6 +739,8 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "date-picker")]
+        "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "tabs")]
         "tabs" => {
             let labels = string_map_property(node, properties, "labels");
@@ -809,6 +813,105 @@ fn compile_node<Msg: Clone + 'static>(
     };
     view = view.id(node.id.widget_id());
     Ok(apply_layout(view, node))
+}
+
+#[cfg(feature = "date-picker")]
+fn document_date_picker<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let minimum_fallback =
+        crate::ZsDate::new(crate::ZsDate::MIN_YEAR, 1, 1).expect("minimum supported date is valid");
+    let maximum_fallback = crate::ZsDate::new(crate::ZsDate::MAX_YEAR, 12, 31)
+        .expect("maximum supported date is valid");
+    let minimum = date_property(node, properties, "minimum")?.unwrap_or(minimum_fallback);
+    let maximum = date_property(node, properties, "maximum")?.unwrap_or(maximum_fallback);
+    if minimum > maximum {
+        return Err(invalid_resolved_property(
+            node,
+            "maximum",
+            "maximum must not be earlier than minimum",
+        ));
+    }
+    let value = date_property(node, properties, "value")?
+        .ok_or_else(|| invalid_resolved_property(node, "value", "a selected date is required"))?;
+    if !(minimum..=maximum).contains(&value) {
+        return Err(invalid_resolved_property(
+            node,
+            "value",
+            "selected date must be within minimum and maximum",
+        ));
+    }
+    let visible_month = date_property(node, properties, "visible_month")?
+        .unwrap_or_else(|| value.first_day_of_month());
+    if visible_month.day() != 1 {
+        return Err(invalid_resolved_property(
+            node,
+            "visible_month",
+            "visible month must use the first day of its month",
+        ));
+    }
+    let first_month = minimum.first_day_of_month();
+    let last_month = maximum.first_day_of_month();
+    if !(first_month..=last_month).contains(&visible_month) {
+        return Err(invalid_resolved_property(
+            node,
+            "visible_month",
+            "visible month must intersect the configured date range",
+        ));
+    }
+
+    let mut control = crate::date_picker(value)
+        .date_range(minimum, maximum)
+        .visible_month(visible_month)
+        .expanded(bool_property(node, properties, "expanded", false));
+    if let Some(today) = date_property(node, properties, "today")? {
+        control = control.today(today);
+    }
+    if let Some(binding) = node.action_bindings.get("change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("value").cloned();
+        control = control.on_date_change_with(move |value| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(value.iso_string()),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("month_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("visible_month").cloned();
+        control = control.on_date_picker_month_change_with(move |month| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(month.iso_string()),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("expanded_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("expanded").cloned();
+        control = control.on_date_picker_expanded_change_with(move |expanded| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(expanded),
+            })
+        });
+    }
+    Ok(control)
 }
 
 #[cfg(feature = "list")]
@@ -1172,7 +1275,8 @@ fn grid_gap_property(
     feature = "grid",
     feature = "list",
     feature = "progress-ring",
-    feature = "password-box"
+    feature = "password-box",
+    feature = "date-picker"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -1230,6 +1334,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -1254,6 +1359,27 @@ fn property_value(
     node.localization
         .get(property)
         .map(|key| Value::String(format!("{{message:{key}}}")))
+}
+
+#[cfg(feature = "date-picker")]
+fn date_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ZsDate>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    let Some(value) = value.as_str() else {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "date must be a canonical YYYY-MM-DD string",
+        ));
+    };
+    crate::ZsDate::parse_iso(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
 
 #[cfg(any(
@@ -1284,6 +1410,7 @@ fn string_property(
     feature = "radio",
     feature = "number-box",
     feature = "combo",
+    feature = "date-picker",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -1459,6 +1586,7 @@ mod tests {
     use super::*;
 
     #[cfg(any(
+        feature = "date-picker",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -1495,6 +1623,123 @@ mod tests {
 
         assert_eq!(view.id, Some(document.root.id.widget_id()));
         assert!(view.children.is_empty());
+    }
+
+    #[cfg(feature = "date-picker")]
+    #[test]
+    fn compiles_controlled_date_picker_and_emits_canonical_state_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "release-date",
+                "component": "date_picker",
+                "properties": {
+                  "minimum": "2026-01-01",
+                  "maximum": "2026-12-31",
+                  "today": "2026-07-22"
+                },
+                "property_bindings": {
+                  "value": "release_date",
+                  "visible_month": "release_month",
+                  "expanded": "release_expanded"
+                },
+                "action_bindings": {
+                  "change": "release_date_changed",
+                  "month_change": "release_month_changed",
+                  "expanded_change": "release_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "release_date".to_owned(),
+                    crate::ui_document::UiValueType::Date,
+                ),
+                (
+                    "release_month".to_owned(),
+                    crate::ui_document::UiValueType::Date,
+                ),
+                (
+                    "release_expanded".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "release_date_changed".to_owned(),
+                    crate::ui_document::UiValueType::Date,
+                ),
+                (
+                    "release_month_changed".to_owned(),
+                    crate::ui_document::UiValueType::Date,
+                ),
+                (
+                    "release_expanded_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "release_date".to_owned(),
+                Value::String("2026-07-22".to_owned()),
+            ),
+            (
+                "release_month".to_owned(),
+                Value::String("2026-07-01".to_owned()),
+            ),
+            ("release_expanded".to_owned(), Value::Bool(true)),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        assert_eq!(
+            view.widget_date_picker_state(widget),
+            Some(crate::ZsDatePickerState {
+                value: crate::ZsDate::new(2026, 7, 22).unwrap(),
+                minimum: crate::ZsDate::new(2026, 1, 1).unwrap(),
+                maximum: crate::ZsDate::new(2026, 12, 31).unwrap(),
+                visible_month: crate::ZsDate::new(2026, 7, 1).unwrap(),
+                expanded: true,
+            })
+        );
+
+        let next_month = crate::ZsDate::new(2026, 8, 1).unwrap();
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::DatePickerMonthChanged {
+                widget,
+                month: next_month,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(action)] = messages.as_slice() else {
+            panic!("month navigation must emit one typed action");
+        };
+        assert_eq!(action.binding, "release_month_changed");
+        assert_eq!(action.property_binding.as_deref(), Some("release_month"));
+        assert_eq!(action.payload, Value::String("2026-08-01".to_owned()));
+
+        let out_of_range = BTreeMap::from([
+            (
+                "release_date".to_owned(),
+                Value::String("2027-01-01".to_owned()),
+            ),
+            (
+                "release_month".to_owned(),
+                Value::String("2026-07-01".to_owned()),
+            ),
+            ("release_expanded".to_owned(), Value::Bool(false)),
+        ]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &out_of_range, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "value"
+        ));
     }
 
     #[cfg(all(feature = "label", feature = "button"))]
