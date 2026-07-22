@@ -1,0 +1,14 @@
+{
+  "properties": {
+    "country_suggestions": "auto_suggestion_array",
+    "country_query": "string",
+    "country_highlighted": "nullable_auto_suggestion_id",
+    "country_expanded": "boolean"
+  },
+  "actions": {
+    "country_query_changed": "string",
+    "country_chosen": "auto_suggestion_id",
+    "country_submitted": "auto_suggest_submission",
+    "country_expanded_changed": "boolean"
+  }
+}

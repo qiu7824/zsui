@@ -1143,6 +1143,121 @@ mod tests {
     }
 
     #[test]
+    fn viewer_preserves_controlled_auto_suggest_state_across_rebuilds() {
+        let directory = fixture_directory("auto-suggest-actions");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("auto-suggest.json");
+        let binding_path = directory.join("auto-suggest.bindings.json");
+        fs::write(
+            &document_path,
+            include_str!("../examples/ui-documents/auto-suggest.json"),
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            include_str!("../examples/ui-documents/auto-suggest.bindings.json"),
+        )
+        .unwrap();
+        let properties = serde_json::from_str::<BTreeMap<String, Value>>(include_str!(
+            "../examples/ui-documents/auto-suggest.values.json"
+        ))
+        .unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        source.validate_properties(&properties).unwrap();
+        let live_source = source.clone();
+        let captured_state = Arc::new(Mutex::new(UiViewerState::default()));
+        let update_state = Arc::clone(&captured_state);
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::with_properties(properties),
+            move |state| live_source.view(state),
+            move |state, message, cx| {
+                ui_viewer_update(state, message, cx);
+                *update_state.lock().unwrap() = state.clone();
+            },
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 720,
+                height: 420,
+            },
+            crate::Dpi::standard(),
+        );
+        let widget = crate::ui_document::UiNodeId::new("country-search")
+            .unwrap()
+            .widget_id();
+        let china = crate::ui_document::ui_auto_suggestion_runtime_id(
+            &crate::ui_document::UiNodeId::new("country-search").unwrap(),
+            &crate::ui_document::UiAutoSuggestionId::new("china").unwrap(),
+        );
+        assert_eq!(
+            live_view.widget_auto_suggest_state(widget),
+            Some(crate::ZsAutoSuggestState {
+                query: "Ch".to_owned(),
+                suggestion_ids: vec![
+                    china,
+                    crate::ui_document::ui_auto_suggestion_runtime_id(
+                        &crate::ui_document::UiNodeId::new("country-search").unwrap(),
+                        &crate::ui_document::UiAutoSuggestionId::new("chile").unwrap(),
+                    ),
+                    crate::ui_document::ui_auto_suggestion_runtime_id(
+                        &crate::ui_document::UiNodeId::new("country-search").unwrap(),
+                        &crate::ui_document::UiAutoSuggestionId::new("chicago").unwrap(),
+                    ),
+                ],
+                highlighted: None,
+                expanded: true,
+            })
+        );
+
+        let highlighted = live_view.dispatch_event(&crate::ViewEvent::AutoSuggestHighlighted {
+            widget,
+            suggestion: china,
+        });
+        assert_eq!(highlighted.message_count, 2);
+        assert_eq!(
+            live_view.widget_auto_suggest_state(widget),
+            Some(crate::ZsAutoSuggestState {
+                query: "中国 / China".to_owned(),
+                suggestion_ids: live_view
+                    .widget_auto_suggest_state(widget)
+                    .unwrap()
+                    .suggestion_ids,
+                highlighted: Some(china),
+                expanded: true,
+            })
+        );
+
+        let submitted = live_view.dispatch_event(&crate::ViewEvent::AutoSuggestSubmitted {
+            widget,
+            suggestion: Some(china),
+        });
+        assert_eq!(submitted.message_count, 2);
+        let final_state = captured_state.lock().unwrap();
+        assert_eq!(
+            final_state.properties.get("country_query"),
+            Some(&Value::String("中国 / China".to_owned()))
+        );
+        assert_eq!(
+            final_state.properties.get("country_highlighted"),
+            Some(&Value::String("china".to_owned()))
+        );
+        assert_eq!(
+            final_state.properties.get("country_expanded"),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(final_state.actions.len(), 4);
+        assert_eq!(final_state.actions[0].binding, "country_query_changed");
+        assert_eq!(final_state.actions[1].binding, "country_chosen");
+        assert_eq!(final_state.actions[2].binding, "country_submitted");
+        assert_eq!(
+            final_state.actions[2].payload,
+            serde_json::json!({ "query": "中国 / China", "chosen": "china" })
+        );
+        assert_eq!(final_state.actions[3].binding, "country_expanded_changed");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn viewer_preserves_controlled_scroll_offset_across_view_rebuilds() {
         let directory = fixture_directory("controlled-scroll");
         fs::create_dir_all(&directory).unwrap();

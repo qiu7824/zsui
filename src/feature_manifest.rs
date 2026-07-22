@@ -490,6 +490,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "slider",
                 "number-box",
                 "combo",
+                "auto-suggest",
                 "date-picker",
                 "time-picker",
                 "color-picker",
@@ -932,6 +933,7 @@ mod tests {
         assert!(ui_viewer.enables.contains(&"date-picker"));
         assert!(ui_viewer.enables.contains(&"time-picker"));
         assert!(ui_viewer.enables.contains(&"color-picker"));
+        assert!(ui_viewer.enables.contains(&"auto-suggest"));
         assert!(full.enables.contains(&"ui-viewer"));
     }
 

@@ -1027,7 +1027,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         *highlighted = None;
                         *expanded = false;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }
@@ -1447,7 +1447,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *expanded = false;
                     if query_changed {
                         if let Some(message) = on_text_change {
-                            cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                            cx.emit(message.map(crate::ZsAutoSuggestTextChange::new(
                                 String::new(),
                                 crate::ZsAutoSuggestTextChangeReason::UserInput,
                             )));
@@ -1455,7 +1455,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     }
                     if was_expanded {
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }
@@ -1481,14 +1481,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     let expanded_changed = *expanded != next_expanded;
                     *expanded = next_expanded;
                     if let Some(message) = on_text_change {
-                        cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                        cx.emit(message.map(crate::ZsAutoSuggestTextChange::new(
                             next_query.clone(),
                             crate::ZsAutoSuggestTextChangeReason::UserInput,
                         )));
                     }
                     if expanded_changed {
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(next_expanded));
+                            cx.emit(message.map(next_expanded));
                         }
                     }
                 }
@@ -1512,7 +1512,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     }
                     if changed {
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(*next_expanded));
+                            cx.emit(message.map(*next_expanded));
                         }
                     }
                 }
@@ -1538,13 +1538,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         *query = candidate.text().to_string();
                         if changed {
                             if let Some(message) = on_text_change {
-                                cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                                cx.emit(message.map(crate::ZsAutoSuggestTextChange::new(
                                     query.clone(),
                                     crate::ZsAutoSuggestTextChangeReason::SuggestionChosen,
                                 )));
                             }
                             if let Some(message) = on_suggestion_chosen {
-                                cx.emit(message(*suggestion));
+                                cx.emit(message.map(*suggestion));
                             }
                         }
                     }
@@ -1576,19 +1576,19 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             *query = candidate.text().to_string();
                             if changed {
                                 if let Some(message) = on_text_change {
-                                    cx.emit(message(crate::ZsAutoSuggestTextChange::new(
+                                    cx.emit(message.map(crate::ZsAutoSuggestTextChange::new(
                                         query.clone(),
                                         crate::ZsAutoSuggestTextChangeReason::SuggestionChosen,
                                     )));
                                 }
                                 if let Some(message) = on_suggestion_chosen {
-                                    cx.emit(message(chosen));
+                                    cx.emit(message.map(chosen));
                                 }
                             }
                         }
                     }
                     if let Some(message) = on_query_submit {
-                        cx.emit(message(crate::ZsAutoSuggestSubmission::new(
+                        cx.emit(message.map(crate::ZsAutoSuggestSubmission::new(
                             query.clone(),
                             chosen,
                         )));
@@ -1598,7 +1598,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *highlighted = None;
                     if was_expanded {
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }

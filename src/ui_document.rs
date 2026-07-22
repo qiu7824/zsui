@@ -54,6 +54,26 @@ impl UiNodeId {
     }
 }
 
+#[cfg(all(feature = "ui-document-runtime", feature = "auto-suggest"))]
+pub(crate) fn ui_auto_suggestion_runtime_id(
+    node_id: &UiNodeId,
+    suggestion_id: &UiAutoSuggestionId,
+) -> crate::ZsAutoSuggestionId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(suggestion_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsAutoSuggestionId::new(hash)
+}
+
 impl fmt::Display for UiNodeId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
@@ -249,6 +269,110 @@ impl UiGridPlacement {
     }
 }
 
+/// Stable author-facing identity for one document-backed auto-suggest item.
+///
+/// The identity is independent from declaration order. The runtime derives a
+/// private [`crate::ZsAutoSuggestionId`] from this value and the owning node ID.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiAutoSuggestionId(String);
+
+impl UiAutoSuggestionId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiAutoSuggestionIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiAutoSuggestionIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiAutoSuggestionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiAutoSuggestionIdError {
+    value: String,
+}
+
+impl fmt::Display for UiAutoSuggestionIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "auto-suggestion id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiAutoSuggestionIdError {}
+
+/// One stable suggestion supplied by document state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAutoSuggestion {
+    id: UiAutoSuggestionId,
+    text: String,
+}
+
+impl UiAutoSuggestion {
+    pub fn new(id: UiAutoSuggestionId, text: impl Into<String>) -> Self {
+        Self {
+            id,
+            text: text.into(),
+        }
+    }
+
+    pub fn id(&self) -> &UiAutoSuggestionId {
+        &self.id
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn into_parts(self) -> (UiAutoSuggestionId, String) {
+        (self.id, self.text)
+    }
+}
+
+/// Typed query-submission payload emitted by a document-backed AutoSuggestBox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiAutoSuggestSubmission {
+    query: String,
+    chosen: Option<UiAutoSuggestionId>,
+}
+
+impl UiAutoSuggestSubmission {
+    pub fn new(query: impl Into<String>, chosen: Option<UiAutoSuggestionId>) -> Self {
+        Self {
+            query: query.into(),
+            chosen,
+        }
+    }
+
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn chosen(&self) -> Option<&UiAutoSuggestionId> {
+        self.chosen.as_ref()
+    }
+
+    pub fn into_parts(self) -> (String, Option<UiAutoSuggestionId>) {
+        (self.query, self.chosen)
+    }
+}
+
 const fn one_grid_span() -> u16 {
     1
 }
@@ -289,6 +413,10 @@ pub enum UiValueType {
     Date,
     Time,
     Color,
+    AutoSuggestionId,
+    NullableAutoSuggestionId,
+    AutoSuggestionArray,
+    AutoSuggestSubmission,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -314,6 +442,12 @@ impl UiValueType {
                 .as_str()
                 .and_then(crate::Color::parse_hex_rgba)
                 .is_some(),
+            Self::AutoSuggestionId => ui_auto_suggestion_id_from_value(value).is_some(),
+            Self::NullableAutoSuggestionId => {
+                value.is_null() || ui_auto_suggestion_id_from_value(value).is_some()
+            }
+            Self::AutoSuggestionArray => ui_auto_suggestions_from_value(value).is_some(),
+            Self::AutoSuggestSubmission => ui_auto_suggest_submission_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -327,6 +461,37 @@ impl UiValueType {
             Self::Any => true,
         }
     }
+}
+
+fn ui_auto_suggestion_id_from_value(value: &Value) -> Option<UiAutoSuggestionId> {
+    value
+        .as_str()
+        .and_then(|value| UiAutoSuggestionId::new(value).ok())
+}
+
+pub(crate) fn ui_auto_suggestions_from_value(value: &Value) -> Option<Vec<UiAutoSuggestion>> {
+    let suggestions = serde_json::from_value::<Vec<UiAutoSuggestion>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    suggestions
+        .iter()
+        .all(|suggestion| {
+            is_valid_node_id(suggestion.id.as_str())
+                && ids.insert(suggestion.id.as_str().to_owned())
+        })
+        .then_some(suggestions)
+}
+
+fn ui_auto_suggest_submission_from_value(value: &Value) -> Option<UiAutoSuggestSubmission> {
+    let object = value.as_object()?;
+    if !object.contains_key("query") || !object.contains_key("chosen") {
+        return None;
+    }
+    let submission = serde_json::from_value::<UiAutoSuggestSubmission>(value.clone()).ok()?;
+    submission
+        .chosen
+        .as_ref()
+        .is_none_or(|chosen| is_valid_node_id(chosen.as_str()))
+        .then_some(submission)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1272,6 +1437,41 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers application-owned suggestions with stable semantic IDs.
+    #[cfg(feature = "auto-suggest")]
+    pub fn register_auto_suggestions_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiAutoSuggestion> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::AutoSuggestionArray, move |state| {
+            Value::Array(
+                read(state)
+                    .into_iter()
+                    .map(|suggestion| {
+                        let (id, text) = suggestion.into_parts();
+                        serde_json::json!({ "id": id.as_str(), "text": text })
+                    })
+                    .collect(),
+            )
+        })
+    }
+
+    /// Registers the optional highlighted suggestion without exposing the
+    /// runtime's numeric suggestion identity.
+    #[cfg(feature = "auto-suggest")]
+    pub fn register_auto_suggestion_id_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiAutoSuggestionId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableAutoSuggestionId, move |state| {
+            read(state)
+                .map(|id| Value::String(id.as_str().to_owned()))
+                .unwrap_or(Value::Null)
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -1347,6 +1547,36 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                         .ok_or_else(|| "color payload must use canonical #RRGGBBAA".to_owned())
                 })?;
             map(color)
+        })
+    }
+
+    /// Registers a strongly typed suggestion-selection action.
+    #[cfg(feature = "auto-suggest")]
+    pub fn register_auto_suggestion_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiAutoSuggestionId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::AutoSuggestionId, move |payload| {
+            let id = ui_auto_suggestion_id_from_value(&payload)
+                .ok_or_else(|| "suggestion payload must be a valid stable string id".to_owned())?;
+            map(id)
+        })
+    }
+
+    /// Registers the structured query-submission action containing the query
+    /// and optional stable suggestion ID.
+    #[cfg(feature = "auto-suggest")]
+    pub fn register_auto_suggest_submission_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiAutoSuggestSubmission) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::AutoSuggestSubmission, move |payload| {
+            let submission = ui_auto_suggest_submission_from_value(&payload).ok_or_else(|| {
+                "auto-suggest submission must contain query and chosen fields".to_owned()
+            })?;
+            map(submission)
         })
     }
 
@@ -2082,6 +2312,40 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "auto_suggest" {
+            let static_suggestions = (!node.property_bindings.contains_key("suggestions"))
+                .then(|| {
+                    node.properties
+                        .get("suggestions")
+                        .and_then(ui_auto_suggestions_from_value)
+                })
+                .flatten();
+            let static_highlighted = (!node.property_bindings.contains_key("highlighted"))
+                .then(|| {
+                    node.properties
+                        .get("highlighted")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_auto_suggestion_id_from_value)
+                })
+                .flatten();
+            if static_highlighted
+                .as_ref()
+                .zip(static_suggestions.as_ref())
+                .is_some_and(|(highlighted, suggestions)| {
+                    !suggestions
+                        .iter()
+                        .any(|suggestion| suggestion.id() == highlighted)
+                })
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.highlighted"),
+                    "auto_suggest highlighted must address an available suggestion id".to_owned(),
+                );
+            }
+        }
+
         if node.component == "date_picker" {
             let static_date = |name: &str, fallback: Option<UiDocumentDate>| {
                 (!node.property_bindings.contains_key(name))
@@ -2760,6 +3024,61 @@ const COMBO_BOX_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const AUTO_SUGGEST_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "suggestions",
+        value_type: UiValueType::AutoSuggestionArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "query",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "highlighted",
+        value_type: UiValueType::NullableAutoSuggestionId,
+        required: false,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+    PropertySpec {
+        name: "placeholder",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "no_results_text",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "query_icon",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const AUTO_SUGGEST_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "text_change",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "choose",
+        payload_type: UiValueType::AutoSuggestionId,
+    },
+    ActionSpec {
+        name: "submit",
+        payload_type: UiValueType::AutoSuggestSubmission,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const DATE_PICKER_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "value",
@@ -3021,6 +3340,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "slider" => Some(leaf(VALUE_PROPERTIES, SLIDER_ACTIONS)),
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
         "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
+        "auto_suggest" => Some(leaf(AUTO_SUGGEST_PROPERTIES, AUTO_SUGGEST_ACTIONS)),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
         "color_picker" => Some(leaf(COLOR_PICKER_PROPERTIES, COLOR_PICKER_ACTIONS)),
@@ -3602,6 +3922,179 @@ mod tests {
             manifest.map_action("color_changed", Value::String("#2060a0e0".to_owned())),
             Err(UiBindingDispatchError::PayloadType { .. })
         ));
+    }
+
+    #[cfg(feature = "auto-suggest")]
+    #[test]
+    fn typed_auto_suggest_bindings_preserve_semantic_ids() {
+        struct SuggestState {
+            suggestions: Vec<UiAutoSuggestion>,
+            highlighted: Option<UiAutoSuggestionId>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum SuggestMsg {
+            Chosen(UiAutoSuggestionId),
+            Submitted(UiAutoSuggestSubmission),
+        }
+
+        let china = UiAutoSuggestionId::new("china").unwrap();
+        let chile = UiAutoSuggestionId::new("chile").unwrap();
+        let mut manifest = UiBindingManifest::<SuggestState, SuggestMsg>::new();
+        manifest
+            .register_auto_suggestions_property("search_suggestions", |state| {
+                state.suggestions.clone()
+            })
+            .unwrap();
+        manifest
+            .register_auto_suggestion_id_property("search_highlighted", |state| {
+                state.highlighted.clone()
+            })
+            .unwrap();
+        manifest
+            .register_auto_suggestion_id_action("search_chosen", |id| Ok(SuggestMsg::Chosen(id)))
+            .unwrap();
+        manifest
+            .register_auto_suggest_submission_action("search_submitted", |submission| {
+                Ok(SuggestMsg::Submitted(submission))
+            })
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties["search_suggestions"],
+            UiValueType::AutoSuggestionArray
+        );
+        assert_eq!(
+            manifest.schema().properties["search_highlighted"],
+            UiValueType::NullableAutoSuggestionId
+        );
+        assert_eq!(
+            manifest.schema().actions["search_chosen"],
+            UiValueType::AutoSuggestionId
+        );
+        assert_eq!(
+            manifest.schema().actions["search_submitted"],
+            UiValueType::AutoSuggestSubmission
+        );
+        assert_eq!(
+            manifest.read_property(
+                "search_suggestions",
+                &SuggestState {
+                    suggestions: vec![
+                        UiAutoSuggestion::new(china.clone(), "China"),
+                        UiAutoSuggestion::new(chile.clone(), "Chile"),
+                    ],
+                    highlighted: Some(china.clone()),
+                },
+            ),
+            Some(serde_json::json!([
+                { "id": "china", "text": "China" },
+                { "id": "chile", "text": "Chile" }
+            ]))
+        );
+        assert_eq!(
+            manifest.map_action("search_chosen", Value::String("china".to_owned())),
+            Ok(SuggestMsg::Chosen(china.clone()))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "search_submitted",
+                serde_json::json!({ "query": "China", "chosen": "china" }),
+            ),
+            Ok(SuggestMsg::Submitted(UiAutoSuggestSubmission::new(
+                "China",
+                Some(china)
+            )))
+        );
+        assert!(
+            !UiValueType::AutoSuggestionArray.matches(&serde_json::json!([
+                { "id": "duplicate", "text": "First" },
+                { "id": "duplicate", "text": "Second" }
+            ]))
+        );
+        assert!(
+            !UiValueType::AutoSuggestSubmission.matches(&serde_json::json!({ "query": "China" }))
+        );
+    }
+
+    #[test]
+    fn auto_suggest_contract_validates_controlled_semantic_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "country-search",
+                "component": "auto_suggest",
+                "properties": {
+                  "placeholder": "Search countries",
+                  "no_results_text": "No matches",
+                  "query_icon": true
+                },
+                "property_bindings": {
+                  "suggestions": "country_suggestions",
+                  "query": "country_query",
+                  "highlighted": "country_highlighted",
+                  "expanded": "country_expanded"
+                },
+                "action_bindings": {
+                  "text_change": "country_query_changed",
+                  "choose": "country_chosen",
+                  "submit": "country_submitted",
+                  "expanded_change": "country_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "country_suggestions".to_owned(),
+                    UiValueType::AutoSuggestionArray,
+                ),
+                ("country_query".to_owned(), UiValueType::String),
+                (
+                    "country_highlighted".to_owned(),
+                    UiValueType::NullableAutoSuggestionId,
+                ),
+                ("country_expanded".to_owned(), UiValueType::Boolean),
+            ]),
+            actions: BTreeMap::from([
+                ("country_query_changed".to_owned(), UiValueType::String),
+                ("country_chosen".to_owned(), UiValueType::AutoSuggestionId),
+                (
+                    "country_submitted".to_owned(),
+                    UiValueType::AutoSuggestSubmission,
+                ),
+                ("country_expanded_changed".to_owned(), UiValueType::Boolean),
+            ]),
+        };
+        let features = UiFeatureSet::new(["auto-suggest"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "country-search",
+                "component": "auto_suggest",
+                "properties": {
+                  "suggestions": [
+                    { "id": "china", "text": "China" },
+                    { "id": "chile", "text": "Chile" }
+                  ],
+                  "highlighted": "missing"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.highlighted"
+        }));
     }
 
     #[test]
