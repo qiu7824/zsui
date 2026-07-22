@@ -1076,7 +1076,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if *expanded {
                         *expanded = false;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }
@@ -1214,6 +1214,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 visible_month,
                 expanded,
                 on_date_change,
+                on_month_change,
                 on_expanded_change,
                 ..
             },
@@ -1224,18 +1225,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         {
             let next_value = (*next_value).clamp(*minimum, *maximum);
             let changed = *value != next_value;
+            let next_month = next_value.first_day_of_month();
+            let month_changed = *visible_month != next_month;
             let was_expanded = *expanded;
             *value = next_value;
-            *visible_month = next_value.first_day_of_month();
+            *visible_month = next_month;
             *expanded = false;
             if changed {
                 if let Some(message) = on_date_change {
-                    cx.emit(message(next_value));
+                    cx.emit(message.map(next_value));
+                }
+            }
+            if month_changed {
+                if let Some(message) = on_month_change {
+                    cx.emit(message.map(next_month));
                 }
             }
             if was_expanded {
                 if let Some(message) = on_expanded_change {
-                    cx.emit(message(false));
+                    cx.emit(message.map(false));
                 }
             }
         }
@@ -1933,6 +1941,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         value,
                         visible_month,
                         expanded,
+                        on_month_change,
                         on_expanded_change,
                         ..
                     },
@@ -1943,10 +1952,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *expanded = *next_expanded;
                     if *next_expanded {
-                        *visible_month = value.first_day_of_month();
+                        let next_month = value.first_day_of_month();
+                        if *visible_month != next_month {
+                            *visible_month = next_month;
+                            if let Some(message) = on_month_change {
+                                cx.emit(message.map(next_month));
+                            }
+                        }
                     }
                     if let Some(message) = on_expanded_change {
-                        cx.emit(message(*next_expanded));
+                        cx.emit(message.map(*next_expanded));
                     }
                 }
                 #[cfg(feature = "date-picker")]
@@ -1955,11 +1970,18 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         minimum,
                         maximum,
                         visible_month,
+                        on_month_change,
                         ..
                     },
                     ViewEvent::DatePickerMonthChanged { month, .. },
                 ) => {
-                    *visible_month = clamp_visible_month(*month, *minimum, *maximum);
+                    let next_month = clamp_visible_month(*month, *minimum, *maximum);
+                    if *visible_month != next_month {
+                        *visible_month = next_month;
+                        if let Some(message) = on_month_change {
+                            cx.emit(message.map(next_month));
+                        }
+                    }
                 }
                 #[cfg(feature = "time-picker")]
                 (

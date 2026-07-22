@@ -488,7 +488,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "password-box",
                 "radio",
                 "slider",
+                "number-box",
+                "combo",
+                "date-picker",
+                "list",
+                "tabs",
+                "grid",
                 "progress",
+                "progress-ring",
                 "scroll",
                 "native-smoke",
             ],
@@ -920,6 +927,7 @@ mod tests {
             .expect("UI viewer feature should be listed");
         assert!(ui_viewer.enables.contains(&"ui-document-runtime"));
         assert!(ui_viewer.enables.contains(&"window"));
+        assert!(ui_viewer.enables.contains(&"date-picker"));
         assert!(full.enables.contains(&"ui-viewer"));
     }
 

@@ -28,6 +28,7 @@ struct Arguments {
     height: u32,
     poll_ms: u64,
     smoke_output: Option<PathBuf>,
+    smoke_clicks: Vec<Point>,
     smoke_scroll: Option<(Point, i32)>,
 }
 
@@ -73,7 +74,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
 
     if let Some(output_directory) = arguments.smoke_output {
-        run_smoke(builder, &source, &output_directory, arguments.smoke_scroll)?;
+        run_smoke(
+            builder,
+            &source,
+            &output_directory,
+            &arguments.smoke_clicks,
+            arguments.smoke_scroll,
+        )?;
     } else {
         builder.run()?;
     }
@@ -88,6 +95,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut height = 520_u32;
     let mut poll_ms = 250_u64;
     let mut smoke_output = None;
+    let mut smoke_clicks = Vec::new();
     let mut smoke_scroll = None;
     let mut arguments = arguments.into_iter();
 
@@ -99,6 +107,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             "--height" => height = number_argument(&mut arguments, "--height")?,
             "--poll-ms" => poll_ms = number_argument(&mut arguments, "--poll-ms")?,
             "--smoke" => smoke_output = Some(path_argument(&mut arguments, "--smoke")?),
+            "--smoke-click" => {
+                let x = number_argument(&mut arguments, "--smoke-click x")?;
+                let y = number_argument(&mut arguments, "--smoke-click y")?;
+                smoke_clicks.push(Point { x, y });
+            }
             "--smoke-scroll" => {
                 let x = number_argument(&mut arguments, "--smoke-scroll x")?;
                 let y = number_argument(&mut arguments, "--smoke-scroll y")?;
@@ -127,6 +140,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         height,
         poll_ms: poll_ms.max(16),
         smoke_output,
+        smoke_clicks,
         smoke_scroll,
     })
 }
@@ -159,7 +173,7 @@ where
 fn usage() -> &'static str {
     "usage: zsui-viewer <document.json> [--bindings path] [--values path] \
      [--width pixels] [--height pixels] [--poll-ms milliseconds] [--smoke output-directory] \
-     [--smoke-scroll x y delta-y]"
+     [--smoke-click x y]... [--smoke-scroll x y delta-y]"
 }
 
 fn inferred_binding_path(document: &Path) -> Option<PathBuf> {
@@ -181,6 +195,7 @@ fn run_smoke(
     builder: zsui::NativeWindowBuilder,
     source: &UiViewerSource,
     output_directory: &Path,
+    smoke_clicks: &[Point],
     smoke_scroll: Option<(Point, i32)>,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_directory)?;
@@ -188,6 +203,9 @@ fn run_smoke(
     let mut options = NativeWindowSmokeRunOptions::new(900)
         .screenshot_file(screenshot.to_string_lossy())
         .require_screenshot(true);
+    if !smoke_clicks.is_empty() {
+        options = options.native_view_clicks(smoke_clicks.iter().copied());
+    }
     if let Some((point, delta_y)) = smoke_scroll {
         options = options.native_view_scroll(point, delta_y);
     }
@@ -202,6 +220,15 @@ fn run_smoke(
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
             "the native Viewer did not route the requested scroll input",
+        )));
+    }
+    if !smoke_clicks.is_empty()
+        && (runtime.native_view_click_count < smoke_clicks.len()
+            || runtime.native_view_message_count < smoke_clicks.len())
+    {
+        return Err(Box::new(ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer did not route every requested click through a typed message",
         )));
     }
     let capture = runtime.native_view_capture.as_ref().ok_or_else(|| {
@@ -268,5 +295,26 @@ mod tests {
         .unwrap();
 
         assert_eq!(arguments.smoke_scroll, Some((Point { x: 120, y: 240 }, 96)));
+    }
+
+    #[test]
+    fn parser_accepts_repeated_native_click_smoke_input() {
+        let arguments = parse_arguments([
+            "ui.json".to_owned(),
+            "--smoke".to_owned(),
+            "proof".to_owned(),
+            "--smoke-click".to_owned(),
+            "120".to_owned(),
+            "240".to_owned(),
+            "--smoke-click".to_owned(),
+            "300".to_owned(),
+            "160".to_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            arguments.smoke_clicks,
+            vec![Point { x: 120, y: 240 }, Point { x: 300, y: 160 }]
+        );
     }
 }

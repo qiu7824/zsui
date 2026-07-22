@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "date-picker-demo",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding": 24.0,
+      "gap": 12.0
+    },
+    "children": [
+      {
+        "id": "date-picker-title",
+        "component": "text",
+        "properties": {
+          "text": "日期选择 / Date picker",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "date-picker-description",
+        "component": "text",
+        "properties": {
+          "text": "受控日期、月份导航与展开状态 / Controlled date, month navigation and open state"
+        }
+      },
+      {
+        "id": "release-date",
+        "component": "date_picker",
+        "properties": {
+          "minimum": "2026-01-01",
+          "maximum": "2026-12-31",
+          "today": "2026-07-22"
+        },
+        "property_bindings": {
+          "value": "release_date",
+          "visible_month": "release_month",
+          "expanded": "release_date_expanded"
+        },
+        "action_bindings": {
+          "change": "release_date_changed",
+          "month_change": "release_month_changed",
+          "expanded_change": "release_date_expanded_changed"
+        },
+        "accessibility": {
+          "role": "datepicker",
+          "label": "发布日期 / Release date"
+        }
+      }
+    ]
+  }
+}

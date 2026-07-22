@@ -248,6 +248,7 @@ pub enum UiValueType {
     Integer,
     NullableInteger,
     String,
+    Date,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -267,6 +268,7 @@ impl UiValueType {
             Self::Integer => value.as_u64().is_some(),
             Self::NullableInteger => value.is_null() || value.as_u64().is_some(),
             Self::String => value.is_string(),
+            Self::Date => ui_date_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -280,6 +282,71 @@ impl UiValueType {
             Self::Any => true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct UiDocumentDate {
+    year: u16,
+    month: u8,
+    day: u8,
+}
+
+impl UiDocumentDate {
+    const MINIMUM: Self = Self {
+        year: 1,
+        month: 1,
+        day: 1,
+    };
+    const MAXIMUM: Self = Self {
+        year: 9999,
+        month: 12,
+        day: 31,
+    };
+
+    fn parse(value: &str) -> Option<Self> {
+        let bytes = value.as_bytes();
+        if bytes.len() != 10
+            || bytes[4] != b'-'
+            || bytes[7] != b'-'
+            || !bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+        {
+            return None;
+        }
+        let year = value[0..4].parse::<u16>().ok()?;
+        let month = value[5..7].parse::<u8>().ok()?;
+        let day = value[8..10].parse::<u8>().ok()?;
+        let maximum_day = ui_document_days_in_month(year, month);
+        (year >= 1 && maximum_day > 0 && (1..=maximum_day).contains(&day)).then_some(Self {
+            year,
+            month,
+            day,
+        })
+    }
+
+    const fn day(self) -> u8 {
+        self.day
+    }
+
+    const fn first_day_of_month(self) -> Self {
+        Self { day: 1, ..self }
+    }
+}
+
+const fn ui_document_days_in_month(year: u16, month: u8) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn ui_date_from_value(value: &Value) -> Option<UiDocumentDate> {
+    value.as_str().and_then(UiDocumentDate::parse)
 }
 
 fn grid_tracks_from_value(value: &Value) -> Option<Vec<UiGridTrack>> {
@@ -1094,6 +1161,19 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         Ok(())
     }
 
+    /// Registers a strongly typed calendar-date property using the canonical
+    /// platform-independent `YYYY-MM-DD` document representation.
+    #[cfg(feature = "date-picker")]
+    pub fn register_date_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> crate::ZsDate + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::Date, move |state| {
+            Value::String(read(state).iso_string())
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -1114,12 +1194,33 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         Ok(())
     }
 
+    /// Registers a strongly typed calendar-date action. Invalid or
+    /// noncanonical serialized dates are rejected before application update.
+    #[cfg(feature = "date-picker")]
+    pub fn register_date_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(crate::ZsDate) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::Date, move |payload| {
+            let date = payload
+                .as_str()
+                .ok_or_else(|| "date payload must be a YYYY-MM-DD string".to_owned())
+                .and_then(|value| {
+                    crate::ZsDate::parse_iso(value).map_err(|error| error.to_string())
+                })?;
+            map(date)
+        })
+    }
+
     pub fn schema(&self) -> UiBindingSchema {
+        #[allow(unused_mut)]
         let mut properties = self
             .properties
             .iter()
             .map(|(name, binding)| (name.clone(), binding.value_type))
             .collect::<BTreeMap<_, _>>();
+        #[allow(unused_mut)]
         let mut actions = self
             .actions
             .iter()
@@ -1806,6 +1907,66 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "date_picker" {
+            let static_date = |name: &str, fallback: Option<UiDocumentDate>| {
+                (!node.property_bindings.contains_key(name))
+                    .then(|| {
+                        node.properties
+                            .get(name)
+                            .and_then(ui_date_from_value)
+                            .or(fallback)
+                    })
+                    .flatten()
+            };
+            let minimum = static_date("minimum", Some(UiDocumentDate::MINIMUM));
+            let maximum = static_date("maximum", Some(UiDocumentDate::MAXIMUM));
+            if minimum
+                .zip(maximum)
+                .is_some_and(|(minimum, maximum)| minimum > maximum)
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.maximum"),
+                    "date_picker maximum must not be earlier than minimum".to_owned(),
+                );
+            }
+            if let (Some(value), Some(minimum), Some(maximum)) =
+                (static_date("value", None), minimum, maximum)
+            {
+                if minimum <= maximum && !(minimum..=maximum).contains(&value) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.value"),
+                        "date_picker value must be within minimum and maximum".to_owned(),
+                    );
+                }
+            }
+            if let Some(month) = static_date("visible_month", None) {
+                if month.day() != 1 {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.visible_month"),
+                        "date_picker visible_month must use the first day of its month".to_owned(),
+                    );
+                } else if let (Some(minimum), Some(maximum)) = (minimum, maximum) {
+                    let first = minimum.first_day_of_month();
+                    let last = maximum.first_day_of_month();
+                    if first <= last && !(first..=last).contains(&month) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.visible_month"),
+                            "date_picker visible_month must intersect the configured date range"
+                                .to_owned(),
+                        );
+                    }
+                }
+            }
+        }
+
         if node.component == "tabs" {
             let child_ids = node
                 .children
@@ -1989,7 +2150,8 @@ impl<'a> UiDocumentValidator<'a> {
         }
 
         for (property_name, message_key) in &node.localization {
-            if find_property(schema, property_name).is_none() {
+            let property = find_property(schema, property_name);
+            if property.is_none() {
                 push_diagnostic(
                     diagnostics,
                     UiDiagnosticCode::UnknownProperty,
@@ -1997,6 +2159,16 @@ impl<'a> UiDocumentValidator<'a> {
                     format!(
                         "property {property_name:?} is not valid on {:?}",
                         node.component
+                    ),
+                );
+            } else if property.is_some_and(|property| property.value_type != UiValueType::String) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidLocalization,
+                    format!("{path}.localization.{property_name}"),
+                    format!(
+                        "property {property_name:?} expects {:?} and cannot be supplied by localization",
+                        property.expect("checked property").value_type
                     ),
                 );
             } else if message_key.trim().is_empty() {
@@ -2278,6 +2450,52 @@ const COMBO_BOX_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const DATE_PICKER_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::Date,
+        required: true,
+    },
+    PropertySpec {
+        name: "minimum",
+        value_type: UiValueType::Date,
+        required: false,
+    },
+    PropertySpec {
+        name: "maximum",
+        value_type: UiValueType::Date,
+        required: false,
+    },
+    PropertySpec {
+        name: "visible_month",
+        value_type: UiValueType::Date,
+        required: false,
+    },
+    PropertySpec {
+        name: "today",
+        value_type: UiValueType::Date,
+        required: false,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const DATE_PICKER_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "change",
+        payload_type: UiValueType::Date,
+    },
+    ActionSpec {
+        name: "month_change",
+        payload_type: UiValueType::Date,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const TABS_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "labels",
@@ -2425,6 +2643,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "slider" => Some(leaf(VALUE_PROPERTIES, SLIDER_ACTIONS)),
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
         "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
+        "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "progress_bar" => Some(leaf(VALUE_PROPERTIES, NO_ACTIONS)),
         "progress_ring" => Some(leaf(PROGRESS_RING_PROPERTIES, NO_ACTIONS)),
         _ => None,
@@ -2748,6 +2967,153 @@ mod tests {
         assert_eq!(manifest.map_action("save", Value::Null), Ok(Msg::Save));
     }
 
+    #[cfg(feature = "date-picker")]
+    #[test]
+    fn typed_date_bindings_use_canonical_document_values() {
+        struct DateState {
+            selected: crate::ZsDate,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum DateMsg {
+            Selected(crate::ZsDate),
+        }
+
+        let date = crate::ZsDate::new(2026, 7, 22).unwrap();
+        let mut manifest = UiBindingManifest::<DateState, DateMsg>::new();
+        manifest
+            .register_date_property("selected_date", |state| state.selected)
+            .unwrap();
+        manifest
+            .register_date_action("date_changed", |date| Ok(DateMsg::Selected(date)))
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties["selected_date"],
+            UiValueType::Date
+        );
+        assert_eq!(manifest.schema().actions["date_changed"], UiValueType::Date);
+        assert_eq!(
+            manifest.read_property("selected_date", &DateState { selected: date }),
+            Some(Value::String("2026-07-22".to_owned()))
+        );
+        assert_eq!(
+            manifest.map_action("date_changed", Value::String("2026-07-22".to_owned())),
+            Ok(DateMsg::Selected(date))
+        );
+        assert!(matches!(
+            manifest.map_action("date_changed", Value::String("2026-7-22".to_owned())),
+            Err(UiBindingDispatchError::PayloadType { .. })
+        ));
+    }
+
+    #[test]
+    fn date_picker_contract_validates_range_and_controlled_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "release-date",
+                "component": "date_picker",
+                "properties": {
+                  "minimum": "2026-01-01",
+                  "maximum": "2026-12-31",
+                  "today": "2026-07-22"
+                },
+                "property_bindings": {
+                  "value": "release_date",
+                  "visible_month": "release_month",
+                  "expanded": "release_date_expanded"
+                },
+                "action_bindings": {
+                  "change": "release_date_changed",
+                  "month_change": "release_month_changed",
+                  "expanded_change": "release_date_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("release_date".to_owned(), UiValueType::Date),
+                ("release_month".to_owned(), UiValueType::Date),
+                ("release_date_expanded".to_owned(), UiValueType::Boolean),
+            ]),
+            actions: BTreeMap::from([
+                ("release_date_changed".to_owned(), UiValueType::Date),
+                ("release_month_changed".to_owned(), UiValueType::Date),
+                (
+                    "release_date_expanded_changed".to_owned(),
+                    UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let report = valid.validate(&UiFeatureSet::new(["date-picker"]), &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        let handoff = UiAiHandoffPackage::build(
+            &valid,
+            &UiFeatureSet::new(["date-picker"]),
+            &bindings,
+            Some(&BTreeMap::from([
+                (
+                    "release_date".to_owned(),
+                    Value::String("2026-07-22".to_owned()),
+                ),
+                (
+                    "release_month".to_owned(),
+                    Value::String("2026-07-01".to_owned()),
+                ),
+                ("release_date_expanded".to_owned(), Value::Bool(false)),
+            ])),
+            None,
+        )
+        .unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "date_picker")
+            .unwrap();
+        assert!(contract
+            .properties
+            .iter()
+            .any(|property| property.name == "value" && property.value_type == UiValueType::Date));
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "invalid-date",
+                "component": "date_picker",
+                "properties": {
+                  "value": "2026-02-30",
+                  "minimum": "2026-12-31",
+                  "maximum": "2026-01-01",
+                  "visible_month": "2026-07-22"
+                },
+                "localization": { "expanded": "date.expanded" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(
+            &UiFeatureSet::new(["date-picker"]),
+            &UiBindingSchema::default(),
+        );
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyType));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidLocalization));
+    }
+
     #[cfg(feature = "password-box")]
     #[test]
     fn password_box_contract_and_manifest_keep_secrets_out_of_json() {
@@ -2920,10 +3286,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "date_picker".to_owned();
+        document.root.children[0].component = "time_picker".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "date-picker"]),
+            &UiFeatureSet::new(["button", "label", "time-picker"]),
             &UiBindingSchema::default(),
         );
 

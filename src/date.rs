@@ -119,6 +119,35 @@ impl ZsDate {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
 
+    /// Parses the canonical `YYYY-MM-DD` representation used by portable UI
+    /// documents and application binding manifests.
+    pub fn parse_iso(value: &str) -> ZsuiResult<Self> {
+        let bytes = value.as_bytes();
+        if bytes.len() != 10
+            || bytes[4] != b'-'
+            || bytes[7] != b'-'
+            || !bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+        {
+            return Err(ZsuiError::invalid_spec(
+                "date",
+                "date must use the canonical YYYY-MM-DD representation",
+            ));
+        }
+        let year = value[0..4].parse::<i32>().map_err(|_| {
+            ZsuiError::invalid_spec("date.year", "year must contain four decimal digits")
+        })?;
+        let month = value[5..7].parse::<u8>().map_err(|_| {
+            ZsuiError::invalid_spec("date.month", "month must contain two decimal digits")
+        })?;
+        let day = value[8..10].parse::<u8>().map_err(|_| {
+            ZsuiError::invalid_spec("date.day", "day must contain two decimal digits")
+        })?;
+        Self::new(year, month, day)
+    }
+
     /// Returns today's date in the operating system's local time zone.
     #[cfg(feature = "date-picker")]
     pub fn today_local() -> ZsuiResult<Self> {
@@ -233,6 +262,15 @@ mod tests {
         ] {
             assert_eq!(ZsDate::from_unix_days(date.unix_days()), date);
         }
+    }
+
+    #[test]
+    fn canonical_iso_dates_round_trip_and_reject_ambiguous_input() {
+        let leap_day = ZsDate::new(2024, 2, 29).unwrap();
+        assert_eq!(ZsDate::parse_iso(&leap_day.iso_string()), Ok(leap_day));
+        assert!(ZsDate::parse_iso("2024-2-29").is_err());
+        assert!(ZsDate::parse_iso("2023-02-29").is_err());
+        assert!(ZsDate::parse_iso("2024/02/29").is_err());
     }
 
     #[cfg(feature = "date-picker")]

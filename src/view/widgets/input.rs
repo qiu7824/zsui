@@ -124,6 +124,7 @@ pub fn date_picker<Msg>(value: ZsDate) -> ViewNode<Msg> {
         today: ZsDate::today_local().ok(),
         expanded: false,
         on_date_change: None,
+        on_month_change: None,
         on_expanded_change: None,
     })
     .min_width(metrics.selection_minimum_width)
