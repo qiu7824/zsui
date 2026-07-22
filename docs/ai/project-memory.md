@@ -93,6 +93,13 @@ history remain authoritative for implementation status.
   as `ZsTime`; value and expanded state use independent controlled loops.
   Minute increments must be nonzero divisors of 60 and selected minutes must
   align with the increment in both schema validation and release compilation.
+  Document-ready ColorPicker uses canonical uppercase `#RRGGBBAA` values and
+  typed `Color` manifest helpers. Value, expanded state and active channel use
+  independent controlled loops. The semantic channel values are `red`,
+  `green`, `blue` and `alpha`; disabling alpha rejects nonopaque colors and an
+  active alpha channel instead of silently normalizing document state. Windows
+  Viewer proof changes the active channel and canonical RGBA value through one
+  real pointer click and captures the final Win32 surface.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the

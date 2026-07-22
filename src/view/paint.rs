@@ -1092,7 +1092,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if state.expanded {
                         state.expanded = false;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }
@@ -1289,7 +1289,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     state.expanded = *expanded;
                     if changed {
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(*expanded));
+                            cx.emit(message.map(*expanded));
                         }
                     }
                 }
@@ -1300,7 +1300,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if state.active_channel != *channel {
                         state.active_channel = *channel;
                         if let Some(message) = on_channel_change {
-                            cx.emit(message(*channel));
+                            cx.emit(message.map(*channel));
                         }
                     }
                 }
@@ -1313,7 +1313,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if state.color != color {
                         state.color = color;
                         if let Some(message) = on_color_change {
-                            cx.emit(message(color));
+                            cx.emit(message.map(color));
                         }
                     }
                 }

@@ -32,7 +32,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`date_picker`、`time_picker`、`password_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
@@ -78,6 +78,13 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 `minute_increment` 必须是小于 60 的非零约数，且分钟值必须与步长对齐；`clock_format` 只接受
 `platform_default`、`twelve_hour` 或 `twenty_four_hour`。静态校验和发布运行时都会拒绝非规范
 时间、无效步长、未对齐值及未知时制，不把平台本地化显示文本写入应用状态。
+
+`color_picker` 使用独立的 `color` 绑定类型，规范序列化形式固定为大写 `#RRGGBBAA`。
+`UiBindingManifest::register_color_property` 和 `register_color_action` 在 Rust 侧直接读写
+`Color`。`value`、`expanded` 与 `active_channel` 可分别绑定受控状态，三个对应动作在
+Viewer 重建后保持 RGBA、弹层和当前编辑通道；通道值只接受 `red`、`green`、`blue` 或
+`alpha`。关闭 `alpha_enabled` 时，校验器和发布运行时都会拒绝非 `FF` alpha 以及活动
+alpha 通道。最终色谱、滑轨、密度与弹层结构仍由 WinUI、AppKit 或 GTK 体验参数决定。
 
 `password_box.value` 只允许绑定到安全状态，禁止写成文档字面量、本地化值或普通
 `values.json`。`UiBindingManifest::register_secret_property` 和
@@ -162,7 +169,7 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle`、`slider.slide`、DatePicker 三类状态动作、TimePicker 两类状态动作和 `scroll.scroll` 均走类型化 Viewer
+`checkbox.toggle`、`toggle.toggle`、`slider.slide`、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
 消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
@@ -204,6 +211,17 @@ cargo run --bin zsui-viewer `
   -- examples/ui-documents/time-picker.json `
   --bindings examples/ui-documents/time-picker.bindings.json `
   --values examples/ui-documents/time-picker.values.json
+```
+
+受控颜色示例使用规范 RGBA 状态，并由目标平台选择自身的 ColorPicker 体验参数：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/color-picker.json `
+  --bindings examples/ui-documents/color-picker.bindings.json `
+  --values examples/ui-documents/color-picker.values.json
 ```
 
 原生证明可由同一可执行文件生成：

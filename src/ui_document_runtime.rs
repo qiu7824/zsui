@@ -68,6 +68,7 @@ pub struct UiDocumentSecretAction {
         feature = "combo",
         feature = "date-picker",
         feature = "time-picker",
+        feature = "color-picker",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -179,6 +180,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "combo",
             feature = "date-picker",
             feature = "time-picker",
+            feature = "color-picker",
             feature = "list",
             feature = "tabs",
             feature = "scroll"
@@ -745,6 +747,8 @@ fn compile_node<Msg: Clone + 'static>(
         "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "time-picker")]
         "time_picker" => document_time_picker(node, properties, mapper)?,
+        #[cfg(feature = "color-picker")]
+        "color_picker" => document_color_picker(node, properties, mapper)?,
         #[cfg(feature = "tabs")]
         "tabs" => {
             let labels = string_map_property(node, properties, "labels");
@@ -997,6 +1001,104 @@ fn document_time_picker<Msg: Clone + 'static>(
                 binding: binding.clone(),
                 property_binding: property_binding.clone(),
                 payload: Value::Bool(expanded),
+            })
+        });
+    }
+    Ok(control)
+}
+
+#[cfg(feature = "color-picker")]
+fn document_color_picker<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let color = color_property(node, properties, "value")?
+        .ok_or_else(|| invalid_resolved_property(node, "value", "an RGBA color is required"))?;
+    let alpha_enabled = bool_property(node, properties, "alpha_enabled", true);
+    if !alpha_enabled && color.a != 255 {
+        return Err(invalid_resolved_property(
+            node,
+            "value",
+            "alpha must be FF when alpha_enabled is false",
+        ));
+    }
+    let channel = match optional_string_property(node, properties, "active_channel")
+        .as_deref()
+        .unwrap_or("red")
+    {
+        "red" => crate::ZsColorChannel::Red,
+        "green" => crate::ZsColorChannel::Green,
+        "blue" => crate::ZsColorChannel::Blue,
+        "alpha" if alpha_enabled => crate::ZsColorChannel::Alpha,
+        "alpha" => {
+            return Err(invalid_resolved_property(
+                node,
+                "active_channel",
+                "alpha channel cannot be active when alpha is disabled",
+            ));
+        }
+        channel => {
+            return Err(invalid_resolved_property(
+                node,
+                "active_channel",
+                format!("unsupported color channel {channel:?}"),
+            ));
+        }
+    };
+
+    let mut state = crate::ZsColorPickerState::new(color)
+        .with_expanded(bool_property(node, properties, "expanded", false))
+        .with_active_channel(channel);
+    if !alpha_enabled {
+        state = state.without_alpha();
+    }
+    let mut control = crate::color_picker(state);
+    if let Some(binding) = node.action_bindings.get("change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("value").cloned();
+        control = control.on_color_change_with(move |color| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(color.hex_rgba()),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("expanded_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("expanded").cloned();
+        control = control.on_color_picker_expanded_change_with(move |expanded| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(expanded),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("channel_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("active_channel").cloned();
+        control = control.on_color_channel_change_with(move |channel| {
+            let channel = match channel {
+                crate::ZsColorChannel::Red => "red",
+                crate::ZsColorChannel::Green => "green",
+                crate::ZsColorChannel::Blue => "blue",
+                crate::ZsColorChannel::Alpha => "alpha",
+            };
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(channel.to_owned()),
             })
         });
     }
@@ -1367,7 +1469,8 @@ fn grid_gap_property(
     feature = "progress-ring",
     feature = "password-box",
     feature = "date-picker",
-    feature = "time-picker"
+    feature = "time-picker",
+    feature = "color-picker"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -1431,6 +1534,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -1499,6 +1603,33 @@ fn time_property(
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
 
+#[cfg(feature = "color-picker")]
+fn color_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::Color>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    let Some(value) = value.as_str() else {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "color must be a canonical #RRGGBBAA string",
+        ));
+    };
+    crate::Color::parse_hex_rgba(value)
+        .map(Some)
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                property,
+                "color must use canonical uppercase #RRGGBBAA",
+            )
+        })
+}
+
 #[cfg(any(
     feature = "label",
     feature = "button",
@@ -1530,6 +1661,7 @@ fn string_property(
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -1580,7 +1712,8 @@ fn nullable_number_property(
     feature = "list",
     feature = "progress-ring",
     feature = "password-box",
-    feature = "time-picker"
+    feature = "time-picker",
+    feature = "color-picker"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -1774,6 +1907,7 @@ mod tests {
         feature = "label",
         feature = "date-picker",
         feature = "time-picker",
+        feature = "color-picker",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -2179,6 +2313,172 @@ mod tests {
         ]);
         assert!(matches!(
             ui_document_view(&document, &bindings, &misaligned, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "value"
+        ));
+    }
+
+    #[cfg(feature = "color-picker")]
+    #[test]
+    fn compiles_controlled_color_picker_and_emits_canonical_state_actions() {
+        let document = UiDocument::from_json(
+            r##"{
+              "schema_version": 1,
+              "root": {
+                "id": "accent-color",
+                "component": "color_picker",
+                "properties": { "alpha_enabled": true },
+                "property_bindings": {
+                  "value": "accent_color",
+                  "expanded": "accent_color_expanded",
+                  "active_channel": "accent_color_channel"
+                },
+                "action_bindings": {
+                  "change": "accent_color_changed",
+                  "expanded_change": "accent_color_expanded_changed",
+                  "channel_change": "accent_color_channel_changed"
+                }
+              }
+            }"##,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "accent_color".to_owned(),
+                    crate::ui_document::UiValueType::Color,
+                ),
+                (
+                    "accent_color_expanded".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "accent_color_channel".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "accent_color_changed".to_owned(),
+                    crate::ui_document::UiValueType::Color,
+                ),
+                (
+                    "accent_color_expanded_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "accent_color_channel_changed".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "accent_color".to_owned(),
+                Value::String("#2060A0E0".to_owned()),
+            ),
+            ("accent_color_expanded".to_owned(), Value::Bool(true)),
+            (
+                "accent_color_channel".to_owned(),
+                Value::String("red".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        assert_eq!(
+            view.widget_color_picker_state(widget),
+            Some(
+                crate::ZsColorPickerState::new(crate::Color::rgba(32, 96, 160, 224))
+                    .with_expanded(true)
+            )
+        );
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ColorPickerChannelChanged {
+                widget,
+                channel: crate::ZsColorChannel::Green,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(action)] = messages.as_slice() else {
+            panic!("channel selection must emit one typed action");
+        };
+        assert_eq!(action.binding, "accent_color_channel_changed");
+        assert_eq!(
+            action.property_binding.as_deref(),
+            Some("accent_color_channel")
+        );
+        assert_eq!(action.payload, Value::String("green".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ColorChanged {
+                widget,
+                color: crate::Color::rgba(12, 34, 56, 78),
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(action)] = messages.as_slice() else {
+            panic!("color edit must emit one typed action");
+        };
+        assert_eq!(action.binding, "accent_color_changed");
+        assert_eq!(action.property_binding.as_deref(), Some("accent_color"));
+        assert_eq!(action.payload, Value::String("#0C22384E".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ColorPickerExpandedChanged {
+                widget,
+                expanded: false,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(action)] = messages.as_slice() else {
+            panic!("expanded state must emit one typed action");
+        };
+        assert_eq!(action.binding, "accent_color_expanded_changed");
+        assert_eq!(
+            action.property_binding.as_deref(),
+            Some("accent_color_expanded")
+        );
+        assert_eq!(action.payload, Value::Bool(false));
+
+        let alpha_disabled = UiDocument::from_json(
+            r##"{
+              "schema_version": 1,
+              "root": {
+                "id": "opaque-color",
+                "component": "color_picker",
+                "properties": {
+                  "alpha_enabled": false
+                },
+                "property_bindings": { "value": "opaque_color" }
+              }
+            }"##,
+        )
+        .unwrap();
+        let alpha_bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "opaque_color".to_owned(),
+                crate::ui_document::UiValueType::Color,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        let alpha_values = BTreeMap::from([(
+            "opaque_color".to_owned(),
+            Value::String("#2060A0E0".to_owned()),
+        )]);
+        assert!(matches!(
+            ui_document_view(
+                &alpha_disabled,
+                &alpha_bindings,
+                &alpha_values,
+                Msg::Action,
+            ),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "value"
         ));

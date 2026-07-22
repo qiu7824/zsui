@@ -22,6 +22,7 @@ impl WidgetId {
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -42,6 +43,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -62,6 +64,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -100,6 +103,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -130,6 +134,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "combo",
     feature = "date-picker",
     feature = "time-picker",
+    feature = "color-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -941,9 +946,9 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "color-picker")]
     ColorPicker {
         state: ZsColorPickerState,
-        on_color_change: Option<fn(crate::Color) -> Msg>,
-        on_expanded_change: Option<fn(bool) -> Msg>,
-        on_channel_change: Option<fn(ZsColorChannel) -> Msg>,
+        on_color_change: Option<ViewMessageMapper<crate::Color, Msg>>,
+        on_expanded_change: Option<ViewMessageMapper<bool, Msg>>,
+        on_channel_change: Option<ViewMessageMapper<ZsColorChannel, Msg>>,
     },
     #[cfg(feature = "tabs")]
     Tabs {
@@ -2094,7 +2099,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "color-picker")]
             ViewNodeKind::ColorPicker {
                 on_expanded_change, ..
-            } => *on_expanded_change = Some(message),
+            } => *on_expanded_change = Some(ViewMessageMapper::from_function(message)),
             _ => {}
         }
         self
@@ -2239,7 +2244,21 @@ impl<Msg: Clone> ViewNode<Msg> {
             on_color_change, ..
         } = &mut self.kind
         {
-            *on_color_change = Some(message);
+            *on_color_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn on_color_change_with(
+        mut self,
+        message: impl Fn(crate::Color) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ColorPicker {
+            on_color_change, ..
+        } = &mut self.kind
+        {
+            *on_color_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2250,7 +2269,21 @@ impl<Msg: Clone> ViewNode<Msg> {
             on_channel_change, ..
         } = &mut self.kind
         {
-            *on_channel_change = Some(message);
+            *on_channel_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn on_color_channel_change_with(
+        mut self,
+        message: impl Fn(ZsColorChannel) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ColorPicker {
+            on_channel_change, ..
+        } = &mut self.kind
+        {
+            *on_channel_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2339,6 +2372,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: impl Fn(bool) -> Msg + Send + Sync + 'static,
     ) -> Self {
         if let ViewNodeKind::TimePicker {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "color-picker")]
+    pub fn on_color_picker_expanded_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ColorPicker {
             on_expanded_change, ..
         } = &mut self.kind
         {
