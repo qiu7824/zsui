@@ -101,6 +101,48 @@
         }
       },
       {
+        "id": "sync-progress",
+        "component": "progress_ring",
+        "properties": {
+          "minimum": 0.0,
+          "maximum": 100.0,
+          "size": "small"
+        },
+        "property_bindings": {
+          "value": "sync_progress"
+        },
+        "accessibility": {
+          "role": "progressbar",
+          "label": "Sync progress"
+        }
+      },
+      {
+        "id": "profile-list",
+        "component": "list",
+        "property_bindings": {
+          "selected": "selected_profile"
+        },
+        "action_bindings": {
+          "select": "selected_profile_changed"
+        },
+        "accessibility": {
+          "role": "list",
+          "label": "Profile preset"
+        },
+        "children": [
+          {
+            "id": "profile-balanced",
+            "component": "text",
+            "properties": { "text": "均衡 / Balanced" }
+          },
+          {
+            "id": "profile-quiet",
+            "component": "text",
+            "properties": { "text": "安静 / Quiet" }
+          }
+        ]
+      },
+      {
         "id": "settings-tabs",
         "component": "tabs",
         "properties": {

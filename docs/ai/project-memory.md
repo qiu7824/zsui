@@ -81,7 +81,15 @@ history remain authoritative for implementation status.
   The map must cover exactly those children; positive spans and row/column
   bounds are checked both for inline documents and again after resolving bound
   release values. Child declaration order therefore does not determine cell
-  identity. Ordinary
+  identity. Document-ready List also uses each direct child's stable
+  `UiNodeId` as the controlled string selection value and emits that ID through
+  its typed select callback, so item reordering does not corrupt selection. The
+  shared List builder floors direct rows at the platform selection height and
+  applies the platform spacing inset to row content; typography scaling raises
+  that hard floor instead of compressing mixed-script line boxes.
+  Document-ready ProgressRing uses one optional `nullable_number` value for
+  determinate/indeterminate mode, validates its numeric range twice and maps
+  small/medium/large to platform-owned metrics. Ordinary
   function-pointer handlers remain
   allocation-free; shared owned closures are
   allocated only through explicit `*_with` builders. `zsui-uic handoff`

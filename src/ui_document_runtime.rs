@@ -17,7 +17,7 @@ use crate::ui_document::{
 use crate::ui_document::{UiGridPlacement, UiGridTrack};
 #[cfg(feature = "label")]
 use crate::ColorRole;
-#[cfg(feature = "progress")]
+#[cfg(any(feature = "progress", feature = "progress-ring"))]
 use crate::ProgressRange;
 #[cfg(feature = "slider")]
 use crate::SliderRange;
@@ -26,6 +26,8 @@ use crate::ZsNumberRange;
 use crate::{column, row, Dp, ThemeColorToken, ViewNode};
 #[cfg(feature = "label")]
 use crate::{SemanticTextStyle, TextRole};
+#[cfg(feature = "progress-ring")]
+use crate::{ZsProgressRingSize, ZsProgressRingSpec};
 
 /// Typed semantic action emitted by a document-backed View subtree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -49,6 +51,7 @@ pub struct UiDocumentAction {
         feature = "slider",
         feature = "number-box",
         feature = "combo",
+        feature = "list",
         feature = "tabs",
         feature = "scroll"
     )),
@@ -102,6 +105,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "slider",
             feature = "number-box",
             feature = "combo",
+            feature = "list",
             feature = "tabs",
             feature = "scroll"
         )),
@@ -236,6 +240,8 @@ fn compile_node<Msg: Clone + 'static>(
         "border" => column(children),
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
+        #[cfg(feature = "list")]
+        "list" => document_list(node, properties, children, mapper)?,
         #[cfg(feature = "scroll")]
         "scroll" => {
             let actual = children.len();
@@ -574,6 +580,8 @@ fn compile_node<Msg: Clone + 'static>(
             number_property(node, properties, "value", 0.0) as f32,
             ProgressRange::new(0.0, 100.0),
         ),
+        #[cfg(feature = "progress-ring")]
+        "progress_ring" => document_progress_ring(node, properties)?,
         component => {
             return Err(UiDocumentRuntimeError::UnsupportedComponent {
                 component: component.to_owned(),
@@ -582,6 +590,124 @@ fn compile_node<Msg: Clone + 'static>(
     };
     view = view.id(node.id.widget_id());
     Ok(apply_layout(view, node))
+}
+
+#[cfg(feature = "list")]
+fn document_list<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let item_ids = node
+        .children
+        .iter()
+        .map(|child| child.id.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let selected_index = optional_string_property(node, properties, "selected")
+        .map(|selected| {
+            item_ids
+                .iter()
+                .position(|item_id| *item_id == selected)
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "selected",
+                        format!("id {selected:?} does not address a direct child"),
+                    )
+                })
+        })
+        .transpose()?;
+    let mut control = crate::list(children, |child| child).selected_index(selected_index);
+    if let Some(binding) = node.action_bindings.get("select") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("selected").cloned();
+        control = control.on_list_select_with(move |selected_index| {
+            let selected = item_ids
+                .get(selected_index)
+                .cloned()
+                .expect("selected document list item must address compiled content");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(selected),
+            })
+        });
+    }
+    Ok(control)
+}
+
+#[cfg(feature = "progress-ring")]
+fn document_progress_ring<Msg>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let minimum = finite_f32_property(node, properties, "minimum", 0.0)?;
+    let maximum = finite_f32_property(node, properties, "maximum", 100.0)?;
+    if minimum >= maximum {
+        return Err(invalid_resolved_property(
+            node,
+            "maximum",
+            "maximum must be greater than minimum",
+        ));
+    }
+    let value = nullable_number_property(node, properties, "value", None)
+        .map(|value| {
+            if !value.is_finite()
+                || value < f64::from(minimum)
+                || value > f64::from(maximum)
+                || value.abs() > f64::from(f32::MAX)
+            {
+                Err(invalid_resolved_property(
+                    node,
+                    "value",
+                    "value must be null or a finite number within minimum and maximum",
+                ))
+            } else {
+                Ok(value as f32)
+            }
+        })
+        .transpose()?;
+    let size = match optional_string_property(node, properties, "size").as_deref() {
+        None | Some("medium") => ZsProgressRingSize::Medium,
+        Some("small") => ZsProgressRingSize::Small,
+        Some("large") => ZsProgressRingSize::Large,
+        Some(_) => {
+            return Err(invalid_resolved_property(
+                node,
+                "size",
+                "size must be small, medium or large",
+            ));
+        }
+    };
+    let spec = value.map_or_else(ZsProgressRingSpec::indeterminate, |value| {
+        ZsProgressRingSpec::determinate(value, ProgressRange::new(minimum, maximum))
+    });
+    Ok(crate::progress_ring(
+        spec.active(bool_property(node, properties, "active", true))
+            .size(size),
+    ))
+}
+
+#[cfg(feature = "progress-ring")]
+fn finite_f32_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+    fallback: f64,
+) -> Result<f32, UiDocumentRuntimeError> {
+    let value = number_property(node, properties, property, fallback);
+    if !value.is_finite() || value.abs() > f64::from(f32::MAX) {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "value must be finite and fit in f32",
+        ));
+    }
+    Ok(value as f32)
 }
 
 #[cfg(feature = "grid")]
@@ -823,7 +949,7 @@ fn grid_gap_property(
     Ok(Some(value as f32))
 }
 
-#[cfg(feature = "grid")]
+#[cfg(any(feature = "grid", feature = "list", feature = "progress-ring"))]
 fn invalid_resolved_property(
     node: &UiNode,
     property: impl Into<String>,
@@ -879,9 +1005,11 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "list",
     feature = "tabs",
     feature = "grid",
     feature = "progress",
+    feature = "progress-ring",
     feature = "scroll"
 ))]
 fn property_value(
@@ -930,7 +1058,8 @@ fn string_property(
     feature = "textbox",
     feature = "radio",
     feature = "number-box",
-    feature = "combo"
+    feature = "combo",
+    feature = "progress-ring"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -947,6 +1076,7 @@ fn bool_property(
     feature = "slider",
     feature = "number-box",
     feature = "progress",
+    feature = "progress-ring",
     feature = "scroll"
 ))]
 fn number_property(
@@ -960,7 +1090,7 @@ fn number_property(
         .unwrap_or(fallback)
 }
 
-#[cfg(feature = "number-box")]
+#[cfg(any(feature = "number-box", feature = "progress-ring"))]
 fn nullable_number_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -972,7 +1102,12 @@ fn nullable_number_property(
         .unwrap_or(fallback)
 }
 
-#[cfg(any(feature = "combo", feature = "tabs"))]
+#[cfg(any(
+    feature = "combo",
+    feature = "tabs",
+    feature = "list",
+    feature = "progress-ring"
+))]
 fn optional_string_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -1097,7 +1232,11 @@ fn color_role(token: &str) -> Option<ColorRole> {
 mod tests {
     use super::*;
 
-    #[cfg(any(feature = "grid", all(feature = "label", feature = "button")))]
+    #[cfg(any(
+        feature = "grid",
+        feature = "list",
+        all(feature = "label", feature = "button")
+    ))]
     use crate::View;
     #[cfg(feature = "grid")]
     use crate::{Dpi, Rect, ViewLayoutCx};
@@ -1183,6 +1322,138 @@ mod tests {
                 payload: Value::Null,
             })]
         );
+    }
+
+    #[cfg(all(feature = "list", feature = "label"))]
+    #[test]
+    fn compiles_list_selection_by_stable_child_id() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "profiles",
+                "component": "list",
+                "property_bindings": { "selected": "selected_profile" },
+                "action_bindings": { "select": "selected_profile_changed" },
+                "children": [
+                  { "id": "balanced", "component": "text", "properties": { "text": "Balanced" } },
+                  { "id": "quiet", "component": "text", "properties": { "text": "Quiet" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "selected_profile".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+            actions: BTreeMap::from([(
+                "selected_profile_changed".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+        };
+        let values = BTreeMap::from([(
+            "selected_profile".to_owned(),
+            Value::String("quiet".to_owned()),
+        )]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        assert!(matches!(
+            &view.kind,
+            crate::ViewNodeKind::List {
+                selected_index: Some(1),
+                ..
+            }
+        ));
+
+        let balanced = document.root.children[0].id.widget_id();
+        let mut events = crate::ViewEventCx::new();
+        view.event(&mut events, &crate::ViewEvent::Click { widget: balanced });
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::Action(UiDocumentAction {
+                node_id: "profiles".to_owned(),
+                binding: "selected_profile_changed".to_owned(),
+                property_binding: Some("selected_profile".to_owned()),
+                payload: Value::String("balanced".to_owned()),
+            })]
+        );
+
+        let mut reordered = document.clone();
+        reordered.root.children.reverse();
+        let reordered_view = ui_document_view(&reordered, &bindings, &values, Msg::Action).unwrap();
+        assert!(matches!(
+            &reordered_view.kind,
+            crate::ViewNodeKind::List {
+                selected_index: Some(0),
+                ..
+            }
+        ));
+    }
+
+    #[cfg(feature = "progress-ring")]
+    #[test]
+    fn compiles_progress_ring_modes_and_rejects_invalid_resolved_range_values() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "sync-progress",
+                "component": "progress_ring",
+                "properties": {
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "active": true,
+                  "size": "large"
+                },
+                "property_bindings": { "value": "sync_progress" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "sync_progress".to_owned(),
+                crate::ui_document::UiValueType::NullableNumber,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        let determinate = ui_document_view(
+            &document,
+            &bindings,
+            &BTreeMap::from([("sync_progress".to_owned(), Value::from(0.25))]),
+            Msg::Action,
+        )
+        .unwrap();
+        let crate::ViewNodeKind::ProgressRing { spec } = determinate.kind else {
+            panic!("document should compile to ProgressRing");
+        };
+        assert!(spec.is_active());
+        assert_eq!(spec.size_value(), crate::ZsProgressRingSize::Large);
+        assert_eq!(spec.mode().fraction(), Some(0.25));
+
+        let indeterminate = ui_document_view(
+            &document,
+            &bindings,
+            &BTreeMap::from([("sync_progress".to_owned(), Value::Null)]),
+            Msg::Action,
+        )
+        .unwrap();
+        let crate::ViewNodeKind::ProgressRing { spec } = indeterminate.kind else {
+            panic!("null document value should compile to indeterminate ProgressRing");
+        };
+        assert_eq!(spec.mode().fraction(), None);
+
+        assert!(matches!(
+            ui_document_view(
+                &document,
+                &bindings,
+                &BTreeMap::from([("sync_progress".to_owned(), Value::from(2.0))]),
+                Msg::Action,
+            ),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "value"
+        ));
     }
 
     #[cfg(feature = "grid")]

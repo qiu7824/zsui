@@ -32,7 +32,8 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`tabs`、`grid`、`progress_bar` 和 `scroll`。
+`radio_button`、`slider`、`number_box`、`combo_box`、`list`、`tabs`、`grid`、
+`progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 `number_box.value` 使用 `nullable_number`，可表示数字或空值；`change` 动作使用相同
@@ -44,6 +45,19 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 混合类型选项和小数索引。`select` 动作发送 `integer`，`expanded_change` 发送 boolean；将
 `selected_index` 和 `expanded` 同时绑定到显式状态后，选择、弹层开关和 View 重建形成
 受控闭环。静态索引超出选项范围会在进入原生宿主前被拒绝。
+
+`list` 的每个直接子节点都是一个可选行，子节点的稳定 `UiNodeId` 同时作为公开选择值。
+`selected` string 属性与 `select` string 动作组成受控选择闭环；调整子节点声明顺序后，
+同一个 ID 仍指向同一个语义项目。静态或绑定选择值如果未命中直接子节点，会在进入宿主
+前被拒绝；列表至少需要一个子节点。选择动作由 List 自身持有的类型化回调发送，不依赖
+全局控件注册表或位置字符串。共享 List builder 会按当前平台的 selection 行高设置不可
+压缩的最小行框，并使用平台 spacing token 留出水平内容边距；字体缩放继续抬高该行框，
+不会把中英文基线挤进固定像素高度。
+
+`progress_ring.value` 使用 `nullable_number`：数字表示确定进度，`null` 或未提供表示不确定
+进度。`minimum`、`maximum`、`active` 和 `size` 分别控制范围、动画状态与平台原生的
+`small`、`medium`、`large` 尺寸。静态校验和发布运行时都会拒绝倒置范围、越界值与未知
+尺寸；最终直径、描边与动画节奏仍由 Win32、AppKit 和 Linux experience profile 决定。
 
 `tabs` 的每个直接子节点都是一个内容槽位，子节点的稳定 `UiNodeId` 同时作为公开选择值
 和内部强类型 `ZsTabId` 的确定性来源。`labels` 使用以子节点 ID 为键的 `string_map`，
@@ -197,7 +211,7 @@ cargo run --bin zsui-uic `
 ```powershell
 cargo run --bin zsui-uic `
   --no-default-features `
-  --features ui-document,label,checkbox,textbox,slider,number-box,combo,tabs,grid `
+  --features ui-document,label,checkbox,textbox,slider,number-box,combo,list,tabs,grid,progress-ring `
   -- embed examples/ui-documents/interactive.json `
   --bindings examples/ui-documents/interactive.bindings.json `
   --output target/release-ui/interactive.zsui `

@@ -449,6 +449,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
+        #[cfg(feature = "list")]
+        let content_bounds = horizontal_inset_bounds(
+            content_bounds,
+            self.list_item_horizontal_inset,
+            cx.dpi,
+        );
         #[cfg(feature = "scroll")]
         if let ViewNodeKind::Scroll {
             offset_y,
@@ -1109,7 +1115,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             {
                 *selected_index = Some(index);
                 if let Some(message) = on_select {
-                    cx.emit(message(index));
+                    cx.emit(message.map(index));
                 }
             }
         }
@@ -2232,9 +2238,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "label")]
             ViewNodeKind::Text { text, style } => {
+                let bounds = padded_bounds(bounds, self.style.padding, cx.dpi);
+                #[cfg(feature = "list")]
+                let bounds = horizontal_inset_bounds(
+                    bounds,
+                    self.list_item_horizontal_inset,
+                    cx.dpi,
+                );
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                     text,
-                    padded_bounds(bounds, self.style.padding, cx.dpi),
+                    bounds,
                     *style,
                 )));
             }
