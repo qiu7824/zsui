@@ -57,6 +57,28 @@
           "role": "slider",
           "label": "Volume"
         }
+      },
+      {
+        "id": "retry-count",
+        "component": "number_box",
+        "properties": {
+          "minimum": 0.0,
+          "maximum": 10.0,
+          "step": 1.0,
+          "large_step": 5.0,
+          "fraction_digits": 0.0,
+          "wraps": false
+        },
+        "property_bindings": {
+          "value": "retry_count"
+        },
+        "action_bindings": {
+          "change": "retry_count_changed"
+        },
+        "accessibility": {
+          "role": "spinbutton",
+          "label": "Retry count"
+        }
       }
     ]
   }

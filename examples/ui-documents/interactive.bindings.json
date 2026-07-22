@@ -2,11 +2,13 @@
   "properties": {
     "profile_name": "string",
     "dark_mode": "boolean",
-    "volume": "number"
+    "volume": "number",
+    "retry_count": "nullable_number"
   },
   "actions": {
     "profile_name_changed": "string",
     "dark_mode_changed": "boolean",
-    "volume_changed": "number"
+    "volume_changed": "number",
+    "retry_count_changed": "nullable_number"
   }
 }

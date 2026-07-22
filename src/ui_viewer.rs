@@ -797,6 +797,19 @@ mod tests {
                     "component": "slider",
                     "property_bindings": { "value": "volume" },
                     "action_bindings": { "slide": "volume_changed" }
+                  },
+                  {
+                    "id": "retry-count",
+                    "component": "number_box",
+                    "properties": {
+                      "minimum": 0.0,
+                      "maximum": 10.0,
+                      "step": 0.5,
+                      "large_step": 5.0,
+                      "fraction_digits": 1.0
+                    },
+                    "property_bindings": { "value": "retry_count" },
+                    "action_bindings": { "change": "retry_count_changed" }
                   }
                 ]
               }
@@ -809,12 +822,14 @@ mod tests {
               "properties": {
                 "name": "string",
                 "dark": "boolean",
-                "volume": "number"
+                "volume": "number",
+                "retry_count": "nullable_number"
               },
               "actions": {
                 "name_changed": "string",
                 "dark_changed": "boolean",
-                "volume_changed": "number"
+                "volume_changed": "number",
+                "retry_count_changed": "nullable_number"
               }
             }"#,
         )
@@ -834,6 +849,7 @@ mod tests {
                 ("name".to_owned(), Value::String("A".to_owned())),
                 ("dark".to_owned(), Value::Bool(false)),
                 ("volume".to_owned(), Value::from(10.0)),
+                ("retry_count".to_owned(), Value::from(2.5)),
             ])),
             move |state| live_source.view(state),
             move |state, message, cx| {
@@ -853,6 +869,9 @@ mod tests {
         let volume = crate::ui_document::UiNodeId::new("volume")
             .unwrap()
             .widget_id();
+        let retry_count = crate::ui_document::UiNodeId::new("retry-count")
+            .unwrap()
+            .widget_id();
 
         let text_update = live_view.dispatch_event(&crate::ViewEvent::TextChanged {
             widget: name,
@@ -866,15 +885,30 @@ mod tests {
             widget: volume,
             value: 73.0,
         });
+        let number_update = live_view.dispatch_event(&crate::ViewEvent::NumberBoxStep {
+            widget: retry_count,
+            steps: 1,
+            large: false,
+        });
 
         assert_eq!(text_update.message_count, 1);
         assert_eq!(toggle_update.message_count, 1);
         assert_eq!(slider_update.message_count, 1);
+        assert_eq!(number_update.message_count, 1);
         assert_eq!(live_view.widget_text_value(name).as_deref(), Some("AB"));
         assert_eq!(live_view.widget_checked_value(dark), Some(true));
         assert_eq!(live_view.widget_slider_state(volume).unwrap().0, 73.0);
+        let draft_update = live_view.dispatch_event(&crate::ViewEvent::TextChanged {
+            widget: retry_count,
+            value: String::new(),
+        });
+        let clear_update = live_view.dispatch_event(&crate::ViewEvent::NumberBoxCommit {
+            widget: retry_count,
+        });
+        assert_eq!(draft_update.message_count, 0);
+        assert_eq!(clear_update.message_count, 1);
         let actions = actions.lock().unwrap();
-        assert_eq!(actions.len(), 3);
+        assert_eq!(actions.len(), 5);
         assert_eq!(actions[0].binding, "name_changed");
         assert_eq!(actions[0].property_binding.as_deref(), Some("name"));
         assert_eq!(actions[0].payload, Value::String("AB".to_owned()));
@@ -882,6 +916,11 @@ mod tests {
         assert_eq!(actions[1].payload, Value::Bool(true));
         assert_eq!(actions[2].binding, "volume_changed");
         assert_eq!(actions[2].payload, Value::from(73.0));
+        assert_eq!(actions[3].binding, "retry_count_changed");
+        assert_eq!(actions[3].property_binding.as_deref(), Some("retry_count"));
+        assert_eq!(actions[3].payload, Value::from(3.0));
+        assert_eq!(actions[4].binding, "retry_count_changed");
+        assert_eq!(actions[4].payload, Value::Null);
         drop(actions);
         fs::remove_dir_all(directory).unwrap();
     }

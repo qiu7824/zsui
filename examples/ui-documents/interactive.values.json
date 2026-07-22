@@ -1,5 +1,6 @@
 {
   "profile_name": "ZSUI",
   "dark_mode": false,
-  "volume": 42.0
+  "volume": 42.0,
+  "retry_count": 3.0
 }

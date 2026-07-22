@@ -32,8 +32,13 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`progress_bar` 和 `scroll`。其他已存在的 ZSUI 组件会被识别为
-“尚未进入 UiDocument schema”，不会被误报为未知组件。
+`radio_button`、`slider`、`number_box`、`progress_bar` 和 `scroll`。其他已存在的 ZSUI
+组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
+
+`number_box.value` 使用 `nullable_number`，可表示数字或空值；`change` 动作使用相同
+payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`maximum`、`step`、
+`large_step`、`fraction_digits` 和 `wraps` 直接编译到共享 NumberBox。校验会拒绝倒置范围、
+非正步长、超出 0–12 的非整数小数位以及超出静态范围的字面量值。
 
 `scroll` 必须有且只有一个内容子节点，并要求非负的 `content_height` 数值属性。
 `offset_y` 是可选的非负数值属性；需要在 View 重建后保留位置时，将它绑定到 number
@@ -170,7 +175,7 @@ cargo run --bin zsui-uic `
 ```powershell
 cargo run --bin zsui-uic `
   --no-default-features `
-  --features ui-document,label,checkbox,textbox,slider `
+  --features ui-document,label,checkbox,textbox,slider,number-box `
   -- embed examples/ui-documents/interactive.json `
   --bindings examples/ui-documents/interactive.bindings.json `
   --output target/release-ui/interactive.zsui `

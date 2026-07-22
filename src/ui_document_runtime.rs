@@ -16,6 +16,8 @@ use crate::ColorRole;
 use crate::ProgressRange;
 #[cfg(feature = "slider")]
 use crate::SliderRange;
+#[cfg(feature = "number-box")]
+use crate::ZsNumberRange;
 use crate::{column, row, Dp, ThemeColorToken, ViewNode};
 #[cfg(feature = "label")]
 use crate::{SemanticTextStyle, TextRole};
@@ -40,6 +42,7 @@ pub struct UiDocumentAction {
         feature = "textbox",
         feature = "radio",
         feature = "slider",
+        feature = "number-box",
         feature = "scroll"
     )),
     allow(dead_code)
@@ -90,6 +93,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "textbox",
             feature = "radio",
             feature = "slider",
+            feature = "number-box",
             feature = "scroll"
         )),
         allow(dead_code)
@@ -406,6 +410,43 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "number-box")]
+        "number_box" => {
+            let minimum = number_property(node, properties, "minimum", 0.0);
+            let maximum = number_property(node, properties, "maximum", 100.0);
+            let range = ZsNumberRange::new(minimum, maximum)
+                .step(number_property(
+                    node,
+                    properties,
+                    "step",
+                    (maximum - minimum).abs() / 100.0,
+                ))
+                .large_step(number_property(
+                    node,
+                    properties,
+                    "large_step",
+                    (maximum - minimum).abs() / 10.0,
+                ));
+            let value = nullable_number_property(node, properties, "value", Some(0.0));
+            let mut control = crate::number_box(value, range)
+                .fraction_digits(number_property(node, properties, "fraction_digits", 0.0) as u8)
+                .wraps(bool_property(node, properties, "wraps", false));
+            if let Some(binding) = node.action_bindings.get("change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("value").cloned();
+                control = control.on_number_change_with(move |value| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: value.map_or(Value::Null, Value::from),
+                    })
+                });
+            }
+            control
+        }
         #[cfg(feature = "progress")]
         "progress_bar" => crate::progress_bar(
             number_property(node, properties, "value", 0.0) as f32,
@@ -462,6 +503,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "textbox",
     feature = "radio",
     feature = "slider",
+    feature = "number-box",
     feature = "progress",
     feature = "scroll"
 ))]
@@ -509,7 +551,8 @@ fn string_property(
     feature = "checkbox",
     feature = "toggle",
     feature = "textbox",
-    feature = "radio"
+    feature = "radio",
+    feature = "number-box"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -522,7 +565,12 @@ fn bool_property(
         .unwrap_or(fallback)
 }
 
-#[cfg(any(feature = "slider", feature = "progress", feature = "scroll"))]
+#[cfg(any(
+    feature = "slider",
+    feature = "number-box",
+    feature = "progress",
+    feature = "scroll"
+))]
 fn number_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -531,6 +579,18 @@ fn number_property(
 ) -> f64 {
     property_value(node, properties, property)
         .and_then(|value| value.as_f64())
+        .unwrap_or(fallback)
+}
+
+#[cfg(feature = "number-box")]
+fn nullable_number_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+    fallback: Option<f64>,
+) -> Option<f64> {
+    property_value(node, properties, property)
+        .map(|value| value.as_f64())
         .unwrap_or(fallback)
 }
 

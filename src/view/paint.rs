@@ -1837,7 +1837,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *draft = format.format(next_value);
                     if changed {
                         if let Some(message) = on_change {
-                            cx.emit(message(next_value));
+                            cx.emit(message.map(next_value));
                         }
                     }
                 }
@@ -1866,7 +1866,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *draft = format.format(next_value);
                     if changed {
                         if let Some(message) = on_change {
-                            cx.emit(message(next_value));
+                            cx.emit(message.map(next_value));
                         }
                     }
                 }

@@ -179,6 +179,7 @@ pub enum UiValueType {
     Null,
     Boolean,
     Number,
+    NullableNumber,
     String,
     Array,
     Object,
@@ -191,6 +192,7 @@ impl UiValueType {
             Self::Null => value.is_null(),
             Self::Boolean => value.is_boolean(),
             Self::Number => value.is_number(),
+            Self::NullableNumber => value.is_null() || value.is_number(),
             Self::String => value.is_string(),
             Self::Array => value.is_array(),
             Self::Object => value.is_object(),
@@ -1328,6 +1330,72 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "number_box" {
+            let static_number = |name: &str, fallback: f64| {
+                (!node.property_bindings.contains_key(name)).then(|| {
+                    node.properties
+                        .get(name)
+                        .and_then(Value::as_f64)
+                        .unwrap_or(fallback)
+                })
+            };
+            let minimum = static_number("minimum", 0.0);
+            let maximum = static_number("maximum", 100.0);
+            if minimum
+                .zip(maximum)
+                .is_some_and(|(minimum, maximum)| minimum >= maximum)
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.maximum"),
+                    "number_box maximum must be greater than minimum".to_owned(),
+                );
+            }
+            for name in ["step", "large_step"] {
+                if node
+                    .properties
+                    .get(name)
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| value <= 0.0)
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("number_box property {name:?} must be greater than zero"),
+                    );
+                }
+            }
+            if node
+                .properties
+                .get("fraction_digits")
+                .and_then(Value::as_f64)
+                .is_some_and(|value| value.fract() != 0.0 || !(0.0..=12.0).contains(&value))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.fraction_digits"),
+                    "number_box fraction_digits must be an integer from 0 through 12".to_owned(),
+                );
+            }
+            if let (Some(value), Some(minimum), Some(maximum)) = (
+                node.properties.get("value").and_then(Value::as_f64),
+                minimum,
+                maximum,
+            ) {
+                if minimum < maximum && !(minimum..=maximum).contains(&value) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.value"),
+                        "number_box value must be within minimum and maximum".to_owned(),
+                    );
+                }
+            }
+        }
+
         for (property_name, binding_name) in &node.property_bindings {
             let property = find_property(schema, property_name);
             if property.is_none() {
@@ -1574,6 +1642,47 @@ const SLIDER_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "slide",
     payload_type: UiValueType::Number,
 }];
+const NUMBER_BOX_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::NullableNumber,
+        required: true,
+    },
+    PropertySpec {
+        name: "minimum",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "maximum",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "step",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "large_step",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "fraction_digits",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "wraps",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const NUMBER_BOX_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "change",
+    payload_type: UiValueType::NullableNumber,
+}];
 const SCROLL_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "offset_y",
@@ -1619,6 +1728,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "textbox" => Some(leaf(TEXTBOX_PROPERTIES, TEXTBOX_ACTIONS)),
         "radio_button" => Some(leaf(RADIO_PROPERTIES, RADIO_ACTIONS)),
         "slider" => Some(leaf(VALUE_PROPERTIES, SLIDER_ACTIONS)),
+        "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
         "progress_bar" => Some(leaf(VALUE_PROPERTIES, NO_ACTIONS)),
         _ => None,
     }
@@ -1987,6 +2097,76 @@ mod tests {
                 .filter(|diagnostic| { diagnostic.code == UiDiagnosticCode::InvalidPropertyValue })
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn number_box_contract_validates_nullable_values_and_numeric_configuration() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "retry-count",
+                "component": "number_box",
+                "properties": {
+                  "minimum": 0.0,
+                  "maximum": 10.0,
+                  "step": 0.5,
+                  "large_step": 5.0,
+                  "fraction_digits": 1.0,
+                  "wraps": true
+                },
+                "property_bindings": { "value": "retry_count" },
+                "action_bindings": { "change": "retry_count_changed" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("retry_count".to_owned(), UiValueType::NullableNumber)]),
+            actions: BTreeMap::from([(
+                "retry_count_changed".to_owned(),
+                UiValueType::NullableNumber,
+            )]),
+        };
+        assert!(valid
+            .validate(&UiFeatureSet::new(["number-box"]), &bindings)
+            .is_valid());
+        assert!(validate_ui_binding_values(
+            &bindings,
+            &BTreeMap::from([("retry_count".to_owned(), Value::Null)])
+        )
+        .is_valid());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "retry-count",
+                "component": "number_box",
+                "properties": {
+                  "value": 8.0,
+                  "minimum": 10.0,
+                  "maximum": 5.0,
+                  "step": 0.0,
+                  "large_step": -1.0,
+                  "fraction_digits": 12.5
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(
+            &UiFeatureSet::new(["number-box"]),
+            &UiBindingSchema::default(),
+        );
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            4
         );
     }
 

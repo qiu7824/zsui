@@ -17,6 +17,7 @@ impl WidgetId {
     feature = "toggle",
     feature = "toggle-button",
     feature = "slider",
+    feature = "number-box",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -30,6 +31,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "toggle",
     feature = "toggle-button",
     feature = "slider",
+    feature = "number-box",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -43,6 +45,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "toggle",
     feature = "toggle-button",
     feature = "slider",
+    feature = "number-box",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -74,6 +77,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "toggle",
     feature = "toggle-button",
     feature = "slider",
+    feature = "number-box",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -97,6 +101,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "toggle",
     feature = "toggle-button",
     feature = "slider",
+    feature = "number-box",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -765,7 +770,7 @@ pub enum ViewNodeKind<Msg> {
         range: ZsNumberRange,
         format: ZsNumberFormat,
         wraps: bool,
-        on_change: Option<fn(Option<f64>) -> Msg>,
+        on_change: Option<ViewMessageMapper<Option<f64>, Msg>>,
     },
     #[cfg(feature = "progress")]
     ProgressBar {
@@ -1513,7 +1518,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "number-box")]
     pub fn on_number_change(mut self, message: fn(Option<f64>) -> Msg) -> Self {
         if let ViewNodeKind::NumberBox { on_change, .. } = &mut self.kind {
-            *on_change = Some(message);
+            *on_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "number-box")]
+    pub fn on_number_change_with(
+        mut self,
+        message: impl Fn(Option<f64>) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::NumberBox { on_change, .. } = &mut self.kind {
+            *on_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

@@ -67,8 +67,10 @@ history remain authoritative for implementation status.
   class changes. Text, toggle, slider and scroll actions capture
   node/action/property identities in per-control `ViewMessageMapper` callbacks,
   carry typed JSON payloads and update explicit property bindings across View
-  rebuilds. Ordinary
-  function-pointer handlers remain allocation-free; shared owned closures are
+  rebuilds. Document-ready NumberBox uses one `nullable_number` value/action
+  contract and validates minimum, maximum, step, large step, fraction digits
+  and wrapping before compilation. Ordinary function-pointer handlers remain
+  allocation-free; shared owned closures are
   allocated only through explicit `*_with` builders. `zsui-uic handoff`
   canonicalizes the validated document, binding schema, optional value snapshot
   and optional native PNG into a deterministic directory. Its stable manifest
