@@ -154,6 +154,71 @@ pub enum UiAxis {
     Vertical,
 }
 
+/// One platform-neutral track in a document-backed Grid declaration.
+///
+/// Fixed sizes use device-independent pixels. Fractional weights are positive
+/// integers so the document never depends on a backend-specific layout type.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UiGridTrack {
+    Fixed { size: f32 },
+    Fraction { weight: u16 },
+}
+
+impl UiGridTrack {
+    pub(crate) fn is_valid(self) -> bool {
+        match self {
+            Self::Fixed { size } => size.is_finite() && size >= 0.0,
+            Self::Fraction { weight } => weight > 0,
+        }
+    }
+}
+
+/// Stable child placement used by a document-backed Grid.
+///
+/// Grid properties key these values by child [`UiNodeId`], so inserting or
+/// reordering siblings does not silently move an existing child to another
+/// cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiGridPlacement {
+    pub row: usize,
+    pub column: usize,
+    #[serde(default = "one_grid_span", skip_serializing_if = "is_one_grid_span")]
+    pub row_span: u16,
+    #[serde(default = "one_grid_span", skip_serializing_if = "is_one_grid_span")]
+    pub column_span: u16,
+}
+
+impl UiGridPlacement {
+    pub const fn new(row: usize, column: usize) -> Self {
+        Self {
+            row,
+            column,
+            row_span: 1,
+            column_span: 1,
+        }
+    }
+
+    pub const fn with_spans(mut self, row_span: u16, column_span: u16) -> Self {
+        self.row_span = row_span;
+        self.column_span = column_span;
+        self
+    }
+
+    pub(crate) const fn is_valid(self) -> bool {
+        self.row_span > 0 && self.column_span > 0
+    }
+}
+
+const fn one_grid_span() -> u16 {
+    1
+}
+
+fn is_one_grid_span(value: &u16) -> bool {
+    *value == 1
+}
+
 /// Semantic accessibility metadata. Platform providers lower these values to
 /// UIA, AppKit Accessibility or AT-SPI later in the pipeline.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,6 +250,8 @@ pub enum UiValueType {
     String,
     StringArray,
     StringMap,
+    GridTrackArray,
+    GridPlacementMap,
     Array,
     Object,
     Any,
@@ -206,11 +273,28 @@ impl UiValueType {
             Self::StringMap => value
                 .as_object()
                 .is_some_and(|values| values.values().all(Value::is_string)),
+            Self::GridTrackArray => grid_tracks_from_value(value).is_some(),
+            Self::GridPlacementMap => grid_placements_from_value(value).is_some(),
             Self::Array => value.is_array(),
             Self::Object => value.is_object(),
             Self::Any => true,
         }
     }
+}
+
+fn grid_tracks_from_value(value: &Value) -> Option<Vec<UiGridTrack>> {
+    let tracks = serde_json::from_value::<Vec<UiGridTrack>>(value.clone()).ok()?;
+    (!tracks.is_empty() && tracks.iter().copied().all(UiGridTrack::is_valid)).then_some(tracks)
+}
+
+fn grid_placements_from_value(value: &Value) -> Option<BTreeMap<String, UiGridPlacement>> {
+    let placements =
+        serde_json::from_value::<BTreeMap<String, UiGridPlacement>>(value.clone()).ok()?;
+    placements
+        .values()
+        .copied()
+        .all(UiGridPlacement::is_valid)
+        .then_some(placements)
 }
 
 /// Serializable projection used by `zsui-uic` and deterministic AI handoff.
@@ -1509,6 +1593,10 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "grid" {
+            validate_grid_component(node, path, diagnostics);
+        }
+
         for (property_name, binding_name) in &node.property_bindings {
             let property = find_property(schema, property_name);
             if property.is_none() {
@@ -1850,6 +1938,33 @@ const TABS_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "select",
     payload_type: UiValueType::String,
 }];
+const GRID_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "columns",
+        value_type: UiValueType::GridTrackArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "rows",
+        value_type: UiValueType::GridTrackArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "placements",
+        value_type: UiValueType::GridPlacementMap,
+        required: true,
+    },
+    PropertySpec {
+        name: "column_gap",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "row_gap",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+];
 const SCROLL_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "offset_y",
@@ -1894,6 +2009,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: TABS_ACTIONS,
             children: ChildPolicy::AtLeast(1),
         }),
+        "grid" => Some(ComponentSchema {
+            properties: GRID_PROPERTIES,
+            actions: NO_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
+        }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
@@ -1936,6 +2056,94 @@ fn is_valid_node_id(value: &str) -> bool {
         && value
             .chars()
             .all(|character| character.is_alphanumeric() || matches!(character, '_' | '-' | '.'))
+}
+
+fn validate_grid_component(node: &UiNode, path: &str, diagnostics: &mut Vec<UiDiagnostic>) {
+    for name in ["column_gap", "row_gap"] {
+        if node
+            .properties
+            .get(name)
+            .and_then(Value::as_f64)
+            .is_some_and(|value| value < 0.0)
+        {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.{name}"),
+                format!("grid property {name:?} must not be negative"),
+            );
+        }
+    }
+
+    let columns = node
+        .properties
+        .get("columns")
+        .and_then(grid_tracks_from_value);
+    let rows = node.properties.get("rows").and_then(grid_tracks_from_value);
+    let placements = node
+        .properties
+        .get("placements")
+        .and_then(grid_placements_from_value);
+    let child_ids = node
+        .children
+        .iter()
+        .map(|child| child.id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    let Some(placements) = placements else {
+        return;
+    };
+    for child_id in &child_ids {
+        if !placements.contains_key(*child_id) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.placements"),
+                format!("grid placements must contain child id {child_id:?}"),
+            );
+        }
+    }
+    for placement_id in placements.keys() {
+        if !child_ids.contains(placement_id.as_str()) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.placements.{placement_id}"),
+                format!("grid placement id {placement_id:?} does not address a child"),
+            );
+        }
+    }
+
+    let (Some(columns), Some(rows)) = (columns, rows) else {
+        return;
+    };
+    for (child_id, placement) in &placements {
+        if !child_ids.contains(child_id.as_str()) {
+            continue;
+        }
+        let column_end = placement
+            .column
+            .checked_add(usize::from(placement.column_span));
+        if placement.column >= columns.len()
+            || column_end.is_none_or(|column_end| column_end > columns.len())
+        {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.placements.{child_id}.column"),
+                format!("grid placement for {child_id:?} exceeds the declared columns"),
+            );
+        }
+        let row_end = placement.row.checked_add(usize::from(placement.row_span));
+        if placement.row >= rows.len() || row_end.is_none_or(|row_end| row_end > rows.len()) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.placements.{child_id}.row"),
+                format!("grid placement for {child_id:?} exceeds the declared rows"),
+            );
+        }
+    }
 }
 
 fn validate_layout(layout: &UiLayout, path: &str, diagnostics: &mut Vec<UiDiagnostic>) {
@@ -2500,6 +2708,145 @@ mod tests {
                 .count(),
             4
         );
+    }
+
+    #[test]
+    fn grid_contract_uses_typed_tracks_and_stable_child_placements() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "settings-grid",
+                "component": "grid",
+                "properties": {
+                  "columns": [
+                    { "kind": "fixed", "size": 160.0 },
+                    { "kind": "fraction", "weight": 2 }
+                  ],
+                  "rows": [
+                    { "kind": "fraction", "weight": 1 },
+                    { "kind": "fixed", "size": 40.0 }
+                  ],
+                  "placements": {
+                    "navigation": { "row": 0, "column": 0, "row_span": 2 },
+                    "content": { "row": 0, "column": 1 },
+                    "actions": { "row": 1, "column": 1 }
+                  },
+                  "column_gap": 12.0,
+                  "row_gap": 8.0
+                },
+                "children": [
+                  { "id": "navigation", "component": "stack" },
+                  { "id": "content", "component": "stack" },
+                  { "id": "actions", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(valid
+            .validate(&UiFeatureSet::new(["grid"]), &UiBindingSchema::default())
+            .is_valid());
+        let handoff = UiAiHandoffPackage::build(
+            &valid,
+            &UiFeatureSet::new(["grid"]),
+            &UiBindingSchema::default(),
+            None,
+            None,
+        )
+        .unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "grid")
+            .unwrap();
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::AtLeast { minimum: 1 }
+        );
+        assert_eq!(
+            contract
+                .properties
+                .iter()
+                .find(|property| property.name == "placements")
+                .unwrap()
+                .value_type,
+            UiValueType::GridPlacementMap
+        );
+
+        let typed_bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("tracks".to_owned(), UiValueType::GridTrackArray),
+                ("cells".to_owned(), UiValueType::GridPlacementMap),
+            ]),
+            actions: BTreeMap::new(),
+        };
+        assert!(validate_ui_binding_values(
+            &typed_bindings,
+            &BTreeMap::from([
+                (
+                    "tracks".to_owned(),
+                    serde_json::json!([{ "kind": "fraction", "weight": 1 }]),
+                ),
+                (
+                    "cells".to_owned(),
+                    serde_json::json!({ "content": { "row": 0, "column": 0 } }),
+                ),
+            ])
+        )
+        .is_valid());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "settings-grid",
+                "component": "grid",
+                "properties": {
+                  "columns": [{ "kind": "fraction", "weight": 1 }],
+                  "rows": [{ "kind": "fraction", "weight": 1 }],
+                  "placements": {
+                    "first": { "row": 0, "column": 1 },
+                    "ghost": { "row": 0, "column": 0 }
+                  },
+                  "column_gap": -1.0
+                },
+                "children": [
+                  { "id": "first", "component": "stack" },
+                  { "id": "second", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&UiFeatureSet::new(["grid"]), &UiBindingSchema::default());
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            4
+        );
+        let invalid_values = validate_ui_binding_values(
+            &typed_bindings,
+            &BTreeMap::from([
+                (
+                    "tracks".to_owned(),
+                    serde_json::json!([{ "kind": "fraction", "weight": 0 }]),
+                ),
+                (
+                    "cells".to_owned(),
+                    serde_json::json!({ "content": { "row": 0, "column": 0, "row_span": 0 } }),
+                ),
+            ]),
+        );
+        assert_eq!(invalid_values.diagnostics.len(), 2);
+        assert!(invalid_values
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code == UiDiagnosticCode::BindingValueTypeMismatch));
     }
 
     #[test]

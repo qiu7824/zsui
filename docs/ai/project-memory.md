@@ -75,7 +75,13 @@ history remain authoritative for implementation status.
   survive View rebuilds. Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the
-  string value emitted by the controlled selection action. Ordinary
+  string value emitted by the controlled selection action. Document-ready Grid
+  stores fixed-DP/fraction tracks in semantic `grid_track_array` values and
+  keys every `grid_placement_map` entry by a direct child's stable `UiNodeId`.
+  The map must cover exactly those children; positive spans and row/column
+  bounds are checked both for inline documents and again after resolving bound
+  release values. Child declaration order therefore does not determine cell
+  identity. Ordinary
   function-pointer handlers remain
   allocation-free; shared owned closures are
   allocated only through explicit `*_with` builders. `zsui-uic handoff`

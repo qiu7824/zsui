@@ -40,11 +40,14 @@ framework readiness.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. Fifteen components are document-ready; NumberBox
+  runtime memory evidence. Sixteen components are document-ready; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
   options plus controlled nullable selection and expanded state. Tabs maps each
   direct child's stable ID to a typed content slot, semantic header and
-  controlled string selection. Complete component coverage and broader
+  controlled string selection. Grid compiles typed fixed/fraction tracks and
+  a complete stable-child-ID placement map, retaining cell identity across
+  sibling reordering and rejecting invalid spans or bounds before native
+  layout. Complete component coverage and broader
   advanced-control state retention remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and

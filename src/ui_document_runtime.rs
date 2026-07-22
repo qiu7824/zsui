@@ -9,7 +9,12 @@ use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ui_document::{UiAxis, UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet, UiNode};
+use crate::ui_document::{
+    validate_ui_binding_values, UiAxis, UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet,
+    UiNode,
+};
+#[cfg(feature = "grid")]
+use crate::ui_document::{UiGridPlacement, UiGridTrack};
 #[cfg(feature = "label")]
 use crate::ColorRole;
 #[cfg(feature = "progress")]
@@ -149,11 +154,12 @@ fn compile_validated_document<Msg: Clone + 'static>(
     properties: &BTreeMap<String, Value>,
     map_action: UiDocumentActionMapper<Msg>,
 ) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
-    let report = document.validate(&UiFeatureSet::compiled(), bindings);
-    if !report.is_valid() {
-        return Err(UiDocumentRuntimeError::Validation {
-            diagnostics: report.diagnostics,
-        });
+    let mut diagnostics = document
+        .validate(&UiFeatureSet::compiled(), bindings)
+        .diagnostics;
+    diagnostics.extend(validate_ui_binding_values(bindings, properties).diagnostics);
+    if !diagnostics.is_empty() {
+        return Err(UiDocumentRuntimeError::Validation { diagnostics });
     }
     compile_node(&document.root, properties, &map_action)
 }
@@ -170,6 +176,11 @@ pub enum UiDocumentRuntimeError {
         component: String,
         expected: usize,
         actual: usize,
+    },
+    InvalidResolvedProperty {
+        node_id: String,
+        property: String,
+        reason: String,
     },
 }
 
@@ -193,6 +204,14 @@ impl fmt::Display for UiDocumentRuntimeError {
                 formatter,
                 "UI document component {component:?} requires {expected} child node(s), found {actual}"
             ),
+            Self::InvalidResolvedProperty {
+                node_id,
+                property,
+                reason,
+            } => write!(
+                formatter,
+                "UI document node {node_id:?} resolved invalid property {property:?}: {reason}"
+            ),
         }
     }
 }
@@ -215,6 +234,8 @@ fn compile_node<Msg: Clone + 'static>(
             UiAxis::Vertical => column(children),
         },
         "border" => column(children),
+        #[cfg(feature = "grid")]
+        "grid" => document_grid(node, properties, children)?,
         #[cfg(feature = "scroll")]
         "scroll" => {
             let actual = children.len();
@@ -563,6 +584,258 @@ fn compile_node<Msg: Clone + 'static>(
     Ok(apply_layout(view, node))
 }
 
+#[cfg(feature = "grid")]
+fn document_grid<Msg>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let mut columns = grid_tracks_property(node, properties, "columns");
+    let mut rows = grid_tracks_property(node, properties, "rows");
+    let mut placements = grid_placements_property(node, properties, "placements");
+
+    if let Some(resolved) = &placements {
+        for child in &node.children {
+            if !resolved.contains_key(child.id.as_str()) {
+                return Err(invalid_resolved_property(
+                    node,
+                    "placements",
+                    format!("missing child id {:?}", child.id.as_str()),
+                ));
+            }
+        }
+        for placement_id in resolved.keys() {
+            if !node
+                .children
+                .iter()
+                .any(|child| child.id.as_str() == placement_id)
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "placements",
+                    format!("id {placement_id:?} does not address a child"),
+                ));
+            }
+        }
+    }
+
+    let required_columns = placements
+        .as_ref()
+        .and_then(|placements| grid_required_track_count(placements.values(), false))
+        .unwrap_or(1)
+        .max(1);
+    let column_count = columns
+        .as_ref()
+        .map_or(required_columns, |columns| columns.len());
+    if columns.is_none() {
+        columns = Some(vec![UiGridTrack::Fraction { weight: 1 }; required_columns]);
+    }
+
+    let automatic_row_count = children.len().div_ceil(column_count.max(1)).max(1);
+    let required_rows = placements
+        .as_ref()
+        .and_then(|placements| grid_required_track_count(placements.values(), true))
+        .unwrap_or(automatic_row_count)
+        .max(1);
+    if rows.is_none() {
+        rows = Some(vec![UiGridTrack::Fraction { weight: 1 }; required_rows]);
+    }
+
+    let columns = columns.expect("document Grid columns always have a resolved fallback");
+    let mut rows = rows.expect("document Grid rows always have a resolved fallback");
+    if placements.is_none() {
+        let needed_rows = children.len().div_ceil(columns.len().max(1)).max(1);
+        rows.resize(
+            needed_rows.max(rows.len()),
+            UiGridTrack::Fraction { weight: 1 },
+        );
+        placements = Some(
+            node.children
+                .iter()
+                .enumerate()
+                .map(|(index, child)| {
+                    (
+                        child.id.as_str().to_owned(),
+                        UiGridPlacement::new(index / columns.len(), index % columns.len()),
+                    )
+                })
+                .collect(),
+        );
+    }
+    let placements = placements.expect("document Grid placements always have a fallback");
+
+    let native_columns = columns
+        .into_iter()
+        .map(|track| native_grid_track(node, track))
+        .collect::<Result<Vec<_>, _>>()?;
+    let native_rows = rows
+        .into_iter()
+        .map(|track| native_grid_track(node, track))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cells = node
+        .children
+        .iter()
+        .zip(children)
+        .map(|(child, content)| {
+            let placement = placements
+                .get(child.id.as_str())
+                .copied()
+                .expect("document Grid placement map was checked against child IDs");
+            let column_end = placement
+                .column
+                .checked_add(usize::from(placement.column_span));
+            if placement.column >= native_columns.len()
+                || column_end.is_none_or(|column_end| column_end > native_columns.len())
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "placements",
+                    format!(
+                        "child {:?} exceeds {} declared column(s)",
+                        child.id.as_str(),
+                        native_columns.len()
+                    ),
+                ));
+            }
+            let row_end = placement.row.checked_add(usize::from(placement.row_span));
+            if placement.row >= native_rows.len()
+                || row_end.is_none_or(|row_end| row_end > native_rows.len())
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "placements",
+                    format!(
+                        "child {:?} exceeds {} declared row(s)",
+                        child.id.as_str(),
+                        native_rows.len()
+                    ),
+                ));
+            }
+            let row_span = crate::ZsGridSpan::new(placement.row_span).map_err(|_| {
+                invalid_resolved_property(node, "placements", "row_span must be positive")
+            })?;
+            let column_span = crate::ZsGridSpan::new(placement.column_span).map_err(|_| {
+                invalid_resolved_property(node, "placements", "column_span must be positive")
+            })?;
+            Ok(
+                crate::ZsGridCell::new(placement.row, placement.column, content)
+                    .row_span(row_span)
+                    .column_span(column_span),
+            )
+        })
+        .collect::<Result<Vec<_>, UiDocumentRuntimeError>>()?;
+
+    let mut view = crate::grid(native_columns, native_rows, cells);
+    if let Some(gap) = grid_gap_property(node, properties, "column_gap")? {
+        view = view.column_gap(Dp::new(gap));
+    }
+    if let Some(gap) = grid_gap_property(node, properties, "row_gap")? {
+        view = view.row_gap(Dp::new(gap));
+    }
+    Ok(view)
+}
+
+#[cfg(feature = "grid")]
+fn grid_tracks_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Option<Vec<UiGridTrack>> {
+    property_value(node, properties, property).and_then(|value| {
+        serde_json::from_value::<Vec<UiGridTrack>>(value)
+            .ok()
+            .filter(|tracks| {
+                !tracks.is_empty() && tracks.iter().copied().all(UiGridTrack::is_valid)
+            })
+    })
+}
+
+#[cfg(feature = "grid")]
+fn grid_placements_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Option<BTreeMap<String, UiGridPlacement>> {
+    property_value(node, properties, property).and_then(|value| {
+        serde_json::from_value::<BTreeMap<String, UiGridPlacement>>(value)
+            .ok()
+            .filter(|placements| placements.values().copied().all(UiGridPlacement::is_valid))
+    })
+}
+
+#[cfg(feature = "grid")]
+fn grid_required_track_count<'a>(
+    placements: impl Iterator<Item = &'a UiGridPlacement>,
+    rows: bool,
+) -> Option<usize> {
+    placements
+        .map(|placement| {
+            if rows {
+                placement.row.checked_add(usize::from(placement.row_span))
+            } else {
+                placement
+                    .column
+                    .checked_add(usize::from(placement.column_span))
+            }
+        })
+        .try_fold(0usize, |maximum, end| end.map(|end| maximum.max(end)))
+}
+
+#[cfg(feature = "grid")]
+fn native_grid_track(
+    node: &UiNode,
+    track: UiGridTrack,
+) -> Result<crate::ZsGridTrack, UiDocumentRuntimeError> {
+    match track {
+        UiGridTrack::Fixed { size } if size.is_finite() && size >= 0.0 => {
+            Ok(crate::ZsGridTrack::fixed(Dp::new(size)))
+        }
+        UiGridTrack::Fraction { weight } => crate::ZsGridFraction::new(weight)
+            .map(crate::ZsGridTrack::fraction)
+            .map_err(|_| {
+                invalid_resolved_property(node, "columns/rows", "fraction weight must be positive")
+            }),
+        UiGridTrack::Fixed { .. } => Err(invalid_resolved_property(
+            node,
+            "columns/rows",
+            "fixed size must be finite and non-negative",
+        )),
+    }
+}
+
+#[cfg(feature = "grid")]
+fn grid_gap_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<f32>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property).and_then(|value| value.as_f64())
+    else {
+        return Ok(None);
+    };
+    if !value.is_finite() || value < 0.0 || value > f64::from(f32::MAX) {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "gap must be finite and non-negative",
+        ));
+    }
+    Ok(Some(value as f32))
+}
+
+#[cfg(feature = "grid")]
+fn invalid_resolved_property(
+    node: &UiNode,
+    property: impl Into<String>,
+    reason: impl Into<String>,
+) -> UiDocumentRuntimeError {
+    UiDocumentRuntimeError::InvalidResolvedProperty {
+        node_id: node.id.as_str().to_owned(),
+        property: property.into(),
+        reason: reason.into(),
+    }
+}
+
 fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     if let Some(value) = node.layout.width {
         view = view.width(Dp::new(value));
@@ -607,6 +880,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "number-box",
     feature = "combo",
     feature = "tabs",
+    feature = "grid",
     feature = "progress",
     feature = "scroll"
 ))]
@@ -823,8 +1097,10 @@ fn color_role(token: &str) -> Option<ColorRole> {
 mod tests {
     use super::*;
 
-    #[cfg(all(feature = "label", feature = "button"))]
+    #[cfg(any(feature = "grid", all(feature = "label", feature = "button")))]
     use crate::View;
+    #[cfg(feature = "grid")]
+    use crate::{Dpi, Rect, ViewLayoutCx};
 
     #[derive(Debug, Clone, PartialEq)]
     enum Msg {
@@ -907,5 +1183,165 @@ mod tests {
                 payload: Value::Null,
             })]
         );
+    }
+
+    #[cfg(feature = "grid")]
+    #[test]
+    fn compiles_document_grid_geometry_and_rejects_invalid_resolved_placements() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "layout",
+                "component": "grid",
+                "properties": {
+                  "columns": [
+                    { "kind": "fixed", "size": 100.0 },
+                    { "kind": "fraction", "weight": 1 }
+                  ],
+                  "rows": [
+                    { "kind": "fraction", "weight": 1 },
+                    { "kind": "fixed", "size": 40.0 }
+                  ],
+                  "placements": {
+                    "navigation": { "row": 0, "column": 0, "row_span": 2 },
+                    "content": { "row": 0, "column": 1 },
+                    "actions": { "row": 1, "column": 1 }
+                  },
+                  "column_gap": 10.0,
+                  "row_gap": 5.0
+                },
+                "children": [
+                  { "id": "navigation", "component": "stack" },
+                  { "id": "content", "component": "stack" },
+                  { "id": "actions", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let mut view = ui_document_view(
+            &document,
+            &UiBindingSchema::default(),
+            &BTreeMap::new(),
+            Msg::Action,
+        )
+        .unwrap();
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 200,
+            },
+            Dpi::standard(),
+        );
+        let output = view.layout(&mut layout);
+        let bounds_for = |id: &str| {
+            let widget = crate::ui_document::UiNodeId::new(id).unwrap().widget_id();
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("document Grid child should be laid out")
+                .bounds
+        };
+        assert_eq!(
+            bounds_for("navigation"),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 200,
+            }
+        );
+        assert_eq!(
+            bounds_for("content"),
+            Rect {
+                x: 110,
+                y: 0,
+                width: 290,
+                height: 155,
+            }
+        );
+        assert_eq!(
+            bounds_for("actions"),
+            Rect {
+                x: 110,
+                y: 160,
+                width: 290,
+                height: 40,
+            }
+        );
+
+        let mut reordered = document.clone();
+        reordered.root.children.reverse();
+        let mut reordered_view = ui_document_view(
+            &reordered,
+            &UiBindingSchema::default(),
+            &BTreeMap::new(),
+            Msg::Action,
+        )
+        .unwrap();
+        let mut reordered_layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 200,
+            },
+            Dpi::standard(),
+        );
+        let reordered_output = reordered_view.layout(&mut reordered_layout);
+        let navigation = crate::ui_document::UiNodeId::new("navigation")
+            .unwrap()
+            .widget_id();
+        assert_eq!(
+            reordered_output
+                .children
+                .iter()
+                .find(|node| node.component == navigation.into())
+                .expect("stable Grid child should survive declaration reordering")
+                .bounds,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 200,
+            }
+        );
+
+        let bound_document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "bound-layout",
+                "component": "grid",
+                "properties": {
+                  "columns": [{ "kind": "fraction", "weight": 1 }],
+                  "rows": [{ "kind": "fraction", "weight": 1 }]
+                },
+                "property_bindings": { "placements": "grid_cells" },
+                "children": [{ "id": "content", "component": "stack" }]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "grid_cells".to_owned(),
+                crate::ui_document::UiValueType::GridPlacementMap,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        let values = BTreeMap::from([(
+            "grid_cells".to_owned(),
+            serde_json::json!({ "ghost": { "row": 0, "column": 0 } }),
+        )]);
+        assert!(matches!(
+            ui_document_view(&bound_document, &bindings, &values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "placements"
+        ));
     }
 }

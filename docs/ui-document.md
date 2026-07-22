@@ -32,7 +32,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`tabs`、`progress_bar` 和 `scroll`。
+`radio_button`、`slider`、`number_box`、`combo_box`、`tabs`、`grid`、`progress_bar` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 `number_box.value` 使用 `nullable_number`，可表示数字或空值；`change` 动作使用相同
@@ -50,6 +50,13 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 `icons` 可使用相同键映射到 `ZsIcon` 语义枚举名；标签必须完整覆盖子节点，额外键、无效
 图标和不存在的 `selected` 都会被拒绝。`selected` string 属性和 `select` string 动作绑定后，
 切换页面会更新显式状态，热重建继续选中同一稳定槽位。Tabs 至少需要一个内容子节点。
+
+`grid.columns` 和 `grid.rows` 使用 `grid_track_array`，每条轨道明确声明为非负 DP
+固定尺寸或正整数权重的 fraction；`placements` 使用 `grid_placement_map`，以每个直接
+子节点的稳定 `UiNodeId` 为键，保存零起点行列和可选的正数跨度。校验要求放置表完整
+覆盖且只引用直接子节点，并拒绝越过已声明轨道、空轨道、零权重、零跨度和负间距。
+因此调整子节点声明顺序不会改变已有节点的单元格，Viewer 与发布嵌入也使用同一份
+强类型放置契约。`column_gap` 和 `row_gap` 可分别覆盖通用 `layout.gap`。
 
 `scroll` 必须有且只有一个内容子节点，并要求非负的 `content_height` 数值属性。
 `offset_y` 是可选的非负数值属性；需要在 View 重建后保留位置时，将它绑定到 number
@@ -186,7 +193,7 @@ cargo run --bin zsui-uic `
 ```powershell
 cargo run --bin zsui-uic `
   --no-default-features `
-  --features ui-document,label,checkbox,textbox,slider,number-box,combo,tabs `
+  --features ui-document,label,checkbox,textbox,slider,number-box,combo,tabs,grid `
   -- embed examples/ui-documents/interactive.json `
   --bindings examples/ui-documents/interactive.bindings.json `
   --output target/release-ui/interactive.zsui `
