@@ -308,7 +308,14 @@ jobs:
                   assert runtime["native_view_key_down_count"] == 1
                   assert runtime["native_view_unhandled_key_count"] == 0
                   assert runtime["native_view_unhandled_click_count"] == 0
-                  assert runtime["native_view_focused_widget"] == 3
+                  focused_tabs = [
+                      widget
+                      for widget in proof["widgets"]
+                      if widget["focused"] and widget["role"] == "tab"
+                  ]
+                  assert len(focused_tabs) == 1
+                  assert proof["focused_widget"] == focused_tabs[0]["id"]
+                  assert proof["focused_widget"] == f'widget-{runtime["native_view_focused_widget"]}'
                   assert any(
                       item["backend"] == "appkit"
                       and item["key"] == "Right"
@@ -715,7 +722,14 @@ jobs:
                   assert runtime["native_view_key_down_count"] == 1
                   assert runtime["native_view_unhandled_key_count"] == 0
                   assert runtime["native_view_unhandled_click_count"] == 0
-                  assert runtime["native_view_focused_widget"] == 3
+                  focused_tabs = [
+                      widget
+                      for widget in proof["widgets"]
+                      if widget["focused"] and widget["role"] == "tab"
+                  ]
+                  assert len(focused_tabs) == 1
+                  assert proof["focused_widget"] == focused_tabs[0]["id"]
+                  assert proof["focused_widget"] == f'widget-{runtime["native_view_focused_widget"]}'
                   assert any(
                       item["backend"] == "linux_direct"
                       and item["key"] == "Right"
@@ -1481,7 +1495,14 @@ jobs:
           assert navigation_runtime["native_view_key_down_count"] == 1
           assert navigation_runtime["native_view_unhandled_key_count"] == 0
           assert navigation_runtime["native_view_unhandled_click_count"] == 0
-          assert navigation_runtime["native_view_focused_widget"] == 3
+          focused_tabs = [
+              widget
+              for widget in navigation["widgets"]
+              if widget["focused"] and widget["role"] == "tab"
+          ]
+          assert len(focused_tabs) == 1
+          assert navigation["focused_widget"] == focused_tabs[0]["id"]
+          assert navigation["focused_widget"] == f'widget-{navigation_runtime["native_view_focused_widget"]}'
           assert any(
               item["backend"] == "linux_direct"
               and item["key"] == "Right"
