@@ -1,0 +1,14 @@
+{
+  "properties": {
+    "commands": "command_palette_item_array",
+    "command_query": "string",
+    "command_highlighted": "nullable_command_palette_item_id",
+    "command_open": "boolean"
+  },
+  "actions": {
+    "command_query_changed": "string",
+    "command_highlight_changed": "command_palette_item_id",
+    "command_invoked": "command_palette_item_id",
+    "command_open_changed": "boolean"
+  }
+}

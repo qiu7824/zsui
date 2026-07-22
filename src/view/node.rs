@@ -13,6 +13,7 @@ impl WidgetId {
 /// stored only when an application opts into a `*_with` builder.
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -35,6 +36,7 @@ pub struct ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -57,6 +59,7 @@ enum ViewMessageMapperKind<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -97,6 +100,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -129,6 +133,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -893,10 +898,10 @@ pub enum ViewNodeKind<Msg> {
         open: bool,
         placeholder: String,
         no_results_text: String,
-        on_query_change: Option<fn(String) -> Msg>,
-        on_highlight_change: Option<fn(crate::ZsCommandPaletteItemId) -> Msg>,
-        on_invoke: Option<fn(crate::ZsCommandPaletteItemId) -> Msg>,
-        on_open_change: Option<fn(bool) -> Msg>,
+        on_query_change: Option<ViewMessageMapper<String, Msg>>,
+        on_highlight_change: Option<ViewMessageMapper<crate::ZsCommandPaletteItemId, Msg>>,
+        on_invoke: Option<ViewMessageMapper<crate::ZsCommandPaletteItemId, Msg>>,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "toast")]
     ToastPresenter {
@@ -1898,7 +1903,21 @@ impl<Msg: Clone> ViewNode<Msg> {
             on_query_change, ..
         } = &mut self.kind
         {
-            *on_query_change = Some(message);
+            *on_query_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_query_change_with(
+        mut self,
+        message: impl Fn(String) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            on_query_change, ..
+        } = &mut self.kind
+        {
+            *on_query_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1913,7 +1932,22 @@ impl<Msg: Clone> ViewNode<Msg> {
             ..
         } = &mut self.kind
         {
-            *on_highlight_change = Some(message);
+            *on_highlight_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_highlight_change_with(
+        mut self,
+        message: impl Fn(crate::ZsCommandPaletteItemId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette {
+            on_highlight_change,
+            ..
+        } = &mut self.kind
+        {
+            *on_highlight_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1924,7 +1958,18 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: fn(crate::ZsCommandPaletteItemId) -> Msg,
     ) -> Self {
         if let ViewNodeKind::CommandPalette { on_invoke, .. } = &mut self.kind {
-            *on_invoke = Some(message);
+            *on_invoke = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_invoke_with(
+        mut self,
+        message: impl Fn(crate::ZsCommandPaletteItemId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1932,7 +1977,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "command-palette")]
     pub fn on_command_palette_open_change(mut self, message: fn(bool) -> Msg) -> Self {
         if let ViewNodeKind::CommandPalette { on_open_change, .. } = &mut self.kind {
-            *on_open_change = Some(message);
+            *on_open_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "command-palette")]
+    pub fn on_command_palette_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::CommandPalette { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

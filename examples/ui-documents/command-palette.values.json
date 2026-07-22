@@ -1,0 +1,33 @@
+{
+  "commands": [
+    {
+      "id": "open-file",
+      "title": "打开文件 / Open file",
+      "subtitle": "从磁盘选择文档 / Choose a document from disk",
+      "keywords": ["open", "file", "打开", "文件"],
+      "shortcut": "Ctrl+O",
+      "icon": "File"
+    },
+    {
+      "id": "open-settings",
+      "title": "打开设置 / Open settings",
+      "keywords": ["preferences", "settings", "设置"],
+      "shortcut": "Ctrl+,",
+      "icon": "Settings"
+    },
+    {
+      "id": "toggle-theme",
+      "title": "切换主题 / Toggle theme",
+      "keywords": ["dark", "light", "theme", "主题"],
+      "icon": "Refresh"
+    },
+    {
+      "id": "unavailable-command",
+      "title": "暂不可用 / Unavailable command",
+      "enabled": false
+    }
+  ],
+  "command_query": "",
+  "command_highlighted": "open-file",
+  "command_open": true
+}

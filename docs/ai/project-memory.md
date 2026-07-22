@@ -108,6 +108,15 @@ history remain authoritative for implementation status.
   semantic item ID, rejects collisions or missing highlights, and never uses
   declaration order as identity. Windows Viewer proof submits one suggestion
   through a real pointer click and retains the final Win32 surface.
+  Document-ready CommandPalette stores command metadata in a typed array of
+  stable semantic string IDs, titles, optional subtitles, search keywords,
+  shortcut labels, semantic icons and enablement. Query, nullable highlighted
+  ID and open state use independent controlled bindings; highlight and invoke
+  emit the stable ID. The release runtime derives private numeric
+  `ZsCommandPaletteItemId` values from the owning node and semantic item ID,
+  rejects collisions plus unavailable highlights, and never executes product
+  commands. Windows Viewer proof invokes one command through a real pointer
+  click, closes the controlled overlay and retains the final Win32 surface.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the

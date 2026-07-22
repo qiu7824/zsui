@@ -855,7 +855,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             *highlighted = state.highlighted.or_else(|| state.first_enabled());
                         }
                         if let Some(message) = on_open_change {
-                            cx.emit(message(*requested));
+                            cx.emit(message.map(*requested));
                         }
                         handled = true;
                     }
@@ -876,11 +876,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             if *highlighted != next {
                                 *highlighted = next;
                                 if let (Some(message), Some(item)) = (on_highlight_change, next) {
-                                    cx.emit(message(item));
+                                    cx.emit(message.map(item));
                                 }
                             }
                             if let Some(message) = on_query_change {
-                                cx.emit(message(value.clone()));
+                                cx.emit(message.map(value.clone()));
                             }
                             handled = true;
                         }
@@ -898,7 +898,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             if *highlighted != Some(*item) {
                                 *highlighted = Some(*item);
                                 if let Some(message) = on_highlight_change {
-                                    cx.emit(message(*item));
+                                    cx.emit(message.map(*item));
                                 }
                             }
                             handled = true;
@@ -917,10 +917,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             *highlighted = Some(*item);
                             *open = false;
                             if let Some(message) = on_invoke {
-                                cx.emit(message(*item));
+                                cx.emit(message.map(*item));
                             }
                             if let Some(message) = on_open_change {
-                                cx.emit(message(false));
+                                cx.emit(message.map(false));
                             }
                             handled = true;
                         }
