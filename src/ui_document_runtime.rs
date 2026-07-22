@@ -67,6 +67,7 @@ pub struct UiDocumentSecretAction {
         feature = "number-box",
         feature = "combo",
         feature = "date-picker",
+        feature = "time-picker",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -177,6 +178,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "number-box",
             feature = "combo",
             feature = "date-picker",
+            feature = "time-picker",
             feature = "list",
             feature = "tabs",
             feature = "scroll"
@@ -741,6 +743,8 @@ fn compile_node<Msg: Clone + 'static>(
         }
         #[cfg(feature = "date-picker")]
         "date_picker" => document_date_picker(node, properties, mapper)?,
+        #[cfg(feature = "time-picker")]
+        "time_picker" => document_time_picker(node, properties, mapper)?,
         #[cfg(feature = "tabs")]
         "tabs" => {
             let labels = string_map_property(node, properties, "labels");
@@ -903,6 +907,91 @@ fn document_date_picker<Msg: Clone + 'static>(
         let binding = binding.clone();
         let property_binding = node.property_bindings.get("expanded").cloned();
         control = control.on_date_picker_expanded_change_with(move |expanded| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(expanded),
+            })
+        });
+    }
+    Ok(control)
+}
+
+#[cfg(feature = "time-picker")]
+fn document_time_picker<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let value = time_property(node, properties, "value")?
+        .ok_or_else(|| invalid_resolved_property(node, "value", "a selected time is required"))?;
+    let increment_value = property_value(node, properties, "minute_increment")
+        .map(|value| {
+            value.as_u64().ok_or_else(|| {
+                invalid_resolved_property(node, "minute_increment", "increment must be an integer")
+            })
+        })
+        .transpose()?
+        .unwrap_or(1);
+    let increment = u8::try_from(increment_value)
+        .map_err(|_| {
+            invalid_resolved_property(
+                node,
+                "minute_increment",
+                "increment must fit in an unsigned byte",
+            )
+        })
+        .and_then(|increment| {
+            crate::ZsMinuteIncrement::new(increment).map_err(|error| {
+                invalid_resolved_property(node, "minute_increment", error.to_string())
+            })
+        })?;
+    if value.minute() % increment.get() != 0 {
+        return Err(invalid_resolved_property(
+            node,
+            "value",
+            "selected time minute must align with minute_increment",
+        ));
+    }
+
+    let mut control = crate::time_picker(value)
+        .minute_increment(increment)
+        .expanded(bool_property(node, properties, "expanded", false));
+    if let Some(clock) = optional_string_property(node, properties, "clock_format") {
+        control = match clock.as_str() {
+            "platform_default" => control,
+            "twelve_hour" => control.clock_format(crate::ZsClockFormat::TwelveHour),
+            "twenty_four_hour" => control.clock_format(crate::ZsClockFormat::TwentyFourHour),
+            _ => {
+                return Err(invalid_resolved_property(
+                    node,
+                    "clock_format",
+                    format!("unsupported clock format {clock:?}"),
+                ));
+            }
+        };
+    }
+    if let Some(binding) = node.action_bindings.get("change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("value").cloned();
+        control = control.on_time_change_with(move |value| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(value.to_string()),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("expanded_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("expanded").cloned();
+        control = control.on_time_picker_expanded_change_with(move |expanded| {
             mapper.map(UiDocumentAction {
                 node_id: node_id.clone(),
                 binding: binding.clone(),
@@ -1277,7 +1366,8 @@ fn grid_gap_property(
     feature = "list",
     feature = "progress-ring",
     feature = "password-box",
-    feature = "date-picker"
+    feature = "date-picker",
+    feature = "time-picker"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -1340,6 +1430,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -1387,6 +1478,27 @@ fn date_property(
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
 
+#[cfg(feature = "time-picker")]
+fn time_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ZsTime>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    let Some(value) = value.as_str() else {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "time must be a canonical HH:MM 24-hour string",
+        ));
+    };
+    crate::ZsTime::parse_24_hour(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
 #[cfg(any(
     feature = "label",
     feature = "button",
@@ -1417,6 +1529,7 @@ fn string_property(
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -1466,7 +1579,8 @@ fn nullable_number_property(
     feature = "tabs",
     feature = "list",
     feature = "progress-ring",
-    feature = "password-box"
+    feature = "password-box",
+    feature = "time-picker"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -1659,6 +1773,7 @@ mod tests {
     #[cfg(any(
         feature = "label",
         feature = "date-picker",
+        feature = "time-picker",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -1954,6 +2069,116 @@ mod tests {
         ]);
         assert!(matches!(
             ui_document_view(&document, &bindings, &out_of_range, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "value"
+        ));
+    }
+
+    #[cfg(feature = "time-picker")]
+    #[test]
+    fn compiles_controlled_time_picker_and_emits_canonical_state_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "meeting-time",
+                "component": "time_picker",
+                "properties": {
+                  "minute_increment": 15,
+                  "clock_format": "twenty_four_hour"
+                },
+                "property_bindings": {
+                  "value": "meeting_time",
+                  "expanded": "meeting_time_expanded"
+                },
+                "action_bindings": {
+                  "change": "meeting_time_changed",
+                  "expanded_change": "meeting_time_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "meeting_time".to_owned(),
+                    crate::ui_document::UiValueType::Time,
+                ),
+                (
+                    "meeting_time_expanded".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "meeting_time_changed".to_owned(),
+                    crate::ui_document::UiValueType::Time,
+                ),
+                (
+                    "meeting_time_expanded_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            ("meeting_time".to_owned(), Value::String("09:30".to_owned())),
+            ("meeting_time_expanded".to_owned(), Value::Bool(true)),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        assert_eq!(
+            view.widget_time_picker_state(widget),
+            Some(crate::ZsTimePickerState {
+                value: crate::ZsTime::new(9, 30).unwrap(),
+                minute_increment: crate::ZsMinuteIncrement::FIFTEEN,
+                clock: crate::ZsClockFormat::TwentyFourHour,
+                expanded: true,
+            })
+        );
+
+        let selected = crate::ZsTime::new(10, 45).unwrap();
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TimeChanged {
+                widget,
+                value: selected,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(action)] = messages.as_slice() else {
+            panic!("time selection must emit one typed action");
+        };
+        assert_eq!(action.binding, "meeting_time_changed");
+        assert_eq!(action.property_binding.as_deref(), Some("meeting_time"));
+        assert_eq!(action.payload, Value::String("10:45".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TimePickerExpandedChanged {
+                widget,
+                expanded: false,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(action)] = messages.as_slice() else {
+            panic!("expanded state must emit one typed action");
+        };
+        assert_eq!(action.binding, "meeting_time_expanded_changed");
+        assert_eq!(
+            action.property_binding.as_deref(),
+            Some("meeting_time_expanded")
+        );
+        assert_eq!(action.payload, Value::Bool(false));
+
+        let misaligned = BTreeMap::from([
+            ("meeting_time".to_owned(), Value::String("09:17".to_owned())),
+            ("meeting_time_expanded".to_owned(), Value::Bool(false)),
+        ]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &misaligned, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "value"
         ));

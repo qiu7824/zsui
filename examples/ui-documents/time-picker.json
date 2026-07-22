@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "time-picker-demo",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "time-picker-title",
+        "component": "text",
+        "properties": {
+          "text": "时间选择 / Time picker",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "time-picker-description",
+        "component": "text",
+        "properties": {
+          "text": "受控时间、分钟步长与展开状态 / Controlled time, minute increment and open state",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
+        }
+      },
+      {
+        "id": "meeting-time",
+        "component": "time_picker",
+        "properties": {
+          "minute_increment": 15,
+          "clock_format": "platform_default"
+        },
+        "property_bindings": {
+          "value": "meeting_time",
+          "expanded": "meeting_time_expanded"
+        },
+        "action_bindings": {
+          "change": "meeting_time_changed",
+          "expanded_change": "meeting_time_expanded_changed"
+        },
+        "accessibility": {
+          "role": "timepicker",
+          "label": "会议时间 / Meeting time"
+        }
+      }
+    ]
+  }
+}

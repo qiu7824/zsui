@@ -87,6 +87,12 @@ history remain authoritative for implementation status.
   release compilation reject invalid dates, inverted or violated ranges and
   noncanonical visible months. Viewer native smoke accepts repeatable fixed
   click sequences and requires typed message evidence before accepting them.
+  Document-ready TimePicker serializes wall-clock state as canonical `HH:MM`
+  `time` values while retaining platform-owned display formatting.
+  `register_time_property` and `register_time_action` keep Rust bindings typed
+  as `ZsTime`; value and expanded state use independent controlled loops.
+  Minute increments must be nonzero divisors of 60 and selected minutes must
+  align with the increment in both schema validation and release compilation.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the
@@ -830,8 +836,12 @@ history remain authoritative for implementation status.
   independent `time-picker` Cargo feature, stays on the shared self-drawn path,
   and selects Windows, macOS or GTK metric profiles internally. The picker
   popup shares viewport flipping and clamping with other overlays; its expanded
-  state and changes remain explicit typed application messages. System-locale
-  clock selection and non-Windows target proof remain readiness gaps.
+  state and changes remain explicit typed application messages. UiDocument
+  represents application state with canonical `HH:MM` values and retains the
+  platform display clock separately. Windows Viewer proof selects `10:45`
+  through two real pointer clicks and captures the final Win32 surface.
+  System-locale clock selection and non-Windows target proof remain readiness
+  gaps.
 - Grid is an independent `grid` Cargo feature. Its public contract uses typed
   fixed/fractional tracks and nonzero spans; the shared layout pass owns row/
   column gaps, explicit cell/span geometry, DPI conversion, paint bounds and

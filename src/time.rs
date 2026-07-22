@@ -32,6 +32,37 @@ impl ZsTime {
         Ok(Self { hour, minute })
     }
 
+    /// Parses the canonical platform-independent `HH:MM` representation used
+    /// by UI documents and typed state bindings.
+    pub fn parse_24_hour(value: &str) -> ZsuiResult<Self> {
+        let bytes = value.as_bytes();
+        if bytes.len() != 5
+            || bytes[2] != b':'
+            || !bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| index == 2 || byte.is_ascii_digit())
+        {
+            return Err(ZsuiError::invalid_spec(
+                "time",
+                "time must use the canonical HH:MM 24-hour representation",
+            ));
+        }
+        let hour = value[0..2].parse::<u8>().map_err(|_| {
+            ZsuiError::invalid_spec(
+                "time.hour",
+                "hour must use two ASCII digits between 00 and 23",
+            )
+        })?;
+        let minute = value[3..5].parse::<u8>().map_err(|_| {
+            ZsuiError::invalid_spec(
+                "time.minute",
+                "minute must use two ASCII digits between 00 and 59",
+            )
+        })?;
+        Self::new(hour, minute)
+    }
+
     pub const fn hour(self) -> u8 {
         self.hour
     }
@@ -139,8 +170,13 @@ mod tests {
 
         assert_eq!(time.format(ZsClockFormat::TwentyFourHour), "18:05");
         assert_eq!(time.format(ZsClockFormat::TwelveHour), "6:05 PM");
+        assert_eq!(ZsTime::parse_24_hour("18:05").unwrap(), time);
         assert!(ZsTime::new(24, 0).is_err());
         assert!(ZsTime::new(12, 60).is_err());
+        assert!(ZsTime::parse_24_hour("8:05").is_err());
+        assert!(ZsTime::parse_24_hour("18:5").is_err());
+        assert!(ZsTime::parse_24_hour("24:00").is_err());
+        assert!(ZsTime::parse_24_hour("ab:cd").is_err());
     }
 
     #[test]

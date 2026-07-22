@@ -21,6 +21,7 @@ impl WidgetId {
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -40,6 +41,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -59,6 +61,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -96,6 +99,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -125,6 +129,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "number-box",
     feature = "combo",
     feature = "date-picker",
+    feature = "time-picker",
     feature = "list",
     feature = "tabs",
     feature = "scroll"
@@ -930,8 +935,8 @@ pub enum ViewNodeKind<Msg> {
         minute_increment: ZsMinuteIncrement,
         clock: ZsClockFormat,
         expanded: bool,
-        on_time_change: Option<fn(ZsTime) -> Msg>,
-        on_expanded_change: Option<fn(bool) -> Msg>,
+        on_time_change: Option<ViewMessageMapper<ZsTime, Msg>>,
+        on_expanded_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "color-picker")]
     ColorPicker {
@@ -2085,7 +2090,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "time-picker")]
             ViewNodeKind::TimePicker {
                 on_expanded_change, ..
-            } => *on_expanded_change = Some(message),
+            } => *on_expanded_change = Some(ViewMessageMapper::from_function(message)),
             #[cfg(feature = "color-picker")]
             ViewNodeKind::ColorPicker {
                 on_expanded_change, ..
@@ -2212,7 +2217,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "time-picker")]
     pub fn on_time_change(mut self, message: fn(ZsTime) -> Msg) -> Self {
         if let ViewNodeKind::TimePicker { on_time_change, .. } = &mut self.kind {
-            *on_time_change = Some(message);
+            *on_time_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn on_time_change_with(
+        mut self,
+        message: impl Fn(ZsTime) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TimePicker { on_time_change, .. } = &mut self.kind {
+            *on_time_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2309,6 +2325,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: impl Fn(bool) -> Msg + Send + Sync + 'static,
     ) -> Self {
         if let ViewNodeKind::DatePicker {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "time-picker")]
+    pub fn on_time_picker_expanded_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TimePicker {
             on_expanded_change, ..
         } = &mut self.kind
         {
