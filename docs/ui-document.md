@@ -36,6 +36,23 @@ cargo run --bin zsui-uic `
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
+## 布局与文字完整性
+
+`layout.padding_token` 和 `layout.gap_token` 使用平台体验层的间距，不把某个平台的
+固定数值复制到另外两个平台。可用值为 `xs`、`sm`、`md`、`lg`、`xl`、
+`content_gap`、`content_padding` 和 `page_padding`。同一节点的 `padding` 与
+`padding_token`、`gap` 与 `gap_token` 互斥；数值布局仍可用于应用确实需要的专用几何。
+
+`text` 支持 `text_role`、`wrap`、`ellipsis`、`weight`、`horizontal_align` 和
+`vertical_align`。正文说明通常使用 `"wrap": "word"` 与 `"ellipsis": false`；
+语义枚举会在静态文档和绑定值解析后分别校验。`flex` 只分配父 Stack 的主轴空间，
+`0` 表示按内容尺寸布局；横向行内需要吸收剩余宽度的换行说明可使用 `flex: 1`，紧凑
+操作行自身可使用 `flex: 0`。
+
+Stack 与 Grid 会递归保留子树的固有尺寸，包括文字行框、控件最小尺寸、节点间距和
+容器内边距。横向 Stack 先按真实分配宽度计算换行文字高度，再决定整行高度；空间不足
+时保留这些硬约束并由上层滚动或裁剪，不压缩字形或把后续节点覆盖到当前容器中。
+
 `number_box.value` 使用 `nullable_number`，可表示数字或空值；`change` 动作使用相同
 payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`maximum`、`step`、
 `large_step`、`fraction_digits` 和 `wraps` 直接编译到共享 NumberBox。校验会拒绝倒置范围、

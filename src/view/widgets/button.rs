@@ -37,6 +37,7 @@ pub(crate) fn styled_text_for_platform<Msg>(
         // reserves the explicit lines and lets the label consume available
         // vertical space.
         node.native_typography_min_height(crate::Dp::new(line_height * explicit_line_count))
+            .flex(0.0)
     } else {
         node.native_typography_height(crate::Dp::new(line_height))
     }

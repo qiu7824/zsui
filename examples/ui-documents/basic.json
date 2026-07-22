@@ -5,8 +5,8 @@
     "component": "stack",
     "layout": {
       "direction": "vertical",
-      "padding": 16.0,
-      "gap": 8.0
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
     },
     "children": [
       {

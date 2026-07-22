@@ -37,6 +37,7 @@ mod tests {
 
         assert_eq!(node.style.height, None);
         assert_eq!(node.style.min_height, Some(Dp::new(line_height * 2.0)));
+        assert_eq!(node.style.flex, 0.0);
     }
 
     #[cfg(any(
@@ -817,6 +818,285 @@ mod tests {
         let heading = bounds_for(heading_id);
         let row = bounds_for(row_id);
         assert!(row.y >= heading.y + heading.height);
+    }
+
+    #[test]
+    #[cfg(feature = "label")]
+    fn nested_column_reserves_descendant_lines_gaps_and_padding_before_siblings() {
+        let card = WidgetId::new(713);
+        let first = WidgetId::new(714);
+        let second = WidgetId::new(715);
+        let after = WidgetId::new(716);
+        let mut view: ViewNode<()> = column([
+            column([
+                text("第一行 / First line").id(first),
+                text("第二行 / Second line").id(second),
+            ])
+            .id(card)
+            .padding(Dp::new(12.0))
+            .gap(Dp::new(8.0)),
+            text("后续内容 / Following content").id(after),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 260,
+                height: 64,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("nested node should expose layout bounds")
+                .bounds
+        };
+        let line_height = crate::TextRole::Body
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height
+            .round() as i32;
+        let card_bounds = bounds_for(card);
+        let first_bounds = bounds_for(first);
+        let second_bounds = bounds_for(second);
+        let after_bounds = bounds_for(after);
+
+        assert!(card_bounds.height >= line_height * 2 + 8 + 24);
+        assert_eq!(first_bounds.y, card_bounds.y + 12);
+        assert!(second_bounds.y >= first_bounds.y + first_bounds.height + 8);
+        assert!(after_bounds.y >= card_bounds.y + card_bounds.height + 8);
+        assert!(after_bounds.y >= second_bounds.y + second_bounds.height + 20);
+    }
+
+    #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn no_wrap_bilingual_label_keeps_intrinsic_width_in_an_overconstrained_row() {
+        let label = WidgetId::new(717);
+        let action = WidgetId::new(718);
+        let label_text = "保存位置 / Save location";
+        let mut view: ViewNode<()> = row([
+            text(label_text).id(label),
+            button("浏览 / Browse").id(action),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("row child should expose layout bounds")
+                .bounds
+        };
+        let label_bounds = bounds_for(label);
+        let action_bounds = bounds_for(action);
+        let metrics = crate::ZsBaseControlMetrics::current();
+
+        assert!(
+            label_bounds.width
+                >= metrics
+                    .estimated_text_width_with_shaping_reserve(label_text)
+                    .to_px(Dpi::standard())
+                    .round_i32()
+        );
+        assert!(action_bounds.x >= label_bounds.x + label_bounds.width + 8);
+    }
+
+    #[test]
+    #[cfg(feature = "label")]
+    fn semantic_page_uses_platform_page_padding_and_content_gap() {
+        let first = WidgetId::new(719);
+        let second = WidgetId::new(720);
+        let spacing = crate::ZsuiSpacingTokens::default();
+        let mut view: ViewNode<()> = page([
+            text("页面标题 / Page title").id(first),
+            text("页面内容 / Page content").id(second),
+        ]);
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 360,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("page child should expose layout bounds")
+                .bounds
+        };
+        let first_bounds = bounds_for(first);
+        let second_bounds = bounds_for(second);
+        let padding = spacing
+            .page_padding
+            .to_px(Dpi::standard())
+            .round_i32();
+        let gap = spacing
+            .content_gap
+            .to_px(Dpi::standard())
+            .round_i32();
+
+        assert_eq!((first_bounds.x, first_bounds.y), (padding, padding));
+        assert_eq!(first_bounds.width, 360 - padding * 2);
+        assert_eq!(
+            second_bounds.y,
+            first_bounds.y + first_bounds.height + gap
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "label")]
+    fn recursive_intrinsic_layout_reserves_scaled_descendant_line_boxes() {
+        fn build() -> ViewNode<()> {
+            column([
+                column([text("第一行 / First line"), text("第二行 / Second line")])
+                    .id(WidgetId::new(726))
+                    .padding(Dp::new(12.0))
+                    .gap(Dp::new(8.0))
+                    .flex(0.0),
+                text("后续内容 / Following content").id(WidgetId::new(727)),
+            ])
+            .gap(Dp::new(8.0))
+        }
+
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 120,
+        };
+        let mut normal = build();
+        let normal_output = normal.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        let mut scaled = build();
+        let scaled_output = scaled.layout(
+            &mut ViewLayoutCx::new(bounds, Dpi::standard()).with_typography_scale(1.5),
+        );
+        let bounds_for = |output: &LayoutOutput, widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("scaled descendant should expose layout bounds")
+                .bounds
+        };
+        let normal_card = bounds_for(&normal_output, WidgetId::new(726));
+        let scaled_card = bounds_for(&scaled_output, WidgetId::new(726));
+        let scaled_after = bounds_for(&scaled_output, WidgetId::new(727));
+
+        assert!(scaled_card.height > normal_card.height);
+        assert!(scaled_after.y >= scaled_card.y + scaled_card.height + 8);
+    }
+
+    #[test]
+    #[cfg(feature = "label")]
+    fn wrapped_text_fills_column_width_without_consuming_surplus_height() {
+        let wrapped = WidgetId::new(721);
+        let following = WidgetId::new(722);
+        let mut style = SemanticTextStyle::body();
+        style.wrap = crate::TextWrap::Word;
+        style.ellipsis = false;
+        let mut view: ViewNode<()> = column([
+            styled_text(
+                "中英文说明完整换行 / Bilingual text wraps in the real line box.",
+                style,
+            )
+            .id(wrapped),
+            text("后续内容 / Following content").id(following),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("text child should expose layout bounds")
+                .bounds
+        };
+        let wrapped_bounds = bounds_for(wrapped);
+        let following_bounds = bounds_for(following);
+
+        assert_eq!(wrapped_bounds.width, 320);
+        assert!(following_bounds.y >= wrapped_bounds.y + wrapped_bounds.height + 8);
+        assert!(following_bounds.y < 120, "wrapped text must not absorb free height");
+    }
+
+    #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn mixed_row_measures_wrapped_text_at_its_allocated_width() {
+        let row_id = WidgetId::new(723);
+        let label = WidgetId::new(724);
+        let action = WidgetId::new(725);
+        let mut style = SemanticTextStyle::body();
+        style.wrap = crate::TextWrap::Word;
+        style.ellipsis = false;
+        let mut view: ViewNode<()> = column([
+            row([
+                styled_text(
+                    "说明文字可以换行，按钮保留平台尺寸。The description wraps beside the action.",
+                    style,
+                )
+                .id(label)
+                .flex(1.0),
+                button("确认 / Confirm").id(action),
+            ])
+            .id(row_id)
+            .gap(Dp::new(12.0))
+            .flex(0.0),
+            text("后续内容 / Following content"),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 360,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("mixed row child should expose layout bounds")
+                .bounds
+        };
+        let row_bounds = bounds_for(row_id);
+        let label_bounds = bounds_for(label);
+        let action_bounds = bounds_for(action);
+
+        assert_eq!(row_bounds.height, label_bounds.height.max(action_bounds.height));
+        assert_eq!(
+            action_bounds.y,
+            row_bounds.y + (row_bounds.height - action_bounds.height) / 2
+        );
+        assert!(row_bounds.height < 80, "row must use the allocated text width");
     }
 
     #[test]

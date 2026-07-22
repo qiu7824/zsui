@@ -14,6 +14,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[cfg(feature = "ui-document-runtime")]
+use crate::Dp;
+
 /// Schema version accepted by this ZSUI release.
 pub const ZSUI_UI_DOCUMENT_SCHEMA_VERSION: u32 = 1;
 /// Schema version of the deterministic AI authoring handoff manifest.
@@ -136,7 +139,9 @@ pub struct UiLayout {
     pub max_width: Option<f32>,
     pub max_height: Option<f32>,
     pub padding: Option<f32>,
+    pub padding_token: Option<UiSpacingToken>,
     pub gap: Option<f32>,
+    pub gap_token: Option<UiSpacingToken>,
     pub flex: Option<f32>,
     pub direction: Option<UiAxis>,
 }
@@ -152,6 +157,39 @@ impl UiLayout {
 pub enum UiAxis {
     Horizontal,
     Vertical,
+}
+
+/// Platform-neutral spacing references resolved by the active desktop
+/// experience profile. Numeric layout values remain available for deliberate
+/// application-specific geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiSpacingToken {
+    Xs,
+    Sm,
+    Md,
+    Lg,
+    Xl,
+    ContentGap,
+    ContentPadding,
+    PagePadding,
+}
+
+impl UiSpacingToken {
+    #[cfg(feature = "ui-document-runtime")]
+    pub(crate) fn resolve(self) -> Dp {
+        let spacing = crate::ZsuiSpacingTokens::default();
+        match self {
+            Self::Xs => spacing.xs,
+            Self::Sm => spacing.sm,
+            Self::Md => spacing.md,
+            Self::Lg => spacing.lg,
+            Self::Xl => spacing.xl,
+            Self::ContentGap => spacing.content_gap,
+            Self::ContentPadding => spacing.content_padding,
+            Self::PagePadding => spacing.page_padding,
+        }
+    }
 }
 
 /// One platform-neutral track in a document-backed Grid declaration.
@@ -1786,6 +1824,44 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "text" {
+            for (name, allowed) in [
+                (
+                    "text_role",
+                    &[
+                        "body",
+                        "caption",
+                        "body_large",
+                        "subtitle",
+                        "title",
+                        "title_large",
+                        "display",
+                    ][..],
+                ),
+                ("wrap", &["no_wrap", "word"][..]),
+                (
+                    "weight",
+                    &["automatic", "regular", "medium", "semibold", "bold"][..],
+                ),
+                ("horizontal_align", &["start", "center", "end"][..]),
+                ("vertical_align", &["start", "center", "end"][..]),
+            ] {
+                if let Some(value) = node.properties.get(name).and_then(Value::as_str) {
+                    if !allowed.contains(&value) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.{name}"),
+                            format!(
+                                "text property {name:?} must be one of {}",
+                                allowed.join(", ")
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+
         if node.component == "password_box" {
             if node.properties.contains_key("value") || node.localization.contains_key("value") {
                 push_diagnostic(
@@ -2161,7 +2237,9 @@ impl<'a> UiDocumentValidator<'a> {
                         node.component
                     ),
                 );
-            } else if property.is_some_and(|property| property.value_type != UiValueType::String) {
+            } else if property.is_some_and(|property| property.value_type != UiValueType::String)
+                || (node.component == "text" && property_name != "text")
+            {
                 push_diagnostic(
                     diagnostics,
                     UiDiagnosticCode::InvalidLocalization,
@@ -2279,6 +2357,31 @@ const TEXT_PROPERTIES: &[PropertySpec] = &[
     },
     PropertySpec {
         name: "text_role",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "wrap",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "ellipsis",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+    PropertySpec {
+        name: "weight",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "horizontal_align",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "vertical_align",
         value_type: UiValueType::String,
         required: false,
     },
@@ -2790,15 +2893,33 @@ fn validate_layout(layout: &UiLayout, path: &str, diagnostics: &mut Vec<UiDiagno
             );
         }
     }
+    for (numeric_name, numeric, token_name, token) in [
+        (
+            "padding",
+            layout.padding,
+            "padding_token",
+            layout.padding_token,
+        ),
+        ("gap", layout.gap, "gap_token", layout.gap_token),
+    ] {
+        if numeric.is_some() && token.is_some() {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidLayout,
+                format!("{path}.layout.{token_name}"),
+                format!("layout must use either {numeric_name:?} or {token_name:?}, not both"),
+            );
+        }
+    }
     if layout
         .flex
-        .is_some_and(|value| !value.is_finite() || value <= 0.0)
+        .is_some_and(|value| !value.is_finite() || value < 0.0)
     {
         push_diagnostic(
             diagnostics,
             UiDiagnosticCode::InvalidLayout,
             format!("{path}.layout.flex"),
-            "layout flex must be finite and greater than zero".to_owned(),
+            "layout flex must be finite and non-negative".to_owned(),
         );
     }
     for (minimum_name, minimum, maximum_name, maximum) in [
@@ -2965,6 +3086,125 @@ mod tests {
             Some(Value::String("Notes".to_owned()))
         );
         assert_eq!(manifest.map_action("save", Value::Null), Ok(Msg::Save));
+    }
+
+    #[test]
+    fn layout_spacing_tokens_round_trip_and_conflict_with_numeric_overrides() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "root",
+                "component": "stack",
+                "layout": {
+                  "padding_token": "page_padding",
+                  "gap_token": "content_gap",
+                  "direction": "vertical"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            document.root.layout.padding_token,
+            Some(UiSpacingToken::PagePadding)
+        );
+        assert_eq!(
+            document.root.layout.gap_token,
+            Some(UiSpacingToken::ContentGap)
+        );
+        let round_trip =
+            UiDocument::from_json(&serde_json::to_string_pretty(&document).unwrap()).unwrap();
+        assert_eq!(round_trip, document);
+        assert!(document
+            .validate(&UiFeatureSet::default(), &UiBindingSchema::default())
+            .is_valid());
+
+        let conflicting = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "root",
+                "component": "stack",
+                "layout": {
+                  "padding": 12.0,
+                  "padding_token": "page_padding",
+                  "gap": 8.0,
+                  "gap_token": "content_gap"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = conflicting.validate(&UiFeatureSet::default(), &UiBindingSchema::default());
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidLayout)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn text_layout_contract_validates_wrapping_alignment_and_semantic_style() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "description",
+                "component": "text",
+                "properties": {
+                  "text": "中文长说明 / A long bilingual description",
+                  "text_role": "body",
+                  "wrap": "word",
+                  "ellipsis": false,
+                  "weight": "regular",
+                  "horizontal_align": "start",
+                  "vertical_align": "start"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let features = UiFeatureSet::new(["label"]);
+        assert!(valid
+            .validate(&features, &UiBindingSchema::default())
+            .is_valid());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "description",
+                "component": "text",
+                "properties": {
+                  "text": "Description",
+                  "text_role": "fluent_title",
+                  "wrap": "compress",
+                  "weight": "heavy",
+                  "horizontal_align": "left",
+                  "vertical_align": "baseline"
+                },
+                "localization": { "wrap": "layout.wrap" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            5
+        );
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidLocalization
+                && diagnostic.path == "$.root.localization.wrap"
+        }));
     }
 
     #[cfg(feature = "date-picker")]

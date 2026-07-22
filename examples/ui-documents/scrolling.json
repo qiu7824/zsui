@@ -5,8 +5,8 @@
     "component": "stack",
     "layout": {
       "direction": "vertical",
-      "padding": 20.0,
-      "gap": 12.0
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
     },
     "children": [
       {
@@ -36,8 +36,8 @@
             "layout": {
               "direction": "vertical",
               "height": 680.0,
-              "padding": 16.0,
-              "gap": 8.0
+              "padding_token": "content_padding",
+              "gap_token": "content_gap"
             },
             "children": [
               {

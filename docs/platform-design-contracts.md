@@ -105,6 +105,7 @@ GTK 的 HIG 同样没有承诺所有主题都使用同一像素高度。ZSUI 只
 - 可换行标签不固定为单行高度；共享 View 树保留显式段落行，最终换行、塑形和测量分别由 DirectWrite/GDI、Core Text/AppKit 与 Pango 完成。
 - AppKit 的 preferred body font 与 GTK 的 `gtk-font-name` 在宿主启动时产生同一份运行时字体比例；该比例同时进入 View 布局、DrawPlan、平台塑形、编辑器可视行、选区和光标，不允许绘制字号与布局行高各用一套值。
 - 按钮最小宽度必须包含 Unicode 全宽字符、组合字符和平台塑形余量；父布局不得把控件压到其文本最小宽度以下。
+- Stack 与 Grid 的固有尺寸递归包含子节点行框、控件最小尺寸、间距和两侧内边距；横向 Stack 按子节点实际获得的宽度计算换行高度。主轴空间不足时允许上层滚动或裁剪，不缩小这些硬约束。
 - Native Proof 的结构报告与最终平台截图共同检查文字边界；共享 DrawPlan 不能代替 AppKit/GTK 的最终文字验收。
 
 ## 验收规则

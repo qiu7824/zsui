@@ -693,6 +693,19 @@ history remain authoritative for implementation status.
   and overpaint its text. The renderer measures unconstrained no-wrap rows and
   applies horizontal alignment at the Cairo origin, then clips ink to the draw
   command bounds; wrapping and ellipsized text remain width-constrained.
+- Stack and Grid intrinsic measurement is recursive. Descendant line boxes,
+  control minimums, gaps and both sides of container padding are hard layout
+  floors; an overconstrained parent may overflow or scroll but must not squash
+  glyphs or overlap the following sibling. A row measures wrapped text height
+  from the width actually allocated after fixed controls and gaps, not from the
+  text's shortest unbreakable segment.
+- `ViewStyle::flex` distributes only a Stack's main axis. Text fills the column
+  cross-axis width even when wrapped text is content-height (`flex(0)`), while
+  a wrapping label beside a fixed action uses explicit main-axis flex when it
+  must receive the remaining row width.
+- UiDocument page/content spacing uses `UiSpacingToken` rather than copied
+  Windows constants. Text documents expose semantic role, wrap, ellipsis,
+  weight and alignment; enum bindings are validated after value resolution.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a
