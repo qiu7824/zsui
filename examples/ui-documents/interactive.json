@@ -79,6 +79,26 @@
           "role": "spinbutton",
           "label": "Retry count"
         }
+      },
+      {
+        "id": "profile-mode",
+        "component": "combo_box",
+        "properties": {
+          "options": ["Balanced", "Fast", "Quiet"],
+          "placeholder": "Choose a mode"
+        },
+        "property_bindings": {
+          "selected_index": "profile_mode",
+          "expanded": "profile_mode_expanded"
+        },
+        "action_bindings": {
+          "select": "profile_mode_selected",
+          "expanded_change": "profile_mode_expanded_changed"
+        },
+        "accessibility": {
+          "role": "combobox",
+          "label": "Profile mode"
+        }
       }
     ]
   }

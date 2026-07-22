@@ -69,7 +69,10 @@ history remain authoritative for implementation status.
   carry typed JSON payloads and update explicit property bindings across View
   rebuilds. Document-ready NumberBox uses one `nullable_number` value/action
   contract and validates minimum, maximum, step, large step, fraction digits
-  and wrapping before compilation. Ordinary function-pointer handlers remain
+  and wrapping before compilation. Document-ready ComboBox uses `string_array`,
+  `nullable_integer`, `integer` and boolean contracts; selected index and
+  expanded state update explicit bindings through owned callbacks so both
+  survive View rebuilds. Ordinary function-pointer handlers remain
   allocation-free; shared owned closures are
   allocated only through explicit `*_with` builders. `zsui-uic handoff`
   canonicalizes the validated document, binding schema, optional value snapshot

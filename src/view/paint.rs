@@ -1031,7 +1031,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         *expanded = false;
                         self.combo_first_visible_option = None;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                 }
@@ -1165,11 +1165,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 *expanded = false;
                 self.combo_first_visible_option = None;
                 if let Some(message) = on_select {
-                    cx.emit(message(*index));
+                    cx.emit(message.map(*index));
                 }
                 if was_expanded {
                     if let Some(message) = on_expanded_change {
-                        cx.emit(message(false));
+                        cx.emit(message.map(false));
                     }
                 }
             }
@@ -1911,7 +1911,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *expanded = *next_expanded;
                     self.combo_first_visible_option = None;
                     if let Some(message) = on_expanded_change {
-                        cx.emit(message(*next_expanded));
+                        cx.emit(message.map(*next_expanded));
                     }
                 }
                 #[cfg(feature = "date-picker")]

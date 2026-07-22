@@ -43,6 +43,7 @@ pub struct UiDocumentAction {
         feature = "radio",
         feature = "slider",
         feature = "number-box",
+        feature = "combo",
         feature = "scroll"
     )),
     allow(dead_code)
@@ -94,6 +95,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "radio",
             feature = "slider",
             feature = "number-box",
+            feature = "combo",
             feature = "scroll"
         )),
         allow(dead_code)
@@ -447,6 +449,46 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "combo")]
+        "combo_box" => {
+            let options = string_array_property(node, properties, "options");
+            let selected_index = nullable_index_property(node, properties, "selected_index")
+                .filter(|selected_index| *selected_index < options.len());
+            let mut control = crate::combo_box(options, selected_index)
+                .expanded(bool_property(node, properties, "expanded", false));
+            if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+                control = control.placeholder(placeholder);
+            }
+            if let Some(binding) = node.action_bindings.get("select") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("selected_index").cloned();
+                control = control.on_combo_select_with(move |selected_index| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::from(selected_index as u64),
+                    })
+                });
+            }
+            if let Some(binding) = node.action_bindings.get("expanded_change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("expanded").cloned();
+                control = control.on_combo_expanded_change_with(move |expanded| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(expanded),
+                    })
+                });
+            }
+            control
+        }
         #[cfg(feature = "progress")]
         "progress_bar" => crate::progress_bar(
             number_property(node, properties, "value", 0.0) as f32,
@@ -504,6 +546,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "radio",
     feature = "slider",
     feature = "number-box",
+    feature = "combo",
     feature = "progress",
     feature = "scroll"
 ))]
@@ -552,7 +595,8 @@ fn string_property(
     feature = "toggle",
     feature = "textbox",
     feature = "radio",
-    feature = "number-box"
+    feature = "number-box",
+    feature = "combo"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -592,6 +636,44 @@ fn nullable_number_property(
     property_value(node, properties, property)
         .map(|value| value.as_f64())
         .unwrap_or(fallback)
+}
+
+#[cfg(feature = "combo")]
+fn optional_string_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Option<String> {
+    property_value(node, properties, property).and_then(|value| value.as_str().map(str::to_owned))
+}
+
+#[cfg(feature = "combo")]
+fn string_array_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Vec<String> {
+    property_value(node, properties, property)
+        .and_then(|value| {
+            value.as_array().map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| value.as_str().map(str::to_owned))
+                    .collect()
+            })
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "combo")]
+fn nullable_index_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Option<usize> {
+    property_value(node, properties, property)
+        .and_then(|value| value.as_u64())
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 #[cfg(feature = "label")]

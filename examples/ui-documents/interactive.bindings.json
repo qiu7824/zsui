@@ -3,12 +3,16 @@
     "profile_name": "string",
     "dark_mode": "boolean",
     "volume": "number",
-    "retry_count": "nullable_number"
+    "retry_count": "nullable_number",
+    "profile_mode": "nullable_integer",
+    "profile_mode_expanded": "boolean"
   },
   "actions": {
     "profile_name_changed": "string",
     "dark_mode_changed": "boolean",
     "volume_changed": "number",
-    "retry_count_changed": "nullable_number"
+    "retry_count_changed": "nullable_number",
+    "profile_mode_selected": "integer",
+    "profile_mode_expanded_changed": "boolean"
   }
 }

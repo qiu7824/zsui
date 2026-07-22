@@ -810,6 +810,22 @@ mod tests {
                     },
                     "property_bindings": { "value": "retry_count" },
                     "action_bindings": { "change": "retry_count_changed" }
+                  },
+                  {
+                    "id": "profile-mode",
+                    "component": "combo_box",
+                    "properties": {
+                      "options": ["Balanced", "Fast", "Quiet"],
+                      "placeholder": "Choose a mode"
+                    },
+                    "property_bindings": {
+                      "selected_index": "profile_mode",
+                      "expanded": "profile_mode_expanded"
+                    },
+                    "action_bindings": {
+                      "select": "profile_mode_selected",
+                      "expanded_change": "profile_mode_expanded_changed"
+                    }
                   }
                 ]
               }
@@ -823,13 +839,17 @@ mod tests {
                 "name": "string",
                 "dark": "boolean",
                 "volume": "number",
-                "retry_count": "nullable_number"
+                "retry_count": "nullable_number",
+                "profile_mode": "nullable_integer",
+                "profile_mode_expanded": "boolean"
               },
               "actions": {
                 "name_changed": "string",
                 "dark_changed": "boolean",
                 "volume_changed": "number",
-                "retry_count_changed": "nullable_number"
+                "retry_count_changed": "nullable_number",
+                "profile_mode_selected": "integer",
+                "profile_mode_expanded_changed": "boolean"
               }
             }"#,
         )
@@ -850,6 +870,8 @@ mod tests {
                 ("dark".to_owned(), Value::Bool(false)),
                 ("volume".to_owned(), Value::from(10.0)),
                 ("retry_count".to_owned(), Value::from(2.5)),
+                ("profile_mode".to_owned(), Value::from(0_u64)),
+                ("profile_mode_expanded".to_owned(), Value::Bool(false)),
             ])),
             move |state| live_source.view(state),
             move |state, message, cx| {
@@ -870,6 +892,9 @@ mod tests {
             .unwrap()
             .widget_id();
         let retry_count = crate::ui_document::UiNodeId::new("retry-count")
+            .unwrap()
+            .widget_id();
+        let profile_mode = crate::ui_document::UiNodeId::new("profile-mode")
             .unwrap()
             .widget_id();
 
@@ -907,8 +932,26 @@ mod tests {
         });
         assert_eq!(draft_update.message_count, 0);
         assert_eq!(clear_update.message_count, 1);
+        let expand_update = live_view.dispatch_event(&crate::ViewEvent::ComboBoxExpandedChanged {
+            widget: profile_mode,
+            expanded: true,
+        });
+        assert_eq!(expand_update.message_count, 1);
+        assert_eq!(
+            live_view.widget_combo_state(profile_mode),
+            Some((Some(0), 3, true))
+        );
+        let select_update = live_view.dispatch_event(&crate::ViewEvent::ComboBoxSelected {
+            widget: profile_mode,
+            index: 2,
+        });
+        assert_eq!(select_update.message_count, 2);
+        assert_eq!(
+            live_view.widget_combo_state(profile_mode),
+            Some((Some(2), 3, false))
+        );
         let actions = actions.lock().unwrap();
-        assert_eq!(actions.len(), 5);
+        assert_eq!(actions.len(), 8);
         assert_eq!(actions[0].binding, "name_changed");
         assert_eq!(actions[0].property_binding.as_deref(), Some("name"));
         assert_eq!(actions[0].payload, Value::String("AB".to_owned()));
@@ -921,6 +964,13 @@ mod tests {
         assert_eq!(actions[3].payload, Value::from(3.0));
         assert_eq!(actions[4].binding, "retry_count_changed");
         assert_eq!(actions[4].payload, Value::Null);
+        assert_eq!(actions[5].binding, "profile_mode_expanded_changed");
+        assert_eq!(actions[5].payload, Value::Bool(true));
+        assert_eq!(actions[6].binding, "profile_mode_selected");
+        assert_eq!(actions[6].property_binding.as_deref(), Some("profile_mode"));
+        assert_eq!(actions[6].payload, Value::from(2_u64));
+        assert_eq!(actions[7].binding, "profile_mode_expanded_changed");
+        assert_eq!(actions[7].payload, Value::Bool(false));
         drop(actions);
         fs::remove_dir_all(directory).unwrap();
     }

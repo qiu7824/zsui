@@ -2,5 +2,7 @@
   "profile_name": "ZSUI",
   "dark_mode": false,
   "volume": 42.0,
-  "retry_count": 3.0
+  "retry_count": 3.0,
+  "profile_mode": 0,
+  "profile_mode_expanded": false
 }

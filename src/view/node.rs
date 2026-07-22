@@ -18,6 +18,7 @@ impl WidgetId {
     feature = "toggle-button",
     feature = "slider",
     feature = "number-box",
+    feature = "combo",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -32,6 +33,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "toggle-button",
     feature = "slider",
     feature = "number-box",
+    feature = "combo",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -46,6 +48,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "toggle-button",
     feature = "slider",
     feature = "number-box",
+    feature = "combo",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -78,6 +81,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "toggle-button",
     feature = "slider",
     feature = "number-box",
+    feature = "combo",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -102,6 +106,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "toggle-button",
     feature = "slider",
     feature = "number-box",
+    feature = "combo",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -884,8 +889,8 @@ pub enum ViewNodeKind<Msg> {
         selected_index: Option<usize>,
         expanded: bool,
         placeholder: Option<String>,
-        on_select: Option<fn(usize) -> Msg>,
-        on_expanded_change: Option<fn(bool) -> Msg>,
+        on_select: Option<ViewMessageMapper<usize, Msg>>,
+        on_expanded_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "date-picker")]
     DatePicker {
@@ -1584,8 +1589,21 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { on_select, .. } => *on_select = Some(message),
             #[cfg(feature = "combo")]
-            ViewNodeKind::ComboBox { on_select, .. } => *on_select = Some(message),
+            ViewNodeKind::ComboBox { on_select, .. } => {
+                *on_select = Some(ViewMessageMapper::from_function(message))
+            }
             _ => {}
+        }
+        self
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn on_combo_select_with(
+        mut self,
+        message: impl Fn(usize) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ComboBox { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2005,7 +2023,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 on_expanded_change, ..
-            } => *on_expanded_change = Some(message),
+            } => *on_expanded_change = Some(ViewMessageMapper::from_function(message)),
             #[cfg(feature = "date-picker")]
             ViewNodeKind::DatePicker {
                 on_expanded_change, ..
@@ -2150,6 +2168,20 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_scroll(mut self, message: fn(Dp) -> Msg) -> Self {
         if let ViewNodeKind::Scroll { on_scroll, .. } = &mut self.kind {
             *on_scroll = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "combo")]
+    pub fn on_combo_expanded_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ComboBox {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

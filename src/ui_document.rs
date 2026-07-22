@@ -180,7 +180,10 @@ pub enum UiValueType {
     Boolean,
     Number,
     NullableNumber,
+    Integer,
+    NullableInteger,
     String,
+    StringArray,
     Array,
     Object,
     Any,
@@ -193,7 +196,12 @@ impl UiValueType {
             Self::Boolean => value.is_boolean(),
             Self::Number => value.is_number(),
             Self::NullableNumber => value.is_null() || value.is_number(),
+            Self::Integer => value.as_u64().is_some(),
+            Self::NullableInteger => value.is_null() || value.as_u64().is_some(),
             Self::String => value.is_string(),
+            Self::StringArray => value
+                .as_array()
+                .is_some_and(|values| values.iter().all(Value::is_string)),
             Self::Array => value.is_array(),
             Self::Object => value.is_object(),
             Self::Any => true,
@@ -1396,6 +1404,27 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "combo_box" {
+            if let (Some(options), Some(selected_index)) = (
+                node.properties.get("options").and_then(Value::as_array),
+                node.properties
+                    .get("selected_index")
+                    .and_then(Value::as_u64),
+            ) {
+                if usize::try_from(selected_index)
+                    .ok()
+                    .is_none_or(|selected_index| selected_index >= options.len())
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.selected_index"),
+                        "combo_box selected_index must address an available option".to_owned(),
+                    );
+                }
+            }
+        }
+
         for (property_name, binding_name) in &node.property_bindings {
             let property = find_property(schema, property_name);
             if property.is_none() {
@@ -1683,6 +1712,38 @@ const NUMBER_BOX_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "change",
     payload_type: UiValueType::NullableNumber,
 }];
+const COMBO_BOX_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "options",
+        value_type: UiValueType::StringArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "selected_index",
+        value_type: UiValueType::NullableInteger,
+        required: false,
+    },
+    PropertySpec {
+        name: "placeholder",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const COMBO_BOX_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "select",
+        payload_type: UiValueType::Integer,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const SCROLL_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "offset_y",
@@ -1729,6 +1790,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "radio_button" => Some(leaf(RADIO_PROPERTIES, RADIO_ACTIONS)),
         "slider" => Some(leaf(VALUE_PROPERTIES, SLIDER_ACTIONS)),
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
+        "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
         "progress_bar" => Some(leaf(VALUE_PROPERTIES, NO_ACTIONS)),
         _ => None,
     }
@@ -2168,6 +2230,89 @@ mod tests {
                 .count(),
             4
         );
+    }
+
+    #[test]
+    fn combo_box_contract_validates_string_options_and_controlled_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "profile-mode",
+                "component": "combo_box",
+                "properties": {
+                  "options": ["Balanced", "Fast", "Quiet"],
+                  "placeholder": "Choose a mode"
+                },
+                "property_bindings": {
+                  "selected_index": "profile_mode",
+                  "expanded": "profile_mode_expanded"
+                },
+                "action_bindings": {
+                  "select": "profile_mode_selected",
+                  "expanded_change": "profile_mode_expanded_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("profile_mode".to_owned(), UiValueType::NullableInteger),
+                ("profile_mode_expanded".to_owned(), UiValueType::Boolean),
+            ]),
+            actions: BTreeMap::from([
+                ("profile_mode_selected".to_owned(), UiValueType::Integer),
+                (
+                    "profile_mode_expanded_changed".to_owned(),
+                    UiValueType::Boolean,
+                ),
+            ]),
+        };
+        assert!(valid
+            .validate(&UiFeatureSet::new(["combo"]), &bindings)
+            .is_valid());
+        assert!(validate_ui_binding_values(
+            &UiBindingSchema {
+                properties: BTreeMap::from([
+                    ("options".to_owned(), UiValueType::StringArray),
+                    ("selected".to_owned(), UiValueType::NullableInteger),
+                ]),
+                actions: BTreeMap::new(),
+            },
+            &BTreeMap::from([
+                (
+                    "options".to_owned(),
+                    Value::Array(vec![Value::String("One".to_owned())]),
+                ),
+                ("selected".to_owned(), Value::Null),
+            ])
+        )
+        .is_valid());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "profile-mode",
+                "component": "combo_box",
+                "properties": {
+                  "options": ["Only", 2],
+                  "selected_index": 4
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&UiFeatureSet::new(["combo"]), &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyType
+                && diagnostic.path.ends_with("properties.options")
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path.ends_with("properties.selected_index")
+        }));
     }
 
     #[test]
