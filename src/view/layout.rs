@@ -792,6 +792,19 @@ fn inset_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     }
 }
 
+#[cfg(feature = "list")]
+fn horizontal_inset_bounds(bounds: Rect, inset: Option<Dp>, dpi: Dpi) -> Rect {
+    let inset = inset
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
+    Rect {
+        x: bounds.x.saturating_add(inset),
+        y: bounds.y,
+        width: bounds.width.saturating_sub(inset.saturating_mul(2)).max(0),
+        height: bounds.height,
+    }
+}
+
 #[cfg(feature = "tabs")]
 fn tab_layout_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     inset_bounds(bounds, padding, dpi)

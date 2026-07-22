@@ -1593,6 +1593,72 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "list" {
+            let child_ids = node
+                .children
+                .iter()
+                .map(|child| child.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if let Some(selected) = node.properties.get("selected").and_then(Value::as_str) {
+                if !child_ids.contains(selected) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.selected"),
+                        "list selected must address a direct child id".to_owned(),
+                    );
+                }
+            }
+        }
+
+        if node.component == "progress_ring" {
+            let static_number = |name: &str, fallback: f64| {
+                (!node.property_bindings.contains_key(name)).then(|| {
+                    node.properties
+                        .get(name)
+                        .and_then(Value::as_f64)
+                        .unwrap_or(fallback)
+                })
+            };
+            let minimum = static_number("minimum", 0.0);
+            let maximum = static_number("maximum", 100.0);
+            if minimum
+                .zip(maximum)
+                .is_some_and(|(minimum, maximum)| minimum >= maximum)
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.maximum"),
+                    "progress_ring maximum must be greater than minimum".to_owned(),
+                );
+            }
+            if let Some(size) = node.properties.get("size").and_then(Value::as_str) {
+                if !matches!(size, "small" | "medium" | "large") {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.size"),
+                        "progress_ring size must be small, medium or large".to_owned(),
+                    );
+                }
+            }
+            if let (Some(value), Some(minimum), Some(maximum)) = (
+                node.properties.get("value").and_then(Value::as_f64),
+                minimum,
+                maximum,
+            ) {
+                if minimum < maximum && !(minimum..=maximum).contains(&value) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.value"),
+                        "progress_ring value must be null or within minimum and maximum".to_owned(),
+                    );
+                }
+            }
+        }
+
         if node.component == "grid" {
             validate_grid_component(node, path, diagnostics);
         }
@@ -1938,6 +2004,42 @@ const TABS_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "select",
     payload_type: UiValueType::String,
 }];
+const LIST_PROPERTIES: &[PropertySpec] = &[PropertySpec {
+    name: "selected",
+    value_type: UiValueType::String,
+    required: false,
+}];
+const LIST_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "select",
+    payload_type: UiValueType::String,
+}];
+const PROGRESS_RING_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::NullableNumber,
+        required: false,
+    },
+    PropertySpec {
+        name: "minimum",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "maximum",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "active",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+    PropertySpec {
+        name: "size",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
 const GRID_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "columns",
@@ -2009,6 +2111,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: TABS_ACTIONS,
             children: ChildPolicy::AtLeast(1),
         }),
+        "list" => Some(ComponentSchema {
+            properties: LIST_PROPERTIES,
+            actions: LIST_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
+        }),
         "grid" => Some(ComponentSchema {
             properties: GRID_PROPERTIES,
             actions: NO_ACTIONS,
@@ -2023,6 +2130,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
         "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
         "progress_bar" => Some(leaf(VALUE_PROPERTIES, NO_ACTIONS)),
+        "progress_ring" => Some(leaf(PROGRESS_RING_PROPERTIES, NO_ACTIONS)),
         _ => None,
     }
 }
@@ -2632,6 +2740,125 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path.ends_with("properties.selected_index")
         }));
+    }
+
+    #[test]
+    fn list_contract_uses_child_ids_as_stable_selection_values() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "profiles",
+                "component": "list",
+                "property_bindings": { "selected": "selected_profile" },
+                "action_bindings": { "select": "selected_profile_changed" },
+                "children": [
+                  { "id": "balanced", "component": "text", "properties": { "text": "Balanced" } },
+                  { "id": "quiet", "component": "text", "properties": { "text": "Quiet" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("selected_profile".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::from([("selected_profile_changed".to_owned(), UiValueType::String)]),
+        };
+        let features = UiFeatureSet::new(["list", "label"]);
+        assert!(valid.validate(&features, &bindings).is_valid());
+        let handoff = UiAiHandoffPackage::build(&valid, &features, &bindings, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "list")
+            .unwrap();
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::AtLeast { minimum: 1 }
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "profiles",
+                "component": "list",
+                "properties": { "selected": "missing" },
+                "children": [
+                  { "id": "balanced", "component": "text", "properties": { "text": "Balanced" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path.ends_with("properties.selected")
+        }));
+    }
+
+    #[test]
+    fn progress_ring_contract_validates_nullable_range_and_native_size() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "sync-progress",
+                "component": "progress_ring",
+                "properties": {
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "active": true,
+                  "size": "large"
+                },
+                "property_bindings": { "value": "sync_progress" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("sync_progress".to_owned(), UiValueType::NullableNumber)]),
+            actions: BTreeMap::new(),
+        };
+        assert!(valid
+            .validate(&UiFeatureSet::new(["progress-ring"]), &bindings)
+            .is_valid());
+        assert!(validate_ui_binding_values(
+            &bindings,
+            &BTreeMap::from([("sync_progress".to_owned(), Value::Null)])
+        )
+        .is_valid());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "sync-progress",
+                "component": "progress_ring",
+                "properties": {
+                  "value": 2.0,
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "size": "huge"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(
+            &UiFeatureSet::new(["progress-ring"]),
+            &UiBindingSchema::default(),
+        );
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            2
+        );
     }
 
     #[test]

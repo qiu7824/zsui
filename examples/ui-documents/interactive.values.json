@@ -5,5 +5,7 @@
   "retry_count": 3.0,
   "profile_mode": 0,
   "profile_mode_expanded": false,
+  "sync_progress": 65.0,
+  "selected_profile": "profile-balanced",
   "active_tab": "general-settings"
 }

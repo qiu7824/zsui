@@ -19,6 +19,7 @@ impl WidgetId {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "list",
     feature = "tabs",
     feature = "scroll"
 ))]
@@ -35,6 +36,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "list",
     feature = "tabs",
     feature = "scroll"
 ))]
@@ -51,6 +53,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "list",
     feature = "tabs",
     feature = "scroll"
 ))]
@@ -85,6 +88,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "list",
     feature = "tabs",
     feature = "scroll"
 ))]
@@ -111,6 +115,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "slider",
     feature = "number-box",
     feature = "combo",
+    feature = "list",
     feature = "tabs",
     feature = "scroll"
 ))]
@@ -933,7 +938,7 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "list")]
     List {
         selected_index: Option<usize>,
-        on_select: Option<fn(usize) -> Msg>,
+        on_select: Option<ViewMessageMapper<usize, Msg>>,
     },
     #[cfg(feature = "scroll")]
     Scroll {
@@ -1014,6 +1019,8 @@ pub struct ViewNode<Msg> {
     #[cfg(all(test, any(feature = "button", feature = "label")))]
     platform_style_override: Option<crate::ZsBaseControlPlatformStyle>,
     pub(crate) typography_scaled_height: bool,
+    #[cfg(feature = "list")]
+    pub(crate) list_item_horizontal_inset: Option<Dp>,
     #[cfg(feature = "combo")]
     combo_first_visible_option: Option<usize>,
     #[cfg(feature = "ui-viewer")]
@@ -1035,6 +1042,8 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(all(test, any(feature = "button", feature = "label")))]
             platform_style_override: None,
             typography_scaled_height: false,
+            #[cfg(feature = "list")]
+            list_item_horizontal_inset: None,
             #[cfg(feature = "combo")]
             combo_first_visible_option: None,
             #[cfg(feature = "ui-viewer")]
@@ -1590,7 +1599,9 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_select(mut self, message: fn(usize) -> Msg) -> Self {
         match &mut self.kind {
             #[cfg(feature = "list")]
-            ViewNodeKind::List { on_select, .. } => *on_select = Some(message),
+            ViewNodeKind::List { on_select, .. } => {
+                *on_select = Some(ViewMessageMapper::from_function(message))
+            }
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { on_select, .. } => *on_select = Some(message),
             #[cfg(feature = "combo")]
@@ -1598,6 +1609,17 @@ impl<Msg: Clone> ViewNode<Msg> {
                 *on_select = Some(ViewMessageMapper::from_function(message))
             }
             _ => {}
+        }
+        self
+    }
+
+    #[cfg(feature = "list")]
+    pub fn on_list_select_with(
+        mut self,
+        message: impl Fn(usize) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::List { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

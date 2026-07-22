@@ -3281,6 +3281,13 @@ mod tests {
             Dpi::standard(),
         );
         view.layout(&mut layout);
+        let metrics = crate::ZsBaseControlMetrics::for_platform(
+            crate::ZsBaseControlPlatformStyle::current(),
+        );
+        assert_eq!(
+            view.children[0].bounds().map(|bounds| bounds.height),
+            Some(metrics.selection_height.0.round() as i32)
+        );
         let mut events = ViewEventCx::new();
 
         view.event(&mut events, &ViewEvent::Click { widget: second });
@@ -3293,11 +3300,90 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::RoundFill { .. })));
+        let horizontal_inset = crate::ZsuiSpacingTokens::for_platform(
+            crate::ZsBaseControlPlatformStyle::current(),
+        )
+        .sm
+        .0
+        .round() as i32;
+        assert!(paint.plan().commands.iter().any(|command| {
+            matches!(
+                command,
+                NativeDrawCommand::Text(text)
+                    if text.text == "One"
+                        && text.bounds.x == horizontal_inset
+                        && text.bounds.width == 240 - horizontal_inset * 2
+                        && text.bounds.height == metrics.selection_height.0.round() as i32
+            )
+        }));
         assert_eq!(view.widget_list_index(second), Some(1));
         assert_eq!(
             view.widget_list_relative_widget(second, -1),
             Some((first, 0))
         );
+    }
+
+    #[test]
+    #[cfg(all(feature = "list", feature = "label"))]
+    fn list_rows_use_each_platforms_selection_height_and_content_inset() {
+        for (platform, expected_height, expected_inset) in [
+            (crate::ZsPlatformStyle::Windows, 32, 8),
+            (crate::ZsPlatformStyle::Macos, 28, 6),
+            (crate::ZsPlatformStyle::Gtk, 34, 8),
+        ] {
+            let mut view: ViewNode<Msg> =
+                list_for_platform(platform, ["中英 / Mixed"], text);
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 240,
+                    height: 80,
+                },
+                Dpi::standard(),
+            ));
+            assert_eq!(
+                view.children[0].bounds(),
+                Some(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 240,
+                    height: expected_height,
+                })
+            );
+
+            let mut paint = ViewPaintCx::new(Dpi::standard());
+            view.paint(&mut paint);
+            assert!(paint.plan().commands.iter().any(|command| {
+                matches!(
+                    command,
+                    NativeDrawCommand::Text(text)
+                        if text.text == "中英 / Mixed"
+                            && text.bounds.x == expected_inset
+                            && text.bounds.width == 240 - expected_inset * 2
+                            && text.bounds.height == expected_height
+                )
+            }));
+        }
+
+        let mut scaled: ViewNode<Msg> = list_for_platform(
+            crate::ZsPlatformStyle::Windows,
+            ["放大 / Scaled"],
+            text,
+        );
+        scaled.layout(
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 240,
+                    height: 100,
+                },
+                Dpi::standard(),
+            )
+            .with_typography_scale(1.5),
+        );
+        assert_eq!(scaled.children[0].bounds().map(|bounds| bounds.height), Some(48));
     }
 
     #[test]
