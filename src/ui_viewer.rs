@@ -1258,6 +1258,115 @@ mod tests {
     }
 
     #[test]
+    fn viewer_preserves_controlled_command_palette_state_across_rebuilds() {
+        let directory = fixture_directory("command-palette-actions");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("command-palette.json");
+        let binding_path = directory.join("command-palette.bindings.json");
+        fs::write(
+            &document_path,
+            include_str!("../examples/ui-documents/command-palette.json"),
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            include_str!("../examples/ui-documents/command-palette.bindings.json"),
+        )
+        .unwrap();
+        let properties = serde_json::from_str::<BTreeMap<String, Value>>(include_str!(
+            "../examples/ui-documents/command-palette.values.json"
+        ))
+        .unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        source.validate_properties(&properties).unwrap();
+        let live_source = source.clone();
+        let captured_state = Arc::new(Mutex::new(UiViewerState::default()));
+        let update_state = Arc::clone(&captured_state);
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::with_properties(properties),
+            move |state| live_source.view(state),
+            move |state, message, cx| {
+                ui_viewer_update(state, message, cx);
+                *update_state.lock().unwrap() = state.clone();
+            },
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 900,
+                height: 620,
+            },
+            crate::Dpi::standard(),
+        );
+        let node_id = crate::ui_document::UiNodeId::new("app-commands").unwrap();
+        let widget = node_id.widget_id();
+        let file = crate::ui_document::ui_command_palette_runtime_id(
+            &node_id,
+            &crate::ui_document::UiCommandPaletteItemId::new("open-file").unwrap(),
+        );
+        let settings = crate::ui_document::ui_command_palette_runtime_id(
+            &node_id,
+            &crate::ui_document::UiCommandPaletteItemId::new("open-settings").unwrap(),
+        );
+        let state = live_view
+            .widget_command_palette_state(widget)
+            .expect("command palette state");
+        assert_eq!(state.visible_items.len(), 4);
+        assert_eq!(state.enabled_items.len(), 3);
+        assert_eq!(state.highlighted, Some(file));
+        assert!(state.open);
+
+        let filtered = live_view.dispatch_event(&crate::ViewEvent::TextChanged {
+            widget,
+            value: "settings".to_owned(),
+        });
+        assert_eq!(filtered.message_count, 2);
+        let filtered_state = live_view
+            .widget_command_palette_state(widget)
+            .expect("filtered command palette state");
+        assert_eq!(filtered_state.query, "settings");
+        assert_eq!(filtered_state.visible_items, vec![settings]);
+        assert_eq!(filtered_state.highlighted, Some(settings));
+
+        let invoked = live_view.dispatch_event(&crate::ViewEvent::CommandPaletteInvoked {
+            widget,
+            item: settings,
+        });
+        assert_eq!(invoked.message_count, 2);
+        let final_state = captured_state.lock().unwrap();
+        assert_eq!(
+            final_state.properties.get("command_highlighted"),
+            Some(&Value::String("open-settings".to_owned()))
+        );
+        assert_eq!(
+            final_state.properties.get("command_open"),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(
+            final_state.properties.get("command_query"),
+            Some(&Value::String("settings".to_owned()))
+        );
+        assert_eq!(final_state.actions.len(), 4);
+        assert_eq!(final_state.actions[0].binding, "command_highlight_changed");
+        assert_eq!(
+            final_state.actions[0].payload,
+            Value::String("open-settings".to_owned())
+        );
+        assert_eq!(final_state.actions[1].binding, "command_query_changed");
+        assert_eq!(
+            final_state.actions[1].payload,
+            Value::String("settings".to_owned())
+        );
+        assert_eq!(final_state.actions[2].binding, "command_invoked");
+        assert_eq!(
+            final_state.actions[2].payload,
+            Value::String("open-settings".to_owned())
+        );
+        assert_eq!(final_state.actions[3].binding, "command_open_changed");
+        assert_eq!(final_state.actions[3].payload, Value::Bool(false));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn viewer_preserves_controlled_scroll_offset_across_view_rebuilds() {
         let directory = fixture_directory("controlled-scroll");
         fs::create_dir_all(&directory).unwrap();

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "app-commands",
+    "component": "command_palette",
+    "properties": {
+      "placeholder": "输入命令 / Type a command",
+      "no_results_text": "没有匹配的命令 / No matching commands"
+    },
+    "property_bindings": {
+      "items": "commands",
+      "query": "command_query",
+      "highlighted": "command_highlighted",
+      "open": "command_open"
+    },
+    "action_bindings": {
+      "query_change": "command_query_changed",
+      "highlight_change": "command_highlight_changed",
+      "invoke": "command_invoked",
+      "open_change": "command_open_changed"
+    },
+    "accessibility": {
+      "role": "dialog",
+      "label": "应用命令 / Application commands"
+    },
+    "children": [
+      {
+        "id": "command-page",
+        "component": "stack",
+        "layout": {
+          "direction": "vertical",
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "command-title",
+            "component": "text",
+            "properties": {
+              "text": "命令面板 / CommandPalette",
+              "text_role": "title"
+            }
+          },
+          {
+            "id": "command-description",
+            "component": "text",
+            "properties": {
+              "text": "稳定命令 ID、平台语义图标与受控状态 / Stable command IDs, semantic icons and controlled state",
+              "wrap": "word",
+              "ellipsis": false,
+              "vertical_align": "start"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

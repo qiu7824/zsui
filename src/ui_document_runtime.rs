@@ -70,6 +70,7 @@ pub struct UiDocumentSecretAction {
         feature = "time-picker",
         feature = "color-picker",
         feature = "auto-suggest",
+        feature = "command-palette",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -747,6 +748,8 @@ fn compile_node<Msg: Clone + 'static>(
         }
         #[cfg(feature = "auto-suggest")]
         "auto_suggest" => document_auto_suggest(node, properties, mapper)?,
+        #[cfg(feature = "command-palette")]
+        "command_palette" => document_command_palette(node, properties, children, mapper)?,
         #[cfg(feature = "date-picker")]
         "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "time-picker")]
@@ -951,6 +954,180 @@ fn document_auto_suggest<Msg: Clone + 'static>(
                 binding: binding.clone(),
                 property_binding: property_binding.clone(),
                 payload: Value::Bool(expanded),
+            })
+        });
+    }
+    Ok(control)
+}
+
+#[cfg(feature = "command-palette")]
+fn document_command_palette<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let actual = children.len();
+    let mut children = children.into_iter();
+    let Some(page) = children.next() else {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 1,
+            actual,
+        });
+    };
+    if children.next().is_some() {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 1,
+            actual,
+        });
+    }
+
+    let authoring_items = command_palette_items_property(node, properties)?;
+    let mut author_to_runtime = BTreeMap::new();
+    let mut runtime_to_author = BTreeMap::new();
+    let mut items = Vec::with_capacity(authoring_items.len());
+    for item in authoring_items {
+        let author_id = item.id().clone();
+        let runtime_id = crate::ui_document::ui_command_palette_runtime_id(&node.id, &author_id);
+        if let Some(first) = runtime_to_author.insert(runtime_id, author_id.as_str().to_owned()) {
+            return Err(invalid_resolved_property(
+                node,
+                "items",
+                format!(
+                    "command ids {first:?} and {:?} collide after stable runtime mapping",
+                    author_id.as_str()
+                ),
+            ));
+        }
+        author_to_runtime.insert(author_id.as_str().to_owned(), runtime_id);
+        let mut runtime_item =
+            crate::ZsCommandPaletteItem::new(runtime_id, item.title()).enabled(item.is_enabled());
+        if let Some(subtitle) = item.subtitle_text() {
+            runtime_item = runtime_item.subtitle(subtitle);
+        }
+        if !item.keyword_values().is_empty() {
+            runtime_item = runtime_item.keywords(item.keyword_values().iter().cloned());
+        }
+        if let Some(shortcut) = item.shortcut_text() {
+            runtime_item = runtime_item.shortcut(shortcut);
+        }
+        if let Some(icon) = item.semantic_icon() {
+            runtime_item = runtime_item.icon(icon);
+        }
+        items.push(runtime_item);
+    }
+
+    let query = string_property(node, properties, "query", "");
+    let highlighted = optional_command_palette_item_id_property(node, properties, "highlighted")?
+        .map(|highlighted| {
+            author_to_runtime
+                .get(highlighted.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "highlighted",
+                        format!(
+                            "id {:?} does not address an available command",
+                            highlighted.as_str()
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
+    if highlighted.is_some_and(|highlighted| {
+        crate::command_palette::command_palette_state(true, &query, &items, Some(highlighted))
+            .highlighted
+            != Some(highlighted)
+    }) {
+        return Err(invalid_resolved_property(
+            node,
+            "highlighted",
+            "highlighted command must be enabled and match the current query",
+        ));
+    }
+
+    let mut control = crate::command_palette(
+        node.id.widget_id(),
+        bool_property(node, properties, "open", false),
+        query,
+        items,
+        page,
+    )
+    .highlighted_command(highlighted);
+    if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+        control = control.command_palette_placeholder(placeholder);
+    }
+    if let Some(no_results_text) = optional_string_property(node, properties, "no_results_text") {
+        control = control.command_palette_no_results_text(no_results_text);
+    }
+
+    let runtime_to_author = Arc::new(runtime_to_author);
+    if let Some(binding) = node.action_bindings.get("query_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("query").cloned();
+        control = control.on_command_palette_query_change_with(move |query| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(query),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("highlight_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("highlighted").cloned();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_command_palette_highlight_change_with(move |highlighted| {
+            let author_id = runtime_to_author
+                .get(&highlighted)
+                .cloned()
+                .expect("highlighted runtime command must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("invoke") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("highlighted").cloned();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_command_palette_invoke_with(move |invoked| {
+            let author_id = runtime_to_author
+                .get(&invoked)
+                .cloned()
+                .expect("invoked runtime command must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("open_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("open").cloned();
+        control = control.on_command_palette_open_change_with(move |open| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(open),
             })
         });
     }
@@ -1817,8 +1994,60 @@ fn optional_auto_suggestion_id_property(
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
 
+#[cfg(feature = "command-palette")]
+fn command_palette_items_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiCommandPaletteItem>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get("items")
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(Vec::new());
+    }
+    let value = property_value(node, properties, "items").ok_or_else(|| {
+        invalid_resolved_property(node, "items", "a command item array is required")
+    })?;
+    crate::ui_document::ui_command_palette_items_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "items",
+            "command items must use unique stable ids, non-empty titles and valid metadata",
+        )
+    })
+}
+
+#[cfg(feature = "command-palette")]
+fn optional_command_palette_item_id_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiCommandPaletteItemId>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(None);
+    }
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(node, property, "command item id must be a string or null")
+    })?;
+    crate::ui_document::UiCommandPaletteItemId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "label",
     feature = "button",
     feature = "toggle-button",
@@ -1851,6 +2080,7 @@ fn string_property(
     feature = "time-picker",
     feature = "color-picker",
     feature = "auto-suggest",
+    feature = "command-palette",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -1903,7 +2133,8 @@ fn nullable_number_property(
     feature = "password-box",
     feature = "time-picker",
     feature = "color-picker",
-    feature = "auto-suggest"
+    feature = "auto-suggest",
+    feature = "command-palette"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -2099,6 +2330,7 @@ mod tests {
         feature = "date-picker",
         feature = "time-picker",
         feature = "color-picker",
+        feature = "command-palette",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -2449,6 +2681,179 @@ mod tests {
         ]);
         assert!(matches!(
             ui_document_view(&document, &bindings, &unknown_highlight, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "highlighted"
+        ));
+    }
+
+    #[cfg(feature = "command-palette")]
+    #[test]
+    fn compiles_controlled_command_palette_and_emits_semantic_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "app-commands",
+                "component": "command_palette",
+                "properties": {
+                  "placeholder": "Type a command",
+                  "no_results_text": "No matching commands"
+                },
+                "property_bindings": {
+                  "items": "commands",
+                  "query": "command_query",
+                  "highlighted": "command_highlighted",
+                  "open": "command_open"
+                },
+                "action_bindings": {
+                  "query_change": "command_query_changed",
+                  "highlight_change": "command_highlight_changed",
+                  "invoke": "command_invoked",
+                  "open_change": "command_open_changed"
+                },
+                "children": [
+                  { "id": "page", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "commands".to_owned(),
+                    crate::ui_document::UiValueType::CommandPaletteItemArray,
+                ),
+                (
+                    "command_query".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "command_highlighted".to_owned(),
+                    crate::ui_document::UiValueType::NullableCommandPaletteItemId,
+                ),
+                (
+                    "command_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "command_query_changed".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "command_highlight_changed".to_owned(),
+                    crate::ui_document::UiValueType::CommandPaletteItemId,
+                ),
+                (
+                    "command_invoked".to_owned(),
+                    crate::ui_document::UiValueType::CommandPaletteItemId,
+                ),
+                (
+                    "command_open_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "commands".to_owned(),
+                serde_json::json!([
+                    {
+                      "id": "open-settings",
+                      "title": "Open settings",
+                      "keywords": ["preferences"],
+                      "shortcut": "Ctrl+,",
+                      "icon": "Settings"
+                    },
+                    {
+                      "id": "open-file",
+                      "title": "Open file",
+                      "subtitle": "Choose from disk",
+                      "icon": "File"
+                    },
+                    {
+                      "id": "open-disabled",
+                      "title": "Open unavailable",
+                      "enabled": false
+                    }
+                ]),
+            ),
+            ("command_query".to_owned(), Value::String("open".to_owned())),
+            (
+                "command_highlighted".to_owned(),
+                Value::String("open-file".to_owned()),
+            ),
+            ("command_open".to_owned(), Value::Bool(true)),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let settings_author =
+            crate::ui_document::UiCommandPaletteItemId::new("open-settings").unwrap();
+        let file_author = crate::ui_document::UiCommandPaletteItemId::new("open-file").unwrap();
+        let settings =
+            crate::ui_document::ui_command_palette_runtime_id(&document.root.id, &settings_author);
+        let file =
+            crate::ui_document::ui_command_palette_runtime_id(&document.root.id, &file_author);
+        let state = view
+            .widget_command_palette_state(widget)
+            .expect("command palette state");
+        assert_eq!(state.visible_items.len(), 3);
+        assert_eq!(state.enabled_items, vec![settings, file]);
+        assert_eq!(state.highlighted, Some(file));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::CommandPaletteHighlighted {
+                widget,
+                item: settings,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(highlighted)] = messages.as_slice() else {
+            panic!("highlighting must emit one stable-id action");
+        };
+        assert_eq!(highlighted.binding, "command_highlight_changed");
+        assert_eq!(
+            highlighted.property_binding.as_deref(),
+            Some("command_highlighted")
+        );
+        assert_eq!(
+            highlighted.payload,
+            Value::String("open-settings".to_owned())
+        );
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::CommandPaletteInvoked {
+                widget,
+                item: settings,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(invoked), Msg::Action(open)] = messages.as_slice() else {
+            panic!("invocation must emit a stable-id action and controlled close");
+        };
+        assert_eq!(invoked.binding, "command_invoked");
+        assert_eq!(
+            invoked.property_binding.as_deref(),
+            Some("command_highlighted")
+        );
+        assert_eq!(invoked.payload, Value::String("open-settings".to_owned()));
+        assert_eq!(open.binding, "command_open_changed");
+        assert_eq!(open.property_binding.as_deref(), Some("command_open"));
+        assert_eq!(open.payload, Value::Bool(false));
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "command_highlighted".to_owned(),
+            Value::String("open-disabled".to_owned()),
+        );
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "highlighted"
         ));

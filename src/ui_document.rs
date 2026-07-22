@@ -74,6 +74,26 @@ pub(crate) fn ui_auto_suggestion_runtime_id(
     crate::ZsAutoSuggestionId::new(hash)
 }
 
+#[cfg(all(feature = "ui-document-runtime", feature = "command-palette"))]
+pub(crate) fn ui_command_palette_runtime_id(
+    node_id: &UiNodeId,
+    item_id: &UiCommandPaletteItemId,
+) -> crate::ZsCommandPaletteItemId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(item_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsCommandPaletteItemId::new(hash)
+}
+
 impl fmt::Display for UiNodeId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
@@ -373,6 +393,165 @@ impl UiAutoSuggestSubmission {
     }
 }
 
+/// Stable author-facing identity for one document-backed command.
+///
+/// The identity is independent from declaration order. The release runtime
+/// derives a private [`crate::ZsCommandPaletteItemId`] from this value and the
+/// owning node ID.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiCommandPaletteItemId(String);
+
+impl UiCommandPaletteItemId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiCommandPaletteItemIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiCommandPaletteItemIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiCommandPaletteItemId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiCommandPaletteItemIdError {
+    value: String,
+}
+
+impl fmt::Display for UiCommandPaletteItemIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "command-palette item id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiCommandPaletteItemIdError {}
+
+/// Application-owned display metadata for one document-backed command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCommandPaletteItem {
+    id: UiCommandPaletteItemId,
+    title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    keywords: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shortcut: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<crate::ZsIcon>,
+    #[serde(default = "ui_command_palette_item_enabled_default")]
+    enabled: bool,
+}
+
+impl UiCommandPaletteItem {
+    pub fn new(id: UiCommandPaletteItemId, title: impl Into<String>) -> Self {
+        Self {
+            id,
+            title: title.into(),
+            subtitle: None,
+            keywords: Vec::new(),
+            shortcut: None,
+            icon: None,
+            enabled: true,
+        }
+    }
+
+    pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
+        self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    pub fn keywords<T>(mut self, keywords: impl IntoIterator<Item = T>) -> Self
+    where
+        T: Into<String>,
+    {
+        self.keywords = keywords.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self
+    }
+
+    pub fn icon(mut self, icon: crate::ZsIcon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub const fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub fn id(&self) -> &UiCommandPaletteItemId {
+        &self.id
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn subtitle_text(&self) -> Option<&str> {
+        self.subtitle.as_deref()
+    }
+
+    pub fn keyword_values(&self) -> &[String] {
+        &self.keywords
+    }
+
+    pub fn shortcut_text(&self) -> Option<&str> {
+        self.shortcut.as_deref()
+    }
+
+    pub const fn semantic_icon(&self) -> Option<crate::ZsIcon> {
+        self.icon
+    }
+
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn matches_query(&self, query: &str) -> bool {
+        let terms = query
+            .split_whitespace()
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>();
+        if terms.is_empty() {
+            return true;
+        }
+        let mut searchable = self.title.to_lowercase();
+        if let Some(subtitle) = &self.subtitle {
+            searchable.push(' ');
+            searchable.push_str(&subtitle.to_lowercase());
+        }
+        for keyword in &self.keywords {
+            searchable.push(' ');
+            searchable.push_str(&keyword.to_lowercase());
+        }
+        terms.iter().all(|term| searchable.contains(term))
+    }
+}
+
+const fn ui_command_palette_item_enabled_default() -> bool {
+    true
+}
+
 const fn one_grid_span() -> u16 {
     1
 }
@@ -417,6 +596,9 @@ pub enum UiValueType {
     NullableAutoSuggestionId,
     AutoSuggestionArray,
     AutoSuggestSubmission,
+    CommandPaletteItemId,
+    NullableCommandPaletteItemId,
+    CommandPaletteItemArray,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -448,6 +630,11 @@ impl UiValueType {
             }
             Self::AutoSuggestionArray => ui_auto_suggestions_from_value(value).is_some(),
             Self::AutoSuggestSubmission => ui_auto_suggest_submission_from_value(value).is_some(),
+            Self::CommandPaletteItemId => ui_command_palette_item_id_from_value(value).is_some(),
+            Self::NullableCommandPaletteItemId => {
+                value.is_null() || ui_command_palette_item_id_from_value(value).is_some()
+            }
+            Self::CommandPaletteItemArray => ui_command_palette_items_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -492,6 +679,39 @@ fn ui_auto_suggest_submission_from_value(value: &Value) -> Option<UiAutoSuggestS
         .as_ref()
         .is_none_or(|chosen| is_valid_node_id(chosen.as_str()))
         .then_some(submission)
+}
+
+fn ui_command_palette_item_id_from_value(value: &Value) -> Option<UiCommandPaletteItemId> {
+    value
+        .as_str()
+        .and_then(|value| UiCommandPaletteItemId::new(value).ok())
+}
+
+pub(crate) fn ui_command_palette_items_from_value(
+    value: &Value,
+) -> Option<Vec<UiCommandPaletteItem>> {
+    let items = serde_json::from_value::<Vec<UiCommandPaletteItem>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    items
+        .iter()
+        .all(|item| {
+            is_valid_node_id(item.id.as_str())
+                && ids.insert(item.id.as_str().to_owned())
+                && !item.title.trim().is_empty()
+                && item
+                    .subtitle
+                    .as_ref()
+                    .is_none_or(|subtitle| !subtitle.trim().is_empty())
+                && item
+                    .shortcut
+                    .as_ref()
+                    .is_none_or(|shortcut| !shortcut.trim().is_empty())
+                && item
+                    .keywords
+                    .iter()
+                    .all(|keyword| !keyword.trim().is_empty())
+        })
+        .then_some(items)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1472,6 +1692,38 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers application-owned command metadata with stable semantic IDs.
+    #[cfg(feature = "command-palette")]
+    pub fn register_command_palette_items_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiCommandPaletteItem> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::CommandPaletteItemArray, move |state| {
+            serde_json::to_value(read(state))
+                .expect("command-palette authoring metadata must serialize")
+        })
+    }
+
+    /// Registers the optional highlighted command without exposing the
+    /// runtime's numeric command identity.
+    #[cfg(feature = "command-palette")]
+    pub fn register_command_palette_item_id_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiCommandPaletteItemId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(
+            name,
+            UiValueType::NullableCommandPaletteItemId,
+            move |state| {
+                read(state)
+                    .map(|id| Value::String(id.as_str().to_owned()))
+                    .unwrap_or(Value::Null)
+            },
+        )
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -1577,6 +1829,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                 "auto-suggest submission must contain query and chosen fields".to_owned()
             })?;
             map(submission)
+        })
+    }
+
+    /// Registers a strongly typed command highlight or invocation action.
+    #[cfg(feature = "command-palette")]
+    pub fn register_command_palette_item_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiCommandPaletteItemId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::CommandPaletteItemId, move |payload| {
+            let id = ui_command_palette_item_id_from_value(&payload)
+                .ok_or_else(|| "command payload must be a valid stable string id".to_owned())?;
+            map(id)
         })
     }
 
@@ -2346,6 +2612,58 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "command_palette" {
+            let static_items = (!node.property_bindings.contains_key("items"))
+                .then(|| {
+                    node.properties
+                        .get("items")
+                        .and_then(ui_command_palette_items_from_value)
+                })
+                .flatten();
+            let static_query = (!node.property_bindings.contains_key("query")).then(|| {
+                node.properties
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            });
+            let static_highlighted = (!node.property_bindings.contains_key("highlighted"))
+                .then(|| {
+                    node.properties
+                        .get("highlighted")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_command_palette_item_id_from_value)
+                })
+                .flatten();
+            if let (Some(highlighted), Some(items)) =
+                (static_highlighted.as_ref(), static_items.as_ref())
+            {
+                match items.iter().find(|item| item.id() == highlighted) {
+                    None => push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.highlighted"),
+                        "command_palette highlighted must address an available command id"
+                            .to_owned(),
+                    ),
+                    Some(item) if !item.is_enabled() => push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.highlighted"),
+                        "command_palette highlighted must address an enabled command".to_owned(),
+                    ),
+                    Some(item) if static_query.is_some_and(|query| !item.matches_query(query)) => {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.highlighted"),
+                            "command_palette highlighted must match the current query".to_owned(),
+                        )
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+
         if node.component == "date_picker" {
             let static_date = |name: &str, fallback: Option<UiDocumentDate>| {
                 (!node.property_bindings.contains_key(name))
@@ -3079,6 +3397,56 @@ const AUTO_SUGGEST_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const COMMAND_PALETTE_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "items",
+        value_type: UiValueType::CommandPaletteItemArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "query",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "highlighted",
+        value_type: UiValueType::NullableCommandPaletteItemId,
+        required: true,
+    },
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "placeholder",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "no_results_text",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const COMMAND_PALETTE_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "query_change",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "highlight_change",
+        payload_type: UiValueType::CommandPaletteItemId,
+    },
+    ActionSpec {
+        name: "invoke",
+        payload_type: UiValueType::CommandPaletteItemId,
+    },
+    ActionSpec {
+        name: "open_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const DATE_PICKER_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "value",
@@ -3341,6 +3709,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
         "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
         "auto_suggest" => Some(leaf(AUTO_SUGGEST_PROPERTIES, AUTO_SUGGEST_ACTIONS)),
+        "command_palette" => Some(ComponentSchema {
+            properties: COMMAND_PALETTE_PROPERTIES,
+            actions: COMMAND_PALETTE_ACTIONS,
+            children: ChildPolicy::Exactly(1),
+        }),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
         "color_picker" => Some(leaf(COLOR_PICKER_PROPERTIES, COLOR_PICKER_ACTIONS)),
@@ -4016,6 +4389,96 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "command-palette")]
+    #[test]
+    fn typed_command_palette_bindings_preserve_semantic_ids_and_metadata() {
+        struct CommandState {
+            items: Vec<UiCommandPaletteItem>,
+            highlighted: Option<UiCommandPaletteItemId>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum CommandMsg {
+            Selected(UiCommandPaletteItemId),
+        }
+
+        let settings = UiCommandPaletteItemId::new("open-settings").unwrap();
+        let file = UiCommandPaletteItemId::new("open-file").unwrap();
+        let mut manifest = UiBindingManifest::<CommandState, CommandMsg>::new();
+        manifest
+            .register_command_palette_items_property("commands", |state| state.items.clone())
+            .unwrap();
+        manifest
+            .register_command_palette_item_id_property("command_highlighted", |state| {
+                state.highlighted.clone()
+            })
+            .unwrap();
+        manifest
+            .register_command_palette_item_id_action("command_invoked", |id| {
+                Ok(CommandMsg::Selected(id))
+            })
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties["commands"],
+            UiValueType::CommandPaletteItemArray
+        );
+        assert_eq!(
+            manifest.schema().properties["command_highlighted"],
+            UiValueType::NullableCommandPaletteItemId
+        );
+        assert_eq!(
+            manifest.schema().actions["command_invoked"],
+            UiValueType::CommandPaletteItemId
+        );
+        assert_eq!(
+            manifest.read_property(
+                "commands",
+                &CommandState {
+                    items: vec![
+                        UiCommandPaletteItem::new(settings.clone(), "Open settings")
+                            .keywords(["preferences"])
+                            .shortcut("Ctrl+,")
+                            .icon(crate::ZsIcon::Settings),
+                        UiCommandPaletteItem::new(file.clone(), "Open file")
+                            .subtitle("Choose from disk"),
+                    ],
+                    highlighted: Some(file.clone()),
+                },
+            ),
+            Some(serde_json::json!([
+                {
+                  "id": "open-settings",
+                  "title": "Open settings",
+                  "keywords": ["preferences"],
+                  "shortcut": "Ctrl+,",
+                  "icon": "Settings",
+                  "enabled": true
+                },
+                {
+                  "id": "open-file",
+                  "title": "Open file",
+                  "subtitle": "Choose from disk",
+                  "enabled": true
+                }
+            ]))
+        );
+        assert_eq!(
+            manifest.map_action("command_invoked", Value::String("open-file".to_owned())),
+            Ok(CommandMsg::Selected(file))
+        );
+        assert!(
+            !UiValueType::CommandPaletteItemArray.matches(&serde_json::json!([
+                { "id": "duplicate", "title": "First" },
+                { "id": "duplicate", "title": "Second" }
+            ]))
+        );
+        assert!(
+            !UiValueType::CommandPaletteItemArray.matches(&serde_json::json!([
+                { "id": "empty-title", "title": "  " }
+            ]))
+        );
+    }
+
     #[test]
     fn auto_suggest_contract_validates_controlled_semantic_state() {
         let valid = UiDocument::from_json(
@@ -4086,6 +4549,94 @@ mod tests {
                   ],
                   "highlighted": "missing"
                 }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.highlighted"
+        }));
+    }
+
+    #[test]
+    fn command_palette_contract_validates_controlled_semantic_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "app-commands",
+                "component": "command_palette",
+                "properties": {
+                  "placeholder": "Type a command",
+                  "no_results_text": "No matching commands"
+                },
+                "property_bindings": {
+                  "items": "commands",
+                  "query": "command_query",
+                  "highlighted": "command_highlighted",
+                  "open": "command_open"
+                },
+                "action_bindings": {
+                  "query_change": "command_query_changed",
+                  "highlight_change": "command_highlight_changed",
+                  "invoke": "command_invoked",
+                  "open_change": "command_open_changed"
+                },
+                "children": [
+                  { "id": "page", "component": "stack" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("commands".to_owned(), UiValueType::CommandPaletteItemArray),
+                ("command_query".to_owned(), UiValueType::String),
+                (
+                    "command_highlighted".to_owned(),
+                    UiValueType::NullableCommandPaletteItemId,
+                ),
+                ("command_open".to_owned(), UiValueType::Boolean),
+            ]),
+            actions: BTreeMap::from([
+                ("command_query_changed".to_owned(), UiValueType::String),
+                (
+                    "command_highlight_changed".to_owned(),
+                    UiValueType::CommandPaletteItemId,
+                ),
+                (
+                    "command_invoked".to_owned(),
+                    UiValueType::CommandPaletteItemId,
+                ),
+                ("command_open_changed".to_owned(), UiValueType::Boolean),
+            ]),
+        };
+        let features = UiFeatureSet::new(["command-palette"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "app-commands",
+                "component": "command_palette",
+                "properties": {
+                  "items": [
+                    { "id": "open-file", "title": "Open file" },
+                    { "id": "disabled", "title": "Disabled", "enabled": false }
+                  ],
+                  "query": "open",
+                  "highlighted": "disabled",
+                  "open": true
+                },
+                "children": [
+                  { "id": "page", "component": "stack" }
+                ]
               }
             }"#,
         )
@@ -4544,10 +5095,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "command_palette".to_owned();
+        document.root.children[0].component = "tree".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "command-palette"]),
+            &UiFeatureSet::new(["button", "label", "tree"]),
             &UiBindingSchema::default(),
         );
 
