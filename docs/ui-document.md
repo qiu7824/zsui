@@ -32,7 +32,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
@@ -45,6 +45,17 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 混合类型选项和小数索引。`select` 动作发送 `integer`，`expanded_change` 发送 boolean；将
 `selected_index` 和 `expanded` 同时绑定到显式状态后，选择、弹层开关和 View 重建形成
 受控闭环。静态索引超出选项范围会在进入原生宿主前被拒绝。
+
+`password_box.value` 只允许绑定到安全状态，禁止写成文档字面量、本地化值或普通
+`values.json`。`UiBindingManifest::register_secret_property` 和
+`register_secret_action` 直接读写 `ZsPassword`；运行时使用
+`ui_document_view_with_secrets` 的独立动作通道，不会把密码降低为 `serde_json::Value`。
+`ZsPassword` 在释放时清零，Debug 输出固定脱敏，并且不实现 Serialize/Deserialize。
+Viewer 热重建把密码保存在不可序列化的 `UiSecretValues` 中，普通动作历史只记录
+`<redacted>` 元数据；证明报告、交接包和发布制品均不包含密码。交接清单通过
+`sensitive_values` 和属性契约的 `sensitive` 标志提示编辑器不得生成明文值。
+`reveal_mode` 可选 `platform_default`、`hidden`、`peek` 或 `visible`，最终控件尺寸、
+显隐交互和绘制仍由各平台 PasswordBox profile 决定。
 
 `list` 的每个直接子节点都是一个可选行，子节点的稳定 `UiNodeId` 同时作为公开选择值。
 `selected` string 属性与 `select` string 动作组成受控选择闭环；调整子节点声明顺序后，
@@ -110,8 +121,9 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/interactive.values.json
 ```
 
-每个 `UiNodeId` 都确定性映射到文档专用的 `WidgetId` 命名空间。Viewer 的属性值和
-动作历史位于普通 `UiViewerState` 中，View 重建不会替换该状态。每次接受有效修改后，
+每个 `UiNodeId` 都确定性映射到文档专用的 `WidgetId` 命名空间。Viewer 的普通属性值和
+动作历史位于 `UiViewerState` 中，PasswordBox 则使用跳过序列化的安全状态槽；View
+重建不会替换这些状态。每次接受有效修改后，
 `UiViewerSourceSnapshot::last_reload` 都会确定性列出保留、新增和必须重置的节点 ID。
 节点 ID 和控件状态类别均兼容时，原生输入运行时保留焦点、文本选择以及文本编辑器的
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，

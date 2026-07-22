@@ -307,6 +307,58 @@ pub struct UiBindingSchema {
     pub actions: BTreeMap<String, UiValueType>,
 }
 
+/// Application-owned secure values used by document-backed PasswordBox nodes.
+///
+/// This store deliberately has no Serde implementation. Its `Debug` output
+/// lists binding names only, while replaced and dropped values are cleared by
+/// [`ZsPassword`](crate::ZsPassword).
+#[cfg(feature = "password-box")]
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct UiSecretValues {
+    values: BTreeMap<String, crate::ZsPassword>,
+}
+
+#[cfg(feature = "password-box")]
+impl fmt::Debug for UiSecretValues {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UiSecretValues")
+            .field("bindings", &self.values.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
+#[cfg(feature = "password-box")]
+impl UiSecretValues {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(
+        &mut self,
+        binding: impl Into<String>,
+        value: impl Into<crate::ZsPassword>,
+    ) -> Option<crate::ZsPassword> {
+        self.values.insert(binding.into(), value.into())
+    }
+
+    pub fn get(&self, binding: &str) -> Option<&crate::ZsPassword> {
+        self.values.get(binding)
+    }
+
+    pub fn remove(&mut self, binding: &str) -> Option<crate::ZsPassword> {
+        self.values.remove(binding)
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.values.keys().map(String::as_str)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+}
+
 /// Validates an authoring value snapshot against declared property bindings.
 ///
 /// Missing values are permitted so a preview can expose unresolved data. Extra
@@ -334,6 +386,52 @@ pub fn validate_ui_binding_values(
         }
     }
     UiValidationReport { diagnostics }
+}
+
+/// Validates ordinary JSON values against both the binding schema and the
+/// document's sensitive-property boundary.
+///
+/// PasswordBox values are never accepted from JSON, even though the public
+/// binding schema records their logical type as `string`. Applications pass
+/// them through [`UiSecretValues`] instead.
+pub fn validate_ui_document_binding_values(
+    document: &UiDocument,
+    bindings: &UiBindingSchema,
+    values: &BTreeMap<String, Value>,
+) -> UiValidationReport {
+    let mut report = validate_ui_binding_values(bindings, values);
+    for binding in ui_document_sensitive_bindings(document) {
+        if values.contains_key(&binding) {
+            push_diagnostic(
+                &mut report.diagnostics,
+                UiDiagnosticCode::SensitiveBindingValue,
+                format!("$.{binding}"),
+                format!(
+                    "sensitive property binding {binding:?} must use UiSecretValues and cannot be stored in JSON"
+                ),
+            );
+        }
+    }
+    report
+}
+
+/// Returns the stable binding names whose values must remain outside JSON,
+/// handoff packages, action logs and proof reports.
+pub fn ui_document_sensitive_bindings(document: &UiDocument) -> BTreeSet<String> {
+    fn collect(node: &UiNode, output: &mut BTreeSet<String>) {
+        if node.component == "password_box" {
+            if let Some(binding) = node.property_bindings.get("value") {
+                output.insert(binding.clone());
+            }
+        }
+        for child in &node.children {
+            collect(child, output);
+        }
+    }
+
+    let mut output = BTreeSet::new();
+    collect(&document.root, &mut output);
+    output
 }
 
 /// One deterministic file entry in an AI authoring handoff.
@@ -396,6 +494,8 @@ pub struct UiAiHandoffPropertyContract {
     pub name: String,
     pub value_type: UiValueType,
     pub required: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sensitive: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -436,6 +536,8 @@ pub struct UiAiHandoffManifest {
     pub required_features: Vec<String>,
     pub provided_values: Vec<String>,
     pub missing_values: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sensitive_values: Vec<String>,
     pub nodes: Vec<UiAiHandoffNode>,
     pub component_contracts: Vec<UiAiHandoffComponentContract>,
 }
@@ -465,7 +567,7 @@ impl UiAiHandoffPackage {
             return Err(UiAiHandoffBuildError::InvalidDocument(document_report));
         }
         if let Some(values) = values {
-            let report = validate_ui_binding_values(bindings, values);
+            let report = validate_ui_document_binding_values(document, bindings, values);
             if !report.is_valid() {
                 return Err(UiAiHandoffBuildError::InvalidValues(report));
             }
@@ -517,6 +619,7 @@ impl UiAiHandoffPackage {
                         name: property.name.to_owned(),
                         value_type: property.value_type,
                         required: property.required,
+                        sensitive: component == "password_box" && property.name == "value",
                     })
                     .collect::<Vec<_>>();
                 properties.sort_by(|left, right| left.name.cmp(&right.name));
@@ -551,9 +654,13 @@ impl UiAiHandoffPackage {
             .into_iter()
             .flat_map(|values| values.keys().cloned())
             .collect::<Vec<_>>();
+        let sensitive_values = ui_document_sensitive_bindings(document)
+            .into_iter()
+            .collect::<Vec<_>>();
         let missing_values = bindings
             .properties
             .keys()
+            .filter(|name| !sensitive_values.contains(name))
             .filter(|name| values.is_none_or(|values| !values.contains_key(*name)))
             .cloned()
             .collect();
@@ -574,6 +681,7 @@ impl UiAiHandoffPackage {
             required_features: required_features.into_iter().collect(),
             provided_values,
             missing_values,
+            sensitive_values,
             nodes,
             component_contracts,
         };
@@ -856,6 +964,10 @@ fn canonical_pretty_json<T: Serialize>(value: &T) -> Result<String, serde_json::
     })
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 fn handoff_file(path: &str, bytes: &[u8]) -> UiAiHandoffFile {
     UiAiHandoffFile {
         path: path.to_owned(),
@@ -883,6 +995,11 @@ fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), UiAiHandoffBuildError> {
 
 type UiStateReader<State> = Arc<dyn Fn(&State) -> Value + Send + Sync + 'static>;
 type UiActionMapper<Msg> = Arc<dyn Fn(Value) -> Result<Msg, String> + Send + Sync + 'static>;
+#[cfg(feature = "password-box")]
+type UiSecretStateReader<State> = Arc<dyn Fn(&State) -> crate::ZsPassword + Send + Sync + 'static>;
+#[cfg(feature = "password-box")]
+type UiSecretActionMapper<Msg> =
+    Arc<dyn Fn(crate::ZsPassword) -> Result<Msg, String> + Send + Sync + 'static>;
 
 struct UiStateBinding<State> {
     value_type: UiValueType,
@@ -894,6 +1011,16 @@ struct UiActionBinding<Msg> {
     map: UiActionMapper<Msg>,
 }
 
+#[cfg(feature = "password-box")]
+struct UiSecretStateBinding<State> {
+    read: UiSecretStateReader<State>,
+}
+
+#[cfg(feature = "password-box")]
+struct UiSecretActionBinding<Msg> {
+    map: UiSecretActionMapper<Msg>,
+}
+
 /// Strongly typed bridge between serialized slots and application-owned Rust
 /// `State`/`Msg` types.
 ///
@@ -902,6 +1029,10 @@ struct UiActionBinding<Msg> {
 pub struct UiBindingManifest<State, Msg> {
     properties: BTreeMap<String, UiStateBinding<State>>,
     actions: BTreeMap<String, UiActionBinding<Msg>>,
+    #[cfg(feature = "password-box")]
+    secret_properties: BTreeMap<String, UiSecretStateBinding<State>>,
+    #[cfg(feature = "password-box")]
+    secret_actions: BTreeMap<String, UiSecretActionBinding<Msg>>,
 }
 
 impl<State, Msg> Default for UiBindingManifest<State, Msg> {
@@ -912,11 +1043,22 @@ impl<State, Msg> Default for UiBindingManifest<State, Msg> {
 
 impl<State, Msg> fmt::Debug for UiBindingManifest<State, Msg> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("UiBindingManifest")
+        let mut debug = formatter.debug_struct("UiBindingManifest");
+        debug
             .field("properties", &self.properties.keys().collect::<Vec<_>>())
-            .field("actions", &self.actions.keys().collect::<Vec<_>>())
-            .finish()
+            .field("actions", &self.actions.keys().collect::<Vec<_>>());
+        #[cfg(feature = "password-box")]
+        {
+            debug.field(
+                "secret_properties",
+                &self.secret_properties.keys().collect::<Vec<_>>(),
+            );
+            debug.field(
+                "secret_actions",
+                &self.secret_actions.keys().collect::<Vec<_>>(),
+            );
+        }
+        debug.finish()
     }
 }
 
@@ -925,6 +1067,10 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         Self {
             properties: BTreeMap::new(),
             actions: BTreeMap::new(),
+            #[cfg(feature = "password-box")]
+            secret_properties: BTreeMap::new(),
+            #[cfg(feature = "password-box")]
+            secret_actions: BTreeMap::new(),
         }
     }
 
@@ -935,7 +1081,7 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         read: impl Fn(&State) -> Value + Send + Sync + 'static,
     ) -> Result<(), UiBindingRegistrationError> {
         let name = validate_binding_name(name.into())?;
-        if self.properties.contains_key(&name) || self.actions.contains_key(&name) {
+        if self.contains_binding(&name) {
             return Err(UiBindingRegistrationError::Duplicate(name));
         }
         self.properties.insert(
@@ -955,7 +1101,7 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         map: impl Fn(Value) -> Result<Msg, String> + Send + Sync + 'static,
     ) -> Result<(), UiBindingRegistrationError> {
         let name = validate_binding_name(name.into())?;
-        if self.properties.contains_key(&name) || self.actions.contains_key(&name) {
+        if self.contains_binding(&name) {
             return Err(UiBindingRegistrationError::Duplicate(name));
         }
         self.actions.insert(
@@ -969,18 +1115,116 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
     }
 
     pub fn schema(&self) -> UiBindingSchema {
-        UiBindingSchema {
-            properties: self
-                .properties
-                .iter()
-                .map(|(name, binding)| (name.clone(), binding.value_type))
-                .collect(),
-            actions: self
-                .actions
-                .iter()
-                .map(|(name, binding)| (name.clone(), binding.payload_type))
-                .collect(),
+        let mut properties = self
+            .properties
+            .iter()
+            .map(|(name, binding)| (name.clone(), binding.value_type))
+            .collect::<BTreeMap<_, _>>();
+        let mut actions = self
+            .actions
+            .iter()
+            .map(|(name, binding)| (name.clone(), binding.payload_type))
+            .collect::<BTreeMap<_, _>>();
+        #[cfg(feature = "password-box")]
+        {
+            properties.extend(
+                self.secret_properties
+                    .keys()
+                    .map(|name| (name.clone(), UiValueType::String)),
+            );
+            actions.extend(
+                self.secret_actions
+                    .keys()
+                    .map(|name| (name.clone(), UiValueType::String)),
+            );
         }
+        UiBindingSchema {
+            properties,
+            actions,
+        }
+    }
+
+    fn contains_binding(&self, name: &str) -> bool {
+        let ordinary = self.properties.contains_key(name) || self.actions.contains_key(name);
+        #[cfg(feature = "password-box")]
+        {
+            ordinary
+                || self.secret_properties.contains_key(name)
+                || self.secret_actions.contains_key(name)
+        }
+        #[cfg(not(feature = "password-box"))]
+        {
+            ordinary
+        }
+    }
+
+    /// Registers a password state reader that never creates a JSON `Value`.
+    #[cfg(feature = "password-box")]
+    pub fn register_secret_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> crate::ZsPassword + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        let name = validate_binding_name(name.into())?;
+        if self.contains_binding(&name) {
+            return Err(UiBindingRegistrationError::Duplicate(name));
+        }
+        self.secret_properties.insert(
+            name,
+            UiSecretStateBinding {
+                read: Arc::new(read),
+            },
+        );
+        Ok(())
+    }
+
+    /// Registers a password action mapper without lowering its payload to
+    /// Serde JSON or a printable string.
+    #[cfg(feature = "password-box")]
+    pub fn register_secret_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(crate::ZsPassword) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        let name = validate_binding_name(name.into())?;
+        if self.contains_binding(&name) {
+            return Err(UiBindingRegistrationError::Duplicate(name));
+        }
+        self.secret_actions
+            .insert(name, UiSecretActionBinding { map: Arc::new(map) });
+        Ok(())
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn read_secret_property(&self, name: &str, state: &State) -> Option<crate::ZsPassword> {
+        self.secret_properties
+            .get(name)
+            .map(|binding| (binding.read)(state))
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn read_secret_values(&self, state: &State) -> UiSecretValues {
+        let mut values = UiSecretValues::new();
+        for (name, binding) in &self.secret_properties {
+            values.insert(name.clone(), (binding.read)(state));
+        }
+        values
+    }
+
+    #[cfg(feature = "password-box")]
+    pub fn map_secret_action(
+        &self,
+        name: &str,
+        payload: crate::ZsPassword,
+    ) -> Result<Msg, UiBindingDispatchError> {
+        let binding = self
+            .secret_actions
+            .get(name)
+            .ok_or_else(|| UiBindingDispatchError::UnknownAction(name.to_owned()))?;
+        (binding.map)(payload).map_err(|message| UiBindingDispatchError::Rejected {
+            action: name.to_owned(),
+            message,
+        })
     }
 
     pub fn read_property(&self, name: &str, state: &State) -> Option<Value> {
@@ -1163,6 +1407,7 @@ pub enum UiDiagnosticCode {
     BindingTypeMismatch,
     UnknownBindingValue,
     BindingValueTypeMismatch,
+    SensitiveBindingValue,
     InvalidPropertyValue,
     InvalidLayout,
     InvalidThemeToken,
@@ -1435,6 +1680,40 @@ impl<'a> UiDocumentValidator<'a> {
                         UiDiagnosticCode::InvalidPropertyValue,
                         format!("{path}.properties.{name}"),
                         format!("scroll property {name:?} must not be negative"),
+                    );
+                }
+            }
+        }
+
+        if node.component == "password_box" {
+            if node.properties.contains_key("value") || node.localization.contains_key("value") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::SensitiveBindingValue,
+                    format!("{path}.properties.value"),
+                    "password_box value must use a secure property binding; literals and localization values are not allowed"
+                        .to_owned(),
+                );
+            }
+            if node.action_bindings.contains_key("change")
+                && !node.property_bindings.contains_key("value")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::SensitiveBindingValue,
+                    format!("{path}.action_bindings.change"),
+                    "password_box change requires a secure value property binding so rebuilt views retain the secret safely"
+                        .to_owned(),
+                );
+            }
+            if let Some(mode) = node.properties.get("reveal_mode").and_then(Value::as_str) {
+                if !matches!(mode, "platform_default" | "hidden" | "peek" | "visible") {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.reveal_mode"),
+                        "password_box reveal_mode must be platform_default, hidden, peek or visible"
+                            .to_owned(),
                     );
                 }
             }
@@ -1885,6 +2164,22 @@ const TEXTBOX_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "change",
     payload_type: UiValueType::String,
 }];
+const PASSWORD_BOX_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "reveal_mode",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const PASSWORD_BOX_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "change",
+    payload_type: UiValueType::String,
+}];
 const RADIO_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "label",
@@ -2125,6 +2420,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
         "textbox" => Some(leaf(TEXTBOX_PROPERTIES, TEXTBOX_ACTIONS)),
+        "password_box" => Some(leaf(PASSWORD_BOX_PROPERTIES, PASSWORD_BOX_ACTIONS)),
         "radio_button" => Some(leaf(RADIO_PROPERTIES, RADIO_ACTIONS)),
         "slider" => Some(leaf(VALUE_PROPERTIES, SLIDER_ACTIONS)),
         "number_box" => Some(leaf(NUMBER_BOX_PROPERTIES, NUMBER_BOX_ACTIONS)),
@@ -2452,6 +2748,133 @@ mod tests {
         assert_eq!(manifest.map_action("save", Value::Null), Ok(Msg::Save));
     }
 
+    #[cfg(feature = "password-box")]
+    #[test]
+    fn password_box_contract_and_manifest_keep_secrets_out_of_json() {
+        #[derive(Default)]
+        struct SecretState {
+            password: crate::ZsPassword,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum SecretMsg {
+            Changed(crate::ZsPassword),
+        }
+
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "account-password",
+                "component": "password_box",
+                "properties": { "reveal_mode": "peek" },
+                "property_bindings": { "value": "account_password" },
+                "action_bindings": { "change": "account_password_changed" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let mut manifest = UiBindingManifest::<SecretState, SecretMsg>::new();
+        manifest
+            .register_secret_property("account_password", |state| state.password.clone())
+            .unwrap();
+        manifest
+            .register_secret_action("account_password_changed", |password| {
+                Ok(SecretMsg::Changed(password))
+            })
+            .unwrap();
+        let schema = manifest.schema();
+        let features = UiFeatureSet::new(["password-box"]);
+        assert!(document.validate(&features, &schema).is_valid());
+        assert_eq!(schema.properties["account_password"], UiValueType::String);
+        assert_eq!(
+            schema.actions["account_password_changed"],
+            UiValueType::String
+        );
+
+        let secret = "never-serialize-this-password";
+        let state = SecretState {
+            password: crate::ZsPassword::from(secret),
+        };
+        assert_eq!(manifest.read_property("account_password", &state), None);
+        assert_eq!(
+            manifest
+                .read_secret_property("account_password", &state)
+                .as_ref()
+                .map(crate::ZsPassword::as_str),
+            Some(secret)
+        );
+        let secure_values = manifest.read_secret_values(&state);
+        assert_eq!(
+            secure_values.get("account_password").unwrap().as_str(),
+            secret
+        );
+        assert_eq!(
+            manifest.map_secret_action(
+                "account_password_changed",
+                crate::ZsPassword::from("changed")
+            ),
+            Ok(SecretMsg::Changed(crate::ZsPassword::from("changed")))
+        );
+        assert!(!format!("{manifest:?}").contains(secret));
+        assert!(!format!("{secure_values:?}").contains(secret));
+
+        let leaked_values = BTreeMap::from([(
+            "account_password".to_owned(),
+            Value::String(secret.to_owned()),
+        )]);
+        let report = validate_ui_document_binding_values(&document, &schema, &leaked_values);
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == UiDiagnosticCode::SensitiveBindingValue }));
+        assert!(matches!(
+            UiAiHandoffPackage::build(&document, &features, &schema, Some(&leaked_values), None,),
+            Err(UiAiHandoffBuildError::InvalidValues(_))
+        ));
+
+        let handoff = UiAiHandoffPackage::build(&document, &features, &schema, None, None).unwrap();
+        assert_eq!(
+            handoff.manifest.sensitive_values,
+            vec!["account_password".to_owned()]
+        );
+        assert!(handoff.manifest.missing_values.is_empty());
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "password_box")
+            .unwrap();
+        assert!(contract
+            .properties
+            .iter()
+            .any(|property| property.name == "value" && property.sensitive));
+        assert!(!handoff.handoff_json.contains(secret));
+        assert!(handoff.values_json.is_none());
+
+        let mut literal = document.clone();
+        literal.root.property_bindings.remove("value");
+        literal
+            .root
+            .properties
+            .insert("value".to_owned(), Value::String("unsafe".to_owned()));
+        let report = literal.validate(&features, &schema);
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == UiDiagnosticCode::SensitiveBindingValue }));
+
+        let mut invalid_mode = document.clone();
+        invalid_mode.root.properties.insert(
+            "reveal_mode".to_owned(),
+            Value::String("always-on".to_owned()),
+        );
+        assert!(invalid_mode
+            .validate(&features, &schema)
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue));
+    }
+
     #[test]
     fn document_widget_ids_are_stable_distinct_and_reserved() {
         let root = UiNodeId::new("root").unwrap().widget_id();
@@ -2497,10 +2920,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "password_box".to_owned();
+        document.root.children[0].component = "date_picker".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "password-box"]),
+            &UiFeatureSet::new(["button", "label", "date-picker"]),
             &UiBindingSchema::default(),
         );
 

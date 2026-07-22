@@ -56,6 +56,13 @@ history remain authoritative for implementation status.
   validation. `zsui-uic check` consumes an application-exported binding schema;
   component availability remains tied to Cargo features and the framework
   component catalog.
+- UiDocument PasswordBox values never use the ordinary JSON property/action
+  channel. Documents bind `password_box.value` to a name registered with
+  `UiBindingManifest::register_secret_property`; changes use
+  `register_secret_action` and `UiDocumentSecretAction`. Runtime and Viewer
+  state keep `ZsPassword` in non-serializable `UiSecretValues` storage.
+  Literal, localized and `values.json` password values are validation errors;
+  AI handoff exposes only the binding name and a `sensitive` contract marker.
 - The prebuilt native development host lives behind the separate optional
   `ui-viewer` feature. `zsui-viewer` polls document and binding files inside the
   existing native live-View refresh loop, keeps the last valid document after

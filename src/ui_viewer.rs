@@ -12,20 +12,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::ui_document::{
-    UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet, UiLayout, UiNode,
+    validate_ui_document_binding_values, UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet,
+    UiLayout, UiNode, UiSecretValues,
 };
-use crate::ui_document_runtime::ui_document_view;
 pub use crate::ui_document_runtime::UiDocumentAction as UiViewerAction;
+use crate::ui_document_runtime::{ui_document_view_with_secrets, UiDocumentSecretAction};
 use crate::{column, text, AppCx, Dp, ViewNode};
 
 pub const ZSUI_UI_VIEWER_DEFAULT_POLL_INTERVAL_MS: u64 = 250;
 pub const ZSUI_UI_VIEWER_PROOF_SCHEMA: &str = "zsui.ui-viewer-proof/v1";
 pub const ZSUI_UI_VIEWER_PROOF_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UiViewerMessage {
     Action(UiViewerAction),
+    Secret(UiDocumentSecretAction),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -35,6 +36,10 @@ pub struct UiViewerState {
     pub properties: BTreeMap<String, Value>,
     #[serde(default)]
     pub actions: Vec<UiViewerAction>,
+    #[serde(default)]
+    pub secure_action_count: u64,
+    #[serde(skip, default)]
+    pub secure_properties: UiSecretValues,
 }
 
 impl UiViewerState {
@@ -42,6 +47,8 @@ impl UiViewerState {
         Self {
             properties,
             actions: Vec::new(),
+            secure_action_count: 0,
+            secure_properties: UiSecretValues::new(),
         }
     }
 }
@@ -59,6 +66,22 @@ pub fn ui_viewer_update(state: &mut UiViewerState, message: UiViewerMessage, _cx
                 state.actions.remove(0);
             }
             state.actions.push(action);
+        }
+        UiViewerMessage::Secret(action) => {
+            const MAX_ACTION_HISTORY: usize = 64;
+            state
+                .secure_properties
+                .insert(action.property_binding.clone(), action.value);
+            state.secure_action_count = state.secure_action_count.saturating_add(1);
+            if state.actions.len() == MAX_ACTION_HISTORY {
+                state.actions.remove(0);
+            }
+            state.actions.push(UiViewerAction {
+                node_id: action.node_id,
+                binding: action.binding,
+                property_binding: Some(action.property_binding),
+                payload: Value::String("<redacted>".to_owned()),
+            });
         }
     }
 }
@@ -274,11 +297,13 @@ impl UiViewerSource {
                     .unwrap_or(0),
             )
         };
-        let content = ui_document_view(
+        let content = ui_document_view_with_secrets(
             &document,
             &bindings,
             &viewer_state.properties,
+            &viewer_state.secure_properties,
             UiViewerMessage::Action,
+            UiViewerMessage::Secret,
         )
         .unwrap_or_else(|error| text(format!("UI document runtime error: {error}")));
         let mut root = if let Some(error) = last_error {
@@ -296,6 +321,25 @@ impl UiViewerSource {
         };
         root = root.with_document_poll_interval_ms(self.poll_interval_ms);
         root
+    }
+
+    /// Rejects undeclared, mistyped and sensitive values before a Viewer
+    /// window is created. Passwords cannot be supplied by `--values` JSON.
+    pub fn validate_properties(
+        &self,
+        properties: &BTreeMap<String, Value>,
+    ) -> Result<(), UiViewerError> {
+        let state = self.lock();
+        let report =
+            validate_ui_document_binding_values(&state.document, &state.bindings, properties);
+        if report.is_valid() {
+            Ok(())
+        } else {
+            Err(UiViewerError::Validation {
+                path: state.document_path.clone(),
+                diagnostics: report.diagnostics,
+            })
+        }
     }
 
     fn record_error(&self, error: String, seen_hash: Option<u64>) {
@@ -557,6 +601,83 @@ mod tests {
         )
         .expect("binding fixture should be written");
         (document, bindings)
+    }
+
+    #[test]
+    fn viewer_preserves_password_state_without_serializing_or_logging_it() {
+        let directory = fixture_directory("secure-password");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("password.json");
+        let binding_path = directory.join("password.bindings.json");
+        fs::write(
+            &document_path,
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "account-password",
+                "component": "password_box",
+                "properties": { "reveal_mode": "peek" },
+                "property_bindings": { "value": "account_password" },
+                "action_bindings": { "change": "account_password_changed" }
+              }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            r#"{
+              "properties": { "account_password": "string" },
+              "actions": { "account_password_changed": "string" }
+            }"#,
+        )
+        .unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        let secret = "viewer-secret-must-not-leak";
+        assert!(source
+            .validate_properties(&BTreeMap::from([(
+                "account_password".to_owned(),
+                Value::String(secret.to_owned()),
+            )]))
+            .is_err());
+
+        let mut state = UiViewerState::default();
+        ui_viewer_update(
+            &mut state,
+            UiViewerMessage::Secret(UiDocumentSecretAction {
+                node_id: "account-password".to_owned(),
+                binding: "account_password_changed".to_owned(),
+                property_binding: "account_password".to_owned(),
+                value: crate::ZsPassword::from(secret),
+            }),
+            &mut AppCx::new(),
+        );
+        assert_eq!(state.secure_action_count, 1);
+        assert_eq!(
+            state
+                .secure_properties
+                .get("account_password")
+                .map(crate::ZsPassword::as_str),
+            Some(secret)
+        );
+        assert_eq!(state.actions.len(), 1);
+        assert_eq!(
+            state.actions[0].payload,
+            Value::String("<redacted>".to_owned())
+        );
+        let serialized = serde_json::to_string(&state).unwrap();
+        assert!(!serialized.contains(secret));
+        assert!(serialized.contains("<redacted>"));
+
+        let view = source.view(&state);
+        let widget = crate::ui_document::UiNodeId::new("account-password")
+            .unwrap()
+            .widget_id();
+        assert_eq!(
+            view.widget_password_value(widget)
+                .map(crate::ZsPassword::as_str),
+            Some(secret)
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -895,8 +1016,9 @@ mod tests {
             ])),
             move |state| live_source.view(state),
             move |state, message, cx| {
-                let UiViewerMessage::Action(action) = &message;
-                captured_actions.lock().unwrap().push(action.clone());
+                if let UiViewerMessage::Action(action) = &message {
+                    captured_actions.lock().unwrap().push(action.clone());
+                }
                 ui_viewer_update(state, message, cx);
             },
             surface,
@@ -1074,8 +1196,9 @@ mod tests {
             )])),
             move |state| live_source.view(state),
             move |state, message, cx| {
-                let UiViewerMessage::Action(action) = &message;
-                captured_actions.lock().unwrap().push(action.clone());
+                if let UiViewerMessage::Action(action) = &message {
+                    captured_actions.lock().unwrap().push(action.clone());
+                }
                 ui_viewer_update(state, message, cx);
             },
             crate::Rect {

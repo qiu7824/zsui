@@ -485,6 +485,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "toggle",
                 "toggle-button",
                 "textbox",
+                "password-box",
                 "radio",
                 "slider",
                 "progress",

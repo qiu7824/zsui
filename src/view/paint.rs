@@ -1771,7 +1771,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     *value = next_value.clone();
                     if let Some(message) = on_change {
-                        cx.emit(message(next_value.clone()));
+                        cx.emit(message.map(next_value.clone()));
                     }
                 }
                 #[cfg(feature = "checkbox")]
