@@ -21,7 +21,7 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 72% complete; schema version 1, the typed
+- Reloadable UI authoring: about 78% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
   auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
   compatibility, preserve native focus/text selection/editor viewport for
@@ -37,10 +37,11 @@ framework readiness.
   survives View rebuilds through explicit number bindings, and Win32 Viewer
   smoke routes a fixed native scroll before final capture. Viewer proof now
   has a versioned target identity, logical/pixel window metrics and
-  deterministic node/layout snapshot; the native-proof workflow defines the
-  same controlled-scroll scene for AppKit and Linux. Complete component
-  coverage, advanced-control state retention and a passing fixed AppKit/Linux
-  Viewer target run remain.
+  deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
+  the same controlled-scroll document on fixed AppKit and Linux jobs, with one
+  handled scroll, one typed Viewer message, final platform-surface PNGs and
+  runtime memory evidence. Complete component coverage and advanced-control
+  state retention remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.

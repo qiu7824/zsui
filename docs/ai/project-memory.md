@@ -44,7 +44,12 @@ history remain authoritative for implementation status.
   deterministic preorder node/layout snapshot. Fixed AppKit and Linux proof
   must execute the same document and typed scroll input, retain the final
   platform-surface PNG, and reject missing messages, memory or handled-scroll
-  evidence.
+  evidence. Native UI Proof run `29883039068` on commit
+  `348808b6f5b862d90c19d8687a15f991e8790344` is the accepted first target
+  evidence: both reports contain the same 15-node document snapshot, one
+  handled scroll, one typed Viewer message and a final target PNG. It measured
+  about 61.83 MiB on AppKit and 27.26 MiB on Linux Direct; these are
+  run-specific resident-memory observations, not universal benchmarks.
 - Authoring contracts live behind the optional `ui-document` feature.
   `src/ui_document.rs` owns schema version 1, typed layout/theme/localization/
   accessibility fields, `UiBindingManifest<State, Msg>` and deterministic
@@ -80,8 +85,9 @@ history remain authoritative for implementation status.
   component features used by the artifact and compile it to typed
   `ViewNode<Msg>` through `ui_document_view`. It does not link `ui-viewer`,
   file polling, preview transport, native smoke code or another process.
-  Full component coverage, advanced-control state retention and fixed
-  AppKit/Linux proof remain unfinished.
+  Full component coverage and advanced-control state retention remain
+  unfinished. Fixed AppKit/Linux Viewer proof has passed; Windows Viewer has
+  local real-host evidence but still needs a fixed Runner baseline.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing
@@ -719,6 +725,11 @@ history remain authoritative for implementation status.
   identity. Exactly one valid tab page is active; only that page participates
   in layout, paint, hit testing and event dispatch, while selection changes
   return through the application's typed `on_tab_select` message.
+- Composite controls derive private child `WidgetId` values from both the
+  parent widget and typed local ID in a reserved synthetic namespace. They must
+  not reinterpret a local `ZsTabId` or similar typed child ID as an application
+  `WidgetId`; application IDs, automatic tree-path IDs and synthetic child IDs
+  occupy disjoint namespaces.
 - Tabs remain self-drawn and use internal platform metric profiles rather than
   native child controls. Windows follows the WinUI interaction split: Left and
   Right move header focus without wrapping, Enter or Space selects, and
@@ -737,8 +748,9 @@ history remain authoritative for implementation status.
   backend-only hook. The Gallery navigation scene clicks Advanced and sends
   Right with the header focused. Local Win32, X11 and real Weston Wayland keep
   Advanced selected while focusing About; AppKit selects About. Reports require
-  exact typed selection/keyboard counters, focused widget 3, zero unhandled
-  click/key input, the platform key backend and a final platform-surface PNG.
+  exact typed selection/keyboard counters, exactly one semantically focused tab
+  whose ID matches the runtime focus ID, zero unhandled click/key input, the
+  platform key backend and a final platform-surface PNG.
   Native UI Proof run `29812803034` on commit `06c249f` passed AppKit, X11 and
   Wayland. Remaining Tabs gates are accessibility providers, header-state
   polish and document-tab close/reorder/overflow behavior.

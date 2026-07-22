@@ -123,6 +123,11 @@ cargo run --bin zsui-viewer `
 
 固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
 `scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。
+Native UI Proof 运行 `29883039068` 已在提交
+`348808b6f5b862d90c19d8687a15f991e8790344` 上通过两项固定目标：两份报告均包含
+15 个确定性节点、1 次已处理滚动、1 条 Viewer 消息和目标最终表面 PNG。该次托管运行
+记录的驻留内存约为 AppKit 61.83 MiB、Linux Direct 27.26 MiB；这些数值是单次 Runner
+证据，不作为跨机器性能基准。
 
 ## 确定性 AI 交接包
 
@@ -212,5 +217,6 @@ let view = ui_document_view(
 profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
 原生 smoke 驱动或强制额外进程。
 
-完整组件覆盖、高级控件状态迁移和三平台固定 Runner Viewer 基准仍是
-后续 v0.2 切片。浏览器投影不能替代原生运行证据。
+完整组件覆盖和高级控件状态迁移仍是后续 v0.2 切片。AppKit 与 Linux Direct 已有固定
+Runner Viewer 证据；Windows Viewer 当前具有本地真实宿主证据，仍需固定 Runner 基准。
+浏览器投影不能替代原生运行证据。

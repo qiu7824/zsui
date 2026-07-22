@@ -415,14 +415,13 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "reloadable_ui_authoring",
-            percent_complete: 72,
+            percent_complete: 78,
             status_name:
-                "schema_native_viewer_controlled_scroll_ai_handoff_and_release_embedding_ready",
+                "schema_native_viewer_target_proof_ai_handoff_and_release_embedding_ready",
             source_path: "docs/v0.2-desktop-native.md",
             missing_before_complete: vec![
                 "complete component and property coverage in the versioned UiDocument schema",
                 "stable-ID state preservation for advanced controls",
-                "fixed AppKit and Linux native Viewer proof",
             ],
         },
         ZsuiCompletionArea {
@@ -937,7 +936,7 @@ mod tests {
             .iter()
             .find(|area| area.area_name == "reloadable_ui_authoring")
             .expect("reloadable UI authoring completion area should exist");
-        assert_eq!(reloadable_authoring.percent_complete, 72);
+        assert_eq!(reloadable_authoring.percent_complete, 78);
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert_eq!(context.readiness.platform_capability_readiness.len(), 4);
         let macos = context
