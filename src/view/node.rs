@@ -13,6 +13,7 @@ impl WidgetId {
 /// stored only when an application opts into a `*_with` builder.
 #[cfg(any(
     feature = "textbox",
+    feature = "password-box",
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
@@ -30,6 +31,7 @@ pub struct ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "textbox",
+    feature = "password-box",
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
@@ -47,6 +49,7 @@ enum ViewMessageMapperKind<Input, Msg> {
 
 #[cfg(any(
     feature = "textbox",
+    feature = "password-box",
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
@@ -82,6 +85,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "textbox",
+    feature = "password-box",
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
@@ -109,6 +113,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "textbox",
+    feature = "password-box",
     feature = "checkbox",
     feature = "toggle",
     feature = "toggle-button",
@@ -753,7 +758,7 @@ pub enum ViewNodeKind<Msg> {
     PasswordBox {
         value: crate::ZsPassword,
         reveal_mode: crate::ZsPasswordRevealMode,
-        on_change: Option<fn(crate::ZsPassword) -> Msg>,
+        on_change: Option<ViewMessageMapper<crate::ZsPassword, Msg>>,
     },
     #[cfg(feature = "checkbox")]
     Checkbox {
@@ -1464,7 +1469,23 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "password-box")]
     pub fn on_password_change(mut self, message: fn(crate::ZsPassword) -> Msg) -> Self {
         if let ViewNodeKind::PasswordBox { on_change, .. } = &mut self.kind {
-            *on_change = Some(message);
+            *on_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Registers an application-owned secure value callback.
+    ///
+    /// The password stays as [`ZsPassword`](crate::ZsPassword) and is never
+    /// lowered through the JSON action channel used by ordinary UI document
+    /// values.
+    #[cfg(feature = "password-box")]
+    pub fn on_password_change_with(
+        mut self,
+        message: impl Fn(crate::ZsPassword) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::PasswordBox { on_change, .. } = &mut self.kind {
+            *on_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

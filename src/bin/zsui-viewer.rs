@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let source = UiViewerSource::open(&arguments.document, bindings.as_ref())?
         .poll_interval_ms(arguments.poll_ms);
     let state = load_values(arguments.values.as_deref())?;
+    source.validate_properties(&state.properties)?;
     let live_source = source.clone();
     let builder = native_window("ZSUI UI Viewer")
         .size(arguments.width, arguments.height)

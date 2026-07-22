@@ -9,9 +9,11 @@ use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[cfg(feature = "password-box")]
+use crate::ui_document::UiSecretValues;
 use crate::ui_document::{
-    validate_ui_binding_values, UiAxis, UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet,
-    UiNode,
+    validate_ui_document_binding_values, UiAxis, UiBindingSchema, UiDiagnostic, UiDocument,
+    UiFeatureSet, UiNode,
 };
 #[cfg(feature = "grid")]
 use crate::ui_document::{UiGridPlacement, UiGridTrack};
@@ -40,6 +42,19 @@ pub struct UiDocumentAction {
     pub payload: Value,
 }
 
+/// Secure typed action emitted by a document-backed PasswordBox.
+///
+/// The payload intentionally cannot be serialized. Its owned allocation is
+/// cleared on drop and `Debug` remains redacted through [`ZsPassword`].
+#[cfg(feature = "password-box")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiDocumentSecretAction {
+    pub node_id: String,
+    pub binding: String,
+    pub property_binding: String,
+    pub value: crate::ZsPassword,
+}
+
 #[cfg_attr(
     not(any(
         feature = "button",
@@ -59,6 +74,61 @@ pub struct UiDocumentAction {
 )]
 struct UiDocumentActionMapper<Msg> {
     mapper: UiDocumentActionMapperKind<Msg>,
+}
+
+#[cfg(feature = "password-box")]
+struct UiDocumentSecretActionMapper<Msg> {
+    mapper: UiDocumentSecretActionMapperKind<Msg>,
+}
+
+#[cfg(feature = "password-box")]
+enum UiDocumentSecretActionMapperKind<Msg> {
+    Function(fn(UiDocumentSecretAction) -> Msg),
+    Shared(Arc<dyn Fn(UiDocumentSecretAction) -> Msg + Send + Sync + 'static>),
+}
+
+#[cfg(feature = "password-box")]
+impl<Msg> Clone for UiDocumentSecretActionMapper<Msg> {
+    fn clone(&self) -> Self {
+        Self {
+            mapper: match &self.mapper {
+                UiDocumentSecretActionMapperKind::Function(mapper) => {
+                    UiDocumentSecretActionMapperKind::Function(*mapper)
+                }
+                UiDocumentSecretActionMapperKind::Shared(mapper) => {
+                    UiDocumentSecretActionMapperKind::Shared(Arc::clone(mapper))
+                }
+            },
+        }
+    }
+}
+
+#[cfg(feature = "password-box")]
+impl<Msg> UiDocumentSecretActionMapper<Msg> {
+    fn from_function(mapper: fn(UiDocumentSecretAction) -> Msg) -> Self {
+        Self {
+            mapper: UiDocumentSecretActionMapperKind::Function(mapper),
+        }
+    }
+
+    fn from_shared(mapper: impl Fn(UiDocumentSecretAction) -> Msg + Send + Sync + 'static) -> Self {
+        Self {
+            mapper: UiDocumentSecretActionMapperKind::Shared(Arc::new(mapper)),
+        }
+    }
+
+    fn map(&self, action: UiDocumentSecretAction) -> Msg {
+        match &self.mapper {
+            UiDocumentSecretActionMapperKind::Function(mapper) => mapper(action),
+            UiDocumentSecretActionMapperKind::Shared(mapper) => mapper(action),
+        }
+    }
+}
+
+#[cfg(feature = "password-box")]
+struct UiDocumentSecureContext<'a, Msg> {
+    values: &'a UiSecretValues,
+    mapper: UiDocumentSecretActionMapper<Msg>,
 }
 
 enum UiDocumentActionMapperKind<Msg> {
@@ -152,6 +222,50 @@ pub fn ui_document_view_with<Msg: Clone + 'static>(
     )
 }
 
+/// Compiles a document with isolated ordinary and password action channels.
+///
+/// Password values never enter `properties`, Serde JSON or
+/// [`UiDocumentAction`]. Missing secure state resolves to an empty PasswordBox
+/// value so authoring previews never need a plaintext fixture.
+#[cfg(feature = "password-box")]
+pub fn ui_document_view_with_secrets<Msg: Clone + 'static>(
+    document: &UiDocument,
+    bindings: &UiBindingSchema,
+    properties: &BTreeMap<String, Value>,
+    secrets: &UiSecretValues,
+    map_action: fn(UiDocumentAction) -> Msg,
+    map_secret_action: fn(UiDocumentSecretAction) -> Msg,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    compile_validated_document_secure(
+        document,
+        bindings,
+        properties,
+        secrets,
+        UiDocumentActionMapper::from_function(map_action),
+        UiDocumentSecretActionMapper::from_function(map_secret_action),
+    )
+}
+
+/// Capturing-callback variant of [`ui_document_view_with_secrets`].
+#[cfg(feature = "password-box")]
+pub fn ui_document_view_with_secrets_and<Msg: Clone + 'static>(
+    document: &UiDocument,
+    bindings: &UiBindingSchema,
+    properties: &BTreeMap<String, Value>,
+    secrets: &UiSecretValues,
+    map_action: impl Fn(UiDocumentAction) -> Msg + Send + Sync + 'static,
+    map_secret_action: impl Fn(UiDocumentSecretAction) -> Msg + Send + Sync + 'static,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    compile_validated_document_secure(
+        document,
+        bindings,
+        properties,
+        secrets,
+        UiDocumentActionMapper::from_shared(map_action),
+        UiDocumentSecretActionMapper::from_shared(map_secret_action),
+    )
+}
+
 fn compile_validated_document<Msg: Clone + 'static>(
     document: &UiDocument,
     bindings: &UiBindingSchema,
@@ -161,11 +275,42 @@ fn compile_validated_document<Msg: Clone + 'static>(
     let mut diagnostics = document
         .validate(&UiFeatureSet::compiled(), bindings)
         .diagnostics;
-    diagnostics.extend(validate_ui_binding_values(bindings, properties).diagnostics);
+    diagnostics
+        .extend(validate_ui_document_binding_values(document, bindings, properties).diagnostics);
     if !diagnostics.is_empty() {
         return Err(UiDocumentRuntimeError::Validation { diagnostics });
     }
-    compile_node(&document.root, properties, &map_action)
+    compile_node(
+        &document.root,
+        properties,
+        &map_action,
+        #[cfg(feature = "password-box")]
+        None,
+    )
+}
+
+#[cfg(feature = "password-box")]
+fn compile_validated_document_secure<Msg: Clone + 'static>(
+    document: &UiDocument,
+    bindings: &UiBindingSchema,
+    properties: &BTreeMap<String, Value>,
+    secrets: &UiSecretValues,
+    map_action: UiDocumentActionMapper<Msg>,
+    map_secret_action: UiDocumentSecretActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let mut diagnostics = document
+        .validate(&UiFeatureSet::compiled(), bindings)
+        .diagnostics;
+    diagnostics
+        .extend(validate_ui_document_binding_values(document, bindings, properties).diagnostics);
+    if !diagnostics.is_empty() {
+        return Err(UiDocumentRuntimeError::Validation { diagnostics });
+    }
+    let secure = UiDocumentSecureContext {
+        values: secrets,
+        mapper: map_secret_action,
+    };
+    compile_node(&document.root, properties, &map_action, Some(&secure))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,6 +330,10 @@ pub enum UiDocumentRuntimeError {
         node_id: String,
         property: String,
         reason: String,
+    },
+    #[cfg(feature = "password-box")]
+    SecureChannelRequired {
+        node_id: String,
     },
 }
 
@@ -216,6 +365,11 @@ impl fmt::Display for UiDocumentRuntimeError {
                 formatter,
                 "UI document node {node_id:?} resolved invalid property {property:?}: {reason}"
             ),
+            #[cfg(feature = "password-box")]
+            Self::SecureChannelRequired { node_id } => write!(
+                formatter,
+                "UI document PasswordBox {node_id:?} requires ui_document_view_with_secrets"
+            ),
         }
     }
 }
@@ -226,11 +380,20 @@ fn compile_node<Msg: Clone + 'static>(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
     mapper: &UiDocumentActionMapper<Msg>,
+    #[cfg(feature = "password-box")] secure: Option<&UiDocumentSecureContext<'_, Msg>>,
 ) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
     let children = node
         .children
         .iter()
-        .map(|child| compile_node(child, properties, mapper))
+        .map(|child| {
+            compile_node(
+                child,
+                properties,
+                mapper,
+                #[cfg(feature = "password-box")]
+                secure,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let mut view = match node.component.as_str() {
         "stack" => match node.layout.direction.unwrap_or(UiAxis::Vertical) {
@@ -398,6 +561,62 @@ fn compile_node<Msg: Clone + 'static>(
                         binding: binding.clone(),
                         property_binding: property_binding.clone(),
                         payload: Value::String(value),
+                    })
+                });
+            }
+            control
+        }
+        #[cfg(feature = "password-box")]
+        "password_box" => {
+            let property_binding = node.property_bindings.get("value").cloned();
+            if property_binding.is_some() && secure.is_none() {
+                return Err(UiDocumentRuntimeError::SecureChannelRequired {
+                    node_id: node.id.as_str().to_owned(),
+                });
+            }
+            let value = property_binding
+                .as_deref()
+                .and_then(|binding| secure.and_then(|secure| secure.values.get(binding)))
+                .cloned()
+                .unwrap_or_default();
+            let reveal_mode = match optional_string_property(node, properties, "reveal_mode")
+                .as_deref()
+            {
+                Some("hidden") => crate::ZsPasswordRevealMode::Hidden,
+                Some("peek") => crate::ZsPasswordRevealMode::Peek,
+                Some("visible") => crate::ZsPasswordRevealMode::Visible,
+                Some("platform_default") | None => crate::ZsPasswordRevealMode::platform_default(),
+                Some(mode) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "reveal_mode",
+                        format!("unsupported password reveal mode {mode:?}"),
+                    ));
+                }
+            };
+            let mut control = crate::password_box(value).reveal_mode(reveal_mode);
+            if let Some(binding) = node.action_bindings.get("change") {
+                let Some(secure) = secure else {
+                    return Err(UiDocumentRuntimeError::SecureChannelRequired {
+                        node_id: node.id.as_str().to_owned(),
+                    });
+                };
+                let Some(property_binding) = property_binding else {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "value",
+                        "password change requires a secure value property binding",
+                    ));
+                };
+                let mapper = secure.mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_password_change_with(move |value| {
+                    mapper.map(UiDocumentSecretAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        value,
                     })
                 });
             }
@@ -949,7 +1168,12 @@ fn grid_gap_property(
     Ok(Some(value as f32))
 }
 
-#[cfg(any(feature = "grid", feature = "list", feature = "progress-ring"))]
+#[cfg(any(
+    feature = "grid",
+    feature = "list",
+    feature = "progress-ring",
+    feature = "password-box"
+))]
 fn invalid_resolved_property(
     node: &UiNode,
     property: impl Into<String>,
@@ -1001,6 +1225,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "checkbox",
     feature = "toggle",
     feature = "textbox",
+    feature = "password-box",
     feature = "radio",
     feature = "slider",
     feature = "number-box",
@@ -1106,7 +1331,8 @@ fn nullable_number_property(
     feature = "combo",
     feature = "tabs",
     feature = "list",
-    feature = "progress-ring"
+    feature = "progress-ring",
+    feature = "password-box"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -1235,6 +1461,7 @@ mod tests {
     #[cfg(any(
         feature = "grid",
         feature = "list",
+        feature = "password-box",
         all(feature = "label", feature = "button")
     ))]
     use crate::View;
@@ -1244,6 +1471,8 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     enum Msg {
         Action(UiDocumentAction),
+        #[cfg(feature = "password-box")]
+        Secret(UiDocumentSecretAction),
     }
 
     #[test]
@@ -1322,6 +1551,92 @@ mod tests {
                 payload: Value::Null,
             })]
         );
+    }
+
+    #[cfg(feature = "password-box")]
+    #[test]
+    fn password_box_uses_only_the_secure_state_and_action_channels() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "account-password",
+                "component": "password_box",
+                "properties": { "reveal_mode": "peek" },
+                "property_bindings": { "value": "account_password" },
+                "action_bindings": { "change": "account_password_changed" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "account_password".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+            actions: BTreeMap::from([(
+                "account_password_changed".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+        };
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &BTreeMap::new(), Msg::Action),
+            Err(UiDocumentRuntimeError::SecureChannelRequired { .. })
+        ));
+        let leaked = "secret-that-must-not-leak";
+        assert!(matches!(
+            ui_document_view(
+                &document,
+                &bindings,
+                &BTreeMap::from([(
+                    "account_password".to_owned(),
+                    Value::String(leaked.to_owned()),
+                )]),
+                Msg::Action,
+            ),
+            Err(UiDocumentRuntimeError::Validation { diagnostics })
+                if diagnostics.iter().any(|diagnostic| {
+                    diagnostic.code == crate::ui_document::UiDiagnosticCode::SensitiveBindingValue
+                })
+        ));
+
+        let mut secrets = UiSecretValues::new();
+        secrets.insert("account_password", leaked);
+        let mut view = ui_document_view_with_secrets(
+            &document,
+            &bindings,
+            &BTreeMap::new(),
+            &secrets,
+            Msg::Action,
+            Msg::Secret,
+        )
+        .unwrap();
+        assert_eq!(
+            view.widget_password_value(document.root.id.widget_id())
+                .map(crate::ZsPassword::as_str),
+            Some(leaked)
+        );
+
+        let next = "next-secret-that-must-not-leak";
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::PasswordChanged {
+                widget: document.root.id.widget_id(),
+                value: crate::ZsPassword::from(next),
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Secret(action)] = messages.as_slice() else {
+            panic!("password change must emit exactly one secure action");
+        };
+        assert_eq!(action.binding, "account_password_changed");
+        assert_eq!(action.property_binding, "account_password");
+        assert_eq!(action.value.as_str(), next);
+        let debug = format!("{messages:?}");
+        assert!(!debug.contains(leaked));
+        assert!(!debug.contains(next));
+        assert!(debug.contains("<redacted>"));
     }
 
     #[cfg(all(feature = "list", feature = "label"))]

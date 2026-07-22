@@ -32,6 +32,23 @@
         }
       },
       {
+        "id": "account-password",
+        "component": "password_box",
+        "properties": {
+          "reveal_mode": "peek"
+        },
+        "property_bindings": {
+          "value": "account_password"
+        },
+        "action_bindings": {
+          "change": "account_password_changed"
+        },
+        "accessibility": {
+          "role": "textbox",
+          "label": "Account password"
+        }
+      },
+      {
         "id": "dark-mode",
         "component": "checkbox",
         "properties": {
