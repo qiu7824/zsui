@@ -224,10 +224,7 @@ impl ZsColorPickerState {
 
     pub fn hex_label(self) -> String {
         if self.alpha_enabled {
-            format!(
-                "#{:02X}{:02X}{:02X}{:02X}",
-                self.color.r, self.color.g, self.color.b, self.color.a
-            )
+            self.color.hex_rgba()
         } else {
             format!(
                 "#{:02X}{:02X}{:02X}",

@@ -288,6 +288,7 @@ pub enum UiValueType {
     String,
     Date,
     Time,
+    Color,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -309,6 +310,10 @@ impl UiValueType {
             Self::String => value.is_string(),
             Self::Date => ui_date_from_value(value).is_some(),
             Self::Time => ui_time_from_value(value).is_some(),
+            Self::Color => value
+                .as_str()
+                .and_then(crate::Color::parse_hex_rgba)
+                .is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -1254,6 +1259,19 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers a strongly typed color property using the canonical
+    /// platform-independent `#RRGGBBAA` representation.
+    #[cfg(feature = "color-picker")]
+    pub fn register_color_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> crate::Color + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::Color, move |state| {
+            Value::String(read(state).hex_rgba())
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -1309,6 +1327,26 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                     crate::ZsTime::parse_24_hour(value).map_err(|error| error.to_string())
                 })?;
             map(time)
+        })
+    }
+
+    /// Registers a strongly typed RGBA action. Noncanonical serialized colors
+    /// are rejected before application update.
+    #[cfg(feature = "color-picker")]
+    pub fn register_color_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(crate::Color) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::Color, move |payload| {
+            let color = payload
+                .as_str()
+                .ok_or_else(|| "color payload must be a #RRGGBBAA string".to_owned())
+                .and_then(|value| {
+                    crate::Color::parse_hex_rgba(value)
+                        .ok_or_else(|| "color payload must use canonical #RRGGBBAA".to_owned())
+                })?;
+            map(color)
         })
     }
 
@@ -2159,6 +2197,59 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "color_picker" {
+            let static_alpha_enabled = (!node.property_bindings.contains_key("alpha_enabled"))
+                .then(|| {
+                    node.properties
+                        .get("alpha_enabled")
+                        .map(Value::as_bool)
+                        .unwrap_or(Some(true))
+                })
+                .flatten();
+            let static_channel =
+                (!node.property_bindings.contains_key("active_channel")).then(|| {
+                    node.properties
+                        .get("active_channel")
+                        .and_then(Value::as_str)
+                        .unwrap_or("red")
+                });
+            if static_channel
+                .is_some_and(|channel| !matches!(channel, "red" | "green" | "blue" | "alpha"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.active_channel"),
+                    "color_picker active_channel must be red, green, blue or alpha".to_owned(),
+                );
+            }
+            if static_alpha_enabled == Some(false) {
+                if (!node.property_bindings.contains_key("value"))
+                    .then(|| node.properties.get("value").and_then(Value::as_str))
+                    .flatten()
+                    .and_then(crate::Color::parse_hex_rgba)
+                    .is_some_and(|color| color.a != 255)
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.value"),
+                        "color_picker value alpha must be FF when alpha_enabled is false"
+                            .to_owned(),
+                    );
+                }
+                if static_channel == Some("alpha") {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.active_channel"),
+                        "color_picker active_channel cannot be alpha when alpha is disabled"
+                            .to_owned(),
+                    );
+                }
+            }
+        }
+
         if node.component == "tabs" {
             let child_ids = node
                 .children
@@ -2747,6 +2838,42 @@ const TIME_PICKER_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const COLOR_PICKER_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::Color,
+        required: true,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+    PropertySpec {
+        name: "active_channel",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "alpha_enabled",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const COLOR_PICKER_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "change",
+        payload_type: UiValueType::Color,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::Boolean,
+    },
+    ActionSpec {
+        name: "channel_change",
+        payload_type: UiValueType::String,
+    },
+];
 const TABS_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "labels",
@@ -2896,6 +3023,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "combo_box" => Some(leaf(COMBO_BOX_PROPERTIES, COMBO_BOX_ACTIONS)),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
+        "color_picker" => Some(leaf(COLOR_PICKER_PROPERTIES, COLOR_PICKER_ACTIONS)),
         "progress_bar" => Some(leaf(VALUE_PROPERTIES, NO_ACTIONS)),
         "progress_ring" => Some(leaf(PROGRESS_RING_PROPERTIES, NO_ACTIONS)),
         _ => None,
@@ -3434,6 +3562,48 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "color-picker")]
+    #[test]
+    fn typed_color_bindings_use_canonical_document_values() {
+        struct ColorState {
+            selected: crate::Color,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum ColorMsg {
+            Selected(crate::Color),
+        }
+
+        let color = crate::Color::rgba(32, 96, 160, 224);
+        let mut manifest = UiBindingManifest::<ColorState, ColorMsg>::new();
+        manifest
+            .register_color_property("selected_color", |state| state.selected)
+            .unwrap();
+        manifest
+            .register_color_action("color_changed", |color| Ok(ColorMsg::Selected(color)))
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties["selected_color"],
+            UiValueType::Color
+        );
+        assert_eq!(
+            manifest.schema().actions["color_changed"],
+            UiValueType::Color
+        );
+        assert_eq!(
+            manifest.read_property("selected_color", &ColorState { selected: color }),
+            Some(Value::String("#2060A0E0".to_owned()))
+        );
+        assert_eq!(
+            manifest.map_action("color_changed", Value::String("#2060A0E0".to_owned())),
+            Ok(ColorMsg::Selected(color))
+        );
+        assert!(matches!(
+            manifest.map_action("color_changed", Value::String("#2060a0e0".to_owned())),
+            Err(UiBindingDispatchError::PayloadType { .. })
+        ));
+    }
+
     #[test]
     fn date_picker_contract_validates_range_and_controlled_state() {
         let valid = UiDocument::from_json(
@@ -3616,6 +3786,99 @@ mod tests {
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidLocalization));
     }
 
+    #[test]
+    fn color_picker_contract_validates_rgba_channel_and_alpha_policy() {
+        let valid = UiDocument::from_json(
+            r##"{
+              "schema_version": 1,
+              "root": {
+                "id": "accent-color",
+                "component": "color_picker",
+                "properties": { "alpha_enabled": true },
+                "property_bindings": {
+                  "value": "accent_color",
+                  "expanded": "accent_color_expanded",
+                  "active_channel": "accent_color_channel"
+                },
+                "action_bindings": {
+                  "change": "accent_color_changed",
+                  "expanded_change": "accent_color_expanded_changed",
+                  "channel_change": "accent_color_channel_changed"
+                }
+              }
+            }"##,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("accent_color".to_owned(), UiValueType::Color),
+                ("accent_color_expanded".to_owned(), UiValueType::Boolean),
+                ("accent_color_channel".to_owned(), UiValueType::String),
+            ]),
+            actions: BTreeMap::from([
+                ("accent_color_changed".to_owned(), UiValueType::Color),
+                (
+                    "accent_color_expanded_changed".to_owned(),
+                    UiValueType::Boolean,
+                ),
+                (
+                    "accent_color_channel_changed".to_owned(),
+                    UiValueType::String,
+                ),
+            ]),
+        };
+        let report = valid.validate(&UiFeatureSet::new(["color-picker"]), &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+
+        let invalid = UiDocument::from_json(
+            r##"{
+              "schema_version": 1,
+              "root": {
+                "id": "invalid-color",
+                "component": "color_picker",
+                "properties": {
+                  "value": "#2060A0E0",
+                  "active_channel": "alpha",
+                  "alpha_enabled": false
+                }
+              }
+            }"##,
+        )
+        .unwrap();
+        let report = invalid.validate(
+            &UiFeatureSet::new(["color-picker"]),
+            &UiBindingSchema::default(),
+        );
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            2
+        );
+
+        let noncanonical = UiDocument::from_json(
+            r##"{
+              "schema_version": 1,
+              "root": {
+                "id": "noncanonical-color",
+                "component": "color_picker",
+                "properties": { "value": "#2060a0e0" }
+              }
+            }"##,
+        )
+        .unwrap();
+        assert!(noncanonical
+            .validate(
+                &UiFeatureSet::new(["color-picker"]),
+                &UiBindingSchema::default(),
+            )
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyType));
+    }
+
     #[cfg(feature = "password-box")]
     #[test]
     fn password_box_contract_and_manifest_keep_secrets_out_of_json() {
@@ -3788,10 +4051,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "color_picker".to_owned();
+        document.root.children[0].component = "command_palette".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "color-picker"]),
+            &UiFeatureSet::new(["button", "label", "command-palette"]),
             &UiBindingSchema::default(),
         );
 

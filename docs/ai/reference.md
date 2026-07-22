@@ -21,7 +21,7 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 80% complete; schema version 1, the typed
+- Reloadable UI authoring: about 83% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
   auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
   compatibility, preserve native focus/text selection/editor viewport for
@@ -40,7 +40,7 @@ framework readiness.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. Twenty-one components are document-ready; NumberBox
+  runtime memory evidence. Twenty-two components are document-ready; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
   options plus controlled nullable selection and expanded state. Tabs maps each
   direct child's stable ID to a typed content slot, semantic header and
@@ -49,7 +49,12 @@ framework readiness.
   sibling reordering and rejecting invalid spans or bounds before native
   layout. TimePicker uses canonical `HH:MM` state, typed `ZsTime` manifest
   helpers, validated minute increments and separate controlled value/expanded
-  loops while keeping target display formatting platform-owned. Complete
+  loops while keeping target display formatting platform-owned. ColorPicker
+  adds canonical uppercase `#RRGGBBAA`, typed `Color` manifest helpers and
+  separately controlled color, expanded and active-channel state while keeping
+  WinUI, AppKit and GTK rendering profiles platform-owned. Local Win32 Viewer
+  proof changes both channel and RGBA state through one native click with no
+  unhandled input and retains the final platform-surface PNG. Complete
   component coverage and broader
   advanced-control state retention remain.
 - Full desktop native host implementation: about 94% complete; product

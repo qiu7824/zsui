@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "accent_color": "color",
+    "accent_color_expanded": "boolean",
+    "accent_color_channel": "string"
+  },
+  "actions": {
+    "accent_color_changed": "color",
+    "accent_color_expanded_changed": "boolean",
+    "accent_color_channel_changed": "string"
+  }
+}

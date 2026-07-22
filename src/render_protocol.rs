@@ -23,6 +23,38 @@ impl Color {
     pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
+
+    /// Parses the canonical platform-independent `#RRGGBBAA` representation.
+    ///
+    /// Lowercase, shorthand and RGB-only forms are intentionally rejected so
+    /// serialized UI state has one deterministic spelling.
+    pub fn parse_hex_rgba(value: &str) -> Option<Self> {
+        fn nibble(value: u8) -> Option<u8> {
+            match value {
+                b'0'..=b'9' => Some(value - b'0'),
+                b'A'..=b'F' => Some(value - b'A' + 10),
+                _ => None,
+            }
+        }
+
+        let bytes = value.as_bytes();
+        if bytes.len() != 9 || bytes[0] != b'#' {
+            return None;
+        }
+        let channel =
+            |offset: usize| Some((nibble(bytes[offset])? << 4) | nibble(bytes[offset + 1])?);
+        Some(Self::rgba(
+            channel(1)?,
+            channel(3)?,
+            channel(5)?,
+            channel(7)?,
+        ))
+    }
+
+    /// Returns the canonical uppercase `#RRGGBBAA` representation.
+    pub fn hex_rgba(self) -> String {
+        format!("#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -995,6 +1027,15 @@ mod draw_command_tests {
         fn draw_command(&mut self, command: &NativeDrawCommand) {
             self.commands.push(command.operation());
         }
+    }
+
+    #[test]
+    fn color_rgba_text_has_one_canonical_representation() {
+        let color = Color::rgba(32, 96, 160, 224);
+        assert_eq!(color.hex_rgba(), "#2060A0E0");
+        assert_eq!(Color::parse_hex_rgba("#2060A0E0"), Some(color));
+        assert_eq!(Color::parse_hex_rgba("#2060a0e0"), None);
+        assert_eq!(Color::parse_hex_rgba("#2060A0"), None);
     }
 
     #[test]

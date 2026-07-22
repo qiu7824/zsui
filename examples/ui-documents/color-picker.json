@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "color-picker-demo",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "color-picker-title",
+        "component": "text",
+        "properties": {
+          "text": "颜色选择 / Color picker",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "color-picker-description",
+        "component": "text",
+        "properties": {
+          "text": "受控 RGBA、活动通道与展开状态 / Controlled RGBA, active channel and open state",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
+        }
+      },
+      {
+        "id": "accent-color",
+        "component": "color_picker",
+        "properties": {
+          "alpha_enabled": true
+        },
+        "property_bindings": {
+          "value": "accent_color",
+          "expanded": "accent_color_expanded",
+          "active_channel": "accent_color_channel"
+        },
+        "action_bindings": {
+          "change": "accent_color_changed",
+          "expanded_change": "accent_color_expanded_changed",
+          "channel_change": "accent_color_channel_changed"
+        },
+        "accessibility": {
+          "role": "colorwell",
+          "label": "强调色 / Accent color"
+        }
+      }
+    ]
+  }
+}
