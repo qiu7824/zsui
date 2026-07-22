@@ -74,7 +74,7 @@ use crate::{NativeDrawIconCommand, NativeIconColorMode};
 ))]
 use crate::{NativeDrawIconCommand, NativeIconColorMode, ZsIcon};
 
-fn zs_character_width_units(character: char) -> i32 {
+pub(crate) fn zs_character_width_units(character: char) -> i32 {
     let codepoint = character as u32;
     if character == '\n' || character == '\r' || character.is_control() {
         0

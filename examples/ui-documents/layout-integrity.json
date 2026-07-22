@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "layout-integrity-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "layout-integrity-title",
+        "component": "text",
+        "properties": {
+          "text": "布局与文字完整性 / Layout integrity",
+          "text_role": "title",
+          "wrap": "word",
+          "ellipsis": false
+        },
+        "accessibility": {
+          "role": "heading",
+          "label": "布局与文字完整性"
+        }
+      },
+      {
+        "id": "layout-integrity-description",
+        "component": "text",
+        "properties": {
+          "text": "中英文说明必须使用平台字体度量完整换行，不能把字形压进过小的行框，也不能贴住窗口边缘。Bilingual descriptions must wrap with native typography metrics instead of being compressed or clipped at the window edge.",
+          "text_role": "body",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
+        }
+      },
+      {
+        "id": "layout-integrity-card",
+        "component": "border",
+        "layout": {
+          "padding_token": "content_padding"
+        },
+        "theme_tokens": {
+          "background": "surface.raised"
+        },
+        "children": [
+          {
+            "id": "layout-integrity-card-content",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "gap_token": "sm"
+            },
+            "children": [
+              {
+                "id": "layout-integrity-card-title",
+                "component": "text",
+                "properties": {
+                  "text": "嵌套容器 / Nested container",
+                  "weight": "semibold",
+                  "ellipsis": false
+                }
+              },
+              {
+                "id": "layout-integrity-card-body",
+                "component": "text",
+                "properties": {
+                  "text": "容器高度必须包含两侧内边距、子节点固有行高和节点间距。Its height includes padding, intrinsic line boxes and the gap between children.",
+                  "wrap": "word",
+                  "ellipsis": false,
+                  "vertical_align": "start"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "layout-integrity-action-row",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "content_gap",
+          "flex": 0
+        },
+        "children": [
+          {
+            "id": "layout-integrity-action-label",
+            "component": "text",
+            "layout": {
+              "flex": 1
+            },
+            "properties": {
+              "text": "较窄窗口中，说明文字可以换行，操作按钮仍保留平台最小尺寸。In a narrow window, the description wraps while the action keeps its native minimum size.",
+              "wrap": "word",
+              "ellipsis": false,
+              "vertical_align": "start"
+            }
+          },
+          {
+            "id": "layout-integrity-action",
+            "component": "button",
+            "properties": {
+              "label": "确认 / Confirm",
+              "enabled": true
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

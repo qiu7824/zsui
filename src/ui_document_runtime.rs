@@ -402,7 +402,7 @@ fn compile_node<Msg: Clone + 'static>(
             UiAxis::Horizontal => row(children),
             UiAxis::Vertical => column(children),
         },
-        "border" => column(children),
+        "border" => column(children).flex(0.0),
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
         #[cfg(feature = "list")]
@@ -451,7 +451,7 @@ fn compile_node<Msg: Clone + 'static>(
         #[cfg(feature = "label")]
         "text" => {
             let value = string_property(node, properties, "text", "");
-            crate::styled_text(value, semantic_text_style(node))
+            crate::styled_text(value, semantic_text_style(node, properties)?)
         }
         #[cfg(feature = "button")]
         "button" => {
@@ -1272,6 +1272,7 @@ fn grid_gap_property(
 }
 
 #[cfg(any(
+    feature = "label",
     feature = "grid",
     feature = "list",
     feature = "progress-ring",
@@ -1305,9 +1306,13 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     }
     if let Some(value) = node.layout.padding {
         view = view.padding(Dp::new(value));
+    } else if let Some(token) = node.layout.padding_token {
+        view = view.padding(token.resolve());
     }
     if let Some(value) = node.layout.gap {
         view = view.gap(Dp::new(value));
+    } else if let Some(token) = node.layout.gap_token {
+        view = view.gap(token.resolve());
     }
     if let Some(value) = node.layout.flex {
         view = view.flex(value);
@@ -1402,6 +1407,7 @@ fn string_property(
 }
 
 #[cfg(any(
+    feature = "label",
     feature = "button",
     feature = "toggle-button",
     feature = "checkbox",
@@ -1455,6 +1461,7 @@ fn nullable_number_property(
 }
 
 #[cfg(any(
+    feature = "label",
     feature = "combo",
     feature = "tabs",
     feature = "list",
@@ -1525,17 +1532,81 @@ fn nullable_index_property(
 }
 
 #[cfg(feature = "label")]
-fn semantic_text_style(node: &UiNode) -> SemanticTextStyle {
-    let role = match node.properties.get("text_role").and_then(Value::as_str) {
+fn semantic_text_style(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<SemanticTextStyle, UiDocumentRuntimeError> {
+    let role = match optional_string_property(node, properties, "text_role").as_deref() {
+        None | Some("body") => TextRole::Body,
         Some("caption") => TextRole::Caption,
         Some("body_large") => TextRole::BodyLarge,
         Some("subtitle") => TextRole::Subtitle,
         Some("title") => TextRole::Title,
         Some("title_large") => TextRole::TitleLarge,
         Some("display") => TextRole::Display,
-        _ => TextRole::Body,
+        Some(_) => {
+            return Err(invalid_resolved_property(
+                node,
+                "text_role",
+                "text_role must be body, caption, body_large, subtitle, title, title_large or display",
+            ));
+        }
     };
     let mut style = SemanticTextStyle::for_role(role);
+    style.wrap = match optional_string_property(node, properties, "wrap").as_deref() {
+        None | Some("no_wrap") => crate::TextWrap::NoWrap,
+        Some("word") => crate::TextWrap::Word,
+        Some(_) => {
+            return Err(invalid_resolved_property(
+                node,
+                "wrap",
+                "wrap must be no_wrap or word",
+            ));
+        }
+    };
+    style.ellipsis = property_value(node, properties, "ellipsis")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(style.wrap == crate::TextWrap::NoWrap);
+    style.weight = match optional_string_property(node, properties, "weight").as_deref() {
+        None | Some("automatic") => crate::TextWeight::Automatic,
+        Some("regular") => crate::TextWeight::Regular,
+        Some("medium") => crate::TextWeight::Medium,
+        Some("semibold") => crate::TextWeight::Semibold,
+        Some("bold") => crate::TextWeight::Bold,
+        Some(_) => {
+            return Err(invalid_resolved_property(
+                node,
+                "weight",
+                "weight must be automatic, regular, medium, semibold or bold",
+            ));
+        }
+    };
+    style.horizontal_align =
+        match optional_string_property(node, properties, "horizontal_align").as_deref() {
+            None | Some("start") => crate::HorizontalAlign::Start,
+            Some("center") => crate::HorizontalAlign::Center,
+            Some("end") => crate::HorizontalAlign::End,
+            Some(_) => {
+                return Err(invalid_resolved_property(
+                    node,
+                    "horizontal_align",
+                    "horizontal_align must be start, center or end",
+                ));
+            }
+        };
+    style.vertical_align =
+        match optional_string_property(node, properties, "vertical_align").as_deref() {
+            None | Some("center") => crate::VerticalAlign::Center,
+            Some("start") => crate::VerticalAlign::Start,
+            Some("end") => crate::VerticalAlign::End,
+            Some(_) => {
+                return Err(invalid_resolved_property(
+                    node,
+                    "vertical_align",
+                    "vertical_align must be start, center or end",
+                ));
+            }
+        };
     if let Some(color) = node
         .theme_tokens
         .get("foreground")
@@ -1543,7 +1614,7 @@ fn semantic_text_style(node: &UiNode) -> SemanticTextStyle {
     {
         style.color = color;
     }
-    style
+    Ok(style)
 }
 
 fn theme_color_token(token: &str) -> Option<ThemeColorToken> {
@@ -1586,6 +1657,7 @@ mod tests {
     use super::*;
 
     #[cfg(any(
+        feature = "label",
         feature = "date-picker",
         feature = "grid",
         feature = "list",
@@ -1593,7 +1665,7 @@ mod tests {
         all(feature = "label", feature = "button")
     ))]
     use crate::View;
-    #[cfg(feature = "grid")]
+    #[cfg(any(feature = "grid", feature = "label"))]
     use crate::{Dpi, Rect, ViewLayoutCx};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -1623,6 +1695,151 @@ mod tests {
 
         assert_eq!(view.id, Some(document.root.id.widget_id()));
         assert!(view.children.is_empty());
+    }
+
+    #[cfg(feature = "label")]
+    #[test]
+    fn compiles_platform_spacing_tokens_into_real_page_geometry() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "page",
+                "component": "stack",
+                "layout": {
+                  "padding_token": "page_padding",
+                  "gap_token": "content_gap"
+                },
+                "children": [
+                  {
+                    "id": "title",
+                    "component": "text",
+                    "properties": { "text": "页面标题 / Page title" }
+                  },
+                  {
+                    "id": "body",
+                    "component": "text",
+                    "properties": { "text": "页面内容 / Page content" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let mut view = ui_document_view(
+            &document,
+            &UiBindingSchema::default(),
+            &BTreeMap::new(),
+            Msg::Action,
+        )
+        .unwrap();
+        let spacing = crate::ZsuiSpacingTokens::default();
+        assert_eq!(view.style.padding, Some(spacing.page_padding));
+        assert_eq!(view.style.gap, Some(spacing.content_gap));
+
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 420,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+        let title = output
+            .children
+            .iter()
+            .find(|node| node.component == document.root.children[0].id.widget_id().into())
+            .unwrap()
+            .bounds;
+        let body = output
+            .children
+            .iter()
+            .find(|node| node.component == document.root.children[1].id.widget_id().into())
+            .unwrap()
+            .bounds;
+        let padding = spacing.page_padding.to_px(Dpi::standard()).round_i32();
+        let gap = spacing.content_gap.to_px(Dpi::standard()).round_i32();
+        assert_eq!((title.x, title.y), (padding, padding));
+        assert_eq!(body.y, title.y + title.height + gap);
+    }
+
+    #[cfg(feature = "label")]
+    #[test]
+    fn compiles_wrapped_text_style_and_rejects_invalid_resolved_enums() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "description",
+                "component": "text",
+                "properties": {
+                  "text": "中文说明需要完整换行 / This bilingual description must wrap without compression.",
+                  "ellipsis": false,
+                  "horizontal_align": "start",
+                  "vertical_align": "start"
+                },
+                "property_bindings": { "wrap": "description_wrap" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "description_wrap".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        let view = ui_document_view(
+            &document,
+            &bindings,
+            &BTreeMap::from([(
+                "description_wrap".to_owned(),
+                Value::String("word".to_owned()),
+            )]),
+            Msg::Action,
+        )
+        .unwrap();
+        let crate::ViewNodeKind::Text { style, .. } = &view.kind else {
+            panic!("text document must compile to a text View node");
+        };
+        assert_eq!(style.wrap, crate::TextWrap::Word);
+        assert!(!style.ellipsis);
+        assert_eq!(style.vertical_align, crate::VerticalAlign::Start);
+        let widget = view.id.unwrap();
+        let mut page = crate::column([view]);
+        let output = page.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 20,
+            },
+            Dpi::standard(),
+        ));
+        let text_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == widget.into())
+            .unwrap()
+            .bounds;
+        assert!(
+            text_bounds.height
+                > crate::TextRole::Body
+                    .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                    .line_height as i32
+        );
+
+        let invalid_values = BTreeMap::from([(
+            "description_wrap".to_owned(),
+            Value::String("compress".to_owned()),
+        )]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "wrap"
+        ));
     }
 
     #[cfg(feature = "date-picker")]

@@ -26,6 +26,18 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
     .children(children)
 }
 
+/// Creates a native desktop content page with platform-owned outer spacing.
+///
+/// Windows and GTK currently use a 24-DP page inset while AppKit uses its
+/// denser 20-DP inset. Applications keep one composition and can still call
+/// [`ViewNode::padding`] or [`ViewNode::gap`] afterwards to override it.
+pub fn page<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
+    let spacing = crate::ZsuiSpacingTokens::default();
+    column(children)
+        .padding(spacing.page_padding)
+        .gap(spacing.content_gap)
+}
+
 /// Groups related content using the target desktop's information architecture.
 ///
 /// This is a semantic composition primitive, not a Windows card with a few

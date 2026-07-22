@@ -104,6 +104,7 @@ fn split_child_bounds<Msg>(
                 dpi,
                 false,
                 typography_scale,
+                bounds.height,
             );
             let mut x = bounds.x;
             widths
@@ -112,12 +113,11 @@ fn split_child_bounds<Msg>(
                 .map(|(width, child)| {
                     let height = cross_axis_length(
                         bounds.height,
-                        child.style.height,
-                        child.style.min_height,
-                        child.style.flex,
+                        child,
                         dpi,
-                        child.typography_scaled_height,
+                        true,
                         typography_scale,
+                        width,
                     );
                     let rect = Rect {
                         x,
@@ -287,7 +287,12 @@ fn grid_track_minimums<Msg>(
                 )
             })
             .unwrap_or(0);
-        minimums[track] = minimums[track].max(fixed.max(minimum));
+        let intrinsic = if vertical {
+            intrinsic_min_height_px(child, 0, dpi, typography_scale)
+        } else {
+            intrinsic_min_width_px(child, dpi, typography_scale)
+        };
+        minimums[track] = minimums[track].max(fixed.max(minimum).max(intrinsic));
     }
     minimums
 }
@@ -408,21 +413,19 @@ fn constrained_child_bounds<Msg>(
 ) -> Rect {
     let width = constrained_child_axis_length(
         cell.width,
-        child.style.width,
-        child.style.min_width,
+        child,
         dpi,
         false,
-        child.typography_scaled_height,
         typography_scale,
+        cell.height,
     );
     let height = constrained_child_axis_length(
         cell.height,
-        child.style.height,
-        child.style.min_height,
+        child,
         dpi,
         true,
-        child.typography_scaled_height,
         typography_scale,
+        width,
     );
     Rect {
         x: cell.x,
@@ -433,31 +436,44 @@ fn constrained_child_bounds<Msg>(
 }
 
 #[cfg(any(feature = "grid", feature = "tabs"))]
-fn constrained_child_axis_length(
+fn constrained_child_axis_length<Msg>(
     available: i32,
-    fixed: Option<Dp>,
-    minimum: Option<Dp>,
+    child: &ViewNode<Msg>,
     dpi: Dpi,
     vertical: bool,
-    typography_scaled_height: bool,
     typography_scale: f32,
+    measurement_cross: i32,
 ) -> i32 {
-    let minimum = minimum
+    let fixed = if vertical {
+        child.style.height
+    } else {
+        child.style.width
+    };
+    let minimum = if vertical {
+        child.style.min_height
+    } else {
+        child.style.min_width
+    }
         .map(|value| {
             typography_aware_length_px(
                 value,
                 dpi,
-                vertical && typography_scaled_height,
+                vertical && child.typography_scaled_height,
                 typography_scale,
             )
         })
         .unwrap_or(0);
+    let minimum = minimum.max(if vertical {
+        intrinsic_min_height_px(child, measurement_cross, dpi, typography_scale)
+    } else {
+        intrinsic_min_width_px(child, dpi, typography_scale)
+    });
     fixed
         .map(|value| {
             typography_aware_length_px(
                 value,
                 dpi,
-                vertical && typography_scaled_height,
+                vertical && child.typography_scaled_height,
                 typography_scale,
             )
             .max(minimum)
@@ -539,6 +555,7 @@ fn split_column_child_bounds<Msg>(
         dpi,
         true,
         typography_scale,
+        bounds.width,
     );
     let mut y = bounds.y;
     heights
@@ -547,12 +564,11 @@ fn split_column_child_bounds<Msg>(
         .map(|(height, child)| {
             let width = cross_axis_length(
                 bounds.width,
-                child.style.width,
-                child.style.min_width,
-                child.style.flex,
+                child,
                 dpi,
                 false,
                 typography_scale,
+                height,
             );
             let rect = Rect {
                 x: bounds.x,
@@ -645,6 +661,7 @@ fn allocate_axis_lengths<Msg>(
     dpi: Dpi,
     vertical: bool,
     typography_scale: f32,
+    cross_available: i32,
 ) -> Vec<i32> {
     let total = total.max(0);
     let total_gap = gap
@@ -667,7 +684,7 @@ fn allocate_axis_lengths<Msg>(
     let minimums = children
         .iter()
         .map(|child| {
-            minimum(&child.style)
+            let declared = minimum(&child.style)
                 .map(|value| {
                     typography_aware_length_px(
                         value,
@@ -676,7 +693,13 @@ fn allocate_axis_lengths<Msg>(
                         typography_scale,
                     )
                 })
-                .unwrap_or(0)
+                .unwrap_or(0);
+            let intrinsic = if vertical {
+                intrinsic_min_height_px(child, cross_available, dpi, typography_scale)
+            } else {
+                intrinsic_min_width_px(child, dpi, typography_scale)
+            };
+            declared.max(intrinsic)
         })
         .collect::<Vec<_>>();
     let mut lengths = requested
@@ -729,28 +752,341 @@ fn allocate_axis_lengths<Msg>(
     lengths
 }
 
-fn cross_axis_length(
+fn cross_axis_length<Msg>(
     available: i32,
-    fixed: Option<Dp>,
-    minimum: Option<Dp>,
-    flex: f32,
+    child: &ViewNode<Msg>,
     dpi: Dpi,
-    typography_scaled: bool,
+    vertical: bool,
     typography_scale: f32,
+    measurement_cross: i32,
 ) -> i32 {
     let available = available.max(0);
-    let minimum = minimum
-        .map(|value| typography_aware_length_px(value, dpi, typography_scaled, typography_scale))
-        .unwrap_or(0)
-        .min(available);
+    let fixed = if vertical {
+        child.style.height
+    } else {
+        child.style.width
+    };
+    let declared_minimum = if vertical {
+        child.style.min_height
+    } else {
+        child.style.min_width
+    };
+    let declared_minimum = declared_minimum
+        .map(|value| {
+            typography_aware_length_px(
+                value,
+                dpi,
+                vertical && child.typography_scaled_height,
+                typography_scale,
+            )
+        })
+        .unwrap_or(0);
+    let intrinsic = if vertical {
+        intrinsic_min_height_px(child, measurement_cross, dpi, typography_scale)
+    } else {
+        intrinsic_min_width_px(child, dpi, typography_scale)
+    };
+    let minimum = declared_minimum.max(intrinsic);
+    // A stack owns its cross-axis cell, and text fills the available width so
+    // wrapping is measured against the real line box. `flex` only distributes
+    // the parent's main axis; it must not collapse either case cross-axis.
+    #[cfg(feature = "label")]
+    let text_stretches_width =
+        !vertical && matches!(&child.kind, ViewNodeKind::Text { .. });
+    #[cfg(not(feature = "label"))]
+    let text_stretches_width = false;
+    let stretches_cross_axis =
+        matches!(&child.kind, ViewNodeKind::Stack { .. }) || text_stretches_width;
     fixed
         .map(|value| {
-            typography_aware_length_px(value, dpi, typography_scaled, typography_scale)
+            typography_aware_length_px(
+                value,
+                dpi,
+                vertical && child.typography_scaled_height,
+                typography_scale,
+            )
                 .max(minimum)
         })
-        .or_else(|| (flex <= f32::EPSILON && minimum > 0).then_some(minimum))
-        .unwrap_or(available)
-        .min(available)
+        .or_else(|| {
+            (child.style.flex <= f32::EPSILON && minimum > 0 && !stretches_cross_axis)
+                .then_some(minimum)
+        })
+        .unwrap_or_else(|| available.max(minimum))
+}
+
+fn intrinsic_min_width_px<Msg>(
+    node: &ViewNode<Msg>,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    let declared = node
+        .style
+        .width
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0)
+        .max(
+            node.style
+                .min_width
+                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .unwrap_or(0),
+        );
+    let padding = node
+        .style
+        .padding
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
+    let gap = node
+        .style
+        .gap
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
+
+    #[cfg(feature = "scroll")]
+    if matches!(node.kind, ViewNodeKind::Scroll { .. }) {
+        return declared;
+    }
+
+    let content = match &node.kind {
+        #[cfg(feature = "label")]
+        ViewNodeKind::Text { text, style } => {
+            estimated_text_min_width_px(text, *style, dpi, typography_scale)
+        }
+        ViewNodeKind::Stack {
+            direction: ViewStackDirection::Row,
+        } => node
+            .children
+            .iter()
+            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .fold(0i32, i32::saturating_add)
+            .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
+        ViewNodeKind::Stack {
+            direction: ViewStackDirection::Column,
+        } => node
+            .children
+            .iter()
+            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .max()
+            .unwrap_or(0),
+        #[cfg(feature = "list")]
+        ViewNodeKind::List { .. } => node
+            .children
+            .iter()
+            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .max()
+            .unwrap_or(0),
+        ViewNodeKind::Spacer => 0,
+        _ => node
+            .children
+            .iter()
+            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .max()
+            .unwrap_or(0),
+    };
+    declared.max(content.saturating_add(padding.saturating_mul(2)))
+}
+
+fn intrinsic_min_height_px<Msg>(
+    node: &ViewNode<Msg>,
+    available_width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    let declared_height = |value| {
+        typography_aware_length_px(
+            value,
+            dpi,
+            node.typography_scaled_height,
+            typography_scale,
+        )
+    };
+    let declared = node
+        .style
+        .height
+        .map(declared_height)
+        .unwrap_or(0)
+        .max(
+            node.style
+                .min_height
+                .map(declared_height)
+                .unwrap_or(0),
+        );
+    let padding = node
+        .style
+        .padding
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
+    let gap = node
+        .style
+        .gap
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0);
+    let content_width = available_width.saturating_sub(padding.saturating_mul(2));
+
+    #[cfg(feature = "scroll")]
+    if matches!(node.kind, ViewNodeKind::Scroll { .. }) {
+        return declared;
+    }
+
+    let content = match &node.kind {
+        #[cfg(feature = "label")]
+        ViewNodeKind::Text { text, style } => {
+            estimated_text_min_height_px(text, *style, content_width, dpi, typography_scale)
+        }
+        ViewNodeKind::Stack {
+            direction: ViewStackDirection::Row,
+        } => {
+            // A row's height depends on the widths that its children actually
+            // receive. Measuring wrapped text at its shortest unbreakable
+            // segment would invent many extra lines and vertically displace
+            // compact controls beside it.
+            let widths = allocate_axis_lengths(
+                content_width,
+                gap,
+                &node.children,
+                |style| style.width,
+                |style| style.min_width,
+                dpi,
+                false,
+                typography_scale,
+                0,
+            );
+            node.children
+                .iter()
+                .zip(widths)
+                .map(|(child, width)| {
+                    intrinsic_min_height_px(child, width, dpi, typography_scale)
+                })
+                .max()
+                .unwrap_or(0)
+        }
+        ViewNodeKind::Stack {
+            direction: ViewStackDirection::Column,
+        } => node
+            .children
+            .iter()
+            .map(|child| {
+                intrinsic_min_height_px(child, content_width, dpi, typography_scale)
+            })
+            .fold(0i32, i32::saturating_add)
+            .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
+        #[cfg(feature = "list")]
+        ViewNodeKind::List { .. } => node
+            .children
+            .iter()
+            .map(|child| {
+                intrinsic_min_height_px(child, content_width, dpi, typography_scale)
+            })
+            .fold(0i32, i32::saturating_add)
+            .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
+        ViewNodeKind::Spacer => 0,
+        _ => node
+            .children
+            .iter()
+            .map(|child| {
+                intrinsic_min_height_px(child, content_width, dpi, typography_scale)
+            })
+            .max()
+            .unwrap_or(0),
+    };
+    declared.max(content.saturating_add(padding.saturating_mul(2)))
+}
+
+#[cfg(feature = "label")]
+fn estimated_text_min_width_px(
+    text: &str,
+    style: SemanticTextStyle,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    let units = if style.wrap == crate::TextWrap::Word {
+        text.lines()
+            .map(estimated_wrapping_segment_units)
+            .max()
+            .unwrap_or(0)
+    } else {
+        crate::widget_render::zs_estimated_text_width_units(text)
+    };
+    estimated_text_units_px(units, style, dpi, typography_scale)
+}
+
+#[cfg(feature = "label")]
+fn estimated_text_min_height_px(
+    text: &str,
+    style: SemanticTextStyle,
+    available_width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    let line_height = Dp::new(
+        style
+            .role
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height
+            * typography_scale.max(0.0),
+    )
+    .to_px(dpi)
+    .round_i32()
+    .max(1);
+    let rows = text
+        .lines()
+        .map(|line| {
+            if style.wrap != crate::TextWrap::Word || available_width <= 0 {
+                return 1;
+            }
+            let units = crate::widget_render::zs_estimated_text_width_units(line);
+            let width = estimated_text_units_px(units, style, dpi, typography_scale);
+            width
+                .saturating_add(available_width.saturating_sub(1))
+                .checked_div(available_width)
+                .unwrap_or(1)
+                .max(1)
+        })
+        .fold(0i32, i32::saturating_add)
+        .max(1);
+    line_height.saturating_mul(rows)
+}
+
+#[cfg(feature = "label")]
+fn estimated_text_units_px(
+    units: i32,
+    style: SemanticTextStyle,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    if units <= 0 {
+        return 0;
+    }
+    let platform = crate::ZsBaseControlPlatformStyle::current();
+    let base = crate::ZsBaseControlMetrics::for_platform(platform);
+    let body_size = crate::TextRole::Body.metrics_for(platform).size.max(1.0);
+    let role_size = style.role.metrics_for(platform).size.max(1.0);
+    let weight_reserve = match style.weight {
+        crate::TextWeight::Semibold | crate::TextWeight::Bold => 1.08,
+        crate::TextWeight::Medium => 1.04,
+        crate::TextWeight::Automatic | crate::TextWeight::Regular => 1.0,
+    };
+    let width = (units.saturating_add(2) as f32)
+        * base.average_character_width.0
+        * (role_size / body_size)
+        * typography_scale.max(0.0)
+        * weight_reserve;
+    Dp::new(width).to_px(dpi).ceil_i32().max(1)
+}
+
+#[cfg(feature = "label")]
+fn estimated_wrapping_segment_units(line: &str) -> i32 {
+    let mut longest = 0i32;
+    let mut current_ascii_word = 0i32;
+    for character in line.chars() {
+        let width = crate::widget_render::zs_character_width_units(character);
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '/' | '.') {
+            current_ascii_word = current_ascii_word.saturating_add(width);
+        } else {
+            longest = longest.max(current_ascii_word).max(width);
+            current_ascii_word = 0;
+        }
+    }
+    longest.max(current_ascii_word)
 }
 
 fn typography_aware_length_px(

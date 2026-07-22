@@ -5,8 +5,8 @@
     "component": "stack",
     "layout": {
       "direction": "vertical",
-      "padding": 24.0,
-      "gap": 12.0
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
     },
     "children": [
       {
@@ -21,7 +21,10 @@
         "id": "date-picker-description",
         "component": "text",
         "properties": {
-          "text": "受控日期、月份导航与展开状态 / Controlled date, month navigation and open state"
+          "text": "受控日期、月份导航与展开状态 / Controlled date, month navigation and open state",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
         }
       },
       {
