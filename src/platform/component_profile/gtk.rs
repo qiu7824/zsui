@@ -151,6 +151,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
                 strip_height: Dp::new(42.0),
                 header_top_padding: Dp::new(4.0),
                 item_height: Dp::new(34.0),
+                content_padding: Dp::new(12.0),
                 outer_inset: Dp::new(6.0),
                 item_gap: Dp::new(0.0),
                 horizontal_padding: Dp::new(12.0),

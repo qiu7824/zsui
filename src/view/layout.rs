@@ -172,7 +172,7 @@ fn split_child_bounds<Msg>(
             columns,
             rows,
             placements,
-            children.len(),
+            children,
             column_gap
                 .map(|value| value.to_px(dpi).round_i32().max(0))
                 .unwrap_or(gap),
@@ -180,25 +180,45 @@ fn split_child_bounds<Msg>(
                 .map(|value| value.to_px(dpi).round_i32().max(0))
                 .unwrap_or(gap),
             dpi,
+            typography_scale,
         ),
         _ => vec![bounds; child_count],
     }
 }
 
 #[cfg(feature = "grid")]
-fn split_grid_child_bounds(
+fn split_grid_child_bounds<Msg>(
     bounds: Rect,
     columns: &[ZsGridTrack],
     rows: &[ZsGridTrack],
     placements: &[ZsGridPlacement],
-    child_count: usize,
+    children: &[ViewNode<Msg>],
     column_gap: i32,
     row_gap: i32,
     dpi: Dpi,
+    typography_scale: f32,
 ) -> Vec<Rect> {
-    let column_lengths = allocate_grid_track_lengths(bounds.width, column_gap, columns, dpi);
-    let row_lengths = allocate_grid_track_lengths(bounds.height, row_gap, rows, dpi);
-    (0..child_count)
+    let column_minimums = grid_track_minimums(
+        columns.len(),
+        placements,
+        children,
+        false,
+        dpi,
+        typography_scale,
+    );
+    let row_minimums = grid_track_minimums(
+        rows.len(),
+        placements,
+        children,
+        true,
+        dpi,
+        typography_scale,
+    );
+    let column_lengths =
+        allocate_grid_track_lengths(bounds.width, column_gap, columns, &column_minimums, dpi);
+    let row_lengths =
+        allocate_grid_track_lengths(bounds.height, row_gap, rows, &row_minimums, dpi);
+    (0..children.len())
         .map(|index| {
             placements
                 .get(index)
@@ -212,6 +232,7 @@ fn split_grid_child_bounds(
                         *placement,
                     )
                 })
+                .map(|cell| constrained_child_bounds(cell, &children[index], dpi, typography_scale))
                 .unwrap_or(Rect {
                     x: bounds.x,
                     y: bounds.y,
@@ -223,7 +244,62 @@ fn split_grid_child_bounds(
 }
 
 #[cfg(feature = "grid")]
-fn allocate_grid_track_lengths(total: i32, gap: i32, tracks: &[ZsGridTrack], dpi: Dpi) -> Vec<i32> {
+fn grid_track_minimums<Msg>(
+    track_count: usize,
+    placements: &[ZsGridPlacement],
+    children: &[ViewNode<Msg>],
+    vertical: bool,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> Vec<i32> {
+    let mut minimums = vec![0; track_count];
+    for (placement, child) in placements.iter().zip(children) {
+        let (track, span) = if vertical {
+            (placement.row, placement.row_span.get())
+        } else {
+            (placement.column, placement.column_span.get())
+        };
+        if span != 1 || track >= track_count {
+            continue;
+        }
+        let (fixed, minimum) = if vertical {
+            (child.style.height, child.style.min_height)
+        } else {
+            (child.style.width, child.style.min_width)
+        };
+        let fixed = fixed
+            .map(|value| {
+                typography_aware_length_px(
+                    value,
+                    dpi,
+                    vertical && child.typography_scaled_height,
+                    typography_scale,
+                )
+            })
+            .unwrap_or(0);
+        let minimum = minimum
+            .map(|value| {
+                typography_aware_length_px(
+                    value,
+                    dpi,
+                    vertical && child.typography_scaled_height,
+                    typography_scale,
+                )
+            })
+            .unwrap_or(0);
+        minimums[track] = minimums[track].max(fixed.max(minimum));
+    }
+    minimums
+}
+
+#[cfg(feature = "grid")]
+fn allocate_grid_track_lengths(
+    total: i32,
+    gap: i32,
+    tracks: &[ZsGridTrack],
+    minimums: &[i32],
+    dpi: Dpi,
+) -> Vec<i32> {
     if tracks.is_empty() {
         return Vec::new();
     }
@@ -240,36 +316,26 @@ fn allocate_grid_track_lengths(total: i32, gap: i32, tracks: &[ZsGridTrack], dpi
             ZsGridTrack::Fraction(_) => None,
         })
         .collect::<Vec<_>>();
-    let fixed_total = requested
+    let mut lengths = requested
         .iter()
-        .flatten()
-        .fold(0i32, |total, value| total.saturating_add(*value));
-    let mut lengths = vec![0; tracks.len()];
+        .enumerate()
+        .map(|(index, value)| {
+            value
+                .unwrap_or(0)
+                .max(minimums.get(index).copied().unwrap_or(0))
+        })
+        .collect::<Vec<_>>();
+    let base_total = lengths
+        .iter()
+        .copied()
+        .fold(0i32, i32::saturating_add);
 
-    if fixed_total >= available && fixed_total > 0 {
-        let fixed_indices = requested
-            .iter()
-            .enumerate()
-            .filter_map(|(index, value)| value.map(|value| (index, value)))
-            .collect::<Vec<_>>();
-        let mut assigned = 0;
-        for (position, (index, value)) in fixed_indices.iter().enumerate() {
-            let length = if position + 1 == fixed_indices.len() {
-                available.saturating_sub(assigned)
-            } else {
-                ((i64::from(*value) * i64::from(available)) / i64::from(fixed_total))
-                    .clamp(0, i64::from(i32::MAX)) as i32
-            };
-            lengths[*index] = length;
-            assigned = assigned.saturating_add(length);
-        }
+    if base_total >= available {
+        // Grid uses the same hard-size contract as Stack: fixed tracks and
+        // native control/text minimums never collapse to fit a smaller slot.
+        // The parent viewport clips or scrolls the overflow instead of
+        // compressing a line box or control below its platform metric.
         return lengths;
-    }
-
-    for (index, value) in requested.iter().enumerate() {
-        if let Some(value) = value {
-            lengths[index] = *value;
-        }
     }
 
     let fractional_indices = tracks
@@ -283,22 +349,120 @@ fn allocate_grid_track_lengths(total: i32, gap: i32, tracks: &[ZsGridTrack], dpi
     if fractional_indices.is_empty() {
         return lengths;
     }
-    let remaining = available.saturating_sub(fixed_total).max(0);
-    let total_weight = fractional_indices.iter().fold(0u64, |total, (_, weight)| {
-        total.saturating_add(u64::from(*weight))
-    });
-    let mut assigned = 0;
-    for (position, (index, weight)) in fractional_indices.iter().enumerate() {
-        let length = if position + 1 == fractional_indices.len() {
-            remaining.saturating_sub(assigned)
-        } else {
-            ((remaining as u128 * u128::from(*weight)) / u128::from(total_weight))
-                .min(i32::MAX as u128) as i32
-        };
-        lengths[*index] = length;
-        assigned = assigned.saturating_add(length);
+    let fixed_total = tracks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, track)| matches!(track, ZsGridTrack::Fixed(_)).then_some(lengths[index]))
+        .fold(0i32, i32::saturating_add);
+    let mut unresolved = fractional_indices;
+    let mut distributable = available.saturating_sub(fixed_total).max(0);
+    loop {
+        let total_weight = unresolved.iter().fold(0u64, |total, (_, weight)| {
+            total.saturating_add(u64::from(*weight))
+        });
+        let constrained = unresolved
+            .iter()
+            .filter_map(|(index, weight)| {
+                let weighted_share = ((distributable as u128 * u128::from(*weight))
+                    / u128::from(total_weight))
+                .min(i32::MAX as u128) as i32;
+                (weighted_share < lengths[*index]).then_some(*index)
+            })
+            .collect::<Vec<_>>();
+        if constrained.is_empty() {
+            let mut assigned = 0;
+            for (position, (index, weight)) in unresolved.iter().enumerate() {
+                let length = if position + 1 == unresolved.len() {
+                    distributable.saturating_sub(assigned)
+                } else {
+                    ((distributable as u128 * u128::from(*weight))
+                        / u128::from(total_weight))
+                    .min(i32::MAX as u128) as i32
+                };
+                lengths[*index] = length.max(lengths[*index]);
+                assigned = assigned.saturating_add(length);
+            }
+            break;
+        }
+        unresolved.retain(|(index, _)| {
+            if constrained.contains(index) {
+                distributable = distributable.saturating_sub(lengths[*index]);
+                false
+            } else {
+                true
+            }
+        });
+        if unresolved.is_empty() {
+            break;
+        }
     }
     lengths
+}
+
+#[cfg(any(feature = "grid", feature = "tabs"))]
+fn constrained_child_bounds<Msg>(
+    cell: Rect,
+    child: &ViewNode<Msg>,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> Rect {
+    let width = constrained_child_axis_length(
+        cell.width,
+        child.style.width,
+        child.style.min_width,
+        dpi,
+        false,
+        child.typography_scaled_height,
+        typography_scale,
+    );
+    let height = constrained_child_axis_length(
+        cell.height,
+        child.style.height,
+        child.style.min_height,
+        dpi,
+        true,
+        child.typography_scaled_height,
+        typography_scale,
+    );
+    Rect {
+        x: cell.x,
+        y: cell.y,
+        width,
+        height,
+    }
+}
+
+#[cfg(any(feature = "grid", feature = "tabs"))]
+fn constrained_child_axis_length(
+    available: i32,
+    fixed: Option<Dp>,
+    minimum: Option<Dp>,
+    dpi: Dpi,
+    vertical: bool,
+    typography_scaled_height: bool,
+    typography_scale: f32,
+) -> i32 {
+    let minimum = minimum
+        .map(|value| {
+            typography_aware_length_px(
+                value,
+                dpi,
+                vertical && typography_scaled_height,
+                typography_scale,
+            )
+        })
+        .unwrap_or(0);
+    fixed
+        .map(|value| {
+            typography_aware_length_px(
+                value,
+                dpi,
+                vertical && typography_scaled_height,
+                typography_scale,
+            )
+            .max(minimum)
+        })
+        .unwrap_or_else(|| available.max(minimum))
 }
 
 #[cfg(feature = "grid")]
@@ -626,6 +790,11 @@ fn inset_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
         width: (bounds.width - padding * 2).max(0),
         height: (bounds.height - padding * 2).max(0),
     }
+}
+
+#[cfg(feature = "tabs")]
+fn tab_layout_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+    inset_bounds(bounds, padding, dpi)
 }
 
 #[cfg(any(feature = "label", feature = "button", feature = "textbox"))]

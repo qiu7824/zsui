@@ -1166,15 +1166,17 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            let tab_bounds = tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
-                bounds,
+                tab_bounds,
                 tabs,
                 selected_index,
                 crate::ZsTabPlatformStyle::current(),
                 self.layout_dpi,
             );
+            let header_clip = clipped_rect(plan.strip_bounds, clip);
             hit_targets.extend(plan.headers.iter().zip(tabs).filter_map(|(header, tab)| {
-                clipped_rect(header.bounds, clip).map(|bounds| {
+                clipped_rect(header.bounds, header_clip).map(|bounds| {
                     ViewHitTarget::with_kind(
                         tab.id.header_widget_id(tab_view),
                         bounds,
@@ -1464,8 +1466,9 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+            let tab_bounds = tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
-                bounds,
+                tab_bounds,
                 tabs,
                 selected_index,
                 crate::ZsTabPlatformStyle::current(),

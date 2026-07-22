@@ -81,8 +81,9 @@ impl<Msg: Clone> ViewNode<Msg> {
         };
         let selected_index = selected
             .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+        let tab_bounds = tab_layout_bounds(cx.bounds, self.style.padding, cx.dpi);
         let plan = crate::zs_tab_view_render_plan_for_tabs(
-            cx.bounds,
+            tab_bounds,
             tabs,
             selected_index,
             crate::ZsTabPlatformStyle::current(),
@@ -99,7 +100,13 @@ impl<Msg: Clone> ViewNode<Msg> {
             });
         }
         if let Some(child) = selected_index.and_then(|index| self.children.get_mut(index)) {
-            let mut child_cx = cx.child(plan.content_bounds);
+            let child_bounds = constrained_child_bounds(
+                plan.content_bounds,
+                child,
+                cx.dpi,
+                cx.typography_scale(),
+            );
+            let mut child_cx = cx.child(child_bounds);
             children.extend(child.layout(&mut child_cx).children);
         }
         LayoutOutput {
@@ -2948,8 +2955,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 let selected_index = selected.and_then(|selected| {
                     tabs.iter().position(|candidate| candidate.id == selected)
                 });
+                let tab_bounds = tab_layout_bounds(bounds, self.style.padding, cx.dpi);
                 let plan = crate::zs_tab_view_render_plan_for_tabs(
-                    bounds,
+                    tab_bounds,
                     tabs,
                     selected_index,
                     crate::ZsTabPlatformStyle::current(),

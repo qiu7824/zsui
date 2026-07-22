@@ -50,6 +50,8 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 `icons` 可使用相同键映射到 `ZsIcon` 语义枚举名；标签必须完整覆盖子节点，额外键、无效
 图标和不存在的 `selected` 都会被拒绝。`selected` string 属性和 `select` string 动作绑定后，
 切换页面会更新显式状态，热重建继续选中同一稳定槽位。Tabs 至少需要一个内容子节点。
+框架会在标签条与当前内容页之间应用平台内容边距，并继续叠加节点自身的 `layout.padding`；
+窄窗口不会把标签文字压缩到平台最小宽度以下，超出标签条的部分由标签条裁剪。
 
 `grid.columns` 和 `grid.rows` 使用 `grid_track_array`，每条轨道明确声明为非负 DP
 固定尺寸或正整数权重的 fraction；`placements` 使用 `grid_placement_map`，以每个直接
@@ -57,6 +59,8 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 覆盖且只引用直接子节点，并拒绝越过已声明轨道、空轨道、零权重、零跨度和负间距。
 因此调整子节点声明顺序不会改变已有节点的单元格，Viewer 与发布嵌入也使用同一份
 强类型放置契约。`column_gap` 和 `row_gap` 可分别覆盖通用 `layout.gap`。
+固定轨道、文字原生行框和控件最小尺寸属于硬布局约束；可用空间不足时 Grid 保留这些
+尺寸并让父视口负责裁剪或滚动，不通过缩小文字行框或控件来强行塞入窗口。
 
 `scroll` 必须有且只有一个内容子节点，并要求非负的 `content_height` 数值属性。
 `offset_y` 是可选的非负数值属性；需要在 View 重建后保留位置时，将它绑定到 number

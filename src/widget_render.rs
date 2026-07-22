@@ -2741,6 +2741,8 @@ pub struct ZsTabViewMetrics {
     pub strip_height: Dp,
     pub header_top_padding: Dp,
     pub item_height: Dp,
+    /// Platform content inset applied between the tab strip and selected page.
+    pub content_padding: Dp,
     pub outer_inset: Dp,
     pub item_gap: Dp,
     pub horizontal_padding: Dp,
@@ -2830,11 +2832,30 @@ pub fn zs_tab_view_render_plan_for_tabs(
         width: bounds.width.max(0),
         height: strip_height,
     };
-    let content_bounds = Rect {
+    let content_area = Rect {
         x: bounds.x,
         y: bounds.y.saturating_add(strip_height),
         width: bounds.width.max(0),
         height: bounds.height.saturating_sub(strip_height).max(0),
+    };
+    let content_padding = metrics
+        .content_padding
+        .to_px(dpi)
+        .round_i32()
+        .max(0)
+        .min(content_area.width / 2)
+        .min(content_area.height / 2);
+    let content_bounds = Rect {
+        x: content_area.x.saturating_add(content_padding),
+        y: content_area.y.saturating_add(content_padding),
+        width: content_area
+            .width
+            .saturating_sub(content_padding.saturating_mul(2))
+            .max(0),
+        height: content_area
+            .height
+            .saturating_sub(content_padding.saturating_mul(2))
+            .max(0),
     };
     let inset = metrics
         .outer_inset
@@ -2888,19 +2909,11 @@ pub fn zs_tab_view_render_plan_for_tabs(
             let equal = widths.iter().copied().max().unwrap_or(minimum_width);
             widths.fill(equal);
         }
-        let requested: i32 = widths.iter().copied().sum();
-        if requested > available_width {
-            let equal = available_width / widths.len() as i32;
-            let remainder = available_width % widths.len() as i32;
-            for (index, width) in widths.iter_mut().enumerate() {
-                *width = equal + i32::from((index as i32) < remainder);
-            }
-        }
     }
     let assigned_width: i32 = widths.iter().copied().sum::<i32>()
         + gap.saturating_mul(widths.len().saturating_sub(1) as i32);
     let mut x = strip_bounds.x.saturating_add(inset);
-    if profile.center_items() {
+    if profile.center_items() && assigned_width <= available_width {
         x = x.saturating_add(available_width.saturating_sub(assigned_width) / 2);
     }
     let indicator_height = metrics
@@ -3040,6 +3053,9 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
             fill: NativeDrawFill::Role(ColorRole::Border),
         });
     }
+    commands.push(NativeDrawCommand::PushClip {
+        rect: plan.strip_bounds,
+    });
     if profile.draw_group_outline() && !plan.headers.is_empty() {
         let first = plan
             .headers
@@ -3130,6 +3146,7 @@ pub fn zs_tab_view_native_draw_plan_for_tabs(
             },
         )));
     }
+    commands.push(NativeDrawCommand::PopClip);
     NativeDrawPlan::new(commands)
 }
 
@@ -7862,6 +7879,7 @@ mod tests {
         assert!(windows.strip_height.0 > macos.strip_height.0);
         assert_eq!(windows.header_top_padding, Dp::new(8.0));
         assert_eq!(windows.item_height, Dp::new(32.0));
+        assert_eq!(windows.content_padding, Dp::new(12.0));
         assert_eq!(windows.horizontal_padding, Dp::new(8.0));
         assert_eq!(windows.icon_size, Dp::new(16.0));
         assert_eq!(windows.icon_gap, Dp::new(10.0));
@@ -7917,7 +7935,15 @@ mod tests {
         assert_eq!(windows.headers.len(), 3);
         assert!(windows.headers[1].selected);
         assert!(windows.headers[1].selection_indicator.is_some());
-        assert_eq!(windows.content_bounds.y, bounds.y + 40);
+        assert_eq!(
+            windows.content_bounds,
+            Rect {
+                x: bounds.x + 12,
+                y: bounds.y + 52,
+                width: bounds.width - 24,
+                height: bounds.height - 64,
+            }
+        );
         assert!(windows
             .headers
             .iter()
@@ -7949,16 +7975,22 @@ mod tests {
             ZsTabPlatformStyle::Windows,
             Dpi::standard(),
         );
-        assert!(narrow.headers.iter().all(|header| {
-            header.bounds.x >= 10
-                && header.bounds.x + header.bounds.width <= 12
-                && header.text_bounds.x >= header.bounds.x
-                && header.text_bounds.x + header.text_bounds.width
-                    <= header.bounds.x + header.bounds.width
-        }));
+        assert!(narrow
+            .headers
+            .iter()
+            .all(|header| header.bounds.width >= 100 && header.text_bounds.width > 0));
+        assert!(narrow.headers[0].bounds.x + narrow.headers[0].bounds.width > 12);
 
         let draw = zs_tab_view_native_draw_plan(&windows, &labels);
         assert_eq!(draw.text_count(), 3);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::PushClip { rect } if *rect == windows.strip_bounds
+        )));
+        assert!(matches!(
+            draw.commands.last(),
+            Some(NativeDrawCommand::PopClip)
+        ));
         assert!(draw.commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::RoundFill {

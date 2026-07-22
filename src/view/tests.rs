@@ -958,6 +958,85 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "grid", feature = "label"))]
+    fn grid_never_compresses_fixed_tracks_or_native_text_line_boxes() {
+        let label = WidgetId::new(81);
+        let mut view: ViewNode<()> = grid(
+            [ZsGridTrack::fixed(Dp::new(80.0))],
+            [ZsGridTrack::fixed(Dp::new(10.0))],
+            [ZsGridCell::new(0, 0, text("中文排版").id(label))],
+        );
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 4,
+                y: 6,
+                width: 40,
+                height: 8,
+            },
+            Dpi::standard(),
+        ));
+        let label_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == label.into())
+            .expect("grid label should expose layout bounds")
+            .bounds;
+
+        assert_eq!(
+            label_bounds,
+            Rect {
+                x: 4,
+                y: 6,
+                width: 80,
+                height: 20,
+            }
+        );
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "中文排版" && text.bounds == label_bounds
+        )));
+
+        let scaled = view.layout(
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 4,
+                    y: 6,
+                    width: 40,
+                    height: 8,
+                },
+                Dpi::standard(),
+            )
+            .with_typography_scale(1.5),
+        );
+        assert_eq!(
+            scaled
+                .children
+                .iter()
+                .find(|node| node.component == label.into())
+                .expect("scaled grid label should expose layout bounds")
+                .bounds
+                .height,
+            30
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "grid")]
+    fn grid_fraction_distribution_preserves_weights_until_a_minimum_binds() {
+        let tracks = [ZsGridTrack::FLEX, ZsGridTrack::FLEX];
+        assert_eq!(
+            allocate_grid_track_lengths(300, 0, &tracks, &[0, 120], Dpi::standard()),
+            vec![150, 150]
+        );
+        assert_eq!(
+            allocate_grid_track_lengths(300, 0, &tracks, &[200, 0], Dpi::standard()),
+            vec![200, 100]
+        );
+    }
+
+    #[test]
     #[cfg(all(feature = "grid", feature = "button"))]
     fn grid_layout_drives_shared_paint_and_typed_hit_geometry() {
         let behind = WidgetId::new(80);
@@ -991,7 +1070,7 @@ mod tests {
         view.paint(&mut paint);
 
         assert_eq!(
-            interaction.click_event_at(Point { x: 205, y: 155 }),
+            interaction.click_event_at(Point { x: 205, y: 120 }),
             Some(ViewEvent::Click { widget: action })
         );
         assert_eq!(interaction.hit_target_count(), 2);
@@ -3495,6 +3574,7 @@ mod tests {
             Some(general),
         )
         .id(tab_view_id)
+        .padding(Dp::new(8.0))
         .on_tab_select(Msg::TabSelected);
         let mut layout = ViewLayoutCx::new(
             Rect {
@@ -3519,6 +3599,18 @@ mod tests {
         assert!(interactions
             .hit_target_for_widget(general_content)
             .is_some());
+        assert_eq!(
+            interactions
+                .hit_target_for_widget(general_content)
+                .expect("selected tab content should be interactive")
+                .bounds,
+            Rect {
+                x: 20,
+                y: 60,
+                width: 380,
+                height: 20,
+            }
+        );
         assert_ne!(
             general.header_widget_id(tab_view_id),
             general_content,

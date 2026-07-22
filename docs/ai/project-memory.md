@@ -752,6 +752,13 @@ history remain authoritative for implementation status.
   adjacent page. GTK4 arrow keys plus Home/End move header focus, Space selects,
   and Ctrl+PageUp/Ctrl+PageDown changes page. Application code and the public
   API contain no platform `cfg`.
+- Tab content composes the caller's explicit View padding with a platform-owned
+  12-DP content inset; selected text and compact controls retain their native
+  intrinsic line/control height at the content area's top-left instead of
+  stretching through the page. Header measurement may overflow the clipped
+  strip, but must never divide labels below the platform minimum width merely
+  to fit a narrow viewport. A future overflow affordance may expose hidden
+  headers without changing this no-compression contract.
 - Windows TabView headers follow the WinUI row composition: an optional
   16-DIP semantic icon and the header label share one 32-DIP item row below an
   8-DIP strip inset. Header labels use Body text; Caption is reserved for
@@ -793,8 +800,12 @@ history remain authoritative for implementation status.
   fixed/fractional tracks and nonzero spans; the shared layout pass owns row/
   column gaps, explicit cell/span geometry, DPI conversion, paint bounds and
   hit-test bounds for all three desktop renderers. Every canonical child is a
-  typed `ZsGridCell`; overlapping cells retain declaration order. Content-sized
-  tracks, baseline alignment and non-Windows target proof remain readiness gaps.
+  typed `ZsGridCell`; overlapping cells retain declaration order. Fixed tracks
+  and one-track child minimums are hard constraints: an over-constrained Grid
+  overflows its viewport instead of scaling platform control metrics or text
+  line boxes. Compact children retain their intrinsic size at the cell's
+  top-left while unconstrained children stretch. General content-sized tracks,
+  baseline alignment and non-Windows target proof remain readiness gaps.
 - NumberBox is an independent `number-box` Cargo feature and stays on the shared
   self-drawn path. `ZsNumberRange` validates finite bounds and small/large steps;
   the editable draft is kept separate from committed `Option<f64>` application
