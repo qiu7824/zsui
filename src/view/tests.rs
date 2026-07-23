@@ -127,6 +127,8 @@ mod tests {
         DialogResult(crate::ZsContentDialogResult),
         #[cfg(feature = "flyout")]
         FlyoutDismissed(crate::ZsFlyoutDismissReason),
+        #[cfg(feature = "flyout")]
+        FlyoutOpen(bool),
         #[cfg(feature = "menu-flyout")]
         MenuCommand(crate::Command),
         #[cfg(feature = "menu-flyout")]
@@ -2489,7 +2491,8 @@ mod tests {
         let content = column(vec![
             text("Platform popover content"),
             button("Apply").id(content_action).on_click(Msg::SaveClicked),
-        ]);
+        ])
+        .id(WidgetId::new(199));
         let mut view = flyout(
             presenter,
             true,
@@ -2498,7 +2501,8 @@ mod tests {
             content,
             page,
         )
-        .on_flyout_dismiss(Msg::FlyoutDismissed);
+        .on_flyout_dismiss(Msg::FlyoutDismissed)
+        .on_flyout_open_change(Msg::FlyoutOpen);
         let viewport = Rect {
             x: 0,
             y: 0,
@@ -2555,6 +2559,7 @@ mod tests {
             vec![
                 Msg::SaveClicked,
                 Msg::FlyoutDismissed(crate::ZsFlyoutDismissReason::LightDismiss),
+                Msg::FlyoutOpen(false),
             ]
         );
         assert!(view

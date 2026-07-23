@@ -15,6 +15,7 @@ impl WidgetId {
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
+    feature = "flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -45,6 +46,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
+    feature = "flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -75,6 +77,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
+    feature = "flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -123,6 +126,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
+    feature = "flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -163,6 +167,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
+    feature = "flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -914,7 +919,8 @@ pub enum ViewNodeKind<Msg> {
         spec: crate::ZsFlyoutSpec,
         open: bool,
         target: WidgetId,
-        on_dismiss: Option<fn(crate::ZsFlyoutDismissReason) -> Msg>,
+        on_dismiss: Option<ViewMessageMapper<crate::ZsFlyoutDismissReason, Msg>>,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "menu-flyout")]
     MenuFlyout {
@@ -1980,7 +1986,37 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: fn(crate::ZsFlyoutDismissReason) -> Msg,
     ) -> Self {
         if let ViewNodeKind::Flyout { on_dismiss, .. } = &mut self.kind {
-            *on_dismiss = Some(message);
+            *on_dismiss = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "flyout")]
+    pub fn on_flyout_dismiss_with(
+        mut self,
+        message: impl Fn(crate::ZsFlyoutDismissReason) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Flyout { on_dismiss, .. } = &mut self.kind {
+            *on_dismiss = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "flyout")]
+    pub fn on_flyout_open_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::Flyout { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "flyout")]
+    pub fn on_flyout_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Flyout { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

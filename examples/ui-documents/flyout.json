@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "details-flyout",
+    "component": "flyout",
+    "properties": {
+      "target": "open-details",
+      "content_width": 320,
+      "content_height": 172,
+      "placement": "right"
+    },
+    "property_bindings": {
+      "open": "details_open"
+    },
+    "action_bindings": {
+      "dismiss": "details_dismissed",
+      "open_change": "details_open_changed"
+    },
+    "children": [
+      {
+        "id": "page",
+        "component": "stack",
+        "layout": {
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "title",
+            "component": "text",
+            "properties": {
+              "text": "浮出控件 / Flyout",
+              "text_role": "subtitle"
+            }
+          },
+          {
+            "id": "open-details",
+            "component": "button",
+            "properties": {
+              "label": "查看平台细节 / View platform details"
+            },
+            "layout": {
+              "width": 260
+            }
+          },
+          {
+            "id": "summary",
+            "component": "text",
+            "properties": {
+              "text": "页面与浮层内容使用同一棵强类型 View；位置、圆角和间距由当前平台决定。 / Page and overlay content share one typed View; the active platform owns placement, radius, and spacing.",
+              "text_role": "body",
+              "wrap": "word",
+              "ellipsis": false
+            },
+            "layout": {
+              "width": 280
+            }
+          }
+        ]
+      },
+      {
+        "id": "flyout-content",
+        "component": "stack",
+        "layout": {
+          "padding_token": "content_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "content-title",
+            "component": "text",
+            "properties": {
+              "text": "平台原生体验 / Native platform experience",
+              "text_role": "body",
+              "weight": "semibold",
+              "wrap": "word",
+              "ellipsis": false
+            }
+          },
+          {
+            "id": "content-description",
+            "component": "text",
+            "properties": {
+              "text": "稳定目标、任意内容和受控关闭状态不会因热重载丢失。 / Stable targets, arbitrary content, and controlled dismissal survive hot reload.",
+              "text_role": "caption",
+              "wrap": "word",
+              "ellipsis": false
+            }
+          },
+          {
+            "id": "apply-details",
+            "component": "button",
+            "properties": {
+              "label": "应用 / Apply"
+            },
+            "action_bindings": {
+              "click": "details_applied"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

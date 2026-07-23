@@ -732,6 +732,7 @@ impl ViewInteractionPlan {
                 .find(|target| {
                     target.kind != ViewHitTargetKind::FlyoutScrim
                         && target.kind != ViewHitTargetKind::Flyout
+                        && target.kind != ViewHitTargetKind::Unknown
                         && target.accepts_focus()
                         && rect_contains_rect(surface.bounds, target.bounds)
                 })

@@ -931,6 +931,7 @@ pub enum UiValueType {
     Date,
     Time,
     Color,
+    FlyoutDismissReason,
     BreadcrumbItemId,
     BreadcrumbItemArray,
     AutoSuggestionId,
@@ -972,6 +973,9 @@ impl UiValueType {
                 .as_str()
                 .and_then(crate::Color::parse_hex_rgba)
                 .is_some(),
+            Self::FlyoutDismissReason => value
+                .as_str()
+                .is_some_and(|value| matches!(value, "light_dismiss" | "escape")),
             Self::BreadcrumbItemId => ui_breadcrumb_item_id_from_value(value).is_some(),
             Self::BreadcrumbItemArray => ui_breadcrumb_items_from_value(value).is_some(),
             Self::AutoSuggestionId => ui_auto_suggestion_id_from_value(value).is_some(),
@@ -2320,6 +2324,27 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                         .ok_or_else(|| "color payload must use canonical #RRGGBBAA".to_owned())
                 })?;
             map(color)
+        })
+    }
+
+    /// Registers a strongly typed Flyout dismissal action.
+    #[cfg(feature = "flyout")]
+    pub fn register_flyout_dismiss_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(crate::ZsFlyoutDismissReason) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::FlyoutDismissReason, move |payload| {
+            let reason = match payload.as_str() {
+                Some("light_dismiss") => crate::ZsFlyoutDismissReason::LightDismiss,
+                Some("escape") => crate::ZsFlyoutDismissReason::EscapeKey,
+                _ => {
+                    return Err(
+                        "flyout dismissal payload must be light_dismiss or escape".to_owned()
+                    )
+                }
+            };
+            map(reason)
         })
     }
 
@@ -3805,6 +3830,72 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "flyout" {
+            let static_string = |name: &str| {
+                (!node.property_bindings.contains_key(name)
+                    && !node.localization.contains_key(name))
+                .then(|| node.properties.get(name).and_then(Value::as_str))
+                .flatten()
+            };
+            for name in ["content_width", "content_height"] {
+                if node
+                    .properties
+                    .get(name)
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| value <= 0.0 || value > f64::from(f32::MAX))
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("flyout {name} must be a positive finite DP extent"),
+                    );
+                }
+            }
+            if static_string("placement").is_some_and(|placement| {
+                !matches!(placement, "auto" | "top" | "bottom" | "left" | "right")
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.placement"),
+                    "flyout placement must be auto, top, bottom, left or right".to_owned(),
+                );
+            }
+            if node.localization.contains_key("target") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidLocalization,
+                    format!("{path}.localization.target"),
+                    "flyout target is a stable node id and cannot be localized".to_owned(),
+                );
+            }
+            if let Some(target) = static_string("target") {
+                let target_exists = node
+                    .children
+                    .first()
+                    .is_some_and(|page| ui_node_contains_id(page, target));
+                if !target_exists {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.target"),
+                        "flyout target must reference a node in its page child".to_owned(),
+                    );
+                }
+            }
+            if node.property_bindings.contains_key("open")
+                && !node.action_bindings.contains_key("open_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.open"),
+                    "bound flyout open state requires an open_change action".to_owned(),
+                );
+            }
+        }
+
         if node.component == "content_dialog" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -4655,6 +4746,43 @@ const SCROLL_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "scroll",
     payload_type: UiValueType::Number,
 }];
+const FLYOUT_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "target",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "content_width",
+        value_type: UiValueType::Number,
+        required: true,
+    },
+    PropertySpec {
+        name: "content_height",
+        value_type: UiValueType::Number,
+        required: true,
+    },
+    PropertySpec {
+        name: "placement",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const FLYOUT_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "dismiss",
+        payload_type: UiValueType::FlyoutDismissReason,
+    },
+    ActionSpec {
+        name: "open_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const INFO_BAR_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "message",
@@ -4871,6 +4999,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: CONTENT_DIALOG_PROPERTIES,
             actions: CONTENT_DIALOG_ACTIONS,
             children: ChildPolicy::Exactly(1),
+        }),
+        "flyout" => Some(ComponentSchema {
+            properties: FLYOUT_PROPERTIES,
+            actions: FLYOUT_ACTIONS,
+            children: ChildPolicy::Exactly(2),
         }),
         "info_bar" => Some(leaf(INFO_BAR_PROPERTIES, INFO_BAR_ACTIONS)),
         "toast" => Some(ComponentSchema {
@@ -5589,6 +5722,39 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "flyout")]
+    #[test]
+    fn typed_flyout_binding_maps_only_semantic_dismiss_reasons() {
+        #[derive(Debug, PartialEq, Eq)]
+        enum Msg {
+            Dismissed(crate::ZsFlyoutDismissReason),
+        }
+
+        let mut manifest = UiBindingManifest::<(), Msg>::new();
+        manifest
+            .register_flyout_dismiss_action("details_dismissed", |reason| {
+                Ok(Msg::Dismissed(reason))
+            })
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().actions["details_dismissed"],
+            UiValueType::FlyoutDismissReason
+        );
+        assert_eq!(
+            manifest.map_action(
+                "details_dismissed",
+                Value::String("light_dismiss".to_owned())
+            ),
+            Ok(Msg::Dismissed(crate::ZsFlyoutDismissReason::LightDismiss))
+        );
+        assert_eq!(
+            manifest.map_action("details_dismissed", Value::String("escape".to_owned())),
+            Ok(Msg::Dismissed(crate::ZsFlyoutDismissReason::EscapeKey))
+        );
+        assert!(!UiValueType::FlyoutDismissReason.matches(&Value::String("resize".to_owned())));
+    }
+
     #[cfg(feature = "breadcrumb")]
     #[test]
     fn typed_breadcrumb_bindings_preserve_path_ids_and_labels() {
@@ -6003,6 +6169,99 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.highlighted"
+        }));
+    }
+
+    #[test]
+    fn flyout_contract_validates_target_geometry_and_controlled_dismissal() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "details-flyout",
+                "component": "flyout",
+                "properties": {
+                  "target": "open-details",
+                  "content_width": 280,
+                  "content_height": 120,
+                  "placement": "right"
+                },
+                "property_bindings": { "open": "details_open" },
+                "action_bindings": {
+                  "dismiss": "details_dismissed",
+                  "open_change": "details_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "open-details",
+                        "component": "button",
+                        "properties": { "label": "Details" }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "flyout-content",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "content-label",
+                        "component": "text",
+                        "properties": { "text": "Platform popover content" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("details_open".to_owned(), UiValueType::Boolean)]),
+            actions: BTreeMap::from([
+                (
+                    "details_dismissed".to_owned(),
+                    UiValueType::FlyoutDismissReason,
+                ),
+                ("details_open_changed".to_owned(), UiValueType::Boolean),
+            ]),
+        };
+        let features = UiFeatureSet::new(["flyout", "button", "label"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let mut invalid_target = valid.clone();
+        invalid_target.root.properties.insert(
+            "target".to_owned(),
+            Value::String("flyout-content".to_owned()),
+        );
+        let report = invalid_target.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.target"
+        }));
+
+        let mut invalid_geometry = valid;
+        invalid_geometry
+            .root
+            .properties
+            .insert("content_height".to_owned(), Value::from(0));
+        invalid_geometry
+            .root
+            .properties
+            .insert("placement".to_owned(), Value::String("center".to_owned()));
+        let report = invalid_geometry.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.content_height"
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.placement"
         }));
     }
 

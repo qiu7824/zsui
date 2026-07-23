@@ -1004,6 +1004,14 @@ history remain authoritative for implementation status.
   the overlay. Accessibility announcements and Flyout-specific AT-SPI actions,
   nested overlay validation, and target Escape/light-dismiss/resize matrices
   remain readiness gaps.
+  UiDocument exposes the same contract as `flyout` with exactly two children:
+  the ordinary page first and arbitrary overlay content second. Its stable
+  target must resolve inside the page, positive content extents and placement
+  are validated before the native host, and bound `open` state requires a
+  Boolean `open_change`. Typed `flyout_dismiss_reason` values are limited to
+  `light_dismiss` and `escape`. Modal focus skips stable layout-only document
+  nodes and selects the first interactive descendant before falling back to
+  the Flyout surface.
 - Toast is an independent `toast` Cargo feature over `widgets-base`. It is a
   nonmodal in-window feedback layer, not an imitation of Windows or macOS
   system-notification chrome. Applications own an optional `ZsToastSpec` with a

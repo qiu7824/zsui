@@ -602,7 +602,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             let mut handled = false;
             let mut route_content = false;
             if let ViewNodeKind::Flyout {
-                open, on_dismiss, ..
+                open,
+                on_dismiss,
+                on_open_change,
+                ..
             } = &mut self.kind
             {
                 route_content = *open;
@@ -619,7 +622,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 if let Some(reason) = reason {
                     *open = false;
                     if let Some(message) = on_dismiss {
-                        cx.emit(message(reason));
+                        cx.emit(message.map(reason));
+                    }
+                    if let Some(message) = on_open_change {
+                        cx.emit(message.map(false));
                     }
                     handled = true;
                 }

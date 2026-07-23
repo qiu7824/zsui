@@ -62,6 +62,7 @@ pub struct UiDocumentSecretAction {
     not(any(
         feature = "button",
         feature = "breadcrumb",
+        feature = "flyout",
         feature = "toggle-button",
         feature = "checkbox",
         feature = "toggle",
@@ -183,6 +184,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
         not(any(
             feature = "button",
             feature = "breadcrumb",
+            feature = "flyout",
             feature = "toggle-button",
             feature = "checkbox",
             feature = "toggle",
@@ -465,6 +467,100 @@ fn compile_node<Msg: Clone + 'static>(
                         binding: binding.clone(),
                         property_binding: property_binding.clone(),
                         payload: Value::from(offset.0),
+                    })
+                });
+            }
+            control
+        }
+        #[cfg(feature = "flyout")]
+        "flyout" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(page) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 2,
+                    actual,
+                });
+            };
+            let Some(content) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 2,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 2,
+                    actual,
+                });
+            }
+
+            let content_width = document_positive_extent(node, properties, "content_width")?;
+            let content_height = document_positive_extent(node, properties, "content_height")?;
+            let placement = match optional_string_property(node, properties, "placement").as_deref()
+            {
+                None | Some("auto") => crate::ZsFlyoutPlacement::Auto,
+                Some("top") => crate::ZsFlyoutPlacement::Top,
+                Some("bottom") => crate::ZsFlyoutPlacement::Bottom,
+                Some("left") => crate::ZsFlyoutPlacement::Left,
+                Some("right") => crate::ZsFlyoutPlacement::Right,
+                Some(placement) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "placement",
+                        format!("unsupported flyout placement {placement:?}"),
+                    ));
+                }
+            };
+            let target = string_property(node, properties, "target", "");
+            let target = flyout_document_target(node, &target).ok_or_else(|| {
+                invalid_resolved_property(
+                    node,
+                    "target",
+                    "flyout target must reference a node in its page child",
+                )
+            })?;
+            let spec = crate::ZsFlyoutSpec::new(content_width, content_height)
+                .preferred_placement(placement);
+            let mut control = crate::flyout(
+                node.id.widget_id(),
+                bool_property(node, properties, "open", false),
+                target,
+                spec,
+                content,
+                page,
+            );
+            if let Some(binding) = node.action_bindings.get("dismiss") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_flyout_dismiss_with(move |reason| {
+                    let payload = match reason {
+                        crate::ZsFlyoutDismissReason::LightDismiss => "light_dismiss",
+                        crate::ZsFlyoutDismissReason::EscapeKey => "escape",
+                    };
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(payload.to_owned()),
+                    })
+                });
+            }
+            if let Some(binding) = node.action_bindings.get("open_change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("open").cloned();
+                control = control.on_flyout_open_change_with(move |open| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(open),
                     })
                 });
             }
@@ -1348,6 +1444,33 @@ fn descendant_document_widget_id(node: &UiNode, id: &str) -> Option<crate::Widge
     }
 
     node.children.iter().find_map(|child| find(child, id))
+}
+
+#[cfg(feature = "flyout")]
+fn flyout_document_target(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
+    fn find(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
+        if node.id.as_str() == id {
+            return Some(node.id.widget_id());
+        }
+        node.children.iter().find_map(|child| find(child, id))
+    }
+
+    node.children.first().and_then(|page| find(page, id))
+}
+
+#[cfg(feature = "flyout")]
+fn document_positive_extent(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Dp, UiDocumentRuntimeError> {
+    let value = property_value(node, properties, property)
+        .and_then(|value| value.as_f64())
+        .filter(|value| *value > 0.0 && *value <= f64::from(f32::MAX))
+        .ok_or_else(|| {
+            invalid_resolved_property(node, property, "a positive finite DP extent is required")
+        })?;
+    Ok(Dp::new(value as f32))
 }
 
 #[cfg(feature = "teaching-tip")]
@@ -2651,6 +2774,7 @@ fn grid_gap_property(
 #[cfg(any(
     feature = "label",
     feature = "breadcrumb",
+    feature = "flyout",
     feature = "grid",
     feature = "list",
     feature = "progress-ring",
@@ -2718,6 +2842,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "label",
     feature = "button",
     feature = "breadcrumb",
+    feature = "flyout",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "toggle",
@@ -3091,6 +3216,7 @@ fn optional_grid_view_item_id_property(
     feature = "info-bar",
     feature = "label",
     feature = "button",
+    feature = "flyout",
     feature = "tooltip",
     feature = "teaching-tip",
     feature = "toggle-button",
@@ -3113,6 +3239,7 @@ fn string_property(
     feature = "label",
     feature = "button",
     feature = "breadcrumb",
+    feature = "flyout",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "toggle",
@@ -3184,6 +3311,7 @@ fn nullable_number_property(
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
+    feature = "flyout",
     feature = "toast",
     feature = "info-bar",
     feature = "tooltip",
@@ -3385,6 +3513,7 @@ mod tests {
         feature = "color-picker",
         feature = "command-palette",
         feature = "breadcrumb",
+        feature = "flyout",
         feature = "tree",
         feature = "grid-view",
         feature = "grid",
@@ -3398,6 +3527,7 @@ mod tests {
     #[cfg(any(
         feature = "grid",
         feature = "label",
+        feature = "flyout",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button")
     ))]
@@ -4074,6 +4204,162 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "expanded"
+        ));
+    }
+
+    #[cfg(all(feature = "flyout", feature = "button", feature = "label"))]
+    #[test]
+    fn compiles_controlled_flyout_and_routes_arbitrary_content_and_dismissal() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "details-flyout",
+                "component": "flyout",
+                "properties": {
+                  "content_width": 280,
+                  "content_height": 120,
+                  "placement": "right"
+                },
+                "property_bindings": {
+                  "open": "details_open",
+                  "target": "details_target"
+                },
+                "action_bindings": {
+                  "dismiss": "details_dismissed",
+                  "open_change": "details_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "open-details",
+                        "component": "button",
+                        "properties": { "label": "Details" }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "flyout-content",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "content-label",
+                        "component": "text",
+                        "properties": { "text": "Platform popover content" }
+                      },
+                      {
+                        "id": "apply-details",
+                        "component": "button",
+                        "properties": { "label": "Apply" },
+                        "action_bindings": { "click": "details_applied" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "details_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "details_target".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "details_applied".to_owned(),
+                    crate::ui_document::UiValueType::Null,
+                ),
+                (
+                    "details_dismissed".to_owned(),
+                    crate::ui_document::UiValueType::FlyoutDismissReason,
+                ),
+                (
+                    "details_open_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            ("details_open".to_owned(), Value::Bool(true)),
+            (
+                "details_target".to_owned(),
+                Value::String("open-details".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let target = document.root.children[0].children[0].id.widget_id();
+        let action = document.root.children[1].children[1].id.widget_id();
+        assert_eq!(
+            view.widget_flyout_state(widget),
+            Some(crate::ZsFlyoutState { open: true, target })
+        );
+
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 720,
+                height: 420,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        assert!(view
+            .interaction_plan()
+            .hit_target_for_widget(action)
+            .is_some());
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(&mut events, &crate::ViewEvent::Click { widget: action });
+        let messages = events.into_messages();
+        let [Msg::Action(applied)] = messages.as_slice() else {
+            panic!("flyout content action must use the ordinary typed child route");
+        };
+        assert_eq!(applied.binding, "details_applied");
+        assert_eq!(applied.payload, Value::Null);
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::FlyoutDismissed {
+                widget,
+                reason: crate::ZsFlyoutDismissReason::EscapeKey,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(dismissed), Msg::Action(closed)] = messages.as_slice() else {
+            panic!("flyout dismissal must emit the reason and controlled open state");
+        };
+        assert_eq!(dismissed.binding, "details_dismissed");
+        assert_eq!(dismissed.property_binding, None);
+        assert_eq!(dismissed.payload, Value::String("escape".to_owned()));
+        assert_eq!(closed.binding, "details_open_changed");
+        assert_eq!(closed.property_binding.as_deref(), Some("details_open"));
+        assert_eq!(closed.payload, Value::Bool(false));
+        assert!(view
+            .widget_flyout_state(widget)
+            .is_some_and(|state| !state.open));
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "details_target".to_owned(),
+            Value::String("flyout-content".to_owned()),
+        );
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "target"
         ));
     }
 

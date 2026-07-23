@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "details_open": "boolean"
+  },
+  "actions": {
+    "details_applied": "null",
+    "details_dismissed": "flyout_dismiss_reason",
+    "details_open_changed": "boolean"
+  }
+}

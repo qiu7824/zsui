@@ -16,6 +16,7 @@ pub fn flyout<Msg>(
         open,
         target,
         on_dismiss: None,
+        on_open_change: None,
     })
     .id(widget)
     .child(page)
