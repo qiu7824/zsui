@@ -134,6 +134,26 @@ pub(crate) fn ui_grid_view_runtime_id(
     crate::ZsGridViewItemId::new(hash)
 }
 
+#[cfg(all(feature = "ui-document-runtime", feature = "breadcrumb"))]
+pub(crate) fn ui_breadcrumb_runtime_id(
+    node_id: &UiNodeId,
+    item_id: &UiBreadcrumbItemId,
+) -> crate::ZsBreadcrumbId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(item_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsBreadcrumbId::new(hash)
+}
+
 impl fmt::Display for UiNodeId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
@@ -326,6 +346,77 @@ impl UiGridPlacement {
 
     pub(crate) const fn is_valid(self) -> bool {
         self.row_span > 0 && self.column_span > 0
+    }
+}
+
+/// Stable author-facing identity for one document-backed breadcrumb item.
+///
+/// The identity is independent from declaration order. The runtime derives a
+/// private [`crate::ZsBreadcrumbId`] from this value and the owning node ID.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiBreadcrumbItemId(String);
+
+impl UiBreadcrumbItemId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiBreadcrumbItemIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiBreadcrumbItemIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiBreadcrumbItemId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiBreadcrumbItemIdError {
+    value: String,
+}
+
+impl fmt::Display for UiBreadcrumbItemIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "breadcrumb item id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiBreadcrumbItemIdError {}
+
+/// Application-owned display metadata for one document-backed breadcrumb.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiBreadcrumbItem {
+    id: UiBreadcrumbItemId,
+    label: String,
+}
+
+impl UiBreadcrumbItem {
+    pub fn new(id: UiBreadcrumbItemId, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            label: label.into(),
+        }
+    }
+
+    pub fn id(&self) -> &UiBreadcrumbItemId {
+        &self.id
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
     }
 }
 
@@ -840,6 +931,8 @@ pub enum UiValueType {
     Date,
     Time,
     Color,
+    BreadcrumbItemId,
+    BreadcrumbItemArray,
     AutoSuggestionId,
     NullableAutoSuggestionId,
     AutoSuggestionArray,
@@ -879,6 +972,8 @@ impl UiValueType {
                 .as_str()
                 .and_then(crate::Color::parse_hex_rgba)
                 .is_some(),
+            Self::BreadcrumbItemId => ui_breadcrumb_item_id_from_value(value).is_some(),
+            Self::BreadcrumbItemArray => ui_breadcrumb_items_from_value(value).is_some(),
             Self::AutoSuggestionId => ui_auto_suggestion_id_from_value(value).is_some(),
             Self::NullableAutoSuggestionId => {
                 value.is_null() || ui_auto_suggestion_id_from_value(value).is_some()
@@ -914,6 +1009,24 @@ impl UiValueType {
             Self::Any => true,
         }
     }
+}
+
+fn ui_breadcrumb_item_id_from_value(value: &Value) -> Option<UiBreadcrumbItemId> {
+    value
+        .as_str()
+        .and_then(|value| UiBreadcrumbItemId::new(value).ok())
+}
+
+pub(crate) fn ui_breadcrumb_items_from_value(value: &Value) -> Option<Vec<UiBreadcrumbItem>> {
+    let items = serde_json::from_value::<Vec<UiBreadcrumbItem>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    (!items.is_empty()
+        && items.iter().all(|item| {
+            is_valid_node_id(item.id.as_str())
+                && ids.insert(item.id.as_str().to_owned())
+                && !item.label.trim().is_empty()
+        }))
+    .then_some(items)
 }
 
 fn ui_auto_suggestion_id_from_value(value: &Value) -> Option<UiAutoSuggestionId> {
@@ -1985,6 +2098,18 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers a root-to-current breadcrumb path with stable semantic IDs.
+    #[cfg(feature = "breadcrumb")]
+    pub fn register_breadcrumb_items_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiBreadcrumbItem> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::BreadcrumbItemArray, move |state| {
+            serde_json::to_value(read(state)).expect("breadcrumb authoring metadata must serialize")
+        })
+    }
+
     /// Registers application-owned suggestions with stable semantic IDs.
     #[cfg(feature = "auto-suggest")]
     pub fn register_auto_suggestions_property(
@@ -2195,6 +2320,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                         .ok_or_else(|| "color payload must use canonical #RRGGBBAA".to_owned())
                 })?;
             map(color)
+        })
+    }
+
+    /// Registers a strongly typed breadcrumb selection action.
+    #[cfg(feature = "breadcrumb")]
+    pub fn register_breadcrumb_item_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiBreadcrumbItemId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::BreadcrumbItemId, move |payload| {
+            let id = ui_breadcrumb_item_id_from_value(&payload)
+                .ok_or_else(|| "breadcrumb payload must be a valid stable string id".to_owned())?;
+            map(id)
         })
     }
 
@@ -3971,6 +4110,28 @@ const BUTTON_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "click",
     payload_type: UiValueType::Null,
 }];
+const BREADCRUMB_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "items",
+        value_type: UiValueType::BreadcrumbItemArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const BREADCRUMB_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "select",
+        payload_type: UiValueType::BreadcrumbItemId,
+    },
+    ActionSpec {
+        name: "expanded_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const CHECKED_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "label",
@@ -4729,6 +4890,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
+        "breadcrumb" => Some(leaf(BREADCRUMB_PROPERTIES, BREADCRUMB_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
         "textbox" => Some(leaf(TEXTBOX_PROPERTIES, TEXTBOX_ACTIONS)),
         "password_box" => Some(leaf(PASSWORD_BOX_PROPERTIES, PASSWORD_BOX_ACTIONS)),
@@ -5427,6 +5589,70 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "breadcrumb")]
+    #[test]
+    fn typed_breadcrumb_bindings_preserve_path_ids_and_labels() {
+        struct BreadcrumbState {
+            items: Vec<UiBreadcrumbItem>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum BreadcrumbMsg {
+            Selected(UiBreadcrumbItemId),
+        }
+
+        let home = UiBreadcrumbItemId::new("home").unwrap();
+        let settings = UiBreadcrumbItemId::new("settings").unwrap();
+        let mut manifest = UiBindingManifest::<BreadcrumbState, BreadcrumbMsg>::new();
+        manifest
+            .register_breadcrumb_items_property("navigation_path", |state| state.items.clone())
+            .unwrap();
+        manifest
+            .register_breadcrumb_item_id_action("navigation_selected", |id| {
+                Ok(BreadcrumbMsg::Selected(id))
+            })
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties["navigation_path"],
+            UiValueType::BreadcrumbItemArray
+        );
+        assert_eq!(
+            manifest.schema().actions["navigation_selected"],
+            UiValueType::BreadcrumbItemId
+        );
+        assert_eq!(
+            manifest.read_property(
+                "navigation_path",
+                &BreadcrumbState {
+                    items: vec![
+                        UiBreadcrumbItem::new(home, "Home"),
+                        UiBreadcrumbItem::new(settings.clone(), "Settings"),
+                    ],
+                },
+            ),
+            Some(serde_json::json!([
+                { "id": "home", "label": "Home" },
+                { "id": "settings", "label": "Settings" }
+            ]))
+        );
+        assert_eq!(
+            manifest.map_action("navigation_selected", Value::String("settings".to_owned())),
+            Ok(BreadcrumbMsg::Selected(settings))
+        );
+        assert!(!UiValueType::BreadcrumbItemArray.matches(&serde_json::json!([])));
+        assert!(
+            !UiValueType::BreadcrumbItemArray.matches(&serde_json::json!([
+                { "id": "same", "label": "First" },
+                { "id": "same", "label": "Second" }
+            ]))
+        );
+        assert!(
+            !UiValueType::BreadcrumbItemArray.matches(&serde_json::json!([
+                { "id": "blank", "label": "  " }
+            ]))
+        );
+    }
+
     #[cfg(feature = "command-palette")]
     #[test]
     fn typed_command_palette_bindings_preserve_semantic_ids_and_metadata() {
@@ -5777,6 +6003,73 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.highlighted"
+        }));
+    }
+
+    #[test]
+    fn breadcrumb_contract_validates_stable_path_and_controlled_overflow() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "location-path",
+                "component": "breadcrumb",
+                "property_bindings": {
+                  "items": "navigation_path",
+                  "expanded": "navigation_overflow_open"
+                },
+                "action_bindings": {
+                  "select": "navigation_selected",
+                  "expanded_change": "navigation_overflow_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "navigation_path".to_owned(),
+                    UiValueType::BreadcrumbItemArray,
+                ),
+                ("navigation_overflow_open".to_owned(), UiValueType::Boolean),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "navigation_selected".to_owned(),
+                    UiValueType::BreadcrumbItemId,
+                ),
+                (
+                    "navigation_overflow_changed".to_owned(),
+                    UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let features = UiFeatureSet::new(["breadcrumb"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "location-path",
+                "component": "breadcrumb",
+                "properties": {
+                  "items": [
+                    { "id": "same", "label": "Home" },
+                    { "id": "same", "label": "Settings" }
+                  ]
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyType
+                && diagnostic.path == "$.root.properties.items"
         }));
     }
 

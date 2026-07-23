@@ -1,0 +1,11 @@
+{
+  "navigation_path": [
+    { "id": "home", "label": "首页 / Home" },
+    { "id": "projects", "label": "项目 / Projects" },
+    { "id": "framework", "label": "ZSUI Framework" },
+    { "id": "documentation", "label": "文档 / Documentation" },
+    { "id": "navigation", "label": "导航组件 / Navigation" },
+    { "id": "breadcrumb", "label": "面包屑 / BreadcrumbBar" }
+  ],
+  "navigation_overflow_open": false
+}

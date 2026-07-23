@@ -72,6 +72,16 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/teaching-tip.bindings.json
 ```
 
+BreadcrumbBar 文档可以用同一校验器验证：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,breadcrumb,label `
+  -- check examples/ui-documents/breadcrumb.json `
+  --bindings examples/ui-documents/breadcrumb.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -86,7 +96,7 @@ cargo run --bin zsui-uic `
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
-`teaching_tip` 和 `scroll`。
+`teaching_tip`、`breadcrumb` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 ## 布局与文字完整性
@@ -226,6 +236,14 @@ Toast；超时仍沿用平台运行时的计时器。Toast 的定位、圆角、
 `open_change` 都发送 `false` 并可回写受控 `open` 绑定，因此 Viewer 重建不会重新打开
 已经关闭的提示。文档运行时只组装 `ZsTeachingTipSpec`、稳定目标和类型化回调；尾部、
 尺寸、字体、按钮顺序与最终放置继续由各平台 profile 和共享原生宿主决定。
+
+`breadcrumb.items` 使用 `breadcrumb_item_array`，每个路径项包含唯一稳定字符串 ID 和
+非空标签；数组顺序只表达从根到当前位置的路径，不作为项目身份。`expanded` 与
+`expanded_change` 形成受控溢出开关，`select` 返回 `breadcrumb_item_id`。Rust 应用可用
+`register_breadcrumb_items_property` 和 `register_breadcrumb_item_id_action` 保留强类型
+语义 ID。发布运行时根据拥有者节点和项目 ID 确定性生成私有 `ZsBreadcrumbId`，重排或
+Viewer 热重建不会改变身份；折叠策略、行高、分隔符、字体和溢出表面继续由 Win32、
+AppKit 与 Linux 各自的 BreadcrumbBar profile 决定。
 
 `list` 的每个直接子节点都是一个可选行，子节点的稳定 `UiNodeId` 同时作为公开选择值。
 `selected` string 属性与 `select` string 动作组成受控选择闭环；调整子节点声明顺序后，
@@ -413,6 +431,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/grid-view.values.json
 ```
 
+受控面包屑示例使用稳定路径项目 ID，并由目标平台决定折叠、分隔符和溢出表面：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/breadcrumb.json `
+  --bindings examples/ui-documents/breadcrumb.bindings.json `
+  --values examples/ui-documents/breadcrumb.values.json
+```
+
 原生证明可由同一可执行文件生成：
 
 ```powershell
@@ -445,6 +474,8 @@ Windows TreeView 受控示例点击一个真实文件行，记录 1 次选择、
 消息和 0 次未处理点击；最终 Win32 PNG 保留完整页面文字、层级图标和新的稳定 ID 选择。
 Windows GridView 受控示例点击一个真实磁贴，记录 1 次选择、1 次调用、2 条 Viewer 消息
 和 0 次未处理点击；最终 Win32 PNG 保留完整双语页面、六个语义图标和新的稳定 ID 选择。
+Windows BreadcrumbBar 受控示例点击真实溢出按钮，记录 1 次展开状态变化、1 条 Viewer
+消息和 0 次未处理点击；最终 Win32 PNG 保留目标平台绘制的路径和溢出表面。
 
 固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
 `scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。

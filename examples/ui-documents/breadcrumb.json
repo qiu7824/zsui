@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "page",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "properties": {
+          "text": "面包屑导航 / BreadcrumbBar",
+          "text_role": "subtitle"
+        }
+      },
+      {
+        "id": "location-path",
+        "component": "breadcrumb",
+        "property_bindings": {
+          "items": "navigation_path",
+          "expanded": "navigation_overflow_open"
+        },
+        "action_bindings": {
+          "select": "navigation_selected",
+          "expanded_change": "navigation_overflow_changed"
+        },
+        "layout": {
+          "width": 520
+        }
+      },
+      {
+        "id": "summary",
+        "component": "text",
+        "properties": {
+          "text": "稳定语义 ID 保留路径身份，溢出菜单由平台体验参数绘制。 / Stable semantic IDs preserve path identity; platform profiles draw overflow.",
+          "text_role": "body",
+          "wrap": "word",
+          "ellipsis": false
+        }
+      }
+    ]
+  }
+}

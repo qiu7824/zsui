@@ -1053,6 +1053,12 @@ history remain authoritative for implementation status.
   Accessibility relationships, editable/file paths, semantic item icons,
   drag-and-drop, complete RTL and AppKit/GTK target interaction smoke remain
   readiness gaps.
+  UiDocument exposes this same component as `breadcrumb`: a typed
+  `breadcrumb_item_array` carries unique stable semantic IDs and non-empty
+  labels, `breadcrumb_item_id` selection returns the author ID, and Boolean
+  expanded/open changes retain state through Viewer rebuilds. The release
+  runtime derives private `ZsBreadcrumbId` values from the owning document
+  node plus the semantic item ID; declaration order is never identity.
 - ProgressRing is an independent `progress-ring` Cargo feature; it must not pull
   in ProgressBar. `ZsProgressRingSpec` keeps active, determinate/indeterminate
   mode and semantic size explicit, while inactive rings reserve layout space and

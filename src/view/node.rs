@@ -13,6 +13,7 @@ impl WidgetId {
 /// stored only when an application opts into a `*_with` builder.
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "command-palette",
     feature = "tree",
     feature = "grid-view",
@@ -42,6 +43,7 @@ pub struct ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "command-palette",
     feature = "tree",
     feature = "grid-view",
@@ -71,6 +73,7 @@ enum ViewMessageMapperKind<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "command-palette",
     feature = "tree",
     feature = "grid-view",
@@ -118,6 +121,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "command-palette",
     feature = "tree",
     feature = "grid-view",
@@ -157,6 +161,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
 
 #[cfg(any(
     feature = "auto-suggest",
+    feature = "breadcrumb",
     feature = "command-palette",
     feature = "tree",
     feature = "grid-view",
@@ -792,8 +797,8 @@ pub enum ViewNodeKind<Msg> {
         items: Vec<crate::ZsBreadcrumbItem>,
         overflow_open: bool,
         focused: Option<crate::ZsBreadcrumbFocusTarget>,
-        on_select: Option<fn(crate::ZsBreadcrumbId) -> Msg>,
-        on_expanded_change: Option<fn(bool) -> Msg>,
+        on_select: Option<ViewMessageMapper<crate::ZsBreadcrumbId, Msg>>,
+        on_expanded_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "toggle-button")]
     ToggleButton {
@@ -1474,7 +1479,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "breadcrumb")]
     pub fn on_breadcrumb_select(mut self, message: fn(crate::ZsBreadcrumbId) -> Msg) -> Self {
         if let ViewNodeKind::BreadcrumbBar { on_select, .. } = &mut self.kind {
-            *on_select = Some(message);
+            *on_select = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    pub fn on_breadcrumb_select_with(
+        mut self,
+        message: impl Fn(crate::ZsBreadcrumbId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::BreadcrumbBar { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2396,7 +2412,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             #[cfg(feature = "breadcrumb")]
             ViewNodeKind::BreadcrumbBar {
                 on_expanded_change, ..
-            } => *on_expanded_change = Some(message),
+            } => *on_expanded_change = Some(ViewMessageMapper::from_function(message)),
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox {
                 on_expanded_change, ..
@@ -2671,6 +2687,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: impl Fn(bool) -> Msg + Send + Sync + 'static,
     ) -> Self {
         if let ViewNodeKind::AutoSuggestBox {
+            on_expanded_change, ..
+        } = &mut self.kind
+        {
+            *on_expanded_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    pub fn on_breadcrumb_expanded_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::BreadcrumbBar {
             on_expanded_change, ..
         } = &mut self.kind
         {

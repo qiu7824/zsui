@@ -61,6 +61,7 @@ pub struct UiDocumentSecretAction {
 #[cfg_attr(
     not(any(
         feature = "button",
+        feature = "breadcrumb",
         feature = "toggle-button",
         feature = "checkbox",
         feature = "toggle",
@@ -181,6 +182,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
     #[cfg_attr(
         not(any(
             feature = "button",
+            feature = "breadcrumb",
             feature = "toggle-button",
             feature = "checkbox",
             feature = "toggle",
@@ -970,6 +972,8 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "breadcrumb")]
+        "breadcrumb" => document_breadcrumb(node, properties, mapper)?,
         #[cfg(feature = "toggle-button")]
         "toggle_button" => {
             let mut control = crate::toggle_button(
@@ -1938,6 +1942,73 @@ fn document_grid_view<Msg: Clone + 'static>(
     Ok(control)
 }
 
+#[cfg(feature = "breadcrumb")]
+fn document_breadcrumb<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let authoring_items = breadcrumb_items_property(node, properties)?;
+    let mut runtime_to_author = Vec::with_capacity(authoring_items.len());
+    let mut items = Vec::with_capacity(authoring_items.len());
+    for item in authoring_items {
+        let runtime_id = crate::ui_document::ui_breadcrumb_runtime_id(&node.id, item.id());
+        if let Some((_, first)) = runtime_to_author
+            .iter()
+            .find(|(candidate, _)| *candidate == runtime_id)
+        {
+            return Err(invalid_resolved_property(
+                node,
+                "items",
+                format!(
+                    "breadcrumb item ids {first:?} and {:?} collide after stable runtime mapping",
+                    item.id().as_str()
+                ),
+            ));
+        }
+        runtime_to_author.push((runtime_id, item.id().as_str().to_owned()));
+        items.push(crate::ZsBreadcrumbItem::new(runtime_id, item.label()));
+    }
+
+    let mut control =
+        crate::breadcrumb_bar(items).expanded(bool_property(node, properties, "expanded", false));
+    let runtime_to_author = Arc::new(runtime_to_author);
+    if let Some(binding) = node.action_bindings.get("select") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_breadcrumb_select_with(move |selected| {
+            let author_id = runtime_to_author
+                .iter()
+                .find(|(runtime_id, _)| *runtime_id == selected)
+                .map(|(_, author_id)| author_id.clone())
+                .expect("selected runtime breadcrumb item must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: None,
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("expanded_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("expanded").cloned();
+        control = control.on_breadcrumb_expanded_change_with(move |expanded| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(expanded),
+            })
+        });
+    }
+    Ok(control)
+}
+
 #[cfg(feature = "date-picker")]
 fn document_date_picker<Msg: Clone + 'static>(
     node: &UiNode,
@@ -2579,6 +2650,7 @@ fn grid_gap_property(
 
 #[cfg(any(
     feature = "label",
+    feature = "breadcrumb",
     feature = "grid",
     feature = "list",
     feature = "progress-ring",
@@ -2645,6 +2717,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
 #[cfg(any(
     feature = "label",
     feature = "button",
+    feature = "breadcrumb",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "toggle",
@@ -2959,6 +3032,30 @@ fn grid_view_items_property(
     })
 }
 
+#[cfg(feature = "breadcrumb")]
+fn breadcrumb_items_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiBreadcrumbItem>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get("items")
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(Vec::new());
+    }
+    let value = property_value(node, properties, "items").ok_or_else(|| {
+        invalid_resolved_property(node, "items", "a breadcrumb item array is required")
+    })?;
+    crate::ui_document::ui_breadcrumb_items_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "items",
+            "breadcrumb items must be non-empty and use unique stable ids and non-empty labels",
+        )
+    })
+}
+
 #[cfg(feature = "grid-view")]
 fn optional_grid_view_item_id_property(
     node: &UiNode,
@@ -3015,6 +3112,7 @@ fn string_property(
 #[cfg(any(
     feature = "label",
     feature = "button",
+    feature = "breadcrumb",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "toggle",
@@ -3286,6 +3384,7 @@ mod tests {
         feature = "time-picker",
         feature = "color-picker",
         feature = "command-palette",
+        feature = "breadcrumb",
         feature = "tree",
         feature = "grid-view",
         feature = "grid",
@@ -3976,6 +4075,116 @@ mod tests {
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "expanded"
         ));
+    }
+
+    #[cfg(feature = "breadcrumb")]
+    #[test]
+    fn compiles_controlled_breadcrumb_and_emits_semantic_item_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "location-path",
+                "component": "breadcrumb",
+                "property_bindings": {
+                  "items": "navigation_path",
+                  "expanded": "navigation_overflow_open"
+                },
+                "action_bindings": {
+                  "select": "navigation_selected",
+                  "expanded_change": "navigation_overflow_changed"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "navigation_path".to_owned(),
+                    crate::ui_document::UiValueType::BreadcrumbItemArray,
+                ),
+                (
+                    "navigation_overflow_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "navigation_selected".to_owned(),
+                    crate::ui_document::UiValueType::BreadcrumbItemId,
+                ),
+                (
+                    "navigation_overflow_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "navigation_path".to_owned(),
+                serde_json::json!([
+                    { "id": "home", "label": "Home" },
+                    { "id": "projects", "label": "Projects" },
+                    { "id": "framework", "label": "ZSUI Framework" }
+                ]),
+            ),
+            ("navigation_overflow_open".to_owned(), Value::Bool(false)),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let projects_author = crate::ui_document::UiBreadcrumbItemId::new("projects").unwrap();
+        let projects =
+            crate::ui_document::ui_breadcrumb_runtime_id(&document.root.id, &projects_author);
+        let state = view
+            .widget_breadcrumb_state(widget)
+            .expect("breadcrumb state");
+        assert_eq!(state.items.len(), 3);
+        assert!(!state.overflow_open);
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::BreadcrumbExpandedChanged {
+                widget,
+                expanded: true,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(expanded)] = messages.as_slice() else {
+            panic!("breadcrumb expansion must emit one controlled-state action");
+        };
+        assert_eq!(expanded.binding, "navigation_overflow_changed");
+        assert_eq!(
+            expanded.property_binding.as_deref(),
+            Some("navigation_overflow_open")
+        );
+        assert_eq!(expanded.payload, Value::Bool(true));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::BreadcrumbSelected {
+                widget,
+                item: projects,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(closed), Msg::Action(selected)] = messages.as_slice() else {
+            panic!("breadcrumb selection must close overflow and emit its semantic id");
+        };
+        assert_eq!(closed.binding, "navigation_overflow_changed");
+        assert_eq!(closed.payload, Value::Bool(false));
+        assert_eq!(selected.binding, "navigation_selected");
+        assert_eq!(selected.property_binding, None);
+        assert_eq!(selected.payload, Value::String("projects".to_owned()));
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "navigation_path".to_owned(),
+            serde_json::json!([{ "id": "blank", "label": " " }]),
+        );
+        assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
     }
 
     #[cfg(feature = "grid-view")]

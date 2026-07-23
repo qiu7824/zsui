@@ -744,7 +744,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 {
                     *overflow_open = *expanded;
                     if let Some(message) = on_expanded_change {
-                        cx.emit(message(*expanded));
+                        cx.emit(message.map(*expanded));
                     }
                 }
                 ViewEvent::BreadcrumbSelected { widget, item }
@@ -755,11 +755,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if *overflow_open {
                         *overflow_open = false;
                         if let Some(message) = on_expanded_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                     }
                     if let Some(message) = on_select {
-                        cx.emit(message(*item));
+                        cx.emit(message.map(*item));
                     }
                 }
                 ViewEvent::DismissPopupOverlays { except }
@@ -767,7 +767,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 {
                     *overflow_open = false;
                     if let Some(message) = on_expanded_change {
-                        cx.emit(message(false));
+                        cx.emit(message.map(false));
                     }
                 }
                 _ => {}

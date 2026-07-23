@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "navigation_path": "breadcrumb_item_array",
+    "navigation_overflow_open": "boolean"
+  },
+  "actions": {
+    "navigation_selected": "breadcrumb_item_id",
+    "navigation_overflow_changed": "boolean"
+  }
+}
