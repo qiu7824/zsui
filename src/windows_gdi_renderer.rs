@@ -1639,30 +1639,48 @@ fn detect_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
     if let Some(families) = WINDOWS_UI_FONT_FAMILIES.get() {
         return *families;
     }
+    if dc.is_null() {
+        return WindowsUiFontFamilies {
+            small: WINDOWS_VARIABLE_SMALL_FONT_FAMILY,
+            text: WINDOWS_VARIABLE_TEXT_FONT_FAMILY,
+            display: WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY,
+        };
+    }
     let system = windows_system_ui_font_family();
-    let has_system = dc.is_null() || windows_gdi_font_family_available(dc, system);
-    let has_text =
-        !has_system && windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_TEXT_FONT_FAMILY);
-    let text = if has_system {
-        system
-    } else if has_text {
+    let has_variable_text =
+        windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_TEXT_FONT_FAMILY);
+    let has_variable_small =
+        windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_SMALL_FONT_FAMILY);
+    let has_variable_display =
+        windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY);
+    let has_segoe = windows_gdi_font_family_available(dc, WINDOWS_UI_FONT_FAMILY);
+    let has_system = windows_gdi_font_family_available(dc, system);
+    let text = if has_variable_text {
         WINDOWS_VARIABLE_TEXT_FONT_FAMILY
+    } else if has_segoe {
+        WINDOWS_UI_FONT_FAMILY
+    } else if has_system {
+        system
     } else {
         WINDOWS_UI_FONT_FAMILY
     };
     let selected = WindowsUiFontFamilies {
-        small: if has_system {
-            system
-        } else if windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_SMALL_FONT_FAMILY) {
+        small: if has_variable_small {
             WINDOWS_VARIABLE_SMALL_FONT_FAMILY
+        } else if has_segoe {
+            WINDOWS_UI_FONT_FAMILY
+        } else if has_system {
+            system
         } else {
             text
         },
         text,
-        display: if has_system {
-            system
-        } else if windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY) {
+        display: if has_variable_display {
             WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY
+        } else if has_segoe {
+            WINDOWS_UI_FONT_FAMILY
+        } else if has_system {
+            system
         } else {
             text
         },
@@ -1685,7 +1703,7 @@ pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProf
         .unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY);
     let mut profile = crate::NativeTypographyProfile::new(
         crate::ZsTypographyPlatformStyle::Windows,
-        "win32_gdi_system_font_detection",
+        "win32_gdi_fluent_typography_detection",
         ui_fonts.text,
         "Consolas",
         icon_font,
@@ -2327,11 +2345,11 @@ mod tests {
         semantic.role = crate::TextRole::Caption;
         let caption = resolver.resolve_text_style(semantic);
         assert_eq!((caption.size, caption.line_height), (12.0, 16.0));
-        assert_eq!(caption.font_family, body.font_family);
+        assert_eq!(caption.font_family, resolver.small_font_family);
         semantic.role = crate::TextRole::Subtitle;
         let subtitle = resolver.resolve_text_style(semantic);
         assert_eq!((subtitle.size, subtitle.line_height), (20.0, 28.0));
-        assert_eq!(subtitle.font_family, body.font_family);
+        assert_eq!(subtitle.font_family, resolver.display_font_family);
         semantic.role = crate::TextRole::Title;
         assert_eq!(resolver.resolve_text_style(semantic).size, 28.0);
         semantic = SemanticTextStyle::for_role(crate::TextRole::TitleLarge);

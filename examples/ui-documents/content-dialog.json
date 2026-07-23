@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "delete-dialog",
+    "component": "content_dialog",
+    "properties": {
+      "title": "删除文件 / Delete file",
+      "content": "此操作无法撤销。 / This action cannot be undone.",
+      "primary_button": "删除 / Delete",
+      "secondary_button": "保留 / Keep",
+      "close_button": "取消 / Cancel",
+      "default_button": "primary"
+    },
+    "property_bindings": {
+      "open": "delete_open"
+    },
+    "action_bindings": {
+      "result": "delete_result",
+      "open_change": "delete_open_changed"
+    },
+    "children": [
+      {
+        "id": "page",
+        "component": "stack",
+        "layout": {
+          "padding_token": "content_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "summary",
+            "component": "text",
+            "properties": {
+              "text": "报告.pdf / report.pdf"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

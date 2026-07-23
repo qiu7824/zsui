@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "delete_open": "boolean"
+  },
+  "actions": {
+    "delete_result": "string",
+    "delete_open_changed": "boolean"
+  }
+}

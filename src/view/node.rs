@@ -29,6 +29,7 @@ impl WidgetId {
     feature = "color-picker",
     feature = "list",
     feature = "tabs",
+    feature = "dialog",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -54,6 +55,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "color-picker",
     feature = "list",
     feature = "tabs",
+    feature = "dialog",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -79,6 +81,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "color-picker",
     feature = "list",
     feature = "tabs",
+    feature = "dialog",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -122,6 +125,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "color-picker",
     feature = "list",
     feature = "tabs",
+    feature = "dialog",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -157,6 +161,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "color-picker",
     feature = "list",
     feature = "tabs",
+    feature = "dialog",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -881,7 +886,8 @@ pub enum ViewNodeKind<Msg> {
         spec: crate::ZsContentDialogSpec,
         open: bool,
         focused_button: crate::ZsContentDialogButton,
-        on_result: Option<fn(crate::ZsContentDialogResult) -> Msg>,
+        on_result: Option<ViewMessageMapper<crate::ZsContentDialogResult, Msg>>,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "flyout")]
     Flyout {
@@ -1880,7 +1886,45 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "dialog")]
     pub fn on_dialog_result(mut self, message: fn(crate::ZsContentDialogResult) -> Msg) -> Self {
         if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
-            *on_result = Some(message);
+            *on_result = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Registers an owned callback for a content-dialog response.
+    ///
+    /// This is the closure-capable counterpart to [`Self::on_dialog_result`].
+    /// It is used by document-backed views to retain the stable node and
+    /// binding identity without a global callback registry.
+    #[cfg(feature = "dialog")]
+    pub fn on_dialog_result_with(
+        mut self,
+        message: impl Fn(crate::ZsContentDialogResult) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ContentDialog { on_result, .. } = &mut self.kind {
+            *on_result = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    /// Registers a controlled-state callback when a dialog response closes
+    /// the modal surface.
+    #[cfg(feature = "dialog")]
+    pub fn on_dialog_open_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::ContentDialog { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Capturing-callback variant of [`Self::on_dialog_open_change`].
+    #[cfg(feature = "dialog")]
+    pub fn on_dialog_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ContentDialog { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

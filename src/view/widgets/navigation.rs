@@ -22,8 +22,9 @@ where
 /// Wraps one page in a modal, self-drawn content-dialog layer.
 ///
 /// The application owns `open` and rebuilds the same node from its state. The
-/// framework temporarily closes the live node after a response and emits one
-/// typed result through [`ViewNode::on_dialog_result`].
+/// framework temporarily closes the live node after a response, emits its typed
+/// result and can report the controlled `open` transition through
+/// [`ViewNode::on_dialog_open_change`].
 #[cfg(feature = "dialog")]
 pub fn content_dialog<Msg>(
     widget: WidgetId,
@@ -37,6 +38,7 @@ pub fn content_dialog<Msg>(
         open,
         focused_button,
         on_result: None,
+        on_open_change: None,
     })
     .id(widget)
     .child(page)

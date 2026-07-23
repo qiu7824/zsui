@@ -3500,6 +3500,88 @@ impl<'a> UiDocumentValidator<'a> {
             validate_grid_component(node, path, diagnostics);
         }
 
+        if node.component == "content_dialog" {
+            let static_string = |name: &str| {
+                (!node.property_bindings.contains_key(name))
+                    .then(|| node.properties.get(name).and_then(Value::as_str))
+                    .flatten()
+            };
+            if static_string("content").is_some_and(|value| value.trim().is_empty()) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.content"),
+                    "content_dialog content must not be empty".to_owned(),
+                );
+            }
+            if static_string("close_button").is_some_and(|value| value.trim().is_empty()) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.close_button"),
+                    "content_dialog close_button must not be empty".to_owned(),
+                );
+            }
+            let has_button = |name: &str| {
+                node.property_bindings.contains_key(name)
+                    || node.localization.contains_key(name)
+                    || static_string(name).is_some_and(|label| !label.trim().is_empty())
+            };
+            let validate_role =
+                |name: &str, role: Option<&str>, diagnostics: &mut Vec<UiDiagnostic>| {
+                    let Some(role) = role else {
+                        return;
+                    };
+                    if !matches!(role, "primary" | "secondary" | "close") {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.{name}"),
+                            format!("content_dialog {name} must be primary, secondary or close"),
+                        );
+                        return;
+                    }
+                    let available = match role {
+                        "primary" => has_button("primary_button"),
+                        "secondary" => has_button("secondary_button"),
+                        "close" => has_button("close_button"),
+                        _ => false,
+                    };
+                    if !available {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.{name}"),
+                            format!(
+                                "content_dialog {name} must address an available dialog button"
+                            ),
+                        );
+                    }
+                };
+            let default_button = static_string("default_button");
+            let destructive_button = static_string("destructive_button");
+            validate_role("default_button", default_button, diagnostics);
+            validate_role("destructive_button", destructive_button, diagnostics);
+            if default_button.is_some() && default_button == destructive_button {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.destructive_button"),
+                    "content_dialog default_button and destructive_button must differ".to_owned(),
+                );
+            }
+            if node.property_bindings.contains_key("open")
+                && !node.action_bindings.contains_key("open_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.open"),
+                    "bound content_dialog open state requires an open_change action".to_owned(),
+                );
+            }
+        }
+
         for (property_name, binding_name) in &node.property_bindings {
             let property = find_property(schema, property_name);
             if property.is_none() {
@@ -4246,6 +4328,58 @@ const SCROLL_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "scroll",
     payload_type: UiValueType::Number,
 }];
+const CONTENT_DIALOG_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "title",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "content",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "primary_button",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "secondary_button",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "close_button",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "default_button",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "destructive_button",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const CONTENT_DIALOG_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "result",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "open_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 
 fn component_schema(component: &str) -> Option<ComponentSchema> {
     let leaf = |properties, actions| ComponentSchema {
@@ -4283,6 +4417,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: GRID_PROPERTIES,
             actions: NO_ACTIONS,
             children: ChildPolicy::AtLeast(1),
+        }),
+        "content_dialog" => Some(ComponentSchema {
+            properties: CONTENT_DIALOG_PROPERTIES,
+            actions: CONTENT_DIALOG_ACTIONS,
+            children: ChildPolicy::Exactly(1),
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
@@ -6308,6 +6447,63 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path.ends_with("properties.selected")
+        }));
+    }
+
+    #[test]
+    fn content_dialog_contract_requires_controlled_close_and_available_roles() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "confirm",
+                "component": "content_dialog",
+                "properties": {
+                  "content": "This action cannot be undone.",
+                  "primary_button": "Delete",
+                  "close_button": "Cancel",
+                  "default_button": "primary"
+                },
+                "property_bindings": { "open": "confirm_open" },
+                "action_bindings": { "open_change": "confirm_open_changed" },
+                "children": [{ "id": "page", "component": "stack" }]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("confirm_open".to_owned(), UiValueType::Boolean)]),
+            actions: BTreeMap::from([("confirm_open_changed".to_owned(), UiValueType::Boolean)]),
+        };
+        let features = UiFeatureSet::new(["dialog"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "confirm",
+                "component": "content_dialog",
+                "properties": {
+                  "content": "This action cannot be undone.",
+                  "close_button": "Cancel",
+                  "default_button": "secondary"
+                },
+                "property_bindings": { "open": "confirm_open" },
+                "children": [{ "id": "page", "component": "stack" }]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.property_bindings.open"
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.default_button"
         }));
     }
 

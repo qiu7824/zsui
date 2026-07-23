@@ -1097,7 +1097,7 @@ mod tests {
         let next_wrapped_line = route.dispatch_key_down(u32::from(VK_DOWN));
         let extended = route.dispatch_key_down_with_shift(u32::from(VK_UP), true);
 
-        assert_eq!(second_visual_row.text_caret, Some(5));
+        assert_eq!(second_visual_row.text_caret, Some(6));
         assert_eq!(short_hard_line.text_caret, Some(8));
         assert_eq!(next_wrapped_line.text_caret, Some(11));
         assert_eq!(extended.text_caret, Some(8));

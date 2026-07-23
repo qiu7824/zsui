@@ -149,6 +149,14 @@ history remain authoritative for implementation status.
   shared List builder floors direct rows at the platform selection height and
   applies the platform spacing inset to row content; typography scaling raises
   that hard floor instead of compressing mixed-script line boxes.
+  Document-ready ContentDialog owns exactly one page child, explicit open
+  state, semantic title/content/button labels and optional default/destructive
+  button roles. Validation rejects empty required copy, unavailable roles and
+  conflicting default/destructive roles. Its result action emits `primary`,
+  `secondary` or `close` through an owned typed callback; bound `open` state
+  requires a Boolean `open_change` action and receives `false` after a response,
+  so Viewer rebuilds cannot reopen a dismissed dialog. Release compilation does
+  not add a global event registry.
   Document-ready ProgressRing uses one optional `nullable_number` value for
   determinate/indeterminate mode, validates its numeric range twice and maps
   small/medium/large to platform-owned metrics. Ordinary
@@ -929,8 +937,10 @@ history remain authoritative for implementation status.
 - ContentDialog is an independent `dialog` Cargo feature over `widgets-base`.
   It composes around one application page, keeps `open` in application state and
   emits `ZsContentDialogResult` from semantic Primary, Secondary or mandatory
-  Close slots; application code never chooses platform button order or imports
-  a native dialog object. The modal surface, scrim, focus scope, hit testing and
+  Close slots. Document-backed bindings pair `open` with a Boolean
+  `open_change` action so a response is retained as `false` across Viewer
+  rebuilds; application code never chooses platform button order or imports a
+  native dialog object. The modal surface, scrim, focus scope, hit testing and
   hover/pressed feedback stay on the shared self-drawn tree, preserving the
   buffered Win32 path and avoiding child HWND/NSView/GtkWidget registries.
   Windows uses WinUI-like equal action widths, macOS puts intrinsic actions at

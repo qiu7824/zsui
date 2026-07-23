@@ -946,6 +946,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 open,
                 focused_button,
                 on_result,
+                on_open_change,
             } = &mut self.kind
             {
                 modal_open = *open;
@@ -962,7 +963,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         {
                             *open = false;
                             if let Some(message) = on_result {
-                                cx.emit(message((*button).into()));
+                                cx.emit(message.map((*button).into()));
+                            }
+                            if let Some(message) = on_open_change {
+                                cx.emit(message.map(false));
                             }
                             handled = true;
                         }

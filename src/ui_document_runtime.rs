@@ -78,6 +78,7 @@ pub struct UiDocumentSecretAction {
         feature = "grid-view",
         feature = "list",
         feature = "tabs",
+        feature = "dialog",
         feature = "scroll"
     )),
     allow(dead_code)
@@ -191,6 +192,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "auto-suggest",
             feature = "list",
             feature = "tabs",
+            feature = "dialog",
             feature = "scroll"
         )),
         allow(dead_code)
@@ -455,6 +457,140 @@ fn compile_node<Msg: Clone + 'static>(
                         binding: binding.clone(),
                         property_binding: property_binding.clone(),
                         payload: Value::from(offset.0),
+                    })
+                });
+            }
+            control
+        }
+        #[cfg(feature = "dialog")]
+        "content_dialog" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(page) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+
+            let content = string_property(node, properties, "content", "");
+            if content.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "content",
+                    "content dialog content must not be empty",
+                ));
+            }
+            let close_button = string_property(node, properties, "close_button", "");
+            if close_button.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "close_button",
+                    "content dialog close button must not be empty",
+                ));
+            }
+            let title = optional_string_property(node, properties, "title");
+            let primary_button = optional_string_property(node, properties, "primary_button");
+            let secondary_button = optional_string_property(node, properties, "secondary_button");
+            let default_button = optional_string_property(node, properties, "default_button")
+                .map(|value| document_dialog_button(node, "default_button", &value))
+                .transpose()?;
+            let destructive_button =
+                optional_string_property(node, properties, "destructive_button")
+                    .map(|value| document_dialog_button(node, "destructive_button", &value))
+                    .transpose()?;
+
+            let has_button = |button| match button {
+                crate::ZsContentDialogButton::Primary => primary_button
+                    .as_deref()
+                    .is_some_and(|label| !label.trim().is_empty()),
+                crate::ZsContentDialogButton::Secondary => secondary_button
+                    .as_deref()
+                    .is_some_and(|label| !label.trim().is_empty()),
+                crate::ZsContentDialogButton::Close => true,
+            };
+            for (property, button) in [
+                ("default_button", default_button),
+                ("destructive_button", destructive_button),
+            ] {
+                if button.is_some_and(|button| !has_button(button)) {
+                    return Err(invalid_resolved_property(
+                        node,
+                        property,
+                        "content dialog role must address an available button",
+                    ));
+                }
+            }
+            if default_button.is_some() && default_button == destructive_button {
+                return Err(invalid_resolved_property(
+                    node,
+                    "destructive_button",
+                    "content dialog default and destructive buttons must differ",
+                ));
+            }
+
+            let mut spec = crate::ZsContentDialogSpec::new(content, close_button);
+            if let Some(title) = title {
+                spec = spec.title(title);
+            }
+            if let Some(primary) = primary_button {
+                spec = spec.primary_button(primary);
+            }
+            if let Some(secondary) = secondary_button {
+                spec = spec.secondary_button(secondary);
+            }
+            if let Some(default_button) = default_button {
+                spec = spec.default_button(default_button);
+            }
+            if let Some(destructive_button) = destructive_button {
+                spec = spec.destructive_button(destructive_button);
+            }
+
+            let mut control = crate::content_dialog(
+                node.id.widget_id(),
+                bool_property(node, properties, "open", false),
+                spec,
+                page,
+            );
+            if let Some(binding) = node.action_bindings.get("result") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_dialog_result_with(move |result| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(
+                            match result {
+                                crate::ZsContentDialogResult::Primary => "primary",
+                                crate::ZsContentDialogResult::Secondary => "secondary",
+                                crate::ZsContentDialogResult::Close => "close",
+                            }
+                            .to_owned(),
+                        ),
+                    })
+                });
+            }
+            if let Some(binding) = node.action_bindings.get("open_change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("open").cloned();
+                control = control.on_dialog_open_change_with(move |open| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(open),
                     })
                 });
             }
@@ -837,6 +973,24 @@ fn compile_node<Msg: Clone + 'static>(
     };
     view = view.id(node.id.widget_id());
     Ok(apply_layout(view, node))
+}
+
+#[cfg(feature = "dialog")]
+fn document_dialog_button(
+    node: &UiNode,
+    property: &str,
+    value: &str,
+) -> Result<crate::ZsContentDialogButton, UiDocumentRuntimeError> {
+    match value {
+        "primary" => Ok(crate::ZsContentDialogButton::Primary),
+        "secondary" => Ok(crate::ZsContentDialogButton::Secondary),
+        "close" => Ok(crate::ZsContentDialogButton::Close),
+        _ => Err(invalid_resolved_property(
+            node,
+            property,
+            "content dialog button must be primary, secondary or close",
+        )),
+    }
 }
 
 #[cfg(feature = "auto-suggest")]
@@ -2056,6 +2210,7 @@ fn grid_gap_property(
     feature = "color-picker",
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "dialog",
     feature = "tree",
     feature = "grid-view"
 ))]
@@ -2452,6 +2607,7 @@ fn optional_grid_view_item_id_property(
 #[cfg(any(
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "dialog",
     feature = "label",
     feature = "button",
     feature = "toggle-button",
@@ -2485,6 +2641,7 @@ fn string_property(
     feature = "color-picker",
     feature = "auto-suggest",
     feature = "command-palette",
+    feature = "dialog",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -2538,7 +2695,8 @@ fn nullable_number_property(
     feature = "time-picker",
     feature = "color-picker",
     feature = "auto-suggest",
-    feature = "command-palette"
+    feature = "command-palette",
+    feature = "dialog"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -3988,6 +4146,85 @@ mod tests {
                 property_binding: None,
                 payload: Value::Null,
             })]
+        );
+    }
+
+    #[cfg(all(feature = "dialog", feature = "label"))]
+    #[test]
+    fn compiles_content_dialog_and_maps_typed_result_without_viewer_runtime() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "confirm",
+                "component": "content_dialog",
+                "properties": {
+                  "title": "Delete item",
+                  "content": "This action cannot be undone.",
+                  "primary_button": "Delete",
+                  "close_button": "Cancel",
+                  "default_button": "primary"
+                },
+                "property_bindings": { "open": "confirm_open" },
+                "action_bindings": {
+                  "result": "confirm_result",
+                  "open_change": "confirm_open_changed"
+                },
+                "children": [
+                  { "id": "page", "component": "text", "properties": { "text": "Page" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "confirm_open".to_owned(),
+                crate::ui_document::UiValueType::Boolean,
+            )]),
+            actions: BTreeMap::from([
+                (
+                    "confirm_result".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "confirm_open_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([("confirm_open".to_owned(), Value::Bool(true))]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        assert!(matches!(
+            &view.kind,
+            crate::ViewNodeKind::ContentDialog { open: true, .. }
+        ));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ContentDialogResponded {
+                widget: document.root.id.widget_id(),
+                button: crate::ZsContentDialogButton::Primary,
+            },
+        );
+
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::Action(UiDocumentAction {
+                    node_id: "confirm".to_owned(),
+                    binding: "confirm_result".to_owned(),
+                    property_binding: None,
+                    payload: Value::String("primary".to_owned()),
+                }),
+                Msg::Action(UiDocumentAction {
+                    node_id: "confirm".to_owned(),
+                    binding: "confirm_open_changed".to_owned(),
+                    property_binding: Some("confirm_open".to_owned()),
+                    payload: Value::Bool(false),
+                })
+            ]
         );
     }
 
