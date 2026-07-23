@@ -757,6 +757,16 @@ history remain authoritative for implementation status.
   action. The Win32 Viewer proof clicks Save once, routes one typed message
   with zero unhandled clicks, and measures 16,035,840 bytes RSS plus 4,882,432
   private bytes before teardown.
+- Standalone semantic icons are the opt-in `icon` feature. Applications and
+  UiDocument select only `ZsIcon`, `ZsIconSize` and a theme `ColorRole`; static
+  document colors may instead use the shared `foreground` theme token, and the
+  validator rejects two simultaneous color sources. The
+  shared View node stays noninteractive while Windows, AppKit and GTK profiles
+  resolve 16/20/32, 13/16/32 and 16/18/32-DP size roles plus their native icon
+  source. Bound document values are revalidated after resolution and cannot
+  carry platform glyphs or resource paths. The Win32 Viewer proof retains
+  three standalone icons, routes one Confirm click with zero unhandled input,
+  and measures 16,064,512 bytes RSS plus 4,907,008 private bytes before teardown.
 - The Notepad acceptance surface uses the real framework TabView for its
   document header. The semantic file icon and title occupy the same tab row and
   the editor is the selected tab content. This remains a one-static-tab proof;

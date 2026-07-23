@@ -624,6 +624,8 @@ fn navigation_intrinsic_height_px<Msg>(
         .to_px(dpi)
         .round_i32()
         .max(1),
+        #[cfg(feature = "icon")]
+        ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => node
@@ -851,6 +853,8 @@ fn intrinsic_min_width_px<Msg>(
         ViewNodeKind::Text { text, style } => {
             estimated_text_min_width_px(text, *style, dpi, typography_scale)
         }
+        #[cfg(feature = "icon")]
+        ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => node
@@ -932,6 +936,8 @@ fn intrinsic_min_height_px<Msg>(
         ViewNodeKind::Text { text, style } => {
             estimated_text_min_height_px(text, *style, content_width, dpi, typography_scale)
         }
+        #[cfg(feature = "icon")]
+        ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => {
@@ -989,6 +995,21 @@ fn intrinsic_min_height_px<Msg>(
             .unwrap_or(0),
     };
     declared.max(content.saturating_add(padding.saturating_mul(2)))
+}
+
+#[cfg(feature = "icon")]
+fn standalone_icon_size_px<Msg>(
+    node: &ViewNode<Msg>,
+    size: crate::ZsIconSize,
+    dpi: Dpi,
+) -> i32 {
+    crate::platform_component_profile::PlatformIconProfile::for_platform(
+        node.resolved_platform_style(),
+    )
+    .size(size)
+    .to_px(dpi)
+    .round_i32()
+    .max(1)
 }
 
 #[cfg(feature = "label")]

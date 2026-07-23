@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "status_icon": "string",
+    "status_icon_size": "string",
+    "status_icon_color": "string"
+  },
+  "actions": {
+    "confirm_clicked": "null"
+  }
+}

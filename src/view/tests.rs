@@ -372,6 +372,60 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "icon")]
+    fn standalone_icon_uses_semantic_payload_and_platform_metrics() {
+        for (platform, expected_size) in [
+            (crate::ZsBaseControlPlatformStyle::Windows, 20),
+            (crate::ZsBaseControlPlatformStyle::Macos, 16),
+            (crate::ZsBaseControlPlatformStyle::Gtk, 18),
+        ] {
+            let icon_node: ViewNode<()> = icon(crate::ZsIcon::Info)
+                .icon_size(crate::ZsIconSize::Standard)
+                .icon_color(ColorRole::Accent)
+                .with_platform_style_override(platform);
+            let mut view = column([icon_node]);
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 120,
+                    height: 80,
+                },
+                Dpi::standard(),
+            ));
+
+            assert_eq!(
+                view.children[0].bounds(),
+                Some(Rect {
+                    x: 0,
+                    y: 0,
+                    width: expected_size,
+                    height: expected_size,
+                })
+            );
+            assert!(matches!(
+                view.children[0].kind,
+                ViewNodeKind::Icon {
+                    icon: crate::ZsIcon::Info,
+                    size: crate::ZsIconSize::Standard,
+                    color: ColorRole::Accent,
+                }
+            ));
+
+            let mut paint = ViewPaintCx::new(Dpi::standard());
+            view.paint(&mut paint);
+            assert!(paint.plan().commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::Icon(command)
+                    if command.icon == crate::ZsIcon::Info
+                        && command.bounds.width == expected_size
+                        && command.bounds.height == expected_size
+                        && command.color == ColorRole::Accent
+            )));
+        }
+    }
+
+    #[test]
     #[cfg(feature = "button")]
     fn toolbar_button_keeps_semantic_icon_and_flat_resting_chrome() {
         let mut view: ViewNode<Msg> = toolbar_button_for_style(

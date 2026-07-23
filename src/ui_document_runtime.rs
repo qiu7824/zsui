@@ -22,7 +22,7 @@ use crate::ui_document::{
 };
 #[cfg(feature = "grid")]
 use crate::ui_document::{UiGridPlacement, UiGridTrack};
-#[cfg(feature = "label")]
+#[cfg(any(feature = "icon", feature = "label"))]
 use crate::ColorRole;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
 use crate::ProgressRange;
@@ -1131,6 +1131,8 @@ fn compile_node<Msg: Clone + 'static>(
             let value = string_property(node, properties, "text", "");
             crate::styled_text(value, semantic_text_style(node, properties)?)
         }
+        #[cfg(feature = "icon")]
+        "icon" => document_icon(node, properties)?,
         #[cfg(feature = "button")]
         "button" => {
             let label = string_property(node, properties, "label", "Button");
@@ -3334,6 +3336,8 @@ fn grid_gap_property(
 
 #[cfg(any(
     feature = "label",
+    feature = "button",
+    feature = "icon",
     feature = "breadcrumb",
     feature = "flyout",
     feature = "menu-flyout",
@@ -3404,6 +3408,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
 #[cfg(any(
     feature = "label",
     feature = "button",
+    feature = "icon",
     feature = "breadcrumb",
     feature = "flyout",
     feature = "menu-flyout",
@@ -3987,6 +3992,7 @@ fn optional_table_sort_property(
     feature = "toast",
     feature = "info-bar",
     feature = "label",
+    feature = "icon",
     feature = "button",
     feature = "flyout",
     feature = "menu-flyout",
@@ -4008,7 +4014,7 @@ fn string_property(
         .unwrap_or_else(|| fallback.to_owned())
 }
 
-#[cfg(feature = "button")]
+#[cfg(any(feature = "button", feature = "icon"))]
 fn optional_semantic_icon_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -4029,6 +4035,65 @@ fn optional_semantic_icon_property(
                 format!("unknown ZsIcon semantic variant {icon:?}"),
             )
         })
+}
+
+#[cfg(feature = "icon")]
+fn document_icon<Msg>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let icon = optional_semantic_icon_property(node, properties, "icon")?.ok_or_else(|| {
+        invalid_resolved_property(node, "icon", "a semantic ZsIcon value is required")
+    })?;
+    let size = match string_property(node, properties, "size", "standard").as_str() {
+        "small" => crate::ZsIconSize::Small,
+        "standard" => crate::ZsIconSize::Standard,
+        "large" => crate::ZsIconSize::Large,
+        value => {
+            return Err(invalid_resolved_property(
+                node,
+                "size",
+                format!("unsupported semantic icon size {value:?}"),
+            ));
+        }
+    };
+    let bound_color = string_property(node, properties, "color", "primary");
+    let color = match node
+        .theme_tokens
+        .get("foreground")
+        .map(String::as_str)
+        .unwrap_or(bound_color.as_str())
+    {
+        "primary" => ColorRole::PrimaryText,
+        "secondary" => ColorRole::SecondaryText,
+        "disabled" => ColorRole::DisabledText,
+        "accent" => ColorRole::Accent,
+        "accent_text" => ColorRole::AccentText,
+        "surface" => ColorRole::Surface,
+        "surface_raised" => ColorRole::SurfaceRaised,
+        "control" => ColorRole::Control,
+        "border" => ColorRole::Border,
+        "success" => ColorRole::Success,
+        "warning" => ColorRole::Warning,
+        "danger" => ColorRole::Danger,
+        token if node.theme_tokens.contains_key("foreground") => {
+            color_role(token).ok_or_else(|| {
+                invalid_resolved_property(
+                    node,
+                    "foreground",
+                    "unsupported icon foreground theme token",
+                )
+            })?
+        }
+        value => {
+            return Err(invalid_resolved_property(
+                node,
+                "color",
+                format!("unsupported semantic icon color {value:?}"),
+            ));
+        }
+    };
+    Ok(crate::icon(icon).icon_size(size).icon_color(color))
 }
 
 #[cfg(any(
@@ -4280,7 +4345,7 @@ fn theme_color_token(token: &str) -> Option<ThemeColorToken> {
     }
 }
 
-#[cfg(feature = "label")]
+#[cfg(any(feature = "icon", feature = "label"))]
 fn color_role(token: &str) -> Option<ColorRole> {
     match token {
         "surface" => Some(ColorRole::Surface),
@@ -4360,6 +4425,69 @@ mod tests {
 
         assert_eq!(view.id, Some(document.root.id.widget_id()));
         assert!(view.children.is_empty());
+    }
+
+    #[cfg(feature = "icon")]
+    #[test]
+    fn compiles_bound_semantic_icon_without_platform_values() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "status-icon",
+                "component": "icon",
+                "property_bindings": {
+                  "icon": "status_symbol",
+                  "size": "status_size",
+                  "color": "status_color"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "status_symbol".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "status_size".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "status_color".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::new(),
+        };
+        let values = BTreeMap::from([
+            (
+                "status_symbol".to_owned(),
+                Value::String("Success".to_owned()),
+            ),
+            ("status_size".to_owned(), Value::String("large".to_owned())),
+            (
+                "status_color".to_owned(),
+                Value::String("success".to_owned()),
+            ),
+        ]);
+
+        let view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        assert!(matches!(
+            view.kind,
+            crate::ViewNodeKind::Icon {
+                icon: crate::ZsIcon::Success,
+                size: crate::ZsIconSize::Large,
+                color: ColorRole::Success,
+            }
+        ));
+        assert_eq!(view.style.flex, 0.0);
+
+        let mut invalid_values = values;
+        invalid_values.insert("status_size".to_owned(), Value::String("huge".to_owned()));
+        assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
     }
 
     #[cfg(feature = "label")]

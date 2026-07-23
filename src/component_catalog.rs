@@ -691,8 +691,8 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "FontIcon/ImageIcon",
         Media,
         FirstPass,
-        Some("image"),
-        "src/icon.rs",
+        Some("icon"),
+        "src/icon.rs + src/view/widgets/icon.rs + three desktop renderers",
         ICON_GAPS
     ),
     component!(

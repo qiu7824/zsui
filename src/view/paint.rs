@@ -2116,6 +2116,30 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         match &self.kind {
+            #[cfg(feature = "icon")]
+            ViewNodeKind::Icon { icon, size, color } => {
+                let icon_size = crate::platform_component_profile::PlatformIconProfile::for_platform(
+                    self.resolved_platform_style(),
+                )
+                .size(*size)
+                .to_px(cx.dpi)
+                .round_i32()
+                .max(1)
+                .min(bounds.width.min(bounds.height).max(1));
+                cx.draw(NativeDrawCommand::Icon(
+                    crate::NativeDrawIconCommand::new(
+                        *icon,
+                        Rect {
+                            x: bounds.x + bounds.width.saturating_sub(icon_size) / 2,
+                            y: bounds.y + bounds.height.saturating_sub(icon_size) / 2,
+                            width: icon_size,
+                            height: icon_size,
+                        },
+                        crate::NativeIconColorMode::ThemeAware,
+                    )
+                    .with_color(*color),
+                ));
+            }
             #[cfg(feature = "canvas")]
             ViewNodeKind::Canvas { scene, .. } => {
                 for command in crate::zs_canvas_native_draw_plan(bounds, scene, cx.dpi).commands {

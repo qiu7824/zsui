@@ -71,6 +71,8 @@ pub(crate) struct PlatformComponentProfile {
     pub style_tokens: PlatformStyleTokenProfile,
     pub typography: PlatformTypographyProfile,
     pub focus_visuals: PlatformFocusVisualProfile,
+    #[cfg(feature = "icon")]
+    pub icon: PlatformIconProfile,
     pub base_control: PlatformBaseControlProfile,
     #[cfg(feature = "label")]
     pub section: PlatformSectionProfile,
@@ -125,6 +127,29 @@ pub(crate) struct PlatformComponentProfile {
     #[cfg(feature = "calculator")]
     pub calculator_shell: PlatformCalculatorShellProfile,
     pub shell: PlatformShellProfile,
+}
+
+#[cfg(feature = "icon")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformIconProfile {
+    pub small: Dp,
+    pub standard: Dp,
+    pub large: Dp,
+}
+
+#[cfg(feature = "icon")]
+impl PlatformIconProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).icon
+    }
+
+    pub(crate) const fn size(self, size: crate::ZsIconSize) -> Dp {
+        match size {
+            crate::ZsIconSize::Small => self.small,
+            crate::ZsIconSize::Standard => self.standard,
+            crate::ZsIconSize::Large => self.large,
+        }
+    }
 }
 
 impl PlatformComponentProfile {

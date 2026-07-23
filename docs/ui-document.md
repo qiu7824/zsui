@@ -134,6 +134,16 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/command-bar.bindings.json
 ```
 
+独立 Icon 文档只声明语义符号、尺寸角色和主题颜色，不包含平台字形或资源路径：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,icon,button,label `
+  -- check examples/ui-documents/icon.json `
+  --bindings examples/ui-documents/icon.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -145,7 +155,7 @@ cargo run --bin zsui-uic `
 - 非法布局值、主题 token、本地化键和辅助功能字段。
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
-`text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
+`text`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
 `teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb`、`navigation`、`command_bar` 和 `scroll`。
@@ -163,6 +173,12 @@ cargo run --bin zsui-uic `
 语义枚举会在静态文档和绑定值解析后分别校验。`flex` 只分配父 Stack 的主轴空间，
 `0` 表示按内容尺寸布局；横向行内需要吸收剩余宽度的换行说明可使用 `flex: 1`，紧凑
 操作行自身可使用 `flex: 0`。
+
+`icon.icon` 必须是 `ZsIcon` 语义名称，`size` 只接受 `small`、`standard` 或
+`large`，动态 `color` 使用主题语义角色而不是硬编码色值；静态颜色也可使用通用
+`theme_tokens.foreground`，两种来源不能同时声明。这三个属性字段可来自显式 string
+绑定，但不能本地化。运行时将同一节点编译为独立非交互 Icon View；Win32、AppKit 与
+Linux profile 分别解析 16/20/32、13/16/32 和 16/18/32 DP 尺寸及平台图标来源。
 
 Stack 与 Grid 会递归保留子树的固有尺寸，包括文字行框、控件最小尺寸、节点间距和
 容器内边距。横向 Stack 先按真实分配宽度计算换行文字高度，再决定整行高度；空间不足
@@ -562,6 +578,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/command-bar.values.json
 ```
 
+独立 Icon 示例使用同一份绑定值生成平台符号、尺寸与主题色，并保留双语说明：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/icon.json `
+  --bindings examples/ui-documents/icon.bindings.json `
+  --values examples/ui-documents/icon.values.json
+```
+
 受控面包屑示例使用稳定路径项目 ID，并由目标平台决定折叠、分隔符和溢出表面：
 
 ```powershell
@@ -636,6 +663,9 @@ bytes 为 5,955,584 字节。紧凑宽度下同一文档自动折叠为导航轨
 Windows CommandBar 示例点击真实 Save 工具栏按钮后记录 1 条 Viewer 消息和 0 次未处理
 点击；960×640 最终 Win32 PNG 保留首部 Save/Undo/Cut 与尾部 About 命令，进程拆除前
 RSS 为 16,035,840 字节，Private bytes 为 4,882,432 字节。
+Windows Icon 示例在最终 Win32 PNG 中保留三个独立语义图标及完整双语文字，点击真实
+Confirm 按钮后记录 1 条 Viewer 消息和 0 次未处理点击；进程拆除前 RSS 为
+16,064,512 字节，Private bytes 为 4,907,008 字节。
 Windows BreadcrumbBar 受控示例点击真实溢出按钮，记录 1 次展开状态变化、1 条 Viewer
 消息和 0 次未处理点击；最终 Win32 PNG 保留目标平台绘制的路径和溢出表面。
 Windows Flyout 受控示例分别点击浮层内真实按钮与外部遮罩：两条场景都记录 1 次已处理

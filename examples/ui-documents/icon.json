@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "icon-page",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "properties": {
+          "text": "语义图标 / Semantic Icons",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "description",
+        "component": "text",
+        "properties": {
+          "text": "同一语义名称由 WinUI 图标、SF Symbols 或 Linux symbolic icon 呈现；尺寸与颜色保持平台无关。 / One semantic name resolves to WinUI icons, SF Symbols, or Linux symbolic icons while size and color stay platform-neutral.",
+          "wrap": "word"
+        },
+        "layout": {
+          "width": 780
+        }
+      },
+      {
+        "id": "bound-icon-row",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "children": [
+          {
+            "id": "bound-icon",
+            "component": "icon",
+            "property_bindings": {
+              "icon": "status_icon",
+              "size": "status_icon_size",
+              "color": "status_icon_color"
+            },
+            "accessibility": {
+              "role": "image",
+              "label": "状态成功 / Status success"
+            }
+          },
+          {
+            "id": "bound-icon-label",
+            "component": "text",
+            "properties": {
+              "text": "绑定的成功状态 / Bound success state"
+            }
+          }
+        ]
+      },
+      {
+        "id": "warning-icon-row",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "children": [
+          {
+            "id": "warning-icon",
+            "component": "icon",
+            "properties": {
+              "icon": "Warning",
+              "size": "standard"
+            },
+            "theme_tokens": {
+              "foreground": "warning"
+            },
+            "accessibility": {
+              "role": "image",
+              "label": "警告 / Warning"
+            }
+          },
+          {
+            "id": "warning-icon-label",
+            "component": "text",
+            "properties": {
+              "text": "目标平台警告符号 / Target-platform warning symbol"
+            }
+          }
+        ]
+      },
+      {
+        "id": "accent-icon-row",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "children": [
+          {
+            "id": "accent-icon",
+            "component": "icon",
+            "properties": {
+              "icon": "Settings",
+              "size": "small"
+            },
+            "theme_tokens": {
+              "foreground": "accent"
+            },
+            "accessibility": {
+              "role": "image",
+              "label": "设置 / Settings"
+            }
+          },
+          {
+            "id": "accent-icon-label",
+            "component": "text",
+            "properties": {
+              "text": "小号强调色设置图标 / Small accent settings icon"
+            }
+          }
+        ]
+      },
+      {
+        "id": "confirm",
+        "component": "button",
+        "properties": {
+          "label": "确认 / Confirm"
+        },
+        "action_bindings": {
+          "click": "confirm_clicked"
+        }
+      }
+    ]
+  }
+}

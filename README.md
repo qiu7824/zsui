@@ -311,6 +311,19 @@ fn connecting() -> ViewNode<()> {
 }
 ```
 
+独立语义图标使用 `icon` feature。应用只选择符号、语义尺寸和主题颜色，Win32、
+AppKit 与 Linux 分别解析平台图标来源和逻辑尺寸：
+
+```rust,no_run
+use zsui::{icon, ColorRole, ViewNode, ZsIcon, ZsIconSize};
+
+fn status_icon() -> ViewNode<()> {
+    icon(ZsIcon::Success)
+        .icon_size(ZsIconSize::Large)
+        .icon_color(ColorRole::Success)
+}
+```
+
 ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
 
 ```rust,no_run

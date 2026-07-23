@@ -20,6 +20,7 @@ $singleFeatures = @(
     "toggle-button",
     "label",
     "grid",
+    "icon",
     "grid-view",
     "widgets-base",
     "widgets-input",

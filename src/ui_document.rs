@@ -3724,6 +3724,7 @@ impl UiFeatureSet {
         include_feature!("workbench");
         include_feature!("document-shell");
         include_feature!("image");
+        include_feature!("icon");
         include_feature!("image-preview");
         Self { names }
     }
@@ -4034,6 +4035,93 @@ impl<'a> UiDocumentValidator<'a> {
                         UiDiagnosticCode::InvalidPropertyValue,
                         format!("{path}.properties.{name}"),
                         format!("scroll property {name:?} must not be negative"),
+                    );
+                }
+            }
+        }
+
+        if node.component == "icon" {
+            let static_value = (!node.property_bindings.contains_key("icon")
+                && !node.localization.contains_key("icon"))
+            .then(|| node.properties.get("icon").and_then(Value::as_str))
+            .flatten();
+            let static_size = (!node.property_bindings.contains_key("size")
+                && !node.localization.contains_key("size"))
+            .then(|| {
+                node.properties
+                    .get("size")
+                    .and_then(Value::as_str)
+                    .unwrap_or("standard")
+            });
+            let static_color = (!node.property_bindings.contains_key("color")
+                && !node.localization.contains_key("color"))
+            .then(|| {
+                node.properties
+                    .get("color")
+                    .and_then(Value::as_str)
+                    .unwrap_or("primary")
+            });
+            if static_value.is_some_and(|icon| {
+                serde_json::from_value::<crate::ZsIcon>(Value::String(icon.to_owned())).is_err()
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.icon"),
+                    "icon must name a ZsIcon semantic variant".to_owned(),
+                );
+            }
+            if static_size.is_some_and(|size| !matches!(size, "small" | "standard" | "large")) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.size"),
+                    "icon size must be small, standard or large".to_owned(),
+                );
+            }
+            if static_color.is_some_and(|color| {
+                !matches!(
+                    color,
+                    "primary"
+                        | "secondary"
+                        | "disabled"
+                        | "accent"
+                        | "accent_text"
+                        | "surface"
+                        | "surface_raised"
+                        | "control"
+                        | "border"
+                        | "success"
+                        | "warning"
+                        | "danger"
+                )
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.color"),
+                    "icon color must name a semantic theme color role".to_owned(),
+                );
+            }
+            if (node.properties.contains_key("color")
+                || node.property_bindings.contains_key("color"))
+                && node.theme_tokens.contains_key("foreground")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::ConflictingPropertySource,
+                    format!("{path}.theme_tokens.foreground"),
+                    "icon color must use either the color property/binding or the foreground theme token"
+                        .to_owned(),
+                );
+            }
+            for name in ["icon", "size", "color"] {
+                if node.localization.contains_key(name) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidLocalization,
+                        format!("{path}.localization.{name}"),
+                        format!("icon {name} is semantic metadata and cannot be localized"),
                     );
                 }
             }
@@ -5572,6 +5660,23 @@ const BUTTON_PROPERTIES: &[PropertySpec] = &[
         required: false,
     },
 ];
+const ICON_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "icon",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "size",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "color",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
 const BUTTON_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "click",
     payload_type: UiValueType::Null,
@@ -6528,6 +6633,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             children: ChildPolicy::Exactly(1),
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
+        "icon" => Some(leaf(ICON_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "breadcrumb" => Some(leaf(BREADCRUMB_PROPERTIES, BREADCRUMB_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
@@ -8435,6 +8541,62 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.expanded"
+        }));
+    }
+
+    #[test]
+    fn icon_contract_validates_semantic_symbol_size_and_color() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "status-icon",
+                "component": "icon",
+                "properties": {
+                  "icon": "Info",
+                  "size": "large",
+                  "color": "accent"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let features = UiFeatureSet::new(["icon"]);
+        let report = valid.validate(&features, &UiBindingSchema::default());
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(
+            UiDocumentReleaseArtifact::compile(&valid, &features, &UiBindingSchema::default())
+                .is_ok()
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "status-icon",
+                "component": "icon",
+                "properties": {
+                  "icon": "NotAnIcon",
+                  "size": "huge",
+                  "color": "brand"
+                },
+                "theme_tokens": {
+                  "foreground": "accent"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        for property in ["icon", "size", "color"] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                    && diagnostic.path == format!("$.root.properties.{property}")
+            }));
+        }
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::ConflictingPropertySource
+                && diagnostic.path == "$.root.theme_tokens.foreground"
         }));
     }
 

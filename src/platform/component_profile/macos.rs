@@ -56,6 +56,12 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             outline_inset: Dp::new(1.0),
             outline_width: Dp::new(2.0),
         },
+        #[cfg(feature = "icon")]
+        icon: PlatformIconProfile {
+            small: Dp::new(13.0),
+            standard: Dp::new(16.0),
+            large: Dp::new(32.0),
+        },
         base_control: PlatformBaseControlProfile {
             metrics: ZsBaseControlMetrics {
                 body_line_height: Dp::new(16.0),

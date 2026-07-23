@@ -800,6 +800,12 @@ pub enum ViewNodeKind<Msg> {
         fit: ZsImageFit,
         interpolation: NativeImageInterpolation,
     },
+    #[cfg(feature = "icon")]
+    Icon {
+        icon: crate::ZsIcon,
+        size: crate::ZsIconSize,
+        color: ColorRole,
+    },
     #[cfg(feature = "canvas")]
     Canvas {
         scene: crate::ZsCanvasScene,
@@ -1107,7 +1113,10 @@ pub struct ViewNode<Msg> {
     tooltip: Option<crate::ZsTooltipSpec>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
-    #[cfg(all(test, any(feature = "button", feature = "label")))]
+    #[cfg(all(
+        test,
+        any(feature = "button", feature = "icon", feature = "label")
+    ))]
     platform_style_override: Option<crate::ZsBaseControlPlatformStyle>,
     pub(crate) typography_scaled_height: bool,
     #[cfg(feature = "list")]
@@ -1130,7 +1139,10 @@ impl<Msg> ViewNode<Msg> {
             tooltip: None,
             bounds: None,
             layout_dpi: Dpi::standard(),
-            #[cfg(all(test, any(feature = "button", feature = "label")))]
+            #[cfg(all(
+                test,
+                any(feature = "button", feature = "icon", feature = "label")
+            ))]
             platform_style_override: None,
             typography_scaled_height: false,
             #[cfg(feature = "list")]
@@ -1273,7 +1285,10 @@ impl<Msg> ViewNode<Msg> {
         }
     }
 
-    #[cfg(all(test, any(feature = "button", feature = "label")))]
+    #[cfg(all(
+        test,
+        any(feature = "button", feature = "icon", feature = "label")
+    ))]
     pub(crate) fn with_platform_style_override(
         mut self,
         platform: crate::ZsBaseControlPlatformStyle,
@@ -1282,7 +1297,7 @@ impl<Msg> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "button", feature = "label"))]
+    #[cfg(any(feature = "button", feature = "icon", feature = "label"))]
     pub(crate) fn resolved_platform_style(&self) -> crate::ZsBaseControlPlatformStyle {
         #[cfg(test)]
         if let Some(platform) = self.platform_style_override {

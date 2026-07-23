@@ -49,6 +49,20 @@ pub enum ZsIcon {
     PasswordReveal,
 }
 
+/// Semantic standalone-icon size resolved through the active desktop profile.
+///
+/// The values intentionally do not expose raw pixels or one platform's symbol
+/// point size. Win32, AppKit and Linux choose their own logical dimensions.
+#[cfg(feature = "icon")]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZsIconSize {
+    Small,
+    #[default]
+    Standard,
+    Large,
+}
+
 impl ZsIcon {
     pub const ALL: [Self; 45] = [
         Self::App,

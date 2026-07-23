@@ -380,6 +380,8 @@ pub use host_protocol::{
 };
 pub use hotkey::HotkeySpec;
 pub use icon::ZsIcon;
+#[cfg(feature = "icon")]
+pub use icon::ZsIconSize;
 #[cfg(feature = "image-preview")]
 pub use image_preview::{
     zs_image_native_draw_command, zs_image_render_geometry, ZsImageFit, ZsImagePreviewConfig,
@@ -667,6 +669,8 @@ pub use view::flyout;
 pub use view::grid;
 #[cfg(feature = "grid-view")]
 pub use view::grid_view;
+#[cfg(feature = "icon")]
+pub use view::icon;
 #[cfg(feature = "image-preview")]
 pub use view::image_preview;
 #[cfg(feature = "info-bar")]
