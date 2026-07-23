@@ -1199,10 +1199,7 @@ mod tests {
             gtk.typography.metrics(TextRole::BodyLarge),
             ZsTypographyMetrics::new(16.5, 22.0, TextWeight::Bold)
         );
-        assert_eq!(
-            windows.typography.fallback().small_font_family,
-            "Segoe UI Variable Small"
-        );
+        assert_eq!(windows.typography.fallback().small_font_family, "Segoe UI");
         assert_eq!(macos.typography.fallback().monospace_font_family, "Menlo");
         assert_eq!(gtk.typography.fallback().rasterization, "pango_cairo");
         assert_eq!(

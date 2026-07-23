@@ -42,9 +42,9 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             monospace: ZsTypographyMetrics::new(13.0, 18.0, TextWeight::Regular),
             fallback: PlatformTypographyFallbackProfile {
                 source: "windows_semantic_fallback",
-                ui_font_family: "Segoe UI Variable Text",
-                small_font_family: "Segoe UI Variable Small",
-                display_font_family: "Segoe UI Variable Display",
+                ui_font_family: "Segoe UI",
+                small_font_family: "Segoe UI",
+                display_font_family: "Segoe UI",
                 monospace_font_family: "Consolas",
                 icon_font_family: "Segoe Fluent Icons",
                 rasterization: "gdi_cleartype",

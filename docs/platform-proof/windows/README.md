@@ -17,7 +17,10 @@ Current diagnostic artifacts:
 - `notepad-interaction.png` and `.json`: a 960×640 run of the same scripted
   input, selection, scrolling and unsaved-close scenario used by AppKit and
   Linux. The PNG comes from the Win32 buffered surface; the JSON records the
-  messages, focus, geometry, process memory and runtime errors.
+  messages, focus, geometry, process memory and runtime errors. Its typography
+  evidence records the live Windows message font used by every semantic UI
+  text role, while role-specific size, line height and weight remain owned by
+  the framework.
 - `bidi-navigation-smoke-report.json`: real Win32 notepad key routing over
   `abאב`; four Right keys move through relative scalar carets `1, 4, 3, 2`,
   proving visual rather than logical traversal of the shaped primary positions.

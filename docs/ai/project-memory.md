@@ -726,10 +726,12 @@ history remain authoritative for implementation status.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92
-  display), uses regular 400 or semibold 600, selects Segoe UI Variable
-  Small/Text/Display with a Segoe UI fallback, and scales `HFONT` height from
-  the active window DPI. Do not restore raw per-widget title sizes or use
-  ClearType color filtering for icon-font glyphs.
+  display), uses regular 400 or semibold 600, resolves all UI text roles to the
+  live `SPI_GETNONCLIENTMETRICS` message font with a Segoe UI failure fallback,
+  and scales `HFONT` height from the active window DPI. This is a backend-owned
+  framework rule shared by Gallery, Notepad, Viewer and normal applications;
+  demos must not declare a replacement family. Do not restore raw per-widget
+  title sizes or use ClearType color filtering for icon-font glyphs.
 - Semantic text roles resolve through a framework-owned desktop typography
   profile before layout, shaping and paint. AppKit follows Apple's macOS text
   styles (10/13 caption, 13/16 body, 15/20 title 3, 17/22 title 2, 22/26

@@ -307,14 +307,14 @@ Windows font code point in component code.
 Text nodes carry `SemanticTextStyle` rather than raw widget-local sizes. The
 shared Fluent type ramp exposes caption 12/16, body 14/20, body-large 18/24,
 subtitle 20/28, title 28/36, title-large 40/52 and display 68/92 roles. Heading
-roles default to semibold 600. On Windows, the GDI sink prefers the installed
-Segoe UI Variable Small/Text/Display families used by the WinUI settings
-surfaces, falls back to classic Segoe UI, and only then uses the configured
-message font as a last-resort family. GDI's normal Unicode font fallback keeps
-CJK glyphs on the system Chinese face while Latin text remains in the native
-Segoe family. The sink converts the DIP font size with the current window DPI
-before creating an `HFONT`; text and icon glyphs use the system ClearType
-quality. AppKit keeps the system `NSFont` family and GTK4 keeps its Pango
+roles default to semibold 600. On Windows, the GDI sink resolves every UI text
+role through the configured `SPI_GETNONCLIENTMETRICS` message font, matching
+native ZSUI applications and Windows system settings on both Latin and CJK
+installations; classic Segoe UI is the failure fallback. The semantic role
+still selects size, line height and weight, while the family remains the live
+system UI family. The sink converts the DIP font size with the current window
+DPI before creating an `HFONT`; text and icon glyphs use ClearType quality.
+AppKit keeps the system `NSFont` family and GTK4 keeps its configured Pango
 system family.
 
 `src/component_catalog.rs` is the authoritative component readiness inventory.

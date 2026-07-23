@@ -50,7 +50,6 @@ const BPBF_TOPDOWNDIB: u32 = 2;
 static BUFFERED_PAINT_INIT: OnceLock<()> = OnceLock::new();
 static GDIP_TOKEN: OnceLock<Option<usize>> = OnceLock::new();
 static WINDOWS_SYSTEM_ICON_FONT: OnceLock<WindowsSystemIconFont> = OnceLock::new();
-static WINDOWS_UI_FONT_FAMILIES: OnceLock<WindowsUiFontFamilies> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WindowsUiFontFamilies {
@@ -127,9 +126,6 @@ const GDIP_UNIT_PIXEL: i32 = 2;
 const GDIP_FILL_MODE_ALTERNATE: i32 = 0;
 const SPI_GETNONCLIENTMETRICS: u32 = 0x0029;
 const WINDOWS_UI_FONT_FAMILY: &str = "Segoe UI";
-const WINDOWS_VARIABLE_SMALL_FONT_FAMILY: &str = "Segoe UI Variable Small";
-const WINDOWS_VARIABLE_TEXT_FONT_FAMILY: &str = "Segoe UI Variable Text";
-const WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY: &str = "Segoe UI Variable Display";
 static WINDOWS_SYSTEM_UI_FONT_FAMILY: OnceLock<String> = OnceLock::new();
 
 #[repr(C)]
@@ -1636,57 +1632,17 @@ fn windows_system_ui_font_family() -> &'static str {
 }
 
 fn detect_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
-    if let Some(families) = WINDOWS_UI_FONT_FAMILIES.get() {
-        return *families;
-    }
-    if dc.is_null() {
-        return WindowsUiFontFamilies {
-            small: WINDOWS_VARIABLE_SMALL_FONT_FAMILY,
-            text: WINDOWS_VARIABLE_TEXT_FONT_FAMILY,
-            display: WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY,
-        };
-    }
     let system = windows_system_ui_font_family();
-    let has_variable_text =
-        windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_TEXT_FONT_FAMILY);
-    let has_variable_small =
-        windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_SMALL_FONT_FAMILY);
-    let has_variable_display =
-        windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY);
-    let has_segoe = windows_gdi_font_family_available(dc, WINDOWS_UI_FONT_FAMILY);
-    let has_system = windows_gdi_font_family_available(dc, system);
-    let text = if has_variable_text {
-        WINDOWS_VARIABLE_TEXT_FONT_FAMILY
-    } else if has_segoe {
-        WINDOWS_UI_FONT_FAMILY
-    } else if has_system {
+    let text = if dc.is_null() || windows_gdi_font_family_available(dc, system) {
         system
     } else {
         WINDOWS_UI_FONT_FAMILY
     };
-    let selected = WindowsUiFontFamilies {
-        small: if has_variable_small {
-            WINDOWS_VARIABLE_SMALL_FONT_FAMILY
-        } else if has_segoe {
-            WINDOWS_UI_FONT_FAMILY
-        } else if has_system {
-            system
-        } else {
-            text
-        },
+    WindowsUiFontFamilies {
+        small: text,
         text,
-        display: if has_variable_display {
-            WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY
-        } else if has_segoe {
-            WINDOWS_UI_FONT_FAMILY
-        } else if has_system {
-            system
-        } else {
-            text
-        },
-    };
-    let _ = WINDOWS_UI_FONT_FAMILIES.set(selected);
-    selected
+        display: text,
+    }
 }
 
 pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProfile {
@@ -1703,7 +1659,7 @@ pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProf
         .unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY);
     let mut profile = crate::NativeTypographyProfile::new(
         crate::ZsTypographyPlatformStyle::Windows,
-        "win32_gdi_fluent_typography_detection",
+        "win32_spi_message_font",
         ui_fonts.text,
         "Consolas",
         icon_font,
@@ -2364,6 +2320,32 @@ mod tests {
             ),
             (68.0, 92.0)
         );
+    }
+
+    #[test]
+    fn system_message_font_is_shared_by_all_windows_text_roles() {
+        let resolver = WindowsGdiStyleResolver::default();
+        let system = windows_system_ui_font_family();
+
+        assert_eq!(resolver.font_family, system);
+        assert_eq!(resolver.small_font_family, system);
+        assert_eq!(resolver.display_font_family, system);
+        for role in [
+            crate::TextRole::Caption,
+            crate::TextRole::Body,
+            crate::TextRole::Button,
+            crate::TextRole::Subtitle,
+            crate::TextRole::Title,
+            crate::TextRole::TitleLarge,
+            crate::TextRole::Display,
+        ] {
+            assert_eq!(
+                resolver
+                    .resolve_text_style(SemanticTextStyle::for_role(role))
+                    .font_family,
+                system
+            );
+        }
     }
 
     #[test]
