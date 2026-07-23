@@ -3500,6 +3500,34 @@ impl<'a> UiDocumentValidator<'a> {
             validate_grid_component(node, path, diagnostics);
         }
 
+        if node.component == "info_bar" {
+            let static_string = |name: &str| {
+                (!node.property_bindings.contains_key(name))
+                    .then(|| node.properties.get(name).and_then(Value::as_str))
+                    .flatten()
+            };
+            for name in ["message", "title", "action_label"] {
+                if static_string(name).is_some_and(|value| value.trim().is_empty()) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("info_bar {name} must not be empty when provided"),
+                    );
+                }
+            }
+            if static_string("severity").is_some_and(|severity| {
+                !matches!(severity, "informational" | "success" | "warning" | "error")
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.severity"),
+                    "info_bar severity must be informational, success, warning or error".to_owned(),
+                );
+            }
+        }
+
         if node.component == "content_dialog" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -4328,6 +4356,37 @@ const SCROLL_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "scroll",
     payload_type: UiValueType::Number,
 }];
+const INFO_BAR_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "message",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "title",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "severity",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "action_label",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "closable",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const INFO_BAR_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "event",
+    payload_type: UiValueType::String,
+}];
 const CONTENT_DIALOG_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "open",
@@ -4423,6 +4482,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: CONTENT_DIALOG_ACTIONS,
             children: ChildPolicy::Exactly(1),
         }),
+        "info_bar" => Some(leaf(INFO_BAR_PROPERTIES, INFO_BAR_ACTIONS)),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
@@ -6505,6 +6565,73 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.default_button"
         }));
+    }
+
+    #[test]
+    fn info_bar_contract_validates_semantics_and_typed_event() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "sync-status",
+                "component": "info_bar",
+                "properties": {
+                  "message": "All changes are synchronized.",
+                  "title": "Up to date",
+                  "severity": "success",
+                  "action_label": "View activity",
+                  "closable": true
+                },
+                "action_bindings": { "event": "sync_status_event" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::new(),
+            actions: BTreeMap::from([("sync_status_event".to_owned(), UiValueType::String)]),
+        };
+        let features = UiFeatureSet::new(["info-bar"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        let handoff = UiAiHandoffPackage::build(&valid, &features, &bindings, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "info_bar")
+            .unwrap();
+        assert_eq!(contract.cargo_feature.as_deref(), Some("info-bar"));
+        assert_eq!(
+            contract.actions,
+            vec![UiAiHandoffActionContract {
+                name: "event".to_owned(),
+                payload_type: UiValueType::String,
+            }]
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "sync-status",
+                "component": "info_bar",
+                "properties": {
+                  "message": "",
+                  "severity": "critical",
+                  "action_label": " "
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        for property in ["message", "severity", "action_label"] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                    && diagnostic.path == format!("$.root.properties.{property}")
+            }));
+        }
     }
 
     #[test]

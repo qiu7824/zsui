@@ -157,6 +157,14 @@ history remain authoritative for implementation status.
   requires a Boolean `open_change` action and receives `false` after a response,
   so Viewer rebuilds cannot reopen a dismissed dialog. Release compilation does
   not add a global event registry.
+  Document-ready InfoBar is an inline semantic surface with required non-empty
+  message, optional title/action label, four validated severities and a
+  default-true closable flag. Its typed event binding emits only `action` or
+  `close`; application state decides whether the next View removes it. Runtime
+  compilation owns `ZsInfoBarSpec`, while each platform profile retains height,
+  icon, action-button, corner and spacing metrics. The callback is an owned
+  node-local mapper, so document reload keeps binding identity without a global
+  control registry.
   Document-ready ProgressRing uses one optional `nullable_number` value for
   determinate/indeterminate mode, validates its numeric range twice and maps
   small/medium/large to platform-owned metrics. Ordinary

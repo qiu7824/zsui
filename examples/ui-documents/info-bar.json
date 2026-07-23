@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "page",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "sync-status",
+        "component": "info_bar",
+        "properties": {
+          "title": "同步完成 / Synchronization complete",
+          "action_label": "查看活动 / View activity"
+        },
+        "property_bindings": {
+          "message": "sync_message",
+          "severity": "sync_severity",
+          "closable": "sync_closable"
+        },
+        "action_bindings": {
+          "event": "sync_status_event"
+        },
+        "accessibility": {
+          "label": "同步状态 / Synchronization status",
+          "description": "显示同步结果并提供后续操作 / Shows the synchronization result and follow-up action"
+        }
+      },
+      {
+        "id": "summary",
+        "component": "text",
+        "properties": {
+          "text": "同一份语义文档由 Win32、AppKit 和 Linux 的平台组件参数完成布局与绘制。 / The same semantic document is laid out and painted by each platform profile.",
+          "text_role": "body",
+          "wrap": "word",
+          "ellipsis": false
+        },
+        "layout": {
+          "flex": 0
+        }
+      }
+    ]
+  }
+}

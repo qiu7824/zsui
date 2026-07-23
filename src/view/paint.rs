@@ -706,7 +706,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         } =>
                 {
                     if let Some(message) = on_event {
-                        cx.emit(message(*event));
+                        cx.emit(message.map(*event));
                     }
                 }
                 _ => {}

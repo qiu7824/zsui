@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "sync_message": "string",
+    "sync_severity": "string",
+    "sync_closable": "boolean"
+  },
+  "actions": {
+    "sync_status_event": "string"
+  }
+}

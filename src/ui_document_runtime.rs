@@ -79,6 +79,7 @@ pub struct UiDocumentSecretAction {
         feature = "list",
         feature = "tabs",
         feature = "dialog",
+        feature = "info-bar",
         feature = "scroll"
     )),
     allow(dead_code)
@@ -193,6 +194,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "list",
             feature = "tabs",
             feature = "dialog",
+            feature = "info-bar",
             feature = "scroll"
         )),
         allow(dead_code)
@@ -457,6 +459,82 @@ fn compile_node<Msg: Clone + 'static>(
                         binding: binding.clone(),
                         property_binding: property_binding.clone(),
                         payload: Value::from(offset.0),
+                    })
+                });
+            }
+            control
+        }
+        #[cfg(feature = "info-bar")]
+        "info_bar" => {
+            let message = string_property(node, properties, "message", "");
+            if message.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "message",
+                    "info bar message must not be empty",
+                ));
+            }
+            let title = optional_string_property(node, properties, "title");
+            if title
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "title",
+                    "info bar title must not be empty when provided",
+                ));
+            }
+            let action_label = optional_string_property(node, properties, "action_label");
+            if action_label
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "action_label",
+                    "info bar action label must not be empty when provided",
+                ));
+            }
+            let severity = match optional_string_property(node, properties, "severity").as_deref() {
+                Some("success") => crate::ZsInfoBarSeverity::Success,
+                Some("warning") => crate::ZsInfoBarSeverity::Warning,
+                Some("error") => crate::ZsInfoBarSeverity::Error,
+                Some("informational") | None => crate::ZsInfoBarSeverity::Informational,
+                Some(severity) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "severity",
+                        format!("unsupported info bar severity {severity:?}"),
+                    ));
+                }
+            };
+            let mut spec = crate::ZsInfoBarSpec::new(message)
+                .severity(severity)
+                .closable(bool_property(node, properties, "closable", true));
+            if let Some(title) = title {
+                spec = spec.title(title);
+            }
+            if let Some(action_label) = action_label {
+                spec = spec.action(action_label);
+            }
+            let mut control = crate::info_bar(node.id.widget_id(), spec);
+            if let Some(binding) = node.action_bindings.get("event") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_info_bar_event_with(move |event| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(
+                            match event {
+                                crate::ZsInfoBarEvent::Action => "action",
+                                crate::ZsInfoBarEvent::Close => "close",
+                            }
+                            .to_owned(),
+                        ),
                     })
                 });
             }
@@ -2608,6 +2686,7 @@ fn optional_grid_view_item_id_property(
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
+    feature = "info-bar",
     feature = "label",
     feature = "button",
     feature = "toggle-button",
@@ -2642,6 +2721,7 @@ fn string_property(
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
+    feature = "info-bar",
     feature = "progress-ring"
 ))]
 fn bool_property(
@@ -2696,7 +2776,8 @@ fn nullable_number_property(
     feature = "color-picker",
     feature = "auto-suggest",
     feature = "command-palette",
-    feature = "dialog"
+    feature = "dialog",
+    feature = "info-bar"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -4147,6 +4228,121 @@ mod tests {
                 payload: Value::Null,
             })]
         );
+    }
+
+    #[cfg(feature = "info-bar")]
+    #[test]
+    fn compiles_info_bar_and_maps_typed_action_and_close_events() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "sync-status",
+                "component": "info_bar",
+                "properties": {
+                  "title": "Up to date",
+                  "action_label": "View activity"
+                },
+                "property_bindings": {
+                  "message": "sync_message",
+                  "severity": "sync_severity",
+                  "closable": "sync_closable"
+                },
+                "action_bindings": { "event": "sync_status_event" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "sync_message".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "sync_severity".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "sync_closable".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+            actions: BTreeMap::from([(
+                "sync_status_event".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+        };
+        let values = BTreeMap::from([
+            (
+                "sync_message".to_owned(),
+                Value::String("All changes are synchronized.".to_owned()),
+            ),
+            (
+                "sync_severity".to_owned(),
+                Value::String("success".to_owned()),
+            ),
+            ("sync_closable".to_owned(), Value::Bool(true)),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let crate::ViewNodeKind::InfoBar { spec, .. } = &view.kind else {
+            panic!("document must compile to an InfoBar");
+        };
+        assert_eq!(spec.title_text(), Some("Up to date"));
+        assert_eq!(spec.message(), "All changes are synchronized.");
+        assert_eq!(spec.info_bar_severity(), crate::ZsInfoBarSeverity::Success);
+        assert_eq!(spec.action_label(), Some("View activity"));
+        assert!(spec.is_closable());
+
+        let mut events = crate::ViewEventCx::new();
+        for event in [crate::ZsInfoBarEvent::Action, crate::ZsInfoBarEvent::Close] {
+            view.event(
+                &mut events,
+                &crate::ViewEvent::InfoBarInvoked {
+                    widget: document.root.id.widget_id(),
+                    event,
+                },
+            );
+        }
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::Action(UiDocumentAction {
+                    node_id: "sync-status".to_owned(),
+                    binding: "sync_status_event".to_owned(),
+                    property_binding: None,
+                    payload: Value::String("action".to_owned()),
+                }),
+                Msg::Action(UiDocumentAction {
+                    node_id: "sync-status".to_owned(),
+                    binding: "sync_status_event".to_owned(),
+                    property_binding: None,
+                    payload: Value::String("close".to_owned()),
+                }),
+            ]
+        );
+
+        let invalid_values = BTreeMap::from([
+            (
+                "sync_message".to_owned(),
+                Value::String("All changes are synchronized.".to_owned()),
+            ),
+            (
+                "sync_severity".to_owned(),
+                Value::String("critical".to_owned()),
+            ),
+            ("sync_closable".to_owned(), Value::Bool(true)),
+        ]);
+        assert!(matches!(
+            ui_document_view(
+                &document,
+                &bindings,
+                &invalid_values,
+                Msg::Action,
+            ),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "severity"
+        ));
     }
 
     #[cfg(all(feature = "dialog", feature = "label"))]

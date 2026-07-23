@@ -30,6 +30,7 @@ impl WidgetId {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "info-bar",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -56,6 +57,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "info-bar",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -82,6 +84,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "info-bar",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -126,6 +129,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "info-bar",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -162,6 +166,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "info-bar",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -937,7 +942,7 @@ pub enum ViewNodeKind<Msg> {
     InfoBar {
         spec: crate::ZsInfoBarSpec,
         focused_control: Option<crate::ZsInfoBarControl>,
-        on_event: Option<fn(crate::ZsInfoBarEvent) -> Msg>,
+        on_event: Option<ViewMessageMapper<crate::ZsInfoBarEvent, Msg>>,
     },
     #[cfg(feature = "combo")]
     ComboBox {
@@ -2128,7 +2133,22 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "info-bar")]
     pub fn on_info_bar_event(mut self, message: fn(crate::ZsInfoBarEvent) -> Msg) -> Self {
         if let ViewNodeKind::InfoBar { on_event, .. } = &mut self.kind {
-            *on_event = Some(message);
+            *on_event = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Registers an owned callback for an InfoBar action or close event.
+    ///
+    /// Document-backed Views use this closure-capable form to retain the
+    /// stable node and typed binding identity without a global event registry.
+    #[cfg(feature = "info-bar")]
+    pub fn on_info_bar_event_with(
+        mut self,
+        message: impl Fn(crate::ZsInfoBarEvent) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::InfoBar { on_event, .. } = &mut self.kind {
+            *on_event = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
