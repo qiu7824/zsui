@@ -34,6 +34,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             caption: ZsTypographyMetrics::new(12.0, 16.0, TextWeight::Regular),
             body_large: ZsTypographyMetrics::new(18.0, 24.0, TextWeight::Regular),
             subtitle: ZsTypographyMetrics::new(20.0, 28.0, TextWeight::Semibold),
+            window_title: ZsTypographyMetrics::new(24.0, 32.0, TextWeight::Semibold),
             title: ZsTypographyMetrics::new(28.0, 36.0, TextWeight::Semibold),
             title_large: ZsTypographyMetrics::new(40.0, 52.0, TextWeight::Semibold),
             display: ZsTypographyMetrics::new(68.0, 92.0, TextWeight::Semibold),

@@ -1321,6 +1321,7 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
                 crate::TextRole::Icon => self.icon_font_family.clone(),
                 crate::TextRole::Caption => self.small_font_family.clone(),
                 crate::TextRole::Subtitle
+                | crate::TextRole::WindowTitle
                 | crate::TextRole::Title
                 | crate::TextRole::TitleLarge
                 | crate::TextRole::Display => self.display_font_family.clone(),
@@ -2335,6 +2336,7 @@ mod tests {
             crate::TextRole::Body,
             crate::TextRole::Button,
             crate::TextRole::Subtitle,
+            crate::TextRole::WindowTitle,
             crate::TextRole::Title,
             crate::TextRole::TitleLarge,
             crate::TextRole::Display,

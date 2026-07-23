@@ -2256,6 +2256,7 @@ fn appkit_preferred_text_style(role: crate::TextRole) -> Option<&'static NSFontT
             crate::TextRole::Body => Some(NSFontTextStyleBody),
             crate::TextRole::BodyLarge => Some(NSFontTextStyleTitle3),
             crate::TextRole::Subtitle => Some(NSFontTextStyleTitle2),
+            crate::TextRole::WindowTitle => Some(NSFontTextStyleTitle1),
             crate::TextRole::Title => Some(NSFontTextStyleTitle1),
             crate::TextRole::TitleLarge | crate::TextRole::Display => {
                 Some(NSFontTextStyleLargeTitle)

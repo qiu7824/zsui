@@ -160,6 +160,7 @@ pub(crate) struct PlatformTypographyProfile {
     caption: ZsTypographyMetrics,
     body_large: ZsTypographyMetrics,
     subtitle: ZsTypographyMetrics,
+    window_title: ZsTypographyMetrics,
     title: ZsTypographyMetrics,
     title_large: ZsTypographyMetrics,
     display: ZsTypographyMetrics,
@@ -180,6 +181,7 @@ impl PlatformTypographyProfile {
             TextRole::Caption => self.caption,
             TextRole::BodyLarge => self.body_large,
             TextRole::Subtitle => self.subtitle,
+            TextRole::WindowTitle => self.window_title,
             TextRole::Title => self.title,
             TextRole::TitleLarge => self.title_large,
             TextRole::Display => self.display,
@@ -1190,6 +1192,10 @@ mod tests {
         assert_eq!(
             windows.typography.metrics(TextRole::Body),
             ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            windows.typography.metrics(TextRole::WindowTitle),
+            ZsTypographyMetrics::new(24.0, 32.0, TextWeight::Semibold)
         );
         assert_eq!(
             macos.typography.metrics(TextRole::Title),

@@ -740,10 +740,11 @@ history remain authoritative for implementation status.
   An internal tree dump alone is not AT-SPI target evidence.
 - Text labels carry semantic roles through the View and renderer boundary.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
-  body large, 20/28 subtitle, 28/36 title, 40/52 title large and 68/92
-  display), uses regular 400 or semibold 600, resolves all UI text roles to the
-  live `SPI_GETNONCLIENTMETRICS` message font with a Segoe UI failure fallback,
-  and scales `HFONT` height from the active window DPI. This is a backend-owned
+  body large, 20/28 subtitle, 28/36 content title, 40/52 title large and 68/92
+  display), plus a compact framework `WindowTitle` role at 24/32. It uses
+  regular 400 or semibold 600, resolves all UI text roles to the live
+  `SPI_GETNONCLIENTMETRICS` message font with a Segoe UI failure fallback, and
+  scales `HFONT` height from the active window DPI. This is a backend-owned
   framework rule shared by Gallery, Notepad, Viewer and normal applications;
   demos must not declare a replacement family. Do not restore raw per-widget
   title sizes or use ClearType color filtering for icon-font glyphs.

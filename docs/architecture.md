@@ -305,9 +305,9 @@ requested. This mirrors the IconElement/IconSource boundary without exposing a
 Windows font code point in component code.
 
 Text nodes carry `SemanticTextStyle` rather than raw widget-local sizes. The
-shared Fluent type ramp exposes caption 12/16, body 14/20, body-large 18/24,
-subtitle 20/28, title 28/36, title-large 40/52 and display 68/92 roles. Heading
-roles default to semibold 600. On Windows, the GDI sink resolves every UI text
+shared semantic type ramp exposes caption 12/16, body 14/20, body-large 18/24,
+subtitle 20/28, compact `WindowTitle` 24/32, title 28/36, title-large 40/52
+and display 68/92 roles. Heading roles default to semibold 600. On Windows, the GDI sink resolves every UI text
 role through the configured `SPI_GETNONCLIENTMETRICS` message font, matching
 native ZSUI applications and Windows system settings on both Latin and CJK
 installations; classic Segoe UI is the failure fallback. The semantic role

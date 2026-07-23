@@ -2753,7 +2753,7 @@ fn shell_role_to_color_role(role: ZsShellThemeRole) -> ColorRole {
 fn shell_text_style(command: &ZsShellTextCommand) -> SemanticTextStyle {
     SemanticTextStyle {
         role: match command.font {
-            ZsShellTextFontRole::Display => TextRole::Title,
+            ZsShellTextFontRole::Display => TextRole::WindowTitle,
             ZsShellTextFontRole::FluentIcon => TextRole::Icon,
             ZsShellTextFontRole::Button => TextRole::Button,
             ZsShellTextFontRole::UiText => {

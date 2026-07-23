@@ -100,6 +100,12 @@ pub enum TextRole {
     Caption,
     BodyLarge,
     Subtitle,
+    /// Native application/window title used by framework chrome.
+    ///
+    /// This is intentionally separate from content `Title`: desktop shells
+    /// commonly use a compact title ramp (ZSClip uses a 24/32 Windows title)
+    /// while document content may legitimately request a larger heading.
+    WindowTitle,
     Title,
     TitleLarge,
     Display,
@@ -272,9 +278,11 @@ impl NativeTypographyProfile {
             TextRole::Monospace => &self.monospace_font_family,
             TextRole::Icon => &self.icon_font_family,
             TextRole::Caption => &self.small_font_family,
-            TextRole::Subtitle | TextRole::Title | TextRole::TitleLarge | TextRole::Display => {
-                &self.display_font_family
-            }
+            TextRole::Subtitle
+            | TextRole::WindowTitle
+            | TextRole::Title
+            | TextRole::TitleLarge
+            | TextRole::Display => &self.display_font_family,
             _ => &self.ui_font_family,
         }
     }
@@ -308,6 +316,7 @@ impl TextRole {
             Self::Monospace => 13.0,
             Self::BodyLarge => 18.0,
             Self::Subtitle => 20.0,
+            Self::WindowTitle => 24.0,
             Self::Title => 28.0,
             Self::TitleLarge => 40.0,
             Self::Display => 68.0,
@@ -324,6 +333,7 @@ impl TextRole {
             Self::Monospace => 18.0,
             Self::BodyLarge => 24.0,
             Self::Subtitle => 28.0,
+            Self::WindowTitle => 32.0,
             Self::Title => 36.0,
             Self::TitleLarge => 52.0,
             Self::Display => 92.0,
@@ -332,7 +342,9 @@ impl TextRole {
 
     pub const fn default_weight(self) -> TextWeight {
         match self {
-            Self::Subtitle | Self::Title | Self::TitleLarge | Self::Display => TextWeight::Semibold,
+            Self::Subtitle | Self::WindowTitle | Self::Title | Self::TitleLarge | Self::Display => {
+                TextWeight::Semibold
+            }
             _ => TextWeight::Regular,
         }
     }
@@ -1156,6 +1168,13 @@ mod draw_command_tests {
             (20.0, 28.0)
         );
         assert_eq!(
+            (
+                TextRole::WindowTitle.size(),
+                TextRole::WindowTitle.line_height()
+            ),
+            (24.0, 32.0)
+        );
+        assert_eq!(
             (TextRole::Title.size(), TextRole::Title.line_height()),
             (28.0, 36.0)
         );
@@ -1182,6 +1201,7 @@ mod draw_command_tests {
         let macos_body = TextRole::Body.metrics_for(ZsTypographyPlatformStyle::Macos);
         let macos_caption = TextRole::Caption.metrics_for(ZsTypographyPlatformStyle::Macos);
         let macos_title = TextRole::Title.metrics_for(ZsTypographyPlatformStyle::Macos);
+        let windows_title = TextRole::WindowTitle.metrics_for(ZsTypographyPlatformStyle::Windows);
         let gtk_caption = TextRole::Caption.metrics_for(ZsTypographyPlatformStyle::Gtk);
 
         assert_eq!((windows.size, windows.line_height), (14.0, 20.0));
@@ -1204,6 +1224,14 @@ mod draw_command_tests {
                 macos_title.default_weight
             ),
             (22.0, 26.0, TextWeight::Regular)
+        );
+        assert_eq!(
+            (
+                windows_title.size,
+                windows_title.line_height,
+                windows_title.default_weight
+            ),
+            (24.0, 32.0, TextWeight::Semibold)
         );
         assert_eq!((gtk_caption.size, gtk_caption.line_height), (11.5, 16.0));
     }

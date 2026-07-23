@@ -29,6 +29,7 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 文档标签 | `TabViewItem` 的语义图标和 Header 位于同一标签行，文字在图标右侧；内容属于所选标签 |
 | 命令栏 | `DefaultLabelPosition="Right"` 时使用 48 epx compact 高度、20×20 epx primary icon、8 epx 图标/标签间距和 12 epx `AppBarButton` 标签；窄窗口的动态 overflow 是独立布局能力 |
 | 标签文字 | `TabViewItemHeaderFontSize` 是 12 epx，图标为 16 epx，图标后间距 10 epx；标签仍与图标位于同一行，不把 Windows 的 12 epx 值复制到 AppKit/GTK |
+| 框架窗口标题 | `WindowTitle` 使用系统 UI 字体、24/32 epx 和 Semibold；这是 ZSClip 桌面壳层的标题语义，不把内容 `Title` 的 28/36 epx 强行用于窗口标题 |
 
 ## macOS / AppKit
 

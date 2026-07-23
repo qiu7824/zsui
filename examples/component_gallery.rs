@@ -1013,7 +1013,7 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
     };
     let spacing = ZsuiSpacingTokens::default();
     let content = column([
-        role_text(state.page.title(), TextRole::Subtitle),
+        role_text(state.page.title(), TextRole::WindowTitle),
         secondary_text(state.page.description(), TextRole::Body),
         page,
     ])
