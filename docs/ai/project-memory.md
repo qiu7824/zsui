@@ -165,6 +165,13 @@ history remain authoritative for implementation status.
   icon, action-button, corner and spacing metrics. The callback is an owned
   node-local mapper, so document reload keeps binding identity without a global
   control registry.
+  Document-ready Toast wraps exactly one page child and keeps `open`,
+  non-empty `message`, optional action label and short/long/persistent duration
+  explicit. Its result binding emits `action`, `close`, `escape` or `timeout`;
+  a separate typed `open_change` binding emits `false` for every response so
+  Viewer state cannot resurrect a dismissed or timed-out toast. Runtime owns
+  `ZsToastSpec` and the closure-capable result/open callbacks, while platform
+  profiles retain placement, metrics and timer scheduling.
   Document-ready ProgressRing uses one optional `nullable_number` value for
   determinate/indeterminate mode, validates its numeric range twice and maps
   small/medium/large to platform-owned metrics. Ordinary

@@ -40,7 +40,8 @@ framework readiness.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. Twenty-two components are document-ready; NumberBox
+  runtime memory evidence. Twenty-nine components are document-ready, including
+  Toast, InfoBar and ContentDialog; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
   options plus controlled nullable selection and expanded state. Tabs maps each
   direct child's stable ID to a typed content slot, semantic header and

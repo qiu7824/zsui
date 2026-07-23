@@ -778,6 +778,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 toast,
                 focused_control,
                 on_result,
+                on_open_change,
             } = &mut self.kind
             {
                 if let Some(active) = toast.as_ref() {
@@ -804,7 +805,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             };
                             *toast = None;
                             if let Some(message) = on_result {
-                                cx.emit(message(result));
+                                cx.emit(message.map(result));
+                            }
+                            if let Some(message) = on_open_change {
+                                cx.emit(message.map(false));
                             }
                             handled = true;
                         }

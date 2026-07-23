@@ -3528,6 +3528,44 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "toast" {
+            let static_string = |name: &str| {
+                (!node.property_bindings.contains_key(name))
+                    .then(|| node.properties.get(name).and_then(Value::as_str))
+                    .flatten()
+            };
+            for name in ["message", "action_label"] {
+                if static_string(name).is_some_and(|value| value.trim().is_empty()) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("toast {name} must not be empty when provided"),
+                    );
+                }
+            }
+            if static_string("duration")
+                .is_some_and(|duration| !matches!(duration, "short" | "long" | "persistent"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.duration"),
+                    "toast duration must be short, long or persistent".to_owned(),
+                );
+            }
+            if node.property_bindings.contains_key("open")
+                && !node.action_bindings.contains_key("open_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.open"),
+                    "bound toast open state requires an open_change action".to_owned(),
+                );
+            }
+        }
+
         if node.component == "content_dialog" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -4387,6 +4425,38 @@ const INFO_BAR_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "event",
     payload_type: UiValueType::String,
 }];
+const TOAST_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "message",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "action_label",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "duration",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const TOAST_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "result",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "open_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const CONTENT_DIALOG_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "open",
@@ -4483,6 +4553,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             children: ChildPolicy::Exactly(1),
         }),
         "info_bar" => Some(leaf(INFO_BAR_PROPERTIES, INFO_BAR_ACTIONS)),
+        "toast" => Some(ComponentSchema {
+            properties: TOAST_PROPERTIES,
+            actions: TOAST_ACTIONS,
+            children: ChildPolicy::Exactly(1),
+        }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
@@ -6632,6 +6707,83 @@ mod tests {
                     && diagnostic.path == format!("$.root.properties.{property}")
             }));
         }
+    }
+
+    #[test]
+    fn toast_contract_requires_one_page_and_controlled_open_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "saved",
+                "component": "toast",
+                "properties": {
+                  "message": "Saved",
+                  "action_label": "Undo",
+                  "duration": "long"
+                },
+                "property_bindings": { "open": "saved_open" },
+                "action_bindings": {
+                  "result": "saved_result",
+                  "open_change": "saved_open_changed"
+                },
+                "children": [{ "id": "page", "component": "stack" }]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("saved_open".to_owned(), UiValueType::Boolean)]),
+            actions: BTreeMap::from([
+                ("saved_result".to_owned(), UiValueType::String),
+                ("saved_open_changed".to_owned(), UiValueType::Boolean),
+            ]),
+        };
+        let features = UiFeatureSet::new(["toast"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        let handoff = UiAiHandoffPackage::build(&valid, &features, &bindings, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "toast")
+            .unwrap();
+        assert_eq!(contract.cargo_feature.as_deref(), Some("toast"));
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::Exactly { count: 1 }
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "saved",
+                "component": "toast",
+                "properties": {
+                  "message": "",
+                  "duration": "forever"
+                },
+                "property_bindings": { "open": "saved_open" },
+                "children": []
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.message"
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.duration"
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.property_bindings.open"
+        }));
     }
 
     #[test]

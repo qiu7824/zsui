@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "saved_open": "boolean",
+    "saved_message": "string"
+  },
+  "actions": {
+    "saved_result": "string",
+    "saved_open_changed": "boolean"
+  }
+}

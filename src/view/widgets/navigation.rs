@@ -99,6 +99,7 @@ pub fn toast_presenter<Msg>(
         toast,
         focused_control,
         on_result: None,
+        on_open_change: None,
     })
     .id(widget)
     .child(page)

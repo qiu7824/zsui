@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "saved-toast",
+    "component": "toast",
+    "properties": {
+      "action_label": "撤销 / Undo",
+      "duration": "persistent"
+    },
+    "property_bindings": {
+      "open": "saved_open",
+      "message": "saved_message"
+    },
+    "action_bindings": {
+      "result": "saved_result",
+      "open_change": "saved_open_changed"
+    },
+    "children": [
+      {
+        "id": "page",
+        "component": "stack",
+        "layout": {
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "title",
+            "component": "text",
+            "properties": {
+              "text": "原生页面 / Native page",
+              "text_role": "subtitle"
+            }
+          },
+          {
+            "id": "body",
+            "component": "text",
+            "properties": {
+              "text": "Toast 响应和受控 open 状态都通过强类型绑定返回应用。 / Toast results and controlled open state return through typed bindings.",
+              "text_role": "body",
+              "wrap": "word",
+              "ellipsis": false
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -30,6 +30,7 @@ impl WidgetId {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "scroll"
 ))]
@@ -57,6 +58,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "scroll"
 ))]
@@ -84,6 +86,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "scroll"
 ))]
@@ -129,6 +132,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "scroll"
 ))]
@@ -166,6 +170,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "list",
     feature = "tabs",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "scroll"
 ))]
@@ -928,7 +933,8 @@ pub enum ViewNodeKind<Msg> {
     ToastPresenter {
         toast: Option<crate::ZsToastSpec>,
         focused_control: crate::ZsToastControl,
-        on_result: Option<fn(crate::ZsToastResult) -> Msg>,
+        on_result: Option<ViewMessageMapper<crate::ZsToastResult, Msg>>,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "teaching-tip")]
     TeachingTip {
@@ -2114,7 +2120,38 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "toast")]
     pub fn on_toast_result(mut self, message: fn(crate::ZsToastResult) -> Msg) -> Self {
         if let ViewNodeKind::ToastPresenter { on_result, .. } = &mut self.kind {
-            *on_result = Some(message);
+            *on_result = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Registers an owned callback for a toast response.
+    ///
+    /// Document-backed Views use this closure-capable form to retain the
+    /// stable node and typed binding identity without a global event registry.
+    #[cfg(feature = "toast")]
+    pub fn on_toast_result_with(
+        mut self,
+        message: impl Fn(crate::ZsToastResult) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ToastPresenter { on_result, .. } = &mut self.kind {
+            *on_result = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    /// Registers an owned callback for the toast's controlled open state.
+    ///
+    /// A toast emits `false` after any response, including timeout, so a
+    /// document-backed open binding cannot resurrect a dismissed toast on the
+    /// next Viewer rebuild.
+    #[cfg(feature = "toast")]
+    pub fn on_toast_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::ToastPresenter { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

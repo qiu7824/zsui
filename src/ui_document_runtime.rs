@@ -79,6 +79,7 @@ pub struct UiDocumentSecretAction {
         feature = "list",
         feature = "tabs",
         feature = "dialog",
+        feature = "toast",
         feature = "info-bar",
         feature = "scroll"
     )),
@@ -194,6 +195,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "list",
             feature = "tabs",
             feature = "dialog",
+            feature = "toast",
             feature = "info-bar",
             feature = "scroll"
         )),
@@ -535,6 +537,107 @@ fn compile_node<Msg: Clone + 'static>(
                             }
                             .to_owned(),
                         ),
+                    })
+                });
+            }
+            control
+        }
+        #[cfg(feature = "toast")]
+        "toast" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(page) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+
+            let message = string_property(node, properties, "message", "");
+            if message.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "message",
+                    "toast message must not be empty",
+                ));
+            }
+            let action_label = optional_string_property(node, properties, "action_label");
+            if action_label
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "action_label",
+                    "toast action label must not be empty when provided",
+                ));
+            }
+            let duration = match optional_string_property(node, properties, "duration").as_deref() {
+                Some("long") => crate::ZsToastDuration::Long,
+                Some("persistent") => crate::ZsToastDuration::Persistent,
+                Some("short") | None => crate::ZsToastDuration::Short,
+                Some(duration) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "duration",
+                        format!("unsupported toast duration {duration:?}"),
+                    ));
+                }
+            };
+            let mut spec =
+                crate::ZsToastSpec::new(node.id.widget_id().0, message).duration(duration);
+            if let Some(action_label) = action_label {
+                spec = spec.action(action_label);
+            }
+            let mut control = crate::toast_presenter(
+                node.id.widget_id(),
+                bool_property(node, properties, "open", false).then_some(spec),
+                page,
+            );
+            if let Some(binding) = node.action_bindings.get("result") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_toast_result_with(move |result| {
+                    let payload = match result.response {
+                        crate::ZsToastResponse::Action => "action",
+                        crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::CloseButton,
+                        ) => "close",
+                        crate::ZsToastResponse::Dismissed(
+                            crate::ZsToastDismissReason::EscapeKey,
+                        ) => "escape",
+                        crate::ZsToastResponse::Dismissed(crate::ZsToastDismissReason::Timeout) => {
+                            "timeout"
+                        }
+                    };
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(payload.to_owned()),
+                    })
+                });
+            }
+            if let Some(binding) = node.action_bindings.get("open_change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("open").cloned();
+                control = control.on_toast_open_change_with(move |open| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(open),
                     })
                 });
             }
@@ -2686,6 +2789,7 @@ fn optional_grid_view_item_id_property(
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "label",
     feature = "button",
@@ -2721,6 +2825,7 @@ fn string_property(
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar",
     feature = "progress-ring"
 ))]
@@ -2777,6 +2882,7 @@ fn nullable_number_property(
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
+    feature = "toast",
     feature = "info-bar"
 ))]
 fn optional_string_property(
@@ -4342,6 +4448,149 @@ mod tests {
             ),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "severity"
+        ));
+    }
+
+    #[cfg(all(feature = "toast", feature = "label"))]
+    #[test]
+    fn compiles_toast_and_maps_result_and_open_change_without_viewer_runtime() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "saved",
+                "component": "toast",
+                "properties": {
+                  "action_label": "Undo",
+                  "duration": "persistent"
+                },
+                "property_bindings": {
+                  "open": "saved_open",
+                  "message": "saved_message"
+                },
+                "action_bindings": {
+                  "result": "saved_result",
+                  "open_change": "saved_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "text",
+                    "properties": { "text": "Saved page" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "saved_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "saved_message".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "saved_result".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "saved_open_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            ("saved_open".to_owned(), Value::Bool(true)),
+            (
+                "saved_message".to_owned(),
+                Value::String("Saved successfully".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let toast_id = {
+            let crate::ViewNodeKind::ToastPresenter {
+                toast: Some(spec), ..
+            } = &view.kind
+            else {
+                panic!("document must compile to an active Toast");
+            };
+            assert_eq!(
+                spec.id(),
+                crate::ZsToastId::from(document.root.id.widget_id().0)
+            );
+            assert_eq!(spec.message(), "Saved successfully");
+            assert_eq!(spec.action_label(), Some("Undo"));
+            assert_eq!(spec.toast_duration(), crate::ZsToastDuration::Persistent);
+            spec.id()
+        };
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ToastResponded {
+                widget: document.root.id.widget_id(),
+                toast: toast_id,
+                response: crate::ZsToastResponse::Action,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::Action(UiDocumentAction {
+                    node_id: "saved".to_owned(),
+                    binding: "saved_result".to_owned(),
+                    property_binding: None,
+                    payload: Value::String("action".to_owned()),
+                }),
+                Msg::Action(UiDocumentAction {
+                    node_id: "saved".to_owned(),
+                    binding: "saved_open_changed".to_owned(),
+                    property_binding: Some("saved_open".to_owned()),
+                    payload: Value::Bool(false),
+                }),
+            ]
+        );
+
+        let invalid_document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "saved",
+                "component": "toast",
+                "properties": {
+                  "open": true,
+                  "message": "Saved successfully"
+                },
+                "property_bindings": { "duration": "saved_duration" },
+                "children": [{ "id": "page", "component": "stack" }]
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            ui_document_view(
+                &invalid_document,
+                &UiBindingSchema {
+                    properties: BTreeMap::from([(
+                        "saved_duration".to_owned(),
+                        crate::ui_document::UiValueType::String,
+                    )]),
+                    actions: BTreeMap::new(),
+                },
+                &BTreeMap::from([(
+                    "saved_duration".to_owned(),
+                    Value::String("forever".to_owned()),
+                )]),
+                Msg::Action
+            ),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "duration"
         ));
     }
 
