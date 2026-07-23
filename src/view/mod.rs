@@ -10,6 +10,7 @@ use std::{
 #[cfg(any(feature = "button", feature = "label"))]
 use crate::render_protocol::TextRole;
 #[cfg(any(
+    feature = "badge",
     feature = "label",
     feature = "button",
     feature = "textbox",

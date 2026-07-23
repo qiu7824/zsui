@@ -767,6 +767,19 @@ history remain authoritative for implementation status.
   carry platform glyphs or resource paths. The Win32 Viewer proof retains
   three standalone icons, routes one Confirm click with zero unhandled input,
   and measures 16,064,512 bytes RSS plus 4,907,008 private bytes before teardown.
+- Information badges are the opt-in `badge` feature and remain noninteractive.
+  `ZsBadgeContent` distinguishes a dot, a nonnegative `u32` count and a
+  semantic `ZsIcon`; `ZsBadgeTone` selects neutral, accent, success, warning or
+  danger without exposing a target palette. Windows follows the official 4-DP
+  dot and 16-DP minimum InfoBadge geometry. AppKit uses a restrained
+  caption-based status capsule because it has no general-purpose InfoBadge
+  view, while GTK follows `AdwViewStackPage` badge-number/needs-attention
+  semantics. UiDocument keeps `kind` static, permits typed value/icon/tone
+  bindings, rejects unrelated content fields and assigns accessibility
+  announcements to the parent semantic node. The Win32 Viewer proof retains
+  dot, numeric and semantic-icon badges, routes one Confirm click with zero
+  unhandled input, and measures 16,035,840 bytes RSS plus 4,837,376 private
+  bytes before teardown.
 - The Notepad acceptance surface uses the real framework TabView for its
   document header. The semantic file icon and title occupy the same tab row and
   the editor is the selected tab content. This remains a one-static-tab proof;

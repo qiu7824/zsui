@@ -426,6 +426,116 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "badge")]
+    fn standalone_badge_uses_platform_metrics_and_semantic_paint() {
+        for (platform, expected_width, expected_height) in [
+            (crate::ZsBaseControlPlatformStyle::Windows, 20, 16),
+            (crate::ZsBaseControlPlatformStyle::Macos, 21, 18),
+            (crate::ZsBaseControlPlatformStyle::Gtk, 25, 18),
+        ] {
+            let badge_node: ViewNode<()> = badge(crate::ZsBadgeContent::Number(42))
+                .badge_tone(crate::ZsBadgeTone::Success)
+                .with_platform_style_override(platform);
+            let mut view = column([badge_node]);
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 120,
+                    height: 80,
+                },
+                Dpi::standard(),
+            ));
+
+            assert_eq!(
+                view.children[0].bounds(),
+                Some(Rect {
+                    x: 0,
+                    y: 0,
+                    width: expected_width,
+                    height: expected_height,
+                })
+            );
+            assert!(matches!(
+                view.children[0].kind,
+                ViewNodeKind::Badge {
+                    content: crate::ZsBadgeContent::Number(42),
+                    tone: crate::ZsBadgeTone::Success,
+                }
+            ));
+
+            let mut paint = ViewPaintCx::new(Dpi::standard());
+            view.paint(&mut paint);
+            assert!(paint.plan().commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::RoundFill {
+                    rect,
+                    fill: NativeDrawFill::Role(ColorRole::Success),
+                    radius,
+                } if rect.width == expected_width
+                    && rect.height == expected_height
+                    && *radius == expected_height / 2
+            )));
+            assert!(paint.plan().commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::Text(command)
+                    if command.text == "42"
+                        && command.bounds.width == expected_width
+                        && command.style.color == ColorRole::AccentText
+                        && command.style.horizontal_align == crate::HorizontalAlign::Center
+            )));
+        }
+
+        let mut dot = column([badge::<()>(crate::ZsBadgeContent::Dot)]);
+        dot.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        assert_eq!(
+            dot.children[0].bounds(),
+            Some(Rect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 4,
+            })
+        );
+        let mut dot_paint = ViewPaintCx::new(Dpi::standard());
+        dot.paint(&mut dot_paint);
+        assert_eq!(dot_paint.plan().text_count(), 0);
+        assert_eq!(dot_paint.plan().icon_count(), 0);
+
+        let mut icon_badge = column([
+            badge::<()>(crate::ZsBadgeContent::icon(crate::ZsIcon::Success))
+                .badge_tone(crate::ZsBadgeTone::Success),
+        ]);
+        icon_badge.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let mut icon_paint = ViewPaintCx::new(Dpi::standard());
+        icon_badge.paint(&mut icon_paint);
+        assert!(icon_paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(command)
+                if command.icon == crate::ZsIcon::Success
+                    && command.bounds.width == 10
+                    && command.bounds.height == 10
+                    && command.color == ColorRole::AccentText
+        )));
+    }
+
+    #[test]
     #[cfg(feature = "button")]
     fn toolbar_button_keeps_semantic_icon_and_flat_resting_chrome() {
         let mut view: ViewNode<Msg> = toolbar_button_for_style(

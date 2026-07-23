@@ -56,6 +56,18 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             outline_inset: Dp::new(1.0),
             outline_width: Dp::new(2.0),
         },
+        #[cfg(feature = "badge")]
+        badge: PlatformBadgeProfile {
+            dot_diameter: Dp::new(6.0),
+            minimum_diameter: Dp::new(18.0),
+            horizontal_padding: Dp::new(5.0),
+            vertical_padding: Dp::new(2.0),
+            icon_size: Dp::new(10.0),
+            digit_width: Dp::new(5.5),
+            text_line_height: Dp::new(13.0),
+            text_role: TextRole::Caption,
+            text_weight: TextWeight::Semibold,
+        },
         #[cfg(feature = "icon")]
         icon: PlatformIconProfile {
             small: Dp::new(13.0),

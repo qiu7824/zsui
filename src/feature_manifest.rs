@@ -96,6 +96,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "button component declarations and base widget surface",
         ),
         ZsuiCargoFeature::new(
+            "badge",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "noninteractive dot, numeric and semantic-icon information badges with platform-owned metrics",
+        ),
+        ZsuiCargoFeature::new(
             "label",
             Widget,
             true,
@@ -488,6 +496,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "ui-document-runtime",
                 "window",
                 "button",
+                "badge",
                 "icon",
                 "label",
                 "checkbox",
@@ -718,6 +727,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Vec::new(),
             vec![
                 "button",
+                "badge",
                 "breadcrumb",
                 "canvas",
                 "flyout",

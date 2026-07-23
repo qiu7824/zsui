@@ -433,6 +433,8 @@ fn compile_node<Msg: Clone + 'static>(
             UiAxis::Vertical => column(children),
         },
         "border" => column(children).flex(0.0),
+        #[cfg(feature = "badge")]
+        "badge" => document_badge(node, properties)?,
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
         #[cfg(feature = "document-shell")]
@@ -3335,6 +3337,7 @@ fn grid_gap_property(
 }
 
 #[cfg(any(
+    feature = "badge",
     feature = "label",
     feature = "button",
     feature = "icon",
@@ -3406,6 +3409,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
 }
 
 #[cfg(any(
+    feature = "badge",
     feature = "label",
     feature = "button",
     feature = "icon",
@@ -3986,6 +3990,7 @@ fn optional_table_sort_property(
 }
 
 #[cfg(any(
+    feature = "badge",
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
@@ -4014,7 +4019,7 @@ fn string_property(
         .unwrap_or_else(|| fallback.to_owned())
 }
 
-#[cfg(any(feature = "button", feature = "icon"))]
+#[cfg(any(feature = "badge", feature = "button", feature = "icon"))]
 fn optional_semantic_icon_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -4035,6 +4040,62 @@ fn optional_semantic_icon_property(
                 format!("unknown ZsIcon semantic variant {icon:?}"),
             )
         })
+}
+
+#[cfg(feature = "badge")]
+fn document_badge<Msg>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let content = match string_property(node, properties, "kind", "").as_str() {
+        "dot" => crate::ZsBadgeContent::Dot,
+        "number" => {
+            let value = property_value(node, properties, "value")
+                .and_then(|value| value.as_u64())
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "value",
+                        "number badges require a nonnegative integer value",
+                    )
+                })?;
+            let value = u32::try_from(value).map_err(|_| {
+                invalid_resolved_property(
+                    node,
+                    "value",
+                    "badge value must fit in an unsigned 32-bit integer",
+                )
+            })?;
+            crate::ZsBadgeContent::Number(value)
+        }
+        "icon" => crate::ZsBadgeContent::Icon(
+            optional_semantic_icon_property(node, properties, "icon")?.ok_or_else(|| {
+                invalid_resolved_property(node, "icon", "icon badges require a semantic ZsIcon")
+            })?,
+        ),
+        value => {
+            return Err(invalid_resolved_property(
+                node,
+                "kind",
+                format!("unsupported badge kind {value:?}"),
+            ));
+        }
+    };
+    let tone = match string_property(node, properties, "tone", "accent").as_str() {
+        "neutral" => crate::ZsBadgeTone::Neutral,
+        "accent" => crate::ZsBadgeTone::Accent,
+        "success" => crate::ZsBadgeTone::Success,
+        "warning" => crate::ZsBadgeTone::Warning,
+        "danger" => crate::ZsBadgeTone::Danger,
+        value => {
+            return Err(invalid_resolved_property(
+                node,
+                "tone",
+                format!("unsupported badge tone {value:?}"),
+            ));
+        }
+    };
+    Ok(crate::badge(content).badge_tone(tone))
 }
 
 #[cfg(feature = "icon")]
@@ -4488,6 +4549,64 @@ mod tests {
         let mut invalid_values = values;
         invalid_values.insert("status_size".to_owned(), Value::String("huge".to_owned()));
         assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
+    }
+
+    #[cfg(feature = "badge")]
+    #[test]
+    fn compiles_bound_numeric_badge_with_semantic_tone() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "unread-count",
+                "component": "badge",
+                "properties": { "kind": "number" },
+                "property_bindings": {
+                  "value": "unread_count",
+                  "tone": "unread_tone"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "unread_count".to_owned(),
+                    crate::ui_document::UiValueType::Integer,
+                ),
+                (
+                    "unread_tone".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::new(),
+        };
+        let values = BTreeMap::from([
+            ("unread_count".to_owned(), Value::from(42u64)),
+            (
+                "unread_tone".to_owned(),
+                Value::String("success".to_owned()),
+            ),
+        ]);
+
+        let view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        assert!(matches!(
+            view.kind,
+            crate::ViewNodeKind::Badge {
+                content: crate::ZsBadgeContent::Number(42),
+                tone: crate::ZsBadgeTone::Success,
+            }
+        ));
+        assert_eq!(view.style.flex, 0.0);
+
+        let mut invalid_values = values;
+        invalid_values.insert("unread_count".to_owned(), Value::from(u64::MAX));
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "value"
+        ));
     }
 
     #[cfg(feature = "label")]

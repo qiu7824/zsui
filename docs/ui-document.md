@@ -144,6 +144,17 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/icon.bindings.json
 ```
 
+Badge 文档显式选择 `dot`、`number` 或 `icon` 内容种类；数字、图标和色调仍可通过
+强类型属性绑定更新：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,badge,button,label `
+  -- check examples/ui-documents/badge.json `
+  --bindings examples/ui-documents/badge.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -155,7 +166,7 @@ cargo run --bin zsui-uic `
 - 非法布局值、主题 token、本地化键和辅助功能字段。
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
-`text`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
+`text`、`badge`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
 `teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb`、`navigation`、`command_bar` 和 `scroll`。
@@ -179,6 +190,13 @@ cargo run --bin zsui-uic `
 `theme_tokens.foreground`，两种来源不能同时声明。这三个属性字段可来自显式 string
 绑定，但不能本地化。运行时将同一节点编译为独立非交互 Icon View；Win32、AppKit 与
 Linux profile 分别解析 16/20/32、13/16/32 和 16/18/32 DP 尺寸及平台图标来源。
+
+`badge.kind` 是静态结构语义，只接受 `dot`、`number` 或 `icon`。数字种类必须提供
+非负 `integer` `value`，图标种类必须提供 `ZsIcon` 语义名称；不相关的内容字段会被
+拒绝。`tone` 可静态声明或绑定为 `neutral`、`accent`、`success`、`warning`、`danger`。
+运行时保持 Badge 非交互，并按 Win32、AppKit、GTK profile 分别解析点/胶囊尺寸、
+Caption 字体、语义图标与主题颜色。辅助功能状态属于可聚焦父节点，文档可把
+`role`、`label` 和 `live_region` 放在该父节点上。
 
 Stack 与 Grid 会递归保留子树的固有尺寸，包括文字行框、控件最小尺寸、节点间距和
 容器内边距。横向 Stack 先按真实分配宽度计算换行文字高度，再决定整行高度；空间不足
@@ -587,6 +605,17 @@ cargo run --bin zsui-viewer `
   -- examples/ui-documents/icon.json `
   --bindings examples/ui-documents/icon.bindings.json `
   --values examples/ui-documents/icon.values.json
+```
+
+Badge 示例同时显示点、受控数字、受控语义图标和平台色调：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/badge.json `
+  --bindings examples/ui-documents/badge.bindings.json `
+  --values examples/ui-documents/badge.values.json
 ```
 
 受控面包屑示例使用稳定路径项目 ID，并由目标平台决定折叠、分隔符和溢出表面：

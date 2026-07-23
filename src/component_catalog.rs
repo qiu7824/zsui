@@ -287,6 +287,10 @@ const ICON_GAPS: &[&str] = &[
     "bundled vector fallback",
     "high-contrast target smoke",
 ];
+const BADGE_GAPS: &[&str] = &[
+    "parent-owned accessibility announcement and state-change notification",
+    "AppKit and GTK target screenshot proof",
+];
 const WORKBENCH_GAPS: &[&str] = &[
     "native editable composer input",
     "hover pressed focus-visible state matrix",
@@ -583,9 +587,9 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "InfoBadge",
         Feedback,
         FirstPass,
-        Some("shell"),
-        "src/shell_layout.rs",
-        PLATFORM_GAPS
+        Some("badge"),
+        "src/badge.rs + src/view/widgets/badge.rs + three desktop renderers",
+        BADGE_GAPS
     ),
     component!(
         "progress_bar",

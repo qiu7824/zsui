@@ -626,6 +626,10 @@ fn navigation_intrinsic_height_px<Msg>(
         .max(1),
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
+        #[cfg(feature = "badge")]
+        ViewNodeKind::Badge { content, .. } => {
+            standalone_badge_size_px(node, *content, dpi, typography_scale).1
+        }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => node
@@ -855,6 +859,10 @@ fn intrinsic_min_width_px<Msg>(
         }
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
+        #[cfg(feature = "badge")]
+        ViewNodeKind::Badge { content, .. } => {
+            standalone_badge_size_px(node, *content, dpi, typography_scale).0
+        }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => node
@@ -938,6 +946,10 @@ fn intrinsic_min_height_px<Msg>(
         }
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
+        #[cfg(feature = "badge")]
+        ViewNodeKind::Badge { content, .. } => {
+            standalone_badge_size_px(node, *content, dpi, typography_scale).1
+        }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Row,
         } => {
@@ -1010,6 +1022,24 @@ fn standalone_icon_size_px<Msg>(
     .to_px(dpi)
     .round_i32()
     .max(1)
+}
+
+#[cfg(feature = "badge")]
+fn standalone_badge_size_px<Msg>(
+    node: &ViewNode<Msg>,
+    content: crate::ZsBadgeContent,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> (i32, i32) {
+    let (width, height) =
+        crate::platform_component_profile::PlatformBadgeProfile::for_platform(
+            node.resolved_platform_style(),
+        )
+        .size(content, typography_scale);
+    (
+        width.to_px(dpi).round_i32().max(1),
+        height.to_px(dpi).round_i32().max(1),
+    )
 }
 
 #[cfg(feature = "label")]

@@ -2116,6 +2116,78 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         match &self.kind {
+            #[cfg(feature = "badge")]
+            ViewNodeKind::Badge { content, tone } => {
+                let profile =
+                    crate::platform_component_profile::PlatformBadgeProfile::for_platform(
+                        self.resolved_platform_style(),
+                    );
+                let (desired_width, desired_height) =
+                    profile.size(*content, cx.plan.typography_scale());
+                let badge_width = desired_width
+                    .to_px(cx.dpi)
+                    .round_i32()
+                    .max(1)
+                    .min(bounds.width.max(1));
+                let badge_height = desired_height
+                    .to_px(cx.dpi)
+                    .round_i32()
+                    .max(1)
+                    .min(bounds.height.max(1));
+                let badge_bounds = Rect {
+                    x: bounds.x + bounds.width.saturating_sub(badge_width) / 2,
+                    y: bounds.y + bounds.height.saturating_sub(badge_height) / 2,
+                    width: badge_width,
+                    height: badge_height,
+                };
+                let (fill, foreground) = profile.colors(*tone);
+                cx.draw(NativeDrawCommand::RoundFill {
+                    rect: badge_bounds,
+                    fill: NativeDrawFill::Role(fill),
+                    radius: badge_height / 2,
+                });
+
+                match content {
+                    crate::ZsBadgeContent::Dot => {}
+                    crate::ZsBadgeContent::Icon(icon) => {
+                        let icon_size = profile
+                            .icon_size
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(1)
+                            .min(badge_width.min(badge_height).max(1));
+                        cx.draw(NativeDrawCommand::Icon(
+                            crate::NativeDrawIconCommand::new(
+                                *icon,
+                                Rect {
+                                    x: badge_bounds.x
+                                        + badge_bounds.width.saturating_sub(icon_size) / 2,
+                                    y: badge_bounds.y
+                                        + badge_bounds.height.saturating_sub(icon_size) / 2,
+                                    width: icon_size,
+                                    height: icon_size,
+                                },
+                                crate::NativeIconColorMode::ThemeAware,
+                            )
+                            .with_color(foreground),
+                        ));
+                    }
+                    crate::ZsBadgeContent::Number(value) => {
+                        let mut style = SemanticTextStyle::for_role(profile.text_role);
+                        style.color = foreground;
+                        style.weight = profile.text_weight;
+                        style.horizontal_align = crate::HorizontalAlign::Center;
+                        style.vertical_align = crate::VerticalAlign::Center;
+                        style.wrap = crate::TextWrap::NoWrap;
+                        style.ellipsis = false;
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            value.to_string(),
+                            badge_bounds,
+                            style,
+                        )));
+                    }
+                }
+            }
             #[cfg(feature = "icon")]
             ViewNodeKind::Icon { icon, size, color } => {
                 let icon_size = crate::platform_component_profile::PlatformIconProfile::for_platform(

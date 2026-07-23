@@ -324,6 +324,25 @@ fn status_icon() -> ViewNode<()> {
 }
 ```
 
+信息徽章使用独立的 `badge` feature，并明确区分点、数字和语义图标内容。应用只选择
+内容与语义色调，平台 profile 负责胶囊尺寸、数字字体、图标尺寸和系统主题颜色：
+
+```rust,no_run
+use zsui::{badge, ViewNode, ZsBadgeContent, ZsBadgeTone, ZsIcon};
+
+fn unread_badges() -> [ViewNode<()>; 3] {
+    [
+        badge(ZsBadgeContent::Dot),
+        badge(ZsBadgeContent::number(12)),
+        badge(ZsBadgeContent::icon(ZsIcon::Success))
+            .badge_tone(ZsBadgeTone::Success),
+    ]
+}
+```
+
+Badge 本身不接收点击或焦点。使用独立 Badge 时，辅助功能标签和状态变化通知应放在
+可聚焦的父元素上；导航、标签页等复合组件可在自己的语义提供者中合并 Badge 状态。
+
 ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
 
 ```rust,no_run

@@ -1,4 +1,6 @@
 include!("button.rs");
+#[cfg(feature = "badge")]
+include!("badge.rs");
 #[cfg(feature = "icon")]
 include!("icon.rs");
 #[cfg(feature = "canvas")]

@@ -14,6 +14,8 @@ pub mod app_command;
 pub mod auto_suggest;
 #[path = "platform/backend_profile.rs"]
 mod backend_profile;
+#[cfg(feature = "badge")]
+pub mod badge;
 #[cfg(feature = "breadcrumb")]
 pub mod breadcrumb;
 #[cfg(feature = "calculator")]
@@ -266,6 +268,8 @@ pub use auto_suggest::{
     ZsAutoSuggestState, ZsAutoSuggestSubmission, ZsAutoSuggestTextChange,
     ZsAutoSuggestTextChangeReason, ZsAutoSuggestion, ZsAutoSuggestionId,
 };
+#[cfg(feature = "badge")]
+pub use badge::{ZsBadgeContent, ZsBadgeTone};
 #[cfg(feature = "breadcrumb")]
 pub use breadcrumb::{
     ZsBreadcrumbFocusTarget, ZsBreadcrumbId, ZsBreadcrumbItem, ZsBreadcrumbState,
@@ -645,6 +649,8 @@ pub use tree::{ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId, ZsTreeRowState, 
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 #[cfg(feature = "auto-suggest")]
 pub use view::auto_suggest_box;
+#[cfg(feature = "badge")]
+pub use view::badge;
 #[cfg(feature = "breadcrumb")]
 pub use view::breadcrumb_bar;
 #[cfg(feature = "canvas")]

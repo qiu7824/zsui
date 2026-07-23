@@ -3686,6 +3686,7 @@ impl UiFeatureSet {
             };
         }
         include_feature!("button");
+        include_feature!("badge");
         include_feature!("breadcrumb");
         include_feature!("canvas");
         include_feature!("flyout");
@@ -4035,6 +4036,132 @@ impl<'a> UiDocumentValidator<'a> {
                         UiDiagnosticCode::InvalidPropertyValue,
                         format!("{path}.properties.{name}"),
                         format!("scroll property {name:?} must not be negative"),
+                    );
+                }
+            }
+        }
+
+        if node.component == "badge" {
+            let has_value = node.properties.contains_key("value")
+                || node.property_bindings.contains_key("value")
+                || node.localization.contains_key("value");
+            let has_icon = node.properties.contains_key("icon")
+                || node.property_bindings.contains_key("icon")
+                || node.localization.contains_key("icon");
+            if node.property_bindings.contains_key("kind") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.kind"),
+                    "badge kind is structural metadata and must be a static dot, number or icon value"
+                        .to_owned(),
+                );
+            }
+            if node.localization.contains_key("kind") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidLocalization,
+                    format!("{path}.localization.kind"),
+                    "badge kind is semantic metadata and cannot be localized".to_owned(),
+                );
+            }
+            let kind = node.properties.get("kind").and_then(Value::as_str);
+            if kind.is_some_and(|kind| !matches!(kind, "dot" | "number" | "icon")) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.kind"),
+                    "badge kind must be dot, number or icon".to_owned(),
+                );
+            }
+            match kind {
+                Some("dot") if has_value || has_icon => push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties"),
+                    "dot badges do not accept value or icon content".to_owned(),
+                ),
+                Some("number") if !has_value => push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::MissingRequiredProperty,
+                    format!("{path}.properties.value"),
+                    "number badges require a nonnegative integer value".to_owned(),
+                ),
+                Some("number") if has_icon => push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.icon"),
+                    "number badges do not accept an icon".to_owned(),
+                ),
+                Some("icon") if !has_icon => push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::MissingRequiredProperty,
+                    format!("{path}.properties.icon"),
+                    "icon badges require a semantic ZsIcon value".to_owned(),
+                ),
+                Some("icon") if has_value => push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.value"),
+                    "icon badges do not accept a numeric value".to_owned(),
+                ),
+                _ => {}
+            }
+            if node
+                .properties
+                .get("value")
+                .and_then(Value::as_u64)
+                .is_some_and(|value| value > u64::from(u32::MAX))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.value"),
+                    "badge value must fit in an unsigned 32-bit integer".to_owned(),
+                );
+            }
+            let static_icon = (!node.property_bindings.contains_key("icon")
+                && !node.localization.contains_key("icon"))
+            .then(|| node.properties.get("icon").and_then(Value::as_str))
+            .flatten();
+            if static_icon.is_some_and(|icon| {
+                serde_json::from_value::<crate::ZsIcon>(Value::String(icon.to_owned())).is_err()
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.icon"),
+                    "badge icon must name a ZsIcon semantic variant".to_owned(),
+                );
+            }
+            let static_tone = (!node.property_bindings.contains_key("tone")
+                && !node.localization.contains_key("tone"))
+            .then(|| {
+                node.properties
+                    .get("tone")
+                    .and_then(Value::as_str)
+                    .unwrap_or("accent")
+            });
+            if static_tone.is_some_and(|tone| {
+                !matches!(
+                    tone,
+                    "neutral" | "accent" | "success" | "warning" | "danger"
+                )
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.tone"),
+                    "badge tone must be neutral, accent, success, warning or danger".to_owned(),
+                );
+            }
+            for name in ["icon", "tone"] {
+                if node.localization.contains_key(name) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidLocalization,
+                        format!("{path}.localization.{name}"),
+                        format!("badge {name} is semantic metadata and cannot be localized"),
                     );
                 }
             }
@@ -5677,6 +5804,28 @@ const ICON_PROPERTIES: &[PropertySpec] = &[
         required: false,
     },
 ];
+const BADGE_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "kind",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "value",
+        value_type: UiValueType::Integer,
+        required: false,
+    },
+    PropertySpec {
+        name: "icon",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "tone",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
 const BUTTON_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "click",
     payload_type: UiValueType::Null,
@@ -6633,6 +6782,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             children: ChildPolicy::Exactly(1),
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
+        "badge" => Some(leaf(BADGE_PROPERTIES, NO_ACTIONS)),
         "icon" => Some(leaf(ICON_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "breadcrumb" => Some(leaf(BREADCRUMB_PROPERTIES, BREADCRUMB_ACTIONS)),
@@ -8597,6 +8747,77 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::ConflictingPropertySource
                 && diagnostic.path == "$.root.theme_tokens.foreground"
+        }));
+    }
+
+    #[test]
+    fn badge_contract_validates_kind_content_tone_and_structural_kind() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "unread-count",
+                "component": "badge",
+                "properties": {
+                  "kind": "number",
+                  "value": 12,
+                  "tone": "accent"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let features = UiFeatureSet::new(["badge"]);
+        let report = valid.validate(&features, &UiBindingSchema::default());
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(
+            UiDocumentReleaseArtifact::compile(&valid, &features, &UiBindingSchema::default())
+                .is_ok()
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "invalid-badge",
+                "component": "badge",
+                "properties": {
+                  "kind": "icon",
+                  "value": 4294967296,
+                  "icon": "NotAnIcon",
+                  "tone": "brand"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        for property in ["value", "icon", "tone"] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                    && diagnostic.path == format!("$.root.properties.{property}")
+            }));
+        }
+
+        let bound_kind = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "dynamic-kind",
+                "component": "badge",
+                "property_bindings": { "kind": "badge_kind" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("badge_kind".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::new(),
+        };
+        let report = bound_kind.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.property_bindings.kind"
         }));
     }
 

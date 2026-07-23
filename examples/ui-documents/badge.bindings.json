@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "unread_count": "integer",
+    "unread_tone": "string",
+    "sync_icon": "string",
+    "sync_tone": "string"
+  },
+  "actions": {
+    "confirm_clicked": "null"
+  }
+}

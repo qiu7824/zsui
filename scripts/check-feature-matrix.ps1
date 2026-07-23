@@ -13,6 +13,7 @@ $singleFeatures = @(
     "accessibility",
     "window",
     "button",
+    "badge",
     "breadcrumb",
     "canvas",
     "flyout",

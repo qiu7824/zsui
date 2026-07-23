@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "badge-page",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "properties": {
+          "text": "信息徽章 / Information Badges",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "description",
+        "component": "text",
+        "properties": {
+          "text": "点、数字和语义图标保持同一应用写法；Windows、macOS 与 Linux 分别解析尺寸、字体和颜色。 / Dot, numeric, and semantic-icon badges share one application contract while each target resolves its own metrics, typography, and colors.",
+          "wrap": "word"
+        },
+        "layout": {
+          "width": 780
+        }
+      },
+      {
+        "id": "new-content-status",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "accessibility": {
+          "role": "status",
+          "label": "有新内容 / New content available",
+          "live_region": "polite"
+        },
+        "children": [
+          {
+            "id": "new-content-label",
+            "component": "text",
+            "properties": {
+              "text": "新内容 / New content"
+            },
+            "layout": {
+              "width": 220
+            }
+          },
+          {
+            "id": "new-content-badge",
+            "component": "badge",
+            "properties": {
+              "kind": "dot",
+              "tone": "accent"
+            }
+          }
+        ]
+      },
+      {
+        "id": "unread-status",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "accessibility": {
+          "role": "status",
+          "label": "十二条未读消息 / Twelve unread messages",
+          "live_region": "polite"
+        },
+        "children": [
+          {
+            "id": "unread-label",
+            "component": "text",
+            "properties": {
+              "text": "未读消息 / Unread messages"
+            },
+            "layout": {
+              "width": 220
+            }
+          },
+          {
+            "id": "unread-badge",
+            "component": "badge",
+            "properties": {
+              "kind": "number"
+            },
+            "property_bindings": {
+              "value": "unread_count",
+              "tone": "unread_tone"
+            }
+          }
+        ]
+      },
+      {
+        "id": "sync-status",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "accessibility": {
+          "role": "status",
+          "label": "同步成功 / Synchronization succeeded"
+        },
+        "children": [
+          {
+            "id": "sync-label",
+            "component": "text",
+            "properties": {
+              "text": "同步状态 / Sync status"
+            },
+            "layout": {
+              "width": 220
+            }
+          },
+          {
+            "id": "sync-badge",
+            "component": "badge",
+            "properties": {
+              "kind": "icon"
+            },
+            "property_bindings": {
+              "icon": "sync_icon",
+              "tone": "sync_tone"
+            }
+          }
+        ]
+      },
+      {
+        "id": "attention-status",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap_token": "md"
+        },
+        "accessibility": {
+          "role": "status",
+          "label": "三个项目需要注意 / Three items need attention"
+        },
+        "children": [
+          {
+            "id": "attention-label",
+            "component": "text",
+            "properties": {
+              "text": "需要注意 / Needs attention"
+            },
+            "layout": {
+              "width": 220
+            }
+          },
+          {
+            "id": "attention-badge",
+            "component": "badge",
+            "properties": {
+              "kind": "number",
+              "value": 3,
+              "tone": "warning"
+            }
+          }
+        ]
+      },
+      {
+        "id": "confirm",
+        "component": "button",
+        "properties": {
+          "label": "确认 / Confirm"
+        },
+        "action_bindings": {
+          "click": "confirm_clicked"
+        }
+      }
+    ]
+  }
+}

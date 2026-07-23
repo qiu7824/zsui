@@ -806,6 +806,11 @@ pub enum ViewNodeKind<Msg> {
         size: crate::ZsIconSize,
         color: ColorRole,
     },
+    #[cfg(feature = "badge")]
+    Badge {
+        content: crate::ZsBadgeContent,
+        tone: crate::ZsBadgeTone,
+    },
     #[cfg(feature = "canvas")]
     Canvas {
         scene: crate::ZsCanvasScene,
@@ -1115,7 +1120,7 @@ pub struct ViewNode<Msg> {
     layout_dpi: Dpi,
     #[cfg(all(
         test,
-        any(feature = "button", feature = "icon", feature = "label")
+        any(feature = "badge", feature = "button", feature = "icon", feature = "label")
     ))]
     platform_style_override: Option<crate::ZsBaseControlPlatformStyle>,
     pub(crate) typography_scaled_height: bool,
@@ -1141,7 +1146,7 @@ impl<Msg> ViewNode<Msg> {
             layout_dpi: Dpi::standard(),
             #[cfg(all(
                 test,
-                any(feature = "button", feature = "icon", feature = "label")
+                any(feature = "badge", feature = "button", feature = "icon", feature = "label")
             ))]
             platform_style_override: None,
             typography_scaled_height: false,
@@ -1287,7 +1292,7 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(all(
         test,
-        any(feature = "button", feature = "icon", feature = "label")
+        any(feature = "badge", feature = "button", feature = "icon", feature = "label")
     ))]
     pub(crate) fn with_platform_style_override(
         mut self,
@@ -1297,7 +1302,7 @@ impl<Msg> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "button", feature = "icon", feature = "label"))]
+    #[cfg(any(feature = "badge", feature = "button", feature = "icon", feature = "label"))]
     pub(crate) fn resolved_platform_style(&self) -> crate::ZsBaseControlPlatformStyle {
         #[cfg(test)]
         if let Some(platform) = self.platform_style_override {

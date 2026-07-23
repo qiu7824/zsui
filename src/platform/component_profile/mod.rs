@@ -1,4 +1,5 @@
 #[cfg(any(
+    feature = "badge",
     feature = "label",
     feature = "button",
     feature = "tabs",
@@ -71,6 +72,8 @@ pub(crate) struct PlatformComponentProfile {
     pub style_tokens: PlatformStyleTokenProfile,
     pub typography: PlatformTypographyProfile,
     pub focus_visuals: PlatformFocusVisualProfile,
+    #[cfg(feature = "badge")]
+    pub badge: PlatformBadgeProfile,
     #[cfg(feature = "icon")]
     pub icon: PlatformIconProfile,
     pub base_control: PlatformBaseControlProfile,
@@ -127,6 +130,61 @@ pub(crate) struct PlatformComponentProfile {
     #[cfg(feature = "calculator")]
     pub calculator_shell: PlatformCalculatorShellProfile,
     pub shell: PlatformShellProfile,
+}
+
+#[cfg(feature = "badge")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformBadgeProfile {
+    pub dot_diameter: Dp,
+    pub minimum_diameter: Dp,
+    pub horizontal_padding: Dp,
+    pub vertical_padding: Dp,
+    pub icon_size: Dp,
+    pub digit_width: Dp,
+    pub text_line_height: Dp,
+    pub text_role: TextRole,
+    pub text_weight: TextWeight,
+}
+
+#[cfg(feature = "badge")]
+impl PlatformBadgeProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).badge
+    }
+
+    pub(crate) fn size(self, content: crate::ZsBadgeContent, typography_scale: f32) -> (Dp, Dp) {
+        match content {
+            crate::ZsBadgeContent::Dot => (self.dot_diameter, self.dot_diameter),
+            crate::ZsBadgeContent::Icon(_) => (self.minimum_diameter, self.minimum_diameter),
+            crate::ZsBadgeContent::Number(value) => {
+                let mut digits = 1u32;
+                let mut remaining = value;
+                while remaining >= 10 {
+                    digits += 1;
+                    remaining /= 10;
+                }
+                let scale = typography_scale.max(0.5);
+                let height = self
+                    .minimum_diameter
+                    .0
+                    .max(self.text_line_height.0 * scale + self.vertical_padding.0 * 2.0);
+                let width = height.max(
+                    self.digit_width.0 * digits as f32 * scale + self.horizontal_padding.0 * 2.0,
+                );
+                (Dp::new(width), Dp::new(height))
+            }
+        }
+    }
+
+    pub(crate) const fn colors(self, tone: crate::ZsBadgeTone) -> (ColorRole, ColorRole) {
+        match tone {
+            crate::ZsBadgeTone::Neutral => (ColorRole::Control, ColorRole::PrimaryText),
+            crate::ZsBadgeTone::Accent => (ColorRole::Accent, ColorRole::AccentText),
+            crate::ZsBadgeTone::Success => (ColorRole::Success, ColorRole::AccentText),
+            crate::ZsBadgeTone::Warning => (ColorRole::Warning, ColorRole::PrimaryText),
+            crate::ZsBadgeTone::Danger => (ColorRole::Danger, ColorRole::AccentText),
+        }
+    }
 }
 
 #[cfg(feature = "icon")]
