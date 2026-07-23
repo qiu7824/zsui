@@ -4039,6 +4039,139 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "button" {
+            let static_presentation = (!node.property_bindings.contains_key("presentation")
+                && !node.localization.contains_key("presentation"))
+            .then(|| {
+                node.properties
+                    .get("presentation")
+                    .and_then(Value::as_str)
+                    .unwrap_or("standard")
+            });
+            let static_icon = (!node.property_bindings.contains_key("icon")
+                && !node.localization.contains_key("icon"))
+            .then(|| node.properties.get("icon").and_then(Value::as_str))
+            .flatten();
+            if node
+                .properties
+                .get("label")
+                .and_then(Value::as_str)
+                .is_some_and(|label| label.trim().is_empty())
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.label"),
+                    "button label must not be empty".to_owned(),
+                );
+            }
+            if static_presentation.is_some_and(|presentation| {
+                !matches!(presentation, "standard" | "primary" | "toolbar" | "icon")
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.presentation"),
+                    "button presentation must be standard, primary, toolbar or icon".to_owned(),
+                );
+            }
+            if static_icon.is_some_and(|icon| {
+                serde_json::from_value::<crate::ZsIcon>(Value::String(icon.to_owned())).is_err()
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.icon"),
+                    "button icon must name a ZsIcon semantic variant".to_owned(),
+                );
+            }
+            if static_presentation.is_some_and(|presentation| {
+                matches!(presentation, "toolbar" | "icon")
+                    && !node.properties.contains_key("icon")
+                    && !node.property_bindings.contains_key("icon")
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::MissingRequiredProperty,
+                    format!("{path}.properties.icon"),
+                    "toolbar and icon button presentations require a semantic icon".to_owned(),
+                );
+            }
+            if static_presentation.is_some_and(|presentation| {
+                matches!(presentation, "standard" | "primary") && static_icon.is_some()
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.icon"),
+                    "standard and primary button presentations do not accept an icon".to_owned(),
+                );
+            }
+            for name in ["presentation", "icon"] {
+                if node.localization.contains_key(name) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidLocalization,
+                        format!("{path}.localization.{name}"),
+                        format!("button {name} is semantic metadata and cannot be localized"),
+                    );
+                }
+            }
+        }
+
+        if node.component == "command_bar" {
+            let child_ids = node
+                .children
+                .iter()
+                .map(|child| child.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if let Some(trailing) = node.properties.get("trailing").and_then(Value::as_array) {
+                let mut seen = BTreeSet::new();
+                for (index, item) in trailing.iter().enumerate() {
+                    let Some(item) = item.as_str() else {
+                        continue;
+                    };
+                    if !seen.insert(item) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.trailing[{index}]"),
+                            format!("command_bar trailing child id {item:?} is duplicated"),
+                        );
+                    } else if !child_ids.contains(item) {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.trailing[{index}]"),
+                            format!("command_bar trailing id {item:?} does not address a child"),
+                        );
+                    }
+                }
+            }
+            if node
+                .properties
+                .get("gap")
+                .and_then(Value::as_f64)
+                .is_some_and(|gap| !gap.is_finite() || gap < 0.0)
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.gap"),
+                    "command_bar gap must be a finite non-negative DP value".to_owned(),
+                );
+            }
+            if node.localization.contains_key("trailing") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidLocalization,
+                    format!("{path}.localization.trailing"),
+                    "command_bar trailing contains stable child IDs and cannot be localized"
+                        .to_owned(),
+                );
+            }
+        }
+
         if node.component == "text" {
             for (name, allowed) in [
                 (
@@ -5428,6 +5561,16 @@ const BUTTON_PROPERTIES: &[PropertySpec] = &[
         value_type: UiValueType::Boolean,
         required: false,
     },
+    PropertySpec {
+        name: "presentation",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "icon",
+        value_type: UiValueType::String,
+        required: false,
+    },
 ];
 const BUTTON_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "click",
@@ -5955,6 +6098,18 @@ const NAVIGATION_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "select",
     payload_type: UiValueType::NavigationItemId,
 }];
+const COMMAND_BAR_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "trailing",
+        value_type: UiValueType::StringArray,
+        required: false,
+    },
+    PropertySpec {
+        name: "gap",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+];
 const TABS_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "labels",
@@ -6320,6 +6475,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: NAVIGATION_PROPERTIES,
             actions: NAVIGATION_ACTIONS,
             children: ChildPolicy::Exactly(1),
+        }),
+        "command_bar" => Some(ComponentSchema {
+            properties: COMMAND_BAR_PROPERTIES,
+            actions: NO_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
         }),
         "tabs" => Some(ComponentSchema {
             properties: TABS_PROPERTIES,
@@ -8276,6 +8436,102 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.expanded"
         }));
+    }
+
+    #[test]
+    fn command_bar_contract_validates_stable_groups_and_button_presentations() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "editor-command-bar",
+                "component": "command_bar",
+                "properties": {
+                  "trailing": ["about"],
+                  "gap": 4
+                },
+                "children": [
+                  {
+                    "id": "save",
+                    "component": "button",
+                    "properties": {
+                      "label": "Save",
+                      "presentation": "toolbar",
+                      "icon": "Save"
+                    },
+                    "action_bindings": { "click": "save_clicked" }
+                  },
+                  {
+                    "id": "undo",
+                    "component": "button",
+                    "properties": {
+                      "label": "Undo",
+                      "presentation": "toolbar",
+                      "icon": "Undo"
+                    }
+                  },
+                  {
+                    "id": "about",
+                    "component": "button",
+                    "properties": {
+                      "label": "About",
+                      "presentation": "icon",
+                      "icon": "Info"
+                    }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::new(),
+            actions: BTreeMap::from([("save_clicked".to_owned(), UiValueType::Null)]),
+        };
+        let features = UiFeatureSet::new(["document-shell", "button"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "editor-command-bar",
+                "component": "command_bar",
+                "properties": {
+                  "trailing": ["missing", "missing"],
+                  "gap": -1
+                },
+                "children": [
+                  {
+                    "id": "save",
+                    "component": "button",
+                    "properties": {
+                      "label": "Save",
+                      "presentation": "toolbar"
+                    }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        for path in [
+            "$.root.properties.trailing[0]",
+            "$.root.properties.trailing[1]",
+            "$.root.properties.gap",
+            "$.root.children[0].properties.icon",
+        ] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                matches!(
+                    diagnostic.code,
+                    UiDiagnosticCode::InvalidPropertyValue
+                        | UiDiagnosticCode::MissingRequiredProperty
+                ) && diagnostic.path == path
+            }));
+        }
     }
 
     #[test]

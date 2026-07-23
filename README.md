@@ -602,6 +602,8 @@ X11 与 Weston Wayland 窗口，导出最终平台表面截图和结构化运行
 `navigation_view` 通过 `.content(WidgetId, ViewNode)` 同时拥有侧边栏和内容，框架内部
 分别采用 WinUI Auto、AppKit 约束折叠和 Libadwaita split-view 规则；紧凑栏、最小模式、
 覆盖层、焦点和收起交互不需要应用编写平台枚举或 `cfg`。
+UiDocument 同样可声明 `command_bar`：直接子节点的稳定 ID 决定首尾分组，Button 只声明
+语义呈现和图标，仍复用框架的 `ZsCommandBarSpec`、类型化事件和三平台 profile。
 
 ### 完整组件 Gallery
 

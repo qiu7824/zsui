@@ -749,6 +749,14 @@ history remain authoritative for implementation status.
   Button event path while the framework owns platform metrics and chrome.
   Windows primary command icons use the WinUI 20-DIP metric, and a visible
   label to the icon's right uses the AppBarButton 12-DIP label role.
+- UiDocument `command_bar` preserves direct-child `UiNodeId` values as the
+  stable grouping contract: `trailing` names a duplicate-free subset, while
+  unlisted children keep leading declaration order. Button `presentation` and
+  semantic `icon` compile through the existing `ZsCommandBarSpec` and Button
+  event path; documents never choose a platform style or silently drop an
+  action. The Win32 Viewer proof clicks Save once, routes one typed message
+  with zero unhandled clicks, and measures 16,035,840 bytes RSS plus 4,882,432
+  private bytes before teardown.
 - The Notepad acceptance surface uses the real framework TabView for its
   document header. The semantic file icon and title occupy the same tab row and
   the editor is the selected tab content. This remains a one-static-tab proof;

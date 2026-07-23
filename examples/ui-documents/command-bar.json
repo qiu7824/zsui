@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "command-bar-page",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "properties": {
+          "text": "命令栏 / CommandBar",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "description",
+        "component": "text",
+        "properties": {
+          "text": "稳定子节点 ID 决定前后动作区；图标、间距、字体和工具栏样式由目标平台解析。 / Stable child IDs define leading and trailing actions while the target platform resolves icons, spacing, typography, and toolbar chrome.",
+          "wrap": "word"
+        },
+        "layout": {
+          "width": 780
+        }
+      },
+      {
+        "id": "editor-command-bar",
+        "component": "command_bar",
+        "properties": {
+          "gap": 4
+        },
+        "property_bindings": {
+          "trailing": "editor_command_bar_trailing"
+        },
+        "layout": {
+          "width": 780
+        },
+        "children": [
+          {
+            "id": "save",
+            "component": "button",
+            "properties": {
+              "label": "保存 / Save",
+              "presentation": "toolbar",
+              "icon": "Save"
+            },
+            "action_bindings": {
+              "click": "save_clicked"
+            }
+          },
+          {
+            "id": "undo",
+            "component": "button",
+            "properties": {
+              "label": "撤销 / Undo",
+              "presentation": "toolbar",
+              "icon": "Undo"
+            },
+            "action_bindings": {
+              "click": "undo_clicked"
+            }
+          },
+          {
+            "id": "cut",
+            "component": "button",
+            "properties": {
+              "label": "剪切 / Cut",
+              "presentation": "toolbar",
+              "icon": "Cut"
+            },
+            "action_bindings": {
+              "click": "cut_clicked"
+            }
+          },
+          {
+            "id": "about",
+            "component": "button",
+            "properties": {
+              "label": "关于 / About",
+              "presentation": "icon",
+              "icon": "Info"
+            },
+            "action_bindings": {
+              "click": "about_clicked"
+            }
+          }
+        ]
+      },
+      {
+        "id": "content",
+        "component": "border",
+        "layout": {
+          "padding_token": "content_padding"
+        },
+        "children": [
+          {
+            "id": "content-text",
+            "component": "text",
+            "properties": {
+              "text": "应用只处理强类型动作；命令栏不会执行产品行为，也不会隐藏声明的操作。 / The application handles typed actions; the bar neither executes product behavior nor silently drops declared commands.",
+              "wrap": "word"
+            },
+            "layout": {
+              "width": 720
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

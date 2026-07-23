@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "editor_command_bar_trailing": "string_array"
+  },
+  "actions": {
+    "save_clicked": "null",
+    "undo_clicked": "null",
+    "cut_clicked": "null",
+    "about_clicked": "null"
+  }
+}

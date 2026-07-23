@@ -123,6 +123,17 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/navigation.bindings.json
 ```
 
+CommandBar 文档使用直接子节点的稳定 ID 划分首尾命令组；按钮只声明语义图标和
+`standard`、`primary`、`toolbar` 或 `icon` 呈现，平台 profile 决定最终工具栏样式：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,document-shell,label `
+  -- check examples/ui-documents/command-bar.json `
+  --bindings examples/ui-documents/command-bar.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -137,7 +148,7 @@ cargo run --bin zsui-uic `
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
-`teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb`、`navigation` 和 `scroll`。
+`teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb`、`navigation`、`command_bar` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 ## 布局与文字完整性
@@ -204,6 +215,12 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 运行时为导航行生成保留命名空间内的稳定子控件 ID，并拒绝跨分组重复、不存在或禁用的
 选择。应用可声明平台无关的 `pane_width` 与 `minimum_content_width`，但展开、紧凑、覆盖、
 source list 及侧边栏组合仍由 Windows、AppKit 和 Linux 的体验 profile 决定。
+
+`command_bar` 至少包含一个直接子节点，`trailing` 使用去重的稳定子节点 ID 数组划分
+尾部命令组；未列出的子节点保持原始顺序留在首部。按钮的 `presentation` 与 `icon` 是
+平台无关的语义元数据：工具栏按钮和纯图标按钮必须声明 `ZsIcon`，普通和主按钮不接收
+图标。发布运行时把文档编译为同一个 `ZsCommandBarSpec` 与 Button 事件路径，平台仍拥有
+工具栏尺寸、间距、图标来源和 chrome；文档不包含平台枚举，也不静默丢弃溢出命令。
 
 `grid_view.items` 使用 `grid_view_item_array`，每个磁贴包含唯一稳定字符串 ID、非空标题、
 可选副标题和 `ZsIcon` 语义图标。`selected` 使用 `nullable_grid_view_item_id` 保存显式单选
@@ -533,6 +550,18 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/navigation.values.json
 ```
 
+CommandBar 示例使用同一份稳定命令组、语义图标和类型化按钮动作，由目标平台决定工具栏
+度量和视觉：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/command-bar.json `
+  --bindings examples/ui-documents/command-bar.bindings.json `
+  --values examples/ui-documents/command-bar.values.json
+```
+
 受控面包屑示例使用稳定路径项目 ID，并由目标平台决定折叠、分隔符和溢出表面：
 
 ```powershell
@@ -604,6 +633,9 @@ Windows DataGrid 受控示例依次点击一个真实数据行和可排序表头
 Windows NavigationView 受控示例在 1200×720 最终窗口中使用展开窗格，点击真实导航行后
 记录 1 条 Viewer 消息和 0 次未处理点击；进程拆除前 RSS 为 17,022,976 字节，Private
 bytes 为 5,955,584 字节。紧凑宽度下同一文档自动折叠为导航轨，不需要文档平台分支。
+Windows CommandBar 示例点击真实 Save 工具栏按钮后记录 1 条 Viewer 消息和 0 次未处理
+点击；960×640 最终 Win32 PNG 保留首部 Save/Undo/Cut 与尾部 About 命令，进程拆除前
+RSS 为 16,035,840 字节，Private bytes 为 4,882,432 字节。
 Windows BreadcrumbBar 受控示例点击真实溢出按钮，记录 1 次展开状态变化、1 条 Viewer
 消息和 0 次未处理点击；最终 Win32 PNG 保留目标平台绘制的路径和溢出表面。
 Windows Flyout 受控示例分别点击浮层内真实按钮与外部遮罩：两条场景都记录 1 次已处理

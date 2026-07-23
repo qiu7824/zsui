@@ -6,7 +6,7 @@
 
 use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 
-#[cfg(feature = "tree")]
+#[cfg(any(feature = "tree", feature = "document-shell"))]
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
@@ -435,6 +435,8 @@ fn compile_node<Msg: Clone + 'static>(
         "border" => column(children).flex(0.0),
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
+        #[cfg(feature = "document-shell")]
+        "command_bar" => document_command_bar(node, properties, children)?,
         #[cfg(feature = "shell")]
         "navigation" => document_navigation(node, properties, children, mapper)?,
         #[cfg(feature = "list")]
@@ -1131,8 +1133,55 @@ fn compile_node<Msg: Clone + 'static>(
         }
         #[cfg(feature = "button")]
         "button" => {
-            let mut control = crate::button(string_property(node, properties, "label", "Button"))
-                .enabled(bool_property(node, properties, "enabled", true));
+            let label = string_property(node, properties, "label", "Button");
+            if label.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "label",
+                    "button label must not be empty",
+                ));
+            }
+            let presentation = string_property(node, properties, "presentation", "standard");
+            let icon = optional_semantic_icon_property(node, properties, "icon")?;
+            let mut control = match presentation.as_str() {
+                "standard" if icon.is_none() => crate::button(label),
+                "primary" if icon.is_none() => crate::primary_button(label),
+                "toolbar" => crate::toolbar_button(
+                    label,
+                    icon.ok_or_else(|| {
+                        invalid_resolved_property(
+                            node,
+                            "icon",
+                            "toolbar button presentation requires a semantic icon",
+                        )
+                    })?,
+                ),
+                "icon" => crate::icon_button(
+                    label,
+                    icon.ok_or_else(|| {
+                        invalid_resolved_property(
+                            node,
+                            "icon",
+                            "icon button presentation requires a semantic icon",
+                        )
+                    })?,
+                ),
+                "standard" | "primary" => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "icon",
+                        "standard and primary button presentations do not accept an icon",
+                    ));
+                }
+                _ => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "presentation",
+                        format!("unsupported button presentation {presentation:?}"),
+                    ));
+                }
+            }
+            .enabled(bool_property(node, properties, "enabled", true));
             if let Some(binding) = node.action_bindings.get("click") {
                 control = control.on_click(mapper.map(UiDocumentAction {
                     node_id: node.id.as_str().to_owned(),
@@ -2127,6 +2176,52 @@ fn document_tree<Msg: Clone + 'static>(
         });
     }
     Ok(control)
+}
+
+#[cfg(feature = "document-shell")]
+fn document_command_bar<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    if children.is_empty() {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 1,
+            actual: 0,
+        });
+    }
+    let trailing_ids = document_string_id_array(node, properties, "trailing")?;
+    let trailing_ids = trailing_ids.into_iter().collect::<BTreeSet<_>>();
+    let child_ids = node
+        .children
+        .iter()
+        .map(|child| child.id.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    if let Some(unknown) = trailing_ids.iter().find(|id| !child_ids.contains(*id)) {
+        return Err(invalid_resolved_property(
+            node,
+            "trailing",
+            format!("trailing id {unknown:?} does not address a direct child"),
+        ));
+    }
+
+    let mut leading = Vec::new();
+    let mut trailing = Vec::new();
+    for (authoring, child) in node.children.iter().zip(children) {
+        if trailing_ids.contains(authoring.id.as_str()) {
+            trailing.push(child);
+        } else {
+            leading.push(child);
+        }
+    }
+    let mut spec = crate::ZsCommandBarSpec::new()
+        .leading(leading)
+        .trailing(trailing);
+    if let Some(gap) = optional_non_negative_extent(node, properties, "gap")? {
+        spec = spec.gap(Dp::new(gap));
+    }
+    Ok(crate::command_bar(spec))
 }
 
 #[cfg(feature = "shell")]
@@ -3603,6 +3698,36 @@ fn optional_tree_node_id_property(
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
 
+#[cfg(feature = "document-shell")]
+fn document_string_id_array(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Vec<String>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(Vec::new());
+    };
+    let values = value.as_array().ok_or_else(|| {
+        invalid_resolved_property(node, property, "stable child IDs must be a string array")
+    })?;
+    let mut ids = Vec::with_capacity(values.len());
+    let mut seen = BTreeSet::new();
+    for value in values {
+        let id = value.as_str().ok_or_else(|| {
+            invalid_resolved_property(node, property, "stable child IDs must be strings")
+        })?;
+        if !seen.insert(id.to_owned()) {
+            return Err(invalid_resolved_property(
+                node,
+                property,
+                format!("stable child id {id:?} is duplicated"),
+            ));
+        }
+        ids.push(id.to_owned());
+    }
+    Ok(ids)
+}
+
 #[cfg(feature = "shell")]
 fn navigation_items_property(
     node: &UiNode,
@@ -3684,7 +3809,7 @@ fn optional_navigation_item_id_property(
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
 
-#[cfg(feature = "shell")]
+#[cfg(any(feature = "shell", feature = "document-shell"))]
 fn optional_non_negative_extent(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -3881,6 +4006,29 @@ fn string_property(
     property_value(node, properties, property)
         .and_then(|value| value.as_str().map(str::to_owned))
         .unwrap_or_else(|| fallback.to_owned())
+}
+
+#[cfg(feature = "button")]
+fn optional_semantic_icon_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ZsIcon>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    let icon = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(node, property, "semantic icon must be a string")
+    })?;
+    serde_json::from_value::<crate::ZsIcon>(Value::String(icon.to_owned()))
+        .map(Some)
+        .map_err(|_| {
+            invalid_resolved_property(
+                node,
+                property,
+                format!("unknown ZsIcon semantic variant {icon:?}"),
+            )
+        })
 }
 
 #[cfg(any(
@@ -5295,6 +5443,96 @@ mod tests {
             serde_json::json!([{ "id": "blank", "label": " " }]),
         );
         assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
+    }
+
+    #[cfg(feature = "document-shell")]
+    #[test]
+    fn compiles_command_bar_groups_and_routes_child_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "editor-command-bar",
+                "component": "command_bar",
+                "properties": { "trailing": ["about"], "gap": 4 },
+                "children": [
+                  {
+                    "id": "save",
+                    "component": "button",
+                    "properties": {
+                      "label": "Save",
+                      "presentation": "toolbar",
+                      "icon": "Save"
+                    },
+                    "action_bindings": { "click": "save_clicked" }
+                  },
+                  {
+                    "id": "undo",
+                    "component": "button",
+                    "properties": {
+                      "label": "Undo",
+                      "presentation": "toolbar",
+                      "icon": "Undo"
+                    }
+                  },
+                  {
+                    "id": "about",
+                    "component": "button",
+                    "properties": {
+                      "label": "About",
+                      "presentation": "icon",
+                      "icon": "Info"
+                    }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::new(),
+            actions: BTreeMap::from([(
+                "save_clicked".to_owned(),
+                crate::ui_document::UiValueType::Null,
+            )]),
+        };
+        let mut view =
+            ui_document_view(&document, &bindings, &BTreeMap::new(), Msg::Action).unwrap();
+        assert_eq!(view.children.len(), 4);
+        assert!(matches!(
+            &view.children[0].kind,
+            crate::ViewNodeKind::Button {
+                presentation: crate::ZsButtonPresentation::Toolbar {
+                    icon: crate::ZsIcon::Save,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &view.children[3].kind,
+            crate::ViewNodeKind::Button {
+                presentation: crate::ZsButtonPresentation::Icon {
+                    icon: crate::ZsIcon::Info
+                },
+                ..
+            }
+        ));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::Click {
+                widget: document.root.children[0].id.widget_id(),
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(clicked)] = messages.as_slice() else {
+            panic!("command-bar child click must emit one typed action");
+        };
+        assert_eq!(clicked.node_id, "save");
+        assert_eq!(clicked.binding, "save_clicked");
+        assert_eq!(clicked.payload, Value::Null);
     }
 
     #[cfg(feature = "shell")]
