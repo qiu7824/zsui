@@ -1,7 +1,8 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct WindowsWindowDrawPlanRecord {
     hwnd: isize,
-    plan: NativeDrawPlan,
+    plan: Arc<NativeDrawPlan>,
+    renderer_resources: WindowsGdiResourceCache,
 }
 
 #[derive(Debug, Clone)]

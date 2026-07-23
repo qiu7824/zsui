@@ -201,7 +201,12 @@ mod tests {
         }]);
 
         assert!(set_windows_win32_window_draw_plan(hwnd, plan.clone()));
-        assert_eq!(window_draw_plan(hwnd), Some(plan));
+        let stored = window_draw_plan(hwnd).expect("draw plan should be retained");
+        assert_eq!(stored.as_ref(), &plan);
+        assert!(Arc::ptr_eq(
+            &stored,
+            &window_draw_plan(hwnd).expect("draw plan lookup should be shared")
+        ));
 
         clear_windows_win32_window_draw_plan(hwnd);
         assert_eq!(window_draw_plan(hwnd), None);
@@ -1092,7 +1097,7 @@ mod tests {
         let next_wrapped_line = route.dispatch_key_down(u32::from(VK_DOWN));
         let extended = route.dispatch_key_down_with_shift(u32::from(VK_UP), true);
 
-        assert_eq!(second_visual_row.text_caret, Some(6));
+        assert_eq!(second_visual_row.text_caret, Some(5));
         assert_eq!(short_hard_line.text_caret, Some(8));
         assert_eq!(next_wrapped_line.text_caret, Some(11));
         assert_eq!(extended.text_caret, Some(8));

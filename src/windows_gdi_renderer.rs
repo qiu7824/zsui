@@ -1,4 +1,11 @@
-use std::{ffi::c_void, io::Cursor, ptr::null, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    ffi::c_void,
+    io::Cursor,
+    mem::size_of,
+    ptr::null,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use crate::{
     native_icons::{WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY},
@@ -24,6 +31,7 @@ use windows_sys::Win32::{
         DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HDC, HGDIOBJ, LOGPIXELSY, NULL_PEN,
         OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY, TEXTMETRICW,
     },
+    UI::WindowsAndMessaging::SystemParametersInfoW,
 };
 
 #[allow(non_camel_case_types)]
@@ -113,14 +121,74 @@ const DT_SINGLELINE: u32 = 0x0020;
 const DT_CALCRECT: u32 = 0x0400;
 const DT_NOPREFIX: u32 = 0x0800;
 const DT_END_ELLIPSIS: u32 = 0x0000_8000;
-const ANTIALIASED_QUALITY: u32 = 4;
+const CLEARTYPE_QUALITY: u32 = 5;
 const GDIP_SMOOTHING_MODE_ANTI_ALIAS: i32 = 4;
 const GDIP_UNIT_PIXEL: i32 = 2;
 const GDIP_FILL_MODE_ALTERNATE: i32 = 0;
+const SPI_GETNONCLIENTMETRICS: u32 = 0x0029;
 const WINDOWS_UI_FONT_FAMILY: &str = "Segoe UI";
 const WINDOWS_VARIABLE_SMALL_FONT_FAMILY: &str = "Segoe UI Variable Small";
 const WINDOWS_VARIABLE_TEXT_FONT_FAMILY: &str = "Segoe UI Variable Text";
 const WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY: &str = "Segoe UI Variable Display";
+static WINDOWS_SYSTEM_UI_FONT_FAMILY: OnceLock<String> = OnceLock::new();
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct WindowsRawLogFontW {
+    height: i32,
+    width: i32,
+    escapement: i32,
+    orientation: i32,
+    weight: i32,
+    italic: u8,
+    underline: u8,
+    strike_out: u8,
+    char_set: u8,
+    output_precision: u8,
+    clip_precision: u8,
+    quality: u8,
+    pitch_and_family: u8,
+    face_name: [u16; 32],
+}
+
+#[repr(C)]
+struct WindowsRawNonClientMetricsW {
+    cb_size: u32,
+    border_width: i32,
+    scroll_width: i32,
+    scroll_height: i32,
+    caption_width: i32,
+    caption_height: i32,
+    caption_font: WindowsRawLogFontW,
+    small_caption_width: i32,
+    small_caption_height: i32,
+    small_caption_font: WindowsRawLogFontW,
+    menu_width: i32,
+    menu_height: i32,
+    menu_font: WindowsRawLogFontW,
+    status_font: WindowsRawLogFontW,
+    message_font: WindowsRawLogFontW,
+    padded_border_width: i32,
+}
+
+const fn zeroed_windows_log_font() -> WindowsRawLogFontW {
+    WindowsRawLogFontW {
+        height: 0,
+        width: 0,
+        escapement: 0,
+        orientation: 0,
+        weight: 0,
+        italic: 0,
+        underline: 0,
+        strike_out: 0,
+        char_set: 0,
+        output_precision: 0,
+        clip_precision: 0,
+        quality: 0,
+        pitch_and_family: 0,
+        face_name: [0; 32],
+    }
+}
 
 #[repr(C)]
 struct GdiplusStartupInput {
@@ -447,8 +515,28 @@ unsafe fn draw_arc_antialiased(
     drawn
 }
 
+#[derive(Debug)]
 struct WindowsGdiOwnedObject {
-    object: HGDIOBJ,
+    object: isize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct WindowsGdiFontKey {
+    family: String,
+    pixel_height: i32,
+    weight: i32,
+    quality: u32,
+}
+
+impl WindowsGdiFontKey {
+    fn from_style(style: &TextStyle, dpi_scale: f32) -> Self {
+        Self {
+            family: style.font_family.clone(),
+            pixel_height: font_pixel_height(style.size, dpi_scale),
+            weight: font_weight(style.weight),
+            quality: font_quality(style),
+        }
+    }
 }
 
 impl WindowsGdiOwnedObject {
@@ -456,7 +544,9 @@ impl WindowsGdiOwnedObject {
         if object.is_null() {
             None
         } else {
-            Some(Self { object })
+            Some(Self {
+                object: object as isize,
+            })
         }
     }
 
@@ -469,22 +559,25 @@ impl WindowsGdiOwnedObject {
     }
 
     fn font(style: &TextStyle, dpi_scale: f32) -> Option<Self> {
-        let family = to_wide(&style.font_family);
-        let pixel_height = font_pixel_height(style.size, dpi_scale);
+        Self::font_from_key(&WindowsGdiFontKey::from_style(style, dpi_scale))
+    }
+
+    fn font_from_key(key: &WindowsGdiFontKey) -> Option<Self> {
+        let family = to_wide(&key.family);
         Self::from_raw(unsafe {
             CreateFontW(
-                -pixel_height,
+                -key.pixel_height,
                 0,
                 0,
                 0,
-                font_weight(style.weight),
+                key.weight,
                 0,
                 0,
                 0,
                 DEFAULT_CHARSET as u32,
                 OUT_DEFAULT_PRECIS as u32,
                 CLIP_DEFAULT_PRECIS as u32,
-                font_quality(style),
+                key.quality,
                 (DEFAULT_PITCH | FF_DONTCARE) as u32,
                 family.as_ptr(),
             ) as HGDIOBJ
@@ -492,17 +585,97 @@ impl WindowsGdiOwnedObject {
     }
 
     fn object(&self) -> HGDIOBJ {
-        self.object
+        self.object as HGDIOBJ
     }
 }
 
 impl Drop for WindowsGdiOwnedObject {
     fn drop(&mut self) {
-        if !self.object.is_null() {
+        if self.object != 0 {
             unsafe {
-                DeleteObject(self.object);
+                DeleteObject(self.object as HGDIOBJ);
             }
         }
+    }
+}
+
+const WINDOWS_GDI_FONT_CACHE_LIMIT: usize = 32;
+const WINDOWS_GDI_BRUSH_CACHE_LIMIT: usize = 64;
+const WINDOWS_GDI_PEN_CACHE_LIMIT: usize = 64;
+
+#[derive(Debug, Default)]
+struct WindowsGdiResourceCacheEntries {
+    brushes: HashMap<u32, WindowsGdiOwnedObject>,
+    pens: HashMap<u32, WindowsGdiOwnedObject>,
+    fonts: HashMap<WindowsGdiFontKey, WindowsGdiOwnedObject>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct WindowsGdiResourceCache {
+    entries: Arc<Mutex<WindowsGdiResourceCacheEntries>>,
+}
+
+impl WindowsGdiResourceCache {
+    fn cached_solid_brush(&self, color: Color) -> Option<HGDIOBJ> {
+        let key = to_colorref(color);
+        let mut entries = self
+            .entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned");
+        if !entries.brushes.contains_key(&key) {
+            if entries.brushes.len() >= WINDOWS_GDI_BRUSH_CACHE_LIMIT {
+                entries.brushes.clear();
+            }
+            entries
+                .brushes
+                .insert(key, WindowsGdiOwnedObject::solid_brush(color)?);
+        }
+        entries.brushes.get(&key).map(WindowsGdiOwnedObject::object)
+    }
+
+    fn cached_pen(&self, color: Color) -> Option<HGDIOBJ> {
+        let key = to_colorref(color);
+        let mut entries = self
+            .entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned");
+        if !entries.pens.contains_key(&key) {
+            if entries.pens.len() >= WINDOWS_GDI_PEN_CACHE_LIMIT {
+                entries.pens.clear();
+            }
+            entries.pens.insert(key, WindowsGdiOwnedObject::pen(color)?);
+        }
+        entries.pens.get(&key).map(WindowsGdiOwnedObject::object)
+    }
+
+    fn cached_font(&self, style: &TextStyle, dpi_scale: f32) -> Option<HGDIOBJ> {
+        let key = WindowsGdiFontKey::from_style(style, dpi_scale);
+        let mut entries = self
+            .entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned");
+        if !entries.fonts.contains_key(&key) {
+            if entries.fonts.len() >= WINDOWS_GDI_FONT_CACHE_LIMIT {
+                entries.fonts.clear();
+            }
+            entries
+                .fonts
+                .insert(key.clone(), WindowsGdiOwnedObject::font_from_key(&key)?);
+        }
+        entries.fonts.get(&key).map(WindowsGdiOwnedObject::object)
+    }
+
+    #[cfg(test)]
+    fn counts(&self) -> (usize, usize, usize) {
+        let entries = self
+            .entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned");
+        (
+            entries.fonts.len(),
+            entries.brushes.len(),
+            entries.pens.len(),
+        )
     }
 }
 
@@ -539,6 +712,7 @@ pub struct WindowsGdiRenderer {
     dc: HDC,
     dpi_scale: f32,
     clip_stack: Vec<i32>,
+    resources: WindowsGdiResourceCache,
 }
 
 impl WindowsGdiRenderer {
@@ -551,10 +725,27 @@ impl WindowsGdiRenderer {
     }
 
     fn with_dpi_scale(dc: HDC, dpi_scale: f32) -> Self {
+        Self::with_dpi_scale_and_resources(dc, dpi_scale, WindowsGdiResourceCache::default())
+    }
+
+    pub(crate) fn with_dpi_and_resources(
+        dc: HDC,
+        dpi: Dpi,
+        resources: WindowsGdiResourceCache,
+    ) -> Self {
+        Self::with_dpi_scale_and_resources(dc, dpi.scale_factor(), resources)
+    }
+
+    fn with_dpi_scale_and_resources(
+        dc: HDC,
+        dpi_scale: f32,
+        resources: WindowsGdiResourceCache,
+    ) -> Self {
         Self {
             dc,
             dpi_scale: dpi_scale.max(0.5),
             clip_stack: Vec::new(),
+            resources,
         }
     }
 
@@ -564,6 +755,18 @@ impl WindowsGdiRenderer {
 
     fn has_dc(&self) -> bool {
         !self.dc.is_null()
+    }
+
+    fn cached_solid_brush(&mut self, color: Color) -> Option<HGDIOBJ> {
+        self.resources.cached_solid_brush(color)
+    }
+
+    fn cached_pen(&mut self, color: Color) -> Option<HGDIOBJ> {
+        self.resources.cached_pen(color)
+    }
+
+    fn cached_font(&mut self, style: &TextStyle) -> Option<HGDIOBJ> {
+        self.resources.cached_font(style, self.dpi_scale)
     }
 }
 
@@ -583,9 +786,9 @@ impl Renderer for WindowsGdiRenderer {
             return;
         }
         let rect = to_win_rect(rect);
-        if let Some(brush) = WindowsGdiOwnedObject::solid_brush(color) {
+        if let Some(brush) = self.cached_solid_brush(color) {
             unsafe {
-                FillRect(self.dc, &rect, brush.object() as _);
+                FillRect(self.dc, &rect, brush as _);
             }
         }
     }
@@ -595,13 +798,13 @@ impl Renderer for WindowsGdiRenderer {
             return;
         }
         let mut rect = to_win_rect(rect);
-        if let Some(brush) = WindowsGdiOwnedObject::solid_brush(color) {
+        if let Some(brush) = self.cached_solid_brush(color) {
             for _ in 0..width.max(1) {
                 if rect.right <= rect.left || rect.bottom <= rect.top {
                     break;
                 }
                 unsafe {
-                    FrameRect(self.dc, &rect, brush.object() as _);
+                    FrameRect(self.dc, &rect, brush as _);
                 }
                 rect.left += 1;
                 rect.top += 1;
@@ -638,15 +841,21 @@ impl Renderer for WindowsGdiRenderer {
         if !self.has_dc() || run.text.is_empty() {
             return;
         }
-        with_font(self.dc, style, self.dpi_scale, |dc| {
-            let mut rect = to_win_rect(run.bounds);
-            let text = to_wide(&run.text);
-            unsafe {
-                SetBkMode(dc, TRANSPARENT);
-                SetTextColor(dc, to_colorref(style.color));
-                DrawTextW(dc, text.as_ptr(), -1, &mut rect, text_flags(style, false));
-            }
-        });
+        let font = self.cached_font(style);
+        let _selected_font = font.and_then(|font| WindowsGdiSelectedObject::select(self.dc, font));
+        let mut rect = to_win_rect(run.bounds);
+        let text = to_wide(&run.text);
+        unsafe {
+            SetBkMode(self.dc, TRANSPARENT);
+            SetTextColor(self.dc, to_colorref(style.color));
+            DrawTextW(
+                self.dc,
+                text.as_ptr(),
+                -1,
+                &mut rect,
+                text_flags(style, false),
+            );
+        }
     }
 
     fn push_clip(&mut self, rect: Rect) {
@@ -1099,14 +1308,9 @@ impl WindowsGdiStyleResolver {
 
 impl Default for WindowsGdiStyleResolver {
     fn default() -> Self {
-        Self::new(
-            WINDOWS_VARIABLE_TEXT_FONT_FAMILY,
-            WindowsGdiPalette::default(),
-        )
-        .with_type_families(
-            WINDOWS_VARIABLE_SMALL_FONT_FAMILY,
-            WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY,
-        )
+        let ui_fonts = detect_windows_ui_font_families(std::ptr::null_mut());
+        Self::new(ui_fonts.text, WindowsGdiPalette::default())
+            .with_type_families(ui_fonts.small, ui_fonts.display)
     }
 }
 
@@ -1184,13 +1388,29 @@ impl WindowsGdiDrawSink {
         high_contrast: bool,
         dpi: Dpi,
     ) -> Self {
+        Self::with_palette_contrast_dpi_and_resources(
+            dc,
+            palette,
+            high_contrast,
+            dpi,
+            WindowsGdiResourceCache::default(),
+        )
+    }
+
+    pub(crate) fn with_palette_contrast_dpi_and_resources(
+        dc: HDC,
+        palette: WindowsGdiPalette,
+        high_contrast: bool,
+        dpi: Dpi,
+        resources: WindowsGdiResourceCache,
+    ) -> Self {
         let system_icon_font = detect_windows_system_icon_font(dc);
         let ui_fonts = detect_windows_ui_font_families(dc);
         let icon_font_family = system_icon_font
             .font_family()
             .unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY);
         Self {
-            renderer: WindowsGdiRenderer::with_dpi(dc, dpi),
+            renderer: WindowsGdiRenderer::with_dpi_and_resources(dc, dpi, resources),
             palette,
             style_resolver: WindowsGdiStyleResolver::new(ui_fonts.text, palette)
                 .with_type_families(ui_fonts.small, ui_fonts.display)
@@ -1249,16 +1469,13 @@ impl WindowsGdiDrawSink {
             self.palette
                 .resolve_fill_with_contrast(stroke, self.high_contrast)
         });
-        let Some(fill_brush) = WindowsGdiOwnedObject::solid_brush(fill) else {
+        let Some(fill_brush) = self.renderer.cached_solid_brush(fill) else {
             return;
         };
-        let stroke_pen = stroke_color.and_then(WindowsGdiOwnedObject::pen);
-        let pen = stroke_pen
-            .as_ref()
-            .map(WindowsGdiOwnedObject::object)
+        let pen = stroke_color
+            .and_then(|stroke| self.renderer.cached_pen(stroke))
             .unwrap_or_else(|| unsafe { GetStockObject(NULL_PEN) });
-        let _selected_brush =
-            WindowsGdiSelectedObject::select(self.renderer.hdc(), fill_brush.object());
+        let _selected_brush = WindowsGdiSelectedObject::select(self.renderer.hdc(), fill_brush);
         let _selected_pen = WindowsGdiSelectedObject::select(self.renderer.hdc(), pen);
         unsafe {
             RoundRect(
@@ -1370,31 +1587,81 @@ fn detect_windows_system_icon_font(dc: HDC) -> WindowsSystemIconFont {
     selected
 }
 
+fn windows_system_ui_font_family() -> &'static str {
+    WINDOWS_SYSTEM_UI_FONT_FAMILY
+        .get_or_init(|| {
+            let mut metrics = WindowsRawNonClientMetricsW {
+                cb_size: size_of::<WindowsRawNonClientMetricsW>() as u32,
+                border_width: 0,
+                scroll_width: 0,
+                scroll_height: 0,
+                caption_width: 0,
+                caption_height: 0,
+                caption_font: zeroed_windows_log_font(),
+                small_caption_width: 0,
+                small_caption_height: 0,
+                small_caption_font: zeroed_windows_log_font(),
+                menu_width: 0,
+                menu_height: 0,
+                menu_font: zeroed_windows_log_font(),
+                status_font: zeroed_windows_log_font(),
+                message_font: zeroed_windows_log_font(),
+                padded_border_width: 0,
+            };
+            let loaded = unsafe {
+                SystemParametersInfoW(
+                    SPI_GETNONCLIENTMETRICS,
+                    metrics.cb_size,
+                    (&mut metrics as *mut WindowsRawNonClientMetricsW).cast(),
+                    0,
+                ) != 0
+            };
+            if loaded {
+                let end = metrics
+                    .message_font
+                    .face_name
+                    .iter()
+                    .position(|character| *character == 0)
+                    .unwrap_or(metrics.message_font.face_name.len());
+                let family = String::from_utf16_lossy(&metrics.message_font.face_name[..end])
+                    .trim()
+                    .to_string();
+                if !family.is_empty() {
+                    return family;
+                }
+            }
+            WINDOWS_UI_FONT_FAMILY.to_string()
+        })
+        .as_str()
+}
+
 fn detect_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
-    if dc.is_null() {
-        return WindowsUiFontFamilies {
-            small: WINDOWS_UI_FONT_FAMILY,
-            text: WINDOWS_UI_FONT_FAMILY,
-            display: WINDOWS_UI_FONT_FAMILY,
-        };
-    }
     if let Some(families) = WINDOWS_UI_FONT_FAMILIES.get() {
         return *families;
     }
-    let has_text = windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_TEXT_FONT_FAMILY);
-    let text = if has_text {
+    let system = windows_system_ui_font_family();
+    let has_system = dc.is_null() || windows_gdi_font_family_available(dc, system);
+    let has_text =
+        !has_system && windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_TEXT_FONT_FAMILY);
+    let text = if has_system {
+        system
+    } else if has_text {
         WINDOWS_VARIABLE_TEXT_FONT_FAMILY
     } else {
         WINDOWS_UI_FONT_FAMILY
     };
     let selected = WindowsUiFontFamilies {
-        small: if windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_SMALL_FONT_FAMILY) {
+        small: if has_system {
+            system
+        } else if windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_SMALL_FONT_FAMILY) {
             WINDOWS_VARIABLE_SMALL_FONT_FAMILY
         } else {
             text
         },
         text,
-        display: if windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY) {
+        display: if has_system {
+            system
+        } else if windows_gdi_font_family_available(dc, WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY) {
             WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY
         } else {
             text
@@ -1423,7 +1690,7 @@ pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProf
         "Consolas",
         icon_font,
         1.0,
-        "gdi_grayscale_antialias",
+        "gdi_cleartype",
     )
     .with_configured_ui_font(ui_fonts.text)
     .with_role_families(ui_fonts.small, ui_fonts.display);
@@ -1533,14 +1800,13 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
                 if self.renderer.hdc().is_null() {
                     return;
                 }
-                let Some(brush) = WindowsGdiOwnedObject::solid_brush(
-                    self.palette
-                        .resolve_fill_with_contrast(*fill, self.high_contrast),
-                ) else {
+                let fill = self
+                    .palette
+                    .resolve_fill_with_contrast(*fill, self.high_contrast);
+                let Some(brush) = self.renderer.cached_solid_brush(fill) else {
                     return;
                 };
-                let _selected_brush =
-                    WindowsGdiSelectedObject::select(self.renderer.hdc(), brush.object());
+                let _selected_brush = WindowsGdiSelectedObject::select(self.renderer.hdc(), brush);
                 let _selected_pen = WindowsGdiSelectedObject::select(self.renderer.hdc(), unsafe {
                     GetStockObject(NULL_PEN)
                 });
@@ -1615,11 +1881,10 @@ fn font_weight(weight: TextWeight) -> i32 {
 }
 
 fn font_quality(_style: &TextStyle) -> u32 {
-    // GDI ClearType writes colored subpixels into the backing bitmap. Those
-    // fringes become visible when native-proof images are scaled, composited,
-    // or viewed on a display with a different subpixel order. Grayscale AA is
-    // stable for the buffered paint path and for both text and icon glyphs.
-    ANTIALIASED_QUALITY
+    // Match the system Win32 text path used by Windows settings surfaces.
+    // ClearType is also the only GDI quality mode that preserves the
+    // expected weight and spacing for CJK fallback glyphs at UI sizes.
+    CLEARTYPE_QUALITY
 }
 
 fn text_flags(style: &TextStyle, measure: bool) -> u32 {
@@ -2057,15 +2322,16 @@ mod tests {
         let resolver = WindowsGdiStyleResolver::default();
         let mut semantic = SemanticTextStyle::body();
 
-        assert_eq!(resolver.resolve_text_style(semantic).size, 14.0);
+        let body = resolver.resolve_text_style(semantic);
+        assert_eq!(body.size, 14.0);
         semantic.role = crate::TextRole::Caption;
         let caption = resolver.resolve_text_style(semantic);
         assert_eq!((caption.size, caption.line_height), (12.0, 16.0));
-        assert_eq!(caption.font_family, WINDOWS_VARIABLE_SMALL_FONT_FAMILY);
+        assert_eq!(caption.font_family, body.font_family);
         semantic.role = crate::TextRole::Subtitle;
         let subtitle = resolver.resolve_text_style(semantic);
         assert_eq!((subtitle.size, subtitle.line_height), (20.0, 28.0));
-        assert_eq!(subtitle.font_family, WINDOWS_VARIABLE_DISPLAY_FONT_FAMILY);
+        assert_eq!(subtitle.font_family, body.font_family);
         semantic.role = crate::TextRole::Title;
         assert_eq!(resolver.resolve_text_style(semantic).size, 28.0);
         semantic = SemanticTextStyle::for_role(crate::TextRole::TitleLarge);
@@ -2091,13 +2357,71 @@ mod tests {
     }
 
     #[test]
-    fn gdi_text_and_icon_fonts_use_stable_grayscale_antialiasing() {
+    fn gdi_text_and_icon_fonts_use_system_cleartype() {
         let mut value = style();
-        assert_eq!(font_quality(&value), ANTIALIASED_QUALITY);
+        assert_eq!(font_quality(&value), CLEARTYPE_QUALITY);
         value.font_family = WINDOWS_FLUENT_ICON_FONT_FAMILY.to_string();
-        assert_eq!(font_quality(&value), ANTIALIASED_QUALITY);
+        assert_eq!(font_quality(&value), CLEARTYPE_QUALITY);
         value.font_family = WINDOWS_MDL2_ICON_FONT_FAMILY.to_string();
-        assert_eq!(font_quality(&value), ANTIALIASED_QUALITY);
+        assert_eq!(font_quality(&value), CLEARTYPE_QUALITY);
+    }
+
+    #[test]
+    fn gdi_frame_reuses_equivalent_fonts_and_brushes() {
+        let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+        assert!(!dc.is_null());
+        let resources = WindowsGdiResourceCache::default();
+        {
+            let mut renderer =
+                WindowsGdiRenderer::with_dpi_scale_and_resources(dc, 1.0, resources.clone());
+            let text_style = style();
+            let run = TextRun {
+                text: "Repeated".to_string(),
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 120,
+                    height: 24,
+                },
+            };
+            let color = Color::rgb(12, 34, 56);
+
+            renderer.draw_text(&run, &text_style);
+            renderer.draw_text(&run, &text_style);
+            renderer.fill_rect(run.bounds, color);
+            renderer.fill_rect(run.bounds, color);
+
+            assert_eq!(resources.counts(), (1, 1, 0));
+        }
+        {
+            let mut renderer =
+                WindowsGdiRenderer::with_dpi_scale_and_resources(dc, 1.0, resources.clone());
+            renderer.draw_text(
+                &TextRun {
+                    text: "Repeated".to_string(),
+                    bounds: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 120,
+                        height: 24,
+                    },
+                },
+                &style(),
+            );
+            renderer.fill_rect(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 120,
+                    height: 24,
+                },
+                Color::rgb(12, 34, 56),
+            );
+        }
+        assert_eq!(resources.counts(), (1, 1, 0));
+        unsafe {
+            DeleteDC(dc);
+        }
     }
 
     #[test]

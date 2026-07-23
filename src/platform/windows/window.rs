@@ -7,10 +7,15 @@ pub fn set_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) -> b
         .lock()
         .expect("window draw plan registry should not be poisoned");
     let hwnd = hwnd as isize;
+    let plan = Arc::new(plan);
     if let Some(record) = plans.iter_mut().find(|record| record.hwnd == hwnd) {
         record.plan = plan;
     } else {
-        plans.push(WindowsWindowDrawPlanRecord { hwnd, plan });
+        plans.push(WindowsWindowDrawPlanRecord {
+            hwnd,
+            plan,
+            renderer_resources: WindowsGdiResourceCache::default(),
+        });
     }
     true
 }
@@ -37,7 +42,13 @@ fn window_draw_plans() -> &'static Mutex<Vec<WindowsWindowDrawPlanRecord>> {
     WINDOW_DRAW_PLANS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-fn window_draw_plan(hwnd: HWND) -> Option<NativeDrawPlan> {
+fn window_draw_plan(hwnd: HWND) -> Option<Arc<NativeDrawPlan>> {
+    window_paint_state(hwnd).map(|(plan, _)| plan)
+}
+
+fn window_paint_state(
+    hwnd: HWND,
+) -> Option<(Arc<NativeDrawPlan>, WindowsGdiResourceCache)> {
     if hwnd.is_null() {
         return None;
     }
@@ -48,7 +59,7 @@ fn window_draw_plan(hwnd: HWND) -> Option<NativeDrawPlan> {
     plans
         .iter()
         .find(|record| record.hwnd == hwnd)
-        .map(|record| record.plan.clone())
+        .map(|record| (record.plan.clone(), record.renderer_resources.clone()))
 }
 
 pub struct WindowsWin32MainWindowHost {
@@ -533,11 +544,15 @@ unsafe fn paint_window_client_rect_to_dc(
     target: windows_sys::Win32::Graphics::Gdi::HDC,
     rect: RECT,
 ) {
-    let draw_plan = window_draw_plan(hwnd);
-    let palette = windows_palette_for_draw_plan(draw_plan.as_ref());
+    let paint_state = window_paint_state(hwnd);
+    let draw_plan = paint_state.as_ref().map(|(plan, _)| plan.as_ref());
+    let resources = paint_state
+        .as_ref()
+        .map(|(_, resources)| resources.clone())
+        .unwrap_or_default();
+    let palette = windows_palette_for_draw_plan(draw_plan);
     let high_contrast = resolved_windows_theme_mode(
         draw_plan
-            .as_ref()
             .map(|plan| plan.theme_mode)
             .unwrap_or(crate::ZsuiThemeMode::System),
     ) == crate::ZsuiThemeMode::HighContrast;
@@ -548,7 +563,8 @@ unsafe fn paint_window_client_rect_to_dc(
         palette,
         high_contrast,
         dpi,
-        draw_plan.as_ref(),
+        draw_plan,
+        resources,
     );
 }
 
@@ -559,16 +575,18 @@ unsafe fn paint_win32_surface(
     high_contrast: bool,
     dpi: crate::Dpi,
     draw_plan: Option<&NativeDrawPlan>,
+    resources: WindowsGdiResourceCache,
 ) {
-    let mut renderer = WindowsGdiRenderer::new(dc);
+    let mut renderer = WindowsGdiRenderer::with_dpi_and_resources(dc, dpi, resources.clone());
     renderer.fill_rect(rect_from_win(rect), palette.surface);
     drop(renderer);
     if let Some(plan) = draw_plan {
-        let mut sink = WindowsGdiDrawSink::with_palette_contrast_and_dpi(
+        let mut sink = WindowsGdiDrawSink::with_palette_contrast_dpi_and_resources(
             dc,
             palette,
             high_contrast,
             dpi,
+            resources,
         );
         sink.draw_native_plan(plan);
     }

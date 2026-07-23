@@ -6,7 +6,7 @@ use std::{
     ptr::{null, null_mut},
     sync::{
         atomic::{AtomicI32, Ordering},
-        Mutex, OnceLock,
+        Arc, Mutex, OnceLock,
     },
 };
 
@@ -16,6 +16,7 @@ use crate::native_file_dialog::{
 use crate::view::SharedLiveViewRuntime;
 use crate::windows_gdi_renderer::{
     rect_from_win, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette, WindowsGdiRenderer,
+    WindowsGdiResourceCache,
 };
 #[cfg(test)]
 use crate::View;

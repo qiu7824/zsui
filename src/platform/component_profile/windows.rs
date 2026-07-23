@@ -47,7 +47,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
                 display_font_family: "Segoe UI Variable Display",
                 monospace_font_family: "Consolas",
                 icon_font_family: "Segoe Fluent Icons",
-                rasterization: "gdi_grayscale_antialias",
+                rasterization: "gdi_cleartype",
             },
         },
         focus_visuals: PlatformFocusVisualProfile {
