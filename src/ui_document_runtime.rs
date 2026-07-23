@@ -466,6 +466,56 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "tooltip")]
+        "tooltip" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(child) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+
+            let text = string_property(node, properties, "text", "");
+            if text.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "text",
+                    "tooltip text must not be empty",
+                ));
+            }
+            let placement = match optional_string_property(node, properties, "placement").as_deref()
+            {
+                None | Some("auto") => crate::ZsTooltipPlacement::Auto,
+                Some("top") => crate::ZsTooltipPlacement::Top,
+                Some("bottom") => crate::ZsTooltipPlacement::Bottom,
+                Some("left") => crate::ZsTooltipPlacement::Left,
+                Some("right") => crate::ZsTooltipPlacement::Right,
+                Some(placement) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "placement",
+                        format!("unsupported tooltip placement {placement:?}"),
+                    ));
+                }
+            };
+            let mut spec = crate::ZsTooltipSpec::new(text).placement(placement);
+            if let Some(open_delay_ms) =
+                property_value(node, properties, "open_delay_ms").and_then(|value| value.as_u64())
+            {
+                spec = spec.open_delay_ms(open_delay_ms);
+            }
+            child.tooltip_spec(spec)
+        }
         #[cfg(feature = "info-bar")]
         "info_bar" => {
             let message = string_property(node, properties, "message", "");
@@ -1152,7 +1202,11 @@ fn compile_node<Msg: Clone + 'static>(
             });
         }
     };
-    view = view.id(node.id.widget_id());
+    // Tooltip is an attached modifier rather than another control, so the
+    // wrapped control keeps the WidgetId used by hit testing and typed events.
+    if node.component != "tooltip" {
+        view = view.id(node.id.widget_id());
+    }
     Ok(apply_layout(view, node))
 }
 
@@ -2393,7 +2447,8 @@ fn grid_gap_property(
     feature = "command-palette",
     feature = "dialog",
     feature = "tree",
-    feature = "grid-view"
+    feature = "grid-view",
+    feature = "tooltip"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -2467,7 +2522,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "grid",
     feature = "progress",
     feature = "progress-ring",
-    feature = "scroll"
+    feature = "scroll",
+    feature = "tooltip"
 ))]
 fn property_value(
     node: &UiNode,
@@ -2793,6 +2849,7 @@ fn optional_grid_view_item_id_property(
     feature = "info-bar",
     feature = "label",
     feature = "button",
+    feature = "tooltip",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "textbox",
@@ -2883,7 +2940,8 @@ fn nullable_number_property(
     feature = "command-palette",
     feature = "dialog",
     feature = "toast",
-    feature = "info-bar"
+    feature = "info-bar",
+    feature = "tooltip"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -3085,10 +3143,15 @@ mod tests {
         feature = "grid",
         feature = "list",
         feature = "password-box",
+        all(feature = "tooltip", feature = "button"),
         all(feature = "label", feature = "button")
     ))]
     use crate::View;
-    #[cfg(any(feature = "grid", feature = "label"))]
+    #[cfg(any(
+        feature = "grid",
+        feature = "label",
+        all(feature = "tooltip", feature = "button")
+    ))]
     use crate::{Dpi, Rect, ViewLayoutCx};
 
     #[derive(Debug, Clone, PartialEq)]
@@ -4591,6 +4654,77 @@ mod tests {
             ),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "duration"
+        ));
+    }
+
+    #[cfg(all(feature = "tooltip", feature = "button"))]
+    #[test]
+    fn compiles_tooltip_as_child_modifier_and_preserves_child_identity() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "save-help",
+                "component": "tooltip",
+                "properties": {
+                  "placement": "bottom",
+                  "open_delay_ms": 0
+                },
+                "property_bindings": { "text": "save_tooltip" },
+                "children": [
+                  {
+                    "id": "save-button",
+                    "component": "button",
+                    "properties": { "label": "Save" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "save_tooltip".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        let values = BTreeMap::from([(
+            "save_tooltip".to_owned(),
+            Value::String("Save the current document".to_owned()),
+        )]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let child_widget = document.root.children[0].id.widget_id();
+        assert_eq!(view.id, Some(child_widget));
+        assert_ne!(view.id, Some(document.root.id.widget_id()));
+
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 120,
+        };
+        view.layout(&mut ViewLayoutCx::new(surface, Dpi::standard()));
+        let interaction = view.interaction_plan();
+        assert_eq!(interaction.hit_target_count(), 1);
+        assert_eq!(interaction.tooltip_targets.len(), 1);
+        assert_eq!(interaction.tooltip_targets[0].widget, child_widget);
+        assert_eq!(
+            interaction.tooltip_targets[0].spec.text,
+            "Save the current document"
+        );
+        assert_eq!(
+            interaction.tooltip_targets[0].spec.placement,
+            crate::ZsTooltipPlacement::Bottom
+        );
+        assert_eq!(interaction.tooltip_targets[0].spec.open_delay_ms, Some(0));
+
+        let invalid_values =
+            BTreeMap::from([("save_tooltip".to_owned(), Value::String(" ".to_owned()))]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "text"
         ));
     }
 

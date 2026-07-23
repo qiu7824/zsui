@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "save_tooltip": "string"
+  },
+  "actions": {
+    "save_clicked": "null"
+  }
+}

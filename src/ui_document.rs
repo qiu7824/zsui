@@ -3566,6 +3566,32 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "tooltip" {
+            let static_string = |name: &str| {
+                (!node.property_bindings.contains_key(name))
+                    .then(|| node.properties.get(name).and_then(Value::as_str))
+                    .flatten()
+            };
+            if static_string("text").is_some_and(|value| value.trim().is_empty()) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.text"),
+                    "tooltip text must not be empty".to_owned(),
+                );
+            }
+            if static_string("placement").is_some_and(|placement| {
+                !matches!(placement, "auto" | "top" | "bottom" | "left" | "right")
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.placement"),
+                    "tooltip placement must be auto, top, bottom, left or right".to_owned(),
+                );
+            }
+        }
+
         if node.component == "content_dialog" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -4457,6 +4483,23 @@ const TOAST_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const TOOLTIP_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "text",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "placement",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "open_delay_ms",
+        value_type: UiValueType::Integer,
+        required: false,
+    },
+];
 const CONTENT_DIALOG_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "open",
@@ -4556,6 +4599,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "toast" => Some(ComponentSchema {
             properties: TOAST_PROPERTIES,
             actions: TOAST_ACTIONS,
+            children: ChildPolicy::Exactly(1),
+        }),
+        "tooltip" => Some(ComponentSchema {
+            properties: TOOLTIP_PROPERTIES,
+            actions: NO_ACTIONS,
             children: ChildPolicy::Exactly(1),
         }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
@@ -6783,6 +6831,89 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.property_bindings.open"
+        }));
+    }
+
+    #[test]
+    fn tooltip_contract_requires_one_child_and_valid_semantics() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "save-help",
+                "component": "tooltip",
+                "properties": {
+                  "placement": "bottom",
+                  "open_delay_ms": 250
+                },
+                "property_bindings": { "text": "save_tooltip" },
+                "children": [
+                  {
+                    "id": "save-button",
+                    "component": "button",
+                    "properties": { "label": "Save" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("save_tooltip".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::new(),
+        };
+        let features = UiFeatureSet::new(["tooltip", "button"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+
+        let handoff = UiAiHandoffPackage::build(&valid, &features, &bindings, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "tooltip")
+            .unwrap();
+        assert_eq!(contract.cargo_feature.as_deref(), Some("tooltip"));
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::Exactly { count: 1 }
+        );
+        assert!(contract.properties.iter().any(|property| {
+            property.name == "open_delay_ms"
+                && property.value_type == UiValueType::Integer
+                && !property.required
+        }));
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "save-help",
+                "component": "tooltip",
+                "properties": {
+                  "text": " ",
+                  "placement": "center",
+                  "open_delay_ms": -1
+                },
+                "children": []
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        for property in ["text", "placement"] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                    && diagnostic.path == format!("$.root.properties.{property}")
+            }));
+        }
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyType
+                && diagnostic.path == "$.root.properties.open_delay_ms"
+        }));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidChildCount
+                && diagnostic.path == "$.root.children"
         }));
     }
 

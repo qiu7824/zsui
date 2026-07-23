@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "page",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "properties": {
+          "text": "工具提示 / Tooltip",
+          "text_role": "subtitle"
+        }
+      },
+      {
+        "id": "save-help",
+        "component": "tooltip",
+        "properties": {
+          "placement": "bottom",
+          "open_delay_ms": 0
+        },
+        "property_bindings": {
+          "text": "save_tooltip"
+        },
+        "children": [
+          {
+            "id": "save-button",
+            "component": "button",
+            "properties": {
+              "label": "保存 / Save"
+            },
+            "action_bindings": {
+              "click": "save_clicked"
+            }
+          }
+        ]
+      },
+      {
+        "id": "summary",
+        "component": "text",
+        "properties": {
+          "text": "工具提示作为子控件的语义修饰，不创建额外命中区域。 / A tooltip is a semantic modifier on its child and does not create another hit target.",
+          "text_role": "body",
+          "wrap": "word",
+          "ellipsis": false
+        },
+        "layout": {
+          "flex": 0
+        }
+      }
+    ]
+  }
+}

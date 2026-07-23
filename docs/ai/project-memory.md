@@ -180,6 +180,12 @@ history remain authoritative for implementation status.
   Viewer state cannot resurrect a dismissed or timed-out toast. Runtime owns
   `ZsToastSpec` and the closure-capable result/open callbacks, while platform
   profiles retain placement, metrics and timer scheduling.
+  Document-ready Tooltip wraps exactly one child and carries non-empty text,
+  platform-neutral placement and an optional nonnegative preview delay.
+  Runtime attaches `ZsTooltipSpec` directly to the compiled child and preserves
+  that child's stable `WidgetId`; the document wrapper does not add a hit
+  target, backend child, registry entry or second event path. Platform profiles
+  and hosts retain timing, metrics, typography and final overlay placement.
   Document-ready ProgressRing uses one optional `nullable_number` value for
   determinate/indeterminate mode, validates its numeric range twice and maps
   small/medium/large to platform-owned metrics. Ordinary
