@@ -4,7 +4,8 @@ use std::{env, fs};
 
 use zsui::{
     native_window, NativeWindowSmokeRunOptions, Point, ZsActionAreaSpec, ZsActionButtonSpec,
-    ZsGroupCardSpec, ZsNavItemSpec, ZsRowAccessory, ZsShellContentRowSpec, ZsShellLayoutSpec,
+    ZsGroupCardSpec, ZsIcon, ZsNavItemSpec, ZsRowAccessory, ZsShellContentRowSpec,
+    ZsShellLayoutSpec,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,10 +14,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audit = shell.audit();
     assert!(audit.valid, "{:?}", audit.issues);
 
-    let builder = native_window("发票工作台 · ZSUI")
-        .size(1100, 740)
-        .min_size(900, 620)
-        .shell_layout(shell);
+    let builder = if args.iter().any(|argument| argument == "--benchmark-empty") {
+        native_window("发票工作台 · ZSUI")
+            .size(1000, 700)
+            .min_size(820, 560)
+            .release_view_when_hidden()
+    } else {
+        native_window("发票工作台 · ZSUI")
+            .size(1000, 700)
+            .min_size(820, 560)
+            .release_view_when_hidden()
+            .shell_layout(shell)
+    };
 
     if args.iter().any(|arg| arg == "--smoke") {
         let artifact_dir = "target/invoice-ui-comparison";
@@ -45,10 +54,10 @@ fn invoice_shell() -> ZsShellLayoutSpec {
     ZsShellLayoutSpec::new("invoice-workbench", "发票重命名")
         .app_title("票据工坊")
         .selected_nav("rename")
-        .nav_item(ZsNavItemSpec::new("merge", "发票合并打印").icon("general"))
-        .nav_item(ZsNavItemSpec::new("extract", "发票信息提取").icon("plugin"))
-        .nav_item(ZsNavItemSpec::new("rename", "发票重命名").icon("keyboard"))
-        .nav_item(ZsNavItemSpec::new("folders", "发票划分文件夹").icon("folder"))
+        .nav_item(ZsNavItemSpec::new("merge", "发票合并打印").semantic_icon(ZsIcon::Copy))
+        .nav_item(ZsNavItemSpec::new("extract", "发票信息提取").semantic_icon(ZsIcon::Search))
+        .nav_item(ZsNavItemSpec::new("rename", "发票重命名").semantic_icon(ZsIcon::Edit))
+        .nav_item(ZsNavItemSpec::new("folders", "发票划分文件夹").semantic_icon(ZsIcon::Folder))
         .card(
             ZsGroupCardSpec::new("rule", "自定义重命名规则")
                 .description("使用发票字段生成清晰、稳定的文件名")
@@ -91,6 +100,13 @@ fn invoice_shell() -> ZsShellLayoutSpec {
                         .description("完成后仍可从原始名称追溯发票")
                         .accessory(ZsRowAccessory::toggle(true)),
                 ),
+        )
+        .card(
+            ZsGroupCardSpec::new("confirmation", "输出确认").row(
+                ZsShellContentRowSpec::new("confirmation-summary", "将重命名 2 张发票")
+                    .description("保留原始文件，结果写入“已重命名”目录")
+                    .accessory(ZsRowAccessory::value("待确认")),
+            ),
         )
         .action_area(
             ZsActionAreaSpec::new()

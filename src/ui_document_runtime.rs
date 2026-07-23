@@ -75,6 +75,7 @@ pub struct UiDocumentSecretAction {
         feature = "auto-suggest",
         feature = "command-palette",
         feature = "tree",
+        feature = "grid-view",
         feature = "list",
         feature = "tabs",
         feature = "scroll"
@@ -756,6 +757,8 @@ fn compile_node<Msg: Clone + 'static>(
         "command_palette" => document_command_palette(node, properties, children, mapper)?,
         #[cfg(feature = "tree")]
         "tree" => document_tree(node, properties, mapper)?,
+        #[cfg(feature = "grid-view")]
+        "grid_view" => document_grid_view(node, properties, mapper)?,
         #[cfg(feature = "date-picker")]
         "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "time-picker")]
@@ -1298,6 +1301,100 @@ fn document_tree<Msg: Clone + 'static>(
                 .get(&invoked)
                 .cloned()
                 .expect("invoked runtime tree node must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: None,
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    Ok(control)
+}
+
+#[cfg(feature = "grid-view")]
+fn document_grid_view<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let authoring_items = grid_view_items_property(node, properties)?;
+    let mut author_to_runtime = BTreeMap::new();
+    let mut runtime_to_author = BTreeMap::new();
+    let mut items = Vec::with_capacity(authoring_items.len());
+    for item in authoring_items {
+        let author_id = item.id().clone();
+        let runtime_id = crate::ui_document::ui_grid_view_runtime_id(&node.id, &author_id);
+        if let Some(first) = runtime_to_author.insert(runtime_id, author_id.as_str().to_owned()) {
+            return Err(invalid_resolved_property(
+                node,
+                "items",
+                format!(
+                    "grid-view item ids {first:?} and {:?} collide after stable runtime mapping",
+                    author_id.as_str()
+                ),
+            ));
+        }
+        author_to_runtime.insert(author_id.as_str().to_owned(), runtime_id);
+        let mut runtime_item = crate::ZsGridViewItem::new(runtime_id, item.title());
+        if let Some(subtitle) = item.subtitle_text() {
+            runtime_item = runtime_item.subtitle(subtitle);
+        }
+        if let Some(icon) = item.semantic_icon() {
+            runtime_item = runtime_item.icon(icon);
+        }
+        items.push(runtime_item);
+    }
+
+    let selected = optional_grid_view_item_id_property(node, properties, "selected")?
+        .map(|selected| {
+            author_to_runtime
+                .get(selected.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "selected",
+                        format!(
+                            "id {:?} does not address an available grid-view item",
+                            selected.as_str()
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
+
+    let mut control = crate::grid_view(items).selected_grid_view_item(selected);
+    let runtime_to_author = Arc::new(runtime_to_author);
+    if let Some(binding) = node.action_bindings.get("select") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("selected").cloned();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_grid_view_select_with(move |selected| {
+            let author_id = runtime_to_author
+                .get(&selected)
+                .cloned()
+                .expect("selected runtime grid-view item must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("invoke") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let runtime_to_author = Arc::clone(&runtime_to_author);
+        control = control.on_grid_view_invoke_with(move |invoked| {
+            let author_id = runtime_to_author
+                .get(&invoked)
+                .cloned()
+                .expect("invoked runtime grid-view item must address compiled document data");
             mapper.map(UiDocumentAction {
                 node_id: node_id.clone(),
                 binding: binding.clone(),
@@ -1959,7 +2056,8 @@ fn grid_gap_property(
     feature = "color-picker",
     feature = "auto-suggest",
     feature = "command-palette",
-    feature = "tree"
+    feature = "tree",
+    feature = "grid-view"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -2027,6 +2125,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "tree",
+    feature = "grid-view",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -2295,6 +2394,57 @@ fn optional_tree_node_id_property(
         invalid_resolved_property(node, property, "tree node id must be a string or null")
     })?;
     crate::ui_document::UiTreeNodeId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
+#[cfg(feature = "grid-view")]
+fn grid_view_items_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiGridViewItem>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get("items")
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(Vec::new());
+    }
+    let value = property_value(node, properties, "items").ok_or_else(|| {
+        invalid_resolved_property(node, "items", "a grid-view item array is required")
+    })?;
+    crate::ui_document::ui_grid_view_items_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "items",
+            "grid-view items must use unique stable ids, non-empty titles and valid metadata",
+        )
+    })
+}
+
+#[cfg(feature = "grid-view")]
+fn optional_grid_view_item_id_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiGridViewItemId>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(None);
+    }
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(node, property, "grid-view item id must be a string or null")
+    })?;
+    crate::ui_document::UiGridViewItemId::new(value)
         .map(Some)
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
@@ -2586,6 +2736,7 @@ mod tests {
         feature = "color-picker",
         feature = "command-palette",
         feature = "tree",
+        feature = "grid-view",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -3266,6 +3417,128 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "expanded"
+        ));
+    }
+
+    #[cfg(feature = "grid-view")]
+    #[test]
+    fn compiles_controlled_grid_view_and_emits_semantic_item_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "library-grid",
+                "component": "grid_view",
+                "property_bindings": {
+                  "items": "library_items",
+                  "selected": "library_selected"
+                },
+                "action_bindings": {
+                  "select": "library_selected_changed",
+                  "invoke": "library_invoked"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "library_items".to_owned(),
+                    crate::ui_document::UiValueType::GridViewItemArray,
+                ),
+                (
+                    "library_selected".to_owned(),
+                    crate::ui_document::UiValueType::NullableGridViewItemId,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "library_selected_changed".to_owned(),
+                    crate::ui_document::UiValueType::GridViewItemId,
+                ),
+                (
+                    "library_invoked".to_owned(),
+                    crate::ui_document::UiValueType::GridViewItemId,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "library_items".to_owned(),
+                serde_json::json!([
+                    {
+                      "id": "documents",
+                      "title": "Documents",
+                      "subtitle": "12 folders",
+                      "icon": "Folder"
+                    },
+                    { "id": "photos", "title": "Photos", "icon": "Image" },
+                    { "id": "source", "title": "Source", "icon": "Code" }
+                ]),
+            ),
+            (
+                "library_selected".to_owned(),
+                Value::String("documents".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let documents_author = crate::ui_document::UiGridViewItemId::new("documents").unwrap();
+        let photos_author = crate::ui_document::UiGridViewItemId::new("photos").unwrap();
+        let documents =
+            crate::ui_document::ui_grid_view_runtime_id(&document.root.id, &documents_author);
+        let photos = crate::ui_document::ui_grid_view_runtime_id(&document.root.id, &photos_author);
+        let state = view
+            .widget_grid_view_state(widget)
+            .expect("grid-view state");
+        assert_eq!(state.items.len(), 3);
+        assert_eq!(state.selected, Some(documents));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::GridViewItemSelected {
+                widget,
+                item: photos,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(selected)] = messages.as_slice() else {
+            panic!("grid-view selection must emit one semantic-id action");
+        };
+        assert_eq!(selected.binding, "library_selected_changed");
+        assert_eq!(
+            selected.property_binding.as_deref(),
+            Some("library_selected")
+        );
+        assert_eq!(selected.payload, Value::String("photos".to_owned()));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::GridViewItemInvoked {
+                widget,
+                item: photos,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(invoked)] = messages.as_slice() else {
+            panic!("grid-view invocation must emit one semantic-id action");
+        };
+        assert_eq!(invoked.binding, "library_invoked");
+        assert_eq!(invoked.property_binding, None);
+        assert_eq!(invoked.payload, Value::String("photos".to_owned()));
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "library_selected".to_owned(),
+            Value::String("missing".to_owned()),
+        );
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "selected"
         ));
     }
 

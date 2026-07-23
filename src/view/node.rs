@@ -15,6 +15,7 @@ impl WidgetId {
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "tree",
+    feature = "grid-view",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -39,6 +40,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "tree",
+    feature = "grid-view",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -63,6 +65,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "tree",
+    feature = "grid-view",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -105,6 +108,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "tree",
+    feature = "grid-view",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -139,6 +143,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "tree",
+    feature = "grid-view",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -858,8 +863,8 @@ pub enum ViewNodeKind<Msg> {
     GridView {
         items: Vec<crate::ZsGridViewItem>,
         selected: Option<crate::ZsGridViewItemId>,
-        on_select: Option<fn(crate::ZsGridViewItemId) -> Msg>,
-        on_invoke: Option<fn(crate::ZsGridViewItemId) -> Msg>,
+        on_select: Option<ViewMessageMapper<crate::ZsGridViewItemId, Msg>>,
+        on_invoke: Option<ViewMessageMapper<crate::ZsGridViewItemId, Msg>>,
     },
     #[cfg(feature = "table")]
     DataGrid {
@@ -1794,7 +1799,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "grid-view")]
     pub fn on_grid_view_select(mut self, message: fn(crate::ZsGridViewItemId) -> Msg) -> Self {
         if let ViewNodeKind::GridView { on_select, .. } = &mut self.kind {
-            *on_select = Some(message);
+            *on_select = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn on_grid_view_select_with(
+        mut self,
+        message: impl Fn(crate::ZsGridViewItemId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::GridView { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1802,7 +1818,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "grid-view")]
     pub fn on_grid_view_invoke(mut self, message: fn(crate::ZsGridViewItemId) -> Msg) -> Self {
         if let ViewNodeKind::GridView { on_invoke, .. } = &mut self.kind {
-            *on_invoke = Some(message);
+            *on_invoke = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "grid-view")]
+    pub fn on_grid_view_invoke_with(
+        mut self,
+        message: impl Fn(crate::ZsGridViewItemId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::GridView { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

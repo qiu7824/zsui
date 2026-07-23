@@ -152,6 +152,8 @@ mod native_menu;
 mod native_menu_accessibility;
 pub mod native_proof;
 pub mod native_smoke;
+#[cfg(all(feature = "accessibility", feature = "tabs"))]
+mod native_tab_accessibility;
 mod native_text_edit;
 #[cfg(feature = "paged-list")]
 pub mod paged_list;
@@ -214,6 +216,13 @@ pub mod windows_gdi_renderer;
     feature = "windows-win32"
 ))]
 mod windows_menu_uia;
+#[cfg(all(
+    windows,
+    feature = "accessibility",
+    feature = "tabs",
+    feature = "windows-win32"
+))]
+mod windows_tab_uia;
 #[cfg(all(
     windows,
     feature = "accessibility",

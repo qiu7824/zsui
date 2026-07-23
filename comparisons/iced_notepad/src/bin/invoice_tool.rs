@@ -26,6 +26,8 @@ fn main() -> iced::Result {
 #[derive(Clone)]
 struct LaunchOptions {
     auto_close: Option<Duration>,
+    empty: bool,
+    repaint: bool,
 }
 
 impl LaunchOptions {
@@ -36,7 +38,15 @@ impl LaunchOptions {
             .find(|pair| pair[0] == "--benchmark-seconds")
             .and_then(|pair| pair[1].parse::<u64>().ok())
             .map(Duration::from_secs);
-        Self { auto_close }
+        let empty = args.iter().any(|argument| argument == "--benchmark-empty");
+        let repaint = args
+            .iter()
+            .any(|argument| argument == "--benchmark-repaint");
+        Self {
+            auto_close,
+            empty,
+            repaint,
+        }
     }
 }
 
@@ -44,6 +54,7 @@ struct InvoiceTool {
     selected: usize,
     file_count: usize,
     status: String,
+    empty: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +63,7 @@ enum Message {
     Add,
     Remove,
     Rename,
+    Repaint,
     Close,
 }
 
@@ -62,13 +74,19 @@ impl InvoiceTool {
                 Message::Close
             })
         });
+        let repaint = if launch.repaint {
+            delayed_repaint()
+        } else {
+            Task::none()
+        };
         (
             Self {
                 selected: 2,
                 file_count: 2,
                 status: "字段识别完成，可以开始重命名".to_string(),
+                empty: launch.empty,
             },
-            close,
+            Task::batch([close, repaint]),
         )
     }
 
@@ -86,6 +104,7 @@ impl InvoiceTool {
             Message::Rename => {
                 self.status = format!("已完成 {} 张发票重命名", self.file_count);
             }
+            Message::Repaint => return delayed_repaint(),
             Message::Close => return iced::exit(),
         }
         Task::none()
@@ -96,6 +115,9 @@ impl InvoiceTool {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        if self.empty {
+            return container(space::vertical()).width(Fill).height(Fill).into();
+        }
         let labels = [
             "发票合并打印",
             "发票信息提取",
@@ -150,12 +172,14 @@ impl InvoiceTool {
             .align_y(Center),
         );
 
-        let mut files = column![row![
-            text(format!("待处理发票 · {}", self.file_count)).size(16),
-            space::horizontal(),
-            text("识别状态：完成").size(13),
+        let mut files = column![
+            row![
+                text(format!("待处理发票 · {}", self.file_count)).size(16),
+                space::horizontal(),
+                text("识别状态：完成").size(13),
+            ]
+            .align_y(Center)
         ]
-        .align_y(Center)]
         .spacing(8);
         if self.file_count > 0 {
             files = files.push(file_panel(
@@ -183,6 +207,14 @@ impl InvoiceTool {
             .align_y(Center),
         );
 
+        let confirmation = panel(
+            column![
+                text("输出确认").size(15),
+                text("将重命名 2 张发票并保留原始文件。").size(12),
+            ]
+            .spacing(5),
+        );
+
         let footer = row![
             text(&self.status).size(13),
             space::horizontal(),
@@ -192,10 +224,18 @@ impl InvoiceTool {
         ]
         .align_y(Center);
 
-        let content = column![heading, rule, files, output, space::vertical(), footer]
-            .spacing(16)
-            .padding(22)
-            .height(Fill);
+        let content = column![
+            heading,
+            rule,
+            files,
+            output,
+            confirmation,
+            space::vertical(),
+            footer
+        ]
+        .spacing(16)
+        .padding(22)
+        .height(Fill);
 
         container(row![
             navigation,
@@ -205,6 +245,13 @@ impl InvoiceTool {
         .height(Fill)
         .into()
     }
+}
+
+fn delayed_repaint() -> Task<Message> {
+    Task::perform(
+        async { std::thread::sleep(Duration::from_millis(16)) },
+        |_| Message::Repaint,
+    )
 }
 
 fn panel<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {

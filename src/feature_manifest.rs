@@ -493,6 +493,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "auto-suggest",
                 "command-palette",
                 "tree",
+                "grid-view",
                 "date-picker",
                 "time-picker",
                 "color-picker",
@@ -938,6 +939,7 @@ mod tests {
         assert!(ui_viewer.enables.contains(&"auto-suggest"));
         assert!(ui_viewer.enables.contains(&"command-palette"));
         assert!(ui_viewer.enables.contains(&"tree"));
+        assert!(ui_viewer.enables.contains(&"grid-view"));
         assert!(full.enables.contains(&"ui-viewer"));
     }
 

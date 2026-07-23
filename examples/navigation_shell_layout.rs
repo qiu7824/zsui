@@ -4,8 +4,8 @@ use std::{env, fs};
 
 use zsui::{
     native_window, Dpi, NativeWindowSmokeRunOptions, Point, Rect, ZsActionAreaSpec,
-    ZsActionButtonSpec, ZsGroupCardSpec, ZsNavItemSpec, ZsRowAccessory, ZsShellContentRowSpec,
-    ZsShellLayoutSpec,
+    ZsActionButtonSpec, ZsGroupCardSpec, ZsIcon, ZsNavItemSpec, ZsRowAccessory,
+    ZsShellContentRowSpec, ZsShellLayoutSpec,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,13 +68,13 @@ fn gallery_shell() -> ZsShellLayoutSpec {
     ZsShellLayoutSpec::new("control-gallery", "Controls")
         .app_title("ZSUI Gallery")
         .selected_nav("general")
-        .nav_item(ZsNavItemSpec::new("general", "General").icon("settings"))
-        .nav_item(ZsNavItemSpec::new("controls", "Controls").icon("extension"))
-        .nav_item(ZsNavItemSpec::new("shortcuts", "Shortcuts").icon("keyboard"))
-        .nav_item(ZsNavItemSpec::new("sync", "Sync").icon("cloud"))
+        .nav_item(ZsNavItemSpec::new("general", "General").semantic_icon(ZsIcon::Settings))
+        .nav_item(ZsNavItemSpec::new("controls", "Controls").semantic_icon(ZsIcon::App))
+        .nav_item(ZsNavItemSpec::new("shortcuts", "Shortcuts").semantic_icon(ZsIcon::Tool))
+        .nav_item(ZsNavItemSpec::new("sync", "Sync").semantic_icon(ZsIcon::Refresh))
         .nav_item(
             ZsNavItemSpec::new("about", "About")
-                .icon("info")
+                .semantic_icon(ZsIcon::Info)
                 .badge(true),
         )
         .card(

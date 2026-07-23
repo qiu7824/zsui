@@ -117,6 +117,7 @@ enum GalleryOverlay {
 struct GalleryState {
     page: GalleryPage,
     dark: bool,
+    animations_frozen: bool,
     click_count: u32,
     canvas_activation_count: u32,
     canvas_pointer_count: u32,
@@ -163,6 +164,7 @@ impl Default for GalleryState {
         Self {
             page: GalleryPage::Inputs,
             dark: false,
+            animations_frozen: false,
             click_count: 0,
             canvas_activation_count: 0,
             canvas_pointer_count: 0,
@@ -413,7 +415,11 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
             slider(state.slider, SliderRange::new(0.0, 100.0)).on_slide(Msg::Slider),
             progress_bar(state.slider, ProgressRange::new(0.0, 100.0)),
             row([
-                progress_ring(ZsProgressRingSpec::indeterminate()),
+                progress_ring(if state.animations_frozen {
+                    ZsProgressRingSpec::determinate(state.slider, ProgressRange::new(0.0, 100.0))
+                } else {
+                    ZsProgressRingSpec::indeterminate()
+                }),
                 progress_ring(ZsProgressRingSpec::determinate(
                     state.slider,
                     ProgressRange::new(0.0, 100.0),
@@ -1273,6 +1279,7 @@ fn main() -> ZsuiResult<()> {
     let mut state = GalleryState::default();
     state.page = initial_page;
     state.dark = dark;
+    state.animations_frozen = args.iter().any(|argument| argument == "--benchmark-static");
     state.menu_flyout_open = native_proof && initial_page == GalleryPage::Feedback;
     let default_size = (1180, 780);
     let window_width = proof_dimension(&args, "--width", default_size.0);
@@ -1305,10 +1312,18 @@ fn main() -> ZsuiResult<()> {
     } else {
         (980, 680)
     };
-    let builder = native_window("ZSUI 组件库 / Component Gallery")
-        .size(window_width, window_height)
-        .min_size(minimum_size.0, minimum_size.1)
-        .stateful_view(state, view, update);
+    let builder = if args.iter().any(|argument| argument == "--benchmark-empty") {
+        native_window("ZSUI 组件库 / Component Gallery")
+            .size(window_width, window_height)
+            .min_size(minimum_size.0, minimum_size.1)
+            .release_view_when_hidden()
+    } else {
+        native_window("ZSUI 组件库 / Component Gallery")
+            .size(window_width, window_height)
+            .min_size(minimum_size.0, minimum_size.1)
+            .release_view_when_hidden()
+            .stateful_view(state, view, update)
+    };
     if native_proof || args.iter().any(|argument| argument == "--smoke") {
         let theme = if dark { "dark" } else { "light" };
         let output = args

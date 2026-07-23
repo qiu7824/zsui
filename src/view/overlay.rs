@@ -108,9 +108,10 @@ impl<Msg> ViewNode<Msg> {
     #[cfg(any(
         feature = "flyout",
         feature = "menu-flyout",
-        feature = "teaching-tip"
+        feature = "teaching-tip",
+        feature = "tabs"
     ))]
-    fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
+    pub(crate) fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
         if self.id == Some(widget) {
             return self.bounds;
         }

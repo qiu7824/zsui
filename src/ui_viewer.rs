@@ -1502,6 +1502,105 @@ mod tests {
     }
 
     #[test]
+    fn viewer_preserves_controlled_grid_view_selection_across_rebuilds() {
+        let directory = fixture_directory("grid-view-actions");
+        fs::create_dir_all(&directory).unwrap();
+        let document_path = directory.join("grid-view.json");
+        let binding_path = directory.join("grid-view.bindings.json");
+        fs::write(
+            &document_path,
+            include_str!("../examples/ui-documents/grid-view.json"),
+        )
+        .unwrap();
+        fs::write(
+            &binding_path,
+            include_str!("../examples/ui-documents/grid-view.bindings.json"),
+        )
+        .unwrap();
+        let properties = serde_json::from_str::<BTreeMap<String, Value>>(include_str!(
+            "../examples/ui-documents/grid-view.values.json"
+        ))
+        .unwrap();
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        source.validate_properties(&properties).unwrap();
+        let live_source = source.clone();
+        let captured_state = Arc::new(Mutex::new(UiViewerState::default()));
+        let update_state = Arc::clone(&captured_state);
+        let live_view = crate::view::live_view_runtime(
+            UiViewerState::with_properties(properties),
+            move |state| live_source.view(state),
+            move |state, message, cx| {
+                ui_viewer_update(state, message, cx);
+                *update_state.lock().unwrap() = state.clone();
+            },
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 900,
+                height: 620,
+            },
+            crate::Dpi::standard(),
+        );
+        let node_id = crate::ui_document::UiNodeId::new("library-grid").unwrap();
+        let widget = node_id.widget_id();
+        let documents = crate::ui_document::ui_grid_view_runtime_id(
+            &node_id,
+            &crate::ui_document::UiGridViewItemId::new("documents").unwrap(),
+        );
+        let photos = crate::ui_document::ui_grid_view_runtime_id(
+            &node_id,
+            &crate::ui_document::UiGridViewItemId::new("photos").unwrap(),
+        );
+        let state = live_view
+            .widget_grid_view_state(widget)
+            .expect("grid-view state");
+        assert_eq!(state.items.len(), 6);
+        assert_eq!(state.selected, Some(documents));
+
+        let selected = live_view.dispatch_event(&crate::ViewEvent::GridViewItemSelected {
+            widget,
+            item: photos,
+        });
+        assert_eq!(selected.message_count, 1);
+        assert_eq!(
+            live_view
+                .widget_grid_view_state(widget)
+                .and_then(|state| state.selected),
+            Some(photos)
+        );
+        let invoked = live_view.dispatch_event(&crate::ViewEvent::GridViewItemInvoked {
+            widget,
+            item: photos,
+        });
+        assert_eq!(invoked.message_count, 1);
+        let draw_plan = live_view.draw_plan();
+        assert!(draw_plan.commands.iter().any(|command| {
+            matches!(
+                command,
+                crate::NativeDrawCommand::Text(text) if text.text.contains("资源库")
+            )
+        }));
+
+        let final_state = captured_state.lock().unwrap();
+        assert_eq!(
+            final_state.properties.get("library_selected"),
+            Some(&Value::String("photos".to_owned()))
+        );
+        assert_eq!(final_state.actions.len(), 2);
+        assert_eq!(final_state.actions[0].binding, "library_selected_changed");
+        assert_eq!(
+            final_state.actions[0].payload,
+            Value::String("photos".to_owned())
+        );
+        assert_eq!(final_state.actions[1].binding, "library_invoked");
+        assert_eq!(
+            final_state.actions[1].payload,
+            Value::String("photos".to_owned())
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn viewer_preserves_controlled_scroll_offset_across_view_rebuilds() {
         let directory = fixture_directory("controlled-scroll");
         fs::create_dir_all(&directory).unwrap();

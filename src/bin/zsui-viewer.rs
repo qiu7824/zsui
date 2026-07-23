@@ -30,6 +30,8 @@ struct Arguments {
     smoke_output: Option<PathBuf>,
     smoke_clicks: Vec<Point>,
     smoke_scroll: Option<(Point, i32)>,
+    benchmark_empty: bool,
+    benchmark_seconds: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -64,16 +66,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = load_values(arguments.values.as_deref())?;
     source.validate_properties(&state.properties)?;
     let live_source = source.clone();
-    let builder = native_window("ZSUI UI Viewer")
-        .size(arguments.width, arguments.height)
-        .min_size(320, 240)
-        .stateful_view(
-            state,
-            move |state| live_source.view(state),
-            ui_viewer_update,
-        );
+    let builder = if arguments.benchmark_empty {
+        native_window("ZSUI UI Viewer")
+            .size(arguments.width, arguments.height)
+            .min_size(320, 240)
+            .release_view_when_hidden()
+    } else {
+        native_window("ZSUI UI Viewer")
+            .size(arguments.width, arguments.height)
+            .min_size(320, 240)
+            .release_view_when_hidden()
+            .stateful_view(
+                state,
+                move |state| live_source.view(state),
+                ui_viewer_update,
+            )
+    };
 
-    if let Some(output_directory) = arguments.smoke_output {
+    if let Some(seconds) = arguments.benchmark_seconds {
+        builder.run_smoke(NativeWindowSmokeRunOptions::new(
+            seconds.saturating_mul(1_000).max(250),
+        ))?;
+    } else if let Some(output_directory) = arguments.smoke_output {
         run_smoke(
             builder,
             &source,
@@ -97,6 +111,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut smoke_output = None;
     let mut smoke_clicks = Vec::new();
     let mut smoke_scroll = None;
+    let mut benchmark_empty = false;
+    let mut benchmark_seconds = None;
     let mut arguments = arguments.into_iter();
 
     while let Some(argument) = arguments.next() {
@@ -107,6 +123,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             "--height" => height = number_argument(&mut arguments, "--height")?,
             "--poll-ms" => poll_ms = number_argument(&mut arguments, "--poll-ms")?,
             "--smoke" => smoke_output = Some(path_argument(&mut arguments, "--smoke")?),
+            "--benchmark-empty" => benchmark_empty = true,
+            "--benchmark-seconds" => {
+                benchmark_seconds = Some(number_argument(&mut arguments, "--benchmark-seconds")?)
+            }
             "--smoke-click" => {
                 let x = number_argument(&mut arguments, "--smoke-click x")?;
                 let y = number_argument(&mut arguments, "--smoke-click y")?;
@@ -142,6 +162,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         smoke_output,
         smoke_clicks,
         smoke_scroll,
+        benchmark_empty,
+        benchmark_seconds,
     })
 }
 
@@ -173,7 +195,8 @@ where
 fn usage() -> &'static str {
     "usage: zsui-viewer <document.json> [--bindings path] [--values path] \
      [--width pixels] [--height pixels] [--poll-ms milliseconds] [--smoke output-directory] \
-     [--smoke-click x y]... [--smoke-scroll x y delta-y]"
+     [--smoke-click x y]... [--smoke-scroll x y delta-y] \
+     [--benchmark-empty] [--benchmark-seconds seconds]"
 }
 
 fn inferred_binding_path(document: &Path) -> Option<PathBuf> {

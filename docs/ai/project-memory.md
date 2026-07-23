@@ -126,6 +126,14 @@ history remain authoritative for implementation status.
   selections and non-expandable entries, and preserves hidden selection when
   an ancestor collapses. Windows Viewer proof selects and invokes one real row
   through a pointer click and retains the final Win32 surface.
+  Document-ready GridView stores one typed tile array with unique stable
+  semantic string IDs, non-empty titles, optional subtitles and semantic
+  icons. A nullable item ID owns explicit single selection; selection and
+  invocation each emit one semantic ID. The release runtime derives private
+  `ZsGridViewItemId` values from the owning document node plus semantic item
+  ID, rejects collisions and unknown selections, and never uses responsive
+  column position as identity. Windows Viewer proof selects and invokes one
+  real tile through a pointer click and retains the final Win32 surface.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the
@@ -1131,6 +1139,16 @@ history remain authoritative for implementation status.
   context pack, use `rg`, and read optional material only for a concrete gap.
 - Use the current repository and generated evidence for progress numbers; do
   not copy stale counts or completion claims into this memory.
+- Performance claims use four independent release workloads: Minimal, Common,
+  Full Native App and Viewer. Compare frameworks only within one fixed visual
+  contract, window size, data and animation state. Measure recursive process
+  trees, reject PID-reuse contamination, and keep formal application rows
+  separate from Viewer rows.
+- `UiDocument` remains a bounded semantic declaration format. The release
+  runtime is feature-pruned; file watching, diagnostics, screenshots and full
+  document-component coverage belong to the separate Viewer artifact. Do not
+  evolve it into a dynamic Web-like platform or let a preview tool define
+  reusable framework components.
 
 ## Acceptance applications
 

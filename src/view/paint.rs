@@ -1693,7 +1693,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if contains && *selected != Some(*item) {
                         *selected = Some(*item);
                         if let Some(message) = on_select {
-                            cx.emit(message(*item));
+                            cx.emit(message.map(*item));
                         }
                     }
                 }
@@ -1709,7 +1709,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         .any(|candidate| candidate.id() == *item);
                     if contains {
                         if let Some(message) = on_invoke {
-                            cx.emit(message(*item));
+                            cx.emit(message.map(*item));
                         }
                     }
                 }

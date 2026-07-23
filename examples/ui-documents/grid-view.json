@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "grid-view-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "grid-view-title",
+        "component": "text",
+        "properties": {
+          "text": "资源库 / GridView",
+          "text_role": "title"
+        }
+      },
+      {
+        "id": "grid-view-description",
+        "component": "text",
+        "properties": {
+          "text": "稳定项目 ID、响应式列与显式选择状态 / Stable item IDs, responsive columns and explicit selection",
+          "wrap": "word",
+          "ellipsis": false,
+          "vertical_align": "start"
+        }
+      },
+      {
+        "id": "library-grid",
+        "component": "grid_view",
+        "layout": {
+          "height": 390.0
+        },
+        "property_bindings": {
+          "items": "library_items",
+          "selected": "library_selected"
+        },
+        "action_bindings": {
+          "select": "library_selected_changed",
+          "invoke": "library_invoked"
+        },
+        "accessibility": {
+          "role": "grid",
+          "label": "资源库项目 / Library items"
+        }
+      }
+    ]
+  }
+}

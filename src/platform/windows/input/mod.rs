@@ -551,6 +551,60 @@ pub(crate) fn windows_win32_window_menu_flyout_accessibility_snapshot(
     )
 }
 
+#[cfg(all(feature = "accessibility", feature = "tabs"))]
+pub(crate) fn windows_win32_window_tab_accessibility_snapshots(
+    hwnd: HWND,
+) -> Vec<crate::native_tab_accessibility::NativeTabAccessibilitySnapshot> {
+    if hwnd.is_null() {
+        return Vec::new();
+    }
+    let Some(plan) = window_draw_plan(hwnd) else {
+        return Vec::new();
+    };
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .map(|record| record.route.shared_runtime.tab_accessibility_snapshots(&plan))
+        .unwrap_or_default()
+}
+
+#[cfg(all(feature = "accessibility", feature = "tabs"))]
+pub(crate) fn focus_windows_win32_window_accessible_tab(hwnd: HWND, tab: crate::ZsTabId) -> bool {
+    let widget = windows_win32_window_tab_accessibility_snapshots(hwnd)
+        .into_iter()
+        .flat_map(|snapshot| snapshot.items)
+        .find(|item| item.tab() == tab)
+        .map(|item| item.target.widget);
+    let Some(widget) = widget else {
+        return false;
+    };
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_tab_focus(widget)
+    })
+    .is_some_and(|report| report.handled)
+}
+
+#[cfg(all(feature = "accessibility", feature = "tabs"))]
+pub(crate) fn select_windows_win32_window_accessible_tab(hwnd: HWND, tab: crate::ZsTabId) -> bool {
+    let target = windows_win32_window_tab_accessibility_snapshots(hwnd)
+        .into_iter()
+        .flat_map(|snapshot| snapshot.items)
+        .find(|item| item.tab() == tab)
+        .map(|item| item.target);
+    let Some(target) = target else {
+        return false;
+    };
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_click(crate::Point {
+            x: target.bounds.x.saturating_add(target.bounds.width.max(1) / 2),
+            y: target.bounds.y.saturating_add(target.bounds.height.max(1) / 2),
+        })
+    })
+    .is_some_and(|report| report.handled)
+}
+
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 pub(crate) fn focus_windows_win32_window_accessible_menu_flyout_item(
     hwnd: HWND,

@@ -1,5 +1,9 @@
 # 发票工作台多框架对比
 
+本页保留早期单一 Common 场景的历史结果。当前用于回归判断的四档独立构建、完整
+内存阶段和 CPU 测量见 [UI 性能测试矩阵](ui-performance-matrix.md)。两组数据的
+页面结构和测量协议不同，不能直接混合排序。
+
 同一套发票重命名界面分别使用 ZSUI、eframe/egui、Iced、Slint 和 Tauri 2 实现。
 所有截图来自 Windows release 构建的真实窗口。
 

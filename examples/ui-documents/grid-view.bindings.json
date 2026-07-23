@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "library_items": "grid_view_item_array",
+    "library_selected": "nullable_grid_view_item_id"
+  },
+  "actions": {
+    "library_selected_changed": "grid_view_item_id",
+    "library_invoked": "grid_view_item_id"
+  }
+}

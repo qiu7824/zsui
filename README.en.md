@@ -566,6 +566,11 @@ coverage without treating declaration-only components as implemented.
 The invoice rename workbench has matching ZSUI, eframe/egui, Iced, Slint and
 Tauri 2 implementations. See the
 [`release screenshots and measurements`](docs/invoice-workbench-comparison.md).
+The broader [UI performance matrix](docs/ui-performance-matrix.md) builds
+Minimal, Common, Full Native App, and Viewer as separate equal-complexity
+release workloads and reports startup, first frame, empty/full/hidden/peak
+resident memory, private resident memory, and idle/repaint CPU. Formal ZSUI
+applications and the development Viewer are never combined into one row.
 
 The shared notepad acceptance app combines `document-shell` with the self-drawn
 multiline editor on target-native Win32, AppKit, and GTK4 hosts. One Rust

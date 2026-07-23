@@ -2,7 +2,7 @@
 
 use std::{env, time::Duration};
 
-use slint::{ComponentHandle, SharedString, Timer};
+use slint::{ComponentHandle, SharedString, Timer, TimerMode};
 
 slint::slint! {
     import { Button } from "std-widgets.slint";
@@ -82,12 +82,13 @@ slint::slint! {
         in-out property<int> selected: 2;
         in-out property<int> file-count: 2;
         in-out property<string> status: "字段识别完成，可以开始重命名";
+        in property<bool> empty;
         callback select(int);
         callback add-file();
         callback remove-file();
         callback rename-files();
 
-        HorizontalLayout {
+        if !root.empty: HorizontalLayout {
             spacing: 0px;
             Rectangle {
                 width: 230px;
@@ -152,6 +153,11 @@ slint::slint! {
                         description: "原文件旁的“已重命名”目录 · 保留原始文件";
                         trailing: "选择文件夹";
                     }
+                    InfoCard {
+                        title: "输出确认";
+                        description: "将重命名 2 张发票并保留原始文件。";
+                        trailing: "待确认";
+                    }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         Text { text: root.status; font-size: 13px; color: #747b86; vertical-alignment: center; }
@@ -172,6 +178,20 @@ fn main() -> Result<(), slint::PlatformError> {
         .and_then(|pair| pair[1].parse::<u64>().ok())
         .map(Duration::from_secs);
     let ui = InvoiceWindow::new()?;
+    ui.set_empty(args.iter().any(|argument| argument == "--benchmark-empty"));
+
+    let repaint_timer = Timer::default();
+    if args
+        .iter()
+        .any(|argument| argument == "--benchmark-repaint")
+    {
+        let weak = ui.as_weak();
+        repaint_timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.window().request_redraw();
+            }
+        });
+    }
 
     ui.on_select({
         let weak = ui.as_weak();
@@ -219,5 +239,6 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
+    let _keep_repaint_timer_alive = repaint_timer;
     ui.run()
 }

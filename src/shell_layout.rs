@@ -49,6 +49,17 @@ fn shell_dp(value: Dp, dpi: Dpi) -> i32 {
     value.to_px(dpi).round_i32()
 }
 
+fn shell_centered_square(rect: UiRect, size: i32, dpi: Dpi) -> UiRect {
+    let available_width = (rect.right - rect.left).max(0);
+    let available_height = (rect.bottom - rect.top).max(0);
+    let side = zs_shell_scale(size.max(1), dpi)
+        .min(available_width)
+        .min(available_height);
+    let left = rect.left + (available_width - side) / 2;
+    let top = rect.top + (available_height - side) / 2;
+    UiRect::new(left, top, left + side, top + side)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsShellLayoutSpec {
     pub id: String,
@@ -337,14 +348,15 @@ impl ZsShellLayoutSpec {
     ) -> NativeDrawPlan {
         let (chrome_and_nav, content, trailing, content_clip_rect) =
             self.paint_plan_parts_with_profile(bounds, dpi, profile);
-        let mut plan = chrome_and_nav.to_native_draw_plan();
+        let mut plan = chrome_and_nav.to_native_draw_plan_with_dpi(dpi);
         plan.push(NativeDrawCommand::PushClip {
             rect: ui_to_rect(content_clip_rect),
         });
-        plan.commands.extend(content.to_native_draw_plan().commands);
+        plan.commands
+            .extend(content.to_native_draw_plan_with_dpi(dpi).commands);
         plan.push(NativeDrawCommand::PopClip);
         plan.commands
-            .extend(trailing.to_native_draw_plan().commands);
+            .extend(trailing.to_native_draw_plan_with_dpi(dpi).commands);
         plan
     }
 
@@ -677,6 +689,13 @@ impl ZsShellNavItemSpec {
         self
     }
 
+    /// Uses a framework semantic icon while leaving the platform backend in
+    /// charge of resolving Segoe Fluent Icons, SF Symbols, or the GTK theme.
+    pub fn semantic_icon(mut self, icon: ZsIcon) -> Self {
+        self.icon = ZsShellNavIconKind::Semantic(icon);
+        self
+    }
+
     pub fn badge(mut self, badge: bool) -> Self {
         self.badge = badge;
         self
@@ -691,6 +710,7 @@ pub enum ZsShellNavIconKind {
     Group,
     Sync,
     About,
+    Semantic(ZsIcon),
 }
 
 impl ZsShellNavIconKind {
@@ -713,6 +733,7 @@ impl ZsShellNavIconKind {
             Self::Group => "\u{E8A5}",
             Self::Sync => "\u{E753}",
             Self::About => "\u{E946}",
+            Self::Semantic(icon) => icon.windows_fluent_glyph(),
         }
     }
 
@@ -724,6 +745,7 @@ impl ZsShellNavIconKind {
             Self::Group => ZsIcon::Folder,
             Self::Sync => ZsIcon::Refresh,
             Self::About => ZsIcon::Info,
+            Self::Semantic(icon) => icon,
         }
     }
 }
@@ -851,13 +873,29 @@ impl ZsShellRowAccessory {
         }
     }
 
-    fn width_with_profile(&self, dpi: Dpi, _profile: PlatformShellProfile) -> Option<i32> {
+    fn width_with_profile(&self, dpi: Dpi, profile: PlatformShellProfile) -> Option<i32> {
+        let base_metrics = crate::ZsBaseControlMetrics::for_platform(profile.style);
         match self {
             Self::None => None,
             Self::Value { .. } => Some(zs_shell_scale(168, dpi)),
             Self::Toggle { .. } => Some(zs_shell_scale(44, dpi)),
-            Self::Button { .. } | Self::AccentButton { .. } => Some(zs_shell_scale(128, dpi)),
-            Self::Dropdown { .. } => Some(zs_shell_scale(176, dpi)),
+            Self::Button { label, .. } | Self::AccentButton { label, .. } => Some(shell_dp(
+                Dp::new(128.0_f32.max(base_metrics.button_minimum_width_for_label(label).0)),
+                dpi,
+            )),
+            Self::Dropdown { selected, .. } => Some(shell_dp(
+                Dp::new(
+                    176.0_f32.max(
+                        base_metrics
+                            .estimated_text_width_with_shaping_reserve(selected)
+                            .0
+                            + base_metrics.button_padding_left.0
+                            + base_metrics.button_padding_right.0
+                            + 28.0,
+                    ),
+                ),
+                dpi,
+            )),
         }
     }
 
@@ -1513,6 +1551,7 @@ pub enum ZsShellThemeRole {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsShellTextFontRole {
     UiText,
+    Button,
     Display,
     FluentIcon,
 }
@@ -1579,6 +1618,10 @@ impl ZsShellPaintPlan {
     }
 
     pub fn to_native_draw_plan(&self) -> NativeDrawPlan {
+        self.to_native_draw_plan_with_dpi(Dpi::standard())
+    }
+
+    pub fn to_native_draw_plan_with_dpi(&self, dpi: Dpi) -> NativeDrawPlan {
         let mut plan = NativeDrawPlan::default();
         for command in &self.paint_commands {
             match command {
@@ -1623,7 +1666,7 @@ impl ZsShellPaintPlan {
                     plan.push(NativeDrawCommand::Icon(
                         NativeDrawIconCommand::new(
                             icon.semantic_icon(),
-                            ui_to_rect(command.rect),
+                            ui_to_rect(shell_centered_square(command.rect, command.size, dpi)),
                             NativeIconColorMode::ThemeAware,
                         )
                         .with_color(shell_role_to_color_role(command.color)),
@@ -1633,7 +1676,7 @@ impl ZsShellPaintPlan {
                     plan.push(NativeDrawCommand::Icon(
                         NativeDrawIconCommand::new(
                             ZsIcon::Sidebar,
-                            ui_to_rect(command.rect),
+                            ui_to_rect(shell_centered_square(command.rect, command.size, dpi)),
                             NativeIconColorMode::ThemeAware,
                         )
                         .with_color(shell_role_to_color_role(command.color)),
@@ -1643,7 +1686,7 @@ impl ZsShellPaintPlan {
                     plan.push(NativeDrawCommand::Icon(
                         NativeDrawIconCommand::new(
                             ZsIcon::ChevronDown,
-                            ui_to_rect(command.rect),
+                            ui_to_rect(shell_centered_square(command.rect, command.size, dpi)),
                             NativeIconColorMode::ThemeAware,
                         )
                         .with_color(shell_role_to_color_role(command.color)),
@@ -2366,6 +2409,7 @@ fn zs_shell_button_paint_plan_with_profile(
     profile: PlatformShellProfile,
 ) -> ZsShellPaintPlan {
     let rr = UiRect::new(rect.left + 1, rect.top + 1, rect.right - 1, rect.bottom - 1);
+    let base_metrics = crate::ZsBaseControlMetrics::for_platform(profile.style);
     let mut paint_commands = Vec::new();
     let mut text_commands = Vec::new();
     match kind {
@@ -2381,10 +2425,7 @@ fn zs_shell_button_paint_plan_with_profile(
                     ZsShellThemeRole::Surface
                 },
                 stroke: ZsShellThemeRole::ControlStroke,
-                radius: crate::ZsBaseControlMetrics::for_platform(profile.style)
-                    .button_radius
-                    .to_px(dpi)
-                    .round_i32(),
+                radius: base_metrics.button_radius.to_px(dpi).round_i32(),
             });
             text_commands.push(ZsShellTextCommand {
                 rect: UiRect::new(rr.left + text_pad, rr.top, rr.right - arrow_w, rr.bottom),
@@ -2450,18 +2491,23 @@ fn zs_shell_button_paint_plan_with_profile(
                 rect: rr,
                 fill,
                 stroke,
-                radius: crate::ZsBaseControlMetrics::for_platform(profile.style)
-                    .button_radius
-                    .to_px(dpi)
-                    .round_i32(),
+                radius: base_metrics.button_radius.to_px(dpi).round_i32(),
             });
+            let padding_left = shell_dp(base_metrics.button_padding_left, dpi);
+            let padding_top = shell_dp(base_metrics.button_padding_top, dpi);
+            let padding_right = shell_dp(base_metrics.button_padding_right, dpi);
+            let padding_bottom = shell_dp(base_metrics.button_padding_bottom, dpi);
+            let content_left = (rr.left + padding_left).min(rr.right);
+            let content_top = (rr.top + padding_top).min(rr.bottom);
+            let content_right = (rr.right - padding_right).max(content_left);
+            let content_bottom = (rr.bottom - padding_bottom).max(content_top);
             text_commands.push(ZsShellTextCommand {
-                rect: rr,
+                rect: UiRect::new(content_left, content_top, content_right, content_bottom),
                 content: ZsShellTextContent::Label(text),
                 color,
                 size: 14,
                 bold: false,
-                font: ZsShellTextFontRole::UiText,
+                font: ZsShellTextFontRole::Button,
                 align: ZsShellTextAlign::Center,
             });
         }
@@ -2495,31 +2541,37 @@ fn zs_shell_action_button_rects_with_profile(
 ) -> Vec<(String, UiRect)> {
     let top_margin = shell_dp(profile.action_margin, dpi);
     let btn_h = shell_dp(profile.action_height, dpi);
-    let save_w = shell_dp(profile.primary_action_width, dpi);
-    let close_w = shell_dp(profile.secondary_action_width, dpi);
     let gap = shell_dp(profile.action_gap, dpi);
     let right = window.right - top_margin;
-    let mut rects = Vec::new();
-    let mut cursor_right = right;
-    for button in action_area.primary.iter().rev() {
+    let base_metrics = crate::ZsBaseControlMetrics::for_platform(profile.style);
+    let mut buttons = Vec::with_capacity(action_area.primary.len() + action_area.secondary.len());
+    for button in &action_area.secondary {
+        let width = profile
+            .secondary_action_width
+            .0
+            .max(base_metrics.button_minimum_width_for_label(&button.label).0);
+        buttons.push((button, shell_dp(Dp::new(width), dpi)));
+    }
+    for button in &action_area.primary {
+        let width = profile
+            .primary_action_width
+            .0
+            .max(base_metrics.button_minimum_width_for_label(&button.label).0);
+        buttons.push((button, shell_dp(Dp::new(width), dpi)));
+    }
+    let total_width = buttons.iter().map(|(_, width)| *width).sum::<i32>()
+        + gap * buttons.len().saturating_sub(1) as i32;
+    let mut cursor_left = right - total_width;
+    let mut rects = Vec::with_capacity(buttons.len());
+    for (button, width) in buttons {
         let rect = UiRect::new(
-            cursor_right - save_w,
+            cursor_left,
             window.top + top_margin,
-            cursor_right,
+            cursor_left + width,
             window.top + top_margin + btn_h,
         );
         rects.push((button.id.clone(), rect));
-        cursor_right -= save_w + gap;
-    }
-    for button in action_area.secondary.iter().rev() {
-        let rect = UiRect::new(
-            cursor_right - close_w,
-            window.top + top_margin,
-            cursor_right,
-            window.top + top_margin + btn_h,
-        );
-        rects.insert(0, (button.id.clone(), rect));
-        cursor_right -= close_w + gap;
+        cursor_left += width + gap;
     }
     rects
 }
@@ -2703,6 +2755,7 @@ fn shell_text_style(command: &ZsShellTextCommand) -> SemanticTextStyle {
         role: match command.font {
             ZsShellTextFontRole::Display => TextRole::Title,
             ZsShellTextFontRole::FluentIcon => TextRole::Icon,
+            ZsShellTextFontRole::Button => TextRole::Button,
             ZsShellTextFontRole::UiText => {
                 if command.size <= 12 {
                     TextRole::Caption
@@ -2713,7 +2766,7 @@ fn shell_text_style(command: &ZsShellTextCommand) -> SemanticTextStyle {
         },
         color: shell_role_to_color_role(command.color),
         weight: if command.bold {
-            TextWeight::Bold
+            TextWeight::Semibold
         } else {
             TextWeight::Regular
         },
@@ -3000,6 +3053,93 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::PopClip)));
+    }
+
+    #[test]
+    fn shell_native_icons_honor_their_declared_size_and_semantics() {
+        let spec = ZsShellLayoutSpec::new("demo", "Demo")
+            .nav_item(ZsShellNavItemSpec::new("rename", "Rename").semantic_icon(ZsIcon::Edit))
+            .card(ZsShellGroupCardSpec::new("content", "Content"));
+        let draw = spec.native_draw_plan_for_style(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1100,
+                height: 740,
+            },
+            Dpi::standard(),
+            ZsPlatformStyle::Windows,
+        );
+        let icons = draw
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                NativeDrawCommand::Icon(icon) => Some(icon),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(icons.iter().any(|icon| icon.icon == ZsIcon::Edit));
+        assert!(icons
+            .iter()
+            .filter(|icon| matches!(icon.icon, ZsIcon::Sidebar | ZsIcon::Edit))
+            .all(|icon| icon.bounds.width == 16 && icon.bounds.height == 16));
+    }
+
+    #[test]
+    fn shell_actions_use_common_label_measurement_and_button_typography() {
+        let action_area = ZsShellActionAreaSpec::new()
+            .secondary(ZsShellActionButtonSpec::secondary("add", "添加发票"))
+            .primary(ZsShellActionButtonSpec::primary("rename", "开始重命名"));
+        let profile = shell_profile_for_style(ZsPlatformStyle::Windows);
+        let rects = zs_shell_action_button_rects_with_profile(
+            UiRect::new(0, 0, 1000, 700),
+            &action_area,
+            Dpi::standard(),
+            profile,
+        );
+        let minimum = crate::ZsBaseControlMetrics::for_platform(ZsPlatformStyle::Windows)
+            .button_minimum_width
+            .to_px(Dpi::standard())
+            .round_i32();
+
+        assert_eq!(
+            rects.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            ["add", "rename"]
+        );
+        assert!(rects
+            .iter()
+            .all(|(_, rect)| rect.right - rect.left >= minimum));
+
+        let paint = zs_shell_button_paint_plan_with_profile(
+            rects[1].1,
+            "开始重命名".to_string(),
+            ZsShellComponentKind::AccentButton,
+            false,
+            false,
+            Dpi::standard(),
+            profile,
+        );
+        let text = paint.text_commands.first().expect("button text command");
+        assert_eq!(text.font, ZsShellTextFontRole::Button);
+        assert!(text.rect.left > rects[1].1.left);
+        assert!(text.rect.right < rects[1].1.right);
+        assert_eq!(shell_text_style(text).role, TextRole::Button);
+    }
+
+    #[test]
+    fn shell_emphasis_uses_platform_semibold_instead_of_heavy_bold() {
+        let command = ZsShellTextCommand {
+            rect: UiRect::new(0, 0, 200, 32),
+            content: ZsShellTextContent::Label("Title".to_string()),
+            color: ZsShellThemeRole::Text,
+            size: 24,
+            bold: true,
+            font: ZsShellTextFontRole::Display,
+            align: ZsShellTextAlign::Left,
+        };
+
+        assert_eq!(shell_text_style(&command).weight, TextWeight::Semibold);
     }
 
     #[test]

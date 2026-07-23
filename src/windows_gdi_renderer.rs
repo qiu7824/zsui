@@ -114,7 +114,6 @@ const DT_CALCRECT: u32 = 0x0400;
 const DT_NOPREFIX: u32 = 0x0800;
 const DT_END_ELLIPSIS: u32 = 0x0000_8000;
 const ANTIALIASED_QUALITY: u32 = 4;
-const CLEARTYPE_QUALITY: u32 = 5;
 const GDIP_SMOOTHING_MODE_ANTI_ALIAS: i32 = 4;
 const GDIP_UNIT_PIXEL: i32 = 2;
 const GDIP_FILL_MODE_ALTERNATE: i32 = 0;
@@ -1424,7 +1423,7 @@ pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProf
         "Consolas",
         icon_font,
         1.0,
-        "gdi_cleartype",
+        "gdi_grayscale_antialias",
     )
     .with_configured_ui_font(ui_fonts.text)
     .with_role_families(ui_fonts.small, ui_fonts.display);
@@ -1615,18 +1614,12 @@ fn font_weight(weight: TextWeight) -> i32 {
     }
 }
 
-fn font_quality(style: &TextStyle) -> u32 {
-    if style
-        .font_family
-        .eq_ignore_ascii_case(WINDOWS_FLUENT_ICON_FONT_FAMILY)
-        || style
-            .font_family
-            .eq_ignore_ascii_case(WINDOWS_MDL2_ICON_FONT_FAMILY)
-    {
-        ANTIALIASED_QUALITY
-    } else {
-        CLEARTYPE_QUALITY
-    }
+fn font_quality(_style: &TextStyle) -> u32 {
+    // GDI ClearType writes colored subpixels into the backing bitmap. Those
+    // fringes become visible when native-proof images are scaled, composited,
+    // or viewed on a display with a different subpixel order. Grayscale AA is
+    // stable for the buffered paint path and for both text and icon glyphs.
+    ANTIALIASED_QUALITY
 }
 
 fn text_flags(style: &TextStyle, measure: bool) -> u32 {
@@ -2098,9 +2091,9 @@ mod tests {
     }
 
     #[test]
-    fn fluent_icon_fonts_use_grayscale_antialiasing_without_cleartype_fringe() {
+    fn gdi_text_and_icon_fonts_use_stable_grayscale_antialiasing() {
         let mut value = style();
-        assert_eq!(font_quality(&value), CLEARTYPE_QUALITY);
+        assert_eq!(font_quality(&value), ANTIALIASED_QUALITY);
         value.font_family = WINDOWS_FLUENT_ICON_FONT_FAMILY.to_string();
         assert_eq!(font_quality(&value), ANTIALIASED_QUALITY);
         value.font_family = WINDOWS_MDL2_ICON_FONT_FAMILY.to_string();

@@ -1945,6 +1945,36 @@ impl NativeViewInputRuntime {
         self.focused_widget
     }
 
+    #[cfg(all(feature = "accessibility", feature = "tabs"))]
+    pub(crate) fn tab_accessibility_snapshots(
+        &self,
+        plan: &NativeDrawPlan,
+    ) -> Vec<crate::native_tab_accessibility::NativeTabAccessibilitySnapshot> {
+        let Some(interaction) = self.current_interaction_plan() else {
+            return Vec::new();
+        };
+        crate::native_tab_accessibility::native_tab_accessibility_snapshots(
+            plan,
+            &interaction,
+            self.focused_widget,
+            self.dpi,
+            |tab_view| {
+                self.live_view
+                    .as_ref()
+                    .and_then(|runtime| runtime.widget_layout_bounds(tab_view))
+                    .or_else(|| {
+                        self.ui_command_view
+                            .as_ref()
+                            .and_then(|view| view.widget_layout_bounds(tab_view))
+                    })
+            },
+            |widget| {
+                self.widget_tab_header_state(widget)
+                    .map(|state| state.selected)
+            },
+        )
+    }
+
     #[cfg(test)]
     pub(crate) fn text_edit_selection(&self) -> Option<NativeTextSelection> {
         self.text_edit.map(|state| state.selection)

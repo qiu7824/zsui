@@ -1,0 +1,41 @@
+{
+  "library_items": [
+    {
+      "id": "documents",
+      "title": "文档 / Docs",
+      "subtitle": "12 folders",
+      "icon": "Folder"
+    },
+    {
+      "id": "photos",
+      "title": "照片 / Photos",
+      "subtitle": "248 images",
+      "icon": "Image"
+    },
+    {
+      "id": "source",
+      "title": "代码 / Source",
+      "subtitle": "Rust workspace",
+      "icon": "Code"
+    },
+    {
+      "id": "notes",
+      "title": "笔记 / Notes",
+      "subtitle": "Recent edits",
+      "icon": "Text"
+    },
+    {
+      "id": "settings",
+      "title": "设置 / Settings",
+      "subtitle": "Preferences",
+      "icon": "Settings"
+    },
+    {
+      "id": "archive",
+      "title": "归档 / Archive",
+      "subtitle": "Read-only",
+      "icon": "File"
+    }
+  ],
+  "library_selected": "documents"
+}

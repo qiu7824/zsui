@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Common</title>
+  <style>*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;background:#f6f7f9;color:#20242b}.empty *{display:none}.shell{display:grid;grid-template-columns:230px 1fr;height:100vh}.nav{padding:20px;background:#fff;border-right:1px solid #ddd}.nav h1{font-size:22px}.nav button{display:block;width:100%;margin:6px 0;padding:11px;border:0;border-radius:7px;background:transparent;text-align:left}.nav button.sel{background:#eaf1ff;color:#245dc9}.content{padding:22px}.top,.row,.footer{display:flex;align-items:center;gap:12px}.top span,.footer span{flex:1}.card{margin:14px 0;padding:16px;background:#fff;border:1px solid #dce1e8;border-radius:9px}.row{margin:8px 0;padding:12px;background:#fff;border:1px solid #e0e4e8;border-radius:8px}.row b{flex:1}button,input{font:inherit;padding:8px 12px}.dialog{padding:14px;border-left:3px solid #245dc9;background:#eef4ff}</style>
+</head>
+<body><main class="shell"><aside class="nav"><h1>票据工坊</h1><small>COMMON APP</small><button>发票合并</button><button>信息提取</button><button class="sel">发票重命名</button><button>划分文件夹</button></aside><section class="content"><header class="top"><div><h1>发票重命名</h1><p>导航＋表单＋列表＋对话框</p></div><span></span><button>添加发票</button></header><article class="card"><label>命名模板　<input value="销售方名称_税额"></label><label>　<input type="checkbox" checked> 保留原文件</label></article><section><div class="row"><b>示例销售方_28.30.pdf</b><button>移除</button></div><div class="row"><b>示例发票_16.80.pdf</b><button>移除</button></div></section><aside class="dialog"><b>输出确认</b><p>将重命名 2 张发票并保留原始文件。</p><button>取消</button> <button>确认</button></aside><footer class="footer"><span>字段识别完成</span><button>开始重命名</button></footer></section></main><script>if(location.search.includes('empty=1'))document.body.className='empty'</script></body>
+</html>

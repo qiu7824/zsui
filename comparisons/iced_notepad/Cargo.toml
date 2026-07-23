@@ -8,6 +8,17 @@ publish = false
 name = "iced-invoice-tool"
 path = "src/bin/invoice_tool.rs"
 
+[[bin]]
+name = "iced-ui-performance"
+path = "src/bin/ui_performance.rs"
+required-features = ["perf-matrix"]
+
+[features]
+perf-matrix = []
+perf-minimal = ["perf-matrix"]
+perf-full = ["perf-matrix"]
+perf-viewer = ["perf-matrix"]
+
 [dependencies]
 iced = { version = "=0.14.0", default-features = false, features = ["image", "thread-pool", "tiny-skia", "x11"] }
 rfd = "=0.17.2"

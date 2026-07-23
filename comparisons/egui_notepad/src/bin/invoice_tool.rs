@@ -16,6 +16,10 @@ fn main() -> eframe::Result {
         .find(|pair| pair[0] == "--benchmark-seconds")
         .and_then(|pair| pair[1].parse::<u64>().ok())
         .map(Duration::from_secs);
+    let empty = args.iter().any(|argument| argument == "--benchmark-empty");
+    let repaint = args
+        .iter()
+        .any(|argument| argument == "--benchmark-repaint");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 700.0])
@@ -29,7 +33,7 @@ fn main() -> eframe::Result {
             context.egui_ctx.set_theme(egui::Theme::Light);
             context.egui_ctx.set_visuals(egui::Visuals::light());
             install_windows_cjk_font(&context.egui_ctx);
-            Ok(Box::new(InvoiceApp::new(auto_close)))
+            Ok(Box::new(InvoiceApp::new(auto_close, empty, repaint)))
         }),
     )
 }
@@ -66,16 +70,20 @@ struct InvoiceApp {
     status: String,
     started: Instant,
     auto_close: Option<Duration>,
+    empty: bool,
+    repaint: bool,
 }
 
 impl InvoiceApp {
-    fn new(auto_close: Option<Duration>) -> Self {
+    fn new(auto_close: Option<Duration>, empty: bool, repaint: bool) -> Self {
         Self {
             selected: 2,
             file_count: 2,
             status: "字段识别完成，可以开始重命名".to_string(),
             started: Instant::now(),
             auto_close,
+            empty,
+            repaint,
         }
     }
 
@@ -161,6 +169,12 @@ impl InvoiceApp {
         });
 
         ui.add_space(14.0);
+        card(ui, |ui| {
+            ui.label(RichText::new("输出确认").strong());
+            ui.label("将重命名 2 张发票并保留原始文件。");
+        });
+
+        ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!("待处理发票 · {}", self.file_count))
@@ -228,11 +242,17 @@ impl InvoiceApp {
 
 impl eframe::App for InvoiceApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.repaint {
+            ui.ctx().request_repaint();
+        }
         if self
             .auto_close
             .is_some_and(|duration| self.started.elapsed() >= duration)
         {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if self.empty {
+            return;
         }
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, Color32::from_rgb(247, 248, 250));

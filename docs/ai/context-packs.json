@@ -222,6 +222,34 @@
       ]
     },
     {
+      "id": "performance",
+      "purpose": "Equal-complexity Minimal, Common, Full Native App and Viewer release measurements",
+      "required": [
+        "scripts/measure-ui-performance-matrix.ps1",
+        "docs/ui-performance-matrix.md",
+        "Cargo.toml",
+        "examples/ui_performance_minimal.rs",
+        "examples/ui-documents/performance-viewer.json"
+      ],
+      "optional": [
+        "examples/invoice_workbench.rs",
+        "examples/component_gallery.rs",
+        "src/bin/zsui-viewer.rs",
+        "comparisons/egui_notepad",
+        "comparisons/iced_notepad",
+        "comparisons/slint_notepad",
+        "comparisons/tauri_notepad",
+        "docs/invoice-workbench-comparison.md"
+      ],
+      "verify": [
+        "[void][scriptblock]::Create((Get-Content -Raw scripts/measure-ui-performance-matrix.ps1))",
+        "cargo check --example ui_performance_minimal --no-default-features --features window,button,label",
+        "cargo check --example invoice_workbench --no-default-features --features window,workbench,list,dialog",
+        "cargo check --example component_gallery --no-default-features --features component-gallery-demo",
+        "cargo check --bin zsui-viewer --no-default-features --features ui-viewer"
+      ]
+    },
+    {
       "id": "calculator",
       "purpose": "Decimal engine, calculator shell and local comparison",
       "required": [

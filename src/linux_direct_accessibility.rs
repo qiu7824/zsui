@@ -22,6 +22,12 @@ use crate::{
 
 const ROOT_NODE_ID: NodeId = NodeId(0);
 
+#[cfg(feature = "tabs")]
+type LinuxTabAccessibilitySnapshots =
+    Vec<crate::native_tab_accessibility::NativeTabAccessibilitySnapshot>;
+#[cfg(not(feature = "tabs"))]
+type LinuxTabAccessibilitySnapshots = ();
+
 #[cfg(feature = "menu-flyout")]
 #[derive(Default)]
 struct MenuFlyoutAccessibilityHierarchy {
@@ -150,6 +156,7 @@ impl LinuxDirectAccessibility {
         plan: &NativeDrawPlan,
         interaction: Option<ViewInteractionPlan>,
         focused_widget: Option<crate::WidgetId>,
+        tab_snapshots: LinuxTabAccessibilitySnapshots,
     ) -> Self {
         let (update, targets) = build_tree_update(
             title,
@@ -160,6 +167,7 @@ impl LinuxDirectAccessibility {
             plan,
             interaction,
             focused_widget,
+            tab_snapshots,
         );
         let node_count = update.nodes.len();
         let tree = Arc::new(RwLock::new(update));
@@ -199,6 +207,7 @@ impl LinuxDirectAccessibility {
         plan: &NativeDrawPlan,
         interaction: Option<ViewInteractionPlan>,
         focused_widget: Option<crate::WidgetId>,
+        tab_snapshots: LinuxTabAccessibilitySnapshots,
     ) {
         let (update, targets) = build_tree_update(
             title,
@@ -209,6 +218,7 @@ impl LinuxDirectAccessibility {
             plan,
             interaction,
             focused_widget,
+            tab_snapshots,
         );
         self.node_count = update.nodes.len();
         self.targets = targets;
@@ -247,6 +257,7 @@ fn build_tree_update(
     plan: &NativeDrawPlan,
     interaction: Option<ViewInteractionPlan>,
     focused_widget: Option<crate::WidgetId>,
+    tab_snapshots: LinuxTabAccessibilitySnapshots,
 ) -> (TreeUpdate, HashMap<NodeId, LinuxAccessibilityTarget>) {
     let targets = interaction
         .map(|interaction| interaction.hit_targets)
@@ -256,6 +267,16 @@ fn build_tree_update(
         .enumerate()
         .map(|(index, target)| (NodeId(index as u64 + 1), target))
         .collect::<Vec<_>>();
+    #[cfg(feature = "tabs")]
+    let mut next_synthetic_node_id = targets.len() as u64 + 1;
+    #[cfg(feature = "tabs")]
+    let tab_node_ids = targets
+        .iter()
+        .filter_map(|(node_id, target)| {
+            matches!(target.kind, ViewHitTargetKind::Tab { .. })
+                .then_some((target.widget, *node_id))
+        })
+        .collect::<HashMap<_, _>>();
     #[cfg(feature = "menu-flyout")]
     let menu_flyout_hierarchy = menu_flyout_accessibility_hierarchy(&targets);
     let mut node_targets = HashMap::with_capacity(targets.len());
@@ -299,6 +320,18 @@ fn build_tree_update(
             node.set_label(accessible_label(plan, target));
         }
         apply_view_accessibility_state(&mut node, target.kind);
+        #[cfg(feature = "tabs")]
+        if let ViewHitTargetKind::Tab { tab_view, tab, .. } = target.kind {
+            if let Some(item) = tab_snapshots
+                .iter()
+                .find(|snapshot| snapshot.tab_view == tab_view)
+                .and_then(|snapshot| snapshot.items.iter().find(|item| item.tab() == tab))
+            {
+                node.set_selected(item.selected);
+                node.set_position_in_set(item.position);
+                node.set_size_of_set(item.count);
+            }
+        }
         #[cfg(feature = "menu-flyout")]
         if let Some(children) = menu_flyout_hierarchy.children_by_parent.get(&node_id) {
             node.set_children(children.clone());
@@ -338,6 +371,54 @@ fn build_tree_update(
         }
         node_targets.insert(node_id, LinuxAccessibilityTarget::View(target));
         nodes.push((node_id, node));
+    }
+
+    #[cfg(feature = "tabs")]
+    for snapshot in tab_snapshots {
+        let list_id = NodeId(next_synthetic_node_id);
+        next_synthetic_node_id = next_synthetic_node_id.saturating_add(1);
+        let panel_id = NodeId(next_synthetic_node_id);
+        next_synthetic_node_id = next_synthetic_node_id.saturating_add(1);
+        let item_ids = snapshot
+            .items
+            .iter()
+            .filter_map(|item| tab_node_ids.get(&item.target.widget).copied())
+            .collect::<Vec<_>>();
+        if item_ids.is_empty() {
+            continue;
+        }
+        for (item, item_id) in snapshot.items.iter().zip(item_ids.iter().copied()) {
+            if let Some((_, node)) = nodes.iter_mut().find(|(node_id, _)| *node_id == item_id) {
+                node.set_controls(vec![panel_id]);
+            }
+            child_ids.retain(|candidate| *candidate != item_id);
+        }
+
+        let mut list = Node::new(Role::TabList);
+        list.set_author_id(format!("zsui-tab-list-{}", snapshot.tab_view.0));
+        list.set_label("Tabs");
+        list.set_bounds(accesskit_rect(Rect {
+            y: snapshot.list_bounds.y.saturating_add(content_offset_y),
+            ..snapshot.list_bounds
+        }));
+        list.set_children(item_ids);
+
+        let mut panel = Node::new(Role::TabPanel);
+        panel.set_author_id(format!("zsui-tab-panel-{}", snapshot.tab_view.0));
+        panel.set_bounds(accesskit_rect(Rect {
+            y: snapshot.panel_bounds.y.saturating_add(content_offset_y),
+            ..snapshot.panel_bounds
+        }));
+        if let Some(selected) = snapshot.selected_item() {
+            if let Some(selected_id) = tab_node_ids.get(&selected.target.widget).copied() {
+                panel.set_labelled_by(vec![selected_id]);
+                panel.set_label(selected.label.clone());
+            }
+        }
+        child_ids.push(list_id);
+        child_ids.push(panel_id);
+        nodes.push((list_id, list));
+        nodes.push((panel_id, panel));
     }
 
     if let Some(menu) = menu {

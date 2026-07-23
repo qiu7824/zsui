@@ -8,6 +8,17 @@ impl WindowsWin32ViewInputRoute {
         self.shared_focused_target()
     }
 
+    #[cfg(all(feature = "accessibility", feature = "tabs"))]
+    fn dispatch_accessibility_tab_focus(
+        &mut self,
+        widget: crate::WidgetId,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_accessibility_focus(widget);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
     #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
     fn dispatch_accessibility_menu_flyout_focus(
         &mut self,

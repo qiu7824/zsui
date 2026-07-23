@@ -57,6 +57,16 @@ Built-in controls also use semantic values. For example, ComboBox requests
 `ZsIcon::ChevronDown`, which resolves to Segoe Fluent/MDL2, `chevron.down`, or
 `pan-down-symbolic` before using the MIT SVG fallback.
 
+Navigation shells use the same typed contract, so application code does not
+select a platform glyph or maintain a parallel string icon catalog:
+
+```rust
+use zsui::{ZsIcon, ZsNavItemSpec};
+
+let rename = ZsNavItemSpec::new("rename", "Rename")
+    .semantic_icon(ZsIcon::Edit);
+```
+
 InfoBar uses the semantic `Info`, `Success`, `Warning` and `Error` values rather
 than embedding status glyphs in the component. They resolve to the documented
 Segoe Fluent Icons code points on Windows, `info.circle`, `checkmark.circle`,

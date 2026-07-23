@@ -8,6 +8,18 @@ UI 文档只保存视觉结构。Rust 应用继续持有 `State` 和 `Msg`，并
 `UiBindingManifest<State, Msg>` 注册状态读取器和消息映射器。序列化绑定名称只有
 在显式清单中声明且类型一致时才有效，不形成反射式属性系统或全局字符串事件总线。
 
+## 定位边界
+
+`UiDocument` 是受限的原生 UI 声明格式，不是第二套 Web 平台。它不拥有动态脚本、
+任意字符串属性、通用运行时解释、业务状态机、网络资源模型或浏览器样式系统。新增
+组件必须先成为可复用的 ZSUI 组件与 Cargo feature，再进入 schema；不能为了 Viewer
+预览而反向定义框架组件。
+
+发布应用只使用按文档实际组件裁剪的 `ui-document-runtime` 或预编译嵌入结果。
+`ui-viewer` 的文件监听、开发诊断、全组件覆盖与截图能力属于独立工具产物。正式应用
+和 Viewer 的二进制、内存与进程数通过独立性能档位验收，详见
+[UI 性能测试矩阵](ui-performance-matrix.md)。
+
 ## 校验
 
 启用文档使用到的组件 feature，并运行：
@@ -32,7 +44,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
@@ -91,6 +103,14 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 `register_tree_node_id_property` 及对应 action helper 保持强类型状态。发布运行时根据拥有者
 节点和语义 ID 生成私有 `ZsTreeNodeId`，拒绝碰撞、未知选择以及指向叶节点的展开状态；
 节点重排、折叠和 Viewer 热重建不会把身份降级为路径或数组下标。
+
+`grid_view.items` 使用 `grid_view_item_array`，每个磁贴包含唯一稳定字符串 ID、非空标题、
+可选副标题和 `ZsIcon` 语义图标。`selected` 使用 `nullable_grid_view_item_id` 保存显式单选
+状态，`select` 与 `invoke` 分别返回 `grid_view_item_id`。Rust 应用通过
+`register_grid_view_items_property`、`register_grid_view_item_id_property` 和
+`register_grid_view_item_id_action` 保留强类型语义 ID；发布运行时根据拥有者节点与项目
+ID 生成私有 `ZsGridViewItemId`，拒绝碰撞、重复项目及不存在的选择。项目重排和响应式
+列数变化不会改变身份，最终列宽、磁贴高度、间距和选择视觉继续由目标平台 profile 决定。
 
 `date_picker` 使用独立的 `date` 绑定类型，序列化形式固定为 ISO `YYYY-MM-DD`，不会把
 平台区域日期文本当作状态格式。`UiBindingManifest::register_date_property` 和
@@ -198,7 +218,7 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、CommandPalette 四类状态动作、TreeView 三类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
+`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、CommandPalette 四类状态动作、TreeView 三类状态动作、GridView 两类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
 消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
@@ -287,6 +307,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/tree.values.json
 ```
 
+受控资源库示例使用稳定项目 ID、响应式列和平台语义图标：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/grid-view.json `
+  --bindings examples/ui-documents/grid-view.bindings.json `
+  --values examples/ui-documents/grid-view.values.json
+```
+
 原生证明可由同一可执行文件生成：
 
 ```powershell
@@ -317,6 +348,8 @@ Windows CommandPalette 受控示例的本地原生证明点击第二个真实命
 1 次关闭、2 条 Viewer 消息和 0 次未处理点击；最终 Win32 PNG 来自关闭后的共享页面。
 Windows TreeView 受控示例点击一个真实文件行，记录 1 次选择、1 次调用、2 条 Viewer
 消息和 0 次未处理点击；最终 Win32 PNG 保留完整页面文字、层级图标和新的稳定 ID 选择。
+Windows GridView 受控示例点击一个真实磁贴，记录 1 次选择、1 次调用、2 条 Viewer 消息
+和 0 次未处理点击；最终 Win32 PNG 保留完整双语页面、六个语义图标和新的稳定 ID 选择。
 
 固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
 `scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。

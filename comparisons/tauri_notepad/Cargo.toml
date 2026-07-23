@@ -8,6 +8,11 @@ publish = false
 name = "tauri-invoice-tool"
 path = "src/bin/invoice_tool.rs"
 
+[[bin]]
+name = "tauri-ui-performance"
+path = "src/bin/ui_performance.rs"
+required-features = ["perf-matrix"]
+
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }
 
@@ -23,6 +28,11 @@ tauri = { version = "=2.11.5", default-features = false, features = [
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+perf-matrix = ["custom-protocol"]
+perf-minimal = ["perf-matrix"]
+perf-common = ["perf-matrix"]
+perf-full = ["perf-matrix"]
+perf-viewer = ["perf-matrix"]
 
 [profile.release]
 opt-level = "z"

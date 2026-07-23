@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "performance-command-palette",
+    "component": "command_palette",
+    "properties": {
+      "items": [
+        { "id": "reload", "title": "重新加载 / Reload", "shortcut": "Ctrl+R", "icon": "Refresh" },
+        { "id": "validate", "title": "验证文档 / Validate", "shortcut": "Ctrl+Enter", "icon": "Tool" }
+      ],
+      "query": "",
+      "highlighted": null,
+      "open": false,
+      "placeholder": "输入命令 / Type a command"
+    },
+    "children": [
+      {
+        "id": "performance-scroll",
+        "component": "scroll",
+        "properties": {
+          "offset_y": 0.0,
+          "content_height": 1760.0
+        },
+        "layout": { "height": 650.0 },
+        "children": [
+          {
+            "id": "performance-stack",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "padding_token": "page_padding",
+              "gap_token": "content_gap"
+            },
+            "children": [
+              {
+                "id": "performance-title",
+                "component": "text",
+                "properties": {
+                  "text": "UiDocument 全组件性能页 / All-component performance page",
+                  "text_role": "title",
+                  "wrap": "word"
+                }
+              },
+              {
+                "id": "performance-border",
+                "component": "border",
+                "layout": { "padding": 12.0 },
+                "children": [
+                  {
+                    "id": "performance-description",
+                    "component": "text",
+                    "properties": {
+                      "text": "固定加载当前 schema 的全部 26 种文档组件；Viewer 额外保留文件轮询、解析、验证与状态映射。",
+                      "wrap": "word"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "performance-button",
+                "component": "button",
+                "properties": { "label": "选择发票 / Choose invoice" }
+              },
+              {
+                "id": "performance-toggle-button",
+                "component": "toggle_button",
+                "properties": { "label": "固定规则 / Pin rule", "checked": true }
+              },
+              {
+                "id": "performance-checkbox",
+                "component": "checkbox",
+                "properties": { "label": "自动识别 / Auto detect", "checked": true }
+              },
+              {
+                "id": "performance-toggle",
+                "component": "toggle",
+                "properties": { "label": "保留原文件 / Keep source", "checked": true }
+              },
+              {
+                "id": "performance-textbox",
+                "component": "textbox",
+                "properties": { "value": "示例销售方_28.30.pdf", "placeholder": "发票名称 / Invoice name" }
+              },
+              {
+                "id": "performance-password",
+                "component": "password_box",
+                "properties": { "reveal_mode": "peek" },
+                "accessibility": { "role": "textbox", "label": "访问口令 / Access token" }
+              },
+              {
+                "id": "performance-radio",
+                "component": "radio_button",
+                "properties": { "label": "标准规则 / Standard rule", "selected": true }
+              },
+              {
+                "id": "performance-slider",
+                "component": "slider",
+                "properties": { "value": 68.0 }
+              },
+              {
+                "id": "performance-number",
+                "component": "number_box",
+                "properties": { "value": 2.0, "minimum": 1.0, "maximum": 99.0, "step": 1.0 }
+              },
+              {
+                "id": "performance-combo",
+                "component": "combo_box",
+                "properties": {
+                  "options": ["销售方_税额", "日期_号码", "客户_金额"],
+                  "selected_index": 0,
+                  "expanded": false
+                }
+              },
+              {
+                "id": "performance-auto-suggest",
+                "component": "auto_suggest",
+                "properties": {
+                  "suggestions": [
+                    { "id": "seller", "text": "销售方 / Seller" },
+                    { "id": "amount", "text": "税额 / Tax amount" }
+                  ],
+                  "query": "销",
+                  "highlighted": "seller",
+                  "expanded": false,
+                  "placeholder": "搜索字段 / Search fields"
+                }
+              },
+              {
+                "id": "performance-tree",
+                "component": "tree",
+                "layout": { "height": 150.0 },
+                "properties": {
+                  "nodes": [
+                    {
+                      "id": "invoices",
+                      "label": "发票 / Invoices",
+                      "icon": "Folder",
+                      "children": [
+                        { "id": "invoice-a", "label": "发票 A", "icon": "File" },
+                        { "id": "invoice-b", "label": "发票 B", "icon": "File" }
+                      ]
+                    }
+                  ],
+                  "expanded": ["invoices"],
+                  "selected": "invoice-a"
+                }
+              },
+              {
+                "id": "performance-grid-view",
+                "component": "grid_view",
+                "layout": { "height": 220.0 },
+                "properties": {
+                  "items": [
+                    { "id": "pending", "title": "待处理 / Pending", "subtitle": "2 invoices", "icon": "Folder" },
+                    { "id": "complete", "title": "已完成 / Complete", "subtitle": "8 invoices", "icon": "File" }
+                  ],
+                  "selected": "pending"
+                }
+              },
+              {
+                "id": "performance-date",
+                "component": "date_picker",
+                "properties": { "value": "2026-07-23", "expanded": false }
+              },
+              {
+                "id": "performance-time",
+                "component": "time_picker",
+                "properties": { "value": "09:30", "minute_increment": 15, "clock_format": "twenty_four_hour", "expanded": false }
+              },
+              {
+                "id": "performance-color",
+                "component": "color_picker",
+                "properties": { "value": "#0078D4FF", "active_channel": "red", "expanded": false, "alpha_enabled": true }
+              },
+              {
+                "id": "performance-progress-bar",
+                "component": "progress_bar",
+                "properties": { "value": 68.0 }
+              },
+              {
+                "id": "performance-progress-ring",
+                "component": "progress_ring",
+                "properties": { "value": 68.0, "minimum": 0.0, "maximum": 100.0, "active": true, "size": "small" }
+              },
+              {
+                "id": "performance-list",
+                "component": "list",
+                "properties": { "selected": "list-item-a" },
+                "children": [
+                  { "id": "list-item-a", "component": "text", "properties": { "text": "示例销售方_28.30.pdf" } },
+                  { "id": "list-item-b", "component": "text", "properties": { "text": "示例发票_16.80.pdf" } }
+                ]
+              },
+              {
+                "id": "performance-tabs",
+                "component": "tabs",
+                "properties": {
+                  "labels": { "tab-general": "常规 / General", "tab-advanced": "高级 / Advanced" },
+                  "icons": { "tab-general": "Settings", "tab-advanced": "Tool" },
+                  "selected": "tab-general"
+                },
+                "children": [
+                  { "id": "tab-general", "component": "text", "properties": { "text": "常规设置 / General settings" } },
+                  { "id": "tab-advanced", "component": "text", "properties": { "text": "高级设置 / Advanced settings" } }
+                ]
+              },
+              {
+                "id": "performance-grid",
+                "component": "grid",
+                "properties": {
+                  "columns": [
+                    { "kind": "fixed", "size": 180.0 },
+                    { "kind": "fraction", "weight": 1 }
+                  ],
+                  "rows": [{ "kind": "fraction", "weight": 1 }],
+                  "placements": {
+                    "grid-label": { "row": 0, "column": 0 },
+                    "grid-value": { "row": 0, "column": 1 }
+                  },
+                  "column_gap": 12.0
+                },
+                "children": [
+                  { "id": "grid-label", "component": "text", "properties": { "text": "输出目录" } },
+                  { "id": "grid-value", "component": "text", "properties": { "text": "已重命名 / Renamed" } }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

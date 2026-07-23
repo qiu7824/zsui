@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tauri UI Performance Minimal",
+  "version": "0.1.0",
+  "identifier": "dev.zsui.comparison.tauri-performance-minimal",
+  "build": { "frontendDist": "frontend-perf/minimal" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "label": "main", "title": "UI Performance", "width": 1000, "height": 700, "visible": false }],
+    "security": { "csp": null }
+  },
+  "bundle": { "active": false, "icon": ["icons/icon.ico", "icons/icon.png"] }
+}

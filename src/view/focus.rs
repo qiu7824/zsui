@@ -100,6 +100,8 @@ trait LiveViewDriver: Send {
     fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState>;
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState>;
+    #[cfg(feature = "tabs")]
+    fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect>;
     #[cfg(all(test, feature = "tabs"))]
     fn widget_tab_view_state(&self, widget: WidgetId) -> Option<ZsTabViewState>;
     #[cfg(feature = "tabs")]
@@ -330,6 +332,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "tabs")]
     pub(crate) fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
         self.lock().widget_tab_header_state(widget)
+    }
+
+    #[cfg(feature = "tabs")]
+    pub(crate) fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
+        self.lock().widget_layout_bounds(widget)
     }
 
     #[cfg(all(test, feature = "tabs"))]
@@ -778,6 +785,11 @@ where
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
         self.view.widget_tab_header_state(widget)
+    }
+
+    #[cfg(feature = "tabs")]
+    fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
+        self.view.widget_layout_bounds(widget)
     }
 
     #[cfg(all(test, feature = "tabs"))]

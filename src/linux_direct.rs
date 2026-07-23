@@ -814,6 +814,10 @@ impl LinuxDirectWindow {
         if let Some(menu) = menu_surface.as_mut() {
             menu.layout(initial_width.max(1) as i32, &text_context);
         }
+        #[cfg(all(feature = "accessibility", feature = "tabs"))]
+        let tab_snapshots = runtime.tab_accessibility_snapshots(&plan);
+        #[cfg(all(feature = "accessibility", not(feature = "tabs")))]
+        let tab_snapshots = ();
         #[cfg(feature = "accessibility")]
         let accessibility = crate::linux_direct_accessibility::LinuxDirectAccessibility::new(
             event_loop,
@@ -835,6 +839,7 @@ impl LinuxDirectWindow {
             &plan,
             runtime.current_interaction_plan(),
             runtime.focused_widget(),
+            tab_snapshots,
         );
         let draw_text_context = text_context.clone();
         Self {
@@ -1105,6 +1110,10 @@ impl LinuxDirectWindow {
             .menu_surface
             .as_ref()
             .map(|menu| menu.accessibility_snapshot());
+        #[cfg(feature = "tabs")]
+        let tab_snapshots = self.runtime.tab_accessibility_snapshots(&self.plan);
+        #[cfg(not(feature = "tabs"))]
+        let tab_snapshots = ();
         self.accessibility.update(
             &self.title,
             Rect {
@@ -1119,6 +1128,7 @@ impl LinuxDirectWindow {
             &self.plan,
             self.runtime.current_interaction_plan(),
             self.runtime.focused_widget(),
+            tab_snapshots,
         );
     }
 

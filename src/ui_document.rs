@@ -114,6 +114,26 @@ pub(crate) fn ui_tree_runtime_id(
     crate::ZsTreeNodeId::new(hash)
 }
 
+#[cfg(all(feature = "ui-document-runtime", feature = "grid-view"))]
+pub(crate) fn ui_grid_view_runtime_id(
+    node_id: &UiNodeId,
+    item_id: &UiGridViewItemId,
+) -> crate::ZsGridViewItemId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(item_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsGridViewItemId::new(hash)
+}
+
 impl fmt::Display for UiNodeId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
@@ -684,6 +704,102 @@ impl UiTreeNode {
     }
 }
 
+/// Stable author-facing identity for one document-backed GridView item.
+///
+/// The identity is independent from declaration order. The release runtime
+/// derives a private [`crate::ZsGridViewItemId`] from this value and the owning
+/// UiDocument node ID.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiGridViewItemId(String);
+
+impl UiGridViewItemId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiGridViewItemIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiGridViewItemIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiGridViewItemId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiGridViewItemIdError {
+    value: String,
+}
+
+impl fmt::Display for UiGridViewItemIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "grid-view item id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiGridViewItemIdError {}
+
+/// Application-owned display metadata for one document-backed GridView tile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiGridViewItem {
+    id: UiGridViewItemId,
+    title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<crate::ZsIcon>,
+}
+
+impl UiGridViewItem {
+    pub fn new(id: UiGridViewItemId, title: impl Into<String>) -> Self {
+        Self {
+            id,
+            title: title.into(),
+            subtitle: None,
+            icon: None,
+        }
+    }
+
+    pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
+        self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    pub fn icon(mut self, icon: crate::ZsIcon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn id(&self) -> &UiGridViewItemId {
+        &self.id
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn subtitle_text(&self) -> Option<&str> {
+        self.subtitle.as_deref()
+    }
+
+    pub const fn semantic_icon(&self) -> Option<crate::ZsIcon> {
+        self.icon
+    }
+}
+
 const fn one_grid_span() -> u16 {
     1
 }
@@ -735,6 +851,9 @@ pub enum UiValueType {
     NullableTreeNodeId,
     TreeNodeIdArray,
     TreeNodeArray,
+    GridViewItemId,
+    NullableGridViewItemId,
+    GridViewItemArray,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -777,6 +896,11 @@ impl UiValueType {
             }
             Self::TreeNodeIdArray => ui_tree_node_ids_from_value(value).is_some(),
             Self::TreeNodeArray => ui_tree_nodes_from_value(value).is_some(),
+            Self::GridViewItemId => ui_grid_view_item_id_from_value(value).is_some(),
+            Self::NullableGridViewItemId => {
+                value.is_null() || ui_grid_view_item_id_from_value(value).is_some()
+            }
+            Self::GridViewItemArray => ui_grid_view_items_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -893,6 +1017,29 @@ fn find_ui_tree_node<'a>(nodes: &'a [UiTreeNode], id: &UiTreeNodeId) -> Option<&
         }
     }
     None
+}
+
+fn ui_grid_view_item_id_from_value(value: &Value) -> Option<UiGridViewItemId> {
+    value
+        .as_str()
+        .and_then(|value| UiGridViewItemId::new(value).ok())
+}
+
+pub(crate) fn ui_grid_view_items_from_value(value: &Value) -> Option<Vec<UiGridViewItem>> {
+    let items = serde_json::from_value::<Vec<UiGridViewItem>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    items
+        .iter()
+        .all(|item| {
+            is_valid_node_id(item.id.as_str())
+                && ids.insert(item.id.as_str().to_owned())
+                && !item.title.trim().is_empty()
+                && item
+                    .subtitle
+                    .as_ref()
+                    .is_none_or(|subtitle| !subtitle.trim().is_empty())
+        })
+        .then_some(items)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1945,6 +2092,34 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers application-owned GridView tile metadata with stable
+    /// semantic item IDs.
+    #[cfg(feature = "grid-view")]
+    pub fn register_grid_view_items_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiGridViewItem> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::GridViewItemArray, move |state| {
+            serde_json::to_value(read(state)).expect("grid-view authoring metadata must serialize")
+        })
+    }
+
+    /// Registers the optional selected GridView item without exposing the
+    /// runtime's numeric item identity.
+    #[cfg(feature = "grid-view")]
+    pub fn register_grid_view_item_id_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiGridViewItemId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableGridViewItemId, move |state| {
+            read(state)
+                .map(|id| Value::String(id.as_str().to_owned()))
+                .unwrap_or(Value::Null)
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -2093,6 +2268,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
             let ids = ui_tree_node_ids_from_value(&payload)
                 .ok_or_else(|| "tree payload must contain unique stable string ids".to_owned())?;
             map(ids)
+        })
+    }
+
+    /// Registers a strongly typed GridView selection or invocation action.
+    #[cfg(feature = "grid-view")]
+    pub fn register_grid_view_item_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiGridViewItemId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::GridViewItemId, move |payload| {
+            let id = ui_grid_view_item_id_from_value(&payload)
+                .ok_or_else(|| "grid-view payload must be a valid stable string id".to_owned())?;
+            map(id)
         })
     }
 
@@ -2977,6 +3166,36 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "grid_view" {
+            let static_items = (!node.property_bindings.contains_key("items"))
+                .then(|| {
+                    node.properties
+                        .get("items")
+                        .and_then(ui_grid_view_items_from_value)
+                })
+                .flatten();
+            let static_selected = (!node.property_bindings.contains_key("selected"))
+                .then(|| {
+                    node.properties
+                        .get("selected")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_grid_view_item_id_from_value)
+                })
+                .flatten();
+            if static_selected
+                .as_ref()
+                .zip(static_items.as_ref())
+                .is_some_and(|(selected, items)| !items.iter().any(|item| item.id() == selected))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.selected"),
+                    "grid_view selected must address an available item id".to_owned(),
+                );
+            }
+        }
+
         if node.component == "date_picker" {
             let static_date = |name: &str, fallback: Option<UiDocumentDate>| {
                 (!node.property_bindings.contains_key(name))
@@ -3791,6 +4010,28 @@ const TREE_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::TreeNodeId,
     },
 ];
+const GRID_VIEW_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "items",
+        value_type: UiValueType::GridViewItemArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "selected",
+        value_type: UiValueType::NullableGridViewItemId,
+        required: true,
+    },
+];
+const GRID_VIEW_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "select",
+        payload_type: UiValueType::GridViewItemId,
+    },
+    ActionSpec {
+        name: "invoke",
+        payload_type: UiValueType::GridViewItemId,
+    },
+];
 const DATE_PICKER_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "value",
@@ -4059,6 +4300,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             children: ChildPolicy::Exactly(1),
         }),
         "tree" => Some(leaf(TREE_PROPERTIES, TREE_ACTIONS)),
+        "grid_view" => Some(leaf(GRID_VIEW_PROPERTIES, GRID_VIEW_ACTIONS)),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
         "color_picker" => Some(leaf(COLOR_PICKER_PROPERTIES, COLOR_PICKER_ACTIONS)),
@@ -4926,6 +5168,86 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "grid-view")]
+    #[test]
+    fn typed_grid_view_bindings_preserve_metadata_and_semantic_ids() {
+        struct GridViewState {
+            items: Vec<UiGridViewItem>,
+            selected: Option<UiGridViewItemId>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum GridViewMsg {
+            Selected(UiGridViewItemId),
+        }
+
+        let documents = UiGridViewItemId::new("documents").unwrap();
+        let photos = UiGridViewItemId::new("photos").unwrap();
+        let mut manifest = UiBindingManifest::<GridViewState, GridViewMsg>::new();
+        manifest
+            .register_grid_view_items_property("library_items", |state| state.items.clone())
+            .unwrap();
+        manifest
+            .register_grid_view_item_id_property("library_selected", |state| state.selected.clone())
+            .unwrap();
+        manifest
+            .register_grid_view_item_id_action("library_selected_changed", |id| {
+                Ok(GridViewMsg::Selected(id))
+            })
+            .unwrap();
+
+        let state = GridViewState {
+            items: vec![
+                UiGridViewItem::new(documents, "Documents")
+                    .subtitle("12 folders")
+                    .icon(crate::ZsIcon::Folder),
+                UiGridViewItem::new(photos.clone(), "Photos").icon(crate::ZsIcon::Image),
+            ],
+            selected: Some(photos.clone()),
+        };
+        assert_eq!(
+            manifest.schema().properties["library_items"],
+            UiValueType::GridViewItemArray
+        );
+        assert_eq!(
+            manifest.schema().properties["library_selected"],
+            UiValueType::NullableGridViewItemId
+        );
+        assert_eq!(
+            manifest.schema().actions["library_selected_changed"],
+            UiValueType::GridViewItemId
+        );
+        assert_eq!(
+            manifest.read_property("library_items", &state),
+            Some(serde_json::json!([
+                {
+                    "id": "documents",
+                    "title": "Documents",
+                    "subtitle": "12 folders",
+                    "icon": "Folder"
+                },
+                {
+                    "id": "photos",
+                    "title": "Photos",
+                    "icon": "Image"
+                }
+            ]))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "library_selected_changed",
+                Value::String("photos".to_owned())
+            ),
+            Ok(GridViewMsg::Selected(photos))
+        );
+        assert!(!UiValueType::GridViewItemArray.matches(&serde_json::json!([
+            { "id": "duplicate", "title": "First" },
+            { "id": "duplicate", "title": "Second" }
+        ])));
+        assert!(!UiValueType::GridViewItemArray.matches(&serde_json::json!([
+            { "id": "empty-title", "title": "  " }
+        ])));
+    }
+
     #[test]
     fn auto_suggest_contract_validates_controlled_semantic_state() {
         let valid = UiDocument::from_json(
@@ -5172,6 +5494,71 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.expanded"
+        }));
+    }
+
+    #[test]
+    fn grid_view_contract_validates_controlled_semantic_selection() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "library-grid",
+                "component": "grid_view",
+                "property_bindings": {
+                  "items": "library_items",
+                  "selected": "library_selected"
+                },
+                "action_bindings": {
+                  "select": "library_selected_changed",
+                  "invoke": "library_invoked"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("library_items".to_owned(), UiValueType::GridViewItemArray),
+                (
+                    "library_selected".to_owned(),
+                    UiValueType::NullableGridViewItemId,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "library_selected_changed".to_owned(),
+                    UiValueType::GridViewItemId,
+                ),
+                ("library_invoked".to_owned(), UiValueType::GridViewItemId),
+            ]),
+        };
+        let features = UiFeatureSet::new(["grid-view"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "library-grid",
+                "component": "grid_view",
+                "properties": {
+                  "items": [
+                    { "id": "documents", "title": "Documents" },
+                    { "id": "photos", "title": "Photos" }
+                  ],
+                  "selected": "missing"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.selected"
         }));
     }
 
@@ -5622,10 +6009,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "grid_view".to_owned();
+        document.root.children[0].component = "table".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "grid-view"]),
+            &UiFeatureSet::new(["button", "label", "table"]),
             &UiBindingSchema::default(),
         );
 
