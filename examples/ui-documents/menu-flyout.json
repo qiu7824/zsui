@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "file-menu",
+    "component": "menu_flyout",
+    "properties": {
+      "target": "open-file-menu"
+    },
+    "property_bindings": {
+      "open": "file_menu_open",
+      "items": "file_menu_items"
+    },
+    "action_bindings": {
+      "invoke": "file_menu_invoked",
+      "open_change": "file_menu_open_changed"
+    },
+    "children": [
+      {
+        "id": "page",
+        "component": "stack",
+        "layout": {
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "title",
+            "component": "text",
+            "properties": {
+              "text": "菜单浮出控件 / MenuFlyout",
+              "text_role": "subtitle"
+            }
+          },
+          {
+            "id": "summary",
+            "component": "text",
+            "properties": {
+              "text": "同一份嵌套菜单数据保留稳定命令 ID、勾选状态和平台快捷键显示。 / One nested menu keeps stable command IDs, checked state, and platform accelerator labels.",
+              "text_role": "body",
+              "wrap": "word",
+              "ellipsis": false
+            },
+            "layout": {
+              "width": 300
+            }
+          },
+          {
+            "id": "open-file-menu",
+            "component": "button",
+            "properties": {
+              "label": "文件操作 / File actions"
+            },
+            "layout": {
+              "width": 220
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

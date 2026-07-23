@@ -1012,6 +1012,16 @@ history remain authoritative for implementation status.
   `light_dismiss` and `escape`. Modal focus skips stable layout-only document
   nodes and selects the first interactive descendant before falling back to
   the Flyout surface.
+  UiDocument `menu_flyout` wraps exactly one page child and resolves its stable
+  target only inside that page. One recursive `menu_flyout_item_array` carries
+  globally unique author IDs for commands and submenus, optional checked state
+  and structured portable accelerators; validation rejects malformed separator
+  runs and more than eight submenu levels. Invocation returns the stable
+  `menu_flyout_item_id`, while Boolean `open_change` closes controlled state
+  across Viewer rebuilds. The release runtime maps those IDs to private custom
+  commands but never executes product behavior. Shared accelerator columns add
+  a shaping guard beyond the lightweight width estimate so mixed-script menus
+  do not ellipsize otherwise unconstrained shortcut labels.
 - Toast is an independent `toast` Cargo feature over `widgets-base`. It is a
   nonmodal in-window feedback layer, not an imitation of Windows or macOS
   system-notification chrome. Applications own an optional `ZsToastSpec` with a

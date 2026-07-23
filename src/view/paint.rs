@@ -523,7 +523,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             open_submenus.clear();
                         }
                         if let Some(message) = on_open_change {
-                            cx.emit(message(*requested));
+                            cx.emit(message.map(*requested));
                         }
                         handled = true;
                     }
@@ -567,10 +567,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             *highlighted = None;
                             open_submenus.clear();
                             if let Some(message) = on_command {
-                                cx.emit(message(command));
+                                cx.emit(message.map(command));
                             }
                             if let Some(message) = on_open_change {
-                                cx.emit(message(false));
+                                cx.emit(message.map(false));
                             }
                             handled = true;
                         }
@@ -582,7 +582,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         *highlighted = None;
                         open_submenus.clear();
                         if let Some(message) = on_open_change {
-                            cx.emit(message(false));
+                            cx.emit(message.map(false));
                         }
                         handled = true;
                     }

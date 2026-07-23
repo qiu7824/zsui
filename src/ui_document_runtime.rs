@@ -14,6 +14,8 @@ use serde_json::Value;
 
 #[cfg(feature = "password-box")]
 use crate::ui_document::UiSecretValues;
+#[cfg(feature = "menu-flyout")]
+use crate::ui_document::{ui_menu_flyout_items_from_value, UiMenuFlyoutItem};
 use crate::ui_document::{
     validate_ui_document_binding_values, UiAxis, UiBindingSchema, UiDiagnostic, UiDocument,
     UiFeatureSet, UiNode,
@@ -63,6 +65,7 @@ pub struct UiDocumentSecretAction {
         feature = "button",
         feature = "breadcrumb",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "toggle-button",
         feature = "checkbox",
         feature = "toggle",
@@ -185,6 +188,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "button",
             feature = "breadcrumb",
             feature = "flyout",
+            feature = "menu-flyout",
             feature = "toggle-button",
             feature = "checkbox",
             feature = "toggle",
@@ -467,6 +471,73 @@ fn compile_node<Msg: Clone + 'static>(
                         binding: binding.clone(),
                         property_binding: property_binding.clone(),
                         payload: Value::from(offset.0),
+                    })
+                });
+            }
+            control
+        }
+        #[cfg(feature = "menu-flyout")]
+        "menu_flyout" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(page) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+
+            let target = string_property(node, properties, "target", "");
+            let target = menu_flyout_document_target(node, &target).ok_or_else(|| {
+                invalid_resolved_property(
+                    node,
+                    "target",
+                    "menu_flyout target must reference a node in its page child",
+                )
+            })?;
+            let menu = document_menu_flyout(node, properties)?;
+            let mut control = crate::menu_flyout(
+                node.id.widget_id(),
+                bool_property(node, properties, "open", false),
+                target,
+                menu,
+                page,
+            );
+            if let Some(binding) = node.action_bindings.get("invoke") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_menu_flyout_command_with(move |command| {
+                    let crate::Command::Custom { id, payload: None } = command else {
+                        unreachable!("document MenuFlyout emits only stable custom item IDs");
+                    };
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(id),
+                    })
+                });
+            }
+            if let Some(binding) = node.action_bindings.get("open_change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("open").cloned();
+                control = control.on_menu_flyout_open_change_with(move |open| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(open),
                     })
                 });
             }
@@ -1456,6 +1527,87 @@ fn flyout_document_target(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
     }
 
     node.children.first().and_then(|page| find(page, id))
+}
+
+#[cfg(feature = "menu-flyout")]
+fn menu_flyout_document_target(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
+    fn find(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
+        if node.id.as_str() == id {
+            return Some(node.id.widget_id());
+        }
+        node.children.iter().find_map(|child| find(child, id))
+    }
+
+    node.children.first().and_then(|page| find(page, id))
+}
+
+#[cfg(feature = "menu-flyout")]
+fn document_menu_flyout(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<crate::MenuSpec, UiDocumentRuntimeError> {
+    fn compile(items: Vec<UiMenuFlyoutItem>) -> Vec<crate::MenuItemSpec> {
+        items
+            .into_iter()
+            .map(|item| match item {
+                UiMenuFlyoutItem::Command {
+                    id,
+                    label,
+                    enabled,
+                    checked,
+                    accelerator,
+                } => {
+                    let id = id.as_str().to_owned();
+                    crate::MenuItemSpec::Command {
+                        id: Some(id.clone()),
+                        label,
+                        command: crate::Command::custom(id),
+                        enabled,
+                        checked,
+                        accelerator: accelerator.map(|accelerator| {
+                            accelerator
+                                .native_accelerator()
+                                .expect("validated document accelerator")
+                        }),
+                    }
+                }
+                UiMenuFlyoutItem::Separator => crate::MenuItemSpec::Separator,
+                UiMenuFlyoutItem::Submenu {
+                    id,
+                    label,
+                    enabled,
+                    items,
+                } => {
+                    let id = id.as_str().to_owned();
+                    crate::MenuItemSpec::Submenu {
+                        id: Some(id.clone()),
+                        label,
+                        enabled,
+                        menu: crate::MenuSpec {
+                            id: Some(id),
+                            title: None,
+                            items: compile(items),
+                        },
+                    }
+                }
+            })
+            .collect()
+    }
+
+    let items = property_value(node, properties, "items")
+        .and_then(|value| ui_menu_flyout_items_from_value(&value))
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "items",
+                "a valid non-empty menu_flyout item tree is required",
+            )
+        })?;
+    Ok(crate::MenuSpec {
+        id: Some(node.id.as_str().to_owned()),
+        title: None,
+        items: compile(items),
+    })
 }
 
 #[cfg(feature = "flyout")]
@@ -2775,6 +2927,7 @@ fn grid_gap_property(
     feature = "label",
     feature = "breadcrumb",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "grid",
     feature = "list",
     feature = "progress-ring",
@@ -2843,6 +2996,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "button",
     feature = "breadcrumb",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "toggle",
@@ -3217,6 +3371,7 @@ fn optional_grid_view_item_id_property(
     feature = "label",
     feature = "button",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "tooltip",
     feature = "teaching-tip",
     feature = "toggle-button",
@@ -3240,6 +3395,7 @@ fn string_property(
     feature = "button",
     feature = "breadcrumb",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "toggle",
@@ -3514,6 +3670,7 @@ mod tests {
         feature = "command-palette",
         feature = "breadcrumb",
         feature = "flyout",
+        feature = "menu-flyout",
         feature = "tree",
         feature = "grid-view",
         feature = "grid",
@@ -3528,6 +3685,7 @@ mod tests {
         feature = "grid",
         feature = "label",
         feature = "flyout",
+        feature = "menu-flyout",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button")
     ))]
@@ -4204,6 +4362,178 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "expanded"
+        ));
+    }
+
+    #[cfg(all(feature = "menu-flyout", feature = "button", feature = "label"))]
+    #[test]
+    fn compiles_controlled_menu_flyout_and_emits_stable_nested_item_ids() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "file-menu",
+                "component": "menu_flyout",
+                "property_bindings": {
+                  "open": "file_menu_open",
+                  "target": "file_menu_target",
+                  "items": "file_menu_items"
+                },
+                "action_bindings": {
+                  "invoke": "file_menu_invoked",
+                  "open_change": "file_menu_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "open-file-menu",
+                        "component": "button",
+                        "properties": { "label": "File" }
+                      },
+                      {
+                        "id": "page-copy",
+                        "component": "text",
+                        "properties": { "text": "Platform menu content" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "file_menu_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "file_menu_target".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "file_menu_items".to_owned(),
+                    crate::ui_document::UiValueType::MenuFlyoutItemArray,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "file_menu_invoked".to_owned(),
+                    crate::ui_document::UiValueType::MenuFlyoutItemId,
+                ),
+                (
+                    "file_menu_open_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let items = serde_json::json!([
+            {
+              "kind": "command",
+              "id": "save",
+              "label": "Save",
+              "accelerator": { "key": "S", "primary": true }
+            },
+            { "kind": "separator" },
+            {
+              "kind": "submenu",
+              "id": "more",
+              "label": "More",
+              "items": [
+                {
+                  "kind": "command",
+                  "id": "export-pdf",
+                  "label": "Export PDF"
+                }
+              ]
+            }
+        ]);
+        let values = BTreeMap::from([
+            ("file_menu_open".to_owned(), Value::Bool(true)),
+            (
+                "file_menu_target".to_owned(),
+                Value::String("open-file-menu".to_owned()),
+            ),
+            ("file_menu_items".to_owned(), items),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let target = document.root.children[0].children[0].id.widget_id();
+        let (state, menu) = view
+            .widget_menu_flyout_state(widget)
+            .expect("compiled MenuFlyout state");
+        assert!(state.open);
+        assert_eq!(state.target, target);
+        assert_eq!(menu.items.len(), 3);
+        assert!(matches!(
+            &menu.items[0],
+            crate::MenuItemSpec::Command {
+                id: Some(id),
+                command: crate::Command::Custom { id: command_id, payload: None },
+                accelerator: Some(accelerator),
+                ..
+            } if id == "save" && command_id == "save" && accelerator.uses_primary()
+        ));
+
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 720,
+                height: 420,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        assert!(view.interaction_plan().hit_targets.iter().any(|target| {
+            matches!(
+                target.kind,
+                crate::ViewHitTargetKind::MenuFlyoutItem { path, .. }
+                    if path == crate::ZsMenuFlyoutPath::root(0)
+            )
+        }));
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::MenuFlyoutInvoked {
+                widget,
+                path: crate::ZsMenuFlyoutPath::root(0),
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(invoked), Msg::Action(closed)] = messages.as_slice() else {
+            panic!("menu invocation must emit the semantic item id and controlled close state");
+        };
+        assert_eq!(invoked.binding, "file_menu_invoked");
+        assert_eq!(invoked.property_binding, None);
+        assert_eq!(invoked.payload, Value::String("save".to_owned()));
+        assert_eq!(closed.binding, "file_menu_open_changed");
+        assert_eq!(closed.property_binding.as_deref(), Some("file_menu_open"));
+        assert_eq!(closed.payload, Value::Bool(false));
+        assert!(view
+            .widget_menu_flyout_state(widget)
+            .is_some_and(|(state, _)| !state.open));
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "file_menu_items".to_owned(),
+            serde_json::json!([
+                { "kind": "command", "id": "same", "label": "First" },
+                { "kind": "command", "id": "same", "label": "Second" }
+            ]),
+        );
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::Validation { diagnostics })
+                if diagnostics.iter().any(|diagnostic|
+                    diagnostic.code
+                        == crate::ui_document::UiDiagnosticCode::BindingValueTypeMismatch
+                        && diagnostic.path == "$.file_menu_items")
         ));
     }
 

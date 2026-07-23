@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "file_menu_open": "boolean",
+    "file_menu_items": "menu_flyout_item_array"
+  },
+  "actions": {
+    "file_menu_invoked": "menu_flyout_item_id",
+    "file_menu_open_changed": "boolean"
+  }
+}

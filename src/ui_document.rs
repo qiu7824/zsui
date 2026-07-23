@@ -420,6 +420,268 @@ impl UiBreadcrumbItem {
     }
 }
 
+/// Stable author-facing identity for one document-backed MenuFlyout item.
+///
+/// Commands and submenus share one identity namespace across the complete
+/// nested menu. Separators deliberately have no identity.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiMenuFlyoutItemId(String);
+
+impl UiMenuFlyoutItemId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiMenuFlyoutItemIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiMenuFlyoutItemIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiMenuFlyoutItemId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiMenuFlyoutItemIdError {
+    value: String,
+}
+
+impl fmt::Display for UiMenuFlyoutItemIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "menu-flyout item id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiMenuFlyoutItemIdError {}
+
+/// Platform-neutral accelerator declared by a document-backed MenuFlyout.
+///
+/// `primary` maps to Control on Windows/Linux and Command on macOS. Keys use a
+/// canonical portable spelling: one uppercase ASCII alphanumeric character,
+/// `enter`, `escape`, `tab`, `space`, `backspace`, `delete`, `up`, `down`,
+/// `left`, `right`, `home`, `end`, `page_up`, `page_down`, or `f1` through
+/// `f24`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiMenuFlyoutAccelerator {
+    key: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    primary: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    shift: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    alt: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    super_key: bool,
+}
+
+impl UiMenuFlyoutAccelerator {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiMenuFlyoutAcceleratorError> {
+        let value = value.into();
+        let Some(key) = canonical_menu_flyout_accelerator_key(&value) else {
+            return Err(UiMenuFlyoutAcceleratorError { value });
+        };
+        Ok(Self {
+            key,
+            primary: false,
+            shift: false,
+            alt: false,
+            super_key: false,
+        })
+    }
+
+    pub const fn primary(mut self) -> Self {
+        self.primary = true;
+        self
+    }
+
+    pub const fn shifted(mut self) -> Self {
+        self.shift = true;
+        self
+    }
+
+    pub const fn with_alt(mut self) -> Self {
+        self.alt = true;
+        self
+    }
+
+    pub const fn with_super(mut self) -> Self {
+        self.super_key = true;
+        self
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub const fn uses_primary(&self) -> bool {
+        self.primary
+    }
+
+    pub const fn uses_shift(&self) -> bool {
+        self.shift
+    }
+
+    pub const fn uses_alt(&self) -> bool {
+        self.alt
+    }
+
+    pub const fn uses_super(&self) -> bool {
+        self.super_key
+    }
+
+    pub(crate) fn native_accelerator(&self) -> Option<crate::ZsAccelerator> {
+        let canonical = canonical_menu_flyout_accelerator_key(&self.key)?;
+        if canonical != self.key {
+            return None;
+        }
+        let key = native_menu_flyout_accelerator_key(&canonical)?;
+        let mut accelerator = crate::ZsAccelerator::new(key);
+        if self.primary {
+            accelerator = crate::ZsAccelerator::primary(key);
+        }
+        if self.shift {
+            accelerator = accelerator.shifted();
+        }
+        if self.alt {
+            accelerator = accelerator.with_alt();
+        }
+        if self.super_key {
+            accelerator = accelerator.with_super();
+        }
+        accelerator.validate().ok().map(|()| accelerator)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiMenuFlyoutAcceleratorError {
+    value: String,
+}
+
+impl fmt::Display for UiMenuFlyoutAcceleratorError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "menu-flyout accelerator key {:?} is not a canonical portable key",
+            self.value
+        )
+    }
+}
+
+impl Error for UiMenuFlyoutAcceleratorError {}
+
+/// One command, separator or submenu in a document-backed MenuFlyout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UiMenuFlyoutItem {
+    Command {
+        id: UiMenuFlyoutItemId,
+        label: String,
+        #[serde(default = "ui_menu_flyout_item_enabled_default")]
+        enabled: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        checked: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accelerator: Option<UiMenuFlyoutAccelerator>,
+    },
+    Separator,
+    Submenu {
+        id: UiMenuFlyoutItemId,
+        label: String,
+        #[serde(default = "ui_menu_flyout_item_enabled_default")]
+        enabled: bool,
+        items: Vec<Self>,
+    },
+}
+
+impl UiMenuFlyoutItem {
+    pub fn command(id: UiMenuFlyoutItemId, label: impl Into<String>) -> Self {
+        Self::Command {
+            id,
+            label: label.into(),
+            enabled: true,
+            checked: false,
+            accelerator: None,
+        }
+    }
+
+    pub const fn separator() -> Self {
+        Self::Separator
+    }
+
+    pub fn submenu(
+        id: UiMenuFlyoutItemId,
+        label: impl Into<String>,
+        items: impl IntoIterator<Item = Self>,
+    ) -> Self {
+        Self::Submenu {
+            id,
+            label: label.into(),
+            enabled: true,
+            items: items.into_iter().collect(),
+        }
+    }
+
+    pub const fn enabled(mut self, value: bool) -> Self {
+        match &mut self {
+            Self::Command { enabled, .. } | Self::Submenu { enabled, .. } => *enabled = value,
+            Self::Separator => {}
+        }
+        self
+    }
+
+    pub const fn checked(mut self, value: bool) -> Self {
+        if let Self::Command { checked, .. } = &mut self {
+            *checked = value;
+        }
+        self
+    }
+
+    pub fn accelerator(mut self, value: UiMenuFlyoutAccelerator) -> Self {
+        if let Self::Command { accelerator, .. } = &mut self {
+            *accelerator = Some(value);
+        }
+        self
+    }
+
+    pub fn id(&self) -> Option<&UiMenuFlyoutItemId> {
+        match self {
+            Self::Command { id, .. } | Self::Submenu { id, .. } => Some(id),
+            Self::Separator => None,
+        }
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        match self {
+            Self::Command { label, .. } | Self::Submenu { label, .. } => Some(label),
+            Self::Separator => None,
+        }
+    }
+
+    pub fn child_items(&self) -> &[Self] {
+        match self {
+            Self::Submenu { items, .. } => items,
+            _ => &[],
+        }
+    }
+}
+
+const fn ui_menu_flyout_item_enabled_default() -> bool {
+    true
+}
+
 /// Stable author-facing identity for one document-backed auto-suggest item.
 ///
 /// The identity is independent from declaration order. The runtime derives a
@@ -932,6 +1194,8 @@ pub enum UiValueType {
     Time,
     Color,
     FlyoutDismissReason,
+    MenuFlyoutItemId,
+    MenuFlyoutItemArray,
     BreadcrumbItemId,
     BreadcrumbItemArray,
     AutoSuggestionId,
@@ -976,6 +1240,8 @@ impl UiValueType {
             Self::FlyoutDismissReason => value
                 .as_str()
                 .is_some_and(|value| matches!(value, "light_dismiss" | "escape")),
+            Self::MenuFlyoutItemId => ui_menu_flyout_item_id_from_value(value).is_some(),
+            Self::MenuFlyoutItemArray => ui_menu_flyout_items_from_value(value).is_some(),
             Self::BreadcrumbItemId => ui_breadcrumb_item_id_from_value(value).is_some(),
             Self::BreadcrumbItemArray => ui_breadcrumb_items_from_value(value).is_some(),
             Self::AutoSuggestionId => ui_auto_suggestion_id_from_value(value).is_some(),
@@ -1013,6 +1279,130 @@ impl UiValueType {
             Self::Any => true,
         }
     }
+}
+
+fn canonical_menu_flyout_accelerator_key(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.len() == 1 {
+        let key = value.as_bytes()[0];
+        return key
+            .is_ascii_alphanumeric()
+            .then(|| char::from(key).to_ascii_uppercase().to_string());
+    }
+
+    let value = value.to_ascii_lowercase();
+    if matches!(
+        value.as_str(),
+        "enter"
+            | "escape"
+            | "tab"
+            | "space"
+            | "backspace"
+            | "delete"
+            | "up"
+            | "down"
+            | "left"
+            | "right"
+            | "home"
+            | "end"
+            | "page_up"
+            | "page_down"
+    ) {
+        return Some(value);
+    }
+    value
+        .strip_prefix('f')
+        .and_then(|number| number.parse::<u8>().ok())
+        .filter(|number| (1..=24).contains(number))
+        .map(|number| format!("f{number}"))
+}
+
+fn native_menu_flyout_accelerator_key(value: &str) -> Option<crate::ZsAcceleratorKey> {
+    Some(match value {
+        "enter" => crate::ZsAcceleratorKey::Enter,
+        "escape" => crate::ZsAcceleratorKey::Escape,
+        "tab" => crate::ZsAcceleratorKey::Tab,
+        "space" => crate::ZsAcceleratorKey::Space,
+        "backspace" => crate::ZsAcceleratorKey::Backspace,
+        "delete" => crate::ZsAcceleratorKey::Delete,
+        "up" => crate::ZsAcceleratorKey::Up,
+        "down" => crate::ZsAcceleratorKey::Down,
+        "left" => crate::ZsAcceleratorKey::Left,
+        "right" => crate::ZsAcceleratorKey::Right,
+        "home" => crate::ZsAcceleratorKey::Home,
+        "end" => crate::ZsAcceleratorKey::End,
+        "page_up" => crate::ZsAcceleratorKey::PageUp,
+        "page_down" => crate::ZsAcceleratorKey::PageDown,
+        value if value.len() == 1 && value.as_bytes()[0].is_ascii_alphanumeric() => {
+            crate::ZsAcceleratorKey::Character(char::from(value.as_bytes()[0]))
+        }
+        value => crate::ZsAcceleratorKey::Function(
+            value
+                .strip_prefix('f')?
+                .parse::<u8>()
+                .ok()
+                .filter(|number| (1..=24).contains(number))?,
+        ),
+    })
+}
+
+fn ui_menu_flyout_item_id_from_value(value: &Value) -> Option<UiMenuFlyoutItemId> {
+    value
+        .as_str()
+        .and_then(|value| UiMenuFlyoutItemId::new(value).ok())
+}
+
+pub(crate) fn ui_menu_flyout_items_from_value(value: &Value) -> Option<Vec<UiMenuFlyoutItem>> {
+    fn valid(
+        items: &[UiMenuFlyoutItem],
+        depth: usize,
+        ids: &mut BTreeSet<UiMenuFlyoutItemId>,
+    ) -> bool {
+        if items.is_empty()
+            || matches!(items.first(), Some(UiMenuFlyoutItem::Separator))
+            || matches!(items.last(), Some(UiMenuFlyoutItem::Separator))
+        {
+            return false;
+        }
+        let mut previous_separator = false;
+        items.iter().all(|item| {
+            let separator = matches!(item, UiMenuFlyoutItem::Separator);
+            if separator {
+                let valid = !previous_separator;
+                previous_separator = true;
+                return valid;
+            }
+            previous_separator = false;
+            match item {
+                UiMenuFlyoutItem::Command {
+                    id,
+                    label,
+                    accelerator,
+                    ..
+                } => {
+                    is_valid_node_id(id.as_str())
+                        && ids.insert(id.clone())
+                        && !label.trim().is_empty()
+                        && accelerator
+                            .as_ref()
+                            .is_none_or(|accelerator| accelerator.native_accelerator().is_some())
+                }
+                UiMenuFlyoutItem::Submenu {
+                    id, label, items, ..
+                } => {
+                    depth < 8
+                        && is_valid_node_id(id.as_str())
+                        && ids.insert(id.clone())
+                        && !label.trim().is_empty()
+                        && valid(items, depth.saturating_add(1), ids)
+                }
+                UiMenuFlyoutItem::Separator => unreachable!(),
+            }
+        })
+    }
+
+    let items = serde_json::from_value::<Vec<UiMenuFlyoutItem>>(value.clone()).ok()?;
+    valid(&items, 1, &mut BTreeSet::new()).then_some(items)
 }
 
 fn ui_breadcrumb_item_id_from_value(value: &Value) -> Option<UiBreadcrumbItemId> {
@@ -2114,6 +2504,18 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers one complete MenuFlyout tree with stable semantic item IDs.
+    #[cfg(feature = "menu-flyout")]
+    pub fn register_menu_flyout_items_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiMenuFlyoutItem> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::MenuFlyoutItemArray, move |state| {
+            serde_json::to_value(read(state)).expect("menu-flyout metadata must serialize")
+        })
+    }
+
     /// Registers application-owned suggestions with stable semantic IDs.
     #[cfg(feature = "auto-suggest")]
     pub fn register_auto_suggestions_property(
@@ -2345,6 +2747,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                 }
             };
             map(reason)
+        })
+    }
+
+    /// Registers a strongly typed MenuFlyout command invocation.
+    #[cfg(feature = "menu-flyout")]
+    pub fn register_menu_flyout_item_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiMenuFlyoutItemId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::MenuFlyoutItemId, move |payload| {
+            let id = ui_menu_flyout_item_id_from_value(&payload)
+                .ok_or_else(|| "menu-flyout payload must be a valid stable string id".to_owned())?;
+            map(id)
         })
     }
 
@@ -3896,6 +4312,45 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "menu_flyout" {
+            let static_target = (!node.property_bindings.contains_key("target")
+                && !node.localization.contains_key("target"))
+            .then(|| node.properties.get("target").and_then(Value::as_str))
+            .flatten();
+            if node.localization.contains_key("target") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidLocalization,
+                    format!("{path}.localization.target"),
+                    "menu_flyout target is a stable node id and cannot be localized".to_owned(),
+                );
+            }
+            if let Some(target) = static_target {
+                let target_exists = node
+                    .children
+                    .first()
+                    .is_some_and(|page| ui_node_contains_id(page, target));
+                if !target_exists {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.target"),
+                        "menu_flyout target must reference a node in its page child".to_owned(),
+                    );
+                }
+            }
+            if node.property_bindings.contains_key("open")
+                && !node.action_bindings.contains_key("open_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.open"),
+                    "bound menu_flyout open state requires an open_change action".to_owned(),
+                );
+            }
+        }
+
         if node.component == "content_dialog" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -4783,6 +5238,33 @@ const FLYOUT_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::Boolean,
     },
 ];
+const MENU_FLYOUT_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "target",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "items",
+        value_type: UiValueType::MenuFlyoutItemArray,
+        required: true,
+    },
+];
+const MENU_FLYOUT_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "invoke",
+        payload_type: UiValueType::MenuFlyoutItemId,
+    },
+    ActionSpec {
+        name: "open_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const INFO_BAR_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "message",
@@ -5004,6 +5486,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: FLYOUT_PROPERTIES,
             actions: FLYOUT_ACTIONS,
             children: ChildPolicy::Exactly(2),
+        }),
+        "menu_flyout" => Some(ComponentSchema {
+            properties: MENU_FLYOUT_PROPERTIES,
+            actions: MENU_FLYOUT_ACTIONS,
+            children: ChildPolicy::Exactly(1),
         }),
         "info_bar" => Some(leaf(INFO_BAR_PROPERTIES, INFO_BAR_ACTIONS)),
         "toast" => Some(ComponentSchema {
@@ -5755,6 +6242,88 @@ mod tests {
         assert!(!UiValueType::FlyoutDismissReason.matches(&Value::String("resize".to_owned())));
     }
 
+    #[cfg(feature = "menu-flyout")]
+    #[test]
+    fn typed_menu_flyout_bindings_preserve_nested_ids_and_portable_accelerators() {
+        struct MenuState {
+            items: Vec<UiMenuFlyoutItem>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum Msg {
+            Invoked(UiMenuFlyoutItemId),
+        }
+
+        let save = UiMenuFlyoutItemId::new("save").unwrap();
+        let more = UiMenuFlyoutItemId::new("more").unwrap();
+        let export = UiMenuFlyoutItemId::new("export-pdf").unwrap();
+        let mut manifest = UiBindingManifest::<MenuState, Msg>::new();
+        manifest
+            .register_menu_flyout_items_property("file_items", |state| state.items.clone())
+            .unwrap();
+        manifest
+            .register_menu_flyout_item_id_action("file_invoked", |id| Ok(Msg::Invoked(id)))
+            .unwrap();
+
+        let state = MenuState {
+            items: vec![
+                UiMenuFlyoutItem::command(save, "Save")
+                    .accelerator(UiMenuFlyoutAccelerator::new("s").unwrap().primary()),
+                UiMenuFlyoutItem::separator(),
+                UiMenuFlyoutItem::submenu(
+                    more,
+                    "More",
+                    [UiMenuFlyoutItem::command(export.clone(), "Export PDF")],
+                ),
+            ],
+        };
+        let value = manifest.read_property("file_items", &state).unwrap();
+        assert!(UiValueType::MenuFlyoutItemArray.matches(&value));
+        assert_eq!(value[0]["accelerator"]["key"], "S");
+        assert_eq!(value[0]["accelerator"]["primary"], true);
+        assert_eq!(
+            manifest.map_action("file_invoked", Value::String("export-pdf".to_owned())),
+            Ok(Msg::Invoked(export))
+        );
+        assert_eq!(
+            manifest.schema().properties["file_items"],
+            UiValueType::MenuFlyoutItemArray
+        );
+        assert_eq!(
+            manifest.schema().actions["file_invoked"],
+            UiValueType::MenuFlyoutItemId
+        );
+
+        assert!(
+            !UiValueType::MenuFlyoutItemArray.matches(&serde_json::json!([
+                { "kind": "command", "id": "duplicate", "label": "First" },
+                {
+                  "kind": "submenu",
+                  "id": "more",
+                  "label": "More",
+                  "items": [
+                    { "kind": "command", "id": "duplicate", "label": "Second" }
+                  ]
+                }
+            ]))
+        );
+        assert!(
+            !UiValueType::MenuFlyoutItemArray.matches(&serde_json::json!([
+                {
+                  "kind": "command",
+                  "id": "save",
+                  "label": "Save",
+                  "accelerator": { "key": "s", "primary": true }
+                }
+            ]))
+        );
+        assert!(
+            !UiValueType::MenuFlyoutItemArray.matches(&serde_json::json!([
+                { "kind": "separator" },
+                { "kind": "command", "id": "save", "label": "Save" }
+            ]))
+        );
+    }
+
     #[cfg(feature = "breadcrumb")]
     #[test]
     fn typed_breadcrumb_bindings_preserve_path_ids_and_labels() {
@@ -6169,6 +6738,116 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.highlighted"
+        }));
+    }
+
+    #[test]
+    fn menu_flyout_contract_validates_target_tree_and_controlled_open_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "file-menu",
+                "component": "menu_flyout",
+                "properties": {
+                  "target": "open-file-menu",
+                  "items": [
+                    {
+                      "kind": "command",
+                      "id": "save",
+                      "label": "Save",
+                      "accelerator": { "key": "S", "primary": true }
+                    },
+                    { "kind": "separator" },
+                    {
+                      "kind": "submenu",
+                      "id": "more",
+                      "label": "More",
+                      "items": [
+                        {
+                          "kind": "command",
+                          "id": "export-pdf",
+                          "label": "Export PDF"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "property_bindings": { "open": "file_menu_open" },
+                "action_bindings": {
+                  "invoke": "file_menu_invoked",
+                  "open_change": "file_menu_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "open-file-menu",
+                        "component": "button",
+                        "properties": { "label": "File" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("file_menu_open".to_owned(), UiValueType::Boolean)]),
+            actions: BTreeMap::from([
+                (
+                    "file_menu_invoked".to_owned(),
+                    UiValueType::MenuFlyoutItemId,
+                ),
+                ("file_menu_open_changed".to_owned(), UiValueType::Boolean),
+            ]),
+        };
+        let features = UiFeatureSet::new(["menu-flyout", "button", "label"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let mut invalid_target = valid.clone();
+        invalid_target.root.properties.insert(
+            "target".to_owned(),
+            Value::String("missing-target".to_owned()),
+        );
+        let report = invalid_target.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.target"
+        }));
+
+        let mut invalid_items = valid.clone();
+        invalid_items.root.properties.insert(
+            "items".to_owned(),
+            serde_json::json!([
+                { "kind": "command", "id": "same", "label": "First" },
+                {
+                  "kind": "submenu",
+                  "id": "more",
+                  "label": "More",
+                  "items": [
+                    { "kind": "command", "id": "same", "label": "Second" }
+                  ]
+                }
+            ]),
+        );
+        let report = invalid_items.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyType
+                && diagnostic.path == "$.root.properties.items"
+        }));
+
+        let mut uncontrolled = valid;
+        uncontrolled.root.action_bindings.remove("open_change");
+        let report = uncontrolled.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.property_bindings.open"
         }));
     }
 

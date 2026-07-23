@@ -16,6 +16,7 @@ impl WidgetId {
     feature = "breadcrumb",
     feature = "command-palette",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -47,6 +48,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "breadcrumb",
     feature = "command-palette",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -78,6 +80,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "breadcrumb",
     feature = "command-palette",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -127,6 +130,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "breadcrumb",
     feature = "command-palette",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -168,6 +172,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "breadcrumb",
     feature = "command-palette",
     feature = "flyout",
+    feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
     feature = "textbox",
@@ -929,8 +934,8 @@ pub enum ViewNodeKind<Msg> {
         target: WidgetId,
         highlighted: Option<crate::ZsMenuFlyoutPath>,
         open_submenus: Vec<crate::ZsMenuFlyoutPath>,
-        on_command: Option<fn(crate::Command) -> Msg>,
-        on_open_change: Option<fn(bool) -> Msg>,
+        on_command: Option<ViewMessageMapper<crate::Command, Msg>>,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "command-palette")]
     CommandPalette {
@@ -2024,7 +2029,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "menu-flyout")]
     pub fn on_menu_flyout_command(mut self, message: fn(crate::Command) -> Msg) -> Self {
         if let ViewNodeKind::MenuFlyout { on_command, .. } = &mut self.kind {
-            *on_command = Some(message);
+            *on_command = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub fn on_menu_flyout_command_with(
+        mut self,
+        message: impl Fn(crate::Command) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::MenuFlyout { on_command, .. } = &mut self.kind {
+            *on_command = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2032,7 +2048,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "menu-flyout")]
     pub fn on_menu_flyout_open_change(mut self, message: fn(bool) -> Msg) -> Self {
         if let ViewNodeKind::MenuFlyout { on_open_change, .. } = &mut self.kind {
-            *on_open_change = Some(message);
+            *on_open_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "menu-flyout")]
+    pub fn on_menu_flyout_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::MenuFlyout { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

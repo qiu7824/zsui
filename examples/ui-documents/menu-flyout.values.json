@@ -1,0 +1,49 @@
+{
+  "file_menu_open": true,
+  "file_menu_items": [
+    {
+      "kind": "command",
+      "id": "new-file",
+      "label": "新建 / New",
+      "accelerator": {
+        "key": "N",
+        "primary": true
+      }
+    },
+    {
+      "kind": "command",
+      "id": "save",
+      "label": "保存 / Save",
+      "accelerator": {
+        "key": "S",
+        "primary": true
+      }
+    },
+    {
+      "kind": "command",
+      "id": "auto-save",
+      "label": "自动保存 / Auto save",
+      "checked": true
+    },
+    {
+      "kind": "separator"
+    },
+    {
+      "kind": "submenu",
+      "id": "export",
+      "label": "导出 / Export",
+      "items": [
+        {
+          "kind": "command",
+          "id": "export-pdf",
+          "label": "PDF 文档 / PDF document"
+        },
+        {
+          "kind": "command",
+          "id": "export-markdown",
+          "label": "Markdown 文档 / Markdown document"
+        }
+      ]
+    }
+  ]
+}

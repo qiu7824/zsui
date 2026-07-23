@@ -585,19 +585,7 @@ fn menu_surface_size(
         .map(|label| crate::widget_render::zs_estimated_text_width_px(label, text_unit))
         .max()
         .unwrap_or_default();
-    let accelerator_width = menu
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            MenuItemSpec::Command {
-                accelerator: Some(value),
-                ..
-            } => Some(menu_accelerator_label(*value, platform)),
-            _ => None,
-        })
-        .map(|label| crate::widget_render::zs_estimated_text_width_px(&label, text_unit))
-        .max()
-        .unwrap_or_default();
+    let accelerator_width = menu_accelerator_column_width(menu, platform, text_unit);
     let has_submenu = menu
         .items
         .iter()
@@ -669,19 +657,7 @@ fn menu_rows(
         .then(|| metrics.submenu_width.to_px(dpi).round_i32().max(0))
         .unwrap_or_default();
     let text_unit = Dp::new(7.0).to_px(dpi).round_i32().max(1);
-    let accelerator_width = menu
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            MenuItemSpec::Command {
-                accelerator: Some(value),
-                ..
-            } => Some(menu_accelerator_label(*value, platform)),
-            _ => None,
-        })
-        .map(|label| crate::widget_render::zs_estimated_text_width_px(&label, text_unit))
-        .max()
-        .unwrap_or_default();
+    let accelerator_width = menu_accelerator_column_width(menu, platform, text_unit);
     let accelerator_gap = (accelerator_width > 0)
         .then(|| metrics.accelerator_gap.to_px(dpi).round_i32().max(0))
         .unwrap_or_default();
@@ -869,6 +845,29 @@ fn menu_item_label(item: &MenuItemSpec) -> Option<&str> {
         MenuItemSpec::Command { label, .. } | MenuItemSpec::Submenu { label, .. } => Some(label),
         MenuItemSpec::Separator => None,
     }
+}
+
+fn menu_accelerator_column_width(
+    menu: &MenuSpec,
+    platform: ZsMenuFlyoutPlatformStyle,
+    text_unit: i32,
+) -> i32 {
+    menu.items
+        .iter()
+        .filter_map(|item| match item {
+            MenuItemSpec::Command {
+                accelerator: Some(value),
+                ..
+            } => Some(menu_accelerator_label(*value, platform)),
+            _ => None,
+        })
+        .map(|label| crate::widget_render::zs_estimated_text_width_px(&label, text_unit))
+        .max()
+        // The lightweight estimate is a layout floor, not exact shaping.
+        // Keep one text unit of guard so wider platform glyphs never trigger
+        // renderer ellipsis in an otherwise unconstrained menu column.
+        .map(|width| width.saturating_add(text_unit))
+        .unwrap_or_default()
 }
 
 fn menu_accelerator_label(
@@ -1084,8 +1083,13 @@ mod tests {
             "自动保存 / Auto save",
             Dp::new(7.0).to_px(Dpi::standard()).round_i32(),
         );
+        let accelerator_expected = crate::widget_render::zs_estimated_text_width_px(
+            "Ctrl+S",
+            Dp::new(7.0).to_px(Dpi::standard()).round_i32(),
+        );
 
         assert!(plan.rows[1].label_bounds.width >= expected);
+        assert!(plan.rows[0].accelerator_bounds.width > accelerator_expected);
         assert!(plan.rows[0].accelerator_bounds.width < 96);
     }
 
