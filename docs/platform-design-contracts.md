@@ -31,6 +31,11 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 标签文字 | `TabViewItemHeaderFontSize` 是 12 epx，图标为 16 epx，图标后间距 10 epx；标签仍与图标位于同一行，不把 Windows 的 12 epx 值复制到 AppKit/GTK |
 | 框架窗口标题 | `WindowTitle` 使用系统 UI 字体、24/32 epx 和 Semibold；这是 ZSClip 桌面壳层的标题语义，不把内容 `Title` 的 28/36 epx 强行用于窗口标题 |
 
+Windows 文字族由 Win32 `SPI_GETNONCLIENTMETRICS.message_font` 在运行时解析，
+与 ZSClip 设置界面使用同一套系统消息字体（当前系统通常是 `Microsoft YaHei UI`）。
+`Segoe UI` 只作为系统查询失败或字体不可用时的框架回退；Demo 和组件实现不得直接
+写入字体族。
+
 ## macOS / AppKit
 
 实现依据：
@@ -120,3 +125,8 @@ GTK 的 HIG 同样没有承诺所有主题都使用同一像素高度。ZSUI 只
 如果官方规范没有给出跨版本固定像素，ZSUI 不得自行编造一个“系统默认值”；应使用语义枚举、主题查询或后端运行时度量。
 
 `toolbar_button` 和 `command_bar(ZsCommandBarSpec)` 是上述工具栏契约的共享实现入口。`section`、`navigation_view(ZsNavigationViewSpec)` 同样不接受平台枚举。需要自适应侧边栏时，应用通过 `.minimum_content_width(...)` 和 `.content(WidgetId, ViewNode)` 声明内容约束与稳定身份；显示模式、覆盖层、焦点和平台参数全部由框架解析。应用只提供语义动作和强类型消息，不在 Demo 内复制 AppKit、GTK 或 WinUI 的分组分支；确定性平台选择只保留为框架内部验收钩子。
+
+所有 Demo 标签都应通过 `text`/`styled_text` 的 `TextRole` 语义入口创建。字体族、
+字号、行高、字重和文字塑形由 `NativeTypographyProfile` 与平台后端共同解析；共享
+字体解析器同时服务布局、绘制、文本输入和 Native Proof，Demo 不得自建字体表或
+绕过框架传入平台字体名。

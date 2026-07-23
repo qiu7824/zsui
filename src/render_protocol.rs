@@ -274,17 +274,35 @@ impl NativeTypographyProfile {
     }
 
     pub fn font_family_for(&self, role: TextRole) -> &str {
-        match role {
-            TextRole::Monospace => &self.monospace_font_family,
-            TextRole::Icon => &self.icon_font_family,
-            TextRole::Caption => &self.small_font_family,
-            TextRole::Subtitle
-            | TextRole::WindowTitle
-            | TextRole::Title
-            | TextRole::TitleLarge
-            | TextRole::Display => &self.display_font_family,
-            _ => &self.ui_font_family,
-        }
+        semantic_font_family_for_role(
+            role,
+            &self.ui_font_family,
+            &self.small_font_family,
+            &self.display_font_family,
+            &self.monospace_font_family,
+            &self.icon_font_family,
+        )
+    }
+}
+
+pub(crate) fn semantic_font_family_for_role<'a>(
+    role: TextRole,
+    ui_font_family: &'a str,
+    small_font_family: &'a str,
+    display_font_family: &'a str,
+    monospace_font_family: &'a str,
+    icon_font_family: &'a str,
+) -> &'a str {
+    match role {
+        TextRole::Monospace => monospace_font_family,
+        TextRole::Icon => icon_font_family,
+        TextRole::Caption => small_font_family,
+        TextRole::Subtitle
+        | TextRole::WindowTitle
+        | TextRole::Title
+        | TextRole::TitleLarge
+        | TextRole::Display => display_font_family,
+        _ => ui_font_family,
     }
 }
 
@@ -442,6 +460,37 @@ impl TextStyle {
 
 pub trait NativeStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle;
+}
+
+/// Resolve semantic text through the host's typography profile.
+///
+/// Backends own their native color surface, but share family selection,
+/// role metrics, weight and layout flags. Applications therefore stay on
+/// `TextRole` values while each host supplies the system font it discovered.
+#[allow(dead_code)]
+pub(crate) fn resolve_semantic_text_style(
+    metrics: ZsTypographyMetrics,
+    font_family: &str,
+    color: Color,
+    style: SemanticTextStyle,
+) -> TextStyle {
+    let weight = if style.weight == TextWeight::Automatic {
+        metrics.default_weight
+    } else {
+        style.weight
+    };
+    TextStyle {
+        font_family: font_family.to_string(),
+        size: metrics.size,
+        line_height: metrics.line_height,
+        semantic_role: Some(style.role),
+        weight,
+        color,
+        horizontal_align: style.horizontal_align,
+        vertical_align: style.vertical_align,
+        wrap: style.wrap,
+        ellipsis: style.ellipsis,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

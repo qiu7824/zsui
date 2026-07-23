@@ -1,6 +1,6 @@
 use crate::{
-    Color, ColorRole, NativeDrawFill, NativeStyleResolver, SemanticTextStyle, TextStyle,
-    TextWeight, ZsuiTheme, ZsuiThemeMode,
+    Color, ColorRole, NativeDrawFill, NativeStyleResolver, SemanticTextStyle, TextStyle, ZsuiTheme,
+    ZsuiThemeMode,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,25 +230,12 @@ impl NativeDrawTextStyleResolver {
 
 impl NativeStyleResolver for NativeDrawTextStyleResolver {
     fn resolve_text_style(&self, style: SemanticTextStyle) -> TextStyle {
-        let metrics = self.typography.metrics_for(style.role);
-        let font_family = self.typography.font_family_for(style.role).to_string();
-        let weight = if style.weight == TextWeight::Automatic {
-            metrics.default_weight
-        } else {
-            style.weight
-        };
-        TextStyle {
-            font_family,
-            size: metrics.size,
-            line_height: metrics.line_height,
-            semantic_role: Some(style.role),
-            weight,
-            color: self.palette.resolve(style.color),
-            horizontal_align: style.horizontal_align,
-            vertical_align: style.vertical_align,
-            wrap: style.wrap,
-            ellipsis: style.ellipsis,
-        }
+        crate::render_protocol::resolve_semantic_text_style(
+            self.typography.metrics_for(style.role),
+            self.typography.font_family_for(style.role),
+            self.palette.resolve(style.color),
+            style,
+        )
     }
 }
 

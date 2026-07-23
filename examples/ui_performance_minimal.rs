@@ -3,7 +3,7 @@
 use std::{env, fs};
 
 use zsui::{
-    button, column, native_window, row, spacer, styled_text, text, Dp, NativeWindowSmokeRunOptions,
+    button, column, native_window, row, spacer, styled_text, Dp, NativeWindowSmokeRunOptions,
     SemanticTextStyle, TextRole, ViewNode,
 };
 
@@ -18,7 +18,7 @@ fn view() -> ViewNode<Msg> {
             "发票助手 / Invoice Assistant",
             SemanticTextStyle::for_role(TextRole::Title),
         ),
-        text("Window + Text + Button"),
+        styled_text("Window + Text + Button", SemanticTextStyle::body()),
         button("选择发票 / Choose invoice").on_click(Msg::ChooseInvoice),
     ])
     .gap(Dp::new(16.0))

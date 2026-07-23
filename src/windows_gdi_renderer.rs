@@ -1315,32 +1315,20 @@ impl NativeStyleResolver for WindowsGdiStyleResolver {
         let metrics = style
             .role
             .metrics_for(crate::ZsTypographyPlatformStyle::Windows);
-        TextStyle {
-            font_family: match style.role {
-                crate::TextRole::Monospace => "Consolas".to_string(),
-                crate::TextRole::Icon => self.icon_font_family.clone(),
-                crate::TextRole::Caption => self.small_font_family.clone(),
-                crate::TextRole::Subtitle
-                | crate::TextRole::WindowTitle
-                | crate::TextRole::Title
-                | crate::TextRole::TitleLarge
-                | crate::TextRole::Display => self.display_font_family.clone(),
-                _ => self.font_family.clone(),
-            },
-            size: metrics.size,
-            line_height: metrics.line_height,
-            semantic_role: Some(style.role),
-            weight: if style.weight == TextWeight::Automatic {
-                metrics.default_weight
-            } else {
-                style.weight
-            },
-            color: self.palette.resolve(style.color),
-            horizontal_align: style.horizontal_align,
-            vertical_align: style.vertical_align,
-            wrap: style.wrap,
-            ellipsis: style.ellipsis,
-        }
+        let font_family = crate::render_protocol::semantic_font_family_for_role(
+            style.role,
+            &self.font_family,
+            &self.small_font_family,
+            &self.display_font_family,
+            "Consolas",
+            &self.icon_font_family,
+        );
+        crate::render_protocol::resolve_semantic_text_style(
+            metrics,
+            font_family,
+            self.palette.resolve(style.color),
+            style,
+        )
     }
 }
 
@@ -2346,6 +2334,27 @@ mod tests {
                     .resolve_text_style(SemanticTextStyle::for_role(role))
                     .font_family,
                 system
+            );
+        }
+    }
+
+    #[test]
+    fn public_windows_font_family_overrides_still_flow_through_shared_resolution() {
+        let mut resolver = WindowsGdiStyleResolver::new("Segoe UI", WindowsGdiPalette::default());
+        resolver.font_family = "Microsoft YaHei UI".to_string();
+        resolver.small_font_family = "Microsoft YaHei UI".to_string();
+        resolver.display_font_family = "Microsoft YaHei UI".to_string();
+
+        for role in [
+            crate::TextRole::Caption,
+            crate::TextRole::Body,
+            crate::TextRole::WindowTitle,
+        ] {
+            assert_eq!(
+                resolver
+                    .resolve_text_style(SemanticTextStyle::for_role(role))
+                    .font_family,
+                "Microsoft YaHei UI"
             );
         }
     }

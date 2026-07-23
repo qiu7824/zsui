@@ -3,8 +3,9 @@
 use std::{env, fs};
 
 use zsui::{
-    button, column, native_window, row, text, textbox, toggle, AppCx, Command, CommandId, Dp,
-    NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, Point, UiCommand, ViewNode, WidgetId,
+    button, column, native_window, row, styled_text, textbox, toggle, AppCx, Command, CommandId,
+    Dp, NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, Point, SemanticTextStyle,
+    UiCommand, ViewNode, WidgetId,
 };
 
 const SAVE: WidgetId = WidgetId::new(1);
@@ -26,16 +27,19 @@ struct AppState {
 
 fn view(state: &AppState) -> ViewNode<Msg> {
     column([
-        text(format!("Hello, {}", state.name)),
+        styled_text(format!("Hello, {}", state.name), SemanticTextStyle::body()),
         textbox(&state.name).id(NAME).on_change(Msg::NameChanged),
         row([
-            text("Dark mode"),
+            styled_text("Dark mode", SemanticTextStyle::body()),
             toggle(state.dark_mode)
                 .id(DARK_MODE)
                 .on_toggle(Msg::DarkModeChanged),
         ]),
         button("Save").id(SAVE).on_click(Msg::SaveClicked),
-        text(format!("Saved {} time(s)", state.save_count)),
+        styled_text(
+            format!("Saved {} time(s)", state.save_count),
+            SemanticTextStyle::body(),
+        ),
     ])
     .gap(Dp::new(12.0))
     .padding(Dp::new(20.0))

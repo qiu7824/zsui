@@ -56,6 +56,14 @@ history remain authoritative for implementation status.
   validation. `zsui-uic check` consumes an application-exported binding schema;
   component availability remains tied to Cargo features and the framework
   component catalog.
+- Typography is a framework contract, not a Demo detail. Windows resolves the
+  Win32 `SPI_GETNONCLIENTMETRICS.message_font` at runtime, matching the ZSClip
+  system message font (currently `Microsoft YaHei UI` on the proof host); the
+  Segoe UI profile is only a fallback when the system family cannot be loaded.
+  AppKit and GTK similarly resolve their host system families. `text` and
+  `styled_text` keep Demo code on semantic `TextRole` values, while the shared
+  `resolve_semantic_text_style` path supplies the same family, metrics,
+  weight and layout flags to every native renderer.
 - UiDocument PasswordBox values never use the ordinary JSON property/action
   channel. Documents bind `password_box.value` to a name registered with
   `UiBindingManifest::register_secret_property`; changes use
