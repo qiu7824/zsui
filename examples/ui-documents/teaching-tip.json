@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "save-guidance",
+    "component": "teaching_tip",
+    "properties": {
+      "target": "save-button",
+      "title": "自动保存 / Auto save",
+      "action_label": "查看设置 / Review settings",
+      "placement": "top"
+    },
+    "property_bindings": {
+      "open": "guidance_open",
+      "subtitle": "guidance_subtitle"
+    },
+    "action_bindings": {
+      "result": "guidance_result",
+      "open_change": "guidance_open_changed"
+    },
+    "children": [
+      {
+        "id": "page",
+        "component": "stack",
+        "layout": {
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "title",
+            "component": "text",
+            "properties": {
+              "text": "教学提示 / TeachingTip",
+              "text_role": "subtitle"
+            }
+          },
+          {
+            "id": "save-button",
+            "component": "button",
+            "properties": {
+              "label": "保存 / Save"
+            }
+          },
+          {
+            "id": "summary",
+            "component": "text",
+            "properties": {
+              "text": "稳定 ID 定位，关闭状态可保留。 / Stable target ID; dismissal persists.",
+              "text_role": "body",
+              "wrap": "word",
+              "ellipsis": false
+            },
+            "layout": {
+              "flex": 0
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

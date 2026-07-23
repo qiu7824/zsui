@@ -143,6 +143,8 @@ mod tests {
         ToastResult(crate::ZsToastResult),
         #[cfg(feature = "teaching-tip")]
         TeachingTipResult(crate::ZsTeachingTipResult),
+        #[cfg(feature = "teaching-tip")]
+        TeachingTipOpen(bool),
         #[cfg(feature = "info-bar")]
         InfoBarEvent(crate::ZsInfoBarEvent),
         #[cfg(feature = "breadcrumb")]
@@ -2877,7 +2879,8 @@ mod tests {
             .action("Review settings"),
             spacer::<Msg>().id(target),
         )
-        .on_teaching_tip_result(Msg::TeachingTipResult);
+        .on_teaching_tip_result(Msg::TeachingTipResult)
+        .on_teaching_tip_open_change(Msg::TeachingTipOpen);
         let viewport = Rect {
             x: 0,
             y: 0,
@@ -2925,9 +2928,12 @@ mod tests {
         );
         assert_eq!(
             events.into_messages(),
-            vec![Msg::TeachingTipResult(crate::ZsTeachingTipResult {
-                response: crate::ZsTeachingTipResponse::Action,
-            })]
+            vec![
+                Msg::TeachingTipResult(crate::ZsTeachingTipResult {
+                    response: crate::ZsTeachingTipResponse::Action,
+                }),
+                Msg::TeachingTipOpen(false),
+            ]
         );
         assert!(view
             .widget_teaching_tip_state(presenter)

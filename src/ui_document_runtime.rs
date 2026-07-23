@@ -81,6 +81,7 @@ pub struct UiDocumentSecretAction {
         feature = "dialog",
         feature = "toast",
         feature = "info-bar",
+        feature = "teaching-tip",
         feature = "scroll"
     )),
     allow(dead_code)
@@ -197,6 +198,7 @@ impl<Msg> UiDocumentActionMapper<Msg> {
             feature = "dialog",
             feature = "toast",
             feature = "info-bar",
+            feature = "teaching-tip",
             feature = "scroll"
         )),
         allow(dead_code)
@@ -515,6 +517,128 @@ fn compile_node<Msg: Clone + 'static>(
                 spec = spec.open_delay_ms(open_delay_ms);
             }
             child.tooltip_spec(spec)
+        }
+        #[cfg(feature = "teaching-tip")]
+        "teaching_tip" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(page) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+
+            let title = string_property(node, properties, "title", "");
+            let subtitle = string_property(node, properties, "subtitle", "");
+            for (property, value) in [("title", &title), ("subtitle", &subtitle)] {
+                if node_has_property_source(node, property) && value.trim().is_empty() {
+                    return Err(invalid_resolved_property(
+                        node,
+                        property,
+                        "teaching tip text must not be empty when provided",
+                    ));
+                }
+            }
+            if title.trim().is_empty() && subtitle.trim().is_empty() {
+                return Err(invalid_resolved_property(
+                    node,
+                    "title",
+                    "teaching tip requires a title, subtitle or both",
+                ));
+            }
+            let action_label = optional_string_property(node, properties, "action_label");
+            if action_label
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                return Err(invalid_resolved_property(
+                    node,
+                    "action_label",
+                    "teaching tip action label must not be empty when provided",
+                ));
+            }
+            let placement = match optional_string_property(node, properties, "placement").as_deref()
+            {
+                None | Some("auto") => crate::ZsTeachingTipPlacement::Auto,
+                Some("top") => crate::ZsTeachingTipPlacement::Top,
+                Some("bottom") => crate::ZsTeachingTipPlacement::Bottom,
+                Some("left") => crate::ZsTeachingTipPlacement::Left,
+                Some("right") => crate::ZsTeachingTipPlacement::Right,
+                Some(placement) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "placement",
+                        format!("unsupported teaching tip placement {placement:?}"),
+                    ));
+                }
+            };
+            let target = string_property(node, properties, "target", "");
+            let target = descendant_document_widget_id(node, &target).ok_or_else(|| {
+                invalid_resolved_property(
+                    node,
+                    "target",
+                    "teaching tip target must reference a node in its page subtree",
+                )
+            })?;
+
+            let mut spec =
+                crate::ZsTeachingTipSpec::new(title, subtitle).preferred_placement(placement);
+            if let Some(action_label) = action_label {
+                spec = spec.action(action_label);
+            }
+            let mut control = crate::teaching_tip(
+                node.id.widget_id(),
+                bool_property(node, properties, "open", false),
+                target,
+                spec,
+                page,
+            );
+            if let Some(binding) = node.action_bindings.get("result") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_teaching_tip_result_with(move |result| {
+                    let payload = match result.response {
+                        crate::ZsTeachingTipResponse::Action => "action",
+                        crate::ZsTeachingTipResponse::Dismissed(
+                            crate::ZsTeachingTipDismissReason::CloseButton,
+                        ) => "close",
+                        crate::ZsTeachingTipResponse::Dismissed(
+                            crate::ZsTeachingTipDismissReason::EscapeKey,
+                        ) => "escape",
+                    };
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(payload.to_owned()),
+                    })
+                });
+            }
+            if let Some(binding) = node.action_bindings.get("open_change") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                let property_binding = node.property_bindings.get("open").cloned();
+                control = control.on_teaching_tip_open_change_with(move |open| {
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: property_binding.clone(),
+                        payload: Value::Bool(open),
+                    })
+                });
+            }
+            control
         }
         #[cfg(feature = "info-bar")]
         "info_bar" => {
@@ -1208,6 +1332,25 @@ fn compile_node<Msg: Clone + 'static>(
         view = view.id(node.id.widget_id());
     }
     Ok(apply_layout(view, node))
+}
+
+#[cfg(feature = "teaching-tip")]
+fn descendant_document_widget_id(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
+    fn find(node: &UiNode, id: &str) -> Option<crate::WidgetId> {
+        if node.id.as_str() == id {
+            return Some(node.id.widget_id());
+        }
+        node.children.iter().find_map(|child| find(child, id))
+    }
+
+    node.children.iter().find_map(|child| find(child, id))
+}
+
+#[cfg(feature = "teaching-tip")]
+fn node_has_property_source(node: &UiNode, property: &str) -> bool {
+    node.properties.contains_key(property)
+        || node.property_bindings.contains_key(property)
+        || node.localization.contains_key(property)
 }
 
 #[cfg(feature = "dialog")]
@@ -2448,7 +2591,8 @@ fn grid_gap_property(
     feature = "dialog",
     feature = "tree",
     feature = "grid-view",
-    feature = "tooltip"
+    feature = "tooltip",
+    feature = "teaching-tip"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -2523,7 +2667,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "progress",
     feature = "progress-ring",
     feature = "scroll",
-    feature = "tooltip"
+    feature = "tooltip",
+    feature = "teaching-tip"
 ))]
 fn property_value(
     node: &UiNode,
@@ -2850,6 +2995,7 @@ fn optional_grid_view_item_id_property(
     feature = "label",
     feature = "button",
     feature = "tooltip",
+    feature = "teaching-tip",
     feature = "toggle-button",
     feature = "checkbox",
     feature = "textbox",
@@ -2884,7 +3030,8 @@ fn string_property(
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
-    feature = "progress-ring"
+    feature = "progress-ring",
+    feature = "teaching-tip"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -2941,7 +3088,8 @@ fn nullable_number_property(
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
-    feature = "tooltip"
+    feature = "tooltip",
+    feature = "teaching-tip"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -3144,13 +3292,15 @@ mod tests {
         feature = "list",
         feature = "password-box",
         all(feature = "tooltip", feature = "button"),
+        all(feature = "teaching-tip", feature = "button"),
         all(feature = "label", feature = "button")
     ))]
     use crate::View;
     #[cfg(any(
         feature = "grid",
         feature = "label",
-        all(feature = "tooltip", feature = "button")
+        all(feature = "tooltip", feature = "button"),
+        all(feature = "teaching-tip", feature = "button")
     ))]
     use crate::{Dpi, Rect, ViewLayoutCx};
 
@@ -4725,6 +4875,148 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "text"
+        ));
+    }
+
+    #[cfg(all(feature = "teaching-tip", feature = "button"))]
+    #[test]
+    fn compiles_teaching_tip_and_retains_controlled_dismissal() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "save-guidance",
+                "component": "teaching_tip",
+                "properties": {
+                  "title": "Automatic saving",
+                  "action_label": "Review settings",
+                  "placement": "top"
+                },
+                "property_bindings": {
+                  "open": "guidance_open",
+                  "target": "guidance_target",
+                  "subtitle": "guidance_subtitle"
+                },
+                "action_bindings": {
+                  "result": "guidance_result",
+                  "open_change": "guidance_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "save-button",
+                        "component": "button",
+                        "properties": { "label": "Save" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "guidance_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "guidance_target".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "guidance_subtitle".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "guidance_result".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "guidance_open_changed".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            ("guidance_open".to_owned(), Value::Bool(true)),
+            (
+                "guidance_target".to_owned(),
+                Value::String("save-button".to_owned()),
+            ),
+            (
+                "guidance_subtitle".to_owned(),
+                Value::String("Your changes are saved as you work.".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let target = document.root.children[0].children[0].id.widget_id();
+        let crate::ViewNodeKind::TeachingTip {
+            spec,
+            open,
+            target: actual_target,
+            ..
+        } = &view.kind
+        else {
+            panic!("document must compile to a TeachingTip");
+        };
+        assert!(*open);
+        assert_eq!(*actual_target, target);
+        assert_eq!(spec.title(), "Automatic saving");
+        assert_eq!(spec.subtitle(), "Your changes are saved as you work.");
+        assert_eq!(spec.action_label(), Some("Review settings"));
+        assert_eq!(spec.placement(), crate::ZsTeachingTipPlacement::Top);
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TeachingTipResponded {
+                widget: document.root.id.widget_id(),
+                response: crate::ZsTeachingTipResponse::Action,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::Action(UiDocumentAction {
+                    node_id: "save-guidance".to_owned(),
+                    binding: "guidance_result".to_owned(),
+                    property_binding: None,
+                    payload: Value::String("action".to_owned()),
+                }),
+                Msg::Action(UiDocumentAction {
+                    node_id: "save-guidance".to_owned(),
+                    binding: "guidance_open_changed".to_owned(),
+                    property_binding: Some("guidance_open".to_owned()),
+                    payload: Value::Bool(false),
+                }),
+            ]
+        );
+        assert!(view
+            .widget_teaching_tip_state(document.root.id.widget_id())
+            .is_some_and(|(state, _)| !state.open));
+
+        let invalid_values = BTreeMap::from([
+            ("guidance_open".to_owned(), Value::Bool(true)),
+            (
+                "guidance_target".to_owned(),
+                Value::String("missing".to_owned()),
+            ),
+            (
+                "guidance_subtitle".to_owned(),
+                Value::String("Your changes are saved as you work.".to_owned()),
+            ),
+        ]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "target"
         ));
     }
 

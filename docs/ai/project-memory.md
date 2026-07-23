@@ -186,6 +186,13 @@ history remain authoritative for implementation status.
   that child's stable `WidgetId`; the document wrapper does not add a hit
   target, backend child, registry entry or second event path. Platform profiles
   and hosts retain timing, metrics, typography and final overlay placement.
+  Document-ready TeachingTip wraps exactly one page subtree and targets one of
+  its stable descendant node IDs. Title/subtitle content, optional action and
+  placement remain semantic; result emits `action`, `close` or `escape`, then
+  a typed `open_change` emits `false` so controlled Viewer state cannot reopen
+  a dismissed tip. Runtime revalidates bound target identity and owns only the
+  `ZsTeachingTipSpec` plus node-local callbacks; platform profiles retain tail,
+  metrics, typography, ordering and final placement.
   Document-ready ProgressRing uses one optional `nullable_number` value for
   determinate/indeterminate mode, validates its numeric range twice and maps
   small/medium/large to platform-owned metrics. Ordinary

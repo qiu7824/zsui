@@ -62,6 +62,16 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/tooltip.bindings.json
 ```
 
+TeachingTip 文档可以用同一校验器验证：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,teaching-tip,button,label `
+  -- check examples/ui-documents/teaching-tip.json `
+  --bindings examples/ui-documents/teaching-tip.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -75,7 +85,8 @@ cargo run --bin zsui-uic `
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
-`progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip` 和 `scroll`。
+`progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
+`teaching_tip` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 ## 布局与文字完整性
@@ -207,6 +218,14 @@ Toast；超时仍沿用平台运行时的计时器。Toast 的定位、圆角、
 稳定 `WidgetId`，因此不会新增命中区域、控件注册项或第二条事件路径。悬停/焦点计时、
 平台尺寸、圆角、文字行框和最终放置仍由 Win32、AppKit 与 Linux 的组件 profile 和
 宿主负责。
+
+`teaching_tip` 包装且只包装一个页面子树。`target` 使用该子树内的稳定 `UiNodeId`，
+静态文档和解析后的绑定值都会验证引用存在；`title` 与 `subtitle` 至少提供一个，
+可选 `action_label` 以及 `auto`、`top`、`bottom`、`left`、`right` 放置语义。
+`result` 动作发送 `"action"`、`"close"` 或 `"escape"`；任意响应后
+`open_change` 都发送 `false` 并可回写受控 `open` 绑定，因此 Viewer 重建不会重新打开
+已经关闭的提示。文档运行时只组装 `ZsTeachingTipSpec`、稳定目标和类型化回调；尾部、
+尺寸、字体、按钮顺序与最终放置继续由各平台 profile 和共享原生宿主决定。
 
 `list` 的每个直接子节点都是一个可选行，子节点的稳定 `UiNodeId` 同时作为公开选择值。
 `selected` string 属性与 `select` string 动作组成受控选择闭环；调整子节点声明顺序后，

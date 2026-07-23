@@ -646,6 +646,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 open,
                 focused_control,
                 on_result,
+                on_open_change,
                 ..
             } = &mut self.kind
             {
@@ -662,9 +663,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         {
                             *open = false;
                             if let Some(message) = on_result {
-                                cx.emit(message(crate::ZsTeachingTipResult {
+                                cx.emit(message.map(crate::ZsTeachingTipResult {
                                     response: *response,
                                 }));
+                            }
+                            if let Some(message) = on_open_change {
+                                cx.emit(message.map(false));
                             }
                             handled = true;
                         }

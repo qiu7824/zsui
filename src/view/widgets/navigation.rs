@@ -108,7 +108,9 @@ pub fn toast_presenter<Msg>(
 /// Wraps one page in a targeted, self-drawn teaching-tip layer.
 ///
 /// The application owns `open` and identifies the target with a stable
-/// [`WidgetId`]. ZSUI owns viewport-aware tail placement and typed responses.
+/// [`WidgetId`]. ZSUI owns viewport-aware tail placement and typed responses,
+/// and can report controlled dismissal through
+/// [`ViewNode::on_teaching_tip_open_change`].
 #[cfg(feature = "teaching-tip")]
 pub fn teaching_tip<Msg>(
     widget: WidgetId,
@@ -125,6 +127,7 @@ pub fn teaching_tip<Msg>(
         target,
         focused_control,
         on_result: None,
+        on_open_change: None,
     })
     .id(widget)
     .child(page)

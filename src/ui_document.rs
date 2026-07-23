@@ -3592,6 +3592,80 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "teaching_tip" {
+            let has_source = |name: &str| {
+                node.properties.contains_key(name)
+                    || node.property_bindings.contains_key(name)
+                    || node.localization.contains_key(name)
+            };
+            let static_string = |name: &str| {
+                (!node.property_bindings.contains_key(name)
+                    && !node.localization.contains_key(name))
+                .then(|| node.properties.get(name).and_then(Value::as_str))
+                .flatten()
+            };
+            for name in ["title", "subtitle", "action_label"] {
+                if static_string(name).is_some_and(|value| value.trim().is_empty()) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("teaching_tip {name} must not be empty when provided"),
+                    );
+                }
+            }
+            if !has_source("title") && !has_source("subtitle") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties"),
+                    "teaching_tip requires a title, subtitle or both".to_owned(),
+                );
+            }
+            if static_string("placement").is_some_and(|placement| {
+                !matches!(placement, "auto" | "top" | "bottom" | "left" | "right")
+            }) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.placement"),
+                    "teaching_tip placement must be auto, top, bottom, left or right".to_owned(),
+                );
+            }
+            if node.localization.contains_key("target") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidLocalization,
+                    format!("{path}.localization.target"),
+                    "teaching_tip target is a stable node id and cannot be localized".to_owned(),
+                );
+            }
+            if let Some(target) = static_string("target") {
+                let target_exists = node
+                    .children
+                    .iter()
+                    .any(|child| ui_node_contains_id(child, target));
+                if !target_exists {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.target"),
+                        "teaching_tip target must reference a node in its page subtree".to_owned(),
+                    );
+                }
+            }
+            if node.property_bindings.contains_key("open")
+                && !node.action_bindings.contains_key("open_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.open"),
+                    "bound teaching_tip open state requires an open_change action".to_owned(),
+                );
+            }
+        }
+
         if node.component == "content_dialog" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -4500,6 +4574,48 @@ const TOOLTIP_PROPERTIES: &[PropertySpec] = &[
         required: false,
     },
 ];
+const TEACHING_TIP_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "target",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "title",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "subtitle",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "action_label",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "placement",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
+const TEACHING_TIP_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "result",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "open_change",
+        payload_type: UiValueType::Boolean,
+    },
+];
 const CONTENT_DIALOG_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "open",
@@ -4606,6 +4722,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: NO_ACTIONS,
             children: ChildPolicy::Exactly(1),
         }),
+        "teaching_tip" => Some(ComponentSchema {
+            properties: TEACHING_TIP_PROPERTIES,
+            actions: TEACHING_TIP_ACTIONS,
+            children: ChildPolicy::Exactly(1),
+        }),
         "text" => Some(leaf(TEXT_PROPERTIES, NO_ACTIONS)),
         "button" => Some(leaf(BUTTON_PROPERTIES, BUTTON_ACTIONS)),
         "toggle_button" | "checkbox" | "toggle" => Some(leaf(CHECKED_PROPERTIES, TOGGLE_ACTIONS)),
@@ -4661,6 +4782,14 @@ fn is_valid_node_id(value: &str) -> bool {
         && value
             .chars()
             .all(|character| character.is_alphanumeric() || matches!(character, '_' | '-' | '.'))
+}
+
+fn ui_node_contains_id(node: &UiNode, id: &str) -> bool {
+    node.id.as_str() == id
+        || node
+            .children
+            .iter()
+            .any(|child| ui_node_contains_id(child, id))
 }
 
 fn validate_grid_component(node: &UiNode, path: &str, diagnostics: &mut Vec<UiDiagnostic>) {
@@ -6915,6 +7044,122 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidChildCount
                 && diagnostic.path == "$.root.children"
         }));
+    }
+
+    #[test]
+    fn teaching_tip_contract_validates_target_content_and_controlled_open_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "save-guidance",
+                "component": "teaching_tip",
+                "properties": {
+                  "target": "save-button",
+                  "title": "Automatic saving",
+                  "action_label": "Review settings",
+                  "placement": "top"
+                },
+                "property_bindings": {
+                  "open": "guidance_open",
+                  "subtitle": "guidance_subtitle"
+                },
+                "action_bindings": {
+                  "result": "guidance_result",
+                  "open_change": "guidance_open_changed"
+                },
+                "children": [
+                  {
+                    "id": "page",
+                    "component": "stack",
+                    "children": [
+                      {
+                        "id": "save-button",
+                        "component": "button",
+                        "properties": { "label": "Save" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                ("guidance_open".to_owned(), UiValueType::Boolean),
+                ("guidance_subtitle".to_owned(), UiValueType::String),
+            ]),
+            actions: BTreeMap::from([
+                ("guidance_result".to_owned(), UiValueType::String),
+                ("guidance_open_changed".to_owned(), UiValueType::Boolean),
+            ]),
+        };
+        let features = UiFeatureSet::new(["teaching-tip", "button"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+
+        let handoff = UiAiHandoffPackage::build(&valid, &features, &bindings, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "teaching_tip")
+            .unwrap();
+        assert_eq!(contract.cargo_feature.as_deref(), Some("teaching-tip"));
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::Exactly { count: 1 }
+        );
+        assert_eq!(
+            contract.actions,
+            vec![
+                UiAiHandoffActionContract {
+                    name: "open_change".to_owned(),
+                    payload_type: UiValueType::Boolean,
+                },
+                UiAiHandoffActionContract {
+                    name: "result".to_owned(),
+                    payload_type: UiValueType::String,
+                },
+            ]
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "save-guidance",
+                "component": "teaching_tip",
+                "properties": {
+                  "target": "missing",
+                  "action_label": " ",
+                  "placement": "center"
+                },
+                "property_bindings": { "open": "guidance_open" },
+                "children": []
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &bindings);
+        for path in [
+            "$.root.properties",
+            "$.root.properties.target",
+            "$.root.properties.action_label",
+            "$.root.properties.placement",
+            "$.root.property_bindings.open",
+            "$.root.children",
+        ] {
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.path == path),
+                "missing diagnostic at {path}: {:#?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]

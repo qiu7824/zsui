@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "guidance_open": "boolean",
+    "guidance_subtitle": "string"
+  },
+  "actions": {
+    "guidance_result": "string",
+    "guidance_open_changed": "boolean"
+  }
+}

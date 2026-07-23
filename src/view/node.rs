@@ -32,6 +32,7 @@ impl WidgetId {
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -60,6 +61,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -88,6 +90,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -134,6 +137,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -172,6 +176,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "dialog",
     feature = "toast",
     feature = "info-bar",
+    feature = "teaching-tip",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -942,7 +947,8 @@ pub enum ViewNodeKind<Msg> {
         open: bool,
         target: WidgetId,
         focused_control: crate::ZsTeachingTipControl,
-        on_result: Option<fn(crate::ZsTeachingTipResult) -> Msg>,
+        on_result: Option<ViewMessageMapper<crate::ZsTeachingTipResult, Msg>>,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
     },
     #[cfg(feature = "info-bar")]
     InfoBar {
@@ -2162,7 +2168,43 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: fn(crate::ZsTeachingTipResult) -> Msg,
     ) -> Self {
         if let ViewNodeKind::TeachingTip { on_result, .. } = &mut self.kind {
-            *on_result = Some(message);
+            *on_result = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Registers an owned callback for a teaching-tip response.
+    ///
+    /// Document-backed Views use this form to retain the stable node and
+    /// binding identity without a global event registry.
+    #[cfg(feature = "teaching-tip")]
+    pub fn on_teaching_tip_result_with(
+        mut self,
+        message: impl Fn(crate::ZsTeachingTipResult) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TeachingTip { on_result, .. } = &mut self.kind {
+            *on_result = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    /// Reports the controlled teaching-tip open transition after a response.
+    #[cfg(feature = "teaching-tip")]
+    pub fn on_teaching_tip_open_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::TeachingTip { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Capturing-callback variant of [`Self::on_teaching_tip_open_change`].
+    #[cfg(feature = "teaching-tip")]
+    pub fn on_teaching_tip_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::TeachingTip { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
