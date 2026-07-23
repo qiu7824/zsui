@@ -57,6 +57,7 @@ mod tests {
         feature = "date-picker",
         feature = "dialog",
         feature = "flyout",
+        feature = "split-view",
         feature = "menu-flyout",
         feature = "command-palette",
         feature = "info-bar",
@@ -129,6 +130,8 @@ mod tests {
         FlyoutDismissed(crate::ZsFlyoutDismissReason),
         #[cfg(feature = "flyout")]
         FlyoutOpen(bool),
+        #[cfg(feature = "split-view")]
+        SplitViewOpen(bool),
         #[cfg(feature = "menu-flyout")]
         MenuCommand(crate::Command),
         #[cfg(feature = "menu-flyout")]
@@ -533,6 +536,66 @@ mod tests {
                     && command.bounds.height == 10
                     && command.color == ColorRole::AccentText
         )));
+    }
+
+    #[test]
+    #[cfg(all(feature = "split-view", feature = "button"))]
+    fn split_view_uses_one_layout_for_paint_hit_testing_and_typed_dismissal() {
+        let split = WidgetId::new(610);
+        let pane_action = WidgetId::new(611);
+        let content_action = WidgetId::new(612);
+        let mut view = split_view(
+            split,
+            crate::ZsSplitViewSpec::new(true),
+            button("Pane action").id(pane_action),
+            button("Content action").id(content_action),
+        )
+        .on_split_view_open_change(Msg::SplitViewOpen)
+        .with_platform_style_override(crate::ZsBaseControlPlatformStyle::Windows);
+        let viewport = Rect {
+            x: 0,
+            y: 0,
+            width: 560,
+            height: 400,
+        };
+
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+        assert_eq!(view.children[0].bounds().unwrap().width, 296);
+        assert_eq!(view.children[1].bounds(), Some(viewport));
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction.target_kind_at(Point { x: 500, y: 120 }),
+            Some(ViewHitTargetKind::SplitViewScrim)
+        );
+        assert!(interaction.focus_target_for_widget(pane_action).is_some());
+        assert!(interaction.focus_target_for_widget(content_action).is_none());
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::FillRect {
+                rect: Rect { x: 296, width: 264, .. },
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: 72,
+                },
+            }
+        )));
+
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Click { widget: split });
+        assert_eq!(events.into_messages(), vec![Msg::SplitViewOpen(false)]);
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::SplitView { spec, .. } if !spec.open()
+        ));
+        view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+        assert_eq!(view.children[0].bounds(), None);
+        assert!(view
+            .interaction_plan()
+            .focus_target_for_widget(content_action)
+            .is_some());
     }
 
     #[test]

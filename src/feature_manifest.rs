@@ -104,6 +104,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "noninteractive dot, numeric and semantic-icon information badges with platform-owned metrics",
         ),
         ZsuiCargoFeature::new(
+            "split-view",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "two-pane adaptive/inline/overlay composition with explicit open state and platform-owned metrics",
+        ),
+        ZsuiCargoFeature::new(
             "label",
             Widget,
             true,
@@ -497,6 +505,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "window",
                 "button",
                 "badge",
+                "split-view",
                 "icon",
                 "label",
                 "checkbox",
@@ -728,6 +737,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             vec![
                 "button",
                 "badge",
+                "split-view",
                 "breadcrumb",
                 "canvas",
                 "flyout",

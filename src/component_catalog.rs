@@ -291,6 +291,12 @@ const BADGE_GAPS: &[&str] = &[
     "parent-owned accessibility announcement and state-change notification",
     "AppKit and GTK target screenshot proof",
 ];
+const SPLIT_VIEW_GAPS: &[&str] = &[
+    "drag-resizable divider and persisted pane extent",
+    "RTL leading and trailing resolution",
+    "accessibility group relationship",
+    "AppKit and Linux target interaction proof",
+];
 const WORKBENCH_GAPS: &[&str] = &[
     "native editable composer input",
     "hover pressed focus-visible state matrix",
@@ -353,9 +359,9 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "SplitView",
         Layout,
         FirstPass,
-        Some("shell"),
-        "src/shell_layout.rs",
-        PLATFORM_GAPS
+        Some("split-view"),
+        "src/split_view.rs + src/view/widgets/split_view.rs",
+        SPLIT_VIEW_GAPS
     ),
     component!(
         "canvas",

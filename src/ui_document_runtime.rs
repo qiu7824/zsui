@@ -64,6 +64,7 @@ pub struct UiDocumentSecretAction {
     not(any(
         feature = "button",
         feature = "breadcrumb",
+        feature = "split-view",
         feature = "flyout",
         feature = "menu-flyout",
         feature = "toggle-button",
@@ -435,6 +436,8 @@ fn compile_node<Msg: Clone + 'static>(
         "border" => column(children).flex(0.0),
         #[cfg(feature = "badge")]
         "badge" => document_badge(node, properties)?,
+        #[cfg(feature = "split-view")]
+        "split_view" => document_split_view(node, properties, children, mapper)?,
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
         #[cfg(feature = "document-shell")]
@@ -3338,6 +3341,7 @@ fn grid_gap_property(
 
 #[cfg(any(
     feature = "badge",
+    feature = "split-view",
     feature = "label",
     feature = "button",
     feature = "icon",
@@ -3410,6 +3414,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
 
 #[cfg(any(
     feature = "badge",
+    feature = "split-view",
     feature = "label",
     feature = "button",
     feature = "icon",
@@ -3991,6 +3996,7 @@ fn optional_table_sort_property(
 
 #[cfg(any(
     feature = "badge",
+    feature = "split-view",
     feature = "auto-suggest",
     feature = "command-palette",
     feature = "dialog",
@@ -4040,6 +4046,114 @@ fn optional_semantic_icon_property(
                 format!("unknown ZsIcon semantic variant {icon:?}"),
             )
         })
+}
+
+#[cfg(feature = "split-view")]
+fn document_split_view<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let actual = children.len();
+    let mut children = children.into_iter();
+    let Some(pane) = children.next() else {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 2,
+            actual,
+        });
+    };
+    let Some(content) = children.next() else {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 2,
+            actual,
+        });
+    };
+    if children.next().is_some() {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 2,
+            actual,
+        });
+    }
+
+    let mode = match string_property(node, properties, "mode", "adaptive").as_str() {
+        "adaptive" => crate::ZsSplitViewDisplayMode::Adaptive,
+        "inline" => crate::ZsSplitViewDisplayMode::Inline,
+        "overlay" => crate::ZsSplitViewDisplayMode::Overlay,
+        value => {
+            return Err(invalid_resolved_property(
+                node,
+                "mode",
+                format!("unsupported split_view mode {value:?}"),
+            ));
+        }
+    };
+    let placement = match string_property(node, properties, "pane_placement", "leading").as_str() {
+        "leading" => crate::ZsSplitViewPanePlacement::Leading,
+        "trailing" => crate::ZsSplitViewPanePlacement::Trailing,
+        value => {
+            return Err(invalid_resolved_property(
+                node,
+                "pane_placement",
+                format!("unsupported split_view pane placement {value:?}"),
+            ));
+        }
+    };
+    let extent = |property: &str, allow_zero: bool| -> Result<Option<Dp>, UiDocumentRuntimeError> {
+        let Some(value) = property_value(node, properties, property) else {
+            return Ok(None);
+        };
+        let value = value.as_f64().ok_or_else(|| {
+            invalid_resolved_property(node, property, "a numeric DP extent is required")
+        })?;
+        if !value.is_finite()
+            || value > f64::from(f32::MAX)
+            || if allow_zero {
+                value < 0.0
+            } else {
+                value <= 0.0
+            }
+        {
+            return Err(invalid_resolved_property(
+                node,
+                property,
+                if allow_zero {
+                    "a finite nonnegative DP extent is required"
+                } else {
+                    "a finite positive DP extent is required"
+                },
+            ));
+        }
+        Ok(Some(Dp::new(value as f32)))
+    };
+    let mut spec = crate::ZsSplitViewSpec::new(bool_property(node, properties, "open", true))
+        .display_mode(mode)
+        .pane_placement(placement);
+    if let Some(width) = extent("pane_width", false)? {
+        spec = spec.pane_width(width);
+    }
+    if let Some(width) = extent("minimum_content_width", true)? {
+        spec = spec.minimum_content_width(width);
+    }
+    let mut control = crate::split_view(node.id.widget_id(), spec, pane, content);
+    if let Some(binding) = node.action_bindings.get("open_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("open").cloned();
+        control = control.on_split_view_open_change_with(move |open| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::Bool(open),
+            })
+        });
+    }
+    Ok(control)
 }
 
 #[cfg(feature = "badge")]
@@ -4159,6 +4273,7 @@ fn document_icon<Msg>(
 
 #[cfg(any(
     feature = "label",
+    feature = "split-view",
     feature = "button",
     feature = "breadcrumb",
     feature = "flyout",
@@ -4452,6 +4567,7 @@ mod tests {
     #[cfg(any(
         feature = "grid",
         feature = "label",
+        feature = "split-view",
         feature = "flyout",
         feature = "menu-flyout",
         all(feature = "tooltip", feature = "button"),
@@ -4607,6 +4723,113 @@ mod tests {
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "value"
         ));
+    }
+
+    #[cfg(all(feature = "split-view", feature = "label"))]
+    #[test]
+    fn compiles_bound_split_view_and_maps_controlled_light_dismissal() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "workspace-split",
+                "component": "split_view",
+                "properties": {
+                  "pane_placement": "trailing",
+                  "minimum_content_width": 360
+                },
+                "property_bindings": {
+                  "open": "workspace_open",
+                  "mode": "workspace_mode",
+                  "pane_width": "workspace_pane_width"
+                },
+                "action_bindings": { "open_change": "workspace_open_changed" },
+                "children": [
+                  { "id": "workspace-pane", "component": "text", "properties": { "text": "Pane" } },
+                  { "id": "workspace-content", "component": "text", "properties": { "text": "Content" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "workspace_open".to_owned(),
+                    crate::ui_document::UiValueType::Boolean,
+                ),
+                (
+                    "workspace_mode".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "workspace_pane_width".to_owned(),
+                    crate::ui_document::UiValueType::Number,
+                ),
+            ]),
+            actions: BTreeMap::from([(
+                "workspace_open_changed".to_owned(),
+                crate::ui_document::UiValueType::Boolean,
+            )]),
+        };
+        let values = BTreeMap::from([
+            ("workspace_open".to_owned(), Value::Bool(true)),
+            (
+                "workspace_mode".to_owned(),
+                Value::String("overlay".to_owned()),
+            ),
+            ("workspace_pane_width".to_owned(), Value::from(220.0)),
+        ]);
+
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action)
+            .unwrap()
+            .with_platform_style_override(crate::ZsBaseControlPlatformStyle::Windows);
+        assert!(matches!(
+            view.kind,
+            crate::ViewNodeKind::SplitView { spec, .. }
+                if spec.open()
+                    && spec.mode() == crate::ZsSplitViewDisplayMode::Overlay
+                    && spec.placement() == crate::ZsSplitViewPanePlacement::Trailing
+                    && spec.requested_pane_width() == Some(Dp::new(220.0))
+        ));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 560,
+                height: 400,
+            },
+            Dpi::standard(),
+        ));
+        assert_eq!(view.children[0].bounds().unwrap().x, 340);
+        assert_eq!(view.children[1].bounds().unwrap().width, 560);
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::Click {
+                widget: document.root.id.widget_id(),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::Action(UiDocumentAction {
+                node_id: "workspace-split".to_owned(),
+                binding: "workspace_open_changed".to_owned(),
+                property_binding: Some("workspace_open".to_owned()),
+                payload: Value::Bool(false),
+            })]
+        );
+
+        let mut invalid_values = values.clone();
+        invalid_values.insert(
+            "workspace_mode".to_owned(),
+            Value::String("compact".to_owned()),
+        );
+        assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
+        invalid_values = values;
+        invalid_values.insert("workspace_pane_width".to_owned(), Value::from(0.0));
+        assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
     }
 
     #[cfg(feature = "label")]

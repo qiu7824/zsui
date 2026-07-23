@@ -780,6 +780,21 @@ history remain authoritative for implementation status.
   dot, numeric and semantic-icon badges, routes one Confirm click with zero
   unhandled input, and measures 16,035,840 bytes RSS plus 4,837,376 private
   bytes before teardown.
+- SplitView is the opt-in `split-view` feature and owns exactly two View
+  subtrees: pane first and persistent content second. `ZsSplitViewSpec` keeps
+  open state, adaptive/inline/overlay mode, logical leading/trailing placement
+  and optional DP constraints platform-neutral. Windows resolves the official
+  296-DP open-pane reference, AppKit uses an NSSplitView-like 240-pt pane and
+  divider, and GTK uses an AdwOverlaySplitView-like 260-px pane; no compact
+  Windows navigation rail is copied to the other profiles. Overlay scrim input
+  and Escape emit one typed Boolean open-change message, underlying content is
+  removed from hit/focus routing while covered, and application state remains
+  authoritative. UiDocument requires two stable child slots, revalidates bound
+  mode/placement/extents during release compilation and pairs a bound `open`
+  property with an `open_change` action. The local Win32 Viewer proof retains
+  separate open/final PNGs; one real scrim click emits one message with zero
+  unhandled clicks and measures 16,084,992 bytes RSS plus 4,845,568 private
+  bytes before teardown.
 - The Notepad acceptance surface uses the real framework TabView for its
   document header. The semantic file icon and title occupy the same tab row and
   the editor is the selected tab content. This remains a one-static-tab proof;

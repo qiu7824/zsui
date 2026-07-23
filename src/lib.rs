@@ -184,6 +184,8 @@ pub mod progress;
 pub mod render_protocol;
 pub mod settings;
 pub mod shell_layout;
+#[cfg(feature = "split-view")]
+pub mod split_view;
 pub mod style;
 #[cfg(feature = "table")]
 pub mod table;
@@ -609,6 +611,11 @@ pub use shell_layout::{
     ZsShellLayoutRegionKind, ZsShellLayoutSpec, ZsShellNavHoverTransition, ZsShellNavItemSpec,
     ZsShellPointerDownTarget, ZsShellPointerMoveTransition, ZsShellRowAccessory, ZsShellRuntime,
 };
+#[cfg(feature = "split-view")]
+pub use split_view::{
+    zs_split_view_layout, ZsSplitViewDisplayMode, ZsSplitViewLayout, ZsSplitViewPanePlacement,
+    ZsSplitViewResolvedMode, ZsSplitViewSpec,
+};
 pub use style::{
     ControlMetricToken, RadiusToken, SpacingToken, ThemeColorToken, TypographyToken,
     ZsuiColorTokens, ZsuiControlMetrics, ZsuiRadiusTokens, ZsuiSpacingTokens, ZsuiTheme,
@@ -697,6 +704,8 @@ pub use view::progress_ring;
 pub use view::radio_button;
 #[cfg(feature = "scroll")]
 pub use view::scroll;
+#[cfg(feature = "split-view")]
+pub use view::split_view;
 #[cfg(feature = "teaching-tip")]
 pub use view::teaching_tip;
 #[cfg(feature = "textbox")]

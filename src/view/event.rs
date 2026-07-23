@@ -230,6 +230,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         reason: crate::ZsFlyoutDismissReason,
     },
+    #[cfg(feature = "split-view")]
+    SplitViewOpenChanged {
+        widget: WidgetId,
+        open: bool,
+    },
     #[cfg(feature = "menu-flyout")]
     MenuFlyoutHighlighted {
         widget: WidgetId,
@@ -409,6 +414,8 @@ pub enum ViewHitTargetKind {
     NavigationViewToggle,
     #[cfg(feature = "label")]
     NavigationViewScrim,
+    #[cfg(feature = "split-view")]
+    SplitViewScrim,
     #[cfg(feature = "toggle-button")]
     ToggleButton,
     Textbox,
@@ -845,6 +852,10 @@ impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
         #[cfg(feature = "label")]
         if self.kind == ViewHitTargetKind::NavigationViewScrim {
+            return false;
+        }
+        #[cfg(feature = "split-view")]
+        if self.kind == ViewHitTargetKind::SplitViewScrim {
             return false;
         }
         #[cfg(feature = "command-palette")]

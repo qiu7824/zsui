@@ -37,6 +37,7 @@ impl WidgetId {
     feature = "toast",
     feature = "info-bar",
     feature = "teaching-tip",
+    feature = "split-view",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -70,6 +71,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "toast",
     feature = "info-bar",
     feature = "teaching-tip",
+    feature = "split-view",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -103,6 +105,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "toast",
     feature = "info-bar",
     feature = "teaching-tip",
+    feature = "split-view",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -154,6 +157,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "toast",
     feature = "info-bar",
     feature = "teaching-tip",
+    feature = "split-view",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -197,6 +201,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "toast",
     feature = "info-bar",
     feature = "teaching-tip",
+    feature = "split-view",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -811,6 +816,11 @@ pub enum ViewNodeKind<Msg> {
         content: crate::ZsBadgeContent,
         tone: crate::ZsBadgeTone,
     },
+    #[cfg(feature = "split-view")]
+    SplitView {
+        spec: crate::ZsSplitViewSpec,
+        on_open_change: Option<ViewMessageMapper<bool, Msg>>,
+    },
     #[cfg(feature = "canvas")]
     Canvas {
         scene: crate::ZsCanvasScene,
@@ -1120,7 +1130,13 @@ pub struct ViewNode<Msg> {
     layout_dpi: Dpi,
     #[cfg(all(
         test,
-        any(feature = "badge", feature = "button", feature = "icon", feature = "label")
+        any(
+            feature = "badge",
+            feature = "split-view",
+            feature = "button",
+            feature = "icon",
+            feature = "label"
+        )
     ))]
     platform_style_override: Option<crate::ZsBaseControlPlatformStyle>,
     pub(crate) typography_scaled_height: bool,
@@ -1146,7 +1162,13 @@ impl<Msg> ViewNode<Msg> {
             layout_dpi: Dpi::standard(),
             #[cfg(all(
                 test,
-                any(feature = "badge", feature = "button", feature = "icon", feature = "label")
+                any(
+                    feature = "badge",
+                    feature = "split-view",
+                    feature = "button",
+                    feature = "icon",
+                    feature = "label"
+                )
             ))]
             platform_style_override: None,
             typography_scaled_height: false,
@@ -1230,6 +1252,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::NavigationView { .. } => true,
             #[cfg(feature = "canvas")]
             ViewNodeKind::Canvas { .. } => true,
+            #[cfg(feature = "split-view")]
+            ViewNodeKind::SplitView { .. } => true,
             #[cfg(feature = "button")]
             ViewNodeKind::Button { .. } => true,
             #[cfg(feature = "breadcrumb")]
@@ -1292,7 +1316,13 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(all(
         test,
-        any(feature = "badge", feature = "button", feature = "icon", feature = "label")
+        any(
+            feature = "badge",
+            feature = "split-view",
+            feature = "button",
+            feature = "icon",
+            feature = "label"
+        )
     ))]
     pub(crate) fn with_platform_style_override(
         mut self,
@@ -1302,7 +1332,13 @@ impl<Msg> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "badge", feature = "button", feature = "icon", feature = "label"))]
+    #[cfg(any(
+        feature = "badge",
+        feature = "split-view",
+        feature = "button",
+        feature = "icon",
+        feature = "label"
+    ))]
     pub(crate) fn resolved_platform_style(&self) -> crate::ZsBaseControlPlatformStyle {
         #[cfg(test)]
         if let Some(platform) = self.platform_style_override {
@@ -1467,6 +1503,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "flyout",
         feature = "label",
         feature = "menu-flyout",
+        feature = "split-view",
         feature = "tabs",
         feature = "virtual-list"
     ))]
@@ -2056,6 +2093,25 @@ impl<Msg: Clone> ViewNode<Msg> {
     ) -> Self {
         if let ViewNodeKind::Flyout { on_dismiss, .. } = &mut self.kind {
             *on_dismiss = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "split-view")]
+    pub fn on_split_view_open_change(mut self, message: fn(bool) -> Msg) -> Self {
+        if let ViewNodeKind::SplitView { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "split-view")]
+    pub fn on_split_view_open_change_with(
+        mut self,
+        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::SplitView { on_open_change, .. } = &mut self.kind {
+            *on_open_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

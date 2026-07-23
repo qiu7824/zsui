@@ -14,6 +14,7 @@ $singleFeatures = @(
     "window",
     "button",
     "badge",
+    "split-view",
     "breadcrumb",
     "canvas",
     "flyout",

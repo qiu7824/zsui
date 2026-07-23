@@ -1,6 +1,8 @@
 include!("button.rs");
 #[cfg(feature = "badge")]
 include!("badge.rs");
+#[cfg(feature = "split-view")]
+include!("split_view.rs");
 #[cfg(feature = "icon")]
 include!("icon.rs");
 #[cfg(feature = "canvas")]

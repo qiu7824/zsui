@@ -3929,6 +3929,25 @@ impl NativeViewInputRuntime {
         let Some(interaction_plan) = self.current_interaction_plan() else {
             return report;
         };
+        #[cfg(feature = "split-view")]
+        if key == NativeViewKey::Escape {
+            if let Some(target) = interaction_plan
+                .hit_targets
+                .iter()
+                .rev()
+                .copied()
+                .find(|target| target.kind == crate::ViewHitTargetKind::SplitViewScrim)
+            {
+                report.handled = true;
+                return self.dispatch_view_event(
+                    ViewEvent::SplitViewOpenChanged {
+                        widget: target.widget,
+                        open: false,
+                    },
+                    report,
+                );
+            }
+        }
         #[cfg(feature = "flyout")]
         if key == NativeViewKey::Escape {
             if let Some(target) = interaction_plan
@@ -11830,6 +11849,63 @@ mod tests {
         assert!(resize_runtime
             .widget_flyout_state(presenter)
             .is_some_and(|state| !state.open));
+    }
+
+    #[cfg(all(feature = "button", feature = "split-view"))]
+    #[test]
+    fn native_view_runtime_closes_overlay_split_view_with_escape() {
+        #[derive(Clone)]
+        enum Msg {
+            Open(bool),
+        }
+        struct State {
+            open: bool,
+        }
+
+        let split = crate::WidgetId::new(211);
+        let pane_action = crate::WidgetId::new(212);
+        let content_action = crate::WidgetId::new(213);
+        let builder = native_window("Platform SplitView")
+            .size(560, 400)
+            .stateful_view(
+                State { open: true },
+                move |state| {
+                    crate::split_view(
+                        split,
+                        crate::ZsSplitViewSpec::new(state.open),
+                        crate::button("Pane action").id(pane_action),
+                        crate::button("Content action").id(content_action),
+                    )
+                    .on_split_view_open_change(Msg::Open)
+                },
+                |state, message, _cx| match message {
+                    Msg::Open(open) => state.open = open,
+                },
+            );
+
+        let mut runtime = builder.native_view_input_runtime();
+        assert!(runtime.current_interaction_plan().is_some_and(|plan| plan
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == crate::ViewHitTargetKind::SplitViewScrim })));
+        let tabbed = runtime.dispatch_key(NativeViewKey::Tab);
+        assert!(tabbed.handled);
+        assert_eq!(runtime.focused_widget(), Some(pane_action));
+
+        let escaped = runtime.dispatch_key(NativeViewKey::Escape);
+        assert!(escaped.handled);
+        assert_eq!(escaped.message_count, 1);
+        let closed = runtime
+            .current_interaction_plan()
+            .expect("closed SplitView interaction plan");
+        assert!(!closed
+            .hit_targets
+            .iter()
+            .any(|target| { target.kind == crate::ViewHitTargetKind::SplitViewScrim }));
+        assert!(closed
+            .hit_targets
+            .iter()
+            .any(|target| target.widget == content_action));
     }
 
     #[cfg(all(feature = "button", feature = "menu-flyout"))]

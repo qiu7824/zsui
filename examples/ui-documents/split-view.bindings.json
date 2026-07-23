@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "workspace_pane_open": "boolean",
+    "workspace_split_mode": "string",
+    "workspace_pane_width": "number"
+  },
+  "actions": {
+    "workspace_pane_open_changed": "boolean"
+  }
+}

@@ -50,6 +50,8 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::TeachingTipResponded { widget, .. }) => id == *widget,
             #[cfg(feature = "flyout")]
             (Some(id), ViewEvent::FlyoutDismissed { widget, .. }) => id == *widget,
+            #[cfg(feature = "split-view")]
+            (Some(id), ViewEvent::SplitViewOpenChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "menu-flyout")]
             (Some(id), ViewEvent::MenuFlyoutHighlighted { widget, .. })
             | (Some(id), ViewEvent::MenuFlyoutSubmenuChanged { widget, .. })
@@ -926,6 +928,40 @@ impl<Msg> ViewNode<Msg> {
         if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
             if let Some(page) = self.children.first() {
                 page.collect_hit_targets(hit_targets, clip);
+            }
+            return;
+        }
+
+        #[cfg(feature = "split-view")]
+        if let (Some(bounds), ViewNodeKind::SplitView { spec, .. }) = (self.bounds, &self.kind) {
+            let layout = crate::zs_split_view_layout(
+                bounds,
+                *spec,
+                self.resolved_platform_style(),
+                self.layout_dpi,
+            );
+            if layout.scrim.is_none() {
+                if let (Some(content), Some(content_clip)) =
+                    (self.children.get(1), clipped_rect(layout.content, clip))
+                {
+                    content.collect_hit_targets(hit_targets, Some(content_clip));
+                }
+            }
+            if let (Some(widget), Some(scrim)) = (
+                self.id,
+                layout.scrim.and_then(|scrim| clipped_rect(scrim, clip)),
+            ) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    scrim,
+                    ViewHitTargetKind::SplitViewScrim,
+                ));
+            }
+            if let (Some(pane), Some(pane_clip)) = (
+                self.children.first(),
+                layout.pane.and_then(|pane| clipped_rect(pane, clip)),
+            ) {
+                pane.collect_hit_targets(hit_targets, Some(pane_clip));
             }
             return;
         }

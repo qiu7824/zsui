@@ -399,6 +399,46 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 }
 
+#[cfg(feature = "split-view")]
+impl<Msg: Clone> ViewNode<Msg> {
+    fn layout_split_view(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        self.bounds = Some(cx.bounds);
+        self.layout_dpi = cx.dpi;
+        let spec = match &self.kind {
+            ViewNodeKind::SplitView { spec, .. } => *spec,
+            _ => unreachable!("split-view layout requires a SplitView node"),
+        };
+        let layout = crate::zs_split_view_layout(
+            cx.bounds,
+            spec,
+            self.resolved_platform_style(),
+            cx.dpi,
+        );
+        for child in &mut self.children {
+            child.clear_layout_bounds();
+        }
+        let mut children = Vec::new();
+        if let Some(id) = self.id {
+            children.push(LayoutNode {
+                component: id.into(),
+                bounds: cx.bounds,
+            });
+        }
+        if let Some(content) = self.children.get_mut(1) {
+            let mut content_cx = cx.child(layout.content);
+            children.extend(content.layout(&mut content_cx).children);
+        }
+        if let (Some(pane_bounds), Some(pane)) = (layout.pane, self.children.first_mut()) {
+            let mut pane_cx = cx.child(pane_bounds);
+            children.extend(pane.layout(&mut pane_cx).children);
+        }
+        LayoutOutput {
+            bounds: cx.bounds,
+            children,
+        }
+    }
+}
+
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
         if cx.is_root() {
@@ -424,6 +464,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         #[cfg(feature = "flyout")]
         if matches!(self.kind, ViewNodeKind::Flyout { .. }) {
             return self.layout_flyout(cx);
+        }
+        #[cfg(feature = "split-view")]
+        if matches!(self.kind, ViewNodeKind::SplitView { .. }) {
+            return self.layout_split_view(cx);
         }
         #[cfg(feature = "label")]
         if matches!(self.kind, ViewNodeKind::NavigationView { .. }) {
@@ -640,6 +684,52 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 if let Some(content) = self.children.get_mut(1) {
                     content.event(cx, event);
                 }
+            }
+            return;
+        }
+
+        #[cfg(feature = "split-view")]
+        if matches!(self.kind, ViewNodeKind::SplitView { .. }) {
+            let mut pane_open = false;
+            let mut handled = false;
+            if let ViewNodeKind::SplitView {
+                spec,
+                on_open_change,
+            } = &mut self.kind
+            {
+                pane_open = spec.open();
+                let requested = match event {
+                    ViewEvent::Click { widget } if pane_open && self.id == Some(*widget) => {
+                        Some(false)
+                    }
+                    ViewEvent::SplitViewOpenChanged { widget, open }
+                        if self.id == Some(*widget) =>
+                    {
+                        Some(*open)
+                    }
+                    _ => None,
+                };
+                if let Some(requested) = requested {
+                    if pane_open != requested {
+                        spec.set_open(requested);
+                        if let Some(message) = on_open_change {
+                            cx.emit(message.map(requested));
+                        }
+                    }
+                    handled = true;
+                    pane_open = requested;
+                }
+            }
+            if handled {
+                return;
+            }
+            if pane_open {
+                if let Some(pane) = self.children.first_mut() {
+                    pane.event(cx, event);
+                }
+            }
+            if let Some(content) = self.children.get_mut(1) {
+                content.event(cx, event);
             }
             return;
         }
@@ -2187,6 +2277,51 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         )));
                     }
                 }
+            }
+            #[cfg(feature = "split-view")]
+            ViewNodeKind::SplitView { spec, .. } => {
+                let platform = self.resolved_platform_style();
+                let profile =
+                    crate::platform_component_profile::PlatformComponentProfile::for_style(
+                        platform,
+                    )
+                    .split_view;
+                let layout = crate::zs_split_view_layout(bounds, *spec, platform, cx.dpi);
+                if let Some(content) = self.children.get(1) {
+                    cx.draw(NativeDrawCommand::PushClip {
+                        rect: layout.content,
+                    });
+                    content.paint(cx);
+                    cx.draw(NativeDrawCommand::PopClip);
+                }
+                if let Some(scrim) = layout.scrim.filter(|scrim| scrim.width > 0) {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: scrim,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::PrimaryText,
+                            alpha: profile.scrim_alpha,
+                        },
+                    });
+                }
+                if let Some(pane_bounds) = layout.pane {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: pane_bounds,
+                        fill: NativeDrawFill::Role(profile.pane_color),
+                    });
+                    if let Some(divider) = layout.divider.filter(|divider| divider.width > 0) {
+                        cx.draw(NativeDrawCommand::FillRect {
+                            rect: divider,
+                            fill: NativeDrawFill::Role(profile.divider_color),
+                        });
+                    }
+                    if let Some(pane) = self.children.first() {
+                        cx.draw(NativeDrawCommand::PushClip { rect: pane_bounds });
+                        pane.paint(cx);
+                        cx.draw(NativeDrawCommand::PopClip);
+                    }
+                }
+                cx.finish_node(self);
+                return;
             }
             #[cfg(feature = "icon")]
             ViewNodeKind::Icon { icon, size, color } => {

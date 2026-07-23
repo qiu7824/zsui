@@ -343,6 +343,33 @@ fn unread_badges() -> [ViewNode<()>; 3] {
 Badge 本身不接收点击或焦点。使用独立 Badge 时，辅助功能标签和状态变化通知应放在
 可聚焦的父元素上；导航、标签页等复合组件可在自己的语义提供者中合并 Badge 状态。
 
+拆分视图使用独立的 `split-view` feature。应用只持有窗格开关状态和语义布局模式，
+框架分别解析 WinUI SplitView、AppKit NSSplitView 与 Libadwaita OverlaySplitView 的
+窗格宽度、分隔线、覆盖层和窄窗降级参数：
+
+```rust,no_run
+use zsui::{
+    split_view, text, ViewNode, WidgetId, ZsSplitViewDisplayMode, ZsSplitViewSpec,
+};
+
+#[derive(Clone)]
+enum Msg { PaneOpenChanged(bool) }
+
+fn workspace(open: bool) -> ViewNode<Msg> {
+    split_view(
+        WidgetId::new(20),
+        ZsSplitViewSpec::new(open)
+            .display_mode(ZsSplitViewDisplayMode::Adaptive),
+        text("工具 / Tools"),
+        text("内容 / Content"),
+    )
+    .on_split_view_open_change(Msg::PaneOpenChanged)
+}
+```
+
+`Adaptive` 仅根据窗格与内容最小宽度选择并排或覆盖，不在应用代码中出现平台分支。
+覆盖模式的窗格外点击与 Esc 都发送 `false`；应用在 `update` 中保存该状态。
+
 ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
 
 ```rust,no_run

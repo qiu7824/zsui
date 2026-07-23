@@ -3687,6 +3687,7 @@ impl UiFeatureSet {
         }
         include_feature!("button");
         include_feature!("badge");
+        include_feature!("split-view");
         include_feature!("breadcrumb");
         include_feature!("canvas");
         include_feature!("flyout");
@@ -4796,6 +4797,89 @@ impl<'a> UiDocumentValidator<'a> {
                     UiDiagnosticCode::InvalidPropertyValue,
                     format!("{path}.property_bindings.selected"),
                     "bound navigation selected state requires a select action".to_owned(),
+                );
+            }
+        }
+
+        if node.component == "split_view" {
+            let static_string = |name: &str, fallback: &'static str| {
+                (!node.property_bindings.contains_key(name)
+                    && !node.localization.contains_key(name))
+                .then(|| {
+                    node.properties
+                        .get(name)
+                        .and_then(Value::as_str)
+                        .unwrap_or(fallback)
+                })
+            };
+            if static_string("mode", "adaptive")
+                .is_some_and(|mode| !matches!(mode, "adaptive" | "inline" | "overlay"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.mode"),
+                    "split_view mode must be adaptive, inline or overlay".to_owned(),
+                );
+            }
+            if static_string("pane_placement", "leading")
+                .is_some_and(|placement| !matches!(placement, "leading" | "trailing"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.pane_placement"),
+                    "split_view pane_placement must be leading or trailing".to_owned(),
+                );
+            }
+            for (name, allow_zero) in [("pane_width", false), ("minimum_content_width", true)] {
+                if node
+                    .properties
+                    .get(name)
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| {
+                        !value.is_finite()
+                            || value > f64::from(f32::MAX)
+                            || if allow_zero {
+                                value < 0.0
+                            } else {
+                                value <= 0.0
+                            }
+                    })
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!(
+                            "split_view {name} must be a {}finite DP extent",
+                            if allow_zero {
+                                "non-negative "
+                            } else {
+                                "positive "
+                            }
+                        ),
+                    );
+                }
+            }
+            for name in ["mode", "pane_placement"] {
+                if node.localization.contains_key(name) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidLocalization,
+                        format!("{path}.localization.{name}"),
+                        format!("split_view {name} is structural metadata and cannot be localized"),
+                    );
+                }
+            }
+            if node.property_bindings.contains_key("open")
+                && !node.action_bindings.contains_key("open_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.open"),
+                    "bound split_view open state requires an open_change action".to_owned(),
                 );
             }
         }
@@ -6464,6 +6548,37 @@ const SCROLL_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "scroll",
     payload_type: UiValueType::Number,
 }];
+const SPLIT_VIEW_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "open",
+        value_type: UiValueType::Boolean,
+        required: true,
+    },
+    PropertySpec {
+        name: "mode",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "pane_placement",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "pane_width",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "minimum_content_width",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+];
+const SPLIT_VIEW_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "open_change",
+    payload_type: UiValueType::Boolean,
+}];
 const FLYOUT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "open",
@@ -6724,6 +6839,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: SCROLL_PROPERTIES,
             actions: SCROLL_ACTIONS,
             children: ChildPolicy::Exactly(1),
+        }),
+        "split_view" => Some(ComponentSchema {
+            properties: SPLIT_VIEW_PROPERTIES,
+            actions: SPLIT_VIEW_ACTIONS,
+            children: ChildPolicy::Exactly(2),
         }),
         "navigation" => Some(ComponentSchema {
             properties: NAVIGATION_PROPERTIES,
@@ -9502,10 +9622,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "split_view".to_owned();
+        document.root.children[0].component = "items_repeater".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "shell"]),
+            &UiFeatureSet::new(["button", "label", "virtual-list"]),
             &UiBindingSchema::default(),
         );
 
@@ -9517,6 +9637,110 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::UnknownComponent));
+    }
+
+    #[test]
+    fn split_view_contract_requires_two_slots_and_controlled_open_state() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "workspace-split",
+                "component": "split_view",
+                "properties": {
+                  "mode": "adaptive",
+                  "pane_placement": "leading",
+                  "pane_width": 280,
+                  "minimum_content_width": 360
+                },
+                "property_bindings": { "open": "workspace_pane_open" },
+                "action_bindings": { "open_change": "workspace_pane_changed" },
+                "children": [
+                  { "id": "workspace-pane", "component": "text", "properties": { "text": "Pane" } },
+                  { "id": "workspace-content", "component": "text", "properties": { "text": "Content" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("workspace_pane_open".to_owned(), UiValueType::Boolean)]),
+            actions: BTreeMap::from([("workspace_pane_changed".to_owned(), UiValueType::Boolean)]),
+        };
+        let features = UiFeatureSet::new(["split-view", "label"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+        let handoff = UiAiHandoffPackage::build(&valid, &features, &bindings, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "split_view")
+            .unwrap();
+        assert_eq!(contract.cargo_feature.as_deref(), Some("split-view"));
+        assert_eq!(
+            contract.children,
+            UiAiHandoffChildPolicy::Exactly { count: 2 }
+        );
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "invalid-split",
+                "component": "split_view",
+                "properties": {
+                  "open": true,
+                  "mode": "compact",
+                  "pane_placement": "left",
+                  "pane_width": 0,
+                  "minimum_content_width": -1
+                },
+                "children": [
+                  { "id": "only-pane", "component": "text", "properties": { "text": "Pane" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidChildCount));
+        for property in [
+            "mode",
+            "pane_placement",
+            "pane_width",
+            "minimum_content_width",
+        ] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                    && diagnostic.path == format!("$.root.properties.{property}")
+            }));
+        }
+
+        let uncontrolled = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "uncontrolled-split",
+                "component": "split_view",
+                "property_bindings": { "open": "workspace_pane_open" },
+                "children": [
+                  { "id": "pane", "component": "text", "properties": { "text": "Pane" } },
+                  { "id": "content", "component": "text", "properties": { "text": "Content" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = uncontrolled.validate(&features, &bindings);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.property_bindings.open"
+        }));
     }
 
     #[test]

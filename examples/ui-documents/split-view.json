@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "workspace-split",
+    "component": "split_view",
+    "properties": {
+      "pane_placement": "trailing",
+      "minimum_content_width": 420
+    },
+    "property_bindings": {
+      "open": "workspace_pane_open",
+      "mode": "workspace_split_mode",
+      "pane_width": "workspace_pane_width"
+    },
+    "action_bindings": {
+      "open_change": "workspace_pane_open_changed"
+    },
+    "accessibility": {
+      "role": "group",
+      "label": "工作区拆分视图 / Workspace split view"
+    },
+    "children": [
+      {
+        "id": "workspace-pane",
+        "component": "stack",
+        "layout": {
+          "direction": "vertical",
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "theme_tokens": {
+          "background": "surface_raised"
+        },
+        "accessibility": {
+          "role": "complementary",
+          "label": "工具边栏 / Utility sidebar"
+        },
+        "children": [
+          {
+            "id": "pane-title",
+            "component": "text",
+            "properties": {
+              "text": "工具边栏 / Utility pane",
+              "text_role": "subtitle",
+              "weight": "semibold"
+            }
+          },
+          {
+            "id": "pane-description",
+            "component": "text",
+            "properties": {
+              "text": "窄窗口中覆盖内容，宽窗口中可改为并排布局。 / Overlay on narrow windows or choose an inline layout on wider windows.",
+              "wrap": "word"
+            }
+          },
+          {
+            "id": "pane-first-action",
+            "component": "button",
+            "properties": {
+              "label": "筛选 / Filters"
+            }
+          },
+          {
+            "id": "pane-second-action",
+            "component": "button",
+            "properties": {
+              "label": "详细信息 / Details"
+            }
+          }
+        ]
+      },
+      {
+        "id": "workspace-content",
+        "component": "stack",
+        "layout": {
+          "direction": "vertical",
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "theme_tokens": {
+          "background": "surface"
+        },
+        "accessibility": {
+          "role": "main",
+          "label": "主内容 / Main content"
+        },
+        "children": [
+          {
+            "id": "content-title",
+            "component": "text",
+            "properties": {
+              "text": "拆分视图 / SplitView",
+              "text_role": "title",
+              "weight": "semibold"
+            }
+          },
+          {
+            "id": "content-summary",
+            "component": "text",
+            "layout": {
+              "width": 600
+            },
+            "properties": {
+              "text": "同一份语义文档由各平台解析自己的边栏宽度、分隔线和覆盖层参数。 / One semantic document resolves platform-owned pane, divider, and overlay metrics.",
+              "wrap": "word"
+            }
+          },
+          {
+            "id": "content-hint",
+            "component": "text",
+            "layout": {
+              "width": 600
+            },
+            "properties": {
+              "text": "单击边栏外部或按 Esc 关闭覆盖层。 / Click outside the pane or press Esc to close the overlay.",
+              "text_role": "body_large",
+              "wrap": "word"
+            }
+          },
+          {
+            "id": "content-action",
+            "component": "button",
+            "properties": {
+              "label": "确认 / Confirm",
+              "presentation": "primary"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

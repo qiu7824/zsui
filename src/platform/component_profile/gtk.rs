@@ -68,6 +68,15 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             text_role: TextRole::Caption,
             text_weight: TextWeight::Bold,
         },
+        #[cfg(feature = "split-view")]
+        split_view: PlatformSplitViewProfile {
+            preferred_pane_width: Dp::new(260.0),
+            minimum_content_width: Dp::new(360.0),
+            divider_width: Dp::new(1.0),
+            scrim_alpha: 96,
+            pane_color: ColorRole::SurfaceRaised,
+            divider_color: ColorRole::Border,
+        },
         #[cfg(feature = "icon")]
         icon: PlatformIconProfile {
             small: Dp::new(16.0),

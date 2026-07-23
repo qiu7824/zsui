@@ -1,5 +1,6 @@
 #[cfg(any(
     feature = "badge",
+    feature = "split-view",
     feature = "label",
     feature = "button",
     feature = "tabs",
@@ -74,6 +75,8 @@ pub(crate) struct PlatformComponentProfile {
     pub focus_visuals: PlatformFocusVisualProfile,
     #[cfg(feature = "badge")]
     pub badge: PlatformBadgeProfile,
+    #[cfg(feature = "split-view")]
+    pub split_view: PlatformSplitViewProfile,
     #[cfg(feature = "icon")]
     pub icon: PlatformIconProfile,
     pub base_control: PlatformBaseControlProfile,
@@ -185,6 +188,17 @@ impl PlatformBadgeProfile {
             crate::ZsBadgeTone::Danger => (ColorRole::Danger, ColorRole::AccentText),
         }
     }
+}
+
+#[cfg(feature = "split-view")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformSplitViewProfile {
+    pub preferred_pane_width: Dp,
+    pub minimum_content_width: Dp,
+    pub divider_width: Dp,
+    pub scrim_alpha: u8,
+    pub pane_color: ColorRole,
+    pub divider_color: ColorRole,
 }
 
 #[cfg(feature = "icon")]
