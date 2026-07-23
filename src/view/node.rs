@@ -207,14 +207,20 @@ impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
 
 const FRAMEWORK_WIDGET_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
 const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
-#[cfg(feature = "tabs")]
+#[cfg(any(
+    feature = "tabs",
+    all(feature = "shell", feature = "ui-document-runtime")
+))]
 const SYNTHETIC_WIDGET_ID_NAMESPACE: u64 = 3 << 62;
 const AUTOMATIC_WIDGET_ID_PROBE: u64 = 0x1e37_79b9_7f4a_7c15;
 
 impl WidgetId {
     /// Builds a deterministic identity for an interactive surface owned by a
     /// composite widget rather than by an application View node.
-    #[cfg(feature = "tabs")]
+    #[cfg(any(
+        feature = "tabs",
+        all(feature = "shell", feature = "ui-document-runtime")
+    ))]
     pub(crate) const fn synthetic_child(parent: Self, local: u64) -> Self {
         let mut hash = parent.0 ^ 0x9e37_79b9_7f4a_7c15;
         hash = hash

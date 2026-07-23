@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "gallery_navigation_items": "navigation_item_array",
+    "gallery_navigation_selected": "nullable_navigation_item_id"
+  },
+  "actions": {
+    "gallery_navigation_selected_changed": "navigation_item_id"
+  }
+}

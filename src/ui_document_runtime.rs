@@ -82,6 +82,7 @@ pub struct UiDocumentSecretAction {
         feature = "tree",
         feature = "grid-view",
         feature = "table",
+        feature = "shell",
         feature = "list",
         feature = "tabs",
         feature = "dialog",
@@ -434,6 +435,8 @@ fn compile_node<Msg: Clone + 'static>(
         "border" => column(children).flex(0.0),
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
+        #[cfg(feature = "shell")]
+        "navigation" => document_navigation(node, properties, children, mapper)?,
         #[cfg(feature = "list")]
         "list" => document_list(node, properties, children, mapper)?,
         #[cfg(feature = "scroll")]
@@ -2126,6 +2129,108 @@ fn document_tree<Msg: Clone + 'static>(
     Ok(control)
 }
 
+#[cfg(feature = "shell")]
+fn document_navigation<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let actual = children.len();
+    let mut children = children.into_iter();
+    let Some(content) = children.next() else {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 1,
+            actual,
+        });
+    };
+    if children.next().is_some() {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 1,
+            actual,
+        });
+    }
+
+    let author_items = navigation_items_property(node, properties, "items", true)?;
+    let author_footer_items = navigation_items_property(node, properties, "footer_items", false)?;
+    let selected = optional_navigation_item_id_property(node, properties, "selected")?;
+    let mut runtime_ids = BTreeMap::new();
+    let mut compile_group = |items: Vec<crate::ui_document::UiNavigationItem>| {
+        items
+            .into_iter()
+            .map(|item| {
+                let author_id = item.id().clone();
+                let runtime_id = crate::ui_document::ui_navigation_runtime_id(&node.id, &author_id);
+                if let Some(first) =
+                    runtime_ids.insert(runtime_id.0, author_id.as_str().to_owned())
+                {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "items",
+                        format!(
+                            "navigation item ids {first:?} and {:?} collide after stable runtime mapping",
+                            author_id.as_str()
+                        ),
+                    ));
+                }
+                let is_selected = selected.as_ref() == Some(&author_id);
+                if is_selected && !item.is_enabled() {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "selected",
+                        "selected navigation item must be enabled",
+                    ));
+                }
+                let mut runtime_item = crate::navigation_item(
+                    item.label(),
+                    item.semantic_icon(),
+                    is_selected,
+                )
+                .id(runtime_id)
+                .enabled(item.is_enabled());
+                if let Some(binding) = node.action_bindings.get("select") {
+                    let action = UiDocumentAction {
+                        node_id: node.id.as_str().to_owned(),
+                        binding: binding.clone(),
+                        property_binding: node.property_bindings.get("selected").cloned(),
+                        payload: Value::String(author_id.as_str().to_owned()),
+                    };
+                    runtime_item = runtime_item.on_click(mapper.map(action));
+                }
+                Ok(runtime_item)
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let items = compile_group(author_items)?;
+    let footer_items = compile_group(author_footer_items)?;
+    if let Some(selected) = selected.as_ref() {
+        if !runtime_ids.values().any(|id| id == selected.as_str()) {
+            return Err(invalid_resolved_property(
+                node,
+                "selected",
+                "selected navigation item must address an available item id",
+            ));
+        }
+    }
+
+    let mut spec = crate::ZsNavigationViewSpec::new(
+        string_property(node, properties, "title", ""),
+        string_property(node, properties, "subtitle", ""),
+    )
+    .items(items)
+    .footer_items(footer_items)
+    .content(node.id.widget_id(), content);
+    if let Some(width) = optional_non_negative_extent(node, properties, "pane_width")? {
+        spec = spec.pane_width(Dp::new(width));
+    }
+    if let Some(width) = optional_non_negative_extent(node, properties, "minimum_content_width")? {
+        spec = spec.minimum_content_width(Dp::new(width));
+    }
+    Ok(crate::navigation_view(spec))
+}
+
 #[cfg(feature = "grid-view")]
 fn document_grid_view<Msg: Clone + 'static>(
     node: &UiNode,
@@ -3496,6 +3601,109 @@ fn optional_tree_node_id_property(
     crate::ui_document::UiTreeNodeId::new(value)
         .map(Some)
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
+#[cfg(feature = "shell")]
+fn navigation_items_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+    required_non_empty: bool,
+) -> Result<Vec<crate::ui_document::UiNavigationItem>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return if required_non_empty {
+            Err(invalid_resolved_property(
+                node,
+                property,
+                "a non-empty navigation item array is required",
+            ))
+        } else {
+            Ok(Vec::new())
+        };
+    }
+    let Some(value) = property_value(node, properties, property) else {
+        return if required_non_empty {
+            Err(invalid_resolved_property(
+                node,
+                property,
+                "a non-empty navigation item array is required",
+            ))
+        } else {
+            Ok(Vec::new())
+        };
+    };
+    let items = crate::ui_document::ui_navigation_items_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            property,
+            "navigation items must use unique stable ids and non-empty labels",
+        )
+    })?;
+    if required_non_empty && items.is_empty() {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "a non-empty navigation item array is required",
+        ));
+    }
+    Ok(items)
+}
+
+#[cfg(feature = "shell")]
+fn optional_navigation_item_id_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiNavigationItemId>, UiDocumentRuntimeError> {
+    if node
+        .property_bindings
+        .get(property)
+        .is_some_and(|binding| !properties.contains_key(binding))
+    {
+        return Ok(None);
+    }
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            property,
+            "navigation item id must be a string or null",
+        )
+    })?;
+    crate::ui_document::UiNavigationItemId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
+#[cfg(feature = "shell")]
+fn optional_non_negative_extent(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<f32>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    let value = value.as_f64().ok_or_else(|| {
+        invalid_resolved_property(node, property, "extent must be a finite number")
+    })?;
+    if !value.is_finite() || value < 0.0 || value > f64::from(f32::MAX) {
+        return Err(invalid_resolved_property(
+            node,
+            property,
+            "extent must be a finite non-negative DP value",
+        ));
+    }
+    Ok(Some(value as f32))
 }
 
 #[cfg(feature = "grid-view")]
@@ -5087,6 +5295,62 @@ mod tests {
             serde_json::json!([{ "id": "blank", "label": " " }]),
         );
         assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
+    }
+
+    #[cfg(feature = "shell")]
+    #[test]
+    fn compiles_navigation_and_emits_semantic_selection() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "app-navigation",
+                "component": "navigation",
+                "properties": {
+                  "title": "ZSUI",
+                  "subtitle": "Native UI",
+                  "items": [
+                    { "id": "home", "label": "Home", "icon": "App" },
+                    { "id": "files", "label": "Files", "icon": "Folder" }
+                  ],
+                  "footer_items": [
+                    { "id": "settings", "label": "Settings", "icon": "Settings" }
+                  ],
+                  "selected": "home",
+                  "pane_width": 240,
+                  "minimum_content_width": 420
+                },
+                "action_bindings": { "select": "navigation_selected_changed" },
+                "children": [
+                  { "id": "navigation-content", "component": "text", "properties": { "text": "Home" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::new(),
+            actions: BTreeMap::from([(
+                "navigation_selected_changed".to_owned(),
+                crate::ui_document::UiValueType::NavigationItemId,
+            )]),
+        };
+        let mut view =
+            ui_document_view(&document, &bindings, &BTreeMap::new(), Msg::Action).unwrap();
+        let files_author = crate::ui_document::UiNavigationItemId::new("files").unwrap();
+        let files = crate::ui_document::ui_navigation_runtime_id(&document.root.id, &files_author);
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(&mut events, &crate::ViewEvent::Click { widget: files });
+        let messages = events.into_messages();
+        let [Msg::Action(selected)] = messages.as_slice() else {
+            panic!("navigation selection must emit one semantic-id action");
+        };
+        assert_eq!(selected.binding, "navigation_selected_changed");
+        assert_eq!(selected.property_binding, None);
+        assert_eq!(selected.payload, Value::String("files".to_owned()));
+
+        assert!(files.0 >> 62 == 3);
     }
 
     #[cfg(feature = "grid-view")]

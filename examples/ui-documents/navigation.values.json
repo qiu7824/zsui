@@ -1,0 +1,25 @@
+{
+  "gallery_navigation_items": [
+    {
+      "id": "inputs",
+      "label": "输入与操作 / Inputs",
+      "icon": "Edit"
+    },
+    {
+      "id": "collections",
+      "label": "集合 / Collections",
+      "icon": "Folder"
+    },
+    {
+      "id": "navigation",
+      "label": "导航 / Navigation",
+      "icon": "Sidebar"
+    },
+    {
+      "id": "feedback",
+      "label": "反馈与浮层 / Feedback",
+      "icon": "Info"
+    }
+  ],
+  "gallery_navigation_selected": "inputs"
+}

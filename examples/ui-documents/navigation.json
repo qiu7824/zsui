@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "gallery-navigation",
+    "component": "navigation",
+    "properties": {
+      "title": "ZSUI 组件库 / Gallery",
+      "subtitle": "原生组件预览 / Native component preview",
+      "footer_items": [
+        {
+          "id": "settings",
+          "label": "设置 / Settings",
+          "icon": "Settings"
+        }
+      ],
+      "pane_width": 252,
+      "minimum_content_width": 520
+    },
+    "property_bindings": {
+      "items": "gallery_navigation_items",
+      "selected": "gallery_navigation_selected"
+    },
+    "action_bindings": {
+      "select": "gallery_navigation_selected_changed"
+    },
+    "children": [
+      {
+        "id": "gallery-page",
+        "component": "stack",
+        "layout": {
+          "padding_token": "page_padding",
+          "gap_token": "content_gap"
+        },
+        "children": [
+          {
+            "id": "page-title",
+            "component": "text",
+            "properties": {
+              "text": "输入与操作 / Inputs",
+              "text_role": "title"
+            }
+          },
+          {
+            "id": "page-description",
+            "component": "text",
+            "properties": {
+              "text": "同一份语义文档由各平台生成自己的导航结构、字体、间距与选中样式。 / One semantic document resolves to platform-native navigation, typography, spacing, and selection chrome.",
+              "wrap": "word"
+            },
+            "layout": {
+              "width": 560
+            }
+          },
+          {
+            "id": "sample-card",
+            "component": "border",
+            "layout": {
+              "padding_token": "content_padding"
+            },
+            "children": [
+              {
+                "id": "sample-card-text",
+                "component": "text",
+                "properties": {
+                  "text": "稳定 ID 保留当前页面；应用代码不枚举 Win32、AppKit 或 Linux。 / Stable IDs retain the active page without platform branches in application code.",
+                  "wrap": "word"
+                },
+                "layout": {
+                  "width": 500
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

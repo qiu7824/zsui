@@ -1232,6 +1232,15 @@ history remain authoritative for implementation status.
   document-component coverage belong to the separate Viewer artifact. Do not
   evolve it into a dynamic Web-like platform or let a preview tool define
   reusable framework components.
+- Document-ready NavigationView uses `navigation_item_array` for stable semantic
+  rows across main and footer groups, `nullable_navigation_item_id` for
+  controlled selection and exactly one content subtree. `shell` owns the
+  required button/label implementation features. Runtime item WidgetIds live in
+  the composite-child namespace, while Windows/AppKit/Linux profiles continue
+  to own pane adaptation, geometry, typography and selection chrome. The local
+  Win32 Viewer proof at 1200x720 routed one real row click into one typed Viewer
+  message with zero unhandled clicks; RSS at teardown was 17,022,976 bytes and
+  Windows private bytes were 5,955,584.
 
 ## Acceptance applications
 

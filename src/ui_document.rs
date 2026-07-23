@@ -133,6 +133,26 @@ pub(crate) fn ui_grid_view_runtime_id(
     crate::ZsGridViewItemId::new(hash)
 }
 
+#[cfg(all(feature = "ui-document-runtime", feature = "shell"))]
+pub(crate) fn ui_navigation_runtime_id(
+    node_id: &UiNodeId,
+    item_id: &UiNavigationItemId,
+) -> crate::WidgetId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(item_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::WidgetId::synthetic_child(node_id.widget_id(), hash)
+}
+
 #[cfg(all(feature = "ui-document-runtime", feature = "table"))]
 pub(crate) fn ui_table_column_runtime_id(
     node_id: &UiNodeId,
@@ -1096,6 +1116,100 @@ impl UiTreeNode {
     }
 }
 
+/// Stable author-facing identity for one document-backed NavigationView item.
+///
+/// The identity is independent from declaration order and from the target
+/// platform's pane composition. The release runtime derives a private
+/// [`crate::WidgetId`] in the reserved document namespace.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiNavigationItemId(String);
+
+impl UiNavigationItemId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiNavigationItemIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiNavigationItemIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiNavigationItemId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiNavigationItemIdError {
+    value: String,
+}
+
+impl fmt::Display for UiNavigationItemIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "navigation item id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiNavigationItemIdError {}
+
+/// Application-owned semantic metadata for one NavigationView row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiNavigationItem {
+    id: UiNavigationItemId,
+    label: String,
+    icon: crate::ZsIcon,
+    #[serde(default = "ui_navigation_item_enabled_default")]
+    enabled: bool,
+}
+
+impl UiNavigationItem {
+    pub fn new(id: UiNavigationItemId, label: impl Into<String>, icon: crate::ZsIcon) -> Self {
+        Self {
+            id,
+            label: label.into(),
+            icon,
+            enabled: true,
+        }
+    }
+
+    pub const fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub fn id(&self) -> &UiNavigationItemId {
+        &self.id
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub const fn semantic_icon(&self) -> crate::ZsIcon {
+        self.icon
+    }
+
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+}
+
+const fn ui_navigation_item_enabled_default() -> bool {
+    true
+}
+
 /// Stable author-facing identity for one document-backed GridView item.
 ///
 /// The identity is independent from declaration order. The release runtime
@@ -1482,6 +1596,9 @@ pub enum UiValueType {
     NullableTreeNodeId,
     TreeNodeIdArray,
     TreeNodeArray,
+    NavigationItemId,
+    NullableNavigationItemId,
+    NavigationItemArray,
     GridViewItemId,
     NullableGridViewItemId,
     GridViewItemArray,
@@ -1540,6 +1657,11 @@ impl UiValueType {
             }
             Self::TreeNodeIdArray => ui_tree_node_ids_from_value(value).is_some(),
             Self::TreeNodeArray => ui_tree_nodes_from_value(value).is_some(),
+            Self::NavigationItemId => ui_navigation_item_id_from_value(value).is_some(),
+            Self::NullableNavigationItemId => {
+                value.is_null() || ui_navigation_item_id_from_value(value).is_some()
+            }
+            Self::NavigationItemArray => ui_navigation_items_from_value(value).is_some(),
             Self::GridViewItemId => ui_grid_view_item_id_from_value(value).is_some(),
             Self::NullableGridViewItemId => {
                 value.is_null() || ui_grid_view_item_id_from_value(value).is_some()
@@ -1811,6 +1933,23 @@ fn find_ui_tree_node<'a>(nodes: &'a [UiTreeNode], id: &UiTreeNodeId) -> Option<&
         }
     }
     None
+}
+
+fn ui_navigation_item_id_from_value(value: &Value) -> Option<UiNavigationItemId> {
+    value
+        .as_str()
+        .and_then(|value| UiNavigationItemId::new(value).ok())
+}
+
+pub(crate) fn ui_navigation_items_from_value(value: &Value) -> Option<Vec<UiNavigationItem>> {
+    let items = serde_json::from_value::<Vec<UiNavigationItem>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    (items.iter().all(|item| {
+        is_valid_node_id(item.id.as_str())
+            && ids.insert(item.id.as_str().to_owned())
+            && !item.label.trim().is_empty()
+    }))
+    .then_some(items)
 }
 
 fn ui_grid_view_item_id_from_value(value: &Value) -> Option<UiGridViewItemId> {
@@ -2961,6 +3100,33 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers one NavigationView group with stable semantic item IDs.
+    #[cfg(feature = "shell")]
+    pub fn register_navigation_items_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiNavigationItem> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NavigationItemArray, move |state| {
+            serde_json::to_value(read(state)).expect("navigation authoring metadata must serialize")
+        })
+    }
+
+    /// Registers the optional selected NavigationView item without exposing
+    /// the private runtime WidgetId.
+    #[cfg(feature = "shell")]
+    pub fn register_navigation_item_id_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiNavigationItemId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableNavigationItemId, move |state| {
+            read(state)
+                .map(|id| Value::String(id.as_str().to_owned()))
+                .unwrap_or(Value::Null)
+        })
+    }
+
     /// Registers application-owned GridView tile metadata with stable
     /// semantic item IDs.
     #[cfg(feature = "grid-view")]
@@ -3241,6 +3407,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
             let ids = ui_tree_node_ids_from_value(&payload)
                 .ok_or_else(|| "tree payload must contain unique stable string ids".to_owned())?;
             map(ids)
+        })
+    }
+
+    /// Registers a strongly typed NavigationView selection action.
+    #[cfg(feature = "shell")]
+    pub fn register_navigation_item_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiNavigationItemId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::NavigationItemId, move |payload| {
+            let id = ui_navigation_item_id_from_value(&payload)
+                .ok_or_else(|| "navigation payload must be a valid stable string id".to_owned())?;
+            map(id)
         })
     }
 
@@ -4164,6 +4344,111 @@ impl<'a> UiDocumentValidator<'a> {
                         }
                     }
                 }
+            }
+        }
+
+        if node.component == "navigation" {
+            let static_items = (!node.property_bindings.contains_key("items"))
+                .then(|| {
+                    node.properties
+                        .get("items")
+                        .and_then(ui_navigation_items_from_value)
+                })
+                .flatten();
+            let static_footer_items =
+                (!node.property_bindings.contains_key("footer_items")).then(|| {
+                    node.properties
+                        .get("footer_items")
+                        .and_then(ui_navigation_items_from_value)
+                        .unwrap_or_default()
+                });
+            let static_selected = (!node.property_bindings.contains_key("selected"))
+                .then(|| {
+                    node.properties
+                        .get("selected")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_navigation_item_id_from_value)
+                })
+                .flatten();
+            if static_items.as_ref().is_some_and(Vec::is_empty) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.items"),
+                    "navigation items must contain at least one item".to_owned(),
+                );
+            }
+            if let (Some(items), Some(footer_items)) =
+                (static_items.as_ref(), static_footer_items.as_ref())
+            {
+                let item_ids = items
+                    .iter()
+                    .map(UiNavigationItem::id)
+                    .collect::<BTreeSet<_>>();
+                if let Some(duplicate) = footer_items
+                    .iter()
+                    .map(UiNavigationItem::id)
+                    .find(|id| item_ids.contains(id))
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.footer_items"),
+                        format!(
+                            "navigation item id {:?} is duplicated across items and footer_items",
+                            duplicate.as_str()
+                        ),
+                    );
+                }
+            }
+            if let Some(selected) = static_selected.as_ref() {
+                let selected_item = static_items
+                    .iter()
+                    .flat_map(|items| items.iter())
+                    .chain(static_footer_items.iter().flat_map(|items| items.iter()))
+                    .find(|item| item.id() == selected);
+                match selected_item {
+                    None if static_items.is_some() && static_footer_items.is_some() => {
+                        push_diagnostic(
+                            diagnostics,
+                            UiDiagnosticCode::InvalidPropertyValue,
+                            format!("{path}.properties.selected"),
+                            "navigation selected must address an available item id".to_owned(),
+                        );
+                    }
+                    Some(item) if !item.is_enabled() => push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.selected"),
+                        "navigation selected must address an enabled item".to_owned(),
+                    ),
+                    None | Some(_) => {}
+                }
+            }
+            for name in ["pane_width", "minimum_content_width"] {
+                if node
+                    .properties
+                    .get(name)
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| !value.is_finite() || value < 0.0)
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.{name}"),
+                        format!("navigation {name} must be a finite non-negative DP extent"),
+                    );
+                }
+            }
+            if node.property_bindings.contains_key("selected")
+                && !node.action_bindings.contains_key("select")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.property_bindings.selected"),
+                    "bound navigation selected state requires a select action".to_owned(),
+                );
             }
         }
 
@@ -5629,6 +5914,47 @@ const COLOR_PICKER_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::String,
     },
 ];
+const NAVIGATION_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "title",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "subtitle",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "items",
+        value_type: UiValueType::NavigationItemArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "footer_items",
+        value_type: UiValueType::NavigationItemArray,
+        required: false,
+    },
+    PropertySpec {
+        name: "selected",
+        value_type: UiValueType::NullableNavigationItemId,
+        required: true,
+    },
+    PropertySpec {
+        name: "pane_width",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+    PropertySpec {
+        name: "minimum_content_width",
+        value_type: UiValueType::Number,
+        required: false,
+    },
+];
+const NAVIGATION_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "select",
+    payload_type: UiValueType::NavigationItemId,
+}];
 const TABS_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "labels",
@@ -5988,6 +6314,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "scroll" => Some(ComponentSchema {
             properties: SCROLL_PROPERTIES,
             actions: SCROLL_ACTIONS,
+            children: ChildPolicy::Exactly(1),
+        }),
+        "navigation" => Some(ComponentSchema {
+            properties: NAVIGATION_PROPERTIES,
+            actions: NAVIGATION_ACTIONS,
             children: ChildPolicy::Exactly(1),
         }),
         "tabs" => Some(ComponentSchema {
@@ -7109,6 +7440,77 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "shell")]
+    #[test]
+    fn typed_navigation_bindings_preserve_semantic_item_ids() {
+        struct NavigationState {
+            items: Vec<UiNavigationItem>,
+            selected: Option<UiNavigationItemId>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum NavigationMsg {
+            Selected(UiNavigationItemId),
+        }
+
+        let home = UiNavigationItemId::new("home").unwrap();
+        let settings = UiNavigationItemId::new("settings").unwrap();
+        let mut manifest = UiBindingManifest::<NavigationState, NavigationMsg>::new();
+        manifest
+            .register_navigation_items_property("navigation_items", |state| state.items.clone())
+            .unwrap();
+        manifest
+            .register_navigation_item_id_property("navigation_selected", |state| {
+                state.selected.clone()
+            })
+            .unwrap();
+        manifest
+            .register_navigation_item_id_action("navigation_selected_changed", |id| {
+                Ok(NavigationMsg::Selected(id))
+            })
+            .unwrap();
+
+        let state = NavigationState {
+            items: vec![
+                UiNavigationItem::new(home, "Home", crate::ZsIcon::App),
+                UiNavigationItem::new(settings.clone(), "Settings", crate::ZsIcon::Settings)
+                    .enabled(false),
+            ],
+            selected: Some(settings.clone()),
+        };
+        assert_eq!(
+            manifest.schema().properties["navigation_items"],
+            UiValueType::NavigationItemArray
+        );
+        assert_eq!(
+            manifest.schema().properties["navigation_selected"],
+            UiValueType::NullableNavigationItemId
+        );
+        assert_eq!(
+            manifest.schema().actions["navigation_selected_changed"],
+            UiValueType::NavigationItemId
+        );
+        assert_eq!(
+            manifest.read_property("navigation_items", &state),
+            Some(serde_json::json!([
+                { "id": "home", "label": "Home", "icon": "App", "enabled": true },
+                { "id": "settings", "label": "Settings", "icon": "Settings", "enabled": false }
+            ]))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "navigation_selected_changed",
+                Value::String("settings".to_owned())
+            ),
+            Ok(NavigationMsg::Selected(settings))
+        );
+        assert!(
+            !UiValueType::NavigationItemArray.matches(&serde_json::json!([
+                { "id": "same", "label": "One", "icon": "App" },
+                { "id": "same", "label": "Two", "icon": "Settings" }
+            ]))
+        );
+    }
+
     #[cfg(feature = "grid-view")]
     #[test]
     fn typed_grid_view_bindings_preserve_metadata_and_semantic_ids() {
@@ -7874,6 +8276,79 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
                 && diagnostic.path == "$.root.properties.expanded"
         }));
+    }
+
+    #[test]
+    fn navigation_contract_validates_groups_selection_and_content_slot() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "app-navigation",
+                "component": "navigation",
+                "properties": {
+                  "title": "ZSUI",
+                  "subtitle": "Native UI",
+                  "items": [
+                    { "id": "home", "label": "Home", "icon": "App" },
+                    { "id": "files", "label": "Files", "icon": "Folder" }
+                  ],
+                  "footer_items": [
+                    { "id": "settings", "label": "Settings", "icon": "Settings" }
+                  ],
+                  "selected": "home",
+                  "minimum_content_width": 420
+                },
+                "action_bindings": { "select": "navigation_selected_changed" },
+                "children": [
+                  { "id": "navigation-content", "component": "text", "properties": { "text": "Home" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::new(),
+            actions: BTreeMap::from([(
+                "navigation_selected_changed".to_owned(),
+                UiValueType::NavigationItemId,
+            )]),
+        };
+        let features = UiFeatureSet::new(["shell", "label"]);
+        let report = valid.validate(&features, &bindings);
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+        assert!(UiDocumentReleaseArtifact::compile(&valid, &features, &bindings).is_ok());
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "app-navigation",
+                "component": "navigation",
+                "properties": {
+                  "title": "ZSUI",
+                  "items": [{ "id": "same", "label": "Home", "icon": "App" }],
+                  "footer_items": [{ "id": "same", "label": "Settings", "icon": "Settings" }],
+                  "selected": "missing",
+                  "pane_width": -1
+                },
+                "children": [
+                  { "id": "navigation-content", "component": "text", "properties": { "text": "Home" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&features, &UiBindingSchema::default());
+        for path in [
+            "$.root.properties.footer_items",
+            "$.root.properties.selected",
+            "$.root.properties.pane_width",
+        ] {
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == UiDiagnosticCode::InvalidPropertyValue && diagnostic.path == path
+            }));
+        }
     }
 
     #[test]
