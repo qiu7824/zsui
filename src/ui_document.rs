@@ -14,7 +14,6 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[cfg(feature = "ui-document-runtime")]
 use crate::Dp;
 
 /// Schema version accepted by this ZSUI release.
@@ -132,6 +131,46 @@ pub(crate) fn ui_grid_view_runtime_id(
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     crate::ZsGridViewItemId::new(hash)
+}
+
+#[cfg(all(feature = "ui-document-runtime", feature = "table"))]
+pub(crate) fn ui_table_column_runtime_id(
+    node_id: &UiNodeId,
+    column_id: &UiTableColumnId,
+) -> crate::ZsTableColumnId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(column_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsTableColumnId::new(hash)
+}
+
+#[cfg(all(feature = "ui-document-runtime", feature = "table"))]
+pub(crate) fn ui_table_row_runtime_id(
+    node_id: &UiNodeId,
+    row_id: &UiTableRowId,
+) -> crate::ZsTableRowId {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in node_id
+        .as_str()
+        .as_bytes()
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .chain(row_id.as_str().as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::ZsTableRowId::new(hash)
 }
 
 #[cfg(all(feature = "ui-document-runtime", feature = "breadcrumb"))]
@@ -1153,6 +1192,240 @@ impl UiGridViewItem {
     }
 }
 
+/// Stable author-facing identity for one document-backed DataGrid column.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiTableColumnId(String);
+
+impl UiTableColumnId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiTableColumnIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiTableColumnIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiTableColumnId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiTableColumnIdError {
+    value: String,
+}
+
+impl fmt::Display for UiTableColumnIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "table column id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiTableColumnIdError {}
+
+/// Stable author-facing identity for one document-backed DataGrid row.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiTableRowId(String);
+
+impl UiTableRowId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiTableRowIdError> {
+        let value = value.into();
+        if is_valid_node_id(&value) {
+            Ok(Self(value))
+        } else {
+            Err(UiTableRowIdError { value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UiTableRowId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiTableRowIdError {
+    value: String,
+}
+
+impl fmt::Display for UiTableRowIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "table row id {:?} must be non-empty and contain only letters, numbers, '_', '-' or '.'",
+            self.value
+        )
+    }
+}
+
+impl Error for UiTableRowIdError {}
+
+/// Platform-neutral DataGrid column sizing.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UiTableColumnWidth {
+    Fixed { width: Dp },
+    Fill { weight: u16 },
+}
+
+impl Default for UiTableColumnWidth {
+    fn default() -> Self {
+        Self::Fill { weight: 1 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiTableColumnAlignment {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+/// Application-owned metadata for one document-backed DataGrid column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiTableColumn {
+    id: UiTableColumnId,
+    header: String,
+    #[serde(default)]
+    width: UiTableColumnWidth,
+    #[serde(default)]
+    alignment: UiTableColumnAlignment,
+    #[serde(default, skip_serializing_if = "is_false")]
+    sortable: bool,
+}
+
+impl UiTableColumn {
+    pub fn new(id: UiTableColumnId, header: impl Into<String>) -> Self {
+        Self {
+            id,
+            header: header.into(),
+            width: UiTableColumnWidth::default(),
+            alignment: UiTableColumnAlignment::default(),
+            sortable: false,
+        }
+    }
+
+    pub fn fixed_width(mut self, width: Dp) -> Self {
+        self.width = UiTableColumnWidth::Fixed { width };
+        self
+    }
+
+    pub fn fill_width(mut self, weight: u16) -> Self {
+        self.width = UiTableColumnWidth::Fill { weight };
+        self
+    }
+
+    pub const fn alignment(mut self, alignment: UiTableColumnAlignment) -> Self {
+        self.alignment = alignment;
+        self
+    }
+
+    pub const fn sortable(mut self, sortable: bool) -> Self {
+        self.sortable = sortable;
+        self
+    }
+
+    pub fn id(&self) -> &UiTableColumnId {
+        &self.id
+    }
+
+    pub fn header(&self) -> &str {
+        &self.header
+    }
+
+    pub const fn column_width(&self) -> UiTableColumnWidth {
+        self.width
+    }
+
+    pub const fn column_alignment(&self) -> UiTableColumnAlignment {
+        self.alignment
+    }
+
+    pub const fn is_sortable(&self) -> bool {
+        self.sortable
+    }
+}
+
+/// Application-owned display values for one document-backed DataGrid row.
+///
+/// Cells are keyed by stable column ID so reordering columns does not move a
+/// value into a different semantic field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiTableRow {
+    id: UiTableRowId,
+    cells: BTreeMap<UiTableColumnId, String>,
+}
+
+impl UiTableRow {
+    pub fn new(
+        id: UiTableRowId,
+        cells: impl IntoIterator<Item = (UiTableColumnId, String)>,
+    ) -> Self {
+        Self {
+            id,
+            cells: cells.into_iter().collect(),
+        }
+    }
+
+    pub fn id(&self) -> &UiTableRowId {
+        &self.id
+    }
+
+    pub fn cells(&self) -> &BTreeMap<UiTableColumnId, String> {
+        &self.cells
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiTableSortDirection {
+    Ascending,
+    Descending,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiTableSort {
+    column: UiTableColumnId,
+    direction: UiTableSortDirection,
+}
+
+impl UiTableSort {
+    pub const fn new(column: UiTableColumnId, direction: UiTableSortDirection) -> Self {
+        Self { column, direction }
+    }
+
+    pub fn column(&self) -> &UiTableColumnId {
+        &self.column
+    }
+
+    pub const fn direction(&self) -> UiTableSortDirection {
+        self.direction
+    }
+}
+
 const fn one_grid_span() -> u16 {
     1
 }
@@ -1212,6 +1485,12 @@ pub enum UiValueType {
     GridViewItemId,
     NullableGridViewItemId,
     GridViewItemArray,
+    TableColumnArray,
+    TableRowId,
+    NullableTableRowId,
+    TableRowArray,
+    TableSort,
+    NullableTableSort,
     StringArray,
     StringMap,
     GridTrackArray,
@@ -1266,6 +1545,14 @@ impl UiValueType {
                 value.is_null() || ui_grid_view_item_id_from_value(value).is_some()
             }
             Self::GridViewItemArray => ui_grid_view_items_from_value(value).is_some(),
+            Self::TableColumnArray => ui_table_columns_from_value(value).is_some(),
+            Self::TableRowId => ui_table_row_id_from_value(value).is_some(),
+            Self::NullableTableRowId => {
+                value.is_null() || ui_table_row_id_from_value(value).is_some()
+            }
+            Self::TableRowArray => ui_table_rows_from_value(value).is_some(),
+            Self::TableSort => ui_table_sort_from_value(value).is_some(),
+            Self::NullableTableSort => value.is_null() || ui_table_sort_from_value(value).is_some(),
             Self::StringArray => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -1547,6 +1834,57 @@ pub(crate) fn ui_grid_view_items_from_value(value: &Value) -> Option<Vec<UiGridV
                     .is_none_or(|subtitle| !subtitle.trim().is_empty())
         })
         .then_some(items)
+}
+
+fn ui_table_row_id_from_value(value: &Value) -> Option<UiTableRowId> {
+    value
+        .as_str()
+        .and_then(|value| UiTableRowId::new(value).ok())
+}
+
+pub(crate) fn ui_table_columns_from_value(value: &Value) -> Option<Vec<UiTableColumn>> {
+    let columns = serde_json::from_value::<Vec<UiTableColumn>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    (!columns.is_empty()
+        && columns.iter().all(|column| {
+            is_valid_node_id(column.id.as_str())
+                && ids.insert(column.id.clone())
+                && !column.header.trim().is_empty()
+                && match column.width {
+                    UiTableColumnWidth::Fixed { width } => width.0.is_finite() && width.0 > 0.0,
+                    UiTableColumnWidth::Fill { weight } => weight > 0,
+                }
+        }))
+    .then_some(columns)
+}
+
+pub(crate) fn ui_table_rows_from_value(value: &Value) -> Option<Vec<UiTableRow>> {
+    let rows = serde_json::from_value::<Vec<UiTableRow>>(value.clone()).ok()?;
+    let mut ids = BTreeSet::new();
+    rows.iter()
+        .all(|row| {
+            is_valid_node_id(row.id.as_str())
+                && ids.insert(row.id.clone())
+                && row
+                    .cells
+                    .keys()
+                    .all(|column_id| is_valid_node_id(column_id.as_str()))
+        })
+        .then_some(rows)
+}
+
+fn ui_table_sort_from_value(value: &Value) -> Option<UiTableSort> {
+    let sort = serde_json::from_value::<UiTableSort>(value.clone()).ok()?;
+    is_valid_node_id(sort.column.as_str()).then_some(sort)
+}
+
+pub(crate) fn ui_table_data_is_compatible(columns: &[UiTableColumn], rows: &[UiTableRow]) -> bool {
+    let column_ids = columns
+        .iter()
+        .map(|column| column.id.clone())
+        .collect::<BTreeSet<_>>();
+    rows.iter()
+        .all(|row| row.cells.keys().cloned().collect::<BTreeSet<_>>() == column_ids)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -2651,6 +2989,61 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers application-owned DataGrid column metadata with stable
+    /// semantic column IDs.
+    #[cfg(feature = "table")]
+    pub fn register_table_columns_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiTableColumn> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::TableColumnArray, move |state| {
+            serde_json::to_value(read(state)).expect("table column metadata must serialize")
+        })
+    }
+
+    /// Registers application-owned DataGrid rows with cells keyed by stable
+    /// semantic column IDs.
+    #[cfg(feature = "table")]
+    pub fn register_table_rows_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiTableRow> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::TableRowArray, move |state| {
+            serde_json::to_value(read(state)).expect("table row data must serialize")
+        })
+    }
+
+    /// Registers the optional selected DataGrid row without exposing the
+    /// runtime's numeric row identity.
+    #[cfg(feature = "table")]
+    pub fn register_table_row_id_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiTableRowId> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableTableRowId, move |state| {
+            read(state)
+                .map(|id| Value::String(id.as_str().to_owned()))
+                .unwrap_or(Value::Null)
+        })
+    }
+
+    /// Registers the optional application-owned DataGrid sort descriptor.
+    #[cfg(feature = "table")]
+    pub fn register_table_sort_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<UiTableSort> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableTableSort, move |state| {
+            read(state)
+                .map(|sort| serde_json::to_value(sort).expect("table sort must serialize"))
+                .unwrap_or(Value::Null)
+        })
+    }
+
     pub fn register_action(
         &mut self,
         name: impl Into<String>,
@@ -2862,6 +3255,34 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
             let id = ui_grid_view_item_id_from_value(&payload)
                 .ok_or_else(|| "grid-view payload must be a valid stable string id".to_owned())?;
             map(id)
+        })
+    }
+
+    /// Registers a strongly typed DataGrid row selection or invocation.
+    #[cfg(feature = "table")]
+    pub fn register_table_row_id_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiTableRowId) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::TableRowId, move |payload| {
+            let id = ui_table_row_id_from_value(&payload)
+                .ok_or_else(|| "table payload must be a valid stable row id".to_owned())?;
+            map(id)
+        })
+    }
+
+    /// Registers a strongly typed DataGrid sort action.
+    #[cfg(feature = "table")]
+    pub fn register_table_sort_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiTableSort) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::TableSort, move |payload| {
+            let sort = ui_table_sort_from_value(&payload)
+                .ok_or_else(|| "table payload must be a valid sort descriptor".to_owned())?;
+            map(sort)
         })
     }
 
@@ -3773,6 +4194,77 @@ impl<'a> UiDocumentValidator<'a> {
                     format!("{path}.properties.selected"),
                     "grid_view selected must address an available item id".to_owned(),
                 );
+            }
+        }
+
+        if node.component == "table" {
+            let static_columns = (!node.property_bindings.contains_key("columns"))
+                .then(|| {
+                    node.properties
+                        .get("columns")
+                        .and_then(ui_table_columns_from_value)
+                })
+                .flatten();
+            let static_rows = (!node.property_bindings.contains_key("rows"))
+                .then(|| {
+                    node.properties
+                        .get("rows")
+                        .and_then(ui_table_rows_from_value)
+                })
+                .flatten();
+            let static_selected = (!node.property_bindings.contains_key("selected"))
+                .then(|| {
+                    node.properties
+                        .get("selected")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_table_row_id_from_value)
+                })
+                .flatten();
+            let static_sort = (!node.property_bindings.contains_key("sort"))
+                .then(|| {
+                    node.properties
+                        .get("sort")
+                        .filter(|value| !value.is_null())
+                        .and_then(ui_table_sort_from_value)
+                })
+                .flatten();
+            if static_columns
+                .as_ref()
+                .zip(static_rows.as_ref())
+                .is_some_and(|(columns, rows)| !ui_table_data_is_compatible(columns, rows))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.rows"),
+                    "table rows must contain exactly one cell for every declared column id"
+                        .to_owned(),
+                );
+            }
+            if static_selected
+                .as_ref()
+                .zip(static_rows.as_ref())
+                .is_some_and(|(selected, rows)| !rows.iter().any(|row| row.id() == selected))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.selected"),
+                    "table selected must address an available row id".to_owned(),
+                );
+            }
+            if let (Some(sort), Some(columns)) = (static_sort.as_ref(), static_columns.as_ref()) {
+                if !columns
+                    .iter()
+                    .any(|column| column.id() == sort.column() && column.is_sortable())
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.sort"),
+                        "table sort must address an available sortable column id".to_owned(),
+                    );
+                }
             }
         }
 
@@ -4987,6 +5479,42 @@ const GRID_VIEW_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::GridViewItemId,
     },
 ];
+const TABLE_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "columns",
+        value_type: UiValueType::TableColumnArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "rows",
+        value_type: UiValueType::TableRowArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "selected",
+        value_type: UiValueType::NullableTableRowId,
+        required: true,
+    },
+    PropertySpec {
+        name: "sort",
+        value_type: UiValueType::NullableTableSort,
+        required: true,
+    },
+];
+const TABLE_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "select",
+        payload_type: UiValueType::TableRowId,
+    },
+    ActionSpec {
+        name: "sort",
+        payload_type: UiValueType::TableSort,
+    },
+    ActionSpec {
+        name: "invoke",
+        payload_type: UiValueType::TableRowId,
+    },
+];
 const DATE_PICKER_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "value",
@@ -5526,6 +6054,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         }),
         "tree" => Some(leaf(TREE_PROPERTIES, TREE_ACTIONS)),
         "grid_view" => Some(leaf(GRID_VIEW_PROPERTIES, GRID_VIEW_ACTIONS)),
+        "table" => Some(leaf(TABLE_PROPERTIES, TABLE_ACTIONS)),
         "date_picker" => Some(leaf(DATE_PICKER_PROPERTIES, DATE_PICKER_ACTIONS)),
         "time_picker" => Some(leaf(TIME_PICKER_PROPERTIES, TIME_PICKER_ACTIONS)),
         "color_picker" => Some(leaf(COLOR_PICKER_PROPERTIES, COLOR_PICKER_ACTIONS)),
@@ -6660,6 +7189,174 @@ mod tests {
         ])));
     }
 
+    #[cfg(feature = "table")]
+    #[test]
+    fn typed_table_bindings_preserve_column_row_and_sort_identity() {
+        struct TableState {
+            columns: Vec<UiTableColumn>,
+            rows: Vec<UiTableRow>,
+            selected: Option<UiTableRowId>,
+            sort: Option<UiTableSort>,
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum TableMsg {
+            Row(UiTableRowId),
+            Sort(UiTableSort),
+        }
+
+        let name = UiTableColumnId::new("name").unwrap();
+        let status = UiTableColumnId::new("status").unwrap();
+        let alpha = UiTableRowId::new("alpha").unwrap();
+        let mut manifest = UiBindingManifest::<TableState, TableMsg>::new();
+        manifest
+            .register_table_columns_property("inventory_columns", |state| state.columns.clone())
+            .unwrap();
+        manifest
+            .register_table_rows_property("inventory_rows", |state| state.rows.clone())
+            .unwrap();
+        manifest
+            .register_table_row_id_property("inventory_selected", |state| state.selected.clone())
+            .unwrap();
+        manifest
+            .register_table_sort_property("inventory_sort", |state| state.sort.clone())
+            .unwrap();
+        manifest
+            .register_table_row_id_action("inventory_selected_changed", |id| Ok(TableMsg::Row(id)))
+            .unwrap();
+        manifest
+            .register_table_sort_action("inventory_sort_changed", |sort| Ok(TableMsg::Sort(sort)))
+            .unwrap();
+
+        let state = TableState {
+            columns: vec![
+                UiTableColumn::new(name.clone(), "Name")
+                    .fill_width(2)
+                    .sortable(true),
+                UiTableColumn::new(status.clone(), "Status")
+                    .fixed_width(Dp::new(120.0))
+                    .alignment(UiTableColumnAlignment::Center),
+            ],
+            rows: vec![UiTableRow::new(
+                alpha.clone(),
+                [
+                    (name.clone(), "Alpha".to_owned()),
+                    (status.clone(), "Ready".to_owned()),
+                ],
+            )],
+            selected: Some(alpha.clone()),
+            sort: Some(UiTableSort::new(
+                name.clone(),
+                UiTableSortDirection::Ascending,
+            )),
+        };
+        assert_eq!(
+            manifest.schema().properties["inventory_columns"],
+            UiValueType::TableColumnArray
+        );
+        assert_eq!(
+            manifest.schema().properties["inventory_rows"],
+            UiValueType::TableRowArray
+        );
+        assert_eq!(
+            manifest.schema().properties["inventory_selected"],
+            UiValueType::NullableTableRowId
+        );
+        assert_eq!(
+            manifest.schema().properties["inventory_sort"],
+            UiValueType::NullableTableSort
+        );
+        assert_eq!(
+            manifest.read_property("inventory_rows", &state),
+            Some(serde_json::json!([{
+                "id": "alpha",
+                "cells": { "name": "Alpha", "status": "Ready" }
+            }]))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "inventory_selected_changed",
+                Value::String("alpha".to_owned())
+            ),
+            Ok(TableMsg::Row(alpha))
+        );
+        assert_eq!(
+            manifest.map_action(
+                "inventory_sort_changed",
+                serde_json::json!({ "column": "name", "direction": "descending" })
+            ),
+            Ok(TableMsg::Sort(UiTableSort::new(
+                name,
+                UiTableSortDirection::Descending
+            )))
+        );
+        assert!(!UiValueType::TableColumnArray.matches(&serde_json::json!([
+            { "id": "same", "header": "First" },
+            { "id": "same", "header": "Second" }
+        ])));
+        assert!(!UiValueType::TableColumnArray.matches(&serde_json::json!([
+            { "id": "bad", "header": "Bad", "width": { "kind": "fill", "weight": 0 } }
+        ])));
+    }
+
+    #[cfg(feature = "table")]
+    #[test]
+    fn table_contract_rejects_misaligned_cells_selection_and_sort() {
+        let valid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "inventory",
+                "component": "table",
+                "properties": {
+                  "columns": [
+                    { "id": "name", "header": "Name", "sortable": true },
+                    { "id": "status", "header": "Status" }
+                  ],
+                  "rows": [
+                    { "id": "alpha", "cells": { "name": "Alpha", "status": "Ready" } }
+                  ],
+                  "selected": "alpha",
+                  "sort": { "column": "name", "direction": "ascending" }
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = valid.validate(&UiFeatureSet::new(["table"]), &UiBindingSchema::default());
+        assert!(report.is_valid(), "{:#?}", report.diagnostics);
+
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "inventory",
+                "component": "table",
+                "properties": {
+                  "columns": [
+                    { "id": "name", "header": "Name", "sortable": true },
+                    { "id": "status", "header": "Status" }
+                  ],
+                  "rows": [
+                    { "id": "alpha", "cells": { "name": "Alpha" } }
+                  ],
+                  "selected": "missing",
+                  "sort": { "column": "status", "direction": "ascending" }
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&UiFeatureSet::new(["table"]), &UiBindingSchema::default());
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue)
+                .count(),
+            3
+        );
+    }
+
     #[test]
     fn auto_suggest_contract_validates_controlled_semantic_state() {
         let valid = UiDocument::from_json(
@@ -7691,10 +8388,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "table".to_owned();
+        document.root.children[0].component = "split_view".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "table"]),
+            &UiFeatureSet::new(["button", "label", "shell"]),
             &UiBindingSchema::default(),
         );
 

@@ -1,0 +1,70 @@
+{
+  "inventory_columns": [
+    {
+      "id": "name",
+      "header": "名称 / Name",
+      "width": {
+        "kind": "fill",
+        "weight": 2
+      },
+      "sortable": true
+    },
+    {
+      "id": "type",
+      "header": "类型 / Type",
+      "width": {
+        "kind": "fill",
+        "weight": 1
+      },
+      "sortable": true
+    },
+    {
+      "id": "status",
+      "header": "状态 / Status",
+      "width": {
+        "kind": "fixed",
+        "width": 140
+      },
+      "alignment": "center"
+    }
+  ],
+  "inventory_rows": [
+    {
+      "id": "alpha",
+      "cells": {
+        "name": "Alpha 项目",
+        "type": "Rust",
+        "status": "就绪 / Ready"
+      }
+    },
+    {
+      "id": "beta",
+      "cells": {
+        "name": "Beta 数据",
+        "type": "JSON",
+        "status": "待处理 / Pending"
+      }
+    },
+    {
+      "id": "gamma",
+      "cells": {
+        "name": "Gamma 资源",
+        "type": "PNG",
+        "status": "完成 / Complete"
+      }
+    },
+    {
+      "id": "delta",
+      "cells": {
+        "name": "Delta 文档",
+        "type": "Markdown",
+        "status": "就绪 / Ready"
+      }
+    }
+  ],
+  "inventory_selected": "alpha",
+  "inventory_sort": {
+    "column": "name",
+    "direction": "ascending"
+  }
+}

@@ -1747,7 +1747,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     if visible && *selected != Some(*row) {
                         *selected = Some(*row);
                         if let Some(message) = on_select {
-                            cx.emit(message(*row));
+                            cx.emit(message.map(*row));
                         }
                     }
                 }
@@ -1765,7 +1765,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         if *sort != Some(next) {
                             *sort = Some(next);
                             if let Some(message) = on_sort {
-                                cx.emit(message(next));
+                                cx.emit(message.map(next));
                             }
                         }
                     }
@@ -1782,7 +1782,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         .any(|candidate| candidate.id() == *row);
                     if visible {
                         if let Some(message) = on_invoke {
-                            cx.emit(message(*row));
+                            cx.emit(message.map(*row));
                         }
                     }
                 }

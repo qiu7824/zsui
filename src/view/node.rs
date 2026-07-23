@@ -19,6 +19,7 @@ impl WidgetId {
     feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -51,6 +52,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -83,6 +85,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -133,6 +136,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -175,6 +179,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "menu-flyout",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "textbox",
     feature = "password-box",
     feature = "checkbox",
@@ -907,9 +912,9 @@ pub enum ViewNodeKind<Msg> {
         rows: Vec<crate::ZsTableRow>,
         selected: Option<crate::ZsTableRowId>,
         sort: Option<crate::ZsTableSort>,
-        on_select: Option<fn(crate::ZsTableRowId) -> Msg>,
-        on_sort: Option<fn(crate::ZsTableSort) -> Msg>,
-        on_invoke: Option<fn(crate::ZsTableRowId) -> Msg>,
+        on_select: Option<ViewMessageMapper<crate::ZsTableRowId, Msg>>,
+        on_sort: Option<ViewMessageMapper<crate::ZsTableSort, Msg>>,
+        on_invoke: Option<ViewMessageMapper<crate::ZsTableRowId, Msg>>,
     },
     #[cfg(feature = "dialog")]
     ContentDialog {
@@ -1906,7 +1911,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "table")]
     pub fn on_table_select(mut self, message: fn(crate::ZsTableRowId) -> Msg) -> Self {
         if let ViewNodeKind::DataGrid { on_select, .. } = &mut self.kind {
-            *on_select = Some(message);
+            *on_select = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn on_table_select_with(
+        mut self,
+        message: impl Fn(crate::ZsTableRowId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::DataGrid { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1914,7 +1930,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "table")]
     pub fn on_table_sort(mut self, message: fn(crate::ZsTableSort) -> Msg) -> Self {
         if let ViewNodeKind::DataGrid { on_sort, .. } = &mut self.kind {
-            *on_sort = Some(message);
+            *on_sort = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn on_table_sort_with(
+        mut self,
+        message: impl Fn(crate::ZsTableSort) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::DataGrid { on_sort, .. } = &mut self.kind {
+            *on_sort = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -1922,7 +1949,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "table")]
     pub fn on_table_invoke(mut self, message: fn(crate::ZsTableRowId) -> Msg) -> Self {
         if let ViewNodeKind::DataGrid { on_invoke, .. } = &mut self.kind {
-            *on_invoke = Some(message);
+            *on_invoke = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "table")]
+    pub fn on_table_invoke_with(
+        mut self,
+        message: impl Fn(crate::ZsTableRowId) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::DataGrid { on_invoke, .. } = &mut self.kind {
+            *on_invoke = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

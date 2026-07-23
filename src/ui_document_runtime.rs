@@ -81,6 +81,7 @@ pub struct UiDocumentSecretAction {
         feature = "command-palette",
         feature = "tree",
         feature = "grid-view",
+        feature = "table",
         feature = "list",
         feature = "tabs",
         feature = "dialog",
@@ -1421,6 +1422,8 @@ fn compile_node<Msg: Clone + 'static>(
         "tree" => document_tree(node, properties, mapper)?,
         #[cfg(feature = "grid-view")]
         "grid_view" => document_grid_view(node, properties, mapper)?,
+        #[cfg(feature = "table")]
+        "table" => document_table(node, properties, mapper)?,
         #[cfg(feature = "date-picker")]
         "date_picker" => document_date_picker(node, properties, mapper)?,
         #[cfg(feature = "time-picker")]
@@ -2217,6 +2220,212 @@ fn document_grid_view<Msg: Clone + 'static>(
     Ok(control)
 }
 
+#[cfg(feature = "table")]
+fn document_table<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let author_columns = table_columns_property(node, properties)?;
+    let author_rows = table_rows_property(node, properties)?;
+    if !crate::ui_document::ui_table_data_is_compatible(&author_columns, &author_rows) {
+        return Err(invalid_resolved_property(
+            node,
+            "rows",
+            "every row must contain exactly one cell for every declared column id",
+        ));
+    }
+
+    let mut author_to_runtime_columns = BTreeMap::new();
+    let mut runtime_to_author_columns = BTreeMap::new();
+    let mut columns = Vec::with_capacity(author_columns.len());
+    for column in &author_columns {
+        let runtime_id = crate::ui_document::ui_table_column_runtime_id(&node.id, column.id());
+        if let Some(first) =
+            runtime_to_author_columns.insert(runtime_id, column.id().as_str().to_owned())
+        {
+            return Err(invalid_resolved_property(
+                node,
+                "columns",
+                format!(
+                    "table column ids {first:?} and {:?} collide after stable runtime mapping",
+                    column.id().as_str()
+                ),
+            ));
+        }
+        author_to_runtime_columns.insert(column.id().as_str().to_owned(), runtime_id);
+        let mut runtime_column = crate::ZsTableColumn::new(runtime_id, column.header());
+        runtime_column = match column.column_width() {
+            crate::ui_document::UiTableColumnWidth::Fixed { width } => {
+                runtime_column.fixed_width(width)
+            }
+            crate::ui_document::UiTableColumnWidth::Fill { weight } => {
+                runtime_column.fill_width(weight)
+            }
+        };
+        runtime_column = runtime_column
+            .alignment(match column.column_alignment() {
+                crate::ui_document::UiTableColumnAlignment::Start => crate::HorizontalAlign::Start,
+                crate::ui_document::UiTableColumnAlignment::Center => {
+                    crate::HorizontalAlign::Center
+                }
+                crate::ui_document::UiTableColumnAlignment::End => crate::HorizontalAlign::End,
+            })
+            .sortable(column.is_sortable());
+        columns.push(runtime_column);
+    }
+
+    let mut author_to_runtime_rows = BTreeMap::new();
+    let mut runtime_to_author_rows = BTreeMap::new();
+    let mut rows = Vec::with_capacity(author_rows.len());
+    for row in &author_rows {
+        let runtime_id = crate::ui_document::ui_table_row_runtime_id(&node.id, row.id());
+        if let Some(first) = runtime_to_author_rows.insert(runtime_id, row.id().as_str().to_owned())
+        {
+            return Err(invalid_resolved_property(
+                node,
+                "rows",
+                format!(
+                    "table row ids {first:?} and {:?} collide after stable runtime mapping",
+                    row.id().as_str()
+                ),
+            ));
+        }
+        author_to_runtime_rows.insert(row.id().as_str().to_owned(), runtime_id);
+        rows.push(crate::ZsTableRow::new(
+            runtime_id,
+            author_columns.iter().map(|column| {
+                row.cells()
+                    .get(column.id())
+                    .cloned()
+                    .expect("validated table row contains every column")
+            }),
+        ));
+    }
+
+    let selected = optional_table_row_id_property(node, properties, "selected")?
+        .map(|selected| {
+            author_to_runtime_rows
+                .get(selected.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "selected",
+                        format!(
+                            "id {:?} does not address an available table row",
+                            selected.as_str()
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
+    let sort = optional_table_sort_property(node, properties, "sort")?
+        .map(|sort| {
+            let column = author_columns
+                .iter()
+                .find(|column| column.id() == sort.column() && column.is_sortable())
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "sort",
+                        format!(
+                            "column {:?} is unavailable or not sortable",
+                            sort.column().as_str()
+                        ),
+                    )
+                })?;
+            let runtime_column = author_to_runtime_columns[column.id().as_str()];
+            let direction = match sort.direction() {
+                crate::ui_document::UiTableSortDirection::Ascending => {
+                    crate::ZsTableSortDirection::Ascending
+                }
+                crate::ui_document::UiTableSortDirection::Descending => {
+                    crate::ZsTableSortDirection::Descending
+                }
+            };
+            Ok(crate::ZsTableSort::new(runtime_column, direction))
+        })
+        .transpose()?;
+
+    let mut control = crate::data_grid(columns, rows)
+        .selected_table_row(selected)
+        .table_sort(sort);
+    let runtime_to_author_rows = Arc::new(runtime_to_author_rows);
+    let runtime_to_author_columns = Arc::new(runtime_to_author_columns);
+    if let Some(binding) = node.action_bindings.get("select") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("selected").cloned();
+        let runtime_to_author_rows = Arc::clone(&runtime_to_author_rows);
+        control = control.on_table_select_with(move |selected| {
+            let author_id = runtime_to_author_rows
+                .get(&selected)
+                .cloned()
+                .expect("selected runtime table row must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("sort") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("sort").cloned();
+        let runtime_to_author_columns = Arc::clone(&runtime_to_author_columns);
+        control = control.on_table_sort_with(move |sort| {
+            let author_id = runtime_to_author_columns
+                .get(&sort.column)
+                .cloned()
+                .expect("sorted runtime table column must address compiled document data");
+            let direction = match sort.direction {
+                crate::ZsTableSortDirection::Ascending => {
+                    crate::ui_document::UiTableSortDirection::Ascending
+                }
+                crate::ZsTableSortDirection::Descending => {
+                    crate::ui_document::UiTableSortDirection::Descending
+                }
+            };
+            let payload = serde_json::to_value(crate::ui_document::UiTableSort::new(
+                crate::ui_document::UiTableColumnId::new(author_id)
+                    .expect("compiled table author id remains valid"),
+                direction,
+            ))
+            .expect("table sort action must serialize");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload,
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("invoke") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let runtime_to_author_rows = Arc::clone(&runtime_to_author_rows);
+        control = control.on_table_invoke_with(move |invoked| {
+            let author_id = runtime_to_author_rows
+                .get(&invoked)
+                .cloned()
+                .expect("invoked runtime table row must address compiled document data");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: None,
+                payload: Value::String(author_id),
+            })
+        });
+    }
+    Ok(control)
+}
+
 #[cfg(feature = "breadcrumb")]
 fn document_breadcrumb<Msg: Clone + 'static>(
     node: &UiNode,
@@ -2940,6 +3149,7 @@ fn grid_gap_property(
     feature = "dialog",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "tooltip",
     feature = "teaching-tip"
 ))]
@@ -3013,6 +3223,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "command-palette",
     feature = "tree",
     feature = "grid-view",
+    feature = "table",
     feature = "list",
     feature = "tabs",
     feature = "grid",
@@ -3311,6 +3522,43 @@ fn grid_view_items_property(
     })
 }
 
+#[cfg(feature = "table")]
+fn table_columns_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiTableColumn>, UiDocumentRuntimeError> {
+    let value = property_value(node, properties, "columns").ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "columns",
+            "a non-empty table column array is required",
+        )
+    })?;
+    crate::ui_document::ui_table_columns_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "columns",
+            "table columns must use unique stable ids, non-empty headers and valid widths",
+        )
+    })
+}
+
+#[cfg(feature = "table")]
+fn table_rows_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<Vec<crate::ui_document::UiTableRow>, UiDocumentRuntimeError> {
+    let value = property_value(node, properties, "rows")
+        .ok_or_else(|| invalid_resolved_property(node, "rows", "a table row array is required"))?;
+    crate::ui_document::ui_table_rows_from_value(&value).ok_or_else(|| {
+        invalid_resolved_property(
+            node,
+            "rows",
+            "table rows must use unique stable ids and valid column-id cell maps",
+        )
+    })
+}
+
 #[cfg(feature = "breadcrumb")]
 fn breadcrumb_items_property(
     node: &UiNode,
@@ -3358,6 +3606,43 @@ fn optional_grid_view_item_id_property(
         invalid_resolved_property(node, property, "grid-view item id must be a string or null")
     })?;
     crate::ui_document::UiGridViewItemId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
+#[cfg(feature = "table")]
+fn optional_table_row_id_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiTableRowId>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let value = value.as_str().ok_or_else(|| {
+        invalid_resolved_property(node, property, "table row id must be a string or null")
+    })?;
+    crate::ui_document::UiTableRowId::new(value)
+        .map(Some)
+        .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
+}
+
+#[cfg(feature = "table")]
+fn optional_table_sort_property(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Option<crate::ui_document::UiTableSort>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    serde_json::from_value::<crate::ui_document::UiTableSort>(value)
         .map(Some)
         .map_err(|error| invalid_resolved_property(node, property, error.to_string()))
 }
@@ -3673,6 +3958,7 @@ mod tests {
         feature = "menu-flyout",
         feature = "tree",
         feature = "grid-view",
+        feature = "table",
         feature = "grid",
         feature = "list",
         feature = "password-box",
@@ -4922,6 +5208,169 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "selected"
+        ));
+    }
+
+    #[cfg(feature = "table")]
+    #[test]
+    fn compiles_controlled_table_and_emits_semantic_row_and_sort_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "inventory",
+                "component": "table",
+                "property_bindings": {
+                  "columns": "inventory_columns",
+                  "rows": "inventory_rows",
+                  "selected": "inventory_selected",
+                  "sort": "inventory_sort"
+                },
+                "action_bindings": {
+                  "select": "inventory_selected_changed",
+                  "sort": "inventory_sort_changed",
+                  "invoke": "inventory_invoked"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "inventory_columns".to_owned(),
+                    crate::ui_document::UiValueType::TableColumnArray,
+                ),
+                (
+                    "inventory_rows".to_owned(),
+                    crate::ui_document::UiValueType::TableRowArray,
+                ),
+                (
+                    "inventory_selected".to_owned(),
+                    crate::ui_document::UiValueType::NullableTableRowId,
+                ),
+                (
+                    "inventory_sort".to_owned(),
+                    crate::ui_document::UiValueType::NullableTableSort,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "inventory_selected_changed".to_owned(),
+                    crate::ui_document::UiValueType::TableRowId,
+                ),
+                (
+                    "inventory_sort_changed".to_owned(),
+                    crate::ui_document::UiValueType::TableSort,
+                ),
+                (
+                    "inventory_invoked".to_owned(),
+                    crate::ui_document::UiValueType::TableRowId,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "inventory_columns".to_owned(),
+                serde_json::json!([
+                    {
+                      "id": "name",
+                      "header": "Name",
+                      "width": { "kind": "fill", "weight": 2 },
+                      "sortable": true
+                    },
+                    {
+                      "id": "status",
+                      "header": "Status",
+                      "width": { "kind": "fixed", "width": 120.0 },
+                      "alignment": "center"
+                    }
+                ]),
+            ),
+            (
+                "inventory_rows".to_owned(),
+                serde_json::json!([
+                    { "id": "alpha", "cells": { "name": "Alpha", "status": "Ready" } },
+                    { "id": "beta", "cells": { "name": "Beta", "status": "Pending" } }
+                ]),
+            ),
+            (
+                "inventory_selected".to_owned(),
+                Value::String("alpha".to_owned()),
+            ),
+            (
+                "inventory_sort".to_owned(),
+                serde_json::json!({ "column": "name", "direction": "ascending" }),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        let name_author = crate::ui_document::UiTableColumnId::new("name").unwrap();
+        let alpha_author = crate::ui_document::UiTableRowId::new("alpha").unwrap();
+        let beta_author = crate::ui_document::UiTableRowId::new("beta").unwrap();
+        let name = crate::ui_document::ui_table_column_runtime_id(&document.root.id, &name_author);
+        let alpha = crate::ui_document::ui_table_row_runtime_id(&document.root.id, &alpha_author);
+        let beta = crate::ui_document::ui_table_row_runtime_id(&document.root.id, &beta_author);
+        let state = view.widget_table_state(widget).expect("table state");
+        assert_eq!(state.rows, vec![alpha, beta]);
+        assert_eq!(state.selected, Some(alpha));
+        assert_eq!(
+            state.sort,
+            Some(crate::ZsTableSort::new(
+                name,
+                crate::ZsTableSortDirection::Ascending
+            ))
+        );
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TableRowSelected { widget, row: beta },
+        );
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TableRowInvoked { widget, row: beta },
+        );
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TableSorted {
+                widget,
+                column: name,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(selected), Msg::Action(invoked), Msg::Action(sorted)] =
+            messages.as_slice()
+        else {
+            panic!("table must emit stable row selection/invocation and sort actions");
+        };
+        assert_eq!(selected.binding, "inventory_selected_changed");
+        assert_eq!(
+            selected.property_binding.as_deref(),
+            Some("inventory_selected")
+        );
+        assert_eq!(selected.payload, Value::String("beta".to_owned()));
+        assert_eq!(invoked.binding, "inventory_invoked");
+        assert_eq!(invoked.property_binding, None);
+        assert_eq!(invoked.payload, Value::String("beta".to_owned()));
+        assert_eq!(sorted.binding, "inventory_sort_changed");
+        assert_eq!(sorted.property_binding.as_deref(), Some("inventory_sort"));
+        assert_eq!(
+            sorted.payload,
+            serde_json::json!({ "column": "name", "direction": "descending" })
+        );
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "inventory_rows".to_owned(),
+            serde_json::json!([
+                { "id": "alpha", "cells": { "name": "Alpha" } }
+            ]),
+        );
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "rows"
         ));
     }
 

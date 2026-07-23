@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "inventory_columns": "table_column_array",
+    "inventory_rows": "table_row_array",
+    "inventory_selected": "nullable_table_row_id",
+    "inventory_sort": "nullable_table_sort"
+  },
+  "actions": {
+    "inventory_selected_changed": "table_row_id",
+    "inventory_sort_changed": "table_sort",
+    "inventory_invoked": "table_row_id"
+  }
+}

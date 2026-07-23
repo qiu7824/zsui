@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "inventory-table",
+    "component": "stack",
+    "layout": {
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "title",
+        "component": "text",
+        "properties": {
+          "text": "数据表格 / DataGrid",
+          "text_role": "subtitle"
+        }
+      },
+      {
+        "id": "summary",
+        "component": "text",
+        "properties": {
+          "text": "稳定列与行 ID 保持选择、排序和单元格语义。 / Stable column and row IDs preserve selection, sorting, and cell semantics.",
+          "text_role": "body",
+          "wrap": "word",
+          "ellipsis": false
+        },
+        "layout": {
+          "width": 620
+        }
+      },
+      {
+        "id": "inventory",
+        "component": "table",
+        "property_bindings": {
+          "columns": "inventory_columns",
+          "rows": "inventory_rows",
+          "selected": "inventory_selected",
+          "sort": "inventory_sort"
+        },
+        "action_bindings": {
+          "select": "inventory_selected_changed",
+          "sort": "inventory_sort_changed",
+          "invoke": "inventory_invoked"
+        },
+        "layout": {
+          "width": 660,
+          "height": 250
+        }
+      }
+    ]
+  }
+}

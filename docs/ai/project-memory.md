@@ -142,6 +142,16 @@ history remain authoritative for implementation status.
   ID, rejects collisions and unknown selections, and never uses responsive
   column position as identity. Windows Viewer proof selects and invokes one
   real tile through a pointer click and retains the final Win32 surface.
+  Document-ready DataGrid stores typed column and row arrays with globally
+  unique semantic string IDs. Every row keys its complete cell map by column
+  ID, so column reordering cannot move values into another semantic field.
+  Nullable selection and sort remain explicit controlled bindings; select and
+  invoke emit a stable row ID, while sort emits the stable column ID plus
+  direction. The release runtime derives private `ZsTableColumnId` and
+  `ZsTableRowId` values from the owning document node, rejects collisions,
+  incomplete cell maps, unavailable selections and nonsortable sort targets,
+  and never sorts application data. Windows Viewer proof selects/invokes one
+  row and toggles one real sortable header through native pointer input.
   Document-ready Tabs treats each direct child as one
   typed content slot: the child's stable `UiNodeId` derives the internal
   `ZsTabId`, keys its required label and optional semantic icon, and is the

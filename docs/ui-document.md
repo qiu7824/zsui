@@ -102,6 +102,16 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/menu-flyout.bindings.json
 ```
 
+DataGrid 文档可以用同一校验器验证：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,table,label `
+  -- check examples/ui-documents/table.json `
+  --bindings examples/ui-documents/table.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -114,7 +124,7 @@ cargo run --bin zsui-uic `
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
 `text`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
-`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
+`radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
 `teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
@@ -182,6 +192,16 @@ payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`ma
 `register_grid_view_item_id_action` 保留强类型语义 ID；发布运行时根据拥有者节点与项目
 ID 生成私有 `ZsGridViewItemId`，拒绝碰撞、重复项目及不存在的选择。项目重排和响应式
 列数变化不会改变身份，最终列宽、磁贴高度、间距和选择视觉继续由目标平台 profile 决定。
+
+`table.columns` 与 `table.rows` 分别使用 `table_column_array` 和 `table_row_array`。列与行都
+使用唯一稳定字符串 ID；每一行的 `cells` 以列 ID 为键并且必须恰好覆盖全部列，因此重排列
+不会把数据移动到错误的语义字段。列宽明确为正数 DP 或正整数 fill 权重，并可声明对齐和
+是否允许排序。`selected` 与 `sort` 使用 `nullable_table_row_id` 和
+`nullable_table_sort`，`select`、`invoke`、`sort` 分别返回强类型行 ID 或列 ID 加方向。
+Rust 应用通过 `register_table_*` property/action helper 保持这些作者身份；发布运行时根据
+拥有者节点生成私有 `ZsTableColumnId`/`ZsTableRowId`，拒绝映射碰撞、缺失单元格、不存在的
+选择以及指向不可排序列的排序。最终表头、行高、分隔线、选择与排序指示继续由目标平台的
+DataGrid profile 决定。
 
 `date_picker` 使用独立的 `date` 绑定类型，序列化形式固定为 ISO `YYYY-MM-DD`，不会把
 平台区域日期文本当作状态格式。`UiBindingManifest::register_date_property` 和
@@ -357,7 +377,7 @@ cargo run --bin zsui-viewer `
 纵向/横向视口；节点被删除、同一 ID 改为其他控件类型或文本框在单行/多行间切换时，
 旧焦点、选择、拖动和 IME 临时态会显式清除，避免把旧控件状态错误路由到新控件。
 `button.click`、`radio_button.choose`、`textbox.change`、`toggle_button.toggle`、
-`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、CommandPalette 四类状态动作、TreeView 三类状态动作、GridView 两类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
+`checkbox.toggle`、`toggle.toggle`、`slider.slide`、AutoSuggestBox 四类状态动作、CommandPalette 四类状态动作、TreeView 三类状态动作、GridView 两类状态动作、DataGrid 三类状态动作、DatePicker 三类状态动作、TimePicker 两类状态动作、ColorPicker 三类状态动作和 `scroll.scroll` 均走类型化 Viewer
 消息。带值控件
 通过按控件持有的 `ViewMessageMapper` 捕获稳定节点 ID、动作绑定和可选属性绑定；普通
 函数指针路径不分配堆内存，只有显式使用 `*_with` 捕获回调时才分配共享闭包。动作 payload
@@ -471,6 +491,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/grid-view.values.json
 ```
 
+受控 DataGrid 示例使用稳定列/行 ID、按列 ID 键控的单元格和显式排序状态：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/table.json `
+  --bindings examples/ui-documents/table.bindings.json `
+  --values examples/ui-documents/table.values.json
+```
+
 受控面包屑示例使用稳定路径项目 ID，并由目标平台决定折叠、分隔符和溢出表面：
 
 ```powershell
@@ -536,6 +567,9 @@ Windows TreeView 受控示例点击一个真实文件行，记录 1 次选择、
 消息和 0 次未处理点击；最终 Win32 PNG 保留完整页面文字、层级图标和新的稳定 ID 选择。
 Windows GridView 受控示例点击一个真实磁贴，记录 1 次选择、1 次调用、2 条 Viewer 消息
 和 0 次未处理点击；最终 Win32 PNG 保留完整双语页面、六个语义图标和新的稳定 ID 选择。
+Windows DataGrid 受控示例依次点击一个真实数据行和可排序表头，记录 1 次选择、1 次调用、
+1 次排序、3 条 Viewer 消息和 0 次未处理点击；最终 Win32 PNG 保留新的稳定行选择、降序
+指示、完整双语列头和不压缩的单元格文字。
 Windows BreadcrumbBar 受控示例点击真实溢出按钮，记录 1 次展开状态变化、1 条 Viewer
 消息和 0 次未处理点击；最终 Win32 PNG 保留目标平台绘制的路径和溢出表面。
 Windows Flyout 受控示例分别点击浮层内真实按钮与外部遮罩：两条场景都记录 1 次已处理
