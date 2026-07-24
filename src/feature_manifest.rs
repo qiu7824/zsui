@@ -528,6 +528,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "time-picker",
                 "color-picker",
                 "list",
+                "virtual-list",
+                "image-preview",
                 "tabs",
                 "grid",
                 "progress",
@@ -541,6 +543,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "menu-flyout",
                 "scroll",
                 "shell",
+                "workbench",
                 "document-shell",
                 "native-smoke",
             ],
@@ -983,6 +986,9 @@ mod tests {
         assert!(ui_viewer.enables.contains(&"command-palette"));
         assert!(ui_viewer.enables.contains(&"tree"));
         assert!(ui_viewer.enables.contains(&"grid-view"));
+        assert!(ui_viewer.enables.contains(&"virtual-list"));
+        assert!(ui_viewer.enables.contains(&"image-preview"));
+        assert!(ui_viewer.enables.contains(&"workbench"));
         assert!(full.enables.contains(&"ui-viewer"));
     }
 

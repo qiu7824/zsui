@@ -903,6 +903,17 @@ history remain authoritative for implementation status.
   1280x800 routed four real clicks plus one real scroll into five typed
   messages with zero unhandled clicks or scrolls; the observed pre-teardown
   process sample was 24,809,472 bytes RSS and 7,696,384 private.
+- Viewer reload compatibility covers both stable nodes and typed property
+  bindings. A binding value survives only when its name, `UiValueType` and
+  ordinary/secure storage class remain compatible. Removed, retyped or
+  storage-changed bindings produce deterministic reset diagnostics, and their
+  old ordinary or secret values are filtered before compiling the accepted
+  document so stale state cannot break the new View. Viewer smoke can inject a
+  prepared document/binding revision inside the running process and require a
+  reload or binding reset. The local Win32 proof accepted revision 2, retained
+  all three stable nodes, reported `window_title` as `binding_removed`, drew the
+  replacement bilingual title and captured the final `WM_PRINTCLIENT` surface
+  with no runtime errors.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

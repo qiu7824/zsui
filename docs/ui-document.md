@@ -841,6 +841,12 @@ cargo run --bin zsui-viewer `
 滚动处理、字体、最终平台视图捕获和进程内存。该报告索引 UiDocument 结构，但截图必须
 来自 AppKit `NSView` 或 Linux 最终呈现表面，不能用共享 DrawPlan PNG 代替。
 
+热重载 smoke 可用 `--smoke-duration-ms` 延长真实窗口运行时间，并用 `--require-reload`
+阻止未发生有效重载的场景通过。绑定迁移场景再加 `--require-binding-reset`，只有
+`proof.json` 中出现删除、改型或存储通道变化的确定性绑定重置记录时才通过。
+`--reload-document-from`、`--reload-bindings-from` 和 `--reload-after-ms` 可在同一 Viewer
+进程的真实窗口运行期间注入已准备好的下一 revision，避免外部测试进程与首帧启动竞态。
+
 Windows AutoSuggestBox 受控示例的本地原生证明使用一次真实建议行点击，记录 1 次已处理
 点击、4 条 Viewer 消息、0 次未处理点击，并在最终 Win32 PNG 中保留提交后的查询。
 Windows CommandPalette 受控示例的本地原生证明点击第二个真实命令行，记录 1 次调用、
@@ -974,6 +980,9 @@ let view = ui_document_view(
 profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
 原生 smoke 驱动或强制额外进程。
 
-完整组件覆盖和高级控件状态迁移仍是后续 v0.2 切片。AppKit 与 Linux Direct 已有固定
-Runner Viewer 证据；Windows Viewer 当前具有本地真实宿主证据，仍需固定 Runner 基准。
+全部 48 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
+身份：绑定类型和普通/安全存储通道兼容时保留值；绑定被删除、改型或改变存储通道时，
+`source.last_reload.binding_state_resets` 输出确定性原因，旧值不会进入新 View 编译。AppKit 与
+Linux Direct 已有固定 Runner Viewer 证据；Windows Viewer 当前具有本地真实宿主证据，
+仍需固定 Runner 基准和高级控件的跨平台重载交互证据。
 浏览器投影不能替代原生运行证据。

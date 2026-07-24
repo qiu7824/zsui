@@ -4,8 +4,10 @@ use std::{
     collections::BTreeMap,
     env,
     error::Error,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
 };
 
 use serde::Serialize;
@@ -28,6 +30,12 @@ struct Arguments {
     height: u32,
     poll_ms: u64,
     smoke_output: Option<PathBuf>,
+    smoke_duration_ms: u64,
+    require_reload: bool,
+    require_binding_reset: bool,
+    reload_document_from: Option<PathBuf>,
+    reload_bindings_from: Option<PathBuf>,
+    reload_after_ms: u64,
     smoke_clicks: Vec<Point>,
     smoke_scroll: Option<(Point, i32)>,
     benchmark_empty: bool,
@@ -61,6 +69,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let bindings = arguments
         .bindings
         .or_else(|| inferred_binding_path(&arguments.document));
+    let reload_injection =
+        if arguments.reload_document_from.is_some() || arguments.reload_bindings_from.is_some() {
+            if arguments.reload_bindings_from.is_some() && bindings.is_none() {
+                return Err(Box::new(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "--reload-bindings-from requires --bindings or an inferred binding file",
+                )));
+            }
+            Some(ViewerReloadInjection {
+                document_target: arguments.document.clone(),
+                document_source: arguments.reload_document_from,
+                binding_target: bindings.clone(),
+                binding_source: arguments.reload_bindings_from,
+                delay_ms: arguments.reload_after_ms,
+            })
+        } else {
+            None
+        };
     let source = UiViewerSource::open(&arguments.document, bindings.as_ref())?
         .poll_interval_ms(arguments.poll_ms);
     let state = load_values(arguments.values.as_deref())?;
@@ -92,6 +118,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             builder,
             &source,
             &output_directory,
+            arguments.smoke_duration_ms,
+            arguments.require_reload,
+            arguments.require_binding_reset,
+            reload_injection,
             &arguments.smoke_clicks,
             arguments.smoke_scroll,
         )?;
@@ -109,6 +139,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut height = 520_u32;
     let mut poll_ms = 250_u64;
     let mut smoke_output = None;
+    let mut smoke_duration_ms = 900_u64;
+    let mut require_reload = false;
+    let mut require_binding_reset = false;
+    let mut reload_document_from = None;
+    let mut reload_bindings_from = None;
+    let mut reload_after_ms = 500_u64;
     let mut smoke_clicks = Vec::new();
     let mut smoke_scroll = None;
     let mut benchmark_empty = false;
@@ -123,6 +159,27 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             "--height" => height = number_argument(&mut arguments, "--height")?,
             "--poll-ms" => poll_ms = number_argument(&mut arguments, "--poll-ms")?,
             "--smoke" => smoke_output = Some(path_argument(&mut arguments, "--smoke")?),
+            "--smoke-duration-ms" => {
+                smoke_duration_ms = number_argument(&mut arguments, "--smoke-duration-ms")?
+            }
+            "--require-reload" => require_reload = true,
+            "--require-binding-reset" => {
+                require_reload = true;
+                require_binding_reset = true;
+            }
+            "--reload-document-from" => {
+                require_reload = true;
+                reload_document_from =
+                    Some(path_argument(&mut arguments, "--reload-document-from")?);
+            }
+            "--reload-bindings-from" => {
+                require_reload = true;
+                reload_bindings_from =
+                    Some(path_argument(&mut arguments, "--reload-bindings-from")?);
+            }
+            "--reload-after-ms" => {
+                reload_after_ms = number_argument(&mut arguments, "--reload-after-ms")?
+            }
             "--benchmark-empty" => benchmark_empty = true,
             "--benchmark-seconds" => {
                 benchmark_seconds = Some(number_argument(&mut arguments, "--benchmark-seconds")?)
@@ -151,6 +208,14 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if width == 0 || height == 0 {
         return Err("--width and --height must be greater than zero".to_owned());
     }
+    if require_reload && smoke_output.is_none() {
+        return Err("Viewer reload proof options require --smoke".to_owned());
+    }
+    if (reload_document_from.is_some() || reload_bindings_from.is_some())
+        && reload_after_ms >= smoke_duration_ms
+    {
+        return Err("--reload-after-ms must be less than --smoke-duration-ms".to_owned());
+    }
 
     Ok(Arguments {
         document,
@@ -160,6 +225,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         height,
         poll_ms: poll_ms.max(16),
         smoke_output,
+        smoke_duration_ms: smoke_duration_ms.max(250),
+        require_reload,
+        require_binding_reset,
+        reload_document_from,
+        reload_bindings_from,
+        reload_after_ms: reload_after_ms.max(16),
         smoke_clicks,
         smoke_scroll,
         benchmark_empty,
@@ -195,6 +266,8 @@ where
 fn usage() -> &'static str {
     "usage: zsui-viewer <document.json> [--bindings path] [--values path] \
      [--width pixels] [--height pixels] [--poll-ms milliseconds] [--smoke output-directory] \
+     [--smoke-duration-ms milliseconds] [--require-reload] [--require-binding-reset] \
+     [--reload-document-from path] [--reload-bindings-from path] [--reload-after-ms milliseconds] \
      [--smoke-click x y]... [--smoke-scroll x y delta-y] \
      [--benchmark-empty] [--benchmark-seconds seconds]"
 }
@@ -218,12 +291,16 @@ fn run_smoke(
     builder: zsui::NativeWindowBuilder,
     source: &UiViewerSource,
     output_directory: &Path,
+    smoke_duration_ms: u64,
+    require_reload: bool,
+    require_binding_reset: bool,
+    reload_injection: Option<ViewerReloadInjection>,
     smoke_clicks: &[Point],
     smoke_scroll: Option<(Point, i32)>,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_directory)?;
     let screenshot = output_directory.join("window.png");
-    let mut options = NativeWindowSmokeRunOptions::new(900)
+    let mut options = NativeWindowSmokeRunOptions::new(smoke_duration_ms)
         .screenshot_file(screenshot.to_string_lossy())
         .require_screenshot(true);
     if !smoke_clicks.is_empty() {
@@ -232,7 +309,16 @@ fn run_smoke(
     if let Some((point, delta_y)) = smoke_scroll {
         options = options.native_view_scroll(point, delta_y);
     }
+    let reload_worker = reload_injection.map(|injection| {
+        thread::spawn(move || injection.apply().map_err(|error| error.to_string()))
+    });
     let runtime = builder.run_smoke(options)?;
+    if let Some(worker) = reload_worker {
+        worker
+            .join()
+            .map_err(|_| io::Error::other("the Viewer reload worker panicked"))?
+            .map_err(io::Error::other)?;
+    }
     if !runtime.visible_window_was_created() || !runtime.screenshot_captured {
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
@@ -260,6 +346,24 @@ fn run_smoke(
             "the native Viewer did not report its final platform-surface capture",
         )
     })?;
+    let source_snapshot = source.snapshot();
+    if require_reload && (source_snapshot.revision <= 1 || source_snapshot.last_reload.is_none()) {
+        return Err(Box::new(ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer did not accept a source reload",
+        )));
+    }
+    if require_binding_reset
+        && source_snapshot
+            .last_reload
+            .as_ref()
+            .is_none_or(|reload| reload.binding_state_resets.is_empty())
+    {
+        return Err(Box::new(ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer reload did not report an incompatible binding reset",
+        )));
+    }
     let proof = ViewerProof {
         schema: ZSUI_UI_VIEWER_PROOF_SCHEMA,
         schema_version: ZSUI_UI_VIEWER_PROOF_SCHEMA_VERSION,
@@ -274,7 +378,7 @@ fn run_smoke(
             scale_factor: capture.scale_factor,
             typography_scale: capture.typography_scale,
         },
-        source: source.snapshot(),
+        source: source_snapshot,
         runtime,
     };
     fs::write(
@@ -282,6 +386,34 @@ fn run_smoke(
         serde_json::to_vec_pretty(&proof)?,
     )?;
     Ok(())
+}
+
+#[derive(Debug)]
+struct ViewerReloadInjection {
+    document_target: PathBuf,
+    document_source: Option<PathBuf>,
+    binding_target: Option<PathBuf>,
+    binding_source: Option<PathBuf>,
+    delay_ms: u64,
+}
+
+impl ViewerReloadInjection {
+    fn apply(self) -> io::Result<()> {
+        thread::sleep(Duration::from_millis(self.delay_ms));
+        if let Some(source) = self.binding_source {
+            let target = self.binding_target.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "binding reload target was not configured",
+                )
+            })?;
+            fs::copy(source, target)?;
+        }
+        if let Some(source) = self.document_source {
+            fs::copy(source, self.document_target)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -339,5 +471,45 @@ mod tests {
             arguments.smoke_clicks,
             vec![Point { x: 120, y: 240 }, Point { x: 300, y: 160 }]
         );
+    }
+
+    #[test]
+    fn parser_accepts_required_binding_reload_smoke() {
+        let arguments = parse_arguments([
+            "ui.json".to_owned(),
+            "--smoke".to_owned(),
+            "proof".to_owned(),
+            "--smoke-duration-ms".to_owned(),
+            "2500".to_owned(),
+            "--require-binding-reset".to_owned(),
+            "--reload-document-from".to_owned(),
+            "next.json".to_owned(),
+            "--reload-bindings-from".to_owned(),
+            "next.bindings.json".to_owned(),
+            "--reload-after-ms".to_owned(),
+            "700".to_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(arguments.smoke_duration_ms, 2500);
+        assert!(arguments.require_reload);
+        assert!(arguments.require_binding_reset);
+        assert_eq!(
+            arguments.reload_document_from,
+            Some(PathBuf::from("next.json"))
+        );
+        assert_eq!(
+            arguments.reload_bindings_from,
+            Some(PathBuf::from("next.bindings.json"))
+        );
+        assert_eq!(arguments.reload_after_ms, 700);
+    }
+
+    #[test]
+    fn parser_rejects_reload_requirement_without_smoke_output() {
+        let error =
+            parse_arguments(["ui.json".to_owned(), "--require-reload".to_owned()]).unwrap_err();
+
+        assert!(error.contains("require --smoke"));
     }
 }

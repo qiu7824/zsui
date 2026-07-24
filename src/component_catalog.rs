@@ -298,10 +298,10 @@ const SPLIT_VIEW_GAPS: &[&str] = &[
     "AppKit and Linux target interaction proof",
 ];
 const WORKBENCH_GAPS: &[&str] = &[
-    "native editable composer input",
+    "three-target composer IME, selection and accessibility proof",
     "hover pressed focus-visible state matrix",
     "dark and high-contrast target smoke",
-    "macOS and GTK native binding",
+    "AppKit and Linux target interaction proof",
 ];
 macro_rules! component {
     ($name:literal, $analogue:literal, $category:ident, $status:ident, $feature:expr, $path:literal, $gaps:expr) => {

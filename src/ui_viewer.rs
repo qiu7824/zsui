@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::ui_document::{
-    validate_ui_document_binding_values, UiBindingSchema, UiDiagnostic, UiDocument, UiFeatureSet,
-    UiLayout, UiNode, UiSecretValues,
+    ui_document_sensitive_bindings, validate_ui_document_binding_values, UiBindingSchema,
+    UiDiagnostic, UiDocument, UiFeatureSet, UiLayout, UiNode, UiSecretValues, UiValueType,
 };
 pub use crate::ui_document_runtime::UiDocumentAction as UiViewerAction;
 use crate::ui_document_runtime::{ui_document_view_with_secrets, UiDocumentSecretAction};
@@ -120,11 +120,21 @@ pub struct UiViewerReloadReport {
     pub preserved_node_ids: Vec<String>,
     pub added_node_ids: Vec<String>,
     pub state_resets: Vec<UiViewerStateReset>,
+    /// Stable property bindings whose ordinary or secure state remains
+    /// type- and storage-compatible with the accepted source revision.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preserved_property_bindings: Vec<String>,
+    /// Property bindings introduced by the accepted source revision.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_property_bindings: Vec<String>,
+    /// Explicit diagnostics for binding state that cannot be reused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binding_state_resets: Vec<UiViewerBindingStateReset>,
 }
 
 impl UiViewerReloadReport {
     pub fn preserves_all_existing_state(&self) -> bool {
-        self.state_resets.is_empty()
+        self.state_resets.is_empty() && self.binding_state_resets.is_empty()
     }
 }
 
@@ -144,6 +154,25 @@ pub enum UiViewerStateResetReason {
     NodeRemoved,
     ComponentChanged,
     ComponentConfigurationChanged,
+}
+
+/// One typed property binding whose previous Viewer value is incompatible
+/// with the accepted source revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiViewerBindingStateReset {
+    pub binding: String,
+    pub previous_type: UiValueType,
+    pub current_type: Option<UiValueType>,
+    pub reason: UiViewerBindingStateResetReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiViewerBindingStateResetReason {
+    BindingRemoved,
+    ValueTypeChanged,
+    StorageClassChanged,
 }
 
 #[derive(Clone)]
@@ -246,7 +275,9 @@ impl UiViewerSource {
                 let next_revision = state.revision.saturating_add(1);
                 let reload = reload_compatibility_report(
                     &state.document,
+                    &state.bindings,
                     &document,
+                    &bindings,
                     state.revision,
                     next_revision,
                 );
@@ -284,7 +315,7 @@ impl UiViewerSource {
 
     pub fn view(&self, viewer_state: &UiViewerState) -> ViewNode<UiViewerMessage> {
         self.refresh();
-        let (document, bindings, last_error, state_reset_count) = {
+        let (document, bindings, last_error, node_reset_count, binding_reset_count) = {
             let state = self.lock();
             (
                 Arc::clone(&state.document),
@@ -295,23 +326,30 @@ impl UiViewerSource {
                     .as_ref()
                     .map(|reload| reload.state_resets.len())
                     .unwrap_or(0),
+                state
+                    .last_reload
+                    .as_ref()
+                    .map(|reload| reload.binding_state_resets.len())
+                    .unwrap_or(0),
             )
         };
+        let (properties, secrets) = compatible_viewer_values(&document, &bindings, viewer_state);
         let content = ui_document_view_with_secrets(
             &document,
             &bindings,
-            &viewer_state.properties,
-            &viewer_state.secure_properties,
+            &properties,
+            &secrets,
             UiViewerMessage::Action,
             UiViewerMessage::Secret,
         )
         .unwrap_or_else(|error| text(format!("UI document runtime error: {error}")));
         let mut root = if let Some(error) = last_error {
             column([text(format!("UI document reload error: {error}")), content]).gap(Dp::new(8.0))
-        } else if state_reset_count > 0 {
+        } else if node_reset_count > 0 || binding_reset_count > 0 {
             column([
                 text(format!(
-                    "UI reload reset state for {state_reset_count} incompatible node(s)"
+                    "UI 重载已重置不兼容状态 / UI reload reset incompatible state: \
+                     {node_reset_count} node(s), {binding_reset_count} binding(s)"
                 )),
                 content,
             ])
@@ -471,7 +509,9 @@ fn parse_and_validate_sources(
 
 fn reload_compatibility_report(
     previous: &UiDocument,
+    previous_bindings: &UiBindingSchema,
     current: &UiDocument,
+    current_bindings: &UiBindingSchema,
     from_revision: u64,
     to_revision: u64,
 ) -> UiViewerReloadReport {
@@ -511,13 +551,82 @@ fn reload_compatibility_report(
         .cloned()
         .collect();
 
+    let previous_sensitive = ui_document_sensitive_bindings(previous);
+    let current_sensitive = ui_document_sensitive_bindings(current);
+    let mut preserved_property_bindings = Vec::new();
+    let mut binding_state_resets = Vec::new();
+    for (binding, previous_type) in &previous_bindings.properties {
+        match current_bindings.properties.get(binding) {
+            Some(current_type)
+                if current_type == previous_type
+                    && previous_sensitive.contains(binding)
+                        == current_sensitive.contains(binding) =>
+            {
+                preserved_property_bindings.push(binding.clone());
+            }
+            Some(current_type) => binding_state_resets.push(UiViewerBindingStateReset {
+                binding: binding.clone(),
+                previous_type: *previous_type,
+                current_type: Some(*current_type),
+                reason: if current_type != previous_type {
+                    UiViewerBindingStateResetReason::ValueTypeChanged
+                } else {
+                    UiViewerBindingStateResetReason::StorageClassChanged
+                },
+            }),
+            None => binding_state_resets.push(UiViewerBindingStateReset {
+                binding: binding.clone(),
+                previous_type: *previous_type,
+                current_type: None,
+                reason: UiViewerBindingStateResetReason::BindingRemoved,
+            }),
+        }
+    }
+    let added_property_bindings = current_bindings
+        .properties
+        .keys()
+        .filter(|binding| !previous_bindings.properties.contains_key(*binding))
+        .cloned()
+        .collect();
+
     UiViewerReloadReport {
         from_revision,
         to_revision,
         preserved_node_ids,
         added_node_ids,
         state_resets,
+        preserved_property_bindings,
+        added_property_bindings,
+        binding_state_resets,
     }
+}
+
+fn compatible_viewer_values(
+    document: &UiDocument,
+    bindings: &UiBindingSchema,
+    state: &UiViewerState,
+) -> (BTreeMap<String, Value>, UiSecretValues) {
+    let sensitive = ui_document_sensitive_bindings(document);
+    let properties = bindings
+        .properties
+        .iter()
+        .filter(|(binding, _)| !sensitive.contains(*binding))
+        .filter_map(|(binding, value_type)| {
+            state
+                .properties
+                .get(binding)
+                .filter(|value| value_type.matches(value))
+                .cloned()
+                .map(|value| (binding.clone(), value))
+        })
+        .collect();
+    let mut secrets = UiSecretValues::new();
+    for binding in sensitive {
+        if let Some(value) = state.secure_properties.get(&binding) {
+            secrets.insert(binding, value.clone());
+        }
+    }
+    (properties, secrets)
 }
 
 #[derive(Clone)]
@@ -698,7 +807,142 @@ mod tests {
         let reload = snapshot.last_reload.unwrap();
         assert!(reload.preserves_all_existing_state());
         assert_eq!(reload.preserved_node_ids, ["root", "save-button", "title"]);
+        assert_eq!(reload.preserved_property_bindings, ["window_title"]);
+        assert!(reload.binding_state_resets.is_empty());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn viewer_filters_removed_binding_state_and_reports_the_reset() {
+        let directory = fixture_directory("binding-removal");
+        let (document_path, binding_path) = write_fixtures(&directory);
+        let source = UiViewerSource::open(&document_path, Some(&binding_path)).unwrap();
+        let state = UiViewerState::with_properties(BTreeMap::from([(
+            "window_title".to_owned(),
+            Value::String("Retired title".to_owned()),
+        )]));
+        fs::write(
+            &document_path,
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "root",
+                "component": "stack",
+                "children": [
+                  {
+                    "id": "title",
+                    "component": "text",
+                    "properties": { "text": "Literal title" }
+                  },
+                  {
+                    "id": "save-button",
+                    "component": "button",
+                    "properties": { "label": "Save" },
+                    "action_bindings": { "click": "save" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        fs::write(&binding_path, r#"{"actions":{"save":"null"}}"#).unwrap();
+
+        assert!(source.refresh());
+        let snapshot = source.snapshot();
+        let reload = snapshot.last_reload.unwrap();
+        assert_eq!(reload.state_resets.len(), 0);
+        assert_eq!(reload.binding_state_resets.len(), 1);
+        assert_eq!(reload.binding_state_resets[0].binding, "window_title");
+        assert_eq!(
+            reload.binding_state_resets[0].reason,
+            UiViewerBindingStateResetReason::BindingRemoved
+        );
+        assert!(!reload.preserves_all_existing_state());
+
+        let (properties, secrets, compiled) = {
+            let source_state = source.lock();
+            let (properties, secrets) =
+                compatible_viewer_values(&source_state.document, &source_state.bindings, &state);
+            let compiled = ui_document_view_with_secrets(
+                &source_state.document,
+                &source_state.bindings,
+                &properties,
+                &secrets,
+                UiViewerMessage::Action,
+                UiViewerMessage::Secret,
+            )
+            .unwrap();
+            (properties, secrets, compiled)
+        };
+        assert!(properties.is_empty());
+        assert!(secrets.is_empty());
+        assert_eq!(
+            compiled.id,
+            Some(
+                crate::ui_document::UiNodeId::new("root")
+                    .unwrap()
+                    .widget_id()
+            )
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reload_report_distinguishes_binding_type_and_storage_changes() {
+        let document = |component: &str, property: &str| {
+            UiDocument::from_json(&format!(
+                r#"{{
+                  "schema_version": 1,
+                  "root": {{
+                    "id": "control",
+                    "component": "{component}",
+                    "property_bindings": {{ "{property}": "value" }}
+                  }}
+                }}"#
+            ))
+            .unwrap()
+        };
+        let ordinary = document("text", "text");
+        let boolean = document("checkbox", "checked");
+        let secure = document("password_box", "value");
+        let string_bindings = UiBindingSchema {
+            properties: BTreeMap::from([("value".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::new(),
+        };
+        let boolean_bindings = UiBindingSchema {
+            properties: BTreeMap::from([("value".to_owned(), UiValueType::Boolean)]),
+            actions: BTreeMap::new(),
+        };
+
+        let retyped = reload_compatibility_report(
+            &ordinary,
+            &string_bindings,
+            &boolean,
+            &boolean_bindings,
+            1,
+            2,
+        );
+        assert_eq!(
+            retyped.binding_state_resets[0].reason,
+            UiViewerBindingStateResetReason::ValueTypeChanged
+        );
+        assert_eq!(
+            retyped.binding_state_resets[0].current_type,
+            Some(UiValueType::Boolean)
+        );
+
+        let secured = reload_compatibility_report(
+            &ordinary,
+            &string_bindings,
+            &secure,
+            &string_bindings,
+            2,
+            3,
+        );
+        assert_eq!(
+            secured.binding_state_resets[0].reason,
+            UiViewerBindingStateResetReason::StorageClassChanged
+        );
     }
 
     #[test]

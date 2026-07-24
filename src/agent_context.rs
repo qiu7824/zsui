@@ -363,10 +363,10 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             status_name: "component_catalog_runtime_surface_ratio",
             source_path: "src/component_catalog.rs",
             missing_before_complete: vec![
-                "content-sized grid tracks and richer repeater layout",
-                "image view runtime beyond its render-protocol contract",
+                "content-sized grid tracks and variable-height repeater layout",
+                "animated image formats, color-profile handling and accessibility",
                 "accessibility and non-Windows target proof for advanced controls",
-                "workbench native input and live composer routing",
+                "workbench interaction-state polish and non-Windows target proof",
             ],
         },
         ZsuiCompletionArea {
@@ -415,13 +415,13 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "reloadable_ui_authoring",
-            percent_complete: 83,
+            percent_complete: 94,
             status_name:
-                "schema_typed_stable_grid_placement_native_viewer_target_proof_and_release_embedding_ready",
+                "all_catalog_components_typed_binding_migration_native_viewer_target_proof_and_release_embedding_ready",
             source_path: "docs/v0.2-desktop-native.md",
             missing_before_complete: vec![
-                "complete component and property coverage in the versioned UiDocument schema",
-                "stable-ID state preservation for advanced controls",
+                "fixed Windows Runner proof for the native Viewer",
+                "AppKit and Linux reload interaction proof for advanced document controls",
             ],
         },
         ZsuiCompletionArea {
@@ -936,7 +936,7 @@ mod tests {
             .iter()
             .find(|area| area.area_name == "reloadable_ui_authoring")
             .expect("reloadable UI authoring completion area should exist");
-        assert_eq!(reloadable_authoring.percent_complete, 83);
+        assert_eq!(reloadable_authoring.percent_complete, 94);
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert_eq!(context.readiness.platform_capability_readiness.len(), 4);
         let macos = context

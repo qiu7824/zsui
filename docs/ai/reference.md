@@ -21,7 +21,7 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 83% complete; schema version 1, the typed
+- Reloadable UI authoring: about 94% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
   auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
   compatibility, preserve native focus/text selection/editor viewport for
@@ -40,8 +40,9 @@ framework readiness.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. Twenty-nine components are document-ready, including
-  Toast, InfoBar and ContentDialog; NumberBox
+  runtime memory evidence. All 48 catalog components are document-ready,
+  including Toast, InfoBar, ContentDialog, Image, ItemsRepeater, SettingsCard
+  and the typed Workbench composition; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
   options plus controlled nullable selection and expanded state. Tabs maps each
   direct child's stable ID to a typed content slot, semantic header and
@@ -55,9 +56,12 @@ framework readiness.
   separately controlled color, expanded and active-channel state while keeping
   WinUI, AppKit and GTK rendering profiles platform-owned. Local Win32 Viewer
   proof changes both channel and RGBA state through one native click with no
-  unhandled input and retains the final platform-surface PNG. Complete
-  component coverage and broader
-  advanced-control state retention remain.
+  unhandled input and retains the final platform-surface PNG. A catalog audit
+  prevents future components from silently omitting a document schema.
+  Accepted reloads compare property-binding type and secure/ordinary storage
+  class, preserve compatible values and filter removed or incompatible values
+  before the new View is compiled. Fixed Windows Runner proof and broader
+  AppKit/Linux reload interaction evidence remain.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.
@@ -236,7 +240,9 @@ user/assistant/system/tool message roles, paragraph/code/tool/notice blocks,
 message actions, composer controls and an optional inspector. The first pass is
 DPI-aware and exposes draw plans, hit regions, bounded scrolling and local
 selection state. `NativeWindowBuilder::workbench(...)` renders it on the native
-window path; full Win32 event-loop routing and editable composer input remain
+window path. The retained View route exposes timeline scrolling, editable
+composer text and typed toolbar/message/sidebar/inspector actions; three-target
+composer IME, selection, accessibility and interaction-state proof remain
 explicit gaps.
 Its built-in visuals use the Fluent token definitions in `src/style.rs` and
 semantic `ZsIcon` commands from `src/icon.rs`. Agents must not add PUA glyph
