@@ -1236,7 +1236,8 @@ impl<Msg> ViewNode<Msg> {
                     feature = "split-view",
                     feature = "button",
                     feature = "icon",
-                    feature = "label"
+                    feature = "label",
+                    feature = "virtual-list"
                 )
             ))]
             platform_style_override: None,

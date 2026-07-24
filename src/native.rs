@@ -8172,6 +8172,22 @@ pub(crate) fn record_native_view_input_reports(
                 report.native_view_canvas_pointer_drag_count += 1;
             }
         }
+        #[cfg(feature = "virtual-list")]
+        if matches!(
+            input,
+            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. }
+        ) && input_dispatches
+            .iter()
+            .any(|dispatch| dispatch.items_repeater_scrollbar_drag_active)
+            && input_dispatches
+                .iter()
+                .any(|dispatch| dispatch.items_repeater_viewport_changed)
+            && input_dispatches
+                .last()
+                .is_some_and(|dispatch| !dispatch.items_repeater_scrollbar_drag_active)
+        {
+            report.native_view_items_repeater_scrollbar_drag_count += 1;
+        }
 
         match input {
             NativeViewSmokeInput::Move(_) => report.native_view_pointer_move_count += 1,
@@ -8295,8 +8311,6 @@ pub(crate) fn record_native_view_input_reports(
         {
             report.native_view_items_repeater_viewport_change_count +=
                 usize::from(dispatch.items_repeater_viewport_changed);
-            report.native_view_items_repeater_scrollbar_drag_count +=
-                usize::from(dispatch.items_repeater_scrollbar_drag_active);
         }
         #[cfg(feature = "color-picker")]
         {
@@ -13814,6 +13828,42 @@ mod tests {
 
         assert_eq!(report.native_view_canvas_pointer_event_count, 3);
         assert_eq!(report.native_view_canvas_pointer_drag_count, 1);
+        assert_eq!(report.native_view_pointer_down_count, 1);
+        assert_eq!(report.native_view_pointer_move_count, 1);
+        assert_eq!(report.native_view_pointer_up_count, 1);
+    }
+
+    #[cfg(feature = "virtual-list")]
+    #[test]
+    fn native_proof_report_counts_one_completed_items_repeater_drag_sequence() {
+        let input = NativeViewSmokeInput::Drag {
+            start: Point { x: 220, y: 16 },
+            end: Point { x: 220, y: 112 },
+        };
+        let dispatches = [
+            NativeViewInputDispatchReport {
+                handled: true,
+                items_repeater_scrollbar_drag_active: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                items_repeater_viewport_changed: true,
+                items_repeater_scrollbar_drag_active: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                items_repeater_viewport_changed: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+        ];
+        let mut report = NativeWindowSmokeRunReport::empty(NativeWindowSmokeRunOptions::quick());
+
+        record_native_view_input_reports(&mut report, &[input], &dispatches, "test");
+
+        assert_eq!(report.native_view_items_repeater_viewport_change_count, 2);
+        assert_eq!(report.native_view_items_repeater_scrollbar_drag_count, 1);
         assert_eq!(report.native_view_pointer_down_count, 1);
         assert_eq!(report.native_view_pointer_move_count, 1);
         assert_eq!(report.native_view_pointer_up_count, 1);
