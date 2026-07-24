@@ -3,16 +3,15 @@
 use std::{env, fs};
 
 use zsui::{
-    native_window, Dpi, NativeWindowSmokeRunOptions, Rect, ZsWorkbenchActionSpec,
-    ZsWorkbenchComposerSpec, ZsWorkbenchContentBlock, ZsWorkbenchConversationGroupSpec,
-    ZsWorkbenchConversationSpec, ZsWorkbenchIcon, ZsWorkbenchInspectorSpec, ZsWorkbenchMessageRole,
-    ZsWorkbenchMessageSpec, ZsWorkbenchNoticeLevel, ZsWorkbenchSidebarSpec, ZsWorkbenchSpec,
-    ZsWorkbenchToolStatus,
+    composer, inspector_panel, message_timeline, native_window, Dpi, NativeWindowSmokeRunOptions,
+    Rect, ZsWorkbenchActionSpec, ZsWorkbenchContentBlock, ZsWorkbenchConversationGroupSpec,
+    ZsWorkbenchConversationSpec, ZsWorkbenchIcon, ZsWorkbenchMessageRole, ZsWorkbenchMessageSpec,
+    ZsWorkbenchNoticeLevel, ZsWorkbenchShellSpec, ZsWorkbenchSidebarSpec, ZsWorkbenchToolStatus,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().skip(1).collect::<Vec<_>>();
-    let workbench = sample_workbench();
+    let workbench = sample_workbench().into_workbench();
     let surface = Rect {
         x: 0,
         y: 0,
@@ -60,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn sample_workbench() -> ZsWorkbenchSpec {
+fn sample_workbench() -> ZsWorkbenchShellSpec {
     let sidebar = ZsWorkbenchSidebarSpec::new("ZSUI")
         .primary_action(ZsWorkbenchActionSpec::new(
             "new-task",
@@ -98,7 +97,7 @@ fn sample_workbench() -> ZsWorkbenchSpec {
             ZsWorkbenchIcon::Settings,
         ));
 
-    let composer = ZsWorkbenchComposerSpec::new("Describe a task or ask a question")
+    let composer = composer("Describe a task or ask a question")
         .draft("Add a reusable workbench shell to the application.")
         .mode("Build")
         .model("Local runtime")
@@ -109,18 +108,7 @@ fn sample_workbench() -> ZsWorkbenchSpec {
         ))
         .action(ZsWorkbenchActionSpec::new("mode", "Build", ZsWorkbenchIcon::Tool).selected(true));
 
-    ZsWorkbenchSpec::new("Native UI framework", sidebar, composer)
-        .subtitle("Reusable workbench shell")
-        .toolbar_action(ZsWorkbenchActionSpec::new(
-            "inspector",
-            "Inspector",
-            ZsWorkbenchIcon::Inspector,
-        ))
-        .toolbar_action(ZsWorkbenchActionSpec::new(
-            "more",
-            "More",
-            ZsWorkbenchIcon::More,
-        ))
+    let timeline = message_timeline()
         .message(
             ZsWorkbenchMessageSpec::new("message-user", ZsWorkbenchMessageRole::User).block(
                 ZsWorkbenchContentBlock::paragraph(
@@ -159,22 +147,35 @@ fn sample_workbench() -> ZsWorkbenchSpec {
                 "Retry",
                 ZsWorkbenchIcon::Retry,
             )),
-        )
-        .inspector(
-            ZsWorkbenchInspectorSpec::new("Inspector")
-                .selected_tab("changes")
-                .tab(ZsWorkbenchActionSpec::new(
-                    "changes",
-                    "Changes",
-                    ZsWorkbenchIcon::Code,
-                ))
-                .tab(ZsWorkbenchActionSpec::new(
-                    "output",
-                    "Output",
-                    ZsWorkbenchIcon::Tool,
-                ))
-                .body(
-                    "Modified files\n\nworkbench.rs\ncomponent_catalog.rs\nworkbench_shell.rs\n\nStatus\nLayout and paint ready",
-                ),
-        )
+        );
+    let inspector = inspector_panel("Inspector")
+        .selected_tab("changes")
+        .tab(ZsWorkbenchActionSpec::new(
+            "changes",
+            "Changes",
+            ZsWorkbenchIcon::Code,
+        ))
+        .tab(ZsWorkbenchActionSpec::new(
+            "output",
+            "Output",
+            ZsWorkbenchIcon::Tool,
+        ))
+        .body(
+            "Modified files\n\nworkbench.rs\ncomponent_catalog.rs\nworkbench_shell.rs\n\nStatus\nLayout and paint ready",
+        );
+
+    ZsWorkbenchShellSpec::new("Native UI framework", sidebar, composer)
+        .subtitle("Reusable workbench shell")
+        .toolbar_action(ZsWorkbenchActionSpec::new(
+            "inspector",
+            "Inspector",
+            ZsWorkbenchIcon::Inspector,
+        ))
+        .toolbar_action(ZsWorkbenchActionSpec::new(
+            "more",
+            "More",
+            ZsWorkbenchIcon::More,
+        ))
+        .timeline(timeline)
+        .inspector(inspector)
 }

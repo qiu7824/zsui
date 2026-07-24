@@ -8616,7 +8616,8 @@ impl NativeWindowBuilder {
     }
 
     #[cfg(feature = "workbench")]
-    pub fn workbench(self, spec: ZsWorkbenchSpec) -> Self {
+    pub fn workbench(self, spec: impl Into<ZsWorkbenchSpec>) -> Self {
+        let spec = spec.into();
         let surface = Rect {
             x: 0,
             y: 0,

@@ -596,6 +596,21 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             display_weight: TextWeight::Regular,
             accent_weight: TextWeight::Semibold,
         },
+        #[cfg(feature = "workbench")]
+        workbench: PlatformWorkbenchProfile {
+            sidebar_width: Dp::new(240.0),
+            collapsed_sidebar_width: Dp::new(52.0),
+            top_bar_height: Dp::new(52.0),
+            composer_height: Dp::new(108.0),
+            inspector_width: Dp::new(300.0),
+            inspector_breakpoint: Dp::new(900.0),
+            content_max_width: Dp::new(720.0),
+            content_horizontal_inset: Dp::new(20.0),
+            composer_vertical_inset: Dp::new(10.0),
+            message_gap: Dp::new(12.0),
+            message_vertical_inset: Dp::new(16.0),
+            floating_radius: Dp::new(10.0),
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Macos,
             navigation: PlatformShellNavigationComposition::AppKitSourceList,

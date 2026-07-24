@@ -63,12 +63,13 @@ platform host into a copy of a product application.
    For switch-style input, reuse `zs_toggle_render_plan(...)` from
    `src/widget_render.rs`; its geometry must stay shared with shell accessories.
    For desktop conversation/task applications, compose
-   `ZsWorkbenchSpec` instead of creating product-specific navigation, message,
-   tool-output, composer and inspector layout code. Keep product commands and
-   persistence outside the workbench runtime.
-   Built-in visuals must consume the shared Fluent tokens and semantic
-   `ZsIcon` catalog. Do not add private PUA glyph strings, local palettes or
-   duplicate control metrics to component modules.
+   `ZsWorkbenchShellSpec` from `ZsMessageTimelineSpec`, `ZsComposerSpec` and
+   `ZsInspectorPanelSpec` instead of creating product-specific navigation,
+   message, tool-output, composer and inspector layout code. Keep product
+   commands and persistence outside the workbench runtime.
+   Built-in visuals must consume the selected desktop component profile and
+   semantic `ZsIcon` catalog. Do not add private PUA glyph strings, local
+   palettes or duplicate control metrics to component modules.
    Reuse `ZsDocumentShellSpec` for text-oriented application chrome. Treat
    `examples/zsui_notepad.rs` as a shared self-drawn acceptance application,
    not as the source of reusable editor, file-dialog, accelerator or

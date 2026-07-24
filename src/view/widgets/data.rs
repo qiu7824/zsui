@@ -39,6 +39,34 @@ pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
     .min_height(Dp::new(480.0))
 }
 
+/// Creates a retained native workbench from explicit shell, timeline,
+/// composer and inspector component contracts.
+///
+/// This is the preferred application-facing constructor. [`workbench`] stays
+/// available for code that already owns the flattened compatibility spec.
+#[cfg(feature = "workbench")]
+pub fn workbench_shell<Msg>(spec: crate::ZsWorkbenchShellSpec) -> ViewNode<Msg> {
+    workbench(spec.into_workbench())
+}
+
+/// Starts the typed MessageTimeline child contract for a WorkbenchShell.
+#[cfg(feature = "workbench")]
+pub const fn message_timeline() -> crate::ZsMessageTimelineSpec {
+    crate::ZsMessageTimelineSpec::new()
+}
+
+/// Starts the typed Composer child contract for a WorkbenchShell.
+#[cfg(feature = "workbench")]
+pub fn composer(placeholder: impl Into<String>) -> crate::ZsComposerSpec {
+    crate::ZsComposerSpec::new(placeholder)
+}
+
+/// Starts the typed InspectorPanel child contract for a WorkbenchShell.
+#[cfg(feature = "workbench")]
+pub fn inspector_panel(title: impl Into<String>) -> crate::ZsInspectorPanelSpec {
+    crate::ZsInspectorPanelSpec::new(title)
+}
+
 /// Creates a native desktop content page with platform-owned outer spacing.
 ///
 /// Windows and GTK currently use a 24-DP page inset while AppKit uses its
@@ -696,6 +724,19 @@ pub fn command_bar<Msg>(spec: ZsCommandBarSpec<Msg>) -> ViewNode<Msg> {
     )
 }
 
+/// Creates the platform-native SettingsCard composition.
+///
+/// Windows renders a Fluent raised card, macOS an unboxed form section and
+/// GTK an Adwaita-style boxed group. The semantic title and child tree are
+/// identical application code on every target.
+#[cfg(feature = "shell")]
+pub fn settings_card<Msg>(
+    title: impl Into<String>,
+    children: impl IntoIterator<Item = ViewNode<Msg>>,
+) -> ViewNode<Msg> {
+    section(title, children)
+}
+
 /// Builds a command bar using the target desktop's action density.
 ///
 /// This deterministic entry is kept inside the framework for proof fixtures;
@@ -779,6 +820,21 @@ pub fn virtual_list<T, Msg>(
     .children(children)
 }
 
+/// Creates an ItemsRepeater backed by the shared bounded virtual-list
+/// runtime.
+///
+/// Only the supplied materialized rows are retained; their first tuple value
+/// is the stable application-owned global index. The compatibility name
+/// [`virtual_list`] remains available.
+#[cfg(feature = "virtual-list")]
+pub fn items_repeater<T, Msg>(
+    total_count: usize,
+    rows: impl IntoIterator<Item = (usize, T)>,
+    render: impl FnMut(usize, T) -> ViewNode<Msg>,
+) -> ViewNode<Msg> {
+    virtual_list(total_count, rows, render)
+}
+
 #[cfg(feature = "scroll")]
 pub fn scroll<Msg>(child: ViewNode<Msg>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Scroll {
@@ -798,6 +854,20 @@ pub fn image_preview<Msg>(snapshot: &ZsImagePreviewSnapshot) -> ViewNode<Msg> {
     })
     .min_width(Dp::new(48.0))
     .min_height(Dp::new(48.0))
+}
+
+/// Creates a retained Image from one immutable premultiplied frame.
+///
+/// Decoding and product caches stay application-owned; use [`image_preview`]
+/// when an asynchronous [`crate::ZsImagePreviewState`] snapshot is required.
+#[cfg(feature = "image-preview")]
+pub fn image<Msg>(frame: crate::ZsImageFrame) -> ViewNode<Msg> {
+    image_preview(&ZsImagePreviewSnapshot {
+        generation: 0,
+        frame: Some(frame),
+        loading: false,
+        last_error: None,
+    })
 }
 
 pub fn spacer<Msg>() -> ViewNode<Msg> {
@@ -865,6 +935,100 @@ mod data_tests {
         ] {
             assert_eq!(section(platform).style.flex, 0.0);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "shell")]
+    fn settings_card_is_the_public_platform_owned_section_composition() {
+        let card = settings_card::<()>("Appearance", [spacer().height(Dp::new(32.0))]);
+        let section = section::<()>("Appearance", [spacer().height(Dp::new(32.0))]);
+
+        assert_eq!(card.style, section.style);
+        assert_eq!(card.children.len(), section.children.len());
+    }
+
+    #[test]
+    #[cfg(feature = "virtual-list")]
+    fn items_repeater_retains_only_stable_materialized_global_rows() {
+        let repeater = items_repeater::<_, ()>(
+            100_000,
+            [(42, "row-42"), (7, "row-7"), (42, "duplicate")],
+            |index, _| spacer().id(crate::WidgetId::new(index as u64 + 1)),
+        );
+
+        assert!(matches!(
+            &repeater.kind,
+            ViewNodeKind::VirtualList {
+                total_count: 100_000,
+                row_indices,
+                ..
+            } if row_indices == &[7, 42]
+        ));
+        assert_eq!(repeater.children.len(), 2);
+
+        let viewport = items_repeater_viewport(
+            100_000,
+            Dp::new(40.0),
+            Dp::new(280.0),
+            Dp::new(240.0),
+            2,
+            ZsItemsRepeaterScrollDirection::Forward,
+        );
+        assert_eq!(viewport.visible_range, ZsItemsRepeaterRange::new(7, 13));
+        assert_eq!(
+            viewport.materialized_range,
+            ZsItemsRepeaterRange::new(5, 15)
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "image-preview")]
+    fn image_keeps_the_immutable_frame_in_the_retained_native_surface() {
+        let frame = crate::ZsImageFrame::from_rgba8(
+            crate::ZsImageFrameId::new(9),
+            1,
+            1,
+            vec![20, 40, 60, 255],
+        )
+        .expect("one RGBA pixel should be valid");
+        let image = image::<()>(frame.clone());
+
+        assert!(matches!(
+            &image.kind,
+            ViewNodeKind::ImagePreview { snapshot, .. }
+                if snapshot.frame.as_ref() == Some(&frame)
+                    && !snapshot.loading
+                    && snapshot.last_error.is_none()
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "workbench")]
+    fn named_workbench_components_build_one_retained_shell_surface() {
+        let timeline = message_timeline().message(crate::ZsWorkbenchMessageSpec::new(
+            "message",
+            crate::ZsWorkbenchMessageRole::Assistant,
+        ));
+        let shell = crate::ZsWorkbenchShellSpec::new(
+            "Workbench",
+            crate::ZsWorkbenchSidebarSpec::new("Threads"),
+            composer("Write a message"),
+        )
+        .timeline(timeline)
+        .inspector(
+            inspector_panel("Inspector").tab(crate::ZsWorkbenchActionSpec::new(
+                "details",
+                "Details",
+                crate::ZsIcon::Inspector,
+            )),
+        );
+        let view = workbench_shell::<()>(shell);
+
+        assert!(matches!(
+            &view.kind,
+            ViewNodeKind::Workbench { spec, .. }
+                if spec.messages.len() == 1 && spec.inspector.is_some()
+        ));
     }
 
     #[test]

@@ -598,6 +598,21 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             display_weight: TextWeight::Semibold,
             accent_weight: TextWeight::Semibold,
         },
+        #[cfg(feature = "workbench")]
+        workbench: PlatformWorkbenchProfile {
+            sidebar_width: Dp::new(272.0),
+            collapsed_sidebar_width: Dp::new(56.0),
+            top_bar_height: Dp::new(64.0),
+            composer_height: Dp::new(120.0),
+            inspector_width: Dp::new(336.0),
+            inspector_breakpoint: Dp::new(980.0),
+            content_max_width: Dp::new(760.0),
+            content_horizontal_inset: Dp::new(20.0),
+            composer_vertical_inset: Dp::new(12.0),
+            message_gap: Dp::new(16.0),
+            message_vertical_inset: Dp::new(20.0),
+            floating_radius: Dp::new(12.0),
+        },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Windows,
             navigation: PlatformShellNavigationComposition::FluentPane,

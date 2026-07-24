@@ -26,6 +26,16 @@ fn workbench_style_tokens() -> crate::platform_component_profile::PlatformStyleT
     crate::platform_component_profile::PlatformComponentProfile::current().style_tokens
 }
 
+fn workbench_profile() -> crate::platform_component_profile::PlatformWorkbenchProfile {
+    crate::platform_component_profile::PlatformWorkbenchProfile::for_platform(
+        crate::ZsPlatformStyle::current(),
+    )
+}
+
+fn workbench_floating_radius(dpi: Dpi) -> i32 {
+    scale_dp(workbench_profile().floating_radius, dpi)
+}
+
 pub type ZsWorkbenchIcon = ZsIcon;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -295,6 +305,42 @@ impl ZsWorkbenchMessageSpec {
     }
 }
 
+/// Application-owned state for the scrollable message region of a
+/// [`ZsWorkbenchShellSpec`].
+///
+/// The timeline is a typed child contract instead of a second window or a
+/// platform widget handle. ZSUI retains stable message IDs and lets the
+/// target backend choose native typography, spacing and scrollbar metrics.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsMessageTimelineSpec {
+    pub messages: Vec<ZsWorkbenchMessageSpec>,
+    pub scroll_y: i32,
+}
+
+impl ZsMessageTimelineSpec {
+    pub const fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+            scroll_y: 0,
+        }
+    }
+
+    pub fn message(mut self, message: ZsWorkbenchMessageSpec) -> Self {
+        self.messages.push(message);
+        self
+    }
+
+    pub fn messages(mut self, messages: impl IntoIterator<Item = ZsWorkbenchMessageSpec>) -> Self {
+        self.messages.extend(messages);
+        self
+    }
+
+    pub fn scroll_y(mut self, scroll_y: i32) -> Self {
+        self.scroll_y = scroll_y.max(0);
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsWorkbenchComposerSpec {
     pub draft: String,
@@ -343,6 +389,9 @@ impl ZsWorkbenchComposerSpec {
     }
 }
 
+/// Public component name for the typed composer child of a workbench shell.
+pub type ZsComposerSpec = ZsWorkbenchComposerSpec;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZsWorkbenchInspectorSpec {
     pub title: String,
@@ -374,6 +423,78 @@ impl ZsWorkbenchInspectorSpec {
     pub fn body(mut self, body: impl Into<String>) -> Self {
         self.body = body.into();
         self
+    }
+}
+
+/// Public component name for the typed inspector child of a workbench shell.
+pub type ZsInspectorPanelSpec = ZsWorkbenchInspectorSpec;
+
+/// A reusable workbench composition assembled from explicit child component
+/// contracts.
+///
+/// `MessageTimeline`, `Composer` and `InspectorPanel` remain independently
+/// configurable application state, while the shell owns their relationship,
+/// adaptive layout and cross-region keyboard/focus behavior. This keeps one
+/// Rust declaration across Win32, AppKit and Linux without exposing target
+/// objects or duplicating a platform-specific component tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsWorkbenchShellSpec {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub sidebar: ZsWorkbenchSidebarSpec,
+    pub toolbar_actions: Vec<ZsWorkbenchActionSpec>,
+    pub timeline: ZsMessageTimelineSpec,
+    pub composer: ZsComposerSpec,
+    pub inspector: Option<ZsInspectorPanelSpec>,
+}
+
+impl ZsWorkbenchShellSpec {
+    pub fn new(
+        title: impl Into<String>,
+        sidebar: ZsWorkbenchSidebarSpec,
+        composer: ZsComposerSpec,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            subtitle: None,
+            sidebar,
+            toolbar_actions: Vec::new(),
+            timeline: ZsMessageTimelineSpec::new(),
+            composer,
+            inspector: None,
+        }
+    }
+
+    pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
+        self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    pub fn toolbar_action(mut self, action: ZsWorkbenchActionSpec) -> Self {
+        self.toolbar_actions.push(action);
+        self
+    }
+
+    pub fn toolbar_actions(
+        mut self,
+        actions: impl IntoIterator<Item = ZsWorkbenchActionSpec>,
+    ) -> Self {
+        self.toolbar_actions.extend(actions);
+        self
+    }
+
+    pub fn timeline(mut self, timeline: ZsMessageTimelineSpec) -> Self {
+        self.timeline = timeline;
+        self
+    }
+
+    pub fn inspector(mut self, inspector: ZsInspectorPanelSpec) -> Self {
+        self.inspector = Some(inspector);
+        self
+    }
+
+    pub fn into_workbench(self) -> ZsWorkbenchSpec {
+        self.into()
     }
 }
 
@@ -439,6 +560,21 @@ impl ZsWorkbenchSpec {
     pub fn native_draw_plan(&self, surface: Rect, dpi: Dpi) -> NativeDrawPlan {
         let layout = self.layout(surface, dpi);
         zs_workbench_native_draw_plan(self, &layout)
+    }
+}
+
+impl From<ZsWorkbenchShellSpec> for ZsWorkbenchSpec {
+    fn from(shell: ZsWorkbenchShellSpec) -> Self {
+        Self {
+            title: shell.title,
+            subtitle: shell.subtitle,
+            sidebar: shell.sidebar,
+            toolbar_actions: shell.toolbar_actions,
+            messages: shell.timeline.messages,
+            composer: shell.composer,
+            inspector: shell.inspector,
+            message_scroll_y: shell.timeline.scroll_y.max(0),
+        }
     }
 }
 
@@ -683,22 +819,25 @@ pub fn zs_workbench_layout(
     surface: Rect,
     dpi: Dpi,
 ) -> ZsWorkbenchLayoutPlan {
-    let sidebar_width = scale(
+    let profile = workbench_profile();
+    let sidebar_width = scale_dp(
         if spec.sidebar.collapsed {
-            ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH
+            profile.collapsed_sidebar_width
         } else {
-            ZS_WORKBENCH_BASE_SIDEBAR_WIDTH
+            profile.sidebar_width
         },
         dpi,
     )
     .min(surface.width.max(0));
-    let inspector_width = if spec.inspector.is_some() && surface.width >= scale(980, dpi) {
-        scale(ZS_WORKBENCH_INSPECTOR_WIDTH, dpi).min((surface.width / 3).max(0))
+    let inspector_width = if spec.inspector.is_some()
+        && surface.width >= scale_dp(profile.inspector_breakpoint, dpi)
+    {
+        scale_dp(profile.inspector_width, dpi).min((surface.width / 3).max(0))
     } else {
         0
     };
-    let top_height = scale(ZS_WORKBENCH_TOP_BAR_HEIGHT, dpi).min(surface.height.max(0));
-    let composer_height = scale(ZS_WORKBENCH_COMPOSER_HEIGHT, dpi).min(surface.height.max(0));
+    let top_height = scale_dp(profile.top_bar_height, dpi).min(surface.height.max(0));
+    let composer_height = scale_dp(profile.composer_height, dpi).min(surface.height.max(0));
     let main_x = surface.x + sidebar_width;
     let main_width = (surface.width - sidebar_width - inspector_width).max(0);
     let main_right = main_x + main_width;
@@ -726,9 +865,10 @@ pub fn zs_workbench_layout(
         width: main_width,
         height: (surface.height - top_height - composer_height).max(0),
     };
+    let content_horizontal_inset = scale_dp(profile.content_horizontal_inset, dpi);
     let content_width = main_width
-        .saturating_sub(scale(40, dpi))
-        .min(scale(ZS_WORKBENCH_CONTENT_MAX_WIDTH, dpi))
+        .saturating_sub(content_horizontal_inset.saturating_mul(2))
+        .min(scale_dp(profile.content_max_width, dpi))
         .max(0);
     let content = Rect {
         x: main_x + (main_width - content_width) / 2,
@@ -736,7 +876,7 @@ pub fn zs_workbench_layout(
         width: content_width,
         height: timeline.height,
     };
-    let composer_inset = scale(12, dpi);
+    let composer_inset = scale_dp(profile.composer_vertical_inset, dpi);
     let composer = Rect {
         x: content.x,
         y: composer_band.y + composer_inset,
@@ -771,8 +911,8 @@ pub fn zs_workbench_layout(
         enabled: true,
     });
 
-    let gap = scale(16, dpi);
-    let top_padding = scale(20, dpi);
+    let gap = scale_dp(profile.message_gap, dpi);
+    let top_padding = scale_dp(profile.message_vertical_inset, dpi);
     let message_heights: Vec<_> = spec
         .messages
         .iter()
@@ -1453,7 +1593,7 @@ fn paint_messages(
                     role: ColorRole::Accent,
                     alpha: 18,
                 },
-                scale(ZS_WORKBENCH_FLOATING_RADIUS, dpi),
+                workbench_floating_radius(dpi),
             )),
             ZsWorkbenchMessageRole::System => commands.push(round_fill(
                 message_layout.bounds,
@@ -1479,7 +1619,7 @@ fn paint_messages(
                     role: ColorRole::Border,
                     alpha: 24,
                 }),
-                scale(ZS_WORKBENCH_FLOATING_RADIUS, dpi),
+                workbench_floating_radius(dpi),
             )),
         }
         for block_layout in &message_layout.blocks {
@@ -1732,7 +1872,7 @@ fn paint_composer(
         commands,
         bounds,
         dpi,
-        Dp::new(ZS_WORKBENCH_FLOATING_RADIUS as f32),
+        workbench_profile().floating_radius,
         NativeDrawFill::role(ColorRole::SurfaceRaised),
     );
     let input = layout
@@ -1907,7 +2047,7 @@ fn paint_inspector(
         commands,
         panel,
         dpi,
-        Dp::new(ZS_WORKBENCH_FLOATING_RADIUS as f32),
+        workbench_profile().floating_radius,
         NativeDrawFill::role(ColorRole::SurfaceRaised),
     );
     commands.push(stroke(
@@ -2299,8 +2439,53 @@ mod tests {
     }
 
     #[test]
+    fn explicit_child_specs_flatten_into_the_compatible_workbench_runtime() {
+        let sidebar = ZsWorkbenchSidebarSpec::new("Workspace");
+        let composer = ZsComposerSpec::new("Write a message").draft("Hello");
+        let timeline = ZsMessageTimelineSpec::new()
+            .message(
+                ZsWorkbenchMessageSpec::new("message-1", ZsWorkbenchMessageRole::Assistant)
+                    .block(ZsWorkbenchContentBlock::paragraph("Ready")),
+            )
+            .scroll_y(42);
+        let inspector = ZsInspectorPanelSpec::new("Inspector")
+            .selected_tab("details")
+            .tab(ZsWorkbenchActionSpec::new(
+                "details",
+                "Details",
+                ZsWorkbenchIcon::Inspector,
+            ));
+
+        let flattened = ZsWorkbenchShellSpec::new("Workbench", sidebar, composer)
+            .subtitle("Shared declaration")
+            .toolbar_action(ZsWorkbenchActionSpec::new(
+                "search",
+                "Search",
+                ZsWorkbenchIcon::Search,
+            ))
+            .timeline(timeline)
+            .inspector(inspector)
+            .into_workbench();
+
+        assert_eq!(flattened.title, "Workbench");
+        assert_eq!(flattened.subtitle.as_deref(), Some("Shared declaration"));
+        assert_eq!(flattened.toolbar_actions.len(), 1);
+        assert_eq!(flattened.messages.len(), 1);
+        assert_eq!(flattened.composer.draft, "Hello");
+        assert_eq!(flattened.message_scroll_y, 42);
+        assert_eq!(
+            flattened
+                .inspector
+                .as_ref()
+                .and_then(|inspector| inspector.selected_tab_id.as_deref()),
+            Some("details")
+        );
+    }
+
+    #[test]
     fn layout_has_stable_sidebar_timeline_composer_and_inspector_regions() {
         let spec = sample_spec();
+        let profile = workbench_profile();
         let plan = spec.layout(
             Rect {
                 x: 0,
@@ -2311,15 +2496,21 @@ mod tests {
             Dpi::standard(),
         );
 
-        assert_eq!(plan.metrics.sidebar.width, ZS_WORKBENCH_BASE_SIDEBAR_WIDTH);
-        assert_eq!(plan.metrics.top_bar.height, ZS_WORKBENCH_TOP_BAR_HEIGHT);
+        assert_eq!(
+            plan.metrics.sidebar.width,
+            scale_dp(profile.sidebar_width, Dpi::standard())
+        );
+        assert_eq!(
+            plan.metrics.top_bar.height,
+            scale_dp(profile.top_bar_height, Dpi::standard())
+        );
         assert_eq!(
             plan.metrics.composer_band.height,
-            ZS_WORKBENCH_COMPOSER_HEIGHT
+            scale_dp(profile.composer_height, Dpi::standard())
         );
         assert_eq!(
             plan.metrics.inspector.expect("inspector").width,
-            ZS_WORKBENCH_INSPECTOR_WIDTH
+            scale_dp(profile.inspector_width, Dpi::standard())
         );
         assert_eq!(plan.messages.len(), 2);
         assert!(plan.regions.iter().any(|region| {
@@ -2343,7 +2534,7 @@ mod tests {
 
         assert_eq!(
             plan.metrics.sidebar.width,
-            ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH
+            scale_dp(workbench_profile().collapsed_sidebar_width, Dpi::standard())
         );
         assert!(plan.metrics.inspector.is_none());
         assert!(plan.metrics.content.width > 0);
@@ -2363,11 +2554,21 @@ mod tests {
             dpi,
         );
         let expected_radius = scale_dp(workbench_style_tokens().radius.medium, dpi);
+        let profile = workbench_profile();
 
         assert_eq!(plan.dpi, dpi);
-        assert_eq!(plan.metrics.sidebar.width, 408);
-        assert_eq!(plan.metrics.top_bar.height, 96);
-        assert_eq!(plan.metrics.composer_band.height, 180);
+        assert_eq!(
+            plan.metrics.sidebar.width,
+            scale_dp(profile.sidebar_width, dpi)
+        );
+        assert_eq!(
+            plan.metrics.top_bar.height,
+            scale_dp(profile.top_bar_height, dpi)
+        );
+        assert_eq!(
+            plan.metrics.composer_band.height,
+            scale_dp(profile.composer_height, dpi)
+        );
         assert!(spec
             .native_draw_plan(plan.metrics.surface, plan.dpi)
             .commands

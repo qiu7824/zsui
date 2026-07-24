@@ -19,6 +19,11 @@ let content = image_preview(&snapshot)
     .image_interpolation(NativeImageInterpolation::Smooth);
 ```
 
+For an already decoded immutable frame, use `image(frame)` directly. This is
+the semantic `Image` constructor used by ordinary View code; `image_preview`
+adds the application-owned asynchronous PNG decode snapshot without creating a
+second renderer or component tree.
+
 ## Frame lifecycle
 
 - PNG parsing and pixel conversion run on one owned decoder thread.

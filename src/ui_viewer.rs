@@ -1095,9 +1095,17 @@ mod tests {
             y: target.bounds.y + target.bounds.height / 2,
         });
         runtime.dispatch_key(crate::NativeViewKey::Home);
+        let line_start = runtime
+            .text_edit_selection()
+            .expect("Home should retain a text selection")
+            .caret;
         runtime.dispatch_key_with_shift(crate::NativeViewKey::Right, true);
         runtime.dispatch_key_with_shift(crate::NativeViewKey::Right, true);
-        assert_eq!(runtime.text_edit_selection().unwrap().ordered(), (0, 2));
+        let expected_selection = (line_start, line_start.saturating_add(2));
+        assert_eq!(
+            runtime.text_edit_selection().unwrap().ordered(),
+            expected_selection
+        );
         runtime.dispatch_pointer_scroll(
             crate::Point {
                 x: target.bounds.x + target.bounds.width / 2,
@@ -1111,7 +1119,7 @@ mod tests {
         fs::write(&document_path, document(24, "textbox")).unwrap();
         let compatible = runtime.refresh_transient_view();
         assert_eq!(compatible.focused_widget, Some(editor.0));
-        assert_eq!(compatible.text_selection, Some((0, 2)));
+        assert_eq!(compatible.text_selection, Some(expected_selection));
         assert_eq!(runtime.text_edit_viewport(), Some(viewport));
         assert!(source
             .snapshot()

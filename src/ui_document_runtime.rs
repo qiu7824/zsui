@@ -3100,7 +3100,7 @@ fn document_items_repeater<Msg: Clone + 'static>(
         })
         .collect::<Vec<_>>();
     let runtime_viewport = viewport.into_runtime();
-    let mut control = crate::virtual_list(total_count, rows, |_, view| view)
+    let mut control = crate::items_repeater(total_count, rows, |_, view| view)
         .item_height(runtime_viewport.row_height)
         .overscan_rows(overscan_rows)
         .scroll_y(runtime_viewport.offset_y)
@@ -3112,7 +3112,7 @@ fn document_items_repeater<Msg: Clone + 'static>(
         let node_id = node.id.as_str().to_owned();
         let binding = binding.clone();
         let property_binding = node.property_bindings.get("selected").cloned();
-        control = control.on_virtual_list_select_with(move |selected| {
+        control = control.on_items_repeater_select_with(move |selected| {
             mapper.map(UiDocumentAction {
                 node_id: node_id.clone(),
                 binding: binding.clone(),
@@ -3126,7 +3126,7 @@ fn document_items_repeater<Msg: Clone + 'static>(
         let node_id = node.id.as_str().to_owned();
         let binding = binding.clone();
         let property_binding = node.property_bindings.get("viewport").cloned();
-        control = control.on_viewport_changed_with(move |viewport| {
+        control = control.on_items_repeater_viewport_changed_with(move |viewport| {
             mapper.map(UiDocumentAction {
                 node_id: node_id.clone(),
                 binding: binding.clone(),
@@ -3553,7 +3553,7 @@ fn document_settings_card<Msg>(
             "settings_card title must not be empty",
         ));
     }
-    Ok(crate::section(title, children))
+    Ok(crate::settings_card(title, children))
 }
 
 #[cfg(feature = "workbench")]
@@ -3845,17 +3845,22 @@ fn document_workbench_shell<Msg: Clone + 'static>(
                 )
             })?,
     };
-    let mut spec = crate::ZsWorkbenchSpec {
-        title,
-        subtitle: optional_string_property(node, properties, "subtitle"),
-        sidebar,
-        toolbar_actions: document_workbench_actions(node, properties, "toolbar_actions")?,
-        messages,
-        composer: composer_spec,
-        inspector: inspector_spec,
-        message_scroll_y,
-    };
-    spec.message_scroll_y = spec.message_scroll_y.max(0);
+    let timeline_spec = crate::ZsMessageTimelineSpec::new()
+        .messages(messages)
+        .scroll_y(message_scroll_y);
+    let mut shell_spec = crate::ZsWorkbenchShellSpec::new(title, sidebar, composer_spec)
+        .timeline(timeline_spec)
+        .toolbar_actions(document_workbench_actions(
+            node,
+            properties,
+            "toolbar_actions",
+        )?);
+    if let Some(subtitle) = optional_string_property(node, properties, "subtitle") {
+        shell_spec = shell_spec.subtitle(subtitle);
+    }
+    if let Some(inspector) = inspector_spec {
+        shell_spec = shell_spec.inspector(inspector);
+    }
 
     #[derive(Clone)]
     struct Route {
@@ -3886,7 +3891,7 @@ fn document_workbench_shell<Msg: Clone + 'static>(
         .first()
         .and_then(|inspector| route(inspector, "select", Some("selected_tab")));
     let mapper = mapper.clone();
-    let control = crate::workbench(spec).on_workbench_interaction_with(move |event| {
+    let control = crate::workbench_shell(shell_spec).on_workbench_interaction_with(move |event| {
         let (route, payload) = match event {
             crate::ZsWorkbenchInteractionEvent::ToggleSidebar => {
                 (sidebar_toggle.as_ref(), Value::Null)

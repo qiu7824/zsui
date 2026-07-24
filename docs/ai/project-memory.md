@@ -224,9 +224,12 @@ history remain authoritative for implementation status.
   component features used by the artifact and compile it to typed
   `ViewNode<Msg>` through `ui_document_view`. It does not link `ui-viewer`,
   file polling, preview transport, native smoke code or another process.
-  Full component coverage and advanced-control state retention remain
-  unfinished. Fixed AppKit/Linux Viewer proof has passed; Windows Viewer has
-  local real-host evidence but still needs a fixed Runner baseline.
+  All catalog components now have first-pass schema/runtime coverage, and
+  binding compatibility handles retained, removed, retyped and secure-storage
+  changes. Fixed AppKit/Linux Viewer proof has passed. The fixed Windows 2025
+  Runner baseline also passes in Native UI Proof run `30069326871`, job
+  `89406615062`; broader advanced-control reload interaction remains target
+  evidence work on AppKit and Linux.
 - A browser/WASM projection is an optional approximate design tool, never
   native platform evidence. A full drag-and-drop designer is outside the v0.2
   completion gate. This added authoring goal does not remove any existing
@@ -903,6 +906,13 @@ history remain authoritative for implementation status.
   1280x800 routed four real clicks plus one real scroll into five typed
   messages with zero unhandled clicks or scrolls; the observed pre-teardown
   process sample was 24,809,472 bytes RSS and 7,696,384 private.
+- Rust applications use the same named component layer as UiDocument:
+  `items_repeater`, `image`, `settings_card`, `message_timeline`, `composer`,
+  `inspector_panel` and `workbench_shell`. `ZsWorkbenchShellSpec` retains the
+  child contracts and converts into `ZsWorkbenchSpec` only at the established
+  retained runtime boundary. WinUI, AppKit and GTK workbench sidebar, top-bar,
+  composer, inspector, content and radius metrics live in their separate
+  component profiles; application code contains no platform selector.
 - Viewer reload compatibility covers both stable nodes and typed property
   bindings. A binding value survives only when its name, `UiValueType` and
   ordinary/secure storage class remain compatible. Removed, retyped or
@@ -914,6 +924,17 @@ history remain authoritative for implementation status.
   all three stable nodes, reported `window_title` as `binding_removed`, drew the
   replacement bilingual title and captured the final `WM_PRINTCLIENT` surface
   with no runtime errors.
+- The fixed `windows-2025` Native UI Proof job owns a deterministic Workbench
+  reload fixture rather than mutating a repository example in place. It starts
+  revision 1 with controlled `timeline_offset` and `composer_draft`, injects
+  revision 2 into the same Win32 Viewer process, requires an explicit binding
+  reset, and validates the final platform capture. Run `30069326871`, job
+  `89406615062`, passed at 960x640: all four Workbench nodes and
+  `timeline_offset` were preserved, removed `composer_draft` was reported as
+  `binding_removed`, the live View rebuilt, process memory was sampled and the
+  final PNG came from `win32_wm_printclient_dib_png` using the Win32 system UI
+  font. Use a fixed size that fits the hosted desktop; Windows otherwise clamps
+  oversized top-level windows to the Runner work area.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

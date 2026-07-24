@@ -264,8 +264,13 @@ actions and inspector content from application commands and persistence. The
 layout produces stable DPI-aware regions and a product-neutral
 `NativeDrawPlan`; `ZsWorkbenchRuntime` adds hit testing, bounded timeline
 scrolling, conversation selection, sidebar collapse and inspector-tab state.
-`NativeWindowBuilder::workbench(...)` is the compact static native-window entry
-while direct native event-loop routing remains a separate completion gate.
+`ZsWorkbenchShellSpec`, `ZsMessageTimelineSpec`, `ZsComposerSpec` and
+`ZsInspectorPanelSpec` expose those regions as explicit reusable child
+contracts; `workbench_shell(...)` builds the retained View while
+`NativeWindowBuilder::workbench(...)` accepts either the structured shell or
+the flattened compatibility spec. The internal platform profile owns distinct
+WinUI, AppKit and GTK shell geometry instead of sharing Windows dimensions.
+Direct target interaction proof remains a separate completion gate.
 
 `src/document_shell.rs` defines a smaller document-editor composite. It owns
 the DPI-aware tab strip, command bar, editor-frame inset, status surface,

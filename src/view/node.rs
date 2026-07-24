@@ -553,6 +553,18 @@ pub struct VirtualListViewport {
     pub direction: VirtualListScrollDirection,
 }
 
+/// Public ItemsRepeater name for a half-open global item range.
+#[cfg(feature = "virtual-list")]
+pub type ZsItemsRepeaterRange = VirtualListRange;
+
+/// Public ItemsRepeater name for the direction of the latest viewport move.
+#[cfg(feature = "virtual-list")]
+pub type ZsItemsRepeaterScrollDirection = VirtualListScrollDirection;
+
+/// Public ItemsRepeater name for controlled viewport state.
+#[cfg(feature = "virtual-list")]
+pub type ZsItemsRepeaterViewport = VirtualListViewport;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewStackDirection {
     Row,
@@ -2011,6 +2023,16 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    /// Registers the typed global-index selection message for an
+    /// [`items_repeater`](crate::items_repeater).
+    #[cfg(feature = "virtual-list")]
+    pub fn on_items_repeater_select_with(
+        self,
+        message: impl Fn(usize) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        self.on_virtual_list_select_with(message)
+    }
+
     #[cfg(feature = "table")]
     pub fn on_table_select_with(
         mut self,
@@ -3022,6 +3044,16 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    /// Registers the controlled viewport message using the public
+    /// ItemsRepeater vocabulary.
+    #[cfg(feature = "virtual-list")]
+    pub fn on_items_repeater_viewport_changed(
+        self,
+        message: fn(ZsItemsRepeaterViewport) -> Msg,
+    ) -> Self {
+        self.on_viewport_changed(message)
+    }
+
     #[cfg(feature = "virtual-list")]
     pub fn on_viewport_changed_with(
         mut self,
@@ -3035,6 +3067,16 @@ impl<Msg: Clone> ViewNode<Msg> {
             *on_viewport_changed = Some(ViewMessageMapper::from_shared(message));
         }
         self
+    }
+
+    /// Registers an owned controlled-viewport mapper using the public
+    /// ItemsRepeater vocabulary.
+    #[cfg(feature = "virtual-list")]
+    pub fn on_items_repeater_viewport_changed_with(
+        self,
+        message: impl Fn(ZsItemsRepeaterViewport) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        self.on_viewport_changed_with(message)
     }
 
     #[cfg(feature = "virtual-list")]

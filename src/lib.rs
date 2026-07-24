@@ -684,8 +684,6 @@ pub use view::grid;
 pub use view::grid_view;
 #[cfg(feature = "icon")]
 pub use view::icon;
-#[cfg(feature = "image-preview")]
-pub use view::image_preview;
 #[cfg(feature = "info-bar")]
 pub use view::info_bar;
 #[cfg(feature = "list")]
@@ -704,6 +702,8 @@ pub use view::progress_ring;
 pub use view::radio_button;
 #[cfg(feature = "scroll")]
 pub use view::scroll;
+#[cfg(feature = "shell")]
+pub use view::settings_card;
 #[cfg(feature = "split-view")]
 pub use view::split_view;
 #[cfg(feature = "teaching-tip")]
@@ -722,8 +722,6 @@ pub use view::toggle;
 pub use view::toggle_button;
 #[cfg(feature = "tree")]
 pub use view::tree_view;
-#[cfg(feature = "workbench")]
-pub use view::workbench;
 #[cfg(any(
     feature = "textbox",
     feature = "checkbox",
@@ -756,6 +754,12 @@ pub use view::{
 };
 #[cfg(feature = "button")]
 pub use view::{command_bar, ZsCommandBarSpec};
+#[cfg(feature = "workbench")]
+pub use view::{composer, inspector_panel, message_timeline, workbench, workbench_shell};
+#[cfg(feature = "image-preview")]
+pub use view::{image, image_preview};
+#[cfg(feature = "virtual-list")]
+pub use view::{items_repeater, items_repeater_viewport, virtual_list, virtual_list_viewport};
 #[cfg(feature = "label")]
 pub use view::{navigation_view, section, ZsNavigationViewSpec};
 #[cfg(feature = "slider")]
@@ -765,9 +769,10 @@ pub use view::{styled_text, text};
 #[cfg(feature = "tabs")]
 pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 #[cfg(feature = "virtual-list")]
-pub use view::{virtual_list, virtual_list_viewport};
-#[cfg(feature = "virtual-list")]
-pub use view::{VirtualListRange, VirtualListScrollDirection, VirtualListViewport};
+pub use view::{
+    VirtualListRange, VirtualListScrollDirection, VirtualListViewport, ZsItemsRepeaterRange,
+    ZsItemsRepeaterScrollDirection, ZsItemsRepeaterViewport,
+};
 #[cfg(feature = "grid")]
 pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTrack};
 #[cfg(feature = "number-box")]
@@ -948,12 +953,13 @@ pub use windows_win32_text_editor::WindowsWin32OwnedTextEditor;
 #[cfg(feature = "workbench")]
 pub use workbench::{
     zs_workbench_event_for_region, zs_workbench_layout, zs_workbench_native_draw_plan,
-    ZsWorkbenchActionSpec, ZsWorkbenchBlockLayout, ZsWorkbenchComposerSpec,
-    ZsWorkbenchContentBlock, ZsWorkbenchConversationGroupSpec, ZsWorkbenchConversationSpec,
-    ZsWorkbenchIcon, ZsWorkbenchInspectorSpec, ZsWorkbenchInteractionEvent,
-    ZsWorkbenchInteractionUpdate, ZsWorkbenchLayoutMetrics, ZsWorkbenchLayoutPlan,
-    ZsWorkbenchLayoutRegion, ZsWorkbenchMessageLayout, ZsWorkbenchMessageRole,
-    ZsWorkbenchMessageSpec, ZsWorkbenchNoticeLevel, ZsWorkbenchRegionKind, ZsWorkbenchRuntime,
+    ZsComposerSpec, ZsInspectorPanelSpec, ZsMessageTimelineSpec, ZsWorkbenchActionSpec,
+    ZsWorkbenchBlockLayout, ZsWorkbenchComposerSpec, ZsWorkbenchContentBlock,
+    ZsWorkbenchConversationGroupSpec, ZsWorkbenchConversationSpec, ZsWorkbenchIcon,
+    ZsWorkbenchInspectorSpec, ZsWorkbenchInteractionEvent, ZsWorkbenchInteractionUpdate,
+    ZsWorkbenchLayoutMetrics, ZsWorkbenchLayoutPlan, ZsWorkbenchLayoutRegion,
+    ZsWorkbenchMessageLayout, ZsWorkbenchMessageRole, ZsWorkbenchMessageSpec,
+    ZsWorkbenchNoticeLevel, ZsWorkbenchRegionKind, ZsWorkbenchRuntime, ZsWorkbenchShellSpec,
     ZsWorkbenchSidebarSpec, ZsWorkbenchSpec, ZsWorkbenchToolStatus,
     ZS_WORKBENCH_BASE_SIDEBAR_WIDTH, ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH,
     ZS_WORKBENCH_COMPOSER_HEIGHT, ZS_WORKBENCH_CONTENT_MAX_WIDTH, ZS_WORKBENCH_INSPECTOR_WIDTH,

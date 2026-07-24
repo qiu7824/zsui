@@ -243,6 +243,27 @@ fn split_grid_child_bounds<Msg>(
         .collect()
 }
 
+/// Computes controlled ItemsRepeater viewport ranges without constructing a
+/// View tree.
+#[cfg(feature = "virtual-list")]
+pub fn items_repeater_viewport(
+    total_count: usize,
+    row_height: Dp,
+    offset_y: Dp,
+    viewport_height: Dp,
+    overscan_rows: usize,
+    direction: ZsItemsRepeaterScrollDirection,
+) -> ZsItemsRepeaterViewport {
+    virtual_list_viewport(
+        total_count,
+        row_height,
+        offset_y,
+        viewport_height,
+        overscan_rows,
+        direction,
+    )
+}
+
 #[cfg(feature = "grid")]
 fn grid_track_minimums<Msg>(
     track_count: usize,

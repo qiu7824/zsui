@@ -21,7 +21,7 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 94% complete; schema version 1, the typed
+- Reloadable UI authoring: about 97% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
   auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
   compatibility, preserve native focus/text selection/editor viewport for
@@ -60,8 +60,12 @@ framework readiness.
   prevents future components from silently omitting a document schema.
   Accepted reloads compare property-binding type and secure/ordinary storage
   class, preserve compatible values and filter removed or incompatible values
-  before the new View is compiled. Fixed Windows Runner proof and broader
-  AppKit/Linux reload interaction evidence remain.
+  before the new View is compiled. Native UI Proof run `30069326871`, job
+  `89406615062`, passes the fixed `windows-2025` Win32 Viewer reload scene:
+  revision 2 preserves all four Workbench nodes and `timeline_offset`, resets
+  removed `composer_draft` state explicitly, captures the final 960x640
+  `WM_PRINTCLIENT` surface, uses the Win32 system UI font and records process
+  memory. Broader AppKit/Linux reload interaction evidence remains.
 - Full desktop native host implementation: about 94% complete; product
   readiness remains lower until broader AppKit and Linux IME, accessibility and
   per-control target evidence exists.
@@ -239,12 +243,15 @@ conversation/task workspace. It covers collapsible navigation, grouped history,
 user/assistant/system/tool message roles, paragraph/code/tool/notice blocks,
 message actions, composer controls and an optional inspector. The first pass is
 DPI-aware and exposes draw plans, hit regions, bounded scrolling and local
-selection state. `NativeWindowBuilder::workbench(...)` renders it on the native
-window path. The retained View route exposes timeline scrolling, editable
-composer text and typed toolbar/message/sidebar/inspector actions; three-target
-composer IME, selection, accessibility and interaction-state proof remain
-explicit gaps.
-Its built-in visuals use the Fluent token definitions in `src/style.rs` and
+selection state. `ZsWorkbenchShellSpec` assembles explicit
+`ZsMessageTimelineSpec`, `ZsComposerSpec` and `ZsInspectorPanelSpec` child
+contracts; `workbench_shell(...)` builds the View and
+`NativeWindowBuilder::workbench(...)` accepts the structured shell or the
+flattened compatibility spec. The retained route exposes timeline scrolling,
+editable composer text and typed toolbar/message/sidebar/inspector actions;
+three-target composer IME, selection, accessibility and interaction-state proof
+remain explicit gaps.
+Its built-in visuals use separate WinUI, AppKit and GTK component metrics plus
 semantic `ZsIcon` commands from `src/icon.rs`. Agents must not add PUA glyph
 strings, private component palettes or arbitrary control dimensions to this
 module. Windows detects Segoe Fluent Icons and falls back to Segoe MDL2 Assets
@@ -574,9 +581,14 @@ stable context without reading prose:
   description text, row
   accessories, action buttons, audit output, stable layout regions, viewport
   masks, scrollbar plans and `NativeDrawPlan` projection.
-- `ZsWorkbenchSpec`, `ZsWorkbenchRuntime` and
+- `ZsWorkbenchShellSpec`, `ZsMessageTimelineSpec`, `ZsComposerSpec`,
+  `ZsInspectorPanelSpec`, `workbench_shell(...)`, `ZsWorkbenchRuntime` and
   `NativeWindowBuilder::workbench(...)`: reusable navigation, message timeline,
-  composer and inspector composite surface with DPI-aware layout and hit regions.
+  composer and inspector contracts with target-owned geometry, DPI-aware layout
+  and hit regions.
+- `items_repeater(...)`, `image(...)` and `settings_card(...)`: named public
+  Rust constructors shared by ordinary View code and the UiDocument compiler;
+  the older `virtual_list`, `image_preview` and `section` entry points remain.
 - `ZsDocumentShellSpec` and `ZsDocumentShellLayout`: reusable document tab,
   command bar, native-editor inset, status surface, semantic draw plan and
   command hit regions.

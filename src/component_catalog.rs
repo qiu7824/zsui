@@ -135,7 +135,10 @@ const IMAGE_PREVIEW_GAPS: &[&str] = &[
     "image accessibility semantics",
     "AppKit and GTK4 target screenshot evidence",
 ];
-const PLATFORM_GAPS: &[&str] = &["native platform binding", "target interaction smoke"];
+const PLATFORM_GAPS: &[&str] = &[
+    "settings-row accessibility relationships",
+    "AppKit and GTK target interaction proof",
+];
 const NAVIGATION_GAPS: &[&str] = &[
     "adaptive pane, compact mode, top mode and back-button behavior",
     "hover, pressed and focus-visible navigation-item state polish",
@@ -585,7 +588,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Collection,
         FirstPass,
         Some("virtual-list"),
-        "src/view/mod.rs + src/paged_list.rs",
+        "src/view/widgets/data.rs + src/view/layout.rs + src/view/paint.rs + src/paged_list.rs",
         VIRTUAL_LIST_GAPS
     ),
     component!(
@@ -693,7 +696,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Media,
         FirstPass,
         Some("image-preview"),
-        "src/image_preview.rs + src/view/mod.rs + three desktop raster renderers",
+        "src/image_preview.rs + src/view/widgets/data.rs + three desktop raster renderers",
         IMAGE_PREVIEW_GAPS
     ),
     component!(
@@ -711,7 +714,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Composite,
         FirstPass,
         Some("shell"),
-        "src/shell_layout.rs",
+        "src/view/widgets/data.rs + three desktop component profiles",
         PLATFORM_GAPS
     ),
     component!(
@@ -720,7 +723,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Composite,
         FirstPass,
         Some("workbench"),
-        "src/workbench.rs",
+        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
         WORKBENCH_GAPS
     ),
     component!(
@@ -729,7 +732,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Composite,
         FirstPass,
         Some("workbench"),
-        "src/workbench.rs",
+        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
         WORKBENCH_GAPS
     ),
     component!(
@@ -738,7 +741,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Composite,
         FirstPass,
         Some("workbench"),
-        "src/workbench.rs",
+        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
         WORKBENCH_GAPS
     ),
     component!(
@@ -747,7 +750,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Composite,
         FirstPass,
         Some("workbench"),
-        "src/workbench.rs",
+        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
         WORKBENCH_GAPS
     ),
 ];

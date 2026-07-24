@@ -524,7 +524,7 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
     .height(Dp::new(138.0))
     .content_height(Dp::new(168.0));
 
-    let virtualized = virtual_list(
+    let virtualized = items_repeater(
         10_000,
         (0..6).map(|index| (index, format!("虚拟行 {index} / Virtual row {index}"))),
         |index, label| text(label).id(WidgetId::new(10_000 + index as u64)),

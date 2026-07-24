@@ -489,29 +489,38 @@ mod tests {
             )));
         }
 
-        let mut dot = column([badge::<()>(crate::ZsBadgeContent::Dot)]);
-        dot.layout(&mut ViewLayoutCx::new(
-            Rect {
-                x: 0,
-                y: 0,
-                width: 40,
-                height: 40,
-            },
-            Dpi::standard(),
-        ));
-        assert_eq!(
-            dot.children[0].bounds(),
-            Some(Rect {
-                x: 0,
-                y: 0,
-                width: 4,
-                height: 4,
-            })
-        );
-        let mut dot_paint = ViewPaintCx::new(Dpi::standard());
-        dot.paint(&mut dot_paint);
-        assert_eq!(dot_paint.plan().text_count(), 0);
-        assert_eq!(dot_paint.plan().icon_count(), 0);
+        for (platform, expected_size) in [
+            (crate::ZsBaseControlPlatformStyle::Windows, 4),
+            (crate::ZsBaseControlPlatformStyle::Macos, 6),
+            (crate::ZsBaseControlPlatformStyle::Gtk, 6),
+        ] {
+            let mut dot = column([
+                badge::<()>(crate::ZsBadgeContent::Dot)
+                    .with_platform_style_override(platform),
+            ]);
+            dot.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 40,
+                    height: 40,
+                },
+                Dpi::standard(),
+            ));
+            assert_eq!(
+                dot.children[0].bounds(),
+                Some(Rect {
+                    x: 0,
+                    y: 0,
+                    width: expected_size,
+                    height: expected_size,
+                })
+            );
+            let mut dot_paint = ViewPaintCx::new(Dpi::standard());
+            dot.paint(&mut dot_paint);
+            assert_eq!(dot_paint.plan().text_count(), 0);
+            assert_eq!(dot_paint.plan().icon_count(), 0);
+        }
 
         let mut icon_badge = column([
             badge::<()>(crate::ZsBadgeContent::icon(crate::ZsIcon::Success))
@@ -1471,6 +1480,10 @@ mod tests {
     #[test]
     #[cfg(all(feature = "grid", feature = "label"))]
     fn grid_never_compresses_fixed_tracks_or_native_text_line_boxes() {
+        let body_line_height = crate::TextRole::Body
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height
+            .round() as i32;
         let label = WidgetId::new(81);
         let mut view: ViewNode<()> = grid(
             [ZsGridTrack::fixed(Dp::new(80.0))],
@@ -1499,7 +1512,7 @@ mod tests {
                 x: 4,
                 y: 6,
                 width: 80,
-                height: 20,
+                height: body_line_height,
             }
         );
         let mut paint = ViewPaintCx::new(Dpi::standard());
@@ -1529,7 +1542,7 @@ mod tests {
                 .expect("scaled grid label should expose layout bounds")
                 .bounds
                 .height,
-            30
+            (body_line_height as f32 * 1.5).round() as i32
         );
     }
 
@@ -4192,6 +4205,16 @@ mod tests {
         view.layout(&mut layout);
 
         let interactions = view.interaction_plan();
+        let tab_metrics = crate::ZsTabViewMetrics::for_platform(
+            crate::ZsTabPlatformStyle::current(),
+        );
+        let outer_padding = 8;
+        let content_padding = tab_metrics.content_padding.0.round() as i32;
+        let strip_height = tab_metrics.strip_height.0.round() as i32;
+        let content_line_height = crate::TextRole::Body
+            .metrics_for(crate::ZsTypographyPlatformStyle::current())
+            .line_height
+            .round() as i32;
         assert_eq!(
             interactions
                 .hit_targets
@@ -4209,10 +4232,10 @@ mod tests {
                 .expect("selected tab content should be interactive")
                 .bounds,
             Rect {
-                x: 20,
-                y: 60,
-                width: 380,
-                height: 20,
+                x: outer_padding + content_padding,
+                y: outer_padding + strip_height + content_padding,
+                width: 420 - (outer_padding + content_padding) * 2,
+                height: content_line_height,
             }
         );
         assert_ne!(

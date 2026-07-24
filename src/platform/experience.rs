@@ -1072,6 +1072,7 @@ mod tests {
             .map_or(workbench, |(production, _)| production);
 
         assert!(production.contains("PlatformComponentProfile::current().style_tokens"));
+        assert!(production.contains("PlatformWorkbenchProfile::for_platform"));
         assert!(!production.contains("ZSUI_FLUENT_"));
         assert!(!production.contains("cfg!(target_os"));
         assert!(!production.contains("#[cfg(target_os"));

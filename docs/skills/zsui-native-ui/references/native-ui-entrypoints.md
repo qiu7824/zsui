@@ -114,9 +114,11 @@ Already reusable at code level:
   cards, row titles, description text, row accessories, action buttons,
   viewport masks, scrollbars, audit output, layout regions and
   `NativeDrawPlan` projection. This is not a product settings schema.
-- Optional `workbench` composite surface through `ZsWorkbenchSpec` and
-  `ZsWorkbenchRuntime`, with collapsible navigation, grouped history, message
-  blocks, composer actions, inspector tabs, DPI-aware layout and hit regions.
+- Optional `workbench` composite surface through `ZsWorkbenchShellSpec`,
+  `ZsMessageTimelineSpec`, `ZsComposerSpec`, `ZsInspectorPanelSpec`,
+  `workbench_shell(...)` and `ZsWorkbenchRuntime`, with collapsible navigation,
+  grouped history, message blocks, composer actions, inspector tabs,
+  target-owned geometry, DPI-aware layout and hit regions.
 - Optional `document-shell` composite through `ZsDocumentShellSpec`, with a
   document tab, command bar, editor content inset, status surface, semantic
   icons, compact layout and stable command hit regions.
