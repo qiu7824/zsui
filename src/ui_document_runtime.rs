@@ -65,6 +65,7 @@ pub struct UiDocumentSecretAction {
         feature = "button",
         feature = "breadcrumb",
         feature = "split-view",
+        feature = "canvas",
         feature = "flyout",
         feature = "menu-flyout",
         feature = "toggle-button",
@@ -438,6 +439,8 @@ fn compile_node<Msg: Clone + 'static>(
         "badge" => document_badge(node, properties)?,
         #[cfg(feature = "split-view")]
         "split_view" => document_split_view(node, properties, children, mapper)?,
+        #[cfg(feature = "canvas")]
+        "canvas" => document_canvas(node, properties, mapper)?,
         #[cfg(feature = "grid")]
         "grid" => document_grid(node, properties, children)?,
         #[cfg(feature = "document-shell")]
@@ -3342,6 +3345,7 @@ fn grid_gap_property(
 #[cfg(any(
     feature = "badge",
     feature = "split-view",
+    feature = "canvas",
     feature = "label",
     feature = "button",
     feature = "icon",
@@ -3415,6 +3419,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
 #[cfg(any(
     feature = "badge",
     feature = "split-view",
+    feature = "canvas",
     feature = "label",
     feature = "button",
     feature = "icon",
@@ -4156,6 +4161,51 @@ fn document_split_view<Msg: Clone + 'static>(
     Ok(control)
 }
 
+#[cfg(feature = "canvas")]
+fn document_canvas<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let value = property_value(node, properties, "primitives").ok_or_else(|| {
+        invalid_resolved_property(node, "primitives", "a Canvas primitive array is required")
+    })?;
+    let primitives =
+        crate::ui_document::ui_canvas_primitives_from_value(&value).ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "primitives",
+                "Canvas primitives must use finite local-DP geometry and semantic theme roles",
+            )
+        })?;
+    let mut control = crate::canvas(crate::ui_document::ui_canvas_native_scene(primitives));
+    if let Some(binding) = node.action_bindings.get("activate") {
+        control = control.on_click(mapper.map(UiDocumentAction {
+            node_id: node.id.as_str().to_owned(),
+            binding: binding.clone(),
+            property_binding: None,
+            payload: Value::Null,
+        }));
+    }
+    if let Some(binding) = node.action_bindings.get("pointer") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        control = control.on_canvas_pointer_with(move |event| {
+            let payload =
+                serde_json::to_value(crate::ui_document::UiCanvasPointerEvent::from_native(event))
+                    .expect("Canvas pointer event must serialize");
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: None,
+                payload,
+            })
+        });
+    }
+    Ok(control)
+}
+
 #[cfg(feature = "badge")]
 fn document_badge<Msg>(
     node: &UiNode,
@@ -4545,6 +4595,7 @@ mod tests {
 
     #[cfg(any(
         feature = "auto-suggest",
+        feature = "canvas",
         feature = "label",
         feature = "date-picker",
         feature = "time-picker",
@@ -4566,6 +4617,7 @@ mod tests {
     use crate::View;
     #[cfg(any(
         feature = "grid",
+        feature = "canvas",
         feature = "label",
         feature = "split-view",
         feature = "flyout",
@@ -4830,6 +4882,139 @@ mod tests {
         invalid_values = values;
         invalid_values.insert("workspace_pane_width".to_owned(), Value::from(0.0));
         assert!(ui_document_view(&document, &bindings, &invalid_values, Msg::Action).is_err());
+    }
+
+    #[cfg(feature = "canvas")]
+    #[test]
+    fn compiles_bound_canvas_scene_and_maps_typed_pointer_payload() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "chart",
+                "component": "canvas",
+                "layout": { "width": 320, "height": 180 },
+                "property_bindings": { "primitives": "chart_scene" },
+                "action_bindings": {
+                  "activate": "chart_activated",
+                  "pointer": "chart_pointer"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "chart_scene".to_owned(),
+                crate::ui_document::UiValueType::CanvasPrimitiveArray,
+            )]),
+            actions: BTreeMap::from([
+                (
+                    "chart_activated".to_owned(),
+                    crate::ui_document::UiValueType::Null,
+                ),
+                (
+                    "chart_pointer".to_owned(),
+                    crate::ui_document::UiValueType::CanvasPointerEvent,
+                ),
+            ]),
+        };
+        let scene = serde_json::json!([
+            {
+                "kind": "round_fill",
+                "rect": { "x": 4, "y": 6, "width": 80, "height": 32 },
+                "fill": { "role": "accent", "alpha": 224 },
+                "radius": 6
+            },
+            {
+                "kind": "text",
+                "text": "图表 / Chart",
+                "rect": { "x": 96, "y": 6, "width": 180, "height": 32 },
+                "style": { "role": "subtitle", "weight": "semibold" }
+            }
+        ]);
+        let values = BTreeMap::from([("chart_scene".to_owned(), scene)]);
+
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        assert!(matches!(
+            &view.kind,
+            crate::ViewNodeKind::Canvas { scene, .. } if scene.primitive_count() == 2
+        ));
+        let bounds = Rect {
+            x: 20,
+            y: 30,
+            width: 320,
+            height: 180,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        let mut paint = crate::ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::RoundFill {
+                rect: Rect {
+                    x: 24,
+                    y: 36,
+                    width: 80,
+                    height: 32
+                },
+                ..
+            }
+        )));
+
+        let widget = document.root.id.widget_id();
+        let pointer = crate::ZsCanvasPointerEvent::new(
+            widget,
+            crate::ZsCanvasPointerPhase::Moved,
+            crate::ZsCanvasPoint::new(Dp::new(-4.0), Dp::new(48.0)),
+            crate::ZsPointerButton::Secondary,
+            crate::ZsPointerModifiers::new(true, false, false, false),
+            false,
+        );
+        let mut events = crate::ViewEventCx::new();
+        view.event(&mut events, &crate::ViewEvent::Click { widget });
+        view.event(
+            &mut events,
+            &crate::ViewEvent::CanvasPointer { event: pointer },
+        );
+        let messages = events.into_messages();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            messages[0],
+            Msg::Action(UiDocumentAction {
+                node_id: "chart".to_owned(),
+                binding: "chart_activated".to_owned(),
+                property_binding: None,
+                payload: Value::Null,
+            })
+        );
+        assert!(matches!(
+            &messages[1],
+            Msg::Action(UiDocumentAction { node_id, binding, payload, .. })
+                if node_id == "chart"
+                    && binding == "chart_pointer"
+                    && payload["phase"] == "moved"
+                    && payload["button"]["kind"] == "secondary"
+                    && payload["position"]["x"] == -4.0
+                    && payload["inside"] == false
+        ));
+
+        let invalid_values = BTreeMap::from([(
+            "chart_scene".to_owned(),
+            serde_json::json!([{
+                "kind": "round_fill",
+                "rect": { "x": 0, "y": 0, "width": 20, "height": 20 },
+                "fill": { "role": "accent" },
+                "radius": -1
+            }]),
+        )]);
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::Validation { diagnostics })
+                if diagnostics.iter().any(|diagnostic|
+                    diagnostic.code
+                        == crate::ui_document::UiDiagnosticCode::BindingValueTypeMismatch)
+        ));
     }
 
     #[cfg(feature = "label")]

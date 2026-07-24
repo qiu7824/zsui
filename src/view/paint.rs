@@ -1470,7 +1470,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     ViewEvent::CanvasPointer { event },
                 ) => {
                     if let Some(message) = on_pointer {
-                        cx.emit(message(*event));
+                        cx.emit(message.map(*event));
                     }
                 }
                 #[cfg(feature = "toggle-button")]

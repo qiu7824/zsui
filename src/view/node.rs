@@ -38,6 +38,7 @@ impl WidgetId {
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "split-view",
+    feature = "canvas",
     feature = "scroll"
 ))]
 #[doc(hidden)]
@@ -72,6 +73,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "split-view",
+    feature = "canvas",
     feature = "scroll"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
@@ -106,6 +108,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "split-view",
+    feature = "canvas",
     feature = "scroll"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
@@ -158,6 +161,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "split-view",
+    feature = "canvas",
     feature = "scroll"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
@@ -202,6 +206,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "info-bar",
     feature = "teaching-tip",
     feature = "split-view",
+    feature = "canvas",
     feature = "scroll"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
@@ -825,7 +830,7 @@ pub enum ViewNodeKind<Msg> {
     Canvas {
         scene: crate::ZsCanvasScene,
         on_click: Option<Msg>,
-        on_pointer: Option<fn(crate::ZsCanvasPointerEvent) -> Msg>,
+        on_pointer: Option<ViewMessageMapper<crate::ZsCanvasPointerEvent, Msg>>,
     },
     #[cfg(feature = "button")]
     Button {
@@ -2081,7 +2086,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         message: fn(crate::ZsCanvasPointerEvent) -> Msg,
     ) -> Self {
         if let ViewNodeKind::Canvas { on_pointer, .. } = &mut self.kind {
-            *on_pointer = Some(message);
+            *on_pointer = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "canvas")]
+    /// Closure-capable counterpart to [`Self::on_canvas_pointer`] used by
+    /// document-backed Canvas actions with stable node-local binding identity.
+    pub fn on_canvas_pointer_with(
+        mut self,
+        message: impl Fn(crate::ZsCanvasPointerEvent) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Canvas { on_pointer, .. } = &mut self.kind {
+            *on_pointer = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

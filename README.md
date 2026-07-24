@@ -370,6 +370,26 @@ fn workspace(open: bool) -> ViewNode<Msg> {
 `Adaptive` 仅根据窗格与内容最小宽度选择并排或覆盖，不在应用代码中出现平台分支。
 覆盖模式的窗格外点击与 Esc 都发送 `false`；应用在 `update` 中保存该状态。
 
+文档 Canvas 使用独立的 `canvas` feature，把有界 retained scene 编译到同一个原生
+绘制协议。场景只包含本地 DP 几何、语义颜色、系统文字角色和 `ZsIcon`；不会序列化
+GDI、Core Graphics、Cairo 或 renderer 句柄。应用可用强类型绑定保持动态场景和指针消息：
+
+```rust,no_run
+use zsui::ui_document::{UiBindingManifest, UiCanvasPointerEvent, UiCanvasPrimitive};
+
+# struct State { scene: Vec<UiCanvasPrimitive> }
+# enum Msg { CanvasPointer(UiCanvasPointerEvent) }
+let mut bindings = UiBindingManifest::<State, Msg>::new();
+bindings.register_canvas_primitives_property("dashboard_scene", |state| state.scene.clone())?;
+bindings.register_canvas_pointer_action("dashboard_pointer", |event| {
+    Ok(Msg::CanvasPointer(event))
+})?;
+# Ok::<(), zsui::ui_document::UiBindingRegistrationError>(())
+```
+
+`canvas_pointer_event` 保留 press/move/release/cancel、按钮、修饰键、本地 DP 坐标和
+`inside`；作者节点身份仍由稳定 `UiNodeId` 提供，私有数值 `WidgetId` 不进入文档。
+
 ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
 
 ```rust,no_run

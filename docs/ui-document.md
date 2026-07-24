@@ -166,6 +166,17 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/split-view.bindings.json
 ```
 
+Canvas 文档使用有界的语义 primitive 数组，不序列化原生绘图句柄；指针动作保留本地
+DP 坐标、按钮、修饰键、阶段和 `inside` 状态：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,canvas,label `
+  -- check examples/ui-documents/canvas.json `
+  --bindings examples/ui-documents/canvas.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -177,7 +188,7 @@ cargo run --bin zsui-uic `
 - 非法布局值、主题 token、本地化键和辅助功能字段。
 
 加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、
-`text`、`badge`、`split_view`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
+`text`、`badge`、`split_view`、`canvas`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
 `teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb`、`navigation`、`command_bar` 和 `scroll`。
@@ -215,6 +226,15 @@ Caption 字体、语义图标与主题颜色。辅助功能状态属于可聚焦
 `leading`、`trailing`。可选 `pane_width` 必须为正数，`minimum_content_width` 必须
 非负；静态值和绑定后的发布值都会重新校验。文档不选择 WinUI、AppKit 或 GTK 外观，
 三平台 profile 分别拥有首选宽度、分隔线、窗格表面和覆盖层透明度。
+
+`canvas.primitives` 是必需的 `canvas_primitive_array`，最多包含 4096 个 retained
+primitive。矩形、圆角矩形、圆弧、三角形、文字和语义图标都使用 Canvas 本地 DP
+坐标；宽高、线宽和圆角必须为有限的非负值，描边线宽必须大于零。画刷只包含主题
+颜色角色和可选 alpha，不接受平台色板或 GDI、Core Graphics、Cairo 对象。文字继续
+使用语义字号、字重、对齐、换行和省略策略，最终字体由目标系统解析；需要动态本地化的
+scene 由强类型属性绑定从当前应用 locale 生成。可选 `activate`
+动作发送 `null`，`pointer` 动作发送 `canvas_pointer_event`；后者不泄漏私有数值
+`WidgetId`，稳定作者节点 ID 由外层 `UiDocumentAction.node_id` 提供。
 
 Stack 与 Grid 会递归保留子树的固有尺寸，包括文字行框、控件最小尺寸、节点间距和
 容器内边距。横向 Stack 先按真实分配宽度计算换行文字高度，再决定整行高度；空间不足
@@ -648,6 +668,17 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/split-view.values.json
 ```
 
+Canvas 示例从 values 快照热重载完整语义场景，并通过节点本地闭包返回强类型指针动作：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/canvas.json `
+  --bindings examples/ui-documents/canvas.bindings.json `
+  --values examples/ui-documents/canvas.values.json
+```
+
 受控面包屑示例使用稳定路径项目 ID，并由目标平台决定折叠、分隔符和溢出表面：
 
 ```powershell
@@ -725,6 +756,10 @@ RSS 为 16,035,840 字节，Private bytes 为 4,882,432 字节。
 Windows SplitView 示例分别保留打开覆盖层与关闭后的两张最终 Win32 PNG；真实遮罩点击
 记录 1 次事件、1 条 Boolean Viewer 消息和 0 次未处理点击。关闭场景在拆除前记录
 16,084,992 字节 RSS、4,845,568 字节 Private bytes，系统字体为 Microsoft YaHei UI。
+Windows Canvas 示例由最终 Win32 表面保留 16 个语义 primitive、8 条系统字体文字和
+平台 Info 图标；一次真实点击产生 2 次 Canvas 指针事件、1 次激活和 3 条 Viewer 消息，
+未处理点击为 0。进程拆除前记录 16,322,560 字节 RSS、5,361,664 字节 Private bytes，
+字体为 Microsoft YaHei UI。
 Windows Icon 示例在最终 Win32 PNG 中保留三个独立语义图标及完整双语文字，点击真实
 Confirm 按钮后记录 1 条 Viewer 消息和 0 次未处理点击；进程拆除前 RSS 为
 16,064,512 字节，Private bytes 为 4,907,008 字节。

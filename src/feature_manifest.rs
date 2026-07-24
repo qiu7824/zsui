@@ -506,6 +506,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "button",
                 "badge",
                 "split-view",
+                "breadcrumb",
+                "canvas",
                 "icon",
                 "label",
                 "checkbox",
@@ -521,6 +523,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "command-palette",
                 "tree",
                 "grid-view",
+                "table",
                 "date-picker",
                 "time-picker",
                 "color-picker",
@@ -529,7 +532,16 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "grid",
                 "progress",
                 "progress-ring",
+                "dialog",
+                "toast",
+                "info-bar",
+                "tooltip",
+                "teaching-tip",
+                "flyout",
+                "menu-flyout",
                 "scroll",
+                "shell",
+                "document-shell",
                 "native-smoke",
             ],
             "prebuilt target-native development viewer with validated file reload and final-surface smoke",
@@ -963,6 +975,7 @@ mod tests {
             .expect("UI viewer feature should be listed");
         assert!(ui_viewer.enables.contains(&"ui-document-runtime"));
         assert!(ui_viewer.enables.contains(&"window"));
+        assert!(ui_viewer.enables.contains(&"canvas"));
         assert!(ui_viewer.enables.contains(&"date-picker"));
         assert!(ui_viewer.enables.contains(&"time-picker"));
         assert!(ui_viewer.enables.contains(&"color-picker"));

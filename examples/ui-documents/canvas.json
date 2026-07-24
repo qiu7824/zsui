@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "canvas-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "canvas-title",
+        "component": "text",
+        "properties": {
+          "text": "语义画布 / Semantic Canvas",
+          "text_role": "title",
+          "weight": "semibold"
+        }
+      },
+      {
+        "id": "canvas-description",
+        "component": "text",
+        "layout": {
+          "width": 820
+        },
+        "properties": {
+          "text": "本地 DP 几何、语义颜色、系统字体和平台图标由同一份文档进入真实原生绘制后端。 / Local-DP geometry, semantic colors, system typography, and platform icons enter each real native renderer from one document.",
+          "wrap": "word"
+        }
+      },
+      {
+        "id": "dashboard-canvas",
+        "component": "canvas",
+        "layout": {
+          "width": 820,
+          "height": 390
+        },
+        "property_bindings": {
+          "primitives": "dashboard_scene"
+        },
+        "action_bindings": {
+          "activate": "dashboard_activated",
+          "pointer": "dashboard_pointer"
+        },
+        "accessibility": {
+          "role": "group",
+          "label": "交互式语义画布 / Interactive semantic canvas",
+          "description": "指针事件使用画布本地 DP 坐标 / Pointer events use Canvas-local DP coordinates"
+        }
+      },
+      {
+        "id": "canvas-hint",
+        "component": "text",
+        "layout": {
+          "width": 820
+        },
+        "properties": {
+          "text": "按下、拖动、释放和取消均通过强类型动作回传；画布不会暴露 GDI、Core Graphics 或 Cairo 句柄。 / Press, drag, release, and cancellation return through typed actions without exposing GDI, Core Graphics, or Cairo handles.",
+          "text_role": "caption",
+          "wrap": "word"
+        }
+      }
+    ]
+  }
+}

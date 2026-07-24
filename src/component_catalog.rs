@@ -369,7 +369,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Layout,
         FirstPass,
         Some("canvas"),
-        "src/canvas.rs + src/view/widgets/canvas.rs + three desktop renderers",
+        "src/canvas.rs + src/view/widgets/canvas.rs + UiDocument + three desktop renderers",
         CANVAS_GAPS
     ),
     component!(

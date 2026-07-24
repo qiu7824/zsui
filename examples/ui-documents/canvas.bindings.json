@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "dashboard_scene": "canvas_primitive_array"
+  },
+  "actions": {
+    "dashboard_activated": "null",
+    "dashboard_pointer": "canvas_pointer_event"
+  }
+}

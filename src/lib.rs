@@ -729,6 +729,7 @@ pub use view::tree_view;
     feature = "toggle-button",
     feature = "slider",
     feature = "teaching-tip",
+    feature = "canvas",
     feature = "scroll"
 ))]
 #[doc(hidden)]

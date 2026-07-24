@@ -1566,6 +1566,528 @@ pub enum UiLiveRegion {
     Assertive,
 }
 
+/// Maximum number of retained primitives accepted by one document-backed
+/// Canvas scene.
+pub const ZSUI_UI_CANVAS_MAX_PRIMITIVES: usize = 4_096;
+/// Maximum UTF-8 byte length of one document-backed Canvas text primitive.
+pub const ZSUI_UI_CANVAS_MAX_TEXT_BYTES: usize = 65_536;
+
+/// Semantic color role used by document-backed Canvas primitives.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasColorRole {
+    #[default]
+    PrimaryText,
+    SecondaryText,
+    DisabledText,
+    Accent,
+    AccentText,
+    Surface,
+    SurfaceRaised,
+    Control,
+    Border,
+    Success,
+    Warning,
+    Danger,
+}
+
+impl From<UiCanvasColorRole> for crate::ColorRole {
+    fn from(value: UiCanvasColorRole) -> Self {
+        match value {
+            UiCanvasColorRole::PrimaryText => Self::PrimaryText,
+            UiCanvasColorRole::SecondaryText => Self::SecondaryText,
+            UiCanvasColorRole::DisabledText => Self::DisabledText,
+            UiCanvasColorRole::Accent => Self::Accent,
+            UiCanvasColorRole::AccentText => Self::AccentText,
+            UiCanvasColorRole::Surface => Self::Surface,
+            UiCanvasColorRole::SurfaceRaised => Self::SurfaceRaised,
+            UiCanvasColorRole::Control => Self::Control,
+            UiCanvasColorRole::Border => Self::Border,
+            UiCanvasColorRole::Success => Self::Success,
+            UiCanvasColorRole::Warning => Self::Warning,
+            UiCanvasColorRole::Danger => Self::Danger,
+        }
+    }
+}
+
+/// Theme-aware Canvas brush. Literal platform colors are intentionally absent;
+/// the active native theme resolves the semantic role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCanvasBrush {
+    pub role: UiCanvasColorRole,
+    #[serde(default = "opaque_canvas_alpha")]
+    pub alpha: u8,
+}
+
+impl UiCanvasBrush {
+    pub const fn role(role: UiCanvasColorRole) -> Self {
+        Self { role, alpha: 255 }
+    }
+
+    pub const fn with_alpha(mut self, alpha: u8) -> Self {
+        self.alpha = alpha;
+        self
+    }
+
+    #[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+    fn native_fill(self) -> crate::NativeDrawFill {
+        if self.alpha == 255 {
+            crate::NativeDrawFill::role(self.role.into())
+        } else {
+            crate::NativeDrawFill::RoleWithAlpha {
+                role: self.role.into(),
+                alpha: self.alpha,
+            }
+        }
+    }
+}
+
+const fn opaque_canvas_alpha() -> u8 {
+    255
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCanvasPoint {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl UiCanvasPoint {
+    pub const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+
+    fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite()
+    }
+
+    #[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+    fn native(self) -> crate::ZsCanvasPoint {
+        crate::ZsCanvasPoint::new(Dp::new(self.x), Dp::new(self.y))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCanvasRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl UiCanvasRect {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn is_valid(self) -> bool {
+        self.x.is_finite()
+            && self.y.is_finite()
+            && self.width.is_finite()
+            && self.height.is_finite()
+            && self.width >= 0.0
+            && self.height >= 0.0
+    }
+
+    #[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+    fn native(self) -> crate::ZsCanvasRect {
+        crate::ZsCanvasRect::new(
+            Dp::new(self.x),
+            Dp::new(self.y),
+            Dp::new(self.width),
+            Dp::new(self.height),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasTextRole {
+    #[default]
+    Body,
+    Caption,
+    BodyLarge,
+    Subtitle,
+    WindowTitle,
+    Title,
+    TitleLarge,
+    Display,
+    Button,
+    Icon,
+    Monospace,
+}
+
+impl From<UiCanvasTextRole> for crate::TextRole {
+    fn from(value: UiCanvasTextRole) -> Self {
+        match value {
+            UiCanvasTextRole::Body => Self::Body,
+            UiCanvasTextRole::Caption => Self::Caption,
+            UiCanvasTextRole::BodyLarge => Self::BodyLarge,
+            UiCanvasTextRole::Subtitle => Self::Subtitle,
+            UiCanvasTextRole::WindowTitle => Self::WindowTitle,
+            UiCanvasTextRole::Title => Self::Title,
+            UiCanvasTextRole::TitleLarge => Self::TitleLarge,
+            UiCanvasTextRole::Display => Self::Display,
+            UiCanvasTextRole::Button => Self::Button,
+            UiCanvasTextRole::Icon => Self::Icon,
+            UiCanvasTextRole::Monospace => Self::Monospace,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasTextWeight {
+    #[default]
+    Automatic,
+    Regular,
+    Medium,
+    Semibold,
+    Bold,
+}
+
+impl From<UiCanvasTextWeight> for crate::TextWeight {
+    fn from(value: UiCanvasTextWeight) -> Self {
+        match value {
+            UiCanvasTextWeight::Automatic => Self::Automatic,
+            UiCanvasTextWeight::Regular => Self::Regular,
+            UiCanvasTextWeight::Medium => Self::Medium,
+            UiCanvasTextWeight::Semibold => Self::Semibold,
+            UiCanvasTextWeight::Bold => Self::Bold,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasHorizontalAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+impl From<UiCanvasHorizontalAlign> for crate::HorizontalAlign {
+    fn from(value: UiCanvasHorizontalAlign) -> Self {
+        match value {
+            UiCanvasHorizontalAlign::Start => Self::Start,
+            UiCanvasHorizontalAlign::Center => Self::Center,
+            UiCanvasHorizontalAlign::End => Self::End,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasVerticalAlign {
+    Start,
+    #[default]
+    Center,
+    End,
+}
+
+impl From<UiCanvasVerticalAlign> for crate::VerticalAlign {
+    fn from(value: UiCanvasVerticalAlign) -> Self {
+        match value {
+            UiCanvasVerticalAlign::Start => Self::Start,
+            UiCanvasVerticalAlign::Center => Self::Center,
+            UiCanvasVerticalAlign::End => Self::End,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasTextWrap {
+    #[default]
+    NoWrap,
+    Word,
+}
+
+impl From<UiCanvasTextWrap> for crate::TextWrap {
+    fn from(value: UiCanvasTextWrap) -> Self {
+        match value {
+            UiCanvasTextWrap::NoWrap => Self::NoWrap,
+            UiCanvasTextWrap::Word => Self::Word,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCanvasTextStyle {
+    #[serde(default)]
+    pub role: UiCanvasTextRole,
+    #[serde(default)]
+    pub color: UiCanvasColorRole,
+    #[serde(default)]
+    pub weight: UiCanvasTextWeight,
+    #[serde(default)]
+    pub horizontal_align: UiCanvasHorizontalAlign,
+    #[serde(default)]
+    pub vertical_align: UiCanvasVerticalAlign,
+    #[serde(default)]
+    pub wrap: UiCanvasTextWrap,
+    #[serde(default = "canvas_ellipsis_default")]
+    pub ellipsis: bool,
+}
+
+impl Default for UiCanvasTextStyle {
+    fn default() -> Self {
+        Self {
+            role: UiCanvasTextRole::Body,
+            color: UiCanvasColorRole::PrimaryText,
+            weight: UiCanvasTextWeight::Automatic,
+            horizontal_align: UiCanvasHorizontalAlign::Start,
+            vertical_align: UiCanvasVerticalAlign::Center,
+            wrap: UiCanvasTextWrap::NoWrap,
+            ellipsis: true,
+        }
+    }
+}
+
+impl UiCanvasTextStyle {
+    #[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+    fn native(self) -> crate::SemanticTextStyle {
+        crate::SemanticTextStyle {
+            role: self.role.into(),
+            color: self.color.into(),
+            weight: self.weight.into(),
+            horizontal_align: self.horizontal_align.into(),
+            vertical_align: self.vertical_align.into(),
+            wrap: self.wrap.into(),
+            ellipsis: self.ellipsis,
+        }
+    }
+}
+
+const fn canvas_ellipsis_default() -> bool {
+    true
+}
+
+/// One retained, platform-neutral primitive in a document-backed Canvas.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UiCanvasPrimitive {
+    FillRect {
+        rect: UiCanvasRect,
+        fill: UiCanvasBrush,
+    },
+    StrokeRect {
+        rect: UiCanvasRect,
+        stroke: UiCanvasBrush,
+        width: f32,
+    },
+    StrokeArc {
+        rect: UiCanvasRect,
+        stroke: UiCanvasBrush,
+        width: f32,
+        start_degrees: i16,
+        sweep_degrees: i16,
+    },
+    FillTriangle {
+        points: [UiCanvasPoint; 3],
+        fill: UiCanvasBrush,
+    },
+    RoundRect {
+        rect: UiCanvasRect,
+        fill: UiCanvasBrush,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stroke: Option<UiCanvasBrush>,
+        radius: f32,
+    },
+    RoundFill {
+        rect: UiCanvasRect,
+        fill: UiCanvasBrush,
+        radius: f32,
+    },
+    Text {
+        text: String,
+        rect: UiCanvasRect,
+        #[serde(default)]
+        style: UiCanvasTextStyle,
+    },
+    Icon {
+        icon: crate::ZsIcon,
+        rect: UiCanvasRect,
+        #[serde(default)]
+        color: UiCanvasColorRole,
+    },
+}
+
+impl UiCanvasPrimitive {
+    fn is_valid(&self) -> bool {
+        match self {
+            Self::FillRect { rect, .. } | Self::Icon { rect, .. } => rect.is_valid(),
+            Self::StrokeRect { rect, width, .. } | Self::StrokeArc { rect, width, .. } => {
+                rect.is_valid() && width.is_finite() && *width > 0.0
+            }
+            Self::FillTriangle { points, .. } => points.iter().all(|point| point.is_finite()),
+            Self::RoundRect { rect, radius, .. } | Self::RoundFill { rect, radius, .. } => {
+                rect.is_valid() && radius.is_finite() && *radius >= 0.0
+            }
+            Self::Text { text, rect, .. } => {
+                !text.contains('\0')
+                    && text.len() <= ZSUI_UI_CANVAS_MAX_TEXT_BYTES
+                    && rect.is_valid()
+            }
+        }
+    }
+
+    #[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+    fn native(self) -> crate::ZsCanvasPrimitive {
+        match self {
+            Self::FillRect { rect, fill } => {
+                crate::ZsCanvasPrimitive::fill_rect(rect.native(), fill.native_fill())
+            }
+            Self::StrokeRect {
+                rect,
+                stroke,
+                width,
+            } => crate::ZsCanvasPrimitive::StrokeRect {
+                rect: rect.native(),
+                stroke: stroke.native_fill(),
+                width: Dp::new(width),
+            },
+            Self::StrokeArc {
+                rect,
+                stroke,
+                width,
+                start_degrees,
+                sweep_degrees,
+            } => crate::ZsCanvasPrimitive::StrokeArc {
+                rect: rect.native(),
+                stroke: stroke.native_fill(),
+                width: Dp::new(width),
+                start_degrees,
+                sweep_degrees,
+            },
+            Self::FillTriangle { points, fill } => crate::ZsCanvasPrimitive::FillTriangle {
+                points: points.map(UiCanvasPoint::native),
+                fill: fill.native_fill(),
+            },
+            Self::RoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+            } => crate::ZsCanvasPrimitive::RoundRect {
+                rect: rect.native(),
+                fill: fill.native_fill(),
+                stroke: stroke.map(UiCanvasBrush::native_fill),
+                radius: Dp::new(radius),
+            },
+            Self::RoundFill { rect, fill, radius } => crate::ZsCanvasPrimitive::round_fill(
+                rect.native(),
+                fill.native_fill(),
+                Dp::new(radius),
+            ),
+            Self::Text { text, rect, style } => {
+                crate::ZsCanvasPrimitive::text(text, rect.native(), style.native())
+            }
+            Self::Icon { icon, rect, color } => {
+                crate::ZsCanvasPrimitive::icon(icon, rect.native(), color.into())
+            }
+        }
+    }
+}
+
+pub(crate) fn ui_canvas_primitives_from_value(value: &Value) -> Option<Vec<UiCanvasPrimitive>> {
+    let primitives = serde_json::from_value::<Vec<UiCanvasPrimitive>>(value.clone()).ok()?;
+    (primitives.len() <= ZSUI_UI_CANVAS_MAX_PRIMITIVES
+        && primitives.iter().all(UiCanvasPrimitive::is_valid))
+    .then_some(primitives)
+}
+
+#[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+pub(crate) fn ui_canvas_native_scene(primitives: Vec<UiCanvasPrimitive>) -> crate::ZsCanvasScene {
+    primitives
+        .into_iter()
+        .map(UiCanvasPrimitive::native)
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiCanvasPointerPhase {
+    Pressed,
+    Moved,
+    Released,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "index", rename_all = "snake_case")]
+pub enum UiCanvasPointerButton {
+    Primary,
+    Secondary,
+    Middle,
+    Auxiliary(u16),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCanvasPointerModifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub alt: bool,
+    pub super_key: bool,
+}
+
+/// Stable action payload emitted by a document-backed Canvas. The numeric
+/// runtime WidgetId stays private; the enclosing `UiDocumentAction::node_id`
+/// identifies the author-facing Canvas node.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiCanvasPointerEvent {
+    pub phase: UiCanvasPointerPhase,
+    pub position: UiCanvasPoint,
+    pub button: UiCanvasPointerButton,
+    pub modifiers: UiCanvasPointerModifiers,
+    pub inside: bool,
+}
+
+impl UiCanvasPointerEvent {
+    #[cfg(all(feature = "canvas", feature = "ui-document-runtime"))]
+    pub(crate) fn from_native(event: crate::ZsCanvasPointerEvent) -> Self {
+        Self {
+            phase: match event.phase {
+                crate::ZsCanvasPointerPhase::Pressed => UiCanvasPointerPhase::Pressed,
+                crate::ZsCanvasPointerPhase::Moved => UiCanvasPointerPhase::Moved,
+                crate::ZsCanvasPointerPhase::Released => UiCanvasPointerPhase::Released,
+                crate::ZsCanvasPointerPhase::Cancelled => UiCanvasPointerPhase::Cancelled,
+            },
+            position: UiCanvasPoint::new(event.position.x.0, event.position.y.0),
+            button: match event.button {
+                crate::ZsPointerButton::Primary => UiCanvasPointerButton::Primary,
+                crate::ZsPointerButton::Secondary => UiCanvasPointerButton::Secondary,
+                crate::ZsPointerButton::Middle => UiCanvasPointerButton::Middle,
+                crate::ZsPointerButton::Auxiliary(index) => UiCanvasPointerButton::Auxiliary(index),
+            },
+            modifiers: UiCanvasPointerModifiers {
+                shift: event.modifiers.shift,
+                control: event.modifiers.control,
+                alt: event.modifiers.alt,
+                super_key: event.modifiers.super_key,
+            },
+            inside: event.inside,
+        }
+    }
+}
+
+fn ui_canvas_pointer_event_from_value(value: &Value) -> Option<UiCanvasPointerEvent> {
+    let event = serde_json::from_value::<UiCanvasPointerEvent>(value.clone()).ok()?;
+    event.position.is_finite().then_some(event)
+}
+
 /// JSON value shape expected by a state property or action payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1580,6 +2102,8 @@ pub enum UiValueType {
     Date,
     Time,
     Color,
+    CanvasPrimitiveArray,
+    CanvasPointerEvent,
     FlyoutDismissReason,
     MenuFlyoutItemId,
     MenuFlyoutItemArray,
@@ -1633,6 +2157,8 @@ impl UiValueType {
                 .as_str()
                 .and_then(crate::Color::parse_hex_rgba)
                 .is_some(),
+            Self::CanvasPrimitiveArray => ui_canvas_primitives_from_value(value).is_some(),
+            Self::CanvasPointerEvent => ui_canvas_pointer_event_from_value(value).is_some(),
             Self::FlyoutDismissReason => value
                 .as_str()
                 .is_some_and(|value| matches!(value, "light_dismiss" | "escape")),
@@ -2969,6 +3495,19 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers one retained Canvas scene using only document-safe semantic
+    /// primitives and theme roles.
+    #[cfg(feature = "canvas")]
+    pub fn register_canvas_primitives_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiCanvasPrimitive> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::CanvasPrimitiveArray, move |state| {
+            serde_json::to_value(read(state)).expect("Canvas primitives must serialize")
+        })
+    }
+
     /// Registers a root-to-current breadcrumb path with stable semantic IDs.
     #[cfg(feature = "breadcrumb")]
     pub fn register_breadcrumb_items_property(
@@ -3285,6 +3824,21 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
                         .ok_or_else(|| "color payload must use canonical #RRGGBBAA".to_owned())
                 })?;
             map(color)
+        })
+    }
+
+    /// Registers a strongly typed local-DP Canvas pointer action without
+    /// exposing the private numeric WidgetId used by the release runtime.
+    #[cfg(feature = "canvas")]
+    pub fn register_canvas_pointer_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiCanvasPointerEvent) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::CanvasPointerEvent, move |payload| {
+            let event = ui_canvas_pointer_event_from_value(&payload)
+                .ok_or_else(|| "Canvas pointer payload is invalid".to_owned())?;
+            map(event)
         })
     }
 
@@ -5812,6 +6366,21 @@ struct ComponentSchema {
 
 const NO_PROPERTIES: &[PropertySpec] = &[];
 const NO_ACTIONS: &[ActionSpec] = &[];
+const CANVAS_PROPERTIES: &[PropertySpec] = &[PropertySpec {
+    name: "primitives",
+    value_type: UiValueType::CanvasPrimitiveArray,
+    required: true,
+}];
+const CANVAS_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "activate",
+        payload_type: UiValueType::Null,
+    },
+    ActionSpec {
+        name: "pointer",
+        payload_type: UiValueType::CanvasPointerEvent,
+    },
+];
 const TEXT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "text",
@@ -6845,6 +7414,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: SPLIT_VIEW_ACTIONS,
             children: ChildPolicy::Exactly(2),
         }),
+        "canvas" => Some(leaf(CANVAS_PROPERTIES, CANVAS_ACTIONS)),
         "navigation" => Some(ComponentSchema {
             properties: NAVIGATION_PROPERTIES,
             actions: NAVIGATION_ACTIONS,
@@ -7272,6 +7842,141 @@ mod tests {
             Some(Value::String("Notes".to_owned()))
         );
         assert_eq!(manifest.map_action("save", Value::Null), Ok(Msg::Save));
+    }
+
+    #[cfg(feature = "canvas")]
+    #[test]
+    fn canvas_scene_and_pointer_bindings_remain_strongly_typed() {
+        #[derive(Clone)]
+        struct CanvasState {
+            primitives: Vec<UiCanvasPrimitive>,
+        }
+        #[derive(Debug, PartialEq)]
+        enum CanvasMsg {
+            Pointer(UiCanvasPointerEvent),
+        }
+
+        let primitives = ui_canvas_primitives_from_value(&serde_json::json!([
+            {
+                "kind": "round_rect",
+                "rect": { "x": 0.0, "y": 0.0, "width": 320.0, "height": 180.0 },
+                "fill": { "role": "surface_raised" },
+                "stroke": { "role": "border", "alpha": 192 },
+                "radius": 8.0
+            },
+            {
+                "kind": "text",
+                "text": "画布 / Canvas",
+                "rect": { "x": 20.0, "y": 20.0, "width": 260.0, "height": 36.0 },
+                "style": { "role": "subtitle", "weight": "semibold" }
+            }
+        ]))
+        .unwrap();
+        let mut manifest = UiBindingManifest::<CanvasState, CanvasMsg>::new();
+        manifest
+            .register_canvas_primitives_property("scene", |state| state.primitives.clone())
+            .unwrap();
+        manifest
+            .register_canvas_pointer_action("canvas_pointer", |event| Ok(CanvasMsg::Pointer(event)))
+            .unwrap();
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "chart",
+                "component": "canvas",
+                "layout": { "width": 320, "height": 180 },
+                "property_bindings": { "primitives": "scene" },
+                "action_bindings": { "pointer": "canvas_pointer" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let features = UiFeatureSet::new(["canvas"]);
+        let schema = manifest.schema();
+        assert!(document.validate(&features, &schema).is_valid());
+        assert!(UiDocumentReleaseArtifact::compile(&document, &features, &schema).is_ok());
+        let handoff = UiAiHandoffPackage::build(&document, &features, &schema, None, None).unwrap();
+        let contract = handoff
+            .manifest
+            .component_contracts
+            .iter()
+            .find(|contract| contract.component == "canvas")
+            .unwrap();
+        assert_eq!(contract.cargo_feature.as_deref(), Some("canvas"));
+        assert_eq!(contract.children, UiAiHandoffChildPolicy::None);
+        assert!(contract.properties.iter().any(|property| {
+            property.name == "primitives"
+                && property.value_type == UiValueType::CanvasPrimitiveArray
+                && property.required
+        }));
+        assert!(contract.actions.iter().any(|action| {
+            action.name == "pointer" && action.payload_type == UiValueType::CanvasPointerEvent
+        }));
+        let state = CanvasState { primitives };
+        assert_eq!(
+            manifest
+                .read_property("scene", &state)
+                .and_then(|value| ui_canvas_primitives_from_value(&value))
+                .map(|primitives| primitives.len()),
+            Some(2)
+        );
+
+        let payload = serde_json::json!({
+            "phase": "moved",
+            "position": { "x": -4.0, "y": 48.0 },
+            "button": { "kind": "auxiliary", "index": 2 },
+            "modifiers": { "shift": true, "control": false, "alt": false, "super_key": false },
+            "inside": false
+        });
+        assert!(matches!(
+            manifest.map_action("canvas_pointer", payload),
+            Ok(CanvasMsg::Pointer(UiCanvasPointerEvent {
+                phase: UiCanvasPointerPhase::Moved,
+                button: UiCanvasPointerButton::Auxiliary(2),
+                inside: false,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn canvas_contract_rejects_invalid_or_unbounded_primitives() {
+        let invalid = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "bad-canvas",
+                "component": "canvas",
+                "properties": {
+                  "primitives": [
+                    {
+                      "kind": "stroke_rect",
+                      "rect": { "x": 0, "y": 0, "width": -1, "height": 20 },
+                      "stroke": { "role": "border" },
+                      "width": 0
+                    }
+                  ]
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = invalid.validate(&UiFeatureSet::new(["canvas"]), &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyType
+                && diagnostic.path == "$.root.properties.primitives"
+        }));
+
+        let mut too_many = Vec::with_capacity(ZSUI_UI_CANVAS_MAX_PRIMITIVES + 1);
+        for _ in 0..=ZSUI_UI_CANVAS_MAX_PRIMITIVES {
+            too_many.push(serde_json::json!({
+                "kind": "fill_rect",
+                "rect": { "x": 0, "y": 0, "width": 1, "height": 1 },
+                "fill": { "role": "accent" }
+            }));
+        }
+        assert!(!UiValueType::CanvasPrimitiveArray.matches(&Value::Array(too_many)));
     }
 
     #[test]

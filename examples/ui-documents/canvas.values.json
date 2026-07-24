@@ -1,0 +1,226 @@
+{
+  "dashboard_scene": [
+    {
+      "kind": "round_rect",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 820,
+        "height": 390
+      },
+      "fill": {
+        "role": "surface_raised"
+      },
+      "stroke": {
+        "role": "border",
+        "alpha": 192
+      },
+      "radius": 10
+    },
+    {
+      "kind": "text",
+      "text": "原生绘制概览 / Native rendering overview",
+      "rect": {
+        "x": 28,
+        "y": 22,
+        "width": 600,
+        "height": 36
+      },
+      "style": {
+        "role": "subtitle",
+        "weight": "semibold"
+      }
+    },
+    {
+      "kind": "text",
+      "text": "同一场景 · 三个平台 / One scene · Three platforms",
+      "rect": {
+        "x": 28,
+        "y": 58,
+        "width": 600,
+        "height": 28
+      },
+      "style": {
+        "role": "caption",
+        "color": "secondary_text"
+      }
+    },
+    {
+      "kind": "icon",
+      "icon": "Info",
+      "rect": {
+        "x": 760,
+        "y": 24,
+        "width": 24,
+        "height": 24
+      },
+      "color": "accent"
+    },
+    {
+      "kind": "round_fill",
+      "rect": {
+        "x": 28,
+        "y": 118,
+        "width": 214,
+        "height": 210
+      },
+      "fill": {
+        "role": "control"
+      },
+      "radius": 8
+    },
+    {
+      "kind": "round_fill",
+      "rect": {
+        "x": 302,
+        "y": 118,
+        "width": 214,
+        "height": 210
+      },
+      "fill": {
+        "role": "control"
+      },
+      "radius": 8
+    },
+    {
+      "kind": "round_fill",
+      "rect": {
+        "x": 576,
+        "y": 118,
+        "width": 214,
+        "height": 210
+      },
+      "fill": {
+        "role": "control"
+      },
+      "radius": 8
+    },
+    {
+      "kind": "fill_rect",
+      "rect": {
+        "x": 54,
+        "y": 258,
+        "width": 42,
+        "height": 42
+      },
+      "fill": {
+        "role": "accent",
+        "alpha": 224
+      }
+    },
+    {
+      "kind": "fill_rect",
+      "rect": {
+        "x": 114,
+        "y": 218,
+        "width": 42,
+        "height": 82
+      },
+      "fill": {
+        "role": "accent"
+      }
+    },
+    {
+      "kind": "fill_rect",
+      "rect": {
+        "x": 174,
+        "y": 170,
+        "width": 42,
+        "height": 130
+      },
+      "fill": {
+        "role": "success"
+      }
+    },
+    {
+      "kind": "stroke_arc",
+      "rect": {
+        "x": 344,
+        "y": 164,
+        "width": 128,
+        "height": 128
+      },
+      "stroke": {
+        "role": "accent"
+      },
+      "width": 12,
+      "start_degrees": -90,
+      "sweep_degrees": 286
+    },
+    {
+      "kind": "fill_triangle",
+      "points": [
+        {
+          "x": 683,
+          "y": 162
+        },
+        {
+          "x": 618,
+          "y": 286
+        },
+        {
+          "x": 748,
+          "y": 286
+        }
+      ],
+      "fill": {
+        "role": "warning"
+      }
+    },
+    {
+      "kind": "stroke_rect",
+      "rect": {
+        "x": 54,
+        "y": 154,
+        "width": 162,
+        "height": 146
+      },
+      "stroke": {
+        "role": "border"
+      },
+      "width": 1
+    },
+    {
+      "kind": "text",
+      "text": "DP 柱状图 / DP bars",
+      "rect": {
+        "x": 48,
+        "y": 336,
+        "width": 174,
+        "height": 30
+      },
+      "style": {
+        "role": "body",
+        "horizontal_align": "center"
+      }
+    },
+    {
+      "kind": "text",
+      "text": "语义圆弧 / Semantic arc",
+      "rect": {
+        "x": 322,
+        "y": 336,
+        "width": 174,
+        "height": 30
+      },
+      "style": {
+        "role": "body",
+        "horizontal_align": "center"
+      }
+    },
+    {
+      "kind": "text",
+      "text": "警告 / Warning",
+      "rect": {
+        "x": 596,
+        "y": 336,
+        "width": 174,
+        "height": 30
+      },
+      "style": {
+        "role": "body",
+        "horizontal_align": "center"
+      }
+    }
+  ]
+}

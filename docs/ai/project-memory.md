@@ -256,6 +256,12 @@ history remain authoritative for implementation status.
   positions and an explicit inside flag. Pointer capture keeps outside drag
   positions unbounded, cancellation follows capture/focus loss, and the
   existing primary `on_click` activation remains source-compatible.
+  UiDocument Canvas uses the required `canvas_primitive_array` property and
+  optional `activate`/`pointer` actions. Its bounded authoring primitives keep
+  local-DP geometry, semantic brushes, text roles and `ZsIcon` values while
+  excluding literal platform palettes and native handles. The typed
+  `canvas_pointer_event` payload omits the private numeric WidgetId because the
+  enclosing document action already carries the stable author node ID.
 - The public `crate::view` module is physically organized under `src/view/`:
   node, layout, event, focus, paint, overlay and widget-family source units
   share the existing module namespace so public paths and privacy stay stable.
