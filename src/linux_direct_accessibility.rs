@@ -619,6 +619,8 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::NavigationViewToggle => Role::Button,
         #[cfg(feature = "label")]
         ViewHitTargetKind::NavigationViewScrim => Role::GenericContainer,
+        #[cfg(feature = "split-view")]
+        ViewHitTargetKind::SplitViewScrim => Role::GenericContainer,
         #[cfg(feature = "toggle-button")]
         ViewHitTargetKind::ToggleButton => Role::Button,
         ViewHitTargetKind::Textbox => Role::TextInput,
@@ -775,6 +777,15 @@ mod tests {
         assert_eq!(accesskit_role(ViewHitTargetKind::Flyout), Role::Dialog);
         assert_eq!(
             accesskit_role(ViewHitTargetKind::FlyoutScrim),
+            Role::GenericContainer
+        );
+    }
+
+    #[cfg(feature = "split-view")]
+    #[test]
+    fn split_view_scrim_is_an_accessible_generic_container() {
+        assert_eq!(
+            accesskit_role(ViewHitTargetKind::SplitViewScrim),
             Role::GenericContainer
         );
     }
