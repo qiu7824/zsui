@@ -4,8 +4,8 @@
     "id": "workbench",
     "component": "workbench_shell",
     "properties": {
-      "title": "Viewer 热重载验收 / Viewer reload proof",
-      "subtitle": "固定 Windows Runner 初始 revision / Initial revision",
+      "title": "热重载验收 / Reload proof",
+      "subtitle": "Windows Runner revision 1",
       "sidebar": {
         "title": "验收任务 / Proof tasks",
         "groups": []

@@ -4,8 +4,8 @@
     "id": "workbench",
     "component": "workbench_shell",
     "properties": {
-      "title": "Viewer 热重载已完成 / Viewer reload complete",
-      "subtitle": "固定 Windows Runner revision 2 / Accepted revision 2",
+      "title": "热重载完成 / Reloaded",
+      "subtitle": "Windows Runner revision 2",
       "sidebar": {
         "title": "验收任务 / Proof tasks",
         "groups": []

@@ -88,8 +88,8 @@ jobs:
             --bindings "$root/view.bindings.json" `
             --values "$root/view.values.json" `
             --poll-ms 50 `
-            --width 1280 `
-            --height 800 `
+            --width 960 `
+            --height 640 `
             --smoke "$root/proof" `
             --smoke-duration-ms 3500 `
             --require-binding-reset `
@@ -134,8 +134,8 @@ jobs:
           Assert-True ($proof.platform -eq "windows") "Viewer did not run on Win32"
           Assert-True ($proof.capture_backend -eq "win32_wm_printclient_dib_png") "unexpected Win32 capture backend"
           Assert-True ($null -eq $proof.display_server) "Win32 proof must not report a display server"
-          Assert-True ($proof.window.logical_width -eq 1280) "unexpected logical width"
-          Assert-True ($proof.window.logical_height -eq 800) "unexpected logical height"
+          Assert-True ($proof.window.logical_width -eq 960) "unexpected logical width"
+          Assert-True ($proof.window.logical_height -eq 640) "unexpected logical height"
           Assert-True ($proof.window.pixel_width -gt 0) "missing screenshot pixel width"
           Assert-True ($proof.window.pixel_height -gt 0) "missing screenshot pixel height"
 
