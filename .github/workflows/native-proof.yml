@@ -30,6 +30,163 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-viewer-proof:
+    name: Win32 Viewer Reload Proof
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+      ZSUI_NATIVE_PROOF_OS_FAMILY: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Assert runner identity
+        shell: pwsh
+        run: |
+          $caption = (Get-CimInstance Win32_OperatingSystem).Caption
+          if ($caption -notmatch "2025") {
+            throw "expected Windows Server 2025, got $caption"
+          }
+          if (-not [Environment]::Is64BitOperatingSystem) {
+            throw "the Win32 Viewer proof requires an x64 operating system"
+          }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Win32 Viewer
+        shell: pwsh
+        run: |
+          cargo build `
+            --release `
+            --locked `
+            --bin zsui-viewer `
+            --no-default-features `
+            --features ui-viewer
+
+      - name: Prepare deterministic reload sources
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64/ui-viewer-reload"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Copy-Item examples/ui-documents/viewer-reload-workbench.json "$root/view.json"
+          Copy-Item examples/ui-documents/viewer-reload-workbench.bindings.json "$root/view.bindings.json"
+          Copy-Item examples/ui-documents/viewer-reload-workbench.values.json "$root/view.values.json"
+
+      - name: Run real Win32 Viewer reload proof
+        id: win32-viewer
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64/ui-viewer-reload"
+          $output = & .\target\release\zsui-viewer.exe `
+            "$root/view.json" `
+            --bindings "$root/view.bindings.json" `
+            --values "$root/view.values.json" `
+            --poll-ms 50 `
+            --width 1280 `
+            --height 800 `
+            --smoke "$root/proof" `
+            --smoke-duration-ms 3500 `
+            --require-binding-reset `
+            --reload-document-from examples/ui-documents/viewer-reload-workbench-next.json `
+            --reload-bindings-from examples/ui-documents/viewer-reload-workbench-next.bindings.json `
+            --reload-after-ms 700 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath "$root/viewer.log"
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Summarize Win32 Viewer proof failure
+        if: failure() && steps.win32-viewer.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $log = "target/native-proof/windows-2025-x86_64/ui-viewer-reload/viewer.log"
+          if (Test-Path $log) {
+            $summary = (Get-Content $log -Tail 50) -join " "
+            Write-Output "::error title=Win32 Viewer proof failure::$summary"
+          }
+
+      - name: Validate Win32 Viewer artifacts
+        shell: pwsh
+        run: |
+          function Assert-True([bool] $Condition, [string] $Message) {
+            if (-not $Condition) {
+              throw $Message
+            }
+          }
+
+          $root = "target/native-proof/windows-2025-x86_64/ui-viewer-reload/proof"
+          $png = Join-Path $root "window.png"
+          $bytes = [IO.File]::ReadAllBytes($png)
+          $signature = [byte[]](137, 80, 78, 71, 13, 10, 26, 10)
+          Assert-True ($bytes.Length -gt 8) "Viewer screenshot is empty"
+          Assert-True (-not (Compare-Object $signature $bytes[0..7])) "Viewer screenshot is not a PNG"
+
+          $proof = Get-Content (Join-Path $root "proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($proof.schema -eq "zsui.ui-viewer-proof/v1") "unexpected Viewer proof schema"
+          Assert-True ($proof.schema_version -eq 1) "unexpected Viewer proof schema version"
+          Assert-True ($proof.platform -eq "windows") "Viewer did not run on Win32"
+          Assert-True ($proof.capture_backend -eq "win32_wm_printclient_dib_png") "unexpected Win32 capture backend"
+          Assert-True ($null -eq $proof.display_server) "Win32 proof must not report a display server"
+          Assert-True ($proof.window.logical_width -eq 1280) "unexpected logical width"
+          Assert-True ($proof.window.logical_height -eq 800) "unexpected logical height"
+          Assert-True ($proof.window.pixel_width -gt 0) "missing screenshot pixel width"
+          Assert-True ($proof.window.pixel_height -gt 0) "missing screenshot pixel height"
+
+          $source = $proof.source
+          Assert-True ($source.revision -eq 2) "Viewer did not accept exactly one reload"
+          Assert-True ($source.document_schema_version -eq 1) "unexpected document schema version"
+          Assert-True ($source.node_count -eq 4) "unexpected reloaded workbench node count"
+          Assert-True ($null -eq $source.last_error) "Viewer retained a source error"
+          $nodeIds = @($source.nodes | ForEach-Object id)
+          foreach ($id in @("workbench", "timeline", "composer", "inspector")) {
+            Assert-True ($nodeIds -contains $id) "missing stable node $id"
+          }
+
+          $reload = $source.last_reload
+          Assert-True ($reload.from_revision -eq 1) "unexpected reload source revision"
+          Assert-True ($reload.to_revision -eq 2) "unexpected reload target revision"
+          Assert-True (@($reload.preserved_node_ids).Count -eq 4) "not all workbench nodes were preserved"
+          Assert-True (@($reload.added_node_ids).Count -eq 0) "reload unexpectedly added nodes"
+          Assert-True (@($reload.state_resets).Count -eq 0) "reload unexpectedly reset node state"
+          Assert-True (@($reload.preserved_property_bindings).Count -eq 1) "unexpected preserved binding count"
+          Assert-True ($reload.preserved_property_bindings[0] -eq "timeline_offset") "timeline offset binding was not preserved"
+          Assert-True (@($reload.binding_state_resets).Count -eq 1) "unexpected binding reset count"
+          $reset = $reload.binding_state_resets[0]
+          Assert-True ($reset.binding -eq "composer_draft") "unexpected reset binding"
+          Assert-True ($reset.previous_type -eq "string") "unexpected previous binding type"
+          Assert-True ($null -eq $reset.current_type) "removed binding unexpectedly has a current type"
+          Assert-True ($reset.reason -eq "binding_removed") "unexpected binding reset reason"
+
+          $runtime = $proof.runtime
+          Assert-True ($runtime.created_window_count -eq 1) "Viewer did not create one native window"
+          Assert-True ($runtime.screenshot_captured) "Viewer did not capture its final Win32 surface"
+          Assert-True ($null -eq $runtime.startup_error) "Viewer reported a startup error"
+          Assert-True ($null -eq $runtime.screenshot_error) "Viewer reported a screenshot error"
+          Assert-True ($runtime.native_view_capture.backend -eq $proof.capture_backend) "capture reports disagree"
+          Assert-True ($runtime.native_view_live_revision -ge 2) "live View did not rebuild after reload"
+          Assert-True ($runtime.draw_command_count -gt 0) "reloaded View produced no draw commands"
+          Assert-True ($runtime.text_command_count -gt 0) "reloaded View produced no text commands"
+          Assert-True ($runtime.process_memory_during_runtime.source -eq "win32_get_process_memory_info") "unexpected memory source"
+          Assert-True ($runtime.process_memory_during_runtime.resident_bytes -gt 0) "missing Win32 RSS evidence"
+          Assert-True ($runtime.process_memory_during_runtime.private_bytes -gt 0) "missing Win32 private-byte evidence"
+          Assert-True ($runtime.native_view_capture.typography.source -eq "win32_spi_message_font") "Viewer bypassed the system UI font"
+
+      - name: Upload Win32 Viewer proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-win32-viewer-reload-proof
+          path: target/native-proof/windows-2025-x86_64/ui-viewer-reload
+          if-no-files-found: error
+          retention-days: 30
+
   macos-appkit-proof:
     name: AppKit Runtime Proof
     runs-on: macos-15

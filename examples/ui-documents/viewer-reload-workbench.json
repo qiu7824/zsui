@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "workbench",
+    "component": "workbench_shell",
+    "properties": {
+      "title": "Viewer 热重载验收 / Viewer reload proof",
+      "subtitle": "固定 Windows Runner 初始 revision / Initial revision",
+      "sidebar": {
+        "title": "验收任务 / Proof tasks",
+        "groups": []
+      },
+      "toolbar_actions": [
+        { "id": "inspect", "label": "检查 / Inspect", "icon": "Inspector" }
+      ]
+    },
+    "action_bindings": {
+      "toolbar_action": "toolbar_action_invoked"
+    },
+    "children": [
+      {
+        "id": "timeline",
+        "component": "message_timeline",
+        "properties": {
+          "messages": [
+            {
+              "id": "initial-message",
+              "role": "assistant",
+              "author": "ZSUI",
+              "blocks": [
+                {
+                  "kind": "paragraph",
+                  "text": "同一个原生窗口将在运行期间接受下一份 UiDocument。"
+                }
+              ]
+            }
+          ]
+        },
+        "property_bindings": {
+          "offset_y": "timeline_offset"
+        },
+        "action_bindings": {
+          "scroll": "timeline_scrolled"
+        }
+      },
+      {
+        "id": "composer",
+        "component": "composer",
+        "properties": {
+          "placeholder": "输入验证消息 / Type a proof message",
+          "mode_label": "本地 / Local",
+          "model_label": "ZSUI Native"
+        },
+        "property_bindings": {
+          "draft": "composer_draft"
+        },
+        "action_bindings": {
+          "change": "composer_changed",
+          "submit": "composer_submitted"
+        }
+      },
+      {
+        "id": "inspector",
+        "component": "inspector_panel",
+        "properties": {
+          "title": "检查器 / Inspector",
+          "selected_tab": "state",
+          "tabs": [
+            { "id": "state", "label": "状态 / State", "icon": "Info" },
+            { "id": "events", "label": "事件 / Events", "icon": "Inspector" }
+          ],
+          "body": "Revision 1\n4 stable nodes\n2 property bindings"
+        },
+        "action_bindings": {
+          "select": "inspector_tab_selected"
+        }
+      }
+    ]
+  }
+}

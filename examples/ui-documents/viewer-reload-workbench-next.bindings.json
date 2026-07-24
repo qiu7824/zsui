@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "timeline_offset": "integer"
+  },
+  "actions": {
+    "toolbar_action_invoked": "string",
+    "timeline_scrolled": "integer",
+    "composer_submitted": "null",
+    "inspector_tab_selected": "string"
+  }
+}

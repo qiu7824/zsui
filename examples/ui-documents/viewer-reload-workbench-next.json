@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "workbench",
+    "component": "workbench_shell",
+    "properties": {
+      "title": "Viewer 热重载已完成 / Viewer reload complete",
+      "subtitle": "固定 Windows Runner revision 2 / Accepted revision 2",
+      "sidebar": {
+        "title": "验收任务 / Proof tasks",
+        "groups": []
+      },
+      "toolbar_actions": [
+        { "id": "inspect", "label": "检查 / Inspect", "icon": "Inspector" }
+      ]
+    },
+    "action_bindings": {
+      "toolbar_action": "toolbar_action_invoked"
+    },
+    "children": [
+      {
+        "id": "timeline",
+        "component": "message_timeline",
+        "properties": {
+          "messages": [
+            {
+              "id": "reloaded-message",
+              "role": "assistant",
+              "author": "ZSUI",
+              "blocks": [
+                {
+                  "kind": "notice",
+                  "text": "最终 Win32 表面来自接受热重载后的同一个原生窗口。",
+                  "level": "success"
+                }
+              ]
+            }
+          ]
+        },
+        "property_bindings": {
+          "offset_y": "timeline_offset"
+        },
+        "action_bindings": {
+          "scroll": "timeline_scrolled"
+        }
+      },
+      {
+        "id": "composer",
+        "component": "composer",
+        "properties": {
+          "draft": "",
+          "placeholder": "绑定已移除 / Binding removed",
+          "mode_label": "本地 / Local",
+          "model_label": "ZSUI Native"
+        },
+        "action_bindings": {
+          "submit": "composer_submitted"
+        }
+      },
+      {
+        "id": "inspector",
+        "component": "inspector_panel",
+        "properties": {
+          "title": "检查器 / Inspector",
+          "selected_tab": "state",
+          "tabs": [
+            { "id": "state", "label": "状态 / State", "icon": "Info" },
+            { "id": "events", "label": "事件 / Events", "icon": "Inspector" }
+          ],
+          "body": "Revision 2\n4 preserved nodes\n1 preserved binding\n1 explicit binding reset"
+        },
+        "action_bindings": {
+          "select": "inspector_tab_selected"
+        }
+      }
+    ]
+  }
+}
