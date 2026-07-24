@@ -39,7 +39,8 @@ impl WidgetId {
     feature = "teaching-tip",
     feature = "split-view",
     feature = "canvas",
-    feature = "scroll"
+    feature = "scroll",
+    feature = "workbench"
 ))]
 #[doc(hidden)]
 pub struct ViewMessageMapper<Input, Msg> {
@@ -74,7 +75,8 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "teaching-tip",
     feature = "split-view",
     feature = "canvas",
-    feature = "scroll"
+    feature = "scroll",
+    feature = "workbench"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
     Function(fn(Input) -> Msg),
@@ -109,7 +111,8 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "teaching-tip",
     feature = "split-view",
     feature = "canvas",
-    feature = "scroll"
+    feature = "scroll",
+    feature = "workbench"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     fn from_function(mapper: fn(Input) -> Msg) -> Self {
@@ -162,7 +165,8 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "teaching-tip",
     feature = "split-view",
     feature = "canvas",
-    feature = "scroll"
+    feature = "scroll",
+    feature = "workbench"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     fn clone(&self) -> Self {
@@ -219,6 +223,7 @@ const FRAMEWORK_WIDGET_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
 const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
 #[cfg(any(
     feature = "tabs",
+    feature = "workbench",
     all(feature = "shell", feature = "ui-document-runtime")
 ))]
 const SYNTHETIC_WIDGET_ID_NAMESPACE: u64 = 3 << 62;
@@ -229,6 +234,7 @@ impl WidgetId {
     /// composite widget rather than by an application View node.
     #[cfg(any(
         feature = "tabs",
+        feature = "workbench",
         all(feature = "shell", feature = "ui-document-runtime")
     ))]
     pub(crate) const fn synthetic_child(parent: Self, local: u64) -> Self {
@@ -810,6 +816,12 @@ pub enum ViewNodeKind<Msg> {
         fit: ZsImageFit,
         interpolation: NativeImageInterpolation,
     },
+    #[cfg(feature = "workbench")]
+    Workbench {
+        spec: crate::ZsWorkbenchSpec,
+        on_interaction:
+            Option<ViewMessageMapper<crate::ZsWorkbenchInteractionEvent, Option<Msg>>>,
+    },
     #[cfg(feature = "icon")]
     Icon {
         icon: crate::ZsIcon,
@@ -1315,6 +1327,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Scroll { .. } => true,
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { .. } => true,
+            #[cfg(feature = "workbench")]
+            ViewNodeKind::Workbench { .. } => true,
             _ => false,
         }
     }
@@ -3027,6 +3041,20 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn loading(mut self, is_loading: bool) -> Self {
         if let ViewNodeKind::VirtualList { loading, .. } = &mut self.kind {
             *loading = is_loading;
+        }
+        self
+    }
+
+    #[cfg(feature = "workbench")]
+    pub fn on_workbench_interaction_with(
+        mut self,
+        message: impl Fn(crate::ZsWorkbenchInteractionEvent) -> Option<Msg>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Workbench { on_interaction, .. } = &mut self.kind {
+            *on_interaction = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

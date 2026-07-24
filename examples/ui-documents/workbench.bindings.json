@@ -1,0 +1,20 @@
+{
+  "properties": {
+    "timeline_offset": "integer",
+    "composer_draft": "string"
+  },
+  "actions": {
+    "sidebar_toggled": "null",
+    "sidebar_action_invoked": "string",
+    "conversation_selected": "string",
+    "toolbar_action_invoked": "string",
+    "message_action_invoked": "workbench_message_action",
+    "timeline_scrolled": "integer",
+    "composer_focused": "null",
+    "composer_changed": "string",
+    "composer_action_invoked": "string",
+    "composer_submitted": "null",
+    "composer_stopped": "null",
+    "inspector_tab_selected": "string"
+  }
+}

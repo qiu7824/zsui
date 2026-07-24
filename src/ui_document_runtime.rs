@@ -416,19 +416,22 @@ fn compile_node<Msg: Clone + 'static>(
     mapper: &UiDocumentActionMapper<Msg>,
     #[cfg(feature = "password-box")] secure: Option<&UiDocumentSecureContext<'_, Msg>>,
 ) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
-    let children = node
-        .children
-        .iter()
-        .map(|child| {
-            compile_node(
-                child,
-                properties,
-                mapper,
-                #[cfg(feature = "password-box")]
-                secure,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let children = if cfg!(feature = "workbench") && node.component == "workbench_shell" {
+        Vec::new()
+    } else {
+        node.children
+            .iter()
+            .map(|child| {
+                compile_node(
+                    child,
+                    properties,
+                    mapper,
+                    #[cfg(feature = "password-box")]
+                    secure,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
     let mut view = match node.component.as_str() {
         "stack" => match node.layout.direction.unwrap_or(UiAxis::Vertical) {
             UiAxis::Horizontal => row(children),
@@ -439,6 +442,8 @@ fn compile_node<Msg: Clone + 'static>(
         "settings_card" => document_settings_card(node, properties, children)?,
         #[cfg(feature = "image-preview")]
         "image" => document_image(node, properties)?,
+        #[cfg(feature = "workbench")]
+        "workbench_shell" => document_workbench_shell(node, properties, mapper)?,
         #[cfg(feature = "badge")]
         "badge" => document_badge(node, properties)?,
         #[cfg(feature = "split-view")]
@@ -3519,7 +3524,8 @@ fn grid_gap_property(
     feature = "tooltip",
     feature = "teaching-tip",
     feature = "shell",
-    feature = "image-preview"
+    feature = "image-preview",
+    feature = "workbench"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -3548,6 +3554,390 @@ fn document_settings_card<Msg>(
         ));
     }
     Ok(crate::section(title, children))
+}
+
+#[cfg(feature = "workbench")]
+fn document_workbench_icon(
+    node: &UiNode,
+    property: &str,
+    icon: String,
+) -> Result<crate::ZsIcon, UiDocumentRuntimeError> {
+    serde_json::from_value::<crate::ZsIcon>(Value::String(icon.clone())).map_err(|_| {
+        invalid_resolved_property(
+            node,
+            property,
+            format!("unknown ZsIcon semantic variant {icon:?}"),
+        )
+    })
+}
+
+#[cfg(feature = "workbench")]
+fn document_workbench_action(
+    node: &UiNode,
+    property: &str,
+    action: crate::ui_document::UiWorkbenchActionSpec,
+) -> Result<crate::ZsWorkbenchActionSpec, UiDocumentRuntimeError> {
+    Ok(crate::ZsWorkbenchActionSpec {
+        id: action.id,
+        label: action.label,
+        icon: document_workbench_icon(node, property, action.icon)?,
+        enabled: action.enabled,
+        selected: action.selected,
+    })
+}
+
+#[cfg(feature = "workbench")]
+fn document_workbench_actions(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    property: &str,
+) -> Result<Vec<crate::ZsWorkbenchActionSpec>, UiDocumentRuntimeError> {
+    let Some(value) = property_value(node, properties, property) else {
+        return Ok(Vec::new());
+    };
+    crate::ui_document::ui_workbench_actions_from_value(&value)
+        .ok_or_else(|| invalid_resolved_property(node, property, "invalid workbench actions"))?
+        .into_iter()
+        .map(|action| document_workbench_action(node, property, action))
+        .collect()
+}
+
+#[cfg(feature = "workbench")]
+fn document_workbench_shell<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let [timeline, composer, inspector @ ..] = node.children.as_slice() else {
+        return Err(UiDocumentRuntimeError::InvalidChildCount {
+            component: node.component.clone(),
+            expected: 2,
+            actual: node.children.len(),
+        });
+    };
+    if timeline.component != "message_timeline"
+        || composer.component != "composer"
+        || inspector.len() > 1
+        || inspector
+            .first()
+            .is_some_and(|child| child.component != "inspector_panel")
+    {
+        return Err(invalid_resolved_property(
+            node,
+            "children",
+            "expected message_timeline, composer and optional inspector_panel",
+        ));
+    }
+    let title = string_property(node, properties, "title", "");
+    if title.trim().is_empty() {
+        return Err(invalid_resolved_property(
+            node,
+            "title",
+            "workbench title must not be empty",
+        ));
+    }
+
+    let sidebar_value = property_value(node, properties, "sidebar").ok_or_else(|| {
+        invalid_resolved_property(node, "sidebar", "workbench sidebar is required")
+    })?;
+    let sidebar = crate::ui_document::ui_workbench_sidebar_from_value(&sidebar_value)
+        .ok_or_else(|| invalid_resolved_property(node, "sidebar", "invalid workbench sidebar"))?;
+    let primary_actions = sidebar
+        .primary_actions
+        .into_iter()
+        .map(|action| document_workbench_action(node, "sidebar", action))
+        .collect::<Result<Vec<_>, _>>()?;
+    let footer_actions = sidebar
+        .footer_actions
+        .into_iter()
+        .map(|action| document_workbench_action(node, "sidebar", action))
+        .collect::<Result<Vec<_>, _>>()?;
+    let groups = sidebar
+        .groups
+        .into_iter()
+        .map(|group| crate::ZsWorkbenchConversationGroupSpec {
+            id: group.id,
+            label: group.label,
+            conversations: group
+                .conversations
+                .into_iter()
+                .map(|conversation| crate::ZsWorkbenchConversationSpec {
+                    id: conversation.id,
+                    title: conversation.title,
+                    subtitle: conversation.subtitle,
+                    selected: conversation.selected,
+                    pinned: conversation.pinned,
+                    unread: conversation.unread,
+                })
+                .collect(),
+        })
+        .collect();
+    let sidebar = crate::ZsWorkbenchSidebarSpec {
+        title: sidebar.title,
+        collapsed: sidebar.collapsed,
+        primary_actions,
+        groups,
+        footer_actions,
+    };
+
+    let message_value = property_value(timeline, properties, "messages").ok_or_else(|| {
+        invalid_resolved_property(timeline, "messages", "message timeline content is required")
+    })?;
+    let messages = crate::ui_document::ui_workbench_messages_from_value(&message_value)
+        .ok_or_else(|| {
+            invalid_resolved_property(timeline, "messages", "invalid workbench messages")
+        })?
+        .into_iter()
+        .map(|message| {
+            let role = match message.role {
+                crate::ui_document::UiWorkbenchMessageRole::User => {
+                    crate::ZsWorkbenchMessageRole::User
+                }
+                crate::ui_document::UiWorkbenchMessageRole::Assistant => {
+                    crate::ZsWorkbenchMessageRole::Assistant
+                }
+                crate::ui_document::UiWorkbenchMessageRole::System => {
+                    crate::ZsWorkbenchMessageRole::System
+                }
+                crate::ui_document::UiWorkbenchMessageRole::Tool => {
+                    crate::ZsWorkbenchMessageRole::Tool
+                }
+            };
+            let blocks = message
+                .blocks
+                .into_iter()
+                .map(|block| match block {
+                    crate::ui_document::UiWorkbenchContentBlock::Paragraph { text } => {
+                        crate::ZsWorkbenchContentBlock::Paragraph { text }
+                    }
+                    crate::ui_document::UiWorkbenchContentBlock::Code { language, code } => {
+                        crate::ZsWorkbenchContentBlock::Code { language, code }
+                    }
+                    crate::ui_document::UiWorkbenchContentBlock::Tool {
+                        title,
+                        summary,
+                        status,
+                    } => crate::ZsWorkbenchContentBlock::Tool {
+                        title,
+                        summary,
+                        status: match status {
+                            crate::ui_document::UiWorkbenchToolStatus::Pending => {
+                                crate::ZsWorkbenchToolStatus::Pending
+                            }
+                            crate::ui_document::UiWorkbenchToolStatus::Running => {
+                                crate::ZsWorkbenchToolStatus::Running
+                            }
+                            crate::ui_document::UiWorkbenchToolStatus::Succeeded => {
+                                crate::ZsWorkbenchToolStatus::Succeeded
+                            }
+                            crate::ui_document::UiWorkbenchToolStatus::Failed => {
+                                crate::ZsWorkbenchToolStatus::Failed
+                            }
+                        },
+                    },
+                    crate::ui_document::UiWorkbenchContentBlock::Notice { text, level } => {
+                        crate::ZsWorkbenchContentBlock::Notice {
+                            text,
+                            level: match level {
+                                crate::ui_document::UiWorkbenchNoticeLevel::Info => {
+                                    crate::ZsWorkbenchNoticeLevel::Info
+                                }
+                                crate::ui_document::UiWorkbenchNoticeLevel::Success => {
+                                    crate::ZsWorkbenchNoticeLevel::Success
+                                }
+                                crate::ui_document::UiWorkbenchNoticeLevel::Warning => {
+                                    crate::ZsWorkbenchNoticeLevel::Warning
+                                }
+                                crate::ui_document::UiWorkbenchNoticeLevel::Error => {
+                                    crate::ZsWorkbenchNoticeLevel::Error
+                                }
+                            },
+                        }
+                    }
+                })
+                .collect();
+            let actions = message
+                .actions
+                .into_iter()
+                .map(|action| document_workbench_action(timeline, "messages", action))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(crate::ZsWorkbenchMessageSpec {
+                id: message.id,
+                role,
+                author: message.author,
+                blocks,
+                actions,
+                streaming: message.streaming,
+            })
+        })
+        .collect::<Result<Vec<_>, UiDocumentRuntimeError>>()?;
+
+    let composer_placeholder = string_property(composer, properties, "placeholder", "");
+    if composer_placeholder.trim().is_empty() {
+        return Err(invalid_resolved_property(
+            composer,
+            "placeholder",
+            "composer placeholder must not be empty",
+        ));
+    }
+    let composer_spec = crate::ZsWorkbenchComposerSpec {
+        draft: string_property(composer, properties, "draft", ""),
+        placeholder: composer_placeholder,
+        mode_label: optional_string_property(composer, properties, "mode_label"),
+        model_label: optional_string_property(composer, properties, "model_label"),
+        busy: bool_property(composer, properties, "busy", false),
+        actions: document_workbench_actions(composer, properties, "actions")?,
+    };
+    let inspector_spec = inspector
+        .first()
+        .map(|inspector| {
+            Ok::<_, UiDocumentRuntimeError>(crate::ZsWorkbenchInspectorSpec {
+                title: string_property(inspector, properties, "title", ""),
+                selected_tab_id: optional_string_property(inspector, properties, "selected_tab"),
+                tabs: document_workbench_actions(inspector, properties, "tabs")?,
+                body: string_property(inspector, properties, "body", ""),
+            })
+        })
+        .transpose()?;
+    if let Some(inspector_runtime) = &inspector_spec {
+        let inspector_source = inspector.first().expect("inspector source");
+        if inspector_runtime.title.trim().is_empty() {
+            return Err(invalid_resolved_property(
+                inspector_source,
+                "title",
+                "inspector title must not be empty",
+            ));
+        }
+        if inspector_runtime.tabs.is_empty() {
+            return Err(invalid_resolved_property(
+                inspector_source,
+                "tabs",
+                "inspector requires at least one tab",
+            ));
+        }
+        if inspector_runtime
+            .selected_tab_id
+            .as_ref()
+            .is_some_and(|selected| {
+                !inspector_runtime
+                    .tabs
+                    .iter()
+                    .any(|tab| tab.enabled && tab.id == *selected)
+            })
+        {
+            return Err(invalid_resolved_property(
+                inspector_source,
+                "selected_tab",
+                "selected inspector tab must address an enabled tab",
+            ));
+        }
+    }
+    let message_scroll_y = match property_value(timeline, properties, "offset_y") {
+        None => 0,
+        Some(value) => value
+            .as_u64()
+            .and_then(|value| i32::try_from(value).ok())
+            .ok_or_else(|| {
+                invalid_resolved_property(
+                    timeline,
+                    "offset_y",
+                    "timeline offset must fit a nonnegative 32-bit integer",
+                )
+            })?,
+    };
+    let mut spec = crate::ZsWorkbenchSpec {
+        title,
+        subtitle: optional_string_property(node, properties, "subtitle"),
+        sidebar,
+        toolbar_actions: document_workbench_actions(node, properties, "toolbar_actions")?,
+        messages,
+        composer: composer_spec,
+        inspector: inspector_spec,
+        message_scroll_y,
+    };
+    spec.message_scroll_y = spec.message_scroll_y.max(0);
+
+    #[derive(Clone)]
+    struct Route {
+        node_id: String,
+        binding: String,
+        property_binding: Option<String>,
+    }
+    let route = |owner: &UiNode, action: &str, property: Option<&str>| {
+        owner.action_bindings.get(action).map(|binding| Route {
+            node_id: owner.id.as_str().to_owned(),
+            binding: binding.clone(),
+            property_binding: property
+                .and_then(|property| owner.property_bindings.get(property).cloned()),
+        })
+    };
+    let sidebar_toggle = route(node, "sidebar_toggle", None);
+    let sidebar_action = route(node, "sidebar_action", None);
+    let conversation_select = route(node, "conversation_select", None);
+    let toolbar_action = route(node, "toolbar_action", None);
+    let message_action = route(timeline, "message_action", None);
+    let scroll = route(timeline, "scroll", Some("offset_y"));
+    let composer_focus = route(composer, "focus", None);
+    let composer_change = route(composer, "change", Some("draft"));
+    let composer_action = route(composer, "action", None);
+    let composer_submit = route(composer, "submit", None);
+    let composer_stop = route(composer, "stop", None);
+    let inspector_select = inspector
+        .first()
+        .and_then(|inspector| route(inspector, "select", Some("selected_tab")));
+    let mapper = mapper.clone();
+    let control = crate::workbench(spec).on_workbench_interaction_with(move |event| {
+        let (route, payload) = match event {
+            crate::ZsWorkbenchInteractionEvent::ToggleSidebar => {
+                (sidebar_toggle.as_ref(), Value::Null)
+            }
+            crate::ZsWorkbenchInteractionEvent::InvokeSidebarAction { action_id } => {
+                (sidebar_action.as_ref(), Value::String(action_id))
+            }
+            crate::ZsWorkbenchInteractionEvent::SelectConversation { conversation_id } => {
+                (conversation_select.as_ref(), Value::String(conversation_id))
+            }
+            crate::ZsWorkbenchInteractionEvent::InvokeToolbarAction { action_id } => {
+                (toolbar_action.as_ref(), Value::String(action_id))
+            }
+            crate::ZsWorkbenchInteractionEvent::InvokeMessageAction {
+                message_id,
+                action_id,
+            } => (
+                message_action.as_ref(),
+                serde_json::json!({
+                    "message_id": message_id,
+                    "action_id": action_id,
+                }),
+            ),
+            crate::ZsWorkbenchInteractionEvent::FocusComposer => {
+                (composer_focus.as_ref(), Value::Null)
+            }
+            crate::ZsWorkbenchInteractionEvent::InvokeComposerAction { action_id } => {
+                (composer_action.as_ref(), Value::String(action_id))
+            }
+            crate::ZsWorkbenchInteractionEvent::Submit => (composer_submit.as_ref(), Value::Null),
+            crate::ZsWorkbenchInteractionEvent::Stop => (composer_stop.as_ref(), Value::Null),
+            crate::ZsWorkbenchInteractionEvent::SelectInspectorTab { tab_id } => {
+                (inspector_select.as_ref(), Value::String(tab_id))
+            }
+            crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft { draft } => {
+                (composer_change.as_ref(), Value::String(draft))
+            }
+            crate::ZsWorkbenchInteractionEvent::ScrollMessages { offset_y } => {
+                (scroll.as_ref(), Value::from(offset_y.max(0)))
+            }
+        };
+        route.map(|route| {
+            mapper.map(UiDocumentAction {
+                node_id: route.node_id.clone(),
+                binding: route.binding.clone(),
+                property_binding: route.property_binding.clone(),
+                payload,
+            })
+        })
+    });
+    Ok(control)
 }
 
 #[cfg(feature = "image-preview")]
@@ -3672,7 +4062,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "tooltip",
     feature = "teaching-tip",
     feature = "shell",
-    feature = "image-preview"
+    feature = "image-preview",
+    feature = "workbench"
 ))]
 fn property_value(
     node: &UiNode,
@@ -4240,7 +4631,8 @@ fn optional_table_sort_property(
     feature = "checkbox",
     feature = "textbox",
     feature = "radio",
-    feature = "shell"
+    feature = "shell",
+    feature = "workbench"
 ))]
 fn string_property(
     node: &UiNode,
@@ -4569,7 +4961,8 @@ fn document_icon<Msg>(
     feature = "progress-ring",
     feature = "teaching-tip",
     feature = "virtual-list",
-    feature = "image-preview"
+    feature = "image-preview",
+    feature = "workbench"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -4629,7 +5022,8 @@ fn nullable_number_property(
     feature = "info-bar",
     feature = "tooltip",
     feature = "teaching-tip",
-    feature = "image-preview"
+    feature = "image-preview",
+    feature = "workbench"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -4837,6 +5231,7 @@ mod tests {
         feature = "list",
         feature = "virtual-list",
         feature = "image-preview",
+        feature = "workbench",
         feature = "password-box",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button"),
@@ -4927,6 +5322,261 @@ mod tests {
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "title"
         ));
+    }
+
+    #[cfg(feature = "workbench")]
+    #[test]
+    fn compiles_workbench_children_into_one_interactive_native_surface() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "workbench",
+                "component": "workbench_shell",
+                "properties": {
+                  "title": "ZSUI 工作台 / Workbench",
+                  "subtitle": "一份声明，平台原生呈现",
+                  "sidebar": {
+                    "title": "任务",
+                    "primary_actions": [{ "id": "new", "label": "新建", "icon": "Add" }],
+                    "groups": [{
+                      "id": "today",
+                      "label": "今天",
+                      "conversations": [
+                        { "id": "thread-1", "title": "组件统一", "selected": true },
+                        { "id": "thread-2", "title": "原生验收" }
+                      ]
+                    }]
+                  },
+                  "toolbar_actions": [{ "id": "refresh", "label": "刷新", "icon": "Refresh" }]
+                },
+                "action_bindings": {
+                  "conversation_select": "conversation_selected"
+                },
+                "children": [
+                  {
+                    "id": "timeline",
+                    "component": "message_timeline",
+                    "properties": {
+                      "messages": [
+                        {
+                          "id": "message-1",
+                          "role": "assistant",
+                          "blocks": [{
+                            "kind": "code",
+                            "language": "rust",
+                            "code": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18"
+                          }],
+                          "actions": [{ "id": "copy", "label": "复制", "icon": "Copy" }]
+                        },
+                        {
+                          "id": "message-2",
+                          "role": "user",
+                          "blocks": [
+                            { "kind": "paragraph", "text": "继续完成四个组件。" },
+                            {
+                              "kind": "code",
+                              "language": "text",
+                              "code": "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "property_bindings": { "offset_y": "timeline_offset" },
+                    "action_bindings": {
+                      "message_action": "message_action",
+                      "scroll": "timeline_scrolled"
+                    }
+                  },
+                  {
+                    "id": "composer",
+                    "component": "composer",
+                    "properties": {
+                      "placeholder": "输入消息",
+                      "actions": [{ "id": "attach", "label": "附件", "icon": "Attach" }]
+                    },
+                    "property_bindings": { "draft": "composer_draft" },
+                    "action_bindings": {
+                      "change": "composer_changed",
+                      "submit": "composer_submitted"
+                    }
+                  },
+                  {
+                    "id": "inspector",
+                    "component": "inspector_panel",
+                    "properties": {
+                      "title": "检查器",
+                      "selected_tab": "details",
+                      "tabs": [
+                        { "id": "details", "label": "详情", "icon": "Info" },
+                        { "id": "events", "label": "事件", "icon": "Inspector" }
+                      ],
+                      "body": "结构、事件和布局"
+                    },
+                    "action_bindings": { "select": "inspector_selected" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "timeline_offset".to_owned(),
+                    crate::ui_document::UiValueType::Integer,
+                ),
+                (
+                    "composer_draft".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "conversation_selected".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "message_action".to_owned(),
+                    crate::ui_document::UiValueType::WorkbenchMessageAction,
+                ),
+                (
+                    "timeline_scrolled".to_owned(),
+                    crate::ui_document::UiValueType::Integer,
+                ),
+                (
+                    "composer_changed".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+                (
+                    "composer_submitted".to_owned(),
+                    crate::ui_document::UiValueType::Null,
+                ),
+                (
+                    "inspector_selected".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            ("timeline_offset".to_owned(), Value::from(0_u64)),
+            (
+                "composer_draft".to_owned(),
+                Value::String("开始输入".to_owned()),
+            ),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 800,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        let root = document.root.id.widget_id();
+        let region_widget = |kind, id: &str, view: &ViewNode<Msg>| {
+            let crate::ViewNodeKind::Workbench { spec, .. } = &view.kind else {
+                panic!("expected retained workbench view")
+            };
+            let layout = spec.layout(bounds, Dpi::standard());
+            let region = layout
+                .regions
+                .iter()
+                .find(|region| region.kind == kind && region.id == id)
+                .expect("workbench region");
+            crate::workbench::zs_workbench_region_widget_id(root, region)
+        };
+
+        let conversation = region_widget(
+            crate::ZsWorkbenchRegionKind::Conversation,
+            "thread-2",
+            &view,
+        );
+        let composer_input = region_widget(
+            crate::ZsWorkbenchRegionKind::ComposerInput,
+            "composer.input",
+            &view,
+        );
+        let timeline_widget =
+            region_widget(crate::ZsWorkbenchRegionKind::Timeline, "timeline", &view);
+        let inspector = region_widget(crate::ZsWorkbenchRegionKind::InspectorTab, "events", &view);
+        let interaction = view.interaction_plan();
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.widget == composer_input
+                && target.kind == crate::ViewHitTargetKind::TextEditor));
+        assert!(interaction
+            .hit_targets
+            .iter()
+            .any(|target| target.widget == timeline_widget
+                && target.kind == crate::ViewHitTargetKind::Scroll));
+        assert_eq!(view.widget_text_value(composer_input), Some("开始输入"));
+        assert_eq!(view.widget_scroll_target(timeline_widget), Some(root));
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::Click {
+                widget: conversation,
+            },
+        );
+        view.event(
+            &mut events,
+            &crate::ViewEvent::TextEdited {
+                widget: composer_input,
+                value: "统一写法".to_owned(),
+                selection: crate::ZsTextSelection::collapsed("统一写法".len()),
+            },
+        );
+        view.event(&mut events, &crate::ViewEvent::Click { widget: inspector });
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ScrollBy {
+                widget: root,
+                delta_y: Dp::new(96.0),
+            },
+        );
+
+        let messages = events.into_messages();
+        assert_eq!(messages.len(), 4);
+        let actions = messages
+            .into_iter()
+            .map(|message| match message {
+                Msg::Action(action) => action,
+                #[cfg(feature = "password-box")]
+                Msg::Secret(_) => panic!("workbench must not emit a secret action"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actions[0].node_id, "workbench");
+        assert_eq!(actions[0].payload, Value::String("thread-2".to_owned()));
+        assert_eq!(actions[1].node_id, "composer");
+        assert_eq!(
+            actions[1].property_binding.as_deref(),
+            Some("composer_draft")
+        );
+        assert_eq!(actions[1].payload, Value::String("统一写法".to_owned()));
+        assert_eq!(actions[2].node_id, "inspector");
+        assert_eq!(actions[2].payload, Value::String("events".to_owned()));
+        assert_eq!(actions[3].node_id, "timeline");
+        assert_eq!(
+            actions[3].property_binding.as_deref(),
+            Some("timeline_offset")
+        );
+        assert!(actions[3].payload.as_u64().is_some_and(|offset| offset > 0));
+
+        let crate::ViewNodeKind::Workbench { spec, .. } = &view.kind else {
+            panic!("expected retained workbench view")
+        };
+        assert_eq!(spec.composer.draft, "统一写法");
+        assert_eq!(
+            spec.inspector.as_ref().unwrap().selected_tab_id.as_deref(),
+            Some("events")
+        );
+        assert!(spec.message_scroll_y > 0);
+        let mut paint = crate::ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.len() > 20);
     }
 
     #[cfg(feature = "image-preview")]

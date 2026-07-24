@@ -800,6 +800,23 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/image.values.json
 ```
 
+Workbench 示例用一份声明组合 WorkbenchShell、MessageTimeline、Composer 和
+InspectorPanel。四个组件共享稳定 ID、受控状态和类型化事件，目标平台继续决定字体、图标、
+布局参数与最终绘制：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/workbench.json `
+  --bindings examples/ui-documents/workbench.bindings.json `
+  --values examples/ui-documents/workbench.values.json
+```
+
+`workbench_shell` 的直接子节点顺序固定为 `message_timeline`、`composer` 和可选的
+`inspector_panel`。子组件不能脱离外壳单独使用；编译器将它们组合成一个保留式
+Workbench 表面，而不是把四份外观相似的通用 Stack 拼在一起。
+
 原生证明可由同一可执行文件生成：
 
 ```powershell

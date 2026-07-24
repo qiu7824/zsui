@@ -722,6 +722,8 @@ pub use view::toggle;
 pub use view::toggle_button;
 #[cfg(feature = "tree")]
 pub use view::tree_view;
+#[cfg(feature = "workbench")]
+pub use view::workbench;
 #[cfg(any(
     feature = "textbox",
     feature = "checkbox",

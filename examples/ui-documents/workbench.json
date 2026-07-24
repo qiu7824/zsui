@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "workbench",
+    "component": "workbench_shell",
+    "properties": {
+      "title": "ZSUI 工作台 / Workbench",
+      "subtitle": "统一声明，平台原生呈现 / One declaration, native presentation",
+      "sidebar": {
+        "title": "任务 / Tasks",
+        "primary_actions": [
+          { "id": "new", "label": "新建 / New", "icon": "Add" },
+          { "id": "search", "label": "搜索 / Search", "icon": "Search" }
+        ],
+        "groups": [
+          {
+            "id": "today",
+            "label": "今天 / Today",
+            "conversations": [
+              {
+                "id": "thread-components",
+                "title": "统一组件声明",
+                "subtitle": "48 个文档组件",
+                "selected": true,
+                "pinned": true
+              },
+              {
+                "id": "thread-proof",
+                "title": "三平台原生验收",
+                "subtitle": "Windows · macOS · Linux",
+                "unread": true
+              }
+            ]
+          }
+        ],
+        "footer_actions": [
+          { "id": "settings", "label": "设置 / Settings", "icon": "Settings" }
+        ]
+      },
+      "toolbar_actions": [
+        { "id": "refresh", "label": "刷新 / Refresh", "icon": "Refresh" },
+        { "id": "inspect", "label": "检查 / Inspect", "icon": "Inspector" }
+      ]
+    },
+    "action_bindings": {
+      "sidebar_toggle": "sidebar_toggled",
+      "sidebar_action": "sidebar_action_invoked",
+      "conversation_select": "conversation_selected",
+      "toolbar_action": "toolbar_action_invoked"
+    },
+    "children": [
+      {
+        "id": "timeline",
+        "component": "message_timeline",
+        "properties": {
+          "messages": [
+            {
+              "id": "user-request",
+              "role": "user",
+              "author": "用户 / User",
+              "blocks": [
+                {
+                  "kind": "paragraph",
+                  "text": "让 WorkbenchShell、MessageTimeline、Composer 和 InspectorPanel 使用一份可复用声明。"
+                }
+              ]
+            },
+            {
+              "id": "assistant-result",
+              "role": "assistant",
+              "author": "ZSUI",
+              "blocks": [
+                {
+                  "kind": "paragraph",
+                  "text": "四个部件已组合为一个保留式工作台表面；结构、状态和事件保持平台中立，布局、字体、图标和绘制由目标平台配置决定。"
+                },
+                {
+                  "kind": "tool",
+                  "title": "UiDocument 结构验证",
+                  "summary": "校验稳定 ID、子组件顺序、动作载荷和受控状态",
+                  "status": "succeeded"
+                },
+                {
+                  "kind": "code",
+                  "language": "rust",
+                  "code": "WorkbenchShell\n  MessageTimeline\n  Composer\n  InspectorPanel\n\nTyped state\nTyped events\nNative draw plan\nStable widget identity"
+                },
+                {
+                  "kind": "notice",
+                  "text": "Viewer 仅用于开发热重载；发布应用直接嵌入同一份已验证文档。",
+                  "level": "info"
+                }
+              ],
+              "actions": [
+                { "id": "copy", "label": "复制 / Copy", "icon": "Copy" },
+                { "id": "retry", "label": "重试 / Retry", "icon": "Retry" }
+              ]
+            },
+            {
+              "id": "system-proof",
+              "role": "system",
+              "blocks": [
+                {
+                  "kind": "notice",
+                  "text": "真实点击、文字输入和滚动由共享 View 事件路由处理。",
+                  "level": "success"
+                }
+              ]
+            }
+          ]
+        },
+        "property_bindings": {
+          "offset_y": "timeline_offset"
+        },
+        "action_bindings": {
+          "message_action": "message_action_invoked",
+          "scroll": "timeline_scrolled"
+        }
+      },
+      {
+        "id": "composer",
+        "component": "composer",
+        "properties": {
+          "placeholder": "输入消息 / Type a message",
+          "mode_label": "本地 / Local",
+          "model_label": "ZSUI Native",
+          "actions": [
+            { "id": "attach", "label": "附件", "icon": "Attach" },
+            { "id": "code", "label": "代码", "icon": "Code" }
+          ]
+        },
+        "property_bindings": {
+          "draft": "composer_draft"
+        },
+        "action_bindings": {
+          "focus": "composer_focused",
+          "change": "composer_changed",
+          "action": "composer_action_invoked",
+          "submit": "composer_submitted",
+          "stop": "composer_stopped"
+        }
+      },
+      {
+        "id": "inspector",
+        "component": "inspector_panel",
+        "properties": {
+          "title": "检查器 / Inspector",
+          "selected_tab": "details",
+          "tabs": [
+            { "id": "details", "label": "详情", "icon": "Info" },
+            { "id": "events", "label": "事件", "icon": "Inspector" }
+          ],
+          "body": "组件\nWorkbenchShell\n\n子区域\nMessageTimeline\nComposer\nInspectorPanel\n\n状态\nValidated"
+        },
+        "action_bindings": {
+          "select": "inspector_tab_selected"
+        }
+      }
+    ]
+  }
+}

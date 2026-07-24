@@ -152,6 +152,18 @@ impl<Msg> ViewNode<Msg> {
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {
+        #[cfg(feature = "workbench")]
+        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let layout = spec.layout(bounds, self.layout_dpi);
+            if layout.regions.iter().any(|region| {
+                region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
+                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
+            }) {
+                return Some(&spec.composer.draft);
+            }
+        }
         if self.id == Some(widget) {
             #[cfg(feature = "textbox")]
             if let ViewNodeKind::Textbox { value, .. } = &self.kind {
@@ -178,6 +190,18 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "textbox")]
     pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
+        #[cfg(feature = "workbench")]
+        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let layout = spec.layout(bounds, self.layout_dpi);
+            if layout.regions.iter().any(|region| {
+                region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
+                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
+            }) {
+                return Some(crate::TextWrap::Word);
+            }
+        }
         if self.id == Some(widget) {
             if let ViewNodeKind::Textbox { wrap, .. } = &self.kind {
                 return Some(*wrap);
@@ -896,6 +920,18 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "scroll")]
     pub fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId> {
+        #[cfg(feature = "workbench")]
+        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let layout = spec.layout(bounds, self.layout_dpi);
+            if layout.regions.iter().any(|region| {
+                region.kind == crate::ZsWorkbenchRegionKind::Timeline
+                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
+            }) {
+                return Some(root);
+            }
+        }
         let is_scroll_target = matches!(self.kind, ViewNodeKind::Scroll { .. });
         #[cfg(feature = "virtual-list")]
         let is_scroll_target =
@@ -916,6 +952,31 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "workbench")]
+        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let layout = spec.layout(bounds, self.layout_dpi);
+            for region in layout.regions.iter().filter(|region| region.enabled) {
+                let Some(bounds) = clipped_rect(region.bounds, clip) else {
+                    continue;
+                };
+                let kind = match region.kind {
+                    crate::ZsWorkbenchRegionKind::ComposerInput => {
+                        ViewHitTargetKind::TextEditor
+                    }
+                    crate::ZsWorkbenchRegionKind::Timeline => ViewHitTargetKind::Scroll,
+                    _ => ViewHitTargetKind::Button,
+                };
+                hit_targets.push(ViewHitTarget::with_kind(
+                    crate::workbench::zs_workbench_region_widget_id(root, region),
+                    bounds,
+                    kind,
+                ));
+            }
+            return;
+        }
+
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             if let Some(page) = self.children.first() {
@@ -2708,6 +2769,8 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { .. } => ViewHitTargetKind::Scroll,
+            #[cfg(feature = "workbench")]
+            ViewNodeKind::Workbench { .. } => ViewHitTargetKind::Unknown,
             _ => ViewHitTargetKind::Unknown,
         }
     }

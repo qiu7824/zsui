@@ -2228,6 +2228,227 @@ pub(crate) fn ui_virtual_list_viewport_from_value(value: &Value) -> Option<UiVir
     viewport.is_valid().then_some(viewport)
 }
 
+fn ui_true() -> bool {
+    true
+}
+
+/// Document-safe action metadata shared by workbench regions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiWorkbenchActionSpec {
+    pub id: String,
+    pub label: String,
+    pub icon: String,
+    #[serde(default = "ui_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiWorkbenchConversationSpec {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: Option<String>,
+    #[serde(default)]
+    pub selected: bool,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub unread: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiWorkbenchConversationGroupSpec {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub conversations: Vec<UiWorkbenchConversationSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiWorkbenchSidebarSpec {
+    pub title: String,
+    #[serde(default)]
+    pub collapsed: bool,
+    #[serde(default)]
+    pub primary_actions: Vec<UiWorkbenchActionSpec>,
+    #[serde(default)]
+    pub groups: Vec<UiWorkbenchConversationGroupSpec>,
+    #[serde(default)]
+    pub footer_actions: Vec<UiWorkbenchActionSpec>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiWorkbenchMessageRole {
+    User,
+    Assistant,
+    System,
+    Tool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiWorkbenchToolStatus {
+    Pending,
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiWorkbenchNoticeLevel {
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UiWorkbenchContentBlock {
+    Paragraph {
+        text: String,
+    },
+    Code {
+        language: String,
+        code: String,
+    },
+    Tool {
+        title: String,
+        summary: String,
+        status: UiWorkbenchToolStatus,
+    },
+    Notice {
+        text: String,
+        level: UiWorkbenchNoticeLevel,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiWorkbenchMessageSpec {
+    pub id: String,
+    pub role: UiWorkbenchMessageRole,
+    #[serde(default)]
+    pub author: Option<String>,
+    pub blocks: Vec<UiWorkbenchContentBlock>,
+    #[serde(default)]
+    pub actions: Vec<UiWorkbenchActionSpec>,
+    #[serde(default)]
+    pub streaming: bool,
+}
+
+/// Stable typed payload emitted by a MessageTimeline action.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiWorkbenchMessageAction {
+    pub message_id: String,
+    pub action_id: String,
+}
+
+fn ui_workbench_action_is_valid(action: &UiWorkbenchActionSpec) -> bool {
+    is_valid_node_id(&action.id)
+        && serde_json::from_value::<crate::ZsIcon>(Value::String(action.icon.clone())).is_ok()
+}
+
+fn ui_workbench_actions_are_valid(actions: &[UiWorkbenchActionSpec]) -> bool {
+    actions.len() <= 128
+        && actions.iter().all(ui_workbench_action_is_valid)
+        && actions
+            .iter()
+            .map(|action| action.id.as_str())
+            .collect::<BTreeSet<_>>()
+            .len()
+            == actions.len()
+}
+
+pub(crate) fn ui_workbench_actions_from_value(value: &Value) -> Option<Vec<UiWorkbenchActionSpec>> {
+    let actions = serde_json::from_value::<Vec<UiWorkbenchActionSpec>>(value.clone()).ok()?;
+    ui_workbench_actions_are_valid(&actions).then_some(actions)
+}
+
+pub(crate) fn ui_workbench_sidebar_from_value(value: &Value) -> Option<UiWorkbenchSidebarSpec> {
+    let sidebar = serde_json::from_value::<UiWorkbenchSidebarSpec>(value.clone()).ok()?;
+    let conversation_count = sidebar
+        .groups
+        .iter()
+        .map(|group| group.conversations.len())
+        .sum::<usize>();
+    let conversations = sidebar
+        .groups
+        .iter()
+        .flat_map(|group| group.conversations.iter())
+        .collect::<Vec<_>>();
+    let group_ids = sidebar
+        .groups
+        .iter()
+        .map(|group| group.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let conversation_ids = conversations
+        .iter()
+        .map(|conversation| conversation.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let sidebar_action_count = sidebar.primary_actions.len() + sidebar.footer_actions.len();
+    let sidebar_action_ids = sidebar
+        .primary_actions
+        .iter()
+        .chain(&sidebar.footer_actions)
+        .map(|action| action.id.as_str())
+        .collect::<BTreeSet<_>>();
+    (!sidebar.title.trim().is_empty()
+        && sidebar.groups.len() <= 64
+        && conversation_count <= 512
+        && group_ids.len() == sidebar.groups.len()
+        && sidebar.groups.iter().all(|group| {
+            is_valid_node_id(&group.id)
+                && !group.label.trim().is_empty()
+                && group.conversations.iter().all(|conversation| {
+                    is_valid_node_id(&conversation.id) && !conversation.title.trim().is_empty()
+                })
+        })
+        && conversation_ids.len() == conversation_count
+        && conversations
+            .iter()
+            .filter(|conversation| conversation.selected)
+            .count()
+            <= 1
+        && ui_workbench_actions_are_valid(&sidebar.primary_actions)
+        && ui_workbench_actions_are_valid(&sidebar.footer_actions)
+        && sidebar_action_ids.len() == sidebar_action_count)
+        .then_some(sidebar)
+}
+
+pub(crate) fn ui_workbench_messages_from_value(
+    value: &Value,
+) -> Option<Vec<UiWorkbenchMessageSpec>> {
+    let messages = serde_json::from_value::<Vec<UiWorkbenchMessageSpec>>(value.clone()).ok()?;
+    let ids = messages
+        .iter()
+        .map(|message| message.id.as_str())
+        .collect::<BTreeSet<_>>();
+    (messages.len() <= 256
+        && ids.len() == messages.len()
+        && messages.iter().all(|message| {
+            is_valid_node_id(&message.id)
+                && !message.blocks.is_empty()
+                && message.blocks.len() <= 64
+                && ui_workbench_actions_are_valid(&message.actions)
+        }))
+    .then_some(messages)
+}
+
+fn ui_workbench_message_action_from_value(value: &Value) -> Option<UiWorkbenchMessageAction> {
+    let action = serde_json::from_value::<UiWorkbenchMessageAction>(value.clone()).ok()?;
+    (is_valid_node_id(&action.message_id) && is_valid_node_id(&action.action_id)).then_some(action)
+}
+
 /// JSON value shape expected by a state property or action payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2247,6 +2468,10 @@ pub enum UiValueType {
     NullableImageFrame,
     ItemsRepeaterIndexMap,
     VirtualListViewport,
+    WorkbenchSidebar,
+    WorkbenchActionArray,
+    WorkbenchMessageArray,
+    WorkbenchMessageAction,
     FlyoutDismissReason,
     MenuFlyoutItemId,
     MenuFlyoutItemArray,
@@ -2305,6 +2530,10 @@ impl UiValueType {
             Self::NullableImageFrame => ui_image_frame_from_value(value).is_some(),
             Self::ItemsRepeaterIndexMap => ui_items_repeater_indices_from_value(value).is_some(),
             Self::VirtualListViewport => ui_virtual_list_viewport_from_value(value).is_some(),
+            Self::WorkbenchSidebar => ui_workbench_sidebar_from_value(value).is_some(),
+            Self::WorkbenchActionArray => ui_workbench_actions_from_value(value).is_some(),
+            Self::WorkbenchMessageArray => ui_workbench_messages_from_value(value).is_some(),
+            Self::WorkbenchMessageAction => ui_workbench_message_action_from_value(value).is_some(),
             Self::FlyoutDismissReason => value
                 .as_str()
                 .is_some_and(|value| matches!(value, "light_dismiss" | "escape")),
@@ -3693,6 +3922,42 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers typed WorkbenchShell sidebar state without platform handles.
+    #[cfg(feature = "workbench")]
+    pub fn register_workbench_sidebar_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> UiWorkbenchSidebarSpec + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::WorkbenchSidebar, move |state| {
+            serde_json::to_value(read(state)).expect("workbench sidebar must serialize")
+        })
+    }
+
+    /// Registers typed actions shared by WorkbenchShell, Composer or InspectorPanel.
+    #[cfg(feature = "workbench")]
+    pub fn register_workbench_actions_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiWorkbenchActionSpec> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::WorkbenchActionArray, move |state| {
+            serde_json::to_value(read(state)).expect("workbench actions must serialize")
+        })
+    }
+
+    /// Registers typed MessageTimeline content.
+    #[cfg(feature = "workbench")]
+    pub fn register_workbench_messages_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Vec<UiWorkbenchMessageSpec> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::WorkbenchMessageArray, move |state| {
+            serde_json::to_value(read(state)).expect("workbench messages must serialize")
+        })
+    }
+
     /// Registers a root-to-current breadcrumb path with stable semantic IDs.
     #[cfg(feature = "breadcrumb")]
     pub fn register_breadcrumb_items_property(
@@ -4038,6 +4303,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
             let viewport = ui_virtual_list_viewport_from_value(&payload)
                 .ok_or_else(|| "expected a valid virtual-list viewport".to_owned())?;
             map(viewport)
+        })
+    }
+
+    /// Registers the stable message/action pair emitted by MessageTimeline.
+    #[cfg(feature = "workbench")]
+    pub fn register_workbench_message_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiWorkbenchMessageAction) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::WorkbenchMessageAction, move |payload| {
+            let action = ui_workbench_message_action_from_value(&payload)
+                .ok_or_else(|| "expected a valid workbench message/action pair".to_owned())?;
+            map(action)
         })
     }
 
@@ -4601,6 +4880,7 @@ impl<'a> UiDocumentValidator<'a> {
         self.validate_node(
             &document.root,
             "$.root",
+            None,
             &mut node_ids,
             &mut widget_ids,
             &mut diagnostics,
@@ -4612,10 +4892,26 @@ impl<'a> UiDocumentValidator<'a> {
         &self,
         node: &UiNode,
         path: &str,
+        parent_component: Option<&str>,
         node_ids: &mut BTreeMap<String, String>,
         widget_ids: &mut BTreeMap<u64, (String, String)>,
         diagnostics: &mut Vec<UiDiagnostic>,
     ) {
+        if matches!(
+            node.component.as_str(),
+            "message_timeline" | "composer" | "inspector_panel"
+        ) && parent_component != Some("workbench_shell")
+        {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidChildCount,
+                format!("{path}.component"),
+                format!(
+                    "component {:?} must be a direct child of workbench_shell",
+                    node.component
+                ),
+            );
+        }
         if !is_valid_node_id(node.id.as_str()) {
             push_diagnostic(
                 diagnostics,
@@ -4701,6 +4997,7 @@ impl<'a> UiDocumentValidator<'a> {
             self.validate_node(
                 child,
                 &format!("{path}.children[{index}]"),
+                Some(&node.component),
                 node_ids,
                 widget_ids,
                 diagnostics,
@@ -6102,6 +6399,13 @@ impl<'a> UiDocumentValidator<'a> {
             validate_items_repeater_component(node, path, diagnostics);
         }
 
+        if matches!(
+            node.component.as_str(),
+            "workbench_shell" | "message_timeline" | "composer" | "inspector_panel"
+        ) {
+            validate_workbench_component(node, path, diagnostics);
+        }
+
         if node.component == "info_bar" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -6751,6 +7055,148 @@ const ITEMS_REPEATER_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::VirtualListViewport,
     },
 ];
+const WORKBENCH_SHELL_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "title",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "subtitle",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "sidebar",
+        value_type: UiValueType::WorkbenchSidebar,
+        required: true,
+    },
+    PropertySpec {
+        name: "toolbar_actions",
+        value_type: UiValueType::WorkbenchActionArray,
+        required: false,
+    },
+];
+const WORKBENCH_SHELL_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "sidebar_toggle",
+        payload_type: UiValueType::Null,
+    },
+    ActionSpec {
+        name: "sidebar_action",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "conversation_select",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "toolbar_action",
+        payload_type: UiValueType::String,
+    },
+];
+const MESSAGE_TIMELINE_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "messages",
+        value_type: UiValueType::WorkbenchMessageArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "offset_y",
+        value_type: UiValueType::Integer,
+        required: false,
+    },
+];
+const MESSAGE_TIMELINE_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "message_action",
+        payload_type: UiValueType::WorkbenchMessageAction,
+    },
+    ActionSpec {
+        name: "scroll",
+        payload_type: UiValueType::Integer,
+    },
+];
+const COMPOSER_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "draft",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "placeholder",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "mode_label",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "model_label",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "busy",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+    PropertySpec {
+        name: "actions",
+        value_type: UiValueType::WorkbenchActionArray,
+        required: false,
+    },
+];
+const COMPOSER_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "focus",
+        payload_type: UiValueType::Null,
+    },
+    ActionSpec {
+        name: "change",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "action",
+        payload_type: UiValueType::String,
+    },
+    ActionSpec {
+        name: "submit",
+        payload_type: UiValueType::Null,
+    },
+    ActionSpec {
+        name: "stop",
+        payload_type: UiValueType::Null,
+    },
+];
+const INSPECTOR_PANEL_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "title",
+        value_type: UiValueType::String,
+        required: true,
+    },
+    PropertySpec {
+        name: "selected_tab",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "tabs",
+        value_type: UiValueType::WorkbenchActionArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "body",
+        value_type: UiValueType::String,
+        required: true,
+    },
+];
+const INSPECTOR_PANEL_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "select",
+    payload_type: UiValueType::String,
+}];
 const BUTTON_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "label",
@@ -7759,6 +8205,14 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         }),
         "canvas" => Some(leaf(CANVAS_PROPERTIES, CANVAS_ACTIONS)),
         "image" => Some(leaf(IMAGE_PROPERTIES, NO_ACTIONS)),
+        "workbench_shell" => Some(ComponentSchema {
+            properties: WORKBENCH_SHELL_PROPERTIES,
+            actions: WORKBENCH_SHELL_ACTIONS,
+            children: ChildPolicy::AtLeast(2),
+        }),
+        "message_timeline" => Some(leaf(MESSAGE_TIMELINE_PROPERTIES, MESSAGE_TIMELINE_ACTIONS)),
+        "composer" => Some(leaf(COMPOSER_PROPERTIES, COMPOSER_ACTIONS)),
+        "inspector_panel" => Some(leaf(INSPECTOR_PANEL_PROPERTIES, INSPECTOR_PANEL_ACTIONS)),
         "navigation" => Some(ComponentSchema {
             properties: NAVIGATION_PROPERTIES,
             actions: NAVIGATION_ACTIONS,
@@ -8081,6 +8535,159 @@ fn validate_items_repeater_component(
                 "items_repeater selected index must be below total_count".to_owned(),
             );
         }
+    }
+}
+
+fn validate_workbench_component(node: &UiNode, path: &str, diagnostics: &mut Vec<UiDiagnostic>) {
+    let structural = match node.component.as_str() {
+        "workbench_shell" => &["sidebar", "toolbar_actions"][..],
+        "message_timeline" => &["messages", "offset_y"][..],
+        "composer" => &["busy", "actions"][..],
+        "inspector_panel" => &["tabs", "selected_tab"][..],
+        _ => &[][..],
+    };
+    for property in structural {
+        if node.localization.contains_key(*property) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidLocalization,
+                format!("{path}.localization.{property}"),
+                format!(
+                    "{} property {property:?} is structural and cannot be localized",
+                    node.component
+                ),
+            );
+        }
+    }
+
+    match node.component.as_str() {
+        "workbench_shell" => {
+            let child_kinds = node
+                .children
+                .iter()
+                .map(|child| child.component.as_str())
+                .collect::<Vec<_>>();
+            let valid = matches!(
+                child_kinds.as_slice(),
+                ["message_timeline", "composer"]
+                    | ["message_timeline", "composer", "inspector_panel"]
+            );
+            if !valid {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidChildCount,
+                    format!("{path}.children"),
+                    "workbench_shell children must be message_timeline, composer and optional inspector_panel in that order"
+                        .to_owned(),
+                );
+            }
+            if node
+                .properties
+                .get("title")
+                .and_then(Value::as_str)
+                .is_some_and(|title| title.trim().is_empty())
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.title"),
+                    "workbench_shell title must not be empty".to_owned(),
+                );
+            }
+        }
+        "message_timeline" => {
+            let property_bound = node.property_bindings.contains_key("offset_y");
+            let action_bound = node.action_bindings.contains_key("scroll");
+            if property_bound && !action_bound {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::UnresolvedActionBinding,
+                    format!("{path}.action_bindings.scroll"),
+                    "bound message_timeline offset_y and scroll action must be declared together"
+                        .to_owned(),
+                );
+            }
+        }
+        "composer" => {
+            let property_bound = node.property_bindings.contains_key("draft");
+            let action_bound = node.action_bindings.contains_key("change");
+            if property_bound && !action_bound {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::UnresolvedActionBinding,
+                    format!("{path}.action_bindings.change"),
+                    "bound composer draft and change action must be declared together".to_owned(),
+                );
+            }
+            if node
+                .properties
+                .get("placeholder")
+                .and_then(Value::as_str)
+                .is_some_and(|placeholder| placeholder.trim().is_empty())
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.placeholder"),
+                    "composer placeholder must not be empty".to_owned(),
+                );
+            }
+        }
+        "inspector_panel" => {
+            let property_bound = node.property_bindings.contains_key("selected_tab");
+            let action_bound = node.action_bindings.contains_key("select");
+            if property_bound && !action_bound {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::UnresolvedActionBinding,
+                    format!("{path}.action_bindings.select"),
+                    "bound inspector_panel selected_tab and select action must be declared together"
+                        .to_owned(),
+                );
+            }
+            if node
+                .properties
+                .get("title")
+                .and_then(Value::as_str)
+                .is_some_and(|title| title.trim().is_empty())
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.title"),
+                    "inspector_panel title must not be empty".to_owned(),
+                );
+            }
+            if node
+                .properties
+                .get("tabs")
+                .and_then(ui_workbench_actions_from_value)
+                .is_some_and(|tabs| tabs.is_empty())
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.tabs"),
+                    "inspector_panel requires at least one tab".to_owned(),
+                );
+            }
+            if let (Some(selected), Some(tabs)) = (
+                node.properties.get("selected_tab").and_then(Value::as_str),
+                node.properties
+                    .get("tabs")
+                    .and_then(ui_workbench_actions_from_value),
+            ) {
+                if !tabs.iter().any(|tab| tab.enabled && tab.id == selected) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.selected_tab"),
+                        "inspector_panel selected_tab must address an enabled tab".to_owned(),
+                    );
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -10781,9 +11388,8 @@ mod tests {
     }
 
     #[test]
-    fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
+    fn validator_reports_unknown_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "workbench_shell".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
             &UiFeatureSet::new(["button", "label", "workbench"]),
@@ -10793,11 +11399,104 @@ mod tests {
         assert!(report
             .diagnostics
             .iter()
-            .any(|diagnostic| { diagnostic.code == UiDiagnosticCode::ComponentNotDocumentReady }));
-        assert!(report
-            .diagnostics
-            .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::UnknownComponent));
+    }
+
+    #[test]
+    fn every_catalog_component_has_a_document_schema() {
+        let missing = crate::component_catalog::zsui_component_catalog()
+            .iter()
+            .filter(|descriptor| component_schema(descriptor.component_name).is_none())
+            .map(|descriptor| descriptor.component_name)
+            .collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "missing UiDocument schemas: {missing:?}"
+        );
+        assert_eq!(crate::component_catalog::zsui_component_catalog().len(), 48);
+    }
+
+    #[test]
+    fn validates_structured_workbench_shell_timeline_composer_and_inspector() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "workbench",
+                "component": "workbench_shell",
+                "properties": {
+                  "title": "ZSUI Workbench",
+                  "sidebar": {
+                    "title": "任务",
+                    "primary_actions": [
+                      { "id": "new", "label": "新建", "icon": "Add" }
+                    ],
+                    "groups": [{
+                      "id": "today",
+                      "label": "今天",
+                      "conversations": [
+                        { "id": "thread-1", "title": "统一组件", "selected": true }
+                      ]
+                    }]
+                  },
+                  "toolbar_actions": [
+                    { "id": "refresh", "label": "刷新", "icon": "Refresh" }
+                  ]
+                },
+                "children": [
+                  {
+                    "id": "timeline",
+                    "component": "message_timeline",
+                    "properties": {
+                      "messages": [{
+                        "id": "message-1",
+                        "role": "assistant",
+                        "blocks": [{ "kind": "paragraph", "text": "四个平台部件共享一份声明。" }],
+                        "actions": [{ "id": "copy", "label": "复制", "icon": "Copy" }]
+                      }]
+                    }
+                  },
+                  {
+                    "id": "composer",
+                    "component": "composer",
+                    "properties": {
+                      "draft": "",
+                      "placeholder": "输入消息",
+                      "actions": [{ "id": "attach", "label": "附件", "icon": "Attach" }]
+                    }
+                  },
+                  {
+                    "id": "inspector",
+                    "component": "inspector_panel",
+                    "properties": {
+                      "title": "检查器",
+                      "selected_tab": "details",
+                      "tabs": [{ "id": "details", "label": "详情", "icon": "Info" }],
+                      "body": "结构、事件和布局"
+                    }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(document
+            .validate(
+                &UiFeatureSet::new(["workbench"]),
+                &UiBindingSchema::default()
+            )
+            .is_valid());
+
+        let mut invalid = document;
+        invalid.root.children.swap(0, 1);
+        let report = invalid.validate(
+            &UiFeatureSet::new(["workbench"]),
+            &UiBindingSchema::default(),
+        );
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidChildCount
+                && diagnostic.path == "$.root.children"
+        }));
     }
 
     #[cfg(feature = "image-preview")]

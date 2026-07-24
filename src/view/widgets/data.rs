@@ -26,6 +26,19 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
     .children(children)
 }
 
+/// Creates the retained native workbench surface used by document authors and
+/// regular Rust applications. Layout and painting remain owned by the shared
+/// workbench contract while each backend renders the resulting native plan.
+#[cfg(feature = "workbench")]
+pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
+    ViewNode::new(ViewNodeKind::Workbench {
+        spec,
+        on_interaction: None,
+    })
+    .min_width(Dp::new(640.0))
+    .min_height(Dp::new(480.0))
+}
+
 /// Creates a native desktop content page with platform-owned outer spacing.
 ///
 /// Windows and GTK currently use a 24-DP page inset while AppKit uses its

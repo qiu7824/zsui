@@ -542,6 +542,12 @@ pub enum ZsWorkbenchInteractionEvent {
     SelectInspectorTab {
         tab_id: String,
     },
+    ChangeComposerDraft {
+        draft: String,
+    },
+    ScrollMessages {
+        offset_y: i32,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -591,6 +597,84 @@ pub fn zs_workbench_event_for_region(
             })
         }
         ZsWorkbenchRegionKind::Timeline => None,
+    }
+}
+
+pub(crate) fn zs_workbench_region_widget_id(
+    parent: crate::WidgetId,
+    region: &ZsWorkbenchLayoutRegion,
+) -> crate::WidgetId {
+    let local_kind = match region.kind {
+        ZsWorkbenchRegionKind::SidebarToggle => 1_u64,
+        ZsWorkbenchRegionKind::SidebarAction => 2,
+        ZsWorkbenchRegionKind::Conversation => 3,
+        ZsWorkbenchRegionKind::ToolbarAction => 4,
+        ZsWorkbenchRegionKind::MessageAction => 5,
+        ZsWorkbenchRegionKind::ComposerInput => 6,
+        ZsWorkbenchRegionKind::ComposerAction => 7,
+        ZsWorkbenchRegionKind::Submit => 8,
+        ZsWorkbenchRegionKind::Stop => 9,
+        ZsWorkbenchRegionKind::InspectorTab => 10,
+        ZsWorkbenchRegionKind::Timeline => 11,
+    };
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ local_kind;
+    for byte in region.id.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    crate::WidgetId::synthetic_child(parent, hash)
+}
+
+pub(crate) fn zs_workbench_apply_interaction(
+    spec: &mut ZsWorkbenchSpec,
+    event: &ZsWorkbenchInteractionEvent,
+) -> bool {
+    match event {
+        ZsWorkbenchInteractionEvent::ToggleSidebar => {
+            spec.sidebar.collapsed = !spec.sidebar.collapsed;
+            true
+        }
+        ZsWorkbenchInteractionEvent::SelectConversation { conversation_id } => {
+            let mut changed = false;
+            for conversation in spec
+                .sidebar
+                .groups
+                .iter_mut()
+                .flat_map(|group| group.conversations.iter_mut())
+            {
+                let selected = conversation.id == *conversation_id;
+                changed |= conversation.selected != selected;
+                conversation.selected = selected;
+            }
+            changed
+        }
+        ZsWorkbenchInteractionEvent::SelectInspectorTab { tab_id } => spec
+            .inspector
+            .as_mut()
+            .map(|inspector| {
+                let changed = inspector.selected_tab_id.as_deref() != Some(tab_id.as_str());
+                inspector.selected_tab_id = Some(tab_id.clone());
+                changed
+            })
+            .unwrap_or(false),
+        ZsWorkbenchInteractionEvent::ChangeComposerDraft { draft } => {
+            if spec.composer.draft == *draft {
+                false
+            } else {
+                spec.composer.draft.clone_from(draft);
+                true
+            }
+        }
+        ZsWorkbenchInteractionEvent::ScrollMessages { offset_y } => {
+            let next = (*offset_y).max(0);
+            if spec.message_scroll_y == next {
+                false
+            } else {
+                spec.message_scroll_y = next;
+                true
+            }
+        }
+        _ => false,
     }
 }
 
@@ -2110,38 +2194,7 @@ impl ZsWorkbenchRuntime {
     }
 
     pub fn apply_interaction(&mut self, event: &ZsWorkbenchInteractionEvent) -> bool {
-        let changed = match event {
-            ZsWorkbenchInteractionEvent::ToggleSidebar => {
-                self.spec.sidebar.collapsed = !self.spec.sidebar.collapsed;
-                true
-            }
-            ZsWorkbenchInteractionEvent::SelectConversation { conversation_id } => {
-                let mut changed = false;
-                for conversation in self
-                    .spec
-                    .sidebar
-                    .groups
-                    .iter_mut()
-                    .flat_map(|group| group.conversations.iter_mut())
-                {
-                    let selected = conversation.id == *conversation_id;
-                    changed |= conversation.selected != selected;
-                    conversation.selected = selected;
-                }
-                changed
-            }
-            ZsWorkbenchInteractionEvent::SelectInspectorTab { tab_id } => self
-                .spec
-                .inspector
-                .as_mut()
-                .map(|inspector| {
-                    let changed = inspector.selected_tab_id.as_deref() != Some(tab_id.as_str());
-                    inspector.selected_tab_id = Some(tab_id.clone());
-                    changed
-                })
-                .unwrap_or(false),
-            _ => false,
-        };
+        let changed = zs_workbench_apply_interaction(&mut self.spec, event);
         if changed {
             self.rebuild();
         }

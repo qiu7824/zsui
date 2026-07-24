@@ -890,6 +890,19 @@ history remain authoritative for implementation status.
   serialize live raster data. Windows Viewer proof at 960x640 retained three
   target-rendered fit modes with no source error and measured 16,125,952 bytes
   RSS plus 5,283,840 private before teardown.
+- UiDocument covers all 48 catalog families. `workbench_shell` is the sole
+  parent for ordered `message_timeline`, `composer` and optional
+  `inspector_panel` children; those child components are typed configuration
+  regions rather than independent look-alike stacks. The release compiler
+  builds one retained `ViewNodeKind::Workbench` and reuses the authoritative
+  `ZsWorkbenchSpec` layout and native draw plan. Stable synthetic region IDs
+  route conversation, toolbar, message, composer, inspector and scrolling
+  events without a global registry. Message arrays, sidebar metadata and
+  action arrays have bounded typed document shapes; composer draft and
+  timeline offset use explicit property/action loops. Windows Viewer proof at
+  1280x800 routed four real clicks plus one real scroll into five typed
+  messages with zero unhandled clicks or scrolls; the observed pre-teardown
+  process sample was 24,809,472 bytes RSS and 7,696,384 private.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

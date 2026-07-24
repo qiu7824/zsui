@@ -534,6 +534,81 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "workbench")]
+        if matches!(self.kind, ViewNodeKind::Workbench { .. }) {
+            let Some(root) = self.id else {
+                return;
+            };
+            let Some(bounds) = self.bounds else {
+                return;
+            };
+            let interaction = if let ViewNodeKind::Workbench { spec, .. } = &self.kind {
+                let layout = spec.layout(bounds, self.layout_dpi);
+                match event {
+                    ViewEvent::Click { widget } => layout
+                        .regions
+                        .iter()
+                        .find(|region| {
+                            region.enabled
+                                && crate::workbench::zs_workbench_region_widget_id(root, region)
+                                    == *widget
+                        })
+                        .and_then(crate::zs_workbench_event_for_region),
+                    ViewEvent::TextChanged { widget, value } => layout
+                        .regions
+                        .iter()
+                        .any(|region| {
+                            region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
+                                && crate::workbench::zs_workbench_region_widget_id(root, region)
+                                    == *widget
+                        })
+                        .then(|| crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft {
+                            draft: value.clone(),
+                        }),
+                    #[cfg(feature = "textbox")]
+                    ViewEvent::TextEdited { widget, value, .. } => layout
+                        .regions
+                        .iter()
+                        .any(|region| {
+                            region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
+                                && crate::workbench::zs_workbench_region_widget_id(root, region)
+                                    == *widget
+                        })
+                        .then(|| crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft {
+                            draft: value.clone(),
+                        }),
+                    #[cfg(feature = "scroll")]
+                    ViewEvent::ScrollBy { widget, delta_y } if *widget == root => {
+                        let next = (spec.message_scroll_y
+                            + delta_y.to_px(self.layout_dpi).round_i32())
+                        .clamp(0, layout.message_scroll_max);
+                        Some(crate::ZsWorkbenchInteractionEvent::ScrollMessages {
+                            offset_y: next,
+                        })
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some(interaction) = interaction {
+                if let ViewNodeKind::Workbench {
+                    spec,
+                    on_interaction,
+                } = &mut self.kind
+                {
+                    crate::workbench::zs_workbench_apply_interaction(spec, &interaction);
+                    if let Some(message) = on_interaction
+                        .as_ref()
+                        .and_then(|mapper| mapper.map(interaction))
+                    {
+                        cx.emit(message);
+                    }
+                }
+            }
+            return;
+        }
+
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             let mut handled = false;
@@ -2206,6 +2281,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         match &self.kind {
+            #[cfg(feature = "workbench")]
+            ViewNodeKind::Workbench { spec, .. } => {
+                let plan = spec.native_draw_plan(bounds, cx.dpi);
+                for command in plan.commands {
+                    cx.draw(command);
+                }
+                cx.finish_node(self);
+                return;
+            }
             #[cfg(feature = "badge")]
             ViewNodeKind::Badge { content, tone } => {
                 let profile =
