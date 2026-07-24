@@ -83,6 +83,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::TabSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
             (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
+            #[cfg(feature = "virtual-list")]
+            (Some(id), ViewEvent::ItemsRepeaterScrollToRatio { widget, .. }) => id == *widget,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "breadcrumb",
@@ -1538,6 +1540,26 @@ impl<Msg> ViewNode<Msg> {
 
         for child in &self.children {
             child.collect_hit_targets(hit_targets, child_clip);
+        }
+
+        #[cfg(feature = "virtual-list")]
+        if let (Some(widget), Some(scrollbar)) =
+            (self.id, items_repeater_scrollbar_layout(self))
+        {
+            if let Some(bounds) = clipped_rect(scrollbar.track, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::ItemsRepeaterScrollbarTrack,
+                ));
+            }
+            if let Some(bounds) = clipped_rect(scrollbar.thumb_hit, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::ItemsRepeaterScrollbarThumb,
+                ));
+            }
         }
     }
 

@@ -120,6 +120,8 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
+    pub native_view_items_repeater_viewport_change_count: usize,
+    pub native_view_items_repeater_scrollbar_drag_count: usize,
     pub native_view_color_picker_value_change_count: usize,
     pub native_view_color_picker_channel_change_count: usize,
     pub native_view_color_picker_expanded_change_count: usize,
@@ -251,6 +253,8 @@ impl NativeHostSmokeInteractionReport {
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
+            native_view_items_repeater_viewport_change_count: 0,
+            native_view_items_repeater_scrollbar_drag_count: 0,
             native_view_color_picker_value_change_count: 0,
             native_view_color_picker_channel_change_count: 0,
             native_view_color_picker_expanded_change_count: 0,
@@ -754,6 +758,10 @@ impl NativeHostSmokeInteractionReport {
             native_view_slider_keyboard_change_count: report
                 .native_view_slider_keyboard_change_count,
             native_view_slider_drag_count: report.native_view_slider_drag_count,
+            native_view_items_repeater_viewport_change_count: report
+                .native_view_items_repeater_viewport_change_count,
+            native_view_items_repeater_scrollbar_drag_count: report
+                .native_view_items_repeater_scrollbar_drag_count,
             native_view_color_picker_value_change_count: report
                 .native_view_color_picker_value_change_count,
             native_view_color_picker_channel_change_count: report
@@ -1481,6 +1489,8 @@ mod tests {
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
+            native_view_items_repeater_viewport_change_count: 0,
+            native_view_items_repeater_scrollbar_drag_count: 0,
             native_view_color_picker_value_change_count: 0,
             native_view_color_picker_channel_change_count: 0,
             native_view_color_picker_expanded_change_count: 0,

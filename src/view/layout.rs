@@ -7,11 +7,31 @@ pub fn virtual_list_viewport(
     overscan_rows: usize,
     direction: VirtualListScrollDirection,
 ) -> VirtualListViewport {
-    let row_height = if row_height.0.is_finite() {
-        row_height.0.max(1.0)
-    } else {
-        1.0
-    };
+    items_repeater_viewport_with_metrics(
+        total_count,
+        row_height,
+        &[],
+        offset_y,
+        viewport_height,
+        overscan_rows,
+        direction,
+    )
+}
+
+/// Computes a controlled ItemsRepeater viewport from one estimated height and
+/// a sparse set of known variable-height item metrics.
+#[cfg(feature = "virtual-list")]
+pub fn items_repeater_viewport_with_metrics(
+    total_count: usize,
+    row_height: Dp,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+    offset_y: Dp,
+    viewport_height: Dp,
+    overscan_rows: usize,
+    direction: VirtualListScrollDirection,
+) -> VirtualListViewport {
+    let row_height = normalized_items_repeater_estimated_height(row_height);
+    let item_metrics = normalized_items_repeater_metrics(total_count, item_metrics);
     let viewport_height = if viewport_height.0.is_finite() {
         viewport_height.0.max(0.0)
     } else {
@@ -22,7 +42,11 @@ pub fn virtual_list_viewport(
     } else {
         0.0
     };
-    let content_height = total_count as f64 * row_height as f64;
+    let content_height = items_repeater_content_height_normalized(
+        total_count,
+        row_height,
+        &item_metrics,
+    );
     let max_offset = (content_height - viewport_height as f64).max(0.0) as f32;
     let offset_y = requested_offset.min(max_offset);
     if total_count == 0 || viewport_height <= 0.0 {
@@ -35,10 +59,36 @@ pub fn virtual_list_viewport(
         };
     }
 
-    let start = ((offset_y / row_height).floor() as usize).min(total_count);
-    let end = (((offset_y + viewport_height) / row_height).ceil() as usize)
-        .max(start.saturating_add(1))
-        .min(total_count);
+    let offset = f64::from(offset_y);
+    let viewport_end = offset + f64::from(viewport_height);
+    let mut start_low = 0usize;
+    let mut start_high = total_count;
+    while start_low < start_high {
+        let middle = start_low + (start_high - start_low) / 2;
+        let bottom = items_repeater_height_before_normalized(
+            middle.saturating_add(1),
+            row_height,
+            &item_metrics,
+        );
+        if bottom <= offset {
+            start_low = middle.saturating_add(1);
+        } else {
+            start_high = middle;
+        }
+    }
+    let start = start_low.min(total_count);
+    let mut end_low = start.saturating_add(1).min(total_count);
+    let mut end_high = total_count;
+    while end_low < end_high {
+        let middle = end_low + (end_high - end_low) / 2;
+        let top = items_repeater_height_before_normalized(middle, row_height, &item_metrics);
+        if top < viewport_end {
+            end_low = middle.saturating_add(1);
+        } else {
+            end_high = middle;
+        }
+    }
+    let end = end_low.max(start.saturating_add(1)).min(total_count);
     let visible_range = VirtualListRange::new(start, end);
     let materialized_range = VirtualListRange::new(
         start.saturating_sub(overscan_rows),
@@ -54,17 +104,122 @@ pub fn virtual_list_viewport(
 }
 
 #[cfg(feature = "virtual-list")]
+fn normalized_items_repeater_estimated_height(row_height: Dp) -> f32 {
+    if row_height.0.is_finite() {
+        row_height.0.max(1.0)
+    } else {
+        1.0
+    }
+}
+
+#[cfg(feature = "virtual-list")]
+fn normalized_items_repeater_metrics(
+    total_count: usize,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+) -> Vec<ZsItemsRepeaterItemMetric> {
+    let mut metrics = item_metrics
+        .iter()
+        .copied()
+        .filter(|metric| metric.index < total_count)
+        .map(|metric| ZsItemsRepeaterItemMetric::new(metric.index, metric.height))
+        .collect::<Vec<_>>();
+    metrics.sort_by_key(|metric| metric.index);
+    let mut normalized = Vec::with_capacity(metrics.len());
+    for metric in metrics {
+        if normalized
+            .last()
+            .is_some_and(|current: &ZsItemsRepeaterItemMetric| current.index == metric.index)
+        {
+            *normalized.last_mut().expect("metric entry must exist") = metric;
+        } else {
+            normalized.push(metric);
+        }
+    }
+    normalized
+}
+
+#[cfg(feature = "virtual-list")]
+fn items_repeater_height_before_normalized(
+    index: usize,
+    estimated_height: f32,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+) -> f64 {
+    let mut height = index as f64 * f64::from(estimated_height);
+    for metric in item_metrics.iter().take_while(|metric| metric.index < index) {
+        height += f64::from(metric.height.0 - estimated_height);
+    }
+    height.max(0.0)
+}
+
+#[cfg(feature = "virtual-list")]
+fn items_repeater_content_height_normalized(
+    total_count: usize,
+    estimated_height: f32,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+) -> f64 {
+    items_repeater_height_before_normalized(total_count, estimated_height, item_metrics)
+}
+
+#[cfg(feature = "virtual-list")]
+pub(crate) fn items_repeater_content_height(
+    total_count: usize,
+    row_height: Dp,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+) -> Dp {
+    let row_height = normalized_items_repeater_estimated_height(row_height);
+    let metrics = normalized_items_repeater_metrics(total_count, item_metrics);
+    Dp::new(
+        items_repeater_content_height_normalized(total_count, row_height, &metrics)
+            .min(f64::from(f32::MAX)) as f32,
+    )
+}
+
+#[cfg(feature = "virtual-list")]
+pub(crate) fn items_repeater_item_height(
+    index: usize,
+    row_height: Dp,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+) -> Dp {
+    item_metrics
+        .binary_search_by_key(&index, |metric| metric.index)
+        .ok()
+        .and_then(|position| item_metrics.get(position))
+        .map(|metric| metric.height)
+        .unwrap_or_else(|| Dp::new(normalized_items_repeater_estimated_height(row_height)))
+}
+
+#[cfg(feature = "virtual-list")]
+pub(crate) fn items_repeater_height_before(
+    index: usize,
+    row_height: Dp,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
+) -> Dp {
+    let row_height = normalized_items_repeater_estimated_height(row_height);
+    Dp::new(
+        items_repeater_height_before_normalized(index, row_height, item_metrics)
+            .min(f64::from(f32::MAX)) as f32,
+    )
+}
+
+#[cfg(feature = "virtual-list")]
 fn virtual_list_row_bounds(
     bounds: Rect,
     index: usize,
     row_height: Dp,
+    item_metrics: &[ZsItemsRepeaterItemMetric],
     offset_y: Dp,
     dpi: Dpi,
 ) -> Rect {
-    let row_height_px = row_height.to_px(dpi).round_i32().max(1);
+    let row_height_px = items_repeater_item_height(index, row_height, item_metrics)
+        .to_px(dpi)
+        .round_i32()
+        .max(1);
     let offset_px = offset_y.to_px(dpi).round_i32().max(0);
-    let row_top = (index as i64)
-        .saturating_mul(row_height_px as i64)
+    let row_top = i64::from(
+        items_repeater_height_before(index, row_height, item_metrics)
+            .to_px(dpi)
+            .round_i32(),
+    )
         .saturating_sub(offset_px as i64)
         .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
     Rect {
@@ -73,6 +228,77 @@ fn virtual_list_row_bounds(
         width: bounds.width,
         height: row_height_px,
     }
+}
+
+#[cfg(feature = "virtual-list")]
+fn items_repeater_scrollbar_layout<Msg>(
+    node: &ViewNode<Msg>,
+) -> Option<ZsItemsRepeaterScrollbarLayout> {
+    let bounds = node.bounds?;
+    let ViewNodeKind::VirtualList {
+        total_count,
+        row_height,
+        item_metrics,
+        offset_y,
+        ..
+    } = &node.kind
+    else {
+        return None;
+    };
+    let content_bounds = inset_bounds(bounds, node.style.padding, node.layout_dpi);
+    let content_height = items_repeater_content_height(*total_count, *row_height, item_metrics);
+    let viewport_height = Dp::new(
+        content_bounds.height.max(0) as f32
+            / node.layout_dpi.scale_factor().max(f32::EPSILON),
+    );
+    let maximum_offset = Dp::new((content_height.0 - viewport_height.0).max(0.0));
+    if maximum_offset.0 <= 0.0 || content_bounds.height <= 0 || content_bounds.width <= 0 {
+        return None;
+    }
+
+    let profile = crate::platform_component_profile::PlatformComponentProfile::for_style(
+        node.resolved_platform_style(),
+    )
+    .shell;
+    let bar_width = profile
+        .scrollbar_width
+        .to_px(node.layout_dpi)
+        .round_i32()
+        .max(1);
+    let margin = profile
+        .scrollbar_margin
+        .to_px(node.layout_dpi)
+        .round_i32()
+        .max(0);
+    let layout = crate::shell_layout::ZsShellScrollLayout::new(
+        content_bounds.y,
+        content_bounds.y.saturating_add(content_bounds.height),
+        content_height.to_px(node.layout_dpi).round_i32().max(0),
+        content_bounds.height,
+        content_bounds.x.saturating_add(content_bounds.width),
+        margin,
+        bar_width,
+        node.layout_dpi,
+    );
+    let offset_px = offset_y.to_px(node.layout_dpi).round_i32().max(0);
+    let track = layout.track_rect()?;
+    let thumb = layout.thumb_rect(offset_px)?;
+    let thumb_hit = layout.thumb_hit_rect(
+        offset_px,
+        Dp::new(4.0).to_px(node.layout_dpi).round_i32().max(0),
+    )?;
+    let to_rect = |rect: crate::UiRect| Rect {
+        x: rect.left,
+        y: rect.top,
+        width: (rect.right - rect.left).max(0),
+        height: (rect.bottom - rect.top).max(0),
+    };
+    Some(ZsItemsRepeaterScrollbarLayout {
+        track: to_rect(track),
+        thumb: to_rect(thumb),
+        thumb_hit: to_rect(thumb_hit),
+        maximum_offset,
+    })
 }
 
 fn split_child_bounds<Msg>(

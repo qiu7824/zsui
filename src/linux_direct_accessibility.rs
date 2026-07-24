@@ -285,6 +285,10 @@ fn build_tree_update(
     let mut focused_node = ROOT_NODE_ID;
 
     for (node_id, target) in targets {
+        #[cfg(feature = "virtual-list")]
+        if target.kind == ViewHitTargetKind::ItemsRepeaterScrollbarThumb {
+            continue;
+        }
         #[cfg(feature = "menu-flyout")]
         match target.kind {
             ViewHitTargetKind::MenuFlyoutScrim => continue,
@@ -605,6 +609,7 @@ fn role_label(kind: ViewHitTargetKind) -> &'static str {
         Role::Menu => "Menu",
         Role::MenuItem | Role::MenuItemCheckBox => "Menu item",
         Role::Canvas => "Canvas",
+        Role::ScrollBar => "Scroll bar",
         Role::ScrollView => "Scroll view",
         _ => "Control",
     }
@@ -621,6 +626,10 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::NavigationViewScrim => Role::GenericContainer,
         #[cfg(feature = "split-view")]
         ViewHitTargetKind::SplitViewScrim => Role::GenericContainer,
+        #[cfg(feature = "virtual-list")]
+        ViewHitTargetKind::ItemsRepeaterScrollbarTrack => Role::ScrollBar,
+        #[cfg(feature = "virtual-list")]
+        ViewHitTargetKind::ItemsRepeaterScrollbarThumb => Role::GenericContainer,
         #[cfg(feature = "toggle-button")]
         ViewHitTargetKind::ToggleButton => Role::Button,
         ViewHitTargetKind::Textbox => Role::TextInput,
@@ -786,6 +795,19 @@ mod tests {
     fn split_view_scrim_is_an_accessible_generic_container() {
         assert_eq!(
             accesskit_role(ViewHitTargetKind::SplitViewScrim),
+            Role::GenericContainer
+        );
+    }
+
+    #[cfg(feature = "virtual-list")]
+    #[test]
+    fn items_repeater_scrollbar_targets_expose_scrollbar_semantics() {
+        assert_eq!(
+            accesskit_role(ViewHitTargetKind::ItemsRepeaterScrollbarTrack),
+            Role::ScrollBar
+        );
+        assert_eq!(
+            accesskit_role(ViewHitTargetKind::ItemsRepeaterScrollbarThumb),
             Role::GenericContainer
         );
     }

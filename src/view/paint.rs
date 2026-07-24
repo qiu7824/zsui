@@ -176,11 +176,18 @@ impl<Msg: Clone> ViewNode<Msg> {
     fn layout_virtual_list(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
-        let (total_count, row_height, overscan_rows, row_indices, current_offset) = match &self.kind
-        {
+        let (
+            total_count,
+            row_height,
+            item_metrics,
+            overscan_rows,
+            row_indices,
+            current_offset,
+        ) = match &self.kind {
             ViewNodeKind::VirtualList {
                 total_count,
                 row_height,
+                item_metrics,
                 overscan_rows,
                 row_indices,
                 offset_y,
@@ -188,6 +195,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             } => (
                 *total_count,
                 *row_height,
+                item_metrics.clone(),
                 *overscan_rows,
                 row_indices.clone(),
                 *offset_y,
@@ -197,9 +205,10 @@ impl<Msg: Clone> ViewNode<Msg> {
         let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
         let viewport_height =
             Dp::new(content_bounds.height.max(0) as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
-        let viewport = virtual_list_viewport(
+        let viewport = items_repeater_viewport_with_metrics(
             total_count,
             row_height,
+            &item_metrics,
             current_offset,
             viewport_height,
             overscan_rows,
@@ -227,22 +236,18 @@ impl<Msg: Clone> ViewNode<Msg> {
                 bounds: cx.bounds,
             });
         }
-        let row_height_px = row_height.to_px(cx.dpi).round_i32().max(1);
-        let offset_px = viewport.offset_y.to_px(cx.dpi).round_i32().max(0);
         for (index, child) in row_indices.into_iter().zip(self.children.iter_mut()) {
             if !viewport.materialized_range.contains(index) {
                 continue;
             }
-            let row_top = (index as i64)
-                .saturating_mul(row_height_px as i64)
-                .saturating_sub(offset_px as i64)
-                .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-            let mut child_cx = cx.child(Rect {
-                    x: content_bounds.x,
-                    y: content_bounds.y.saturating_add(row_top),
-                    width: content_bounds.width,
-                    height: row_height_px,
-                });
+            let mut child_cx = cx.child(virtual_list_row_bounds(
+                content_bounds,
+                index,
+                row_height,
+                &item_metrics,
+                viewport.offset_y,
+                cx.dpi,
+            ));
             children.extend(child.layout(&mut child_cx).children);
         }
         LayoutOutput {
@@ -2207,6 +2212,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     ViewNodeKind::VirtualList {
                         total_count,
                         row_height,
+                        item_metrics,
                         overscan_rows,
                         offset_y,
                         visible_range,
@@ -2232,9 +2238,68 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     } else {
                         VirtualListScrollDirection::Stationary
                     };
-                    let viewport = virtual_list_viewport(
+                    let viewport = items_repeater_viewport_with_metrics(
                         *total_count,
                         *row_height,
+                        item_metrics,
+                        requested,
+                        viewport_height,
+                        *overscan_rows,
+                        direction,
+                    );
+                    *offset_y = viewport.offset_y;
+                    *visible_range = viewport.visible_range;
+                    *materialized_range = viewport.materialized_range;
+                    if let Some(message) = on_viewport_changed {
+                        cx.emit(message.map(viewport));
+                    }
+                }
+                #[cfg(feature = "virtual-list")]
+                (
+                    ViewNodeKind::VirtualList {
+                        total_count,
+                        row_height,
+                        item_metrics,
+                        overscan_rows,
+                        offset_y,
+                        visible_range,
+                        materialized_range,
+                        on_viewport_changed,
+                        ..
+                    },
+                    ViewEvent::ItemsRepeaterScrollToRatio { ratio, .. },
+                ) => {
+                    let viewport_height = list_bounds
+                        .map(|bounds| {
+                            Dp::new(
+                                bounds.height.max(0) as f32
+                                    / self.layout_dpi.scale_factor().max(f32::EPSILON),
+                            )
+                        })
+                        .unwrap_or(Dp::new(0.0));
+                    let content_height = items_repeater_content_height(
+                        *total_count,
+                        *row_height,
+                        item_metrics,
+                    );
+                    let maximum_offset = (content_height.0 - viewport_height.0).max(0.0);
+                    let ratio = if ratio.is_finite() {
+                        ratio.clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let requested = Dp::new(maximum_offset * ratio);
+                    let direction = if requested.0 > offset_y.0 {
+                        VirtualListScrollDirection::Forward
+                    } else if requested.0 < offset_y.0 {
+                        VirtualListScrollDirection::Backward
+                    } else {
+                        VirtualListScrollDirection::Stationary
+                    };
+                    let viewport = items_repeater_viewport_with_metrics(
+                        *total_count,
+                        *row_height,
+                        item_metrics,
                         requested,
                         viewport_height,
                         *overscan_rows,
@@ -3363,6 +3428,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList {
                 row_height,
+                item_metrics,
                 row_indices,
                 selected_index,
                 offset_y,
@@ -3395,6 +3461,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             content_bounds,
                             index,
                             *row_height,
+                            item_metrics,
                             *offset_y,
                             cx.dpi,
                         );
@@ -3420,6 +3487,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
                 for child in &self.children {
                     child.paint(cx);
+                }
+                if let Some(scrollbar) = items_repeater_scrollbar_layout(self) {
+                    cx.draw(NativeDrawCommand::RoundFill {
+                        rect: scrollbar.thumb,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::SecondaryText,
+                            alpha: 176,
+                        },
+                        radius: (scrollbar.thumb.width / 2).max(1),
+                    });
                 }
                 cx.draw(NativeDrawCommand::PopClip);
                 cx.finish_node(self);

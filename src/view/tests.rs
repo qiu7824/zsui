@@ -4046,7 +4046,16 @@ mod tests {
         view.paint(&mut paint);
 
         assert_eq!(output.children.len(), 10);
-        assert_eq!(view.interaction_plan().hit_target_count(), 6);
+        let interaction = view.interaction_plan();
+        assert_eq!(interaction.hit_target_count(), 8);
+        assert!(interaction.hit_targets.iter().any(|target| {
+            target.widget == list_id
+                && target.kind == ViewHitTargetKind::ItemsRepeaterScrollbarTrack
+        }));
+        assert!(interaction.hit_targets.iter().any(|target| {
+            target.widget == list_id
+                && target.kind == ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+        }));
         assert_eq!(
             paint
                 .plan()
@@ -4133,6 +4142,100 @@ mod tests {
             VirtualListRange::new(99_986, 100_000)
         );
         assert_eq!(viewport.offset_y, Dp::new(2_399_760.0));
+    }
+
+    #[test]
+    #[cfg(feature = "virtual-list")]
+    fn items_repeater_viewport_uses_sparse_variable_height_metrics() {
+        let metrics = [
+            ZsItemsRepeaterItemMetric::new(1, Dp::new(80.0)),
+            ZsItemsRepeaterItemMetric::new(3, Dp::new(20.0)),
+        ];
+
+        let first = items_repeater_viewport_with_metrics(
+            4,
+            Dp::new(40.0),
+            &metrics,
+            Dp::new(40.0),
+            Dp::new(80.0),
+            1,
+            VirtualListScrollDirection::Forward,
+        );
+        let second = items_repeater_viewport_with_metrics(
+            4,
+            Dp::new(40.0),
+            &metrics,
+            Dp::new(100.0),
+            Dp::new(50.0),
+            1,
+            VirtualListScrollDirection::Forward,
+        );
+
+        assert_eq!(first.visible_range, VirtualListRange::new(1, 2));
+        assert_eq!(first.materialized_range, VirtualListRange::new(0, 3));
+        assert_eq!(second.visible_range, VirtualListRange::new(1, 3));
+        assert_eq!(second.materialized_range, VirtualListRange::new(0, 4));
+        assert_eq!(second.offset_y, Dp::new(100.0));
+    }
+
+    #[test]
+    #[cfg(all(feature = "virtual-list", feature = "label"))]
+    fn items_repeater_layout_uses_variable_item_bounds_and_ratio_scroll() {
+        let list_id = WidgetId::new(720);
+        let row_ids = [
+            WidgetId::new(721),
+            WidgetId::new(722),
+            WidgetId::new(723),
+            WidgetId::new(724),
+        ];
+        let mut view = items_repeater(4, [(0, ()), (1, ()), (2, ()), (3, ())], |index, _| {
+            text(format!("Row {index}")).id(row_ids[index])
+        })
+        .id(list_id)
+        .item_height(Dp::new(40.0))
+        .item_metrics([
+            ZsItemsRepeaterItemMetric::new(1, Dp::new(60.0)),
+            ZsItemsRepeaterItemMetric::new(3, Dp::new(20.0)),
+        ])
+        .overscan_rows(0)
+        .on_viewport_changed(Msg::ViewportChanged);
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 120,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+
+        assert_eq!(view.children[0].bounds().map(|bounds| bounds.height), Some(40));
+        assert_eq!(view.children[1].bounds().map(|bounds| bounds.height), Some(60));
+        assert_eq!(view.children[2].bounds().map(|bounds| bounds.y), Some(100));
+        assert!(view.interaction_plan().hit_targets.iter().any(|target| {
+            target.widget == list_id
+                && target.kind == ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+        }));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ItemsRepeaterScrollToRatio {
+                widget: list_id,
+                ratio: 1.0,
+            },
+        );
+
+        assert!(matches!(
+            events.messages(),
+            [Msg::ViewportChanged(VirtualListViewport {
+                offset_y: Dp(40.0),
+                visible_range: VirtualListRange { start: 1, end: 4 },
+                direction: VirtualListScrollDirection::Forward,
+                ..
+            })]
+        ));
     }
 
     #[test]

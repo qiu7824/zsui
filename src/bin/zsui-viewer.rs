@@ -38,6 +38,7 @@ struct Arguments {
     reload_after_ms: u64,
     smoke_clicks: Vec<Point>,
     smoke_scroll: Option<(Point, i32)>,
+    smoke_items_repeater_drag: Option<String>,
     benchmark_empty: bool,
     benchmark_seconds: Option<u64>,
 }
@@ -124,6 +125,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             reload_injection,
             &arguments.smoke_clicks,
             arguments.smoke_scroll,
+            arguments.smoke_items_repeater_drag.as_deref(),
         )?;
     } else {
         builder.run()?;
@@ -147,6 +149,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut reload_after_ms = 500_u64;
     let mut smoke_clicks = Vec::new();
     let mut smoke_scroll = None;
+    let mut smoke_items_repeater_drag = None;
     let mut benchmark_empty = false;
     let mut benchmark_seconds = None;
     let mut arguments = arguments.into_iter();
@@ -195,6 +198,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                 let delta_y = number_argument(&mut arguments, "--smoke-scroll delta-y")?;
                 smoke_scroll = Some((Point { x, y }, delta_y));
             }
+            "--smoke-items-repeater-drag" => {
+                smoke_items_repeater_drag = Some(arguments.next().ok_or_else(|| {
+                    "--smoke-items-repeater-drag requires a stable node ID".to_owned()
+                })?);
+            }
             "--help" | "-h" => return Err(usage().to_owned()),
             value if value.starts_with('-') => {
                 return Err(format!("unknown option `{value}`\n{}", usage()));
@@ -210,6 +218,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     }
     if require_reload && smoke_output.is_none() {
         return Err("Viewer reload proof options require --smoke".to_owned());
+    }
+    if smoke_items_repeater_drag.is_some() && smoke_output.is_none() {
+        return Err("--smoke-items-repeater-drag requires --smoke".to_owned());
     }
     if (reload_document_from.is_some() || reload_bindings_from.is_some())
         && reload_after_ms >= smoke_duration_ms
@@ -233,6 +244,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         reload_after_ms: reload_after_ms.max(16),
         smoke_clicks,
         smoke_scroll,
+        smoke_items_repeater_drag,
         benchmark_empty,
         benchmark_seconds,
     })
@@ -269,6 +281,7 @@ fn usage() -> &'static str {
      [--smoke-duration-ms milliseconds] [--require-reload] [--require-binding-reset] \
      [--reload-document-from path] [--reload-bindings-from path] [--reload-after-ms milliseconds] \
      [--smoke-click x y]... [--smoke-scroll x y delta-y] \
+     [--smoke-items-repeater-drag node-id] \
      [--benchmark-empty] [--benchmark-seconds seconds]"
 }
 
@@ -297,6 +310,7 @@ fn run_smoke(
     reload_injection: Option<ViewerReloadInjection>,
     smoke_clicks: &[Point],
     smoke_scroll: Option<(Point, i32)>,
+    smoke_items_repeater_drag: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_directory)?;
     let screenshot = output_directory.join("window.png");
@@ -308,6 +322,59 @@ fn run_smoke(
     }
     if let Some((point, delta_y)) = smoke_scroll {
         options = options.native_view_scroll(point, delta_y);
+    }
+    if let Some(node_id) = smoke_items_repeater_drag {
+        let widget = zsui::ui_document::UiNodeId::new(node_id)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?
+            .widget_id();
+        let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
+            ZsuiError::host(
+                "ui_viewer_smoke",
+                "the Viewer did not expose a View interaction plan",
+            )
+        })?;
+        let track = interaction
+            .hit_targets
+            .iter()
+            .find(|target| {
+                target.widget == widget
+                    && target.kind == zsui::ViewHitTargetKind::ItemsRepeaterScrollbarTrack
+            })
+            .copied()
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "ui_viewer_smoke",
+                    format!("items_repeater {node_id:?} did not expose a scrollbar track"),
+                )
+            })?;
+        let thumb = interaction
+            .hit_targets
+            .iter()
+            .find(|target| {
+                target.widget == widget
+                    && target.kind == zsui::ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+            })
+            .copied()
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "ui_viewer_smoke",
+                    format!("items_repeater {node_id:?} did not expose a scrollbar thumb"),
+                )
+            })?;
+        let start = Point {
+            x: thumb.bounds.x + thumb.bounds.width / 2,
+            y: thumb.bounds.y + thumb.bounds.height / 2,
+        };
+        let end = Point {
+            x: start.x,
+            y: track
+                .bounds
+                .y
+                .saturating_add(track.bounds.height)
+                .saturating_sub(thumb.bounds.height / 2)
+                .saturating_sub(1),
+        };
+        options = options.native_view_drag(start, end);
     }
     let reload_worker = reload_injection.map(|injection| {
         thread::spawn(move || injection.apply().map_err(|error| error.to_string()))
@@ -329,6 +396,15 @@ fn run_smoke(
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
             "the native Viewer did not route the requested scroll input",
+        )));
+    }
+    if smoke_items_repeater_drag.is_some()
+        && (runtime.native_view_items_repeater_viewport_change_count == 0
+            || runtime.native_view_items_repeater_scrollbar_drag_count == 0)
+    {
+        return Err(Box::new(ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer did not route the ItemsRepeater thumb drag through typed viewport state",
         )));
     }
     if !smoke_clicks.is_empty()
@@ -450,6 +526,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(arguments.smoke_scroll, Some((Point { x: 120, y: 240 }, 96)));
+    }
+
+    #[test]
+    fn parser_accepts_items_repeater_scrollbar_drag_proof() {
+        let arguments = parse_arguments([
+            "ui.json".to_owned(),
+            "--smoke".to_owned(),
+            "proof".to_owned(),
+            "--smoke-items-repeater-drag".to_owned(),
+            "records".to_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            arguments.smoke_items_repeater_drag.as_deref(),
+            Some("records")
+        );
     }
 
     #[test]

@@ -2094,6 +2094,12 @@ fn ui_canvas_pointer_event_from_value(value: &Value) -> Option<UiCanvasPointerEv
 /// map to global collection indices, so declaration order is never identity.
 pub type UiItemsRepeaterIndexMap = BTreeMap<UiNodeId, usize>;
 
+/// Sparse stable child-to-height metrics for a document-backed ItemsRepeater.
+///
+/// Heights use logical DP and are keyed by stable direct-child IDs. Omitted
+/// rows continue to use the controlled viewport's estimated row height.
+pub type UiItemsRepeaterMetricMap = BTreeMap<UiNodeId, f32>;
+
 /// Maximum decoded pixel storage accepted by one document-backed Image frame.
 ///
 /// Larger application-owned previews should keep using `ZsImagePreviewState`
@@ -2125,6 +2131,16 @@ pub(crate) fn ui_items_repeater_indices_from_value(
     value: &Value,
 ) -> Option<UiItemsRepeaterIndexMap> {
     serde_json::from_value(value.clone()).ok()
+}
+
+pub(crate) fn ui_items_repeater_metrics_from_value(
+    value: &Value,
+) -> Option<UiItemsRepeaterMetricMap> {
+    let metrics = serde_json::from_value::<UiItemsRepeaterMetricMap>(value.clone()).ok()?;
+    metrics
+        .values()
+        .all(|height| height.is_finite() && *height >= 1.0)
+        .then_some(metrics)
 }
 
 /// Platform-neutral direction reported by a document-backed virtual viewport.
@@ -2467,6 +2483,7 @@ pub enum UiValueType {
     CanvasPointerEvent,
     NullableImageFrame,
     ItemsRepeaterIndexMap,
+    ItemsRepeaterMetricMap,
     VirtualListViewport,
     WorkbenchSidebar,
     WorkbenchActionArray,
@@ -2529,6 +2546,7 @@ impl UiValueType {
             Self::CanvasPointerEvent => ui_canvas_pointer_event_from_value(value).is_some(),
             Self::NullableImageFrame => ui_image_frame_from_value(value).is_some(),
             Self::ItemsRepeaterIndexMap => ui_items_repeater_indices_from_value(value).is_some(),
+            Self::ItemsRepeaterMetricMap => ui_items_repeater_metrics_from_value(value).is_some(),
             Self::VirtualListViewport => ui_virtual_list_viewport_from_value(value).is_some(),
             Self::WorkbenchSidebar => ui_workbench_sidebar_from_value(value).is_some(),
             Self::WorkbenchActionArray => ui_workbench_actions_from_value(value).is_some(),
@@ -3906,6 +3924,19 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
     ) -> Result<(), UiBindingRegistrationError> {
         self.register_property(name, UiValueType::ItemsRepeaterIndexMap, move |state| {
             serde_json::to_value(read(state)).expect("ItemsRepeater indices must serialize")
+        })
+    }
+
+    /// Registers sparse stable child heights for one document-backed
+    /// ItemsRepeater. Heights are logical DP and must be finite and positive.
+    #[cfg(feature = "virtual-list")]
+    pub fn register_items_repeater_metrics_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> UiItemsRepeaterMetricMap + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::ItemsRepeaterMetricMap, move |state| {
+            serde_json::to_value(read(state)).expect("ItemsRepeater metrics must serialize")
         })
     }
 
@@ -7020,6 +7051,11 @@ const ITEMS_REPEATER_PROPERTIES: &[PropertySpec] = &[
         required: true,
     },
     PropertySpec {
+        name: "item_heights",
+        value_type: UiValueType::ItemsRepeaterMetricMap,
+        required: false,
+    },
+    PropertySpec {
         name: "viewport",
         value_type: UiValueType::VirtualListViewport,
         required: true,
@@ -8448,6 +8484,7 @@ fn validate_items_repeater_component(
     for property in [
         "total_count",
         "item_indices",
+        "item_heights",
         "viewport",
         "overscan_rows",
         "selected",
@@ -8506,6 +8543,25 @@ fn validate_items_repeater_component(
                     "items_repeater child indices must be below total_count".to_owned(),
                 );
             }
+        }
+    }
+    if let Some(metrics) = node
+        .properties
+        .get("item_heights")
+        .and_then(ui_items_repeater_metrics_from_value)
+    {
+        let child_ids = node
+            .children
+            .iter()
+            .map(|child| &child.id)
+            .collect::<BTreeSet<_>>();
+        if metrics.keys().any(|id| !child_ids.contains(id)) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.item_heights"),
+                "items_repeater item_heights may only address stable direct-child IDs".to_owned(),
+            );
         }
     }
     if let (Some(total_count), Some(viewport)) = (
@@ -11629,6 +11685,7 @@ mod tests {
                 "properties": {
                   "total_count": 100000,
                   "item_indices": { "record-a": 0, "record-b": 1 },
+                  "item_heights": { "record-a": 44, "record-b": 68 },
                   "overscan_rows": 4
                 },
                 "property_bindings": {
@@ -11672,6 +11729,10 @@ mod tests {
             "item_indices".to_owned(),
             serde_json::json!({ "record-a": 1, "ghost": 1 }),
         );
+        invalid.root.properties.insert(
+            "item_heights".to_owned(),
+            serde_json::json!({ "record-a": 44, "ghost": 24 }),
+        );
         invalid.root.action_bindings.remove("viewport_change");
         let diagnostics = invalid
             .validate(&UiFeatureSet::new(["virtual-list", "label"]), &bindings)
@@ -11681,9 +11742,54 @@ mod tests {
                 && diagnostic.path == "$.root.properties.item_indices"
         }));
         assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.item_heights"
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.code == UiDiagnosticCode::UnresolvedActionBinding
                 && diagnostic.path == "$.root.action_bindings.viewport_change"
         }));
+    }
+
+    #[cfg(feature = "virtual-list")]
+    #[test]
+    fn items_repeater_manifest_registers_strongly_typed_indices_and_metrics() {
+        #[derive(Default)]
+        struct RepeaterState {
+            indices: UiItemsRepeaterIndexMap,
+            metrics: UiItemsRepeaterMetricMap,
+        }
+
+        let mut manifest = UiBindingManifest::<RepeaterState, ()>::new();
+        manifest
+            .register_items_repeater_indices_property("record_indices", |state| {
+                state.indices.clone()
+            })
+            .unwrap();
+        manifest
+            .register_items_repeater_metrics_property("record_metrics", |state| {
+                state.metrics.clone()
+            })
+            .unwrap();
+
+        assert_eq!(
+            manifest.schema().properties,
+            BTreeMap::from([
+                (
+                    "record_indices".to_owned(),
+                    UiValueType::ItemsRepeaterIndexMap,
+                ),
+                (
+                    "record_metrics".to_owned(),
+                    UiValueType::ItemsRepeaterMetricMap,
+                ),
+            ])
+        );
+        assert!(
+            !UiValueType::ItemsRepeaterMetricMap.matches(&serde_json::json!({
+                "record-a": 0
+            }))
+        );
     }
 
     #[test]

@@ -3022,6 +3022,17 @@ fn document_items_repeater<Msg: Clone + 'static>(
                 "item_indices must map stable direct-child IDs to global indices",
             )
         })?;
+    let item_heights = match property_value(node, properties, "item_heights") {
+        None => crate::ui_document::UiItemsRepeaterMetricMap::new(),
+        Some(value) => crate::ui_document::ui_items_repeater_metrics_from_value(&value)
+            .ok_or_else(|| {
+                invalid_resolved_property(
+                    node,
+                    "item_heights",
+                    "item_heights must map stable direct-child IDs to finite positive DP heights",
+                )
+            })?,
+    };
     let viewport = property_value(node, properties, "viewport")
         .and_then(|value| crate::ui_document::ui_virtual_list_viewport_from_value(&value))
         .filter(|viewport| viewport.fits_total(total_count))
@@ -3043,6 +3054,13 @@ fn document_items_repeater<Msg: Clone + 'static>(
             node,
             "item_indices",
             "item_indices must cover exactly the stable direct-child IDs",
+        ));
+    }
+    if item_heights.keys().any(|id| !child_ids.contains(id)) {
+        return Err(invalid_resolved_property(
+            node,
+            "item_heights",
+            "item_heights may only address stable direct-child IDs",
         ));
     }
     if indices.values().copied().collect::<BTreeSet<_>>().len() != indices.len()
@@ -3100,8 +3118,20 @@ fn document_items_repeater<Msg: Clone + 'static>(
         })
         .collect::<Vec<_>>();
     let runtime_viewport = viewport.into_runtime();
+    let item_metrics = item_heights
+        .iter()
+        .map(|(id, height)| {
+            crate::ZsItemsRepeaterItemMetric::new(
+                *indices
+                    .get(id)
+                    .expect("validated ItemsRepeater metric must have an index"),
+                crate::Dp::new(*height),
+            )
+        })
+        .collect::<Vec<_>>();
     let mut control = crate::items_repeater(total_count, rows, |_, view| view)
         .item_height(runtime_viewport.row_height)
+        .item_metrics(item_metrics)
         .overscan_rows(overscan_rows)
         .scroll_y(runtime_viewport.offset_y)
         .selected_index(selected)
@@ -5674,6 +5704,7 @@ mod tests {
                 "properties": {
                   "total_count": 100,
                   "item_indices": { "record-a": 10, "record-b": 11, "record-c": 12 },
+                  "item_heights": { "record-b": 40 },
                   "overscan_rows": 1,
                   "loading": true
                 },
@@ -5746,6 +5777,10 @@ mod tests {
             Dpi::standard(),
         );
         view.layout(&mut layout);
+        assert_eq!(
+            view.children[1].bounds().map(|bounds| bounds.height),
+            Some(40)
+        );
         let mut events = crate::ViewEventCx::new();
         view.event(&mut events, &crate::ViewEvent::Click { widget: row_id });
         view.event(
@@ -5781,7 +5816,7 @@ mod tests {
                 .expect("viewport payload must retain the typed document shape");
         assert_eq!(viewport.offset_y, 220.0);
         assert_eq!(viewport.visible_start, 11);
-        assert_eq!(viewport.visible_end, 14);
+        assert_eq!(viewport.visible_end, 13);
         assert_eq!(
             viewport.direction,
             crate::ui_document::UiVirtualListScrollDirection::Forward

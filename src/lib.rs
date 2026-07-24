@@ -759,7 +759,10 @@ pub use view::{composer, inspector_panel, message_timeline, workbench, workbench
 #[cfg(feature = "image-preview")]
 pub use view::{image, image_preview};
 #[cfg(feature = "virtual-list")]
-pub use view::{items_repeater, items_repeater_viewport, virtual_list, virtual_list_viewport};
+pub use view::{
+    items_repeater, items_repeater_viewport, items_repeater_viewport_with_metrics, virtual_list,
+    virtual_list_viewport,
+};
 #[cfg(feature = "label")]
 pub use view::{navigation_view, section, ZsNavigationViewSpec};
 #[cfg(feature = "slider")]
@@ -770,8 +773,9 @@ pub use view::{styled_text, text};
 pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 #[cfg(feature = "virtual-list")]
 pub use view::{
-    VirtualListRange, VirtualListScrollDirection, VirtualListViewport, ZsItemsRepeaterRange,
-    ZsItemsRepeaterScrollDirection, ZsItemsRepeaterViewport,
+    VirtualListRange, VirtualListScrollDirection, VirtualListViewport, ZsItemsRepeaterItemMetric,
+    ZsItemsRepeaterRange, ZsItemsRepeaterScrollDirection, ZsItemsRepeaterScrollbarLayout,
+    ZsItemsRepeaterViewport,
 };
 #[cfg(feature = "grid")]
 pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTrack};

@@ -596,8 +596,10 @@ UiDocument 的 `page_padding`、`content_padding` 和 `content_gap` 等语义间
 多行文字高度，避免中英文被压缩、截断或覆盖相邻节点。`settings_card` 声明一个
 非空语义标题和类型化内容子树；同一文档在 Windows 组合为 Fluent 分组卡，在 macOS
 组合为 AppKit 表单分组，在 Linux 组合为 GTK boxed list，应用不选择平台枚举。
-`items_repeater` 则以稳定子节点 ID 到全局索引的完整映射描述当前实例化窗口，选择和
-视口通过强类型绑定回到应用；即使逻辑项目总数很大，文档也不携带完整数据集或平台句柄。
+`items_repeater` 则以稳定子节点 ID 到全局索引的完整映射描述当前实例化窗口，可用稀疏
+`item_heights` 覆盖已知项目的逻辑 DP 高度；选择和视口通过强类型绑定回到应用，滚动条
+采用各目标平台 profile 并把滚轮、轨道点击和滑块拖动统一路由为视口更新。即使逻辑项目
+总数很大，文档也不携带完整数据集或平台句柄。
 `image` 接收有界的不可变预乘像素帧以及 Contain/Cover/Stretch 和插值语义，最终仍由
 Win32、Core Graphics 或 GTK/Cairo 绘制；大型动态 PNG 保持使用应用拥有的后台解码状态。
 现有 Rust `view` builder 继续保留，完整

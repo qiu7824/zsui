@@ -1136,6 +1136,8 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
+    pub native_view_items_repeater_viewport_change_count: usize,
+    pub native_view_items_repeater_scrollbar_drag_count: usize,
     pub native_view_color_picker_value_change_count: usize,
     pub native_view_color_picker_channel_change_count: usize,
     pub native_view_color_picker_expanded_change_count: usize,
@@ -1296,6 +1298,8 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
+            native_view_items_repeater_viewport_change_count: 0,
+            native_view_items_repeater_scrollbar_drag_count: 0,
             native_view_color_picker_value_change_count: 0,
             native_view_color_picker_channel_change_count: 0,
             native_view_color_picker_expanded_change_count: 0,
@@ -1412,6 +1416,8 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
+    #[cfg(feature = "virtual-list")]
+    items_repeater_scrollbar_drag: Option<NativeItemsRepeaterScrollbarDrag>,
     #[cfg(feature = "color-picker")]
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(any(
@@ -1488,6 +1494,13 @@ struct NativeCanvasPointerCapture {
     bounds: Rect,
     button: ZsPointerButton,
     last_point: Point,
+}
+
+#[cfg(feature = "virtual-list")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeItemsRepeaterScrollbarDrag {
+    widget: crate::WidgetId,
+    pointer_offset_in_thumb: i32,
 }
 
 impl NativeViewImeText {
@@ -1594,6 +1607,10 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub slider_value_changed: bool,
     #[cfg(feature = "slider")]
     pub slider_drag_active: bool,
+    #[cfg(feature = "virtual-list")]
+    pub items_repeater_viewport_changed: bool,
+    #[cfg(feature = "virtual-list")]
+    pub items_repeater_scrollbar_drag_active: bool,
     #[cfg(feature = "color-picker")]
     pub color_picker_value: Option<crate::Color>,
     #[cfg(feature = "color-picker")]
@@ -1751,6 +1768,8 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "virtual-list")]
+            items_repeater_scrollbar_drag: None,
             #[cfg(feature = "color-picker")]
             color_picker_drag: None,
             #[cfg(any(
@@ -1846,6 +1865,10 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
+        }
+        #[cfg(feature = "virtual-list")]
+        {
+            self.items_repeater_scrollbar_drag = None;
         }
         #[cfg(feature = "color-picker")]
         {
@@ -2289,6 +2312,10 @@ impl NativeViewInputRuntime {
                 {
                     self.slider_drag = None;
                 }
+                #[cfg(feature = "virtual-list")]
+                {
+                    self.items_repeater_scrollbar_drag = None;
+                }
                 #[cfg(feature = "color-picker")]
                 {
                     self.color_picker_drag = None;
@@ -2606,6 +2633,10 @@ impl NativeViewInputRuntime {
         if self.slider_drag.take().is_some() {
             return report;
         }
+        #[cfg(feature = "virtual-list")]
+        if self.items_repeater_scrollbar_drag.is_some() {
+            return self.dispatch_pointer_up(point);
+        }
         self.dispatch_pointer_up(point)
     }
 
@@ -2741,6 +2772,48 @@ impl NativeViewInputRuntime {
             self.slider_drag = Some(target.widget);
             report.slider_drag_active = true;
             return self.dispatch_slider_pointer(target, point, report);
+        }
+        #[cfg(feature = "virtual-list")]
+        if target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb {
+            self.text_drag = None;
+            self.items_repeater_scrollbar_drag = Some(NativeItemsRepeaterScrollbarDrag {
+                widget: target.widget,
+                pointer_offset_in_thumb: point.y.saturating_sub(target.bounds.y),
+            });
+            report.handled = true;
+            report.items_repeater_scrollbar_drag_active = true;
+            return report;
+        }
+        #[cfg(feature = "virtual-list")]
+        if target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarTrack {
+            let thumb = interaction_plan.as_ref().and_then(|plan| {
+                plan.hit_targets.iter().copied().find(|candidate| {
+                    candidate.widget == target.widget
+                        && candidate.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+                })
+            });
+            if let Some(thumb) = thumb {
+                let drag_range = target
+                    .bounds
+                    .height
+                    .saturating_sub(thumb.bounds.height)
+                    .max(1);
+                let desired_top = point
+                    .y
+                    .saturating_sub(thumb.bounds.height / 2)
+                    .clamp(target.bounds.y, target.bounds.y.saturating_add(drag_range));
+                let ratio = desired_top.saturating_sub(target.bounds.y) as f32 / drag_range as f32;
+                report.handled = true;
+                report.items_repeater_viewport_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ItemsRepeaterScrollToRatio {
+                        widget: target.widget,
+                        ratio,
+                    },
+                    report,
+                );
+            }
+            return report;
         }
         #[cfg(feature = "color-picker")]
         if matches!(
@@ -2994,6 +3067,44 @@ impl NativeViewInputRuntime {
             return report;
         }
         let Some(drag) = self.text_drag else {
+            #[cfg(feature = "virtual-list")]
+            if let Some(drag) = self.items_repeater_scrollbar_drag {
+                let geometry = self.current_interaction_plan().and_then(|plan| {
+                    let track = plan.hit_targets.iter().copied().find(|target| {
+                        target.widget == drag.widget
+                            && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarTrack
+                    })?;
+                    let thumb = plan.hit_targets.iter().copied().find(|target| {
+                        target.widget == drag.widget
+                            && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+                    })?;
+                    Some((track, thumb))
+                });
+                if let Some((track, thumb)) = geometry {
+                    let drag_range = track
+                        .bounds
+                        .height
+                        .saturating_sub(thumb.bounds.height)
+                        .max(1);
+                    let desired_top = point
+                        .y
+                        .saturating_sub(drag.pointer_offset_in_thumb)
+                        .clamp(track.bounds.y, track.bounds.y.saturating_add(drag_range));
+                    let ratio =
+                        desired_top.saturating_sub(track.bounds.y) as f32 / drag_range as f32;
+                    report.handled = true;
+                    report.items_repeater_viewport_changed = true;
+                    report.items_repeater_scrollbar_drag_active = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::ItemsRepeaterScrollToRatio {
+                            widget: drag.widget,
+                            ratio,
+                        },
+                        report,
+                    );
+                }
+                self.items_repeater_scrollbar_drag = None;
+            }
             #[cfg(feature = "color-picker")]
             if let Some((widget, kind)) = self.color_picker_drag {
                 if let Some(target) = self.current_interaction_plan().and_then(|plan| {
@@ -3248,6 +3359,14 @@ impl NativeViewInputRuntime {
                 feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
+            return report;
+        }
+        #[cfg(feature = "virtual-list")]
+        if self.items_repeater_scrollbar_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            self.items_repeater_scrollbar_drag = None;
+            report.handled = true;
+            report.items_repeater_scrollbar_drag_active = false;
             return report;
         }
         #[cfg(feature = "color-picker")]
@@ -3767,6 +3886,8 @@ impl NativeViewInputRuntime {
         let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
+        #[cfg(feature = "virtual-list")]
+        let had_drag = had_drag | self.items_repeater_scrollbar_drag.take().is_some();
         #[cfg(feature = "color-picker")]
         let had_drag = had_drag | self.color_picker_drag.take().is_some();
         let mut report = NativeViewInputDispatchReport {
@@ -3782,6 +3903,8 @@ impl NativeViewInputRuntime {
             canvas_pointer_button: canvas_pointer.map(|capture| capture.button),
             #[cfg(feature = "slider")]
             slider_drag_active: false,
+            #[cfg(feature = "virtual-list")]
+            items_repeater_scrollbar_drag_active: false,
             #[cfg(feature = "color-picker")]
             color_picker_drag_active: false,
             ..NativeViewInputDispatchReport::default()
@@ -8168,6 +8291,13 @@ pub(crate) fn record_native_view_input_reports(
                 usize::from(dispatch.slider_value_changed);
             report.native_view_slider_drag_count += usize::from(dispatch.slider_drag_active);
         }
+        #[cfg(feature = "virtual-list")]
+        {
+            report.native_view_items_repeater_viewport_change_count +=
+                usize::from(dispatch.items_repeater_viewport_changed);
+            report.native_view_items_repeater_scrollbar_drag_count +=
+                usize::from(dispatch.items_repeater_scrollbar_drag_active);
+        }
         #[cfg(feature = "color-picker")]
         {
             report.native_view_color_picker_value_change_count +=
@@ -10776,6 +10906,109 @@ mod tests {
         assert_eq!(left.slider_value, Some(70.0));
         assert_eq!(coarse_right.slider_value, Some(100.0));
         assert_eq!(runtime.widget_slider_state(slider_id), Some((100.0, range)));
+    }
+
+    #[cfg(all(feature = "virtual-list", feature = "label"))]
+    #[test]
+    fn native_view_runtime_drags_items_repeater_scrollbar_with_typed_viewport_updates() {
+        #[derive(Default)]
+        struct State {
+            viewport: Option<crate::ZsItemsRepeaterViewport>,
+        }
+
+        #[derive(Clone)]
+        enum Msg {
+            Viewport(crate::ZsItemsRepeaterViewport),
+        }
+
+        let list_id = crate::WidgetId::new(812);
+        let builder = native_window("Platform ItemsRepeater")
+            .size(320, 180)
+            .stateful_view(
+                State::default(),
+                move |state| {
+                    crate::items_repeater(
+                        40,
+                        (0..40).map(|index| (index, format!("Row {index}"))),
+                        |index, label| {
+                            crate::text(label).id(crate::WidgetId::new(9_000 + index as u64))
+                        },
+                    )
+                    .id(list_id)
+                    .height(crate::Dp::new(160.0))
+                    .item_height(crate::Dp::new(32.0))
+                    .item_metrics([
+                        crate::ZsItemsRepeaterItemMetric::new(1, crate::Dp::new(56.0)),
+                        crate::ZsItemsRepeaterItemMetric::new(3, crate::Dp::new(24.0)),
+                    ])
+                    .scroll_y(
+                        state
+                            .viewport
+                            .map(|viewport| viewport.offset_y)
+                            .unwrap_or(crate::Dp::new(0.0)),
+                    )
+                    .on_viewport_changed(Msg::Viewport)
+                },
+                |state, message, _cx| match message {
+                    Msg::Viewport(viewport) => state.viewport = Some(viewport),
+                },
+            );
+        let interaction = builder
+            .native_view_interaction_plan()
+            .expect("items repeater should expose scrollbar geometry");
+        let track = interaction
+            .hit_targets
+            .iter()
+            .find(|target| {
+                target.widget == list_id
+                    && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarTrack
+            })
+            .copied()
+            .expect("items repeater should expose a scrollbar track");
+        let thumb = interaction
+            .hit_targets
+            .iter()
+            .find(|target| {
+                target.widget == list_id
+                    && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+            })
+            .copied()
+            .expect("items repeater should expose a scrollbar thumb");
+        let press = Point {
+            x: thumb.bounds.x + thumb.bounds.width / 2,
+            y: thumb.bounds.y + thumb.bounds.height / 2,
+        };
+        let end = Point {
+            x: press.x,
+            y: track.bounds.y + track.bounds.height - 1,
+        };
+        let mut runtime = builder.native_view_input_runtime();
+
+        let pressed = runtime.dispatch_pointer_down(press, false);
+        let dragged = runtime.dispatch_pointer_move(end);
+        let released = runtime.dispatch_pointer_up(end);
+
+        assert!(pressed.handled);
+        assert!(pressed.items_repeater_scrollbar_drag_active);
+        assert!(dragged.handled);
+        assert!(dragged.items_repeater_viewport_changed);
+        assert!(dragged.items_repeater_scrollbar_drag_active);
+        assert_eq!(dragged.message_count, 1);
+        assert!(dragged.redraw_plan.is_some());
+        assert!(!released.items_repeater_scrollbar_drag_active);
+        let moved_thumb = runtime
+            .current_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets
+                    .iter()
+                    .find(|target| {
+                        target.widget == list_id
+                            && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+                    })
+                    .copied()
+            })
+            .expect("refreshed items repeater should retain scrollbar geometry");
+        assert!(moved_thumb.bounds.y > thumb.bounds.y);
     }
 
     #[cfg(feature = "number-box")]

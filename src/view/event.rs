@@ -358,6 +358,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         delta_y: Dp,
     },
+    #[cfg(feature = "virtual-list")]
+    ItemsRepeaterScrollToRatio {
+        widget: WidgetId,
+        ratio: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -416,6 +421,10 @@ pub enum ViewHitTargetKind {
     NavigationViewScrim,
     #[cfg(feature = "split-view")]
     SplitViewScrim,
+    #[cfg(feature = "virtual-list")]
+    ItemsRepeaterScrollbarTrack,
+    #[cfg(feature = "virtual-list")]
+    ItemsRepeaterScrollbarThumb,
     #[cfg(feature = "toggle-button")]
     ToggleButton,
     Textbox,

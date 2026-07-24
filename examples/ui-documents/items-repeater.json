@@ -23,7 +23,7 @@
         "component": "text",
         "layout": { "width": 820 },
         "properties": {
-          "text": "ItemsRepeater 只实例化当前窗口需要的行；稳定节点 ID 映射到全局索引，选择和视口仍由应用显式持有。 / ItemsRepeater materializes only the required window while stable node IDs map to application-owned global indices.",
+          "text": "ItemsRepeater 只实例化当前窗口需要的行；稳定节点 ID 映射到全局索引，可变行高、选择和视口仍由应用显式持有。 / ItemsRepeater materializes only the required window while stable node IDs map to application-owned indices, variable heights and controlled viewport state.",
           "wrap": "word"
         }
       },
@@ -44,6 +44,11 @@
             "record-00007": 7,
             "record-00008": 8,
             "record-00009": 9
+          },
+          "item_heights": {
+            "record-00001": 72,
+            "record-00004": 64,
+            "record-00006": 60
           },
           "overscan_rows": 2,
           "placeholders": true

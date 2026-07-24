@@ -373,6 +373,15 @@ impl WindowsWin32ViewInputRoute {
         {
             self.shared_slider_drag_active = shared.slider_drag_active;
         }
+        #[cfg(feature = "virtual-list")]
+        let items_repeater_scrollbar_drag_ended = self
+            .shared_items_repeater_scrollbar_drag_active
+            && !shared.items_repeater_scrollbar_drag_active;
+        #[cfg(feature = "virtual-list")]
+        {
+            self.shared_items_repeater_scrollbar_drag_active =
+                shared.items_repeater_scrollbar_drag_active;
+        }
         #[cfg(feature = "color-picker")]
         let color_picker_drag_ended =
             self.shared_color_picker_drag_active && !shared.color_picker_drag_active;
@@ -559,6 +568,15 @@ impl WindowsWin32ViewInputRoute {
             );
             report.slider_drag_count = usize::from(slider_drag_ended);
             report.slider_drag_active = shared.slider_drag_active;
+        }
+        #[cfg(feature = "virtual-list")]
+        {
+            report.items_repeater_viewport_change_count =
+                usize::from(shared.items_repeater_viewport_changed);
+            report.items_repeater_scrollbar_drag_count =
+                usize::from(items_repeater_scrollbar_drag_ended);
+            report.items_repeater_scrollbar_drag_active =
+                shared.items_repeater_scrollbar_drag_active;
         }
         #[cfg(feature = "color-picker")]
         {

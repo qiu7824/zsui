@@ -8,6 +8,8 @@ pub struct WindowsWin32ViewInputRoute {
     shared_canvas_pointer_drag_moved: bool,
     #[cfg(feature = "slider")]
     shared_slider_drag_active: bool,
+    #[cfg(feature = "virtual-list")]
+    shared_items_repeater_scrollbar_drag_active: bool,
     #[cfg(feature = "color-picker")]
     shared_color_picker_drag_active: bool,
     pending_utf16_high_surrogate: Option<u16>,
@@ -102,6 +104,8 @@ impl WindowsWin32ViewInputRoute {
             shared_canvas_pointer_drag_moved: false,
             #[cfg(feature = "slider")]
             shared_slider_drag_active: false,
+            #[cfg(feature = "virtual-list")]
+            shared_items_repeater_scrollbar_drag_active: false,
             #[cfg(feature = "color-picker")]
             shared_color_picker_drag_active: false,
             pending_utf16_high_surrogate: None,
@@ -195,6 +199,9 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_keyboard_change_count: usize,
     pub slider_drag_count: usize,
     pub slider_drag_active: bool,
+    pub items_repeater_viewport_change_count: usize,
+    pub items_repeater_scrollbar_drag_count: usize,
+    pub items_repeater_scrollbar_drag_active: bool,
     pub color_picker_value_change_count: usize,
     pub color_picker_channel_change_count: usize,
     pub color_picker_expanded_change_count: usize,
@@ -317,6 +324,9 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_keyboard_change_count += next.slider_keyboard_change_count;
         self.slider_drag_count += next.slider_drag_count;
         self.slider_drag_active = next.slider_drag_active;
+        self.items_repeater_viewport_change_count += next.items_repeater_viewport_change_count;
+        self.items_repeater_scrollbar_drag_count += next.items_repeater_scrollbar_drag_count;
+        self.items_repeater_scrollbar_drag_active = next.items_repeater_scrollbar_drag_active;
         self.color_picker_value_change_count += next.color_picker_value_change_count;
         self.color_picker_channel_change_count += next.color_picker_channel_change_count;
         self.color_picker_expanded_change_count += next.color_picker_expanded_change_count;

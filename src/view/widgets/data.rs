@@ -806,6 +806,7 @@ pub fn virtual_list<T, Msg>(
     ViewNode::<Msg>::new(ViewNodeKind::VirtualList {
         total_count,
         row_height: Dp::new(40.0),
+        item_metrics: Vec::new(),
         overscan_rows: 4,
         row_indices,
         selected_index: None,

@@ -1568,6 +1568,76 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "virtual-list")]
+    fn window_view_input_route_drags_items_repeater_scrollbar() {
+        fn viewport_changed(_: crate::ZsItemsRepeaterViewport) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.items_repeater_viewport"))
+        }
+
+        let widget = crate::WidgetId::new(35);
+        let mut view = crate::items_repeater(
+            20,
+            (0..20).map(|index| (index, ())),
+            |index, _| crate::spacer().id(crate::WidgetId::new(3_500 + index as u64)),
+        )
+        .id(widget)
+        .item_height(crate::Dp::new(32.0))
+        .item_metric(crate::ZsItemsRepeaterItemMetric::new(
+            1,
+            crate::Dp::new(56.0),
+        ))
+        .on_items_repeater_viewport_changed(viewport_changed);
+        view.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 120,
+            },
+            crate::Dpi::standard(),
+        ));
+        let interaction = view.interaction_plan();
+        let track = interaction
+            .hit_targets
+            .iter()
+            .find(|target| {
+                target.widget == widget
+                    && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarTrack
+            })
+            .copied()
+            .unwrap();
+        let thumb = interaction
+            .hit_targets
+            .iter()
+            .find(|target| {
+                target.widget == widget
+                    && target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb
+            })
+            .copied()
+            .unwrap();
+        let start = crate::Point {
+            x: thumb.bounds.x + thumb.bounds.width / 2,
+            y: thumb.bounds.y + thumb.bounds.height / 2,
+        };
+        let end = crate::Point {
+            x: start.x,
+            y: track.bounds.y + track.bounds.height - 1,
+        };
+        let mut route = WindowsWin32ViewInputRoute::new(interaction, view);
+
+        let pressed = route.dispatch_pointer_down(start, false);
+        let dragged = route.dispatch_pointer_move(end);
+        let released = route.dispatch_pointer_up(end);
+
+        assert!(pressed.items_repeater_scrollbar_drag_active);
+        assert_eq!(dragged.items_repeater_viewport_change_count, 1);
+        assert!(dragged.items_repeater_scrollbar_drag_active);
+        assert_eq!(released.items_repeater_scrollbar_drag_count, 1);
+        assert!(!released.items_repeater_scrollbar_drag_active);
+        assert_eq!(route.pending_ui_command_count(), 2);
+    }
+
+    #[test]
     #[cfg(feature = "color-picker")]
     fn window_view_input_route_drags_and_keys_color_picker_channels() {
         fn color_changed(_: crate::Color) -> UiCommand {

@@ -300,6 +300,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p target/native-proof/macos-15-arm64/ui-viewer-scroll
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-items-repeater
           ./target/release/zsui-viewer \
               examples/ui-documents/scrolling.json \
               --bindings examples/ui-documents/scrolling.bindings.json \
@@ -309,6 +310,15 @@ jobs:
               --smoke target/native-proof/macos-15-arm64/ui-viewer-scroll \
               --smoke-scroll 360 260 96 \
             2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-scroll/viewer.log
+          ./target/release/zsui-viewer \
+              examples/ui-documents/items-repeater.json \
+              --bindings examples/ui-documents/items-repeater.bindings.json \
+              --values examples/ui-documents/items-repeater.values.json \
+              --width 960 \
+              --height 640 \
+              --smoke target/native-proof/macos-15-arm64/ui-viewer-items-repeater \
+              --smoke-items-repeater-drag records \
+            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-items-repeater/viewer.log
 
       - name: Summarize AppKit Viewer proof failure
         if: failure() && steps.appkit-viewer.outcome == 'failure'
@@ -532,6 +542,24 @@ jobs:
           assert runtime["process_memory_during_runtime"]["resident_bytes"] > 0
           assert "appkit_proof_input:scroll:handled" in runtime["events"]
 
+          repeater_root = root / "ui-viewer-items-repeater"
+          repeater_png = repeater_root / "window.png"
+          if repeater_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+              raise SystemExit(f"{repeater_png} is not a PNG")
+          repeater = json.loads(
+              (repeater_root / "proof.json").read_text(encoding="utf-8")
+          )
+          assert repeater["platform"] == "macos"
+          assert repeater["capture_backend"] == "appkit_nsview_bitmap_cache"
+          assert repeater["source"]["document_path"] == "examples/ui-documents/items-repeater.json"
+          assert repeater["source"]["node_count"] == 34
+          runtime = repeater["runtime"]
+          assert runtime["native_view_items_repeater_viewport_change_count"] >= 1
+          assert runtime["native_view_items_repeater_scrollbar_drag_count"] == 1
+          assert runtime["native_view_pointer_down_count"] == 1
+          assert runtime["native_view_pointer_move_count"] == 1
+          assert runtime["native_view_pointer_up_count"] == 1
+
           status = json.loads(
               Path("target/native-proof/macos-status-item/status-item-run.json")
               .read_text(encoding="utf-8")
@@ -719,6 +747,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater
           dbus-run-session -- xvfb-run -a \
             ./target/release/zsui-viewer \
               examples/ui-documents/scrolling.json \
@@ -729,6 +758,16 @@ jobs:
               --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll \
               --smoke-scroll 360 260 96 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll/viewer.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/zsui-viewer \
+              examples/ui-documents/items-repeater.json \
+              --bindings examples/ui-documents/items-repeater.bindings.json \
+              --values examples/ui-documents/items-repeater.values.json \
+              --width 960 \
+              --height 640 \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater \
+              --smoke-items-repeater-drag records \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater/viewer.log
 
       - name: Summarize Linux Viewer proof failure
         if: failure() && steps.linux-viewer.outcome == 'failure'
@@ -945,6 +984,24 @@ jobs:
           assert runtime["process_memory_during_runtime"]["source"] == "linux_procfs_status_smaps_rollup"
           assert runtime["process_memory_during_runtime"]["resident_bytes"] > 0
           assert "linux_direct_proof_input:scroll:handled" in runtime["events"]
+
+          repeater_root = root / "ui-viewer-items-repeater"
+          repeater_png = repeater_root / "window.png"
+          if repeater_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+              raise SystemExit(f"{repeater_png} is not a PNG")
+          repeater = json.loads(
+              (repeater_root / "proof.json").read_text(encoding="utf-8")
+          )
+          assert repeater["platform"] == "linux"
+          assert repeater["capture_backend"] == "winit_softbuffer_pango_cairo"
+          assert repeater["source"]["document_path"] == "examples/ui-documents/items-repeater.json"
+          assert repeater["source"]["node_count"] == 34
+          runtime = repeater["runtime"]
+          assert runtime["native_view_items_repeater_viewport_change_count"] >= 1
+          assert runtime["native_view_items_repeater_scrollbar_drag_count"] == 1
+          assert runtime["native_view_pointer_down_count"] == 1
+          assert runtime["native_view_pointer_move_count"] == 1
+          assert runtime["native_view_pointer_up_count"] == 1
 
           lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
           lite_png = lite_root / "notepad-interaction.png"

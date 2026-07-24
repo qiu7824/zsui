@@ -876,13 +876,15 @@ history remain authoritative for implementation status.
   VirtualList. `total_count` describes the application-owned global space;
   `item_indices` must cover every stable direct-child ID exactly once and map
   it to a unique in-range global index. Direct children are only the current
-  materialized window. A typed `virtual_list_viewport` property/action pair
-  carries offset, row height, visible/materialized ranges and direction, while
+  materialized window. Optional `item_heights` is a sparse map from stable
+  direct-child IDs to finite positive logical-DP heights; omitted rows use the
+  viewport row height as an estimate. A typed `virtual_list_viewport`
+  property/action pair carries offset, estimated row height,
+  visible/materialized ranges and direction, while
   nullable global selection uses its own property/action pair. Paging, product
   data, platform handles and a runtime template language remain outside the
-  document. Windows Viewer proof at 960x640 routed one real row click and one
-  real scroll into two typed messages with zero unhandled inputs; the observed
-  pre-teardown process sample was 16,347,136 bytes RSS and 5,013,504 private.
+  document. The shared runtime uses target profile scrollbar metrics and maps
+  wheel, track and thumb-drag input back to controlled viewport state.
 - UiDocument `image` consumes a nullable immutable `ZsImageFrame`, revalidates
   exact `width * height * 4` storage and caps one document frame at 32 MiB.
   Contain/Cover/Stretch and nearest/smooth remain platform-neutral; target

@@ -586,9 +586,15 @@ stable context without reading prose:
   `NativeWindowBuilder::workbench(...)`: reusable navigation, message timeline,
   composer and inspector contracts with target-owned geometry, DPI-aware layout
   and hit regions.
-- `items_repeater(...)`, `image(...)` and `settings_card(...)`: named public
-  Rust constructors shared by ordinary View code and the UiDocument compiler;
-  the older `virtual_list`, `image_preview` and `section` entry points remain.
+- `items_repeater(...)`, `ZsItemsRepeaterItemMetric`, `item_metric(s)` and
+  `items_repeater_viewport_with_metrics(...)`: bounded variable-height
+  collection construction and viewport math shared by ordinary View code and
+  the UiDocument compiler. Target profiles own scrollbar geometry; typed
+  wheel, track and thumb-drag paths return controlled viewport state. The
+  older `virtual_list` entry point remains.
+- `image(...)` and `settings_card(...)`: named public Rust constructors shared
+  by ordinary View code and the UiDocument compiler; the older
+  `image_preview` and `section` entry points remain.
 - `ZsDocumentShellSpec` and `ZsDocumentShellLayout`: reusable document tab,
   command bar, native-editor inset, status surface, semantic draw plan and
   command hit regions.

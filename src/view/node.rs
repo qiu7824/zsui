@@ -553,6 +553,44 @@ pub struct VirtualListViewport {
     pub direction: VirtualListScrollDirection,
 }
 
+/// One known variable-height item in an [`items_repeater`](crate::items_repeater).
+///
+/// Items not present in the metric set use the repeater's estimated
+/// `item_height`. Keeping the global index in the metric makes sparse,
+/// application-owned materialization deterministic without retaining the full
+/// collection in the View tree.
+#[cfg(feature = "virtual-list")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsItemsRepeaterItemMetric {
+    pub index: usize,
+    pub height: Dp,
+}
+
+#[cfg(feature = "virtual-list")]
+impl ZsItemsRepeaterItemMetric {
+    pub fn new(index: usize, height: Dp) -> Self {
+        let height = if height.0.is_finite() {
+            height.0.max(1.0)
+        } else {
+            1.0
+        };
+        Self {
+            index,
+            height: Dp::new(height),
+        }
+    }
+}
+
+/// Deterministic scrollbar geometry for a retained ItemsRepeater.
+#[cfg(feature = "virtual-list")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZsItemsRepeaterScrollbarLayout {
+    pub track: Rect,
+    pub thumb: Rect,
+    pub thumb_hit: Rect,
+    pub maximum_offset: Dp,
+}
+
 /// Public ItemsRepeater name for a half-open global item range.
 #[cfg(feature = "virtual-list")]
 pub type ZsItemsRepeaterRange = VirtualListRange;
@@ -1091,6 +1129,7 @@ pub enum ViewNodeKind<Msg> {
     VirtualList {
         total_count: usize,
         row_height: Dp,
+        item_metrics: Vec<ZsItemsRepeaterItemMetric>,
         overscan_rows: usize,
         row_indices: Vec<usize>,
         selected_index: Option<usize>,
@@ -1164,7 +1203,8 @@ pub struct ViewNode<Msg> {
             feature = "split-view",
             feature = "button",
             feature = "icon",
-            feature = "label"
+            feature = "label",
+            feature = "virtual-list"
         )
     ))]
     platform_style_override: Option<crate::ZsBaseControlPlatformStyle>,
@@ -1352,7 +1392,8 @@ impl<Msg> ViewNode<Msg> {
             feature = "split-view",
             feature = "button",
             feature = "icon",
-            feature = "label"
+            feature = "label",
+            feature = "virtual-list"
         )
     ))]
     pub(crate) fn with_platform_style_override(
@@ -1368,7 +1409,8 @@ impl<Msg> ViewNode<Msg> {
         feature = "split-view",
         feature = "button",
         feature = "icon",
-        feature = "label"
+        feature = "label",
+        feature = "virtual-list"
     ))]
     pub(crate) fn resolved_platform_style(&self) -> crate::ZsBaseControlPlatformStyle {
         #[cfg(test)]
@@ -3040,6 +3082,63 @@ impl<Msg: Clone> ViewNode<Msg> {
         } = &mut self.kind
         {
             *on_viewport_changed = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    /// Adds or replaces one sparse variable-height metric by stable global
+    /// item index. Unspecified items continue to use `item_height` as their
+    /// estimate.
+    #[cfg(feature = "virtual-list")]
+    pub fn item_metric(mut self, metric: ZsItemsRepeaterItemMetric) -> Self {
+        if let ViewNodeKind::VirtualList {
+            total_count,
+            item_metrics,
+            ..
+        } = &mut self.kind
+        {
+            if metric.index < *total_count {
+                let metric = ZsItemsRepeaterItemMetric::new(metric.index, metric.height);
+                match item_metrics.binary_search_by_key(&metric.index, |candidate| candidate.index) {
+                    Ok(position) => item_metrics[position] = metric,
+                    Err(position) => item_metrics.insert(position, metric),
+                }
+            }
+        }
+        self
+    }
+
+    /// Replaces the sparse variable-height metric set. Invalid or out-of-range
+    /// entries are discarded and duplicate global indices use the last value.
+    #[cfg(feature = "virtual-list")]
+    pub fn item_metrics(
+        mut self,
+        metrics: impl IntoIterator<Item = ZsItemsRepeaterItemMetric>,
+    ) -> Self {
+        if let ViewNodeKind::VirtualList {
+            total_count,
+            item_metrics,
+            ..
+        } = &mut self.kind
+        {
+            let mut next = metrics
+                .into_iter()
+                .filter(|metric| metric.index < *total_count)
+                .map(|metric| ZsItemsRepeaterItemMetric::new(metric.index, metric.height))
+                .collect::<Vec<_>>();
+            next.sort_by_key(|metric| metric.index);
+            let mut normalized = Vec::with_capacity(next.len());
+            for metric in next {
+                if normalized
+                    .last()
+                    .is_some_and(|current: &ZsItemsRepeaterItemMetric| current.index == metric.index)
+                {
+                    *normalized.last_mut().expect("metric entry must exist") = metric;
+                } else {
+                    normalized.push(metric);
+                }
+            }
+            *item_metrics = normalized;
         }
         self
     }

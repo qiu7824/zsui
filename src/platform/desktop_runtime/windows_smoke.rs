@@ -91,6 +91,10 @@ fn record_windows_win32_view_input_report(
     report.native_view_slider_value_change_count += input.slider_value_change_count;
     report.native_view_slider_keyboard_change_count += input.slider_keyboard_change_count;
     report.native_view_slider_drag_count += input.slider_drag_count;
+    report.native_view_items_repeater_viewport_change_count +=
+        input.items_repeater_viewport_change_count;
+    report.native_view_items_repeater_scrollbar_drag_count +=
+        input.items_repeater_scrollbar_drag_count;
     report.native_view_color_picker_value_change_count += input.color_picker_value_change_count;
     report.native_view_color_picker_channel_change_count += input.color_picker_channel_change_count;
     report.native_view_color_picker_expanded_change_count +=
