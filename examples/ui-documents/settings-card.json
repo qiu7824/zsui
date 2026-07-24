@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "settings-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "settings-title",
+        "component": "text",
+        "properties": {
+          "text": "设置分组 / Settings groups",
+          "text_role": "title",
+          "weight": "semibold"
+        }
+      },
+      {
+        "id": "settings-description",
+        "component": "text",
+        "layout": { "width": 820 },
+        "properties": {
+          "text": "同一份语义文档由 Windows、macOS 和 Linux 分别组合成 Fluent 卡片、AppKit 表单分组和 GTK boxed list。 / One semantic document becomes a Fluent card, AppKit form section, or GTK boxed list through the target profile.",
+          "wrap": "word"
+        }
+      },
+      {
+        "id": "appearance-card",
+        "component": "settings_card",
+        "layout": { "width": 820 },
+        "property_bindings": {
+          "title": "appearance_section_title"
+        },
+        "children": [
+          {
+            "id": "appearance-row",
+            "component": "stack",
+            "layout": {
+              "direction": "horizontal",
+              "gap_token": "content_gap"
+            },
+            "children": [
+              {
+                "id": "appearance-copy",
+                "component": "text",
+                "layout": { "flex": 1 },
+                "properties": {
+                  "text": "跟随系统主题，并保留平台原生字体、密度与焦点样式。 / Follow the system theme while retaining native typography, density, and focus treatment.",
+                  "wrap": "word"
+                }
+              },
+              {
+                "id": "apply-appearance",
+                "component": "button",
+                "properties": {
+                  "label": "应用 / Apply"
+                },
+                "action_bindings": {
+                  "click": "apply_settings"
+                }
+              }
+            ]
+          },
+          {
+            "id": "appearance-note",
+            "component": "text",
+            "properties": {
+              "text": "应用代码不选择平台枚举。 / Application code does not select a platform enum.",
+              "text_role": "caption",
+              "wrap": "word"
+            }
+          }
+        ]
+      },
+      {
+        "id": "privacy-card",
+        "component": "settings_card",
+        "layout": { "width": 820 },
+        "properties": {
+          "title": "隐私 / Privacy"
+        },
+        "children": [
+          {
+            "id": "privacy-summary",
+            "component": "text",
+            "properties": {
+              "text": "设置内容、状态和消息仍由应用显式持有；Viewer 只负责开发期重载。 / Settings content, state, and messages remain explicitly application-owned; Viewer only reloads during development.",
+              "wrap": "word"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

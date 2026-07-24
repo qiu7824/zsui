@@ -862,6 +862,13 @@ history remain authoritative for implementation status.
 - UiDocument page/content spacing uses `UiSpacingToken` rather than copied
   Windows constants. Text documents expose semantic role, wrap, ellipsis,
   weight and alignment; enum bindings are validated after value resolution.
+- UiDocument `settings_card` is the document form of the framework's semantic
+  `section`: it requires a non-empty string title and at least one typed child,
+  permits bound or localized titles, and compiles without a platform selector.
+  Windows owns Fluent raised-card composition, AppKit owns an unboxed form
+  section, and GTK owns a padded boxed list with separators. Child actions stay
+  node-local and typed; the document does not serialize target colors or
+  spacing values.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

@@ -115,7 +115,8 @@ pub(crate) fn section_for_style<Msg>(
                 + spacing.lg.0 * 2.0
                 + child_content_height
                 + spacing.content_gap.0 * child_count.saturating_sub(1) as f32,
-        )),
+        ))
+        .flex(0.0),
         PlatformSectionComposition::AppKitForm => {
             column([heading, column(children).gap(spacing.md)])
                 .gap(spacing.md)
@@ -125,6 +126,7 @@ pub(crate) fn section_for_style<Msg>(
                         + child_content_height
                         + spacing.md.0 * child_count.saturating_sub(1) as f32,
                 ))
+                .flex(0.0)
         }
         PlatformSectionComposition::GtkBoxedList => {
             // GNOME's boxed-list pattern uses padded rows separated by thin
@@ -172,6 +174,7 @@ pub(crate) fn section_for_style<Msg>(
                     + row_padding.0 * 2.0 * child_count as f32
                     + child_count.saturating_sub(1) as f32,
             ))
+            .flex(0.0)
         }
     }
 }
@@ -816,13 +819,16 @@ mod data_tests {
 
     #[test]
     fn section_intrinsic_height_prevents_non_flex_content_from_collapsing() {
-        let height = |platform| {
+        let section = |platform| {
             section_for_style::<()>(
                 platform,
                 "Breadcrumb",
                 [spacer().height(Dp::new(32.0))],
             )
-            .style
+        };
+        let height = |platform| {
+            section(platform)
+                .style
             .min_height
             .expect("section must expose its intrinsic minimum height")
         };
@@ -839,6 +845,13 @@ mod data_tests {
             height(crate::ZsBaseControlPlatformStyle::Gtk),
             Dp::new(84.0)
         );
+        for platform in [
+            crate::ZsBaseControlPlatformStyle::Windows,
+            crate::ZsBaseControlPlatformStyle::Macos,
+            crate::ZsBaseControlPlatformStyle::Gtk,
+        ] {
+            assert_eq!(section(platform).style.flex, 0.0);
+        }
     }
 
     #[test]

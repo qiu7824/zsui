@@ -435,6 +435,8 @@ fn compile_node<Msg: Clone + 'static>(
             UiAxis::Vertical => column(children),
         },
         "border" => column(children).flex(0.0),
+        #[cfg(feature = "shell")]
+        "settings_card" => document_settings_card(node, properties, children)?,
         #[cfg(feature = "badge")]
         "badge" => document_badge(node, properties)?,
         #[cfg(feature = "split-view")]
@@ -3366,7 +3368,8 @@ fn grid_gap_property(
     feature = "grid-view",
     feature = "table",
     feature = "tooltip",
-    feature = "teaching-tip"
+    feature = "teaching-tip",
+    feature = "shell"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -3378,6 +3381,23 @@ fn invalid_resolved_property(
         property: property.into(),
         reason: reason.into(),
     }
+}
+
+#[cfg(feature = "shell")]
+fn document_settings_card<Msg>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let title = string_property(node, properties, "title", "");
+    if title.trim().is_empty() {
+        return Err(invalid_resolved_property(
+            node,
+            "title",
+            "settings_card title must not be empty",
+        ));
+    }
+    Ok(crate::section(title, children))
 }
 
 fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
@@ -3450,7 +3470,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "progress-ring",
     feature = "scroll",
     feature = "tooltip",
-    feature = "teaching-tip"
+    feature = "teaching-tip",
+    feature = "shell"
 ))]
 fn property_value(
     node: &UiNode,
@@ -4017,7 +4038,8 @@ fn optional_table_sort_property(
     feature = "toggle-button",
     feature = "checkbox",
     feature = "textbox",
-    feature = "radio"
+    feature = "radio",
+    feature = "shell"
 ))]
 fn string_property(
     node: &UiNode,
@@ -4615,6 +4637,91 @@ mod tests {
         all(feature = "label", feature = "button")
     ))]
     use crate::View;
+
+    #[cfg(feature = "shell")]
+    #[test]
+    fn compiles_settings_card_with_bound_title_and_routes_child_actions() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "appearance-card",
+                "component": "settings_card",
+                "property_bindings": { "title": "appearance_title" },
+                "children": [
+                  {
+                    "id": "apply-appearance",
+                    "component": "button",
+                    "properties": { "label": "Apply" },
+                    "action_bindings": { "click": "apply_appearance" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "appearance_title".to_owned(),
+                crate::ui_document::UiValueType::String,
+            )]),
+            actions: BTreeMap::from([(
+                "apply_appearance".to_owned(),
+                crate::ui_document::UiValueType::Null,
+            )]),
+        };
+        let mut view = ui_document_view(
+            &document,
+            &bindings,
+            &BTreeMap::from([(
+                "appearance_title".to_owned(),
+                Value::String("Appearance".to_owned()),
+            )]),
+            Msg::Action,
+        )
+        .unwrap();
+        assert_eq!(view.id, Some(document.root.id.widget_id()));
+        assert!(matches!(
+            view.kind,
+            crate::ViewNodeKind::Stack {
+                direction: crate::ViewStackDirection::Column
+            }
+        ));
+        assert_eq!(view.children.len(), 2);
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::Click {
+                widget: crate::ui_document::UiNodeId::new("apply-appearance")
+                    .unwrap()
+                    .widget_id(),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::Action(UiDocumentAction {
+                node_id: "apply-appearance".to_owned(),
+                binding: "apply_appearance".to_owned(),
+                property_binding: None,
+                payload: Value::Null,
+            })]
+        );
+
+        assert!(matches!(
+            ui_document_view(
+                &document,
+                &bindings,
+                &BTreeMap::from([(
+                    "appearance_title".to_owned(),
+                    Value::String("   ".to_owned()),
+                )]),
+                Msg::Action,
+            ),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "title"
+        ));
+    }
     #[cfg(any(
         feature = "grid",
         feature = "canvas",

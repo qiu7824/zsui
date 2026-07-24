@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "appearance_section_title": "string"
+  },
+  "actions": {
+    "apply_settings": "null"
+  }
+}

@@ -4980,6 +4980,21 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "settings_card"
+            && node
+                .properties
+                .get("title")
+                .and_then(Value::as_str)
+                .is_some_and(|title| title.trim().is_empty())
+        {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.title"),
+                "settings_card title must not be empty".to_owned(),
+            );
+        }
+
         if node.component == "password_box" {
             if node.properties.contains_key("value") || node.localization.contains_key("value") {
                 push_diagnostic(
@@ -6418,6 +6433,11 @@ const TEXT_PROPERTIES: &[PropertySpec] = &[
         required: false,
     },
 ];
+const SETTINGS_CARD_PROPERTIES: &[PropertySpec] = &[PropertySpec {
+    name: "title",
+    value_type: UiValueType::String,
+    required: true,
+}];
 const BUTTON_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "label",
@@ -7403,6 +7423,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             properties: NO_PROPERTIES,
             actions: NO_ACTIONS,
             children: ChildPolicy::AtMost(1),
+        }),
+        "settings_card" => Some(ComponentSchema {
+            properties: SETTINGS_CARD_PROPERTIES,
+            actions: NO_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
         }),
         "scroll" => Some(ComponentSchema {
             properties: SCROLL_PROPERTIES,
@@ -10342,6 +10367,56 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::UnknownComponent));
+    }
+
+    #[test]
+    fn settings_card_requires_a_nonempty_title_and_content() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "appearance-card",
+                "component": "settings_card",
+                "property_bindings": { "title": "appearance_title" },
+                "children": [
+                  {
+                    "id": "appearance-value",
+                    "component": "text",
+                    "properties": { "text": "Use system theme" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([("appearance_title".to_owned(), UiValueType::String)]),
+            actions: BTreeMap::new(),
+        };
+        assert!(document
+            .validate(&UiFeatureSet::new(["shell", "label"]), &bindings)
+            .is_valid());
+
+        let mut invalid = document.clone();
+        invalid.root.property_bindings.clear();
+        invalid
+            .root
+            .properties
+            .insert("title".to_owned(), Value::String("  ".to_owned()));
+        invalid.root.children.clear();
+        let diagnostics = invalid
+            .validate(
+                &UiFeatureSet::new(["shell", "label"]),
+                &UiBindingSchema::default(),
+            )
+            .diagnostics;
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.title"
+        }));
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidChildCount));
     }
 
     #[test]
