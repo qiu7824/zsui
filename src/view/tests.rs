@@ -522,29 +522,36 @@ mod tests {
             assert_eq!(dot_paint.plan().icon_count(), 0);
         }
 
-        let mut icon_badge = column([
-            badge::<()>(crate::ZsBadgeContent::icon(crate::ZsIcon::Success))
-                .badge_tone(crate::ZsBadgeTone::Success),
-        ]);
-        icon_badge.layout(&mut ViewLayoutCx::new(
-            Rect {
-                x: 0,
-                y: 0,
-                width: 40,
-                height: 40,
-            },
-            Dpi::standard(),
-        ));
-        let mut icon_paint = ViewPaintCx::new(Dpi::standard());
-        icon_badge.paint(&mut icon_paint);
-        assert!(icon_paint.plan().commands.iter().any(|command| matches!(
-            command,
-            NativeDrawCommand::Icon(command)
-                if command.icon == crate::ZsIcon::Success
-                    && command.bounds.width == 10
-                    && command.bounds.height == 10
-                    && command.color == ColorRole::AccentText
-        )));
+        for (platform, expected_icon_size) in [
+            (crate::ZsBaseControlPlatformStyle::Windows, 10),
+            (crate::ZsBaseControlPlatformStyle::Macos, 10),
+            (crate::ZsBaseControlPlatformStyle::Gtk, 12),
+        ] {
+            let mut icon_badge = column([
+                badge::<()>(crate::ZsBadgeContent::icon(crate::ZsIcon::Success))
+                    .badge_tone(crate::ZsBadgeTone::Success)
+                    .with_platform_style_override(platform),
+            ]);
+            icon_badge.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 40,
+                    height: 40,
+                },
+                Dpi::standard(),
+            ));
+            let mut icon_paint = ViewPaintCx::new(Dpi::standard());
+            icon_badge.paint(&mut icon_paint);
+            assert!(icon_paint.plan().commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::Icon(command)
+                    if command.icon == crate::ZsIcon::Success
+                        && command.bounds.width == expected_icon_size
+                        && command.bounds.height == expected_icon_size
+                        && command.color == ColorRole::AccentText
+            )));
+        }
     }
 
     #[test]
