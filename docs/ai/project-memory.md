@@ -880,6 +880,16 @@ history remain authoritative for implementation status.
   document. Windows Viewer proof at 960x640 routed one real row click and one
   real scroll into two typed messages with zero unhandled inputs; the observed
   pre-teardown process sample was 16,347,136 bytes RSS and 5,013,504 private.
+- UiDocument `image` consumes a nullable immutable `ZsImageFrame`, revalidates
+  exact `width * height * 4` storage and caps one document frame at 32 MiB.
+  Contain/Cover/Stretch and nearest/smooth remain platform-neutral; target
+  renderers consume the same premultiplied frame. Empty frames retain the
+  semantic placeholder and loading may retain the last complete frame. Large
+  or frequently changing PNGs remain application-owned `ZsImagePreviewState`
+  snapshots through the Rust builder so document reload does not repeatedly
+  serialize live raster data. Windows Viewer proof at 960x640 retained three
+  target-rendered fit modes with no source error and measured 16,125,952 bytes
+  RSS plus 5,283,840 private before teardown.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

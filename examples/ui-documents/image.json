@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "image-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "image-title",
+        "component": "text",
+        "properties": {
+          "text": "图像缩放 / Image fitting",
+          "text_role": "title",
+          "weight": "semibold"
+        }
+      },
+      {
+        "id": "image-description",
+        "component": "text",
+        "layout": {
+          "width": 820
+        },
+        "properties": {
+          "text": "同一不可变预乘像素帧由三平台最终光栅后端绘制；文档只声明内容、缩放和插值语义。 / One immutable premultiplied frame is painted by each target raster backend; the document declares only content, fit and interpolation.",
+          "wrap": "word"
+        }
+      },
+      {
+        "id": "image-modes",
+        "component": "stack",
+        "layout": {
+          "direction": "horizontal",
+          "gap": 12
+        },
+        "children": [
+          {
+            "id": "contain-column",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "gap": 8
+            },
+            "children": [
+              {
+                "id": "contain-preview",
+                "component": "image",
+                "layout": {
+                  "width": 264,
+                  "height": 300,
+                  "padding": 12
+                },
+                "properties": {
+                  "fit": "contain",
+                  "interpolation": "nearest"
+                },
+                "property_bindings": {
+                  "frame": "preview_frame"
+                },
+                "accessibility": {
+                  "role": "image",
+                  "label": "Contain image preview"
+                }
+              },
+              {
+                "id": "contain-label",
+                "component": "text",
+                "properties": {
+                  "text": "完整显示 / Contain",
+                  "horizontal_align": "center"
+                }
+              }
+            ]
+          },
+          {
+            "id": "cover-column",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "gap": 8
+            },
+            "children": [
+              {
+                "id": "cover-preview",
+                "component": "image",
+                "layout": {
+                  "width": 264,
+                  "height": 300,
+                  "padding": 12
+                },
+                "properties": {
+                  "fit": "cover",
+                  "interpolation": "smooth"
+                },
+                "property_bindings": {
+                  "frame": "preview_frame"
+                },
+                "accessibility": {
+                  "role": "image",
+                  "label": "Cover image preview"
+                }
+              },
+              {
+                "id": "cover-label",
+                "component": "text",
+                "properties": {
+                  "text": "裁切填充 / Cover",
+                  "horizontal_align": "center"
+                }
+              }
+            ]
+          },
+          {
+            "id": "stretch-column",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "gap": 8
+            },
+            "children": [
+              {
+                "id": "stretch-preview",
+                "component": "image",
+                "layout": {
+                  "width": 264,
+                  "height": 300,
+                  "padding": 12
+                },
+                "properties": {
+                  "fit": "stretch",
+                  "interpolation": "smooth"
+                },
+                "property_bindings": {
+                  "frame": "preview_frame"
+                },
+                "accessibility": {
+                  "role": "image",
+                  "label": "Stretch image preview"
+                }
+              },
+              {
+                "id": "stretch-label",
+                "component": "text",
+                "properties": {
+                  "text": "拉伸填充 / Stretch",
+                  "horizontal_align": "center"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

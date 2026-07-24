@@ -2094,6 +2094,33 @@ fn ui_canvas_pointer_event_from_value(value: &Value) -> Option<UiCanvasPointerEv
 /// map to global collection indices, so declaration order is never identity.
 pub type UiItemsRepeaterIndexMap = BTreeMap<UiNodeId, usize>;
 
+/// Maximum decoded pixel storage accepted by one document-backed Image frame.
+///
+/// Larger application-owned previews should keep using `ZsImagePreviewState`
+/// and the Rust `image_preview` builder so document reloads never serialize a
+/// large live raster repeatedly.
+pub const ZSUI_UI_IMAGE_MAX_DECODED_BYTES: usize = 32 * 1024 * 1024;
+
+pub(crate) fn ui_image_frame_from_value(value: &Value) -> Option<Option<crate::ZsImageFrame>> {
+    if value.is_null() {
+        return Some(None);
+    }
+    let frame = serde_json::from_value::<crate::ZsImageFrame>(value.clone()).ok()?;
+    let expected = usize::try_from(frame.width())
+        .ok()
+        .and_then(|width| {
+            usize::try_from(frame.height())
+                .ok()
+                .and_then(|height| width.checked_mul(height))
+        })
+        .and_then(|pixels| pixels.checked_mul(4))?;
+    (frame.width() > 0
+        && frame.height() > 0
+        && frame.decoded_bytes() == expected
+        && expected <= ZSUI_UI_IMAGE_MAX_DECODED_BYTES)
+        .then_some(Some(frame))
+}
+
 pub(crate) fn ui_items_repeater_indices_from_value(
     value: &Value,
 ) -> Option<UiItemsRepeaterIndexMap> {
@@ -2217,6 +2244,7 @@ pub enum UiValueType {
     Color,
     CanvasPrimitiveArray,
     CanvasPointerEvent,
+    NullableImageFrame,
     ItemsRepeaterIndexMap,
     VirtualListViewport,
     FlyoutDismissReason,
@@ -2274,6 +2302,7 @@ impl UiValueType {
                 .is_some(),
             Self::CanvasPrimitiveArray => ui_canvas_primitives_from_value(value).is_some(),
             Self::CanvasPointerEvent => ui_canvas_pointer_event_from_value(value).is_some(),
+            Self::NullableImageFrame => ui_image_frame_from_value(value).is_some(),
             Self::ItemsRepeaterIndexMap => ui_items_repeater_indices_from_value(value).is_some(),
             Self::VirtualListViewport => ui_virtual_list_viewport_from_value(value).is_some(),
             Self::FlyoutDismissReason => value
@@ -3622,6 +3651,19 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
     ) -> Result<(), UiBindingRegistrationError> {
         self.register_property(name, UiValueType::CanvasPrimitiveArray, move |state| {
             serde_json::to_value(read(state)).expect("Canvas primitives must serialize")
+        })
+    }
+
+    /// Registers one bounded immutable raster frame for a document-backed
+    /// Image. `None` retains the platform image placeholder.
+    #[cfg(feature = "image-preview")]
+    pub fn register_image_frame_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> Option<crate::ZsImageFrame> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::NullableImageFrame, move |state| {
+            serde_json::to_value(read(state)).expect("image frame must serialize")
         })
     }
 
@@ -5152,6 +5194,47 @@ impl<'a> UiDocumentValidator<'a> {
             );
         }
 
+        if node.component == "image" {
+            for name in ["frame", "fit", "interpolation", "loading"] {
+                if node.localization.contains_key(name) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.localization.{name}"),
+                        format!("image property {name:?} is structural and cannot be localized"),
+                    );
+                }
+            }
+            if !node.property_bindings.contains_key("fit")
+                && node
+                    .properties
+                    .get("fit")
+                    .and_then(Value::as_str)
+                    .is_some_and(|fit| !matches!(fit, "contain" | "cover" | "stretch"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.fit"),
+                    "image fit must be contain, cover or stretch".to_owned(),
+                );
+            }
+            if !node.property_bindings.contains_key("interpolation")
+                && node
+                    .properties
+                    .get("interpolation")
+                    .and_then(Value::as_str)
+                    .is_some_and(|interpolation| !matches!(interpolation, "nearest" | "smooth"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.interpolation"),
+                    "image interpolation must be nearest or smooth".to_owned(),
+                );
+            }
+        }
+
         if node.component == "password_box" {
             if node.properties.contains_key("value") || node.localization.contains_key("value") {
                 push_diagnostic(
@@ -6557,6 +6640,28 @@ const CANVAS_ACTIONS: &[ActionSpec] = &[
         payload_type: UiValueType::CanvasPointerEvent,
     },
 ];
+const IMAGE_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "frame",
+        value_type: UiValueType::NullableImageFrame,
+        required: true,
+    },
+    PropertySpec {
+        name: "fit",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "interpolation",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "loading",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
 const TEXT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "text",
@@ -7653,6 +7758,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             children: ChildPolicy::Exactly(2),
         }),
         "canvas" => Some(leaf(CANVAS_PROPERTIES, CANVAS_ACTIONS)),
+        "image" => Some(leaf(IMAGE_PROPERTIES, NO_ACTIONS)),
         "navigation" => Some(ComponentSchema {
             properties: NAVIGATION_PROPERTIES,
             actions: NAVIGATION_ACTIONS,
@@ -10677,10 +10783,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "image".to_owned();
+        document.root.children[0].component = "workbench_shell".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "image-preview"]),
+            &UiFeatureSet::new(["button", "label", "workbench"]),
             &UiBindingSchema::default(),
         );
 
@@ -10692,6 +10798,75 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::UnknownComponent));
+    }
+
+    #[cfg(feature = "image-preview")]
+    #[test]
+    fn image_uses_a_bounded_immutable_frame_and_platform_neutral_render_policy() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "preview",
+                "component": "image",
+                "layout": { "width": 320, "height": 180 },
+                "properties": { "fit": "cover", "interpolation": "smooth" },
+                "property_bindings": { "frame": "preview_frame" },
+                "accessibility": { "role": "image", "label": "Preview" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "preview_frame".to_owned(),
+                UiValueType::NullableImageFrame,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        assert!(document
+            .validate(&UiFeatureSet::new(["image-preview"]), &bindings)
+            .is_valid());
+
+        let frame = crate::ZsImageFrame::from_rgba8(
+            crate::ZsImageFrameId::new(7),
+            2,
+            1,
+            vec![255, 0, 0, 255, 0, 255, 0, 255],
+        )
+        .unwrap();
+        let values = BTreeMap::from([(
+            "preview_frame".to_owned(),
+            serde_json::to_value(frame).unwrap(),
+        )]);
+        assert!(validate_ui_document_binding_values(&document, &bindings, &values).is_valid());
+
+        let mut invalid = document.clone();
+        invalid
+            .root
+            .properties
+            .insert("fit".to_owned(), Value::String("winui_crop".to_owned()));
+        assert!(invalid
+            .validate(&UiFeatureSet::new(["image-preview"]), &bindings)
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidPropertyValue));
+
+        let invalid_values = BTreeMap::from([(
+            "preview_frame".to_owned(),
+            serde_json::json!({
+                "id": 8,
+                "width": 2,
+                "height": 2,
+                "premultiplied_bgra8": [0, 0, 0, 255]
+            }),
+        )]);
+        assert!(
+            validate_ui_document_binding_values(&document, &bindings, &invalid_values)
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == UiDiagnosticCode::BindingValueTypeMismatch)
+        );
     }
 
     #[test]

@@ -598,6 +598,8 @@ UiDocument 的 `page_padding`、`content_padding` 和 `content_gap` 等语义间
 组合为 AppKit 表单分组，在 Linux 组合为 GTK boxed list，应用不选择平台枚举。
 `items_repeater` 则以稳定子节点 ID 到全局索引的完整映射描述当前实例化窗口，选择和
 视口通过强类型绑定回到应用；即使逻辑项目总数很大，文档也不携带完整数据集或平台句柄。
+`image` 接收有界的不可变预乘像素帧以及 Contain/Cover/Stretch 和插值语义，最终仍由
+Win32、Core Graphics 或 GTK/Cairo 绘制；大型动态 PNG 保持使用应用拥有的后台解码状态。
 现有 Rust `view` builder 继续保留，完整
 拖放式设计器不属于 v0.2 完成门槛，浏览器模拟也不能替代三平台真实运行证据。
 可选 `ui-document` feature、`UiBindingManifest<State, Msg>` 和 `zsui-uic check`

@@ -437,6 +437,8 @@ fn compile_node<Msg: Clone + 'static>(
         "border" => column(children).flex(0.0),
         #[cfg(feature = "shell")]
         "settings_card" => document_settings_card(node, properties, children)?,
+        #[cfg(feature = "image-preview")]
+        "image" => document_image(node, properties)?,
         #[cfg(feature = "badge")]
         "badge" => document_badge(node, properties)?,
         #[cfg(feature = "split-view")]
@@ -3516,7 +3518,8 @@ fn grid_gap_property(
     feature = "table",
     feature = "tooltip",
     feature = "teaching-tip",
-    feature = "shell"
+    feature = "shell",
+    feature = "image-preview"
 ))]
 fn invalid_resolved_property(
     node: &UiNode,
@@ -3545,6 +3548,56 @@ fn document_settings_card<Msg>(
         ));
     }
     Ok(crate::section(title, children))
+}
+
+#[cfg(feature = "image-preview")]
+fn document_image<Msg: Clone>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let frame = property_value(node, properties, "frame")
+        .and_then(|value| crate::ui_document::ui_image_frame_from_value(&value))
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "frame",
+                "frame must be null or a bounded immutable image frame",
+            )
+        })?;
+    let fit = match optional_string_property(node, properties, "fit").as_deref() {
+        Some("contain") | None => crate::ZsImageFit::Contain,
+        Some("cover") => crate::ZsImageFit::Cover,
+        Some("stretch") => crate::ZsImageFit::Stretch,
+        Some(value) => {
+            return Err(invalid_resolved_property(
+                node,
+                "fit",
+                format!("unsupported image fit {value:?}"),
+            ));
+        }
+    };
+    let interpolation = match optional_string_property(node, properties, "interpolation").as_deref()
+    {
+        Some("nearest") => crate::NativeImageInterpolation::Nearest,
+        Some("smooth") | None => crate::NativeImageInterpolation::Smooth,
+        Some(value) => {
+            return Err(invalid_resolved_property(
+                node,
+                "interpolation",
+                format!("unsupported image interpolation {value:?}"),
+            ));
+        }
+    };
+    let generation = frame.as_ref().map_or(0, |frame| frame.id().0);
+    let snapshot = crate::ZsImagePreviewSnapshot {
+        generation,
+        frame,
+        loading: bool_property(node, properties, "loading", false),
+        last_error: None,
+    };
+    Ok(crate::image_preview(&snapshot)
+        .image_fit(fit)
+        .image_interpolation(interpolation))
 }
 
 fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
@@ -3618,7 +3671,8 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "scroll",
     feature = "tooltip",
     feature = "teaching-tip",
-    feature = "shell"
+    feature = "shell",
+    feature = "image-preview"
 ))]
 fn property_value(
     node: &UiNode,
@@ -4514,7 +4568,8 @@ fn document_icon<Msg>(
     feature = "info-bar",
     feature = "progress-ring",
     feature = "teaching-tip",
-    feature = "virtual-list"
+    feature = "virtual-list",
+    feature = "image-preview"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -4573,7 +4628,8 @@ fn nullable_number_property(
     feature = "toast",
     feature = "info-bar",
     feature = "tooltip",
-    feature = "teaching-tip"
+    feature = "teaching-tip",
+    feature = "image-preview"
 ))]
 fn optional_string_property(
     node: &UiNode,
@@ -4780,6 +4836,7 @@ mod tests {
         feature = "grid",
         feature = "list",
         feature = "virtual-list",
+        feature = "image-preview",
         feature = "password-box",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button"),
@@ -4869,6 +4926,84 @@ mod tests {
             ),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "title"
+        ));
+    }
+
+    #[cfg(feature = "image-preview")]
+    #[test]
+    fn compiles_bounded_image_frame_into_the_shared_native_draw_plan() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "preview",
+                "component": "image",
+                "layout": { "width": 100, "height": 100 },
+                "properties": { "interpolation": "nearest", "loading": true },
+                "property_bindings": { "frame": "preview_frame", "fit": "preview_fit" },
+                "accessibility": { "role": "image", "label": "Preview" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "preview_frame".to_owned(),
+                    crate::ui_document::UiValueType::NullableImageFrame,
+                ),
+                (
+                    "preview_fit".to_owned(),
+                    crate::ui_document::UiValueType::String,
+                ),
+            ]),
+            actions: BTreeMap::new(),
+        };
+        let frame = crate::ZsImageFrame::from_rgba8(
+            crate::ZsImageFrameId::new(19),
+            2,
+            1,
+            vec![255, 0, 0, 255, 0, 255, 0, 255],
+        )
+        .unwrap();
+        let values = BTreeMap::from([
+            (
+                "preview_frame".to_owned(),
+                serde_json::to_value(frame).unwrap(),
+            ),
+            ("preview_fit".to_owned(), Value::String("cover".to_owned())),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = crate::ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert_eq!(paint.plan().image_count(), 1);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Image(image)
+                if image.frame.id() == crate::ZsImageFrameId::new(19)
+                    && image.source.width == 1
+                    && image.interpolation == crate::NativeImageInterpolation::Nearest
+        )));
+        assert_eq!(view.background_poll_interval_ms(), Some(16));
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "preview_fit".to_owned(),
+            Value::String("platform_crop".to_owned()),
+        );
+        assert!(matches!(
+            ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
+            Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
+                if property == "fit"
         ));
     }
 
@@ -5027,6 +5162,7 @@ mod tests {
         feature = "split-view",
         feature = "flyout",
         feature = "menu-flyout",
+        feature = "image-preview",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button")
     ))]
