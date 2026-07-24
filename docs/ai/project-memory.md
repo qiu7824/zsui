@@ -869,6 +869,17 @@ history remain authoritative for implementation status.
   section, and GTK owns a padded boxed list with separators. Child actions stay
   node-local and typed; the document does not serialize target colors or
   spacing values.
+- UiDocument `items_repeater` is the bounded document contract for the shared
+  VirtualList. `total_count` describes the application-owned global space;
+  `item_indices` must cover every stable direct-child ID exactly once and map
+  it to a unique in-range global index. Direct children are only the current
+  materialized window. A typed `virtual_list_viewport` property/action pair
+  carries offset, row height, visible/materialized ranges and direction, while
+  nullable global selection uses its own property/action pair. Paging, product
+  data, platform handles and a runtime template language remain outside the
+  document. Windows Viewer proof at 960x640 routed one real row click and one
+  real scroll into two typed messages with zero unhandled inputs; the observed
+  pre-teardown process sample was 16,347,136 bytes RSS and 5,013,504 private.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a

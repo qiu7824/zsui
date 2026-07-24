@@ -188,6 +188,17 @@ cargo run --bin zsui-uic `
   --bindings examples/ui-documents/settings-card.bindings.json
 ```
 
+ItemsRepeater 文档把有限的已实例化子树映射到任意规模的全局索引空间；视口和选择
+保持为应用拥有的强类型状态：
+
+```powershell
+cargo run --bin zsui-uic `
+  --no-default-features `
+  --features ui-document,virtual-list,label `
+  -- check examples/ui-documents/items-repeater.json `
+  --bindings examples/ui-documents/items-repeater.bindings.json
+```
+
 `zsui-uic check` 会拒绝：
 
 - 不兼容的 schema 版本；
@@ -198,7 +209,7 @@ cargo run --bin zsui-uic `
 - 未解析或类型不一致的状态、动作绑定；
 - 非法布局值、主题 token、本地化键和辅助功能字段。
 
-加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、`settings_card`、
+加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、`settings_card`、`items_repeater`、
 `text`、`badge`、`split_view`、`canvas`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
@@ -252,6 +263,14 @@ Release runtime 编译到框架现有的 semantic `section`，因此 Windows 使
 group，macOS 使用无卡片外框的 AppKit form section，GTK 使用带行内边距与分隔线的
 boxed list。文档不包含平台枚举、卡片色值或目标专用间距；子控件继续沿用自己的强类型
 动作绑定。
+
+`items_repeater.total_count` 描述应用的全局项目数，`item_indices` 必须完整覆盖所有
+直接子节点的稳定 ID，并把每个 ID 映射到唯一且有效的全局索引。直接子节点只表示当前
+实例化窗口，不是完整数据源。`viewport` 使用 `virtual_list_viewport`，包含偏移、固定行高、
+可见区间、实例化区间和滚动方向；绑定该属性时必须提供同类型的 `viewport_change` 动作。
+可选 `selected`/`select` 使用 `nullable_integer`/`integer` 的受控闭环。发布运行时复用
+框架的 VirtualList，不把模板解释器、分页请求、产品数据源或平台滚动句柄放入文档；应用
+可把视口动作直接交给 `PagedListState::update_viewport`，再生成下一批稳定行子树。
 
 Stack 与 Grid 会递归保留子树的固有尺寸，包括文字行框、控件最小尺寸、节点间距和
 容器内边距。横向 Stack 先按真实分配宽度计算换行文字高度，再决定整行高度；空间不足
@@ -738,6 +757,18 @@ cargo run --bin zsui-viewer `
   -- examples/ui-documents/settings-card.json `
   --bindings examples/ui-documents/settings-card.bindings.json `
   --values examples/ui-documents/settings-card.values.json
+```
+
+ItemsRepeater 示例声明十万个逻辑项目，但仅实例化固定窗口中的十行；点击返回全局索引，
+滚动返回新的强类型视口：
+
+```powershell
+cargo run --bin zsui-viewer `
+  --no-default-features `
+  --features ui-viewer `
+  -- examples/ui-documents/items-repeater.json `
+  --bindings examples/ui-documents/items-repeater.bindings.json `
+  --values examples/ui-documents/items-repeater.values.json
 ```
 
 原生证明可由同一可执行文件生成：

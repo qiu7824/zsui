@@ -1073,8 +1073,8 @@ pub enum ViewNodeKind<Msg> {
         offset_y: Dp,
         visible_range: VirtualListRange,
         materialized_range: VirtualListRange,
-        on_select: Option<fn(usize) -> Msg>,
-        on_viewport_changed: Option<fn(VirtualListViewport) -> Msg>,
+        on_select: Option<ViewMessageMapper<usize, Msg>>,
+        on_viewport_changed: Option<ViewMessageMapper<VirtualListViewport, Msg>>,
         loading: bool,
         show_placeholders: bool,
     },
@@ -1783,7 +1783,9 @@ impl<Msg: Clone> ViewNode<Msg> {
                 *on_select = Some(ViewMessageMapper::from_function(message))
             }
             #[cfg(feature = "virtual-list")]
-            ViewNodeKind::VirtualList { on_select, .. } => *on_select = Some(message),
+            ViewNodeKind::VirtualList { on_select, .. } => {
+                *on_select = Some(ViewMessageMapper::from_function(message))
+            }
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { on_select, .. } => {
                 *on_select = Some(ViewMessageMapper::from_function(message))
@@ -1980,6 +1982,17 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn on_table_select(mut self, message: fn(crate::ZsTableRowId) -> Msg) -> Self {
         if let ViewNodeKind::DataGrid { on_select, .. } = &mut self.kind {
             *on_select = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn on_virtual_list_select_with(
+        mut self,
+        message: impl Fn(usize) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::VirtualList { on_select, .. } = &mut self.kind {
+            *on_select = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }
@@ -2990,7 +3003,22 @@ impl<Msg: Clone> ViewNode<Msg> {
             ..
         } = &mut self.kind
         {
-            *on_viewport_changed = Some(message);
+            *on_viewport_changed = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "virtual-list")]
+    pub fn on_viewport_changed_with(
+        mut self,
+        message: impl Fn(VirtualListViewport) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::VirtualList {
+            on_viewport_changed,
+            ..
+        } = &mut self.kind
+        {
+            *on_viewport_changed = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

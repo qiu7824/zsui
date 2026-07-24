@@ -6,7 +6,7 @@
 
 use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 
-#[cfg(any(feature = "tree", feature = "document-shell"))]
+#[cfg(any(feature = "tree", feature = "document-shell", feature = "virtual-list"))]
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
@@ -449,6 +449,8 @@ fn compile_node<Msg: Clone + 'static>(
         "command_bar" => document_command_bar(node, properties, children)?,
         #[cfg(feature = "shell")]
         "navigation" => document_navigation(node, properties, children, mapper)?,
+        #[cfg(feature = "virtual-list")]
+        "items_repeater" => document_items_repeater(node, properties, children, mapper)?,
         #[cfg(feature = "list")]
         "list" => document_list(node, properties, children, mapper)?,
         #[cfg(feature = "scroll")]
@@ -2987,6 +2989,151 @@ fn document_color_picker<Msg: Clone + 'static>(
     Ok(control)
 }
 
+#[cfg(feature = "virtual-list")]
+fn document_items_repeater<Msg: Clone + 'static>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+    children: Vec<ViewNode<Msg>>,
+    mapper: &UiDocumentActionMapper<Msg>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let total_count = property_value(node, properties, "total_count")
+        .and_then(|value| value.as_u64())
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "total_count",
+                "total_count must be a nonnegative integer that fits usize",
+            )
+        })?;
+    let indices = property_value(node, properties, "item_indices")
+        .and_then(|value| crate::ui_document::ui_items_repeater_indices_from_value(&value))
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "item_indices",
+                "item_indices must map stable direct-child IDs to global indices",
+            )
+        })?;
+    let viewport = property_value(node, properties, "viewport")
+        .and_then(|value| crate::ui_document::ui_virtual_list_viewport_from_value(&value))
+        .filter(|viewport| viewport.fits_total(total_count))
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "viewport",
+                "viewport geometry and ranges must be valid and within total_count",
+            )
+        })?;
+    let child_ids = node
+        .children
+        .iter()
+        .map(|child| &child.id)
+        .collect::<BTreeSet<_>>();
+    let index_ids = indices.keys().collect::<BTreeSet<_>>();
+    if child_ids != index_ids {
+        return Err(invalid_resolved_property(
+            node,
+            "item_indices",
+            "item_indices must cover exactly the stable direct-child IDs",
+        ));
+    }
+    if indices.values().copied().collect::<BTreeSet<_>>().len() != indices.len()
+        || indices.values().any(|index| *index >= total_count)
+    {
+        return Err(invalid_resolved_property(
+            node,
+            "item_indices",
+            "global indices must be unique and below total_count",
+        ));
+    }
+    let overscan_rows = property_value(node, properties, "overscan_rows")
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "overscan_rows",
+                        "overscan_rows must be a nonnegative integer that fits usize",
+                    )
+                })
+        })
+        .transpose()?
+        .unwrap_or(4);
+    let selected = match property_value(node, properties, "selected") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let selected = value
+                .as_u64()
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|selected| *selected < total_count)
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "selected",
+                        "selected must be null or an index below total_count",
+                    )
+                })?;
+            Some(selected)
+        }
+    };
+    let rows = node
+        .children
+        .iter()
+        .zip(children)
+        .map(|(child, view)| {
+            (
+                *indices
+                    .get(&child.id)
+                    .expect("validated ItemsRepeater child must have an index"),
+                view,
+            )
+        })
+        .collect::<Vec<_>>();
+    let runtime_viewport = viewport.into_runtime();
+    let mut control = crate::virtual_list(total_count, rows, |_, view| view)
+        .item_height(runtime_viewport.row_height)
+        .overscan_rows(overscan_rows)
+        .scroll_y(runtime_viewport.offset_y)
+        .selected_index(selected)
+        .loading(bool_property(node, properties, "loading", false))
+        .placeholders(bool_property(node, properties, "placeholders", true));
+    if let Some(binding) = node.action_bindings.get("select") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("selected").cloned();
+        control = control.on_virtual_list_select_with(move |selected| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: Value::from(selected as u64),
+            })
+        });
+    }
+    if let Some(binding) = node.action_bindings.get("viewport_change") {
+        let mapper = mapper.clone();
+        let node_id = node.id.as_str().to_owned();
+        let binding = binding.clone();
+        let property_binding = node.property_bindings.get("viewport").cloned();
+        control = control.on_viewport_changed_with(move |viewport| {
+            mapper.map(UiDocumentAction {
+                node_id: node_id.clone(),
+                binding: binding.clone(),
+                property_binding: property_binding.clone(),
+                payload: serde_json::to_value(
+                    crate::ui_document::UiVirtualListViewport::from_runtime(viewport),
+                )
+                .expect("virtual viewport must serialize"),
+            })
+        });
+    }
+    Ok(control)
+}
+
 #[cfg(feature = "list")]
 fn document_list<Msg: Clone + 'static>(
     node: &UiNode,
@@ -4366,7 +4513,8 @@ fn document_icon<Msg>(
     feature = "toast",
     feature = "info-bar",
     feature = "progress-ring",
-    feature = "teaching-tip"
+    feature = "teaching-tip",
+    feature = "virtual-list"
 ))]
 fn bool_property(
     node: &UiNode,
@@ -4631,6 +4779,7 @@ mod tests {
         feature = "table",
         feature = "grid",
         feature = "list",
+        feature = "virtual-list",
         feature = "password-box",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button"),
@@ -4720,6 +4869,155 @@ mod tests {
             ),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "title"
+        ));
+    }
+
+    #[cfg(all(feature = "virtual-list", feature = "label"))]
+    #[test]
+    fn compiles_items_repeater_and_maps_global_selection_and_viewport() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "records",
+                "component": "items_repeater",
+                "properties": {
+                  "total_count": 100,
+                  "item_indices": { "record-a": 10, "record-b": 11, "record-c": 12 },
+                  "overscan_rows": 1,
+                  "loading": true
+                },
+                "property_bindings": {
+                  "viewport": "records_viewport",
+                  "selected": "selected_record"
+                },
+                "action_bindings": {
+                  "viewport_change": "records_viewport_changed",
+                  "select": "record_selected"
+                },
+                "children": [
+                  { "id": "record-a", "component": "text", "properties": { "text": "A" } },
+                  { "id": "record-b", "component": "text", "properties": { "text": "B" } },
+                  { "id": "record-c", "component": "text", "properties": { "text": "C" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "records_viewport".to_owned(),
+                    crate::ui_document::UiValueType::VirtualListViewport,
+                ),
+                (
+                    "selected_record".to_owned(),
+                    crate::ui_document::UiValueType::NullableInteger,
+                ),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "records_viewport_changed".to_owned(),
+                    crate::ui_document::UiValueType::VirtualListViewport,
+                ),
+                (
+                    "record_selected".to_owned(),
+                    crate::ui_document::UiValueType::Integer,
+                ),
+            ]),
+        };
+        let values = BTreeMap::from([
+            (
+                "records_viewport".to_owned(),
+                serde_json::json!({
+                    "offset_y": 200.0,
+                    "row_height": 20.0,
+                    "visible_start": 10,
+                    "visible_end": 13,
+                    "materialized_start": 9,
+                    "materialized_end": 14,
+                    "direction": "stationary"
+                }),
+            ),
+            ("selected_record".to_owned(), Value::Null),
+        ]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let list_id = document.root.id.widget_id();
+        let row_id = crate::ui_document::UiNodeId::new("record-b")
+            .unwrap()
+            .widget_id();
+        let mut layout = ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 60,
+            },
+            Dpi::standard(),
+        );
+        view.layout(&mut layout);
+        let mut events = crate::ViewEventCx::new();
+        view.event(&mut events, &crate::ViewEvent::Click { widget: row_id });
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ScrollBy {
+                widget: list_id,
+                delta_y: Dp::new(20.0),
+            },
+        );
+        let messages = events.into_messages();
+        assert_eq!(
+            messages[0],
+            Msg::Action(UiDocumentAction {
+                node_id: "records".to_owned(),
+                binding: "record_selected".to_owned(),
+                property_binding: Some("selected_record".to_owned()),
+                payload: Value::from(11_u64),
+            })
+        );
+        let viewport_action = match &messages[1] {
+            Msg::Action(action) => action,
+            #[cfg(feature = "password-box")]
+            Msg::Secret(_) => panic!("viewport scroll must emit a document action"),
+        };
+        assert_eq!(viewport_action.node_id, "records");
+        assert_eq!(viewport_action.binding, "records_viewport_changed");
+        assert_eq!(
+            viewport_action.property_binding.as_deref(),
+            Some("records_viewport")
+        );
+        let viewport =
+            crate::ui_document::ui_virtual_list_viewport_from_value(&viewport_action.payload)
+                .expect("viewport payload must retain the typed document shape");
+        assert_eq!(viewport.offset_y, 220.0);
+        assert_eq!(viewport.visible_start, 11);
+        assert_eq!(viewport.visible_end, 14);
+        assert_eq!(
+            viewport.direction,
+            crate::ui_document::UiVirtualListScrollDirection::Forward
+        );
+
+        let mut invalid_values = values;
+        invalid_values.insert(
+            "records_viewport".to_owned(),
+            serde_json::json!({
+                "offset_y": 0.0,
+                "row_height": 0.0,
+                "visible_start": 0,
+                "visible_end": 0,
+                "materialized_start": 0,
+                "materialized_end": 0,
+                "direction": "stationary"
+            }),
+        );
+        let invalid = ui_document_view(&document, &bindings, &invalid_values, Msg::Action);
+        assert!(matches!(
+            invalid,
+            Err(UiDocumentRuntimeError::Validation { ref diagnostics })
+                if diagnostics.iter().any(|diagnostic| {
+                    diagnostic.code == crate::ui_document::UiDiagnosticCode::BindingValueTypeMismatch
+                        && diagnostic.path == "$.records_viewport"
+                })
         ));
     }
     #[cfg(any(

@@ -2088,6 +2088,119 @@ fn ui_canvas_pointer_event_from_value(value: &Value) -> Option<UiCanvasPointerEv
     event.position.is_finite().then_some(event)
 }
 
+/// Stable child-to-global-index mapping for a document-backed ItemsRepeater.
+///
+/// Only materialized rows appear as document children. Their stable node IDs
+/// map to global collection indices, so declaration order is never identity.
+pub type UiItemsRepeaterIndexMap = BTreeMap<UiNodeId, usize>;
+
+pub(crate) fn ui_items_repeater_indices_from_value(
+    value: &Value,
+) -> Option<UiItemsRepeaterIndexMap> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+/// Platform-neutral direction reported by a document-backed virtual viewport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiVirtualListScrollDirection {
+    Backward,
+    Stationary,
+    Forward,
+}
+
+/// Serializable viewport state for a document-backed ItemsRepeater.
+///
+/// The shape carries only logical DP geometry and global row ranges. It does
+/// not expose a native scroll object or backend handle.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiVirtualListViewport {
+    pub offset_y: f32,
+    pub row_height: f32,
+    pub visible_start: usize,
+    pub visible_end: usize,
+    pub materialized_start: usize,
+    pub materialized_end: usize,
+    pub direction: UiVirtualListScrollDirection,
+}
+
+impl UiVirtualListViewport {
+    pub const fn initial(row_height: f32) -> Self {
+        Self {
+            offset_y: 0.0,
+            row_height,
+            visible_start: 0,
+            visible_end: 0,
+            materialized_start: 0,
+            materialized_end: 0,
+            direction: UiVirtualListScrollDirection::Stationary,
+        }
+    }
+
+    fn is_valid(self) -> bool {
+        self.offset_y.is_finite()
+            && self.offset_y >= 0.0
+            && self.row_height.is_finite()
+            && self.row_height > 0.0
+            && self.visible_start <= self.visible_end
+            && self.materialized_start <= self.visible_start
+            && self.materialized_end >= self.visible_end
+    }
+
+    pub(crate) fn fits_total(self, total_count: usize) -> bool {
+        self.is_valid() && self.visible_end <= total_count && self.materialized_end <= total_count
+    }
+
+    #[cfg(all(feature = "ui-document-runtime", feature = "virtual-list"))]
+    pub(crate) fn into_runtime(self) -> crate::VirtualListViewport {
+        crate::VirtualListViewport {
+            offset_y: crate::Dp::new(self.offset_y),
+            row_height: crate::Dp::new(self.row_height),
+            visible_range: crate::VirtualListRange::new(self.visible_start, self.visible_end),
+            materialized_range: crate::VirtualListRange::new(
+                self.materialized_start,
+                self.materialized_end,
+            ),
+            direction: match self.direction {
+                UiVirtualListScrollDirection::Backward => {
+                    crate::VirtualListScrollDirection::Backward
+                }
+                UiVirtualListScrollDirection::Stationary => {
+                    crate::VirtualListScrollDirection::Stationary
+                }
+                UiVirtualListScrollDirection::Forward => crate::VirtualListScrollDirection::Forward,
+            },
+        }
+    }
+
+    #[cfg(all(feature = "ui-document-runtime", feature = "virtual-list"))]
+    pub(crate) fn from_runtime(viewport: crate::VirtualListViewport) -> Self {
+        Self {
+            offset_y: viewport.offset_y.0,
+            row_height: viewport.row_height.0,
+            visible_start: viewport.visible_range.start,
+            visible_end: viewport.visible_range.end,
+            materialized_start: viewport.materialized_range.start,
+            materialized_end: viewport.materialized_range.end,
+            direction: match viewport.direction {
+                crate::VirtualListScrollDirection::Backward => {
+                    UiVirtualListScrollDirection::Backward
+                }
+                crate::VirtualListScrollDirection::Stationary => {
+                    UiVirtualListScrollDirection::Stationary
+                }
+                crate::VirtualListScrollDirection::Forward => UiVirtualListScrollDirection::Forward,
+            },
+        }
+    }
+}
+
+pub(crate) fn ui_virtual_list_viewport_from_value(value: &Value) -> Option<UiVirtualListViewport> {
+    let viewport = serde_json::from_value::<UiVirtualListViewport>(value.clone()).ok()?;
+    viewport.is_valid().then_some(viewport)
+}
+
 /// JSON value shape expected by a state property or action payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2104,6 +2217,8 @@ pub enum UiValueType {
     Color,
     CanvasPrimitiveArray,
     CanvasPointerEvent,
+    ItemsRepeaterIndexMap,
+    VirtualListViewport,
     FlyoutDismissReason,
     MenuFlyoutItemId,
     MenuFlyoutItemArray,
@@ -2159,6 +2274,8 @@ impl UiValueType {
                 .is_some(),
             Self::CanvasPrimitiveArray => ui_canvas_primitives_from_value(value).is_some(),
             Self::CanvasPointerEvent => ui_canvas_pointer_event_from_value(value).is_some(),
+            Self::ItemsRepeaterIndexMap => ui_items_repeater_indices_from_value(value).is_some(),
+            Self::VirtualListViewport => ui_virtual_list_viewport_from_value(value).is_some(),
             Self::FlyoutDismissReason => value
                 .as_str()
                 .is_some_and(|value| matches!(value, "light_dismiss" | "escape")),
@@ -3508,6 +3625,32 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
         })
     }
 
+    /// Registers the materialized child-to-global-index mapping for one
+    /// document-backed ItemsRepeater.
+    #[cfg(feature = "virtual-list")]
+    pub fn register_items_repeater_indices_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> UiItemsRepeaterIndexMap + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::ItemsRepeaterIndexMap, move |state| {
+            serde_json::to_value(read(state)).expect("ItemsRepeater indices must serialize")
+        })
+    }
+
+    /// Registers controlled logical viewport state for one document-backed
+    /// ItemsRepeater.
+    #[cfg(feature = "virtual-list")]
+    pub fn register_virtual_list_viewport_property(
+        &mut self,
+        name: impl Into<String>,
+        read: impl Fn(&State) -> UiVirtualListViewport + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_property(name, UiValueType::VirtualListViewport, move |state| {
+            serde_json::to_value(read(state)).expect("virtual viewport must serialize")
+        })
+    }
+
     /// Registers a root-to-current breadcrumb path with stable semantic IDs.
     #[cfg(feature = "breadcrumb")]
     pub fn register_breadcrumb_items_property(
@@ -3839,6 +3982,20 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
             let event = ui_canvas_pointer_event_from_value(&payload)
                 .ok_or_else(|| "Canvas pointer payload is invalid".to_owned())?;
             map(event)
+        })
+    }
+
+    /// Registers a strongly typed ItemsRepeater viewport action.
+    #[cfg(feature = "virtual-list")]
+    pub fn register_virtual_list_viewport_action(
+        &mut self,
+        name: impl Into<String>,
+        map: impl Fn(UiVirtualListViewport) -> Result<Msg, String> + Send + Sync + 'static,
+    ) -> Result<(), UiBindingRegistrationError> {
+        self.register_action(name, UiValueType::VirtualListViewport, move |payload| {
+            let viewport = ui_virtual_list_viewport_from_value(&payload)
+                .ok_or_else(|| "expected a valid virtual-list viewport".to_owned())?;
+            map(viewport)
         })
     }
 
@@ -5858,6 +6015,10 @@ impl<'a> UiDocumentValidator<'a> {
             validate_grid_component(node, path, diagnostics);
         }
 
+        if node.component == "items_repeater" {
+            validate_items_repeater_component(node, path, diagnostics);
+        }
+
         if node.component == "info_bar" {
             let static_string = |name: &str| {
                 (!node.property_bindings.contains_key(name))
@@ -6438,6 +6599,53 @@ const SETTINGS_CARD_PROPERTIES: &[PropertySpec] = &[PropertySpec {
     value_type: UiValueType::String,
     required: true,
 }];
+const ITEMS_REPEATER_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "total_count",
+        value_type: UiValueType::Integer,
+        required: true,
+    },
+    PropertySpec {
+        name: "item_indices",
+        value_type: UiValueType::ItemsRepeaterIndexMap,
+        required: true,
+    },
+    PropertySpec {
+        name: "viewport",
+        value_type: UiValueType::VirtualListViewport,
+        required: true,
+    },
+    PropertySpec {
+        name: "overscan_rows",
+        value_type: UiValueType::Integer,
+        required: false,
+    },
+    PropertySpec {
+        name: "selected",
+        value_type: UiValueType::NullableInteger,
+        required: false,
+    },
+    PropertySpec {
+        name: "loading",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+    PropertySpec {
+        name: "placeholders",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const ITEMS_REPEATER_ACTIONS: &[ActionSpec] = &[
+    ActionSpec {
+        name: "select",
+        payload_type: UiValueType::Integer,
+    },
+    ActionSpec {
+        name: "viewport_change",
+        payload_type: UiValueType::VirtualListViewport,
+    },
+];
 const BUTTON_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "label",
@@ -7429,6 +7637,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: NO_ACTIONS,
             children: ChildPolicy::AtLeast(1),
         }),
+        "items_repeater" => Some(ComponentSchema {
+            properties: ITEMS_REPEATER_PROPERTIES,
+            actions: ITEMS_REPEATER_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
+        }),
         "scroll" => Some(ComponentSchema {
             properties: SCROLL_PROPERTIES,
             actions: SCROLL_ACTIONS,
@@ -7648,6 +7861,118 @@ fn validate_grid_component(node: &UiNode, path: &str, diagnostics: &mut Vec<UiDi
                 UiDiagnosticCode::InvalidPropertyValue,
                 format!("{path}.properties.placements.{child_id}.row"),
                 format!("grid placement for {child_id:?} exceeds the declared rows"),
+            );
+        }
+    }
+}
+
+fn validate_items_repeater_component(
+    node: &UiNode,
+    path: &str,
+    diagnostics: &mut Vec<UiDiagnostic>,
+) {
+    for (property, action) in [("viewport", "viewport_change"), ("selected", "select")] {
+        let property_bound = node.property_bindings.contains_key(property);
+        let action_bound = node.action_bindings.contains_key(action);
+        if property_bound != action_bound {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::UnresolvedActionBinding,
+                format!("{path}.action_bindings.{action}"),
+                format!(
+                    "bound items_repeater {property:?} state and {action:?} action must be declared together"
+                ),
+            );
+        }
+    }
+    for property in [
+        "total_count",
+        "item_indices",
+        "viewport",
+        "overscan_rows",
+        "selected",
+        "loading",
+        "placeholders",
+    ] {
+        if node.localization.contains_key(property) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidLocalization,
+                format!("{path}.localization.{property}"),
+                format!("items_repeater {property:?} is structural state and cannot be localized"),
+            );
+        }
+    }
+
+    let total_count = node
+        .properties
+        .get("total_count")
+        .and_then(Value::as_u64)
+        .and_then(|count| usize::try_from(count).ok());
+    let indices = node
+        .properties
+        .get("item_indices")
+        .and_then(ui_items_repeater_indices_from_value);
+    if let Some(indices) = indices.as_ref() {
+        let child_ids = node
+            .children
+            .iter()
+            .map(|child| &child.id)
+            .collect::<BTreeSet<_>>();
+        let index_ids = indices.keys().collect::<BTreeSet<_>>();
+        if child_ids != index_ids {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.item_indices"),
+                "items_repeater item_indices must cover exactly the stable direct-child IDs"
+                    .to_owned(),
+            );
+        }
+        if indices.values().copied().collect::<BTreeSet<_>>().len() != indices.len() {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.item_indices"),
+                "items_repeater global indices must be unique".to_owned(),
+            );
+        }
+        if let Some(total_count) = total_count {
+            if indices.values().any(|index| *index >= total_count) {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.item_indices"),
+                    "items_repeater child indices must be below total_count".to_owned(),
+                );
+            }
+        }
+    }
+    if let (Some(total_count), Some(viewport)) = (
+        total_count,
+        node.properties
+            .get("viewport")
+            .and_then(ui_virtual_list_viewport_from_value),
+    ) {
+        if !viewport.fits_total(total_count) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.viewport"),
+                "items_repeater viewport ranges must be ordered and within total_count".to_owned(),
+            );
+        }
+    }
+    if let (Some(total_count), Some(selected)) = (
+        total_count,
+        node.properties.get("selected").and_then(Value::as_u64),
+    ) {
+        if usize::try_from(selected).map_or(true, |selected| selected >= total_count) {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidPropertyValue,
+                format!("{path}.properties.selected"),
+                "items_repeater selected index must be below total_count".to_owned(),
             );
         }
     }
@@ -10352,10 +10677,10 @@ mod tests {
     #[test]
     fn validator_distinguishes_unknown_and_not_yet_document_ready_components() {
         let mut document = valid_document();
-        document.root.children[0].component = "items_repeater".to_owned();
+        document.root.children[0].component = "image".to_owned();
         document.root.children[1].component = "imaginary".to_owned();
         let report = document.validate(
-            &UiFeatureSet::new(["button", "label", "virtual-list"]),
+            &UiFeatureSet::new(["button", "label", "image-preview"]),
             &UiBindingSchema::default(),
         );
 
@@ -10417,6 +10742,74 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == UiDiagnosticCode::InvalidChildCount));
+    }
+
+    #[test]
+    fn items_repeater_uses_stable_materialized_indices_and_controlled_viewport() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "records",
+                "component": "items_repeater",
+                "properties": {
+                  "total_count": 100000,
+                  "item_indices": { "record-a": 0, "record-b": 1 },
+                  "overscan_rows": 4
+                },
+                "property_bindings": {
+                  "viewport": "records_viewport",
+                  "selected": "selected_record"
+                },
+                "action_bindings": {
+                  "viewport_change": "records_viewport_changed",
+                  "select": "record_selected"
+                },
+                "children": [
+                  { "id": "record-a", "component": "text", "properties": { "text": "A" } },
+                  { "id": "record-b", "component": "text", "properties": { "text": "B" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([
+                (
+                    "records_viewport".to_owned(),
+                    UiValueType::VirtualListViewport,
+                ),
+                ("selected_record".to_owned(), UiValueType::NullableInteger),
+            ]),
+            actions: BTreeMap::from([
+                (
+                    "records_viewport_changed".to_owned(),
+                    UiValueType::VirtualListViewport,
+                ),
+                ("record_selected".to_owned(), UiValueType::Integer),
+            ]),
+        };
+        assert!(document
+            .validate(&UiFeatureSet::new(["virtual-list", "label"]), &bindings,)
+            .is_valid());
+
+        let mut invalid = document.clone();
+        invalid.root.properties.insert(
+            "item_indices".to_owned(),
+            serde_json::json!({ "record-a": 1, "ghost": 1 }),
+        );
+        invalid.root.action_bindings.remove("viewport_change");
+        let diagnostics = invalid
+            .validate(&UiFeatureSet::new(["virtual-list", "label"]), &bindings)
+            .diagnostics;
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidPropertyValue
+                && diagnostic.path == "$.root.properties.item_indices"
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::UnresolvedActionBinding
+                && diagnostic.path == "$.root.action_bindings.viewport_change"
+        }));
     }
 
     #[test]

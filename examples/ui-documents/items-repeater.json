@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "records-page",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "padding_token": "page_padding",
+      "gap_token": "content_gap"
+    },
+    "children": [
+      {
+        "id": "records-title",
+        "component": "text",
+        "properties": {
+          "text": "虚拟化记录 / Virtualized records",
+          "text_role": "title",
+          "weight": "semibold"
+        }
+      },
+      {
+        "id": "records-description",
+        "component": "text",
+        "layout": { "width": 820 },
+        "properties": {
+          "text": "ItemsRepeater 只实例化当前窗口需要的行；稳定节点 ID 映射到全局索引，选择和视口仍由应用显式持有。 / ItemsRepeater materializes only the required window while stable node IDs map to application-owned global indices.",
+          "wrap": "word"
+        }
+      },
+      {
+        "id": "records",
+        "component": "items_repeater",
+        "layout": { "width": 820, "height": 420 },
+        "properties": {
+          "total_count": 100000,
+          "item_indices": {
+            "record-00000": 0,
+            "record-00001": 1,
+            "record-00002": 2,
+            "record-00003": 3,
+            "record-00004": 4,
+            "record-00005": 5,
+            "record-00006": 6,
+            "record-00007": 7,
+            "record-00008": 8,
+            "record-00009": 9
+          },
+          "overscan_rows": 2,
+          "placeholders": true
+        },
+        "property_bindings": {
+          "viewport": "records_viewport",
+          "selected": "selected_record"
+        },
+        "action_bindings": {
+          "viewport_change": "records_viewport_changed",
+          "select": "record_selected"
+        },
+        "children": [
+          {
+            "id": "record-00000",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00000-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00000  首次启动 / Cold start" } },
+              { "id": "record-00000-state", "component": "text", "properties": { "text": "已通过 / Passed", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00001",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00001-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00001  首帧绘制 / First frame" } },
+              { "id": "record-00001-state", "component": "text", "properties": { "text": "14 ms", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00002",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00002-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00002  字体回退 / Font fallback" } },
+              { "id": "record-00002-state", "component": "text", "properties": { "text": "系统字体 / System", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00003",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00003-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00003  焦点导航 / Focus navigation" } },
+              { "id": "record-00003-state", "component": "text", "properties": { "text": "键盘 / Keyboard", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00004",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00004-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00004  选择状态 / Selection state" } },
+              { "id": "record-00004-state", "component": "text", "properties": { "text": "受控 / Controlled", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00005",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00005-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00005  辅助功能 / Accessibility" } },
+              { "id": "record-00005-state", "component": "text", "properties": { "text": "语义节点 / Semantic", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00006",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00006-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00006  滚动窗口 / Scroll window" } },
+              { "id": "record-00006-state", "component": "text", "properties": { "text": "2 行预取 / 2 overscan", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00007",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00007-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00007  内存探针 / Memory probe" } },
+              { "id": "record-00007-state", "component": "text", "properties": { "text": "稳定 / Stable", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00008",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00008-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00008  深色主题 / Dark theme" } },
+              { "id": "record-00008-state", "component": "text", "properties": { "text": "平台令牌 / Tokens", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-00009",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-00009-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00009  末端占位 / Trailing placeholder" } },
+              { "id": "record-00009-state", "component": "text", "properties": { "text": "按需 / On demand", "text_role": "caption" } }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

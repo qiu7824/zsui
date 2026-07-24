@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "records_viewport": "virtual_list_viewport",
+    "selected_record": "nullable_integer"
+  },
+  "actions": {
+    "records_viewport_changed": "virtual_list_viewport",
+    "record_selected": "integer"
+  }
+}

@@ -1261,7 +1261,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 if let Some(index) = row_indices.get(position).copied() {
                     *selected_index = Some(index);
                     if let Some(message) = on_select {
-                        cx.emit(message(index));
+                        cx.emit(message.map(index));
                     }
                 }
             }
@@ -2169,7 +2169,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *visible_range = viewport.visible_range;
                     *materialized_range = viewport.materialized_range;
                     if let Some(message) = on_viewport_changed {
-                        cx.emit(message(viewport));
+                        cx.emit(message.map(viewport));
                     }
                 }
                 _ => {}
