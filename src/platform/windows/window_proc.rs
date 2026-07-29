@@ -44,13 +44,16 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             if let Some(result) = crate::windows_menu_uia::handle_get_object(hwnd, wparam, lparam) {
                 return result;
             }
+            // A focused self-drawn editor is the active UIA root surface. Prefer
+            // its Edit/ValuePattern/TextPattern provider over the generic
+            // semantic tree so screen readers receive the native text contract.
+            #[cfg(feature = "text-input-core")]
+            if let Some(result) = crate::windows_uia::handle_get_object(hwnd, wparam, lparam) {
+                return result;
+            }
             if let Some(result) =
                 crate::windows_semantic_uia::handle_get_object(hwnd, wparam, lparam)
             {
-                return result;
-            }
-            #[cfg(feature = "text-input-core")]
-            if let Some(result) = crate::windows_uia::handle_get_object(hwnd, wparam, lparam) {
                 return result;
             }
             #[cfg(feature = "tabs")]
