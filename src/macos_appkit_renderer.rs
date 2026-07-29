@@ -384,10 +384,14 @@ define_class!(
         #[unsafe(method_id(accessibilityChildren))]
         fn accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
             #[cfg(feature = "menu-flyout")]
-            if let Some(children) = self.menu_flyout_accessibility_children() {
-                return Some(children);
+            {
+                self.menu_flyout_accessibility_children()
+                    .or_else(|| self.semantic_accessibility_children())
             }
-            self.semantic_accessibility_children()
+            #[cfg(not(feature = "menu-flyout"))]
+            {
+                self.semantic_accessibility_children()
+            }
         }
 
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
