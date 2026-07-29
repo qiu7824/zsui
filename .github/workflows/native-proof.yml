@@ -83,24 +83,34 @@ jobs:
         shell: pwsh
         run: |
           $root = "target/native-proof/windows-2025-x86_64/ui-viewer-reload"
-          $global:LASTEXITCODE = 0
-          $output = & .\target\release\zsui-viewer.exe `
-            "$root/view.json" `
-            --bindings "$root/view.bindings.json" `
-            --values "$root/view.values.json" `
-            --poll-ms 50 `
-            --width 960 `
-            --height 640 `
-            --smoke "$root/proof" `
-            --smoke-duration-ms 3500 `
-            --require-binding-reset `
-            --reload-document-from examples/ui-documents/viewer-reload-workbench-next.json `
-            --reload-bindings-from examples/ui-documents/viewer-reload-workbench-next.bindings.json `
-            --reload-after-ms 700 2>&1
-          $exitCode = $LASTEXITCODE
-          $output | Tee-Object -FilePath "$root/viewer.log"
-          if ($exitCode -ne 0) {
-            exit $exitCode
+          $stdout = Join-Path $root "viewer.stdout.log"
+          $stderr = Join-Path $root "viewer.stderr.log"
+          $process = Start-Process `
+            -FilePath .\target\release\zsui-viewer.exe `
+            -ArgumentList @(
+              "$root/view.json",
+              "--bindings", "$root/view.bindings.json",
+              "--values", "$root/view.values.json",
+              "--poll-ms", "50",
+              "--width", "960",
+              "--height", "640",
+              "--smoke", "$root/proof",
+              "--smoke-duration-ms", "3500",
+              "--require-binding-reset",
+              "--reload-document-from", "examples/ui-documents/viewer-reload-workbench-next.json",
+              "--reload-bindings-from", "examples/ui-documents/viewer-reload-workbench-next.bindings.json",
+              "--reload-after-ms", "700"
+            ) `
+            -Wait `
+            -PassThru `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
+          @(
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+          ) | Tee-Object -FilePath "$root/viewer.log"
+          if ($process.ExitCode -ne 0) {
+            exit $process.ExitCode
           }
 
       - name: Run Win32 named component proofs
@@ -111,70 +121,89 @@ jobs:
             New-Item -ItemType Directory -Force -Path (Join-Path $root $scene) | Out-Null
           }
 
-          $global:LASTEXITCODE = 0
-          & .\target\release\zsui-viewer.exe `
-            examples/ui-documents/items-repeater.json `
-            --bindings examples/ui-documents/items-repeater.bindings.json `
-            --values examples/ui-documents/items-repeater.values.json `
-            --width 960 `
-            --height 640 `
-            --smoke "$root/ui-viewer-items-repeater" `
-            --smoke-duration-ms 700 `
-            --smoke-items-repeater-drag records
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          function Invoke-ViewerProof {
+            param(
+              [string] $Scene,
+              [string[]] $ViewerArguments
+            )
+            $sceneRoot = Join-Path $root $Scene
+            $stdout = Join-Path $sceneRoot "viewer.stdout.log"
+            $stderr = Join-Path $sceneRoot "viewer.stderr.log"
+            $process = Start-Process `
+              -FilePath .\target\release\zsui-viewer.exe `
+              -ArgumentList $ViewerArguments `
+              -Wait `
+              -PassThru `
+              -RedirectStandardOutput $stdout `
+              -RedirectStandardError $stderr
+            @(
+              Get-Content $stdout -ErrorAction SilentlyContinue
+              Get-Content $stderr -ErrorAction SilentlyContinue
+            ) | Tee-Object -FilePath (Join-Path $sceneRoot "viewer.log")
+            if ($process.ExitCode -ne 0) {
+              exit $process.ExitCode
+            }
+          }
+
+          Invoke-ViewerProof "ui-viewer-items-repeater" @(
+            "examples/ui-documents/items-repeater.json",
+            "--bindings", "examples/ui-documents/items-repeater.bindings.json",
+            "--values", "examples/ui-documents/items-repeater.values.json",
+            "--width", "960",
+            "--height", "640",
+            "--smoke", "$root/ui-viewer-items-repeater",
+            "--smoke-duration-ms", "700",
+            "--smoke-items-repeater-drag", "records"
+          )
 
           foreach ($theme in @(
             @{ Name = "dark"; Output = "ui-viewer-workbench-dark" },
             @{ Name = "high-contrast"; Output = "ui-viewer-workbench-high-contrast" }
           )) {
-            $global:LASTEXITCODE = 0
-            & .\target\release\zsui-viewer.exe `
-              examples/ui-documents/workbench.json `
-              --bindings examples/ui-documents/workbench.bindings.json `
-              --values examples/ui-documents/workbench.values.json `
-              --width 1280 `
-              --height 800 `
-              --theme $theme.Name `
-              --smoke "$root/$($theme.Output)" `
-              --smoke-duration-ms 700
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Invoke-ViewerProof $theme.Output @(
+              "examples/ui-documents/workbench.json",
+              "--bindings", "examples/ui-documents/workbench.bindings.json",
+              "--values", "examples/ui-documents/workbench.values.json",
+              "--width", "1280",
+              "--height", "800",
+              "--theme", $theme.Name,
+              "--smoke", "$root/$($theme.Output)",
+              "--smoke-duration-ms", "700"
+            )
           }
 
-          $global:LASTEXITCODE = 0
-          & .\target\release\zsui-viewer.exe `
-            examples/ui-documents/image.json `
-            --bindings examples/ui-documents/image.bindings.json `
-            --values examples/ui-documents/image.values.json `
-            --width 960 `
-            --height 640 `
-            --smoke "$root/ui-viewer-image" `
-            --smoke-duration-ms 700
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Invoke-ViewerProof "ui-viewer-image" @(
+            "examples/ui-documents/image.json",
+            "--bindings", "examples/ui-documents/image.bindings.json",
+            "--values", "examples/ui-documents/image.values.json",
+            "--width", "960",
+            "--height", "640",
+            "--smoke", "$root/ui-viewer-image",
+            "--smoke-duration-ms", "700"
+          )
 
-          $global:LASTEXITCODE = 0
-          & .\target\release\zsui-viewer.exe `
-            examples/ui-documents/settings-card.json `
-            --bindings examples/ui-documents/settings-card.bindings.json `
-            --values examples/ui-documents/settings-card.values.json `
-            --width 960 `
-            --height 640 `
-            --smoke "$root/ui-viewer-settings-card" `
-            --smoke-duration-ms 700 `
-            --smoke-click-node apply-appearance
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Invoke-ViewerProof "ui-viewer-settings-card" @(
+            "examples/ui-documents/settings-card.json",
+            "--bindings", "examples/ui-documents/settings-card.bindings.json",
+            "--values", "examples/ui-documents/settings-card.values.json",
+            "--width", "960",
+            "--height", "640",
+            "--smoke", "$root/ui-viewer-settings-card",
+            "--smoke-duration-ms", "700",
+            "--smoke-click-node", "apply-appearance"
+          )
 
-          $global:LASTEXITCODE = 0
-          & .\target\release\zsui-viewer.exe `
-            examples/ui-documents/workbench.json `
-            --bindings examples/ui-documents/workbench.bindings.json `
-            --values examples/ui-documents/workbench.values.json `
-            --width 1280 `
-            --height 800 `
-            --smoke "$root/ui-viewer-workbench" `
-            --smoke-duration-ms 900 `
-            --smoke-scroll 600 400 96 `
-            --smoke-workbench-composer workbench
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Invoke-ViewerProof "ui-viewer-workbench" @(
+            "examples/ui-documents/workbench.json",
+            "--bindings", "examples/ui-documents/workbench.bindings.json",
+            "--values", "examples/ui-documents/workbench.values.json",
+            "--width", "1280",
+            "--height", "800",
+            "--smoke", "$root/ui-viewer-workbench",
+            "--smoke-duration-ms", "900",
+            "--smoke-scroll", "600", "400", "96",
+            "--smoke-workbench-composer", "workbench"
+          )
 
       - name: Summarize Win32 Viewer proof failure
         if: failure() && steps.win32-viewer.outcome == 'failure'

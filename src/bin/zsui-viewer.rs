@@ -549,7 +549,13 @@ fn run_smoke(
     {
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
-            "the native Viewer did not route Composer text, navigation and selection through the shared text runtime",
+            format!(
+                "the native Viewer did not route Composer text, navigation and selection through the shared text runtime (text={}, navigation={}, drag={}, selection={})",
+                runtime.native_view_text_input_count,
+                runtime.native_view_text_navigation_count,
+                runtime.native_view_text_drag_count,
+                runtime.native_view_text_selection_change_count,
+            ),
         )));
     }
     let expected_clicks = smoke_clicks.len() + smoke_click_nodes.len();
