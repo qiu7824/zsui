@@ -47,9 +47,7 @@ fn arboard_read_image(
                 let bytes = image.bytes.into_owned();
                 return ClipboardData::image_rgba(image.width, image.height, bytes).map(Some);
             }
-            Err(arboard::Error::ContentNotAvailable)
-                if attempt + 1 < IMAGE_READ_ATTEMPTS =>
-            {
+            Err(arboard::Error::ContentNotAvailable) if attempt + 1 < IMAGE_READ_ATTEMPTS => {
                 std::thread::sleep(std::time::Duration::from_millis(IMAGE_READ_RETRY_MS));
             }
             Err(arboard::Error::ContentNotAvailable) => return Ok(None),
