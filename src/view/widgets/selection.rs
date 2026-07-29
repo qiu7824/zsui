@@ -36,12 +36,15 @@ pub fn tab_view<Msg>(
     let selected = selected
         .filter(|selected| tabs.iter().any(|tab| tab.id == *selected))
         .or_else(|| tabs.first().map(|tab| tab.id));
-    ViewNode::new(ViewNodeKind::Tabs {
+    let node = ViewNode::new(ViewNodeKind::Tabs {
         tabs,
         selected,
         on_select: None,
     })
-    .children(items.into_iter().map(|item| item.content))
+    .children(items.into_iter().map(|item| item.content));
+    #[cfg(feature = "scroll")]
+    let node = node.auto_scroll_y();
+    node
 }
 #[cfg(feature = "list")]
 pub fn list<T, Msg>(

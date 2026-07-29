@@ -6,6 +6,7 @@
 //! commands in Rust, while platform hosts map those declarations to Win32,
 //! AppKit or GTK/libadwaita backends.
 
+pub mod accessibility;
 pub mod agent_context;
 pub mod android_activity_host;
 pub mod app;
@@ -220,6 +221,8 @@ pub mod windows_gdi_renderer;
     feature = "windows-win32"
 ))]
 mod windows_menu_uia;
+#[cfg(all(windows, feature = "accessibility", feature = "windows-win32"))]
+mod windows_semantic_uia;
 #[cfg(all(
     windows,
     feature = "accessibility",
@@ -243,6 +246,10 @@ pub mod windows_win32_text_editor;
 #[cfg(feature = "workbench")]
 pub mod workbench;
 
+pub use accessibility::{
+    ParseZsAccessibilityRoleError, ZsAccessibilityLiveRegion, ZsAccessibilityNode,
+    ZsAccessibilityRole, ZsAccessibilitySpec,
+};
 pub use agent_context::{
     zsui_agent_context, zsui_agent_context_json, zsui_completion_areas,
     zsui_framework_boundary_rules, zsui_framework_layers, zsui_native_runtime_gate_plans,
@@ -749,8 +756,8 @@ pub use view::{calculator_view, ZsCalculatorViewIds};
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
     LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,
-    ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewPaintCx,
-    ViewStackDirection, ViewStyle, WidgetId,
+    ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewOverflow,
+    ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
 #[cfg(feature = "button")]
 pub use view::{command_bar, ZsCommandBarSpec};

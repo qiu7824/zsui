@@ -24,21 +24,8 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         }
         WM_NCDESTROY => {
             let role = WindowsWindowRole::from_create_param(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-            #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
-            crate::windows_uia::disconnect(hwnd);
-            #[cfg(all(
-                feature = "accessibility",
-                feature = "menu-flyout",
-                not(feature = "text-input-core")
-            ))]
-            crate::windows_menu_uia::disconnect(hwnd);
-            #[cfg(all(
-                feature = "accessibility",
-                feature = "tabs",
-                not(feature = "text-input-core"),
-                not(feature = "menu-flyout")
-            ))]
-            crate::windows_tab_uia::disconnect(hwnd);
+            #[cfg(feature = "accessibility")]
+            crate::windows_semantic_uia::disconnect(hwnd);
             clear_windows_win32_window_draw_plan(hwnd);
             archive_windows_win32_window_view_input_report(hwnd);
             clear_windows_win32_window_shell_input_route(hwnd);
@@ -51,17 +38,15 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => 1,
-        #[cfg(all(
-            feature = "accessibility",
-            any(
-                feature = "text-input-core",
-                feature = "menu-flyout",
-                feature = "tabs"
-            )
-        ))]
+        #[cfg(feature = "accessibility")]
         WM_GETOBJECT => {
             #[cfg(feature = "menu-flyout")]
             if let Some(result) = crate::windows_menu_uia::handle_get_object(hwnd, wparam, lparam) {
+                return result;
+            }
+            if let Some(result) =
+                crate::windows_semantic_uia::handle_get_object(hwnd, wparam, lparam)
+            {
                 return result;
             }
             #[cfg(feature = "text-input-core")]

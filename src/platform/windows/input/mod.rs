@@ -527,6 +527,60 @@ pub(crate) fn windows_win32_window_text_accessibility_snapshot(
         .and_then(|record| record.route.focused_text_accessibility_snapshot())
 }
 
+#[cfg(feature = "accessibility")]
+pub(crate) fn windows_win32_window_semantic_accessibility_nodes(
+    hwnd: HWND,
+) -> Vec<crate::ZsAccessibilityNode> {
+    if hwnd.is_null() {
+        return Vec::new();
+    }
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .and_then(|record| record.route.shared_runtime.current_interaction_plan())
+        .map(|interaction| interaction.accessibility_nodes)
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "accessibility")]
+pub(crate) fn windows_win32_window_semantic_accessibility_focus(
+    hwnd: HWND,
+) -> Option<crate::WidgetId> {
+    if hwnd.is_null() {
+        return None;
+    }
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .and_then(|record| record.route.shared_runtime.focused_widget())
+}
+
+#[cfg(feature = "accessibility")]
+pub(crate) fn focus_windows_win32_window_accessible_semantic_node(
+    hwnd: HWND,
+    widget: crate::WidgetId,
+) -> bool {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_focus(widget)
+    })
+    .is_some_and(|report| report.handled)
+}
+
+#[cfg(feature = "accessibility")]
+pub(crate) fn invoke_windows_win32_window_accessible_semantic_node(
+    hwnd: HWND,
+    widget: crate::WidgetId,
+) -> bool {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_invoke(widget)
+    })
+    .is_some_and(|report| report.handled)
+}
+
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 pub(crate) fn windows_win32_window_menu_flyout_accessibility_snapshot(
     hwnd: HWND,

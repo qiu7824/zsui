@@ -155,6 +155,19 @@ fn text_provider(hwnd: isize) -> IRawElementProviderSimple {
     IRawElementProviderSimple::from(WindowsTextUiaProvider { hwnd })
 }
 
+pub(crate) fn text_pattern_provider(hwnd: isize, pattern_id: UIA_PATTERN_ID) -> Result<IUnknown> {
+    let provider = text_provider(hwnd);
+    if pattern_id == UIA_TextPatternId {
+        let pattern: ITextProvider = provider.cast()?;
+        return pattern.cast();
+    }
+    if pattern_id == UIA_ValuePatternId {
+        let pattern: IValueProvider = provider.cast()?;
+        return pattern.cast();
+    }
+    Err(Error::empty())
+}
+
 fn text_range_provider(
     hwnd: isize,
     widget: crate::WidgetId,
@@ -807,17 +820,6 @@ pub(crate) fn handle_get_object(
         UiaReturnRawElementProvider(HWND(hwnd.cast()), WPARAM(wparam), LPARAM(lparam), &provider)
     };
     Some(result.0)
-}
-
-pub(crate) fn disconnect(hwnd: windows_sys::Win32::Foundation::HWND) {
-    unsafe {
-        let _ = UiaReturnRawElementProvider(
-            HWND(hwnd.cast()),
-            WPARAM(0),
-            LPARAM(0),
-            None::<&IRawElementProviderSimple>,
-        );
-    }
 }
 
 #[cfg(test)]

@@ -18,7 +18,8 @@ use zsui::{
         ui_viewer_update, UiViewerSource, UiViewerSourceSnapshot, UiViewerState,
         ZSUI_UI_VIEWER_PROOF_SCHEMA, ZSUI_UI_VIEWER_PROOF_SCHEMA_VERSION,
     },
-    NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, Point, ZsuiError,
+    NativeViewKey, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport, Point, ZsuiError,
+    ZsuiThemeMode,
 };
 
 #[derive(Debug)]
@@ -29,6 +30,7 @@ struct Arguments {
     width: u32,
     height: u32,
     poll_ms: u64,
+    theme: ZsuiThemeMode,
     smoke_output: Option<PathBuf>,
     smoke_duration_ms: u64,
     require_reload: bool,
@@ -37,8 +39,10 @@ struct Arguments {
     reload_bindings_from: Option<PathBuf>,
     reload_after_ms: u64,
     smoke_clicks: Vec<Point>,
+    smoke_click_nodes: Vec<String>,
     smoke_scroll: Option<(Point, i32)>,
     smoke_items_repeater_drag: Option<String>,
+    smoke_workbench_composer: Option<String>,
     benchmark_empty: bool,
     benchmark_seconds: Option<u64>,
 }
@@ -50,6 +54,7 @@ struct ViewerProof {
     platform: &'static str,
     capture_backend: &'static str,
     display_server: Option<&'static str>,
+    theme: ZsuiThemeMode,
     window: ViewerProofWindow,
     source: UiViewerSourceSnapshot,
     runtime: NativeWindowSmokeRunReport,
@@ -93,6 +98,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = load_values(arguments.values.as_deref())?;
     source.validate_properties(&state.properties)?;
     let live_source = source.clone();
+    let theme = arguments.theme;
     let builder = if arguments.benchmark_empty {
         native_window("ZSUI UI Viewer")
             .size(arguments.width, arguments.height)
@@ -105,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .release_view_when_hidden()
             .stateful_view(
                 state,
-                move |state| live_source.view(state),
+                move |state| live_source.view(state).theme_mode(theme),
                 ui_viewer_update,
             )
     };
@@ -120,12 +126,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             &source,
             &output_directory,
             arguments.smoke_duration_ms,
+            arguments.theme,
             arguments.require_reload,
             arguments.require_binding_reset,
             reload_injection,
             &arguments.smoke_clicks,
+            &arguments.smoke_click_nodes,
             arguments.smoke_scroll,
             arguments.smoke_items_repeater_drag.as_deref(),
+            arguments.smoke_workbench_composer.as_deref(),
         )?;
     } else {
         builder.run()?;
@@ -140,6 +149,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut width = 720_u32;
     let mut height = 520_u32;
     let mut poll_ms = 250_u64;
+    let mut theme = ZsuiThemeMode::System;
     let mut smoke_output = None;
     let mut smoke_duration_ms = 900_u64;
     let mut require_reload = false;
@@ -148,8 +158,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut reload_bindings_from = None;
     let mut reload_after_ms = 500_u64;
     let mut smoke_clicks = Vec::new();
+    let mut smoke_click_nodes = Vec::new();
     let mut smoke_scroll = None;
     let mut smoke_items_repeater_drag = None;
+    let mut smoke_workbench_composer = None;
     let mut benchmark_empty = false;
     let mut benchmark_seconds = None;
     let mut arguments = arguments.into_iter();
@@ -161,6 +173,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             "--width" => width = number_argument(&mut arguments, "--width")?,
             "--height" => height = number_argument(&mut arguments, "--height")?,
             "--poll-ms" => poll_ms = number_argument(&mut arguments, "--poll-ms")?,
+            "--theme" => {
+                let value = arguments.next().ok_or_else(|| {
+                    "--theme requires system, light, dark, or high-contrast".to_owned()
+                })?;
+                theme = parse_theme_mode(&value)?;
+            }
             "--smoke" => smoke_output = Some(path_argument(&mut arguments, "--smoke")?),
             "--smoke-duration-ms" => {
                 smoke_duration_ms = number_argument(&mut arguments, "--smoke-duration-ms")?
@@ -192,6 +210,13 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                 let y = number_argument(&mut arguments, "--smoke-click y")?;
                 smoke_clicks.push(Point { x, y });
             }
+            "--smoke-click-node" => {
+                smoke_click_nodes.push(
+                    arguments
+                        .next()
+                        .ok_or_else(|| "--smoke-click-node requires a stable node ID".to_owned())?,
+                );
+            }
             "--smoke-scroll" => {
                 let x = number_argument(&mut arguments, "--smoke-scroll x")?;
                 let y = number_argument(&mut arguments, "--smoke-scroll y")?;
@@ -201,6 +226,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             "--smoke-items-repeater-drag" => {
                 smoke_items_repeater_drag = Some(arguments.next().ok_or_else(|| {
                     "--smoke-items-repeater-drag requires a stable node ID".to_owned()
+                })?);
+            }
+            "--smoke-workbench-composer" => {
+                smoke_workbench_composer = Some(arguments.next().ok_or_else(|| {
+                    "--smoke-workbench-composer requires a stable node ID".to_owned()
                 })?);
             }
             "--help" | "-h" => return Err(usage().to_owned()),
@@ -222,6 +252,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if smoke_items_repeater_drag.is_some() && smoke_output.is_none() {
         return Err("--smoke-items-repeater-drag requires --smoke".to_owned());
     }
+    if smoke_workbench_composer.is_some() && smoke_output.is_none() {
+        return Err("--smoke-workbench-composer requires --smoke".to_owned());
+    }
     if (reload_document_from.is_some() || reload_bindings_from.is_some())
         && reload_after_ms >= smoke_duration_ms
     {
@@ -235,6 +268,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         width,
         height,
         poll_ms: poll_ms.max(16),
+        theme,
         smoke_output,
         smoke_duration_ms: smoke_duration_ms.max(250),
         require_reload,
@@ -243,8 +277,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         reload_bindings_from,
         reload_after_ms: reload_after_ms.max(16),
         smoke_clicks,
+        smoke_click_nodes,
         smoke_scroll,
         smoke_items_repeater_drag,
+        smoke_workbench_composer,
         benchmark_empty,
         benchmark_seconds,
     })
@@ -277,12 +313,26 @@ where
 
 fn usage() -> &'static str {
     "usage: zsui-viewer <document.json> [--bindings path] [--values path] \
-     [--width pixels] [--height pixels] [--poll-ms milliseconds] [--smoke output-directory] \
+     [--width pixels] [--height pixels] [--poll-ms milliseconds] \
+     [--theme system|light|dark|high-contrast] [--smoke output-directory] \
      [--smoke-duration-ms milliseconds] [--require-reload] [--require-binding-reset] \
      [--reload-document-from path] [--reload-bindings-from path] [--reload-after-ms milliseconds] \
-     [--smoke-click x y]... [--smoke-scroll x y delta-y] \
+     [--smoke-click x y]... [--smoke-click-node node-id]... [--smoke-scroll x y delta-y] \
      [--smoke-items-repeater-drag node-id] \
+     [--smoke-workbench-composer node-id] \
      [--benchmark-empty] [--benchmark-seconds seconds]"
+}
+
+fn parse_theme_mode(value: &str) -> Result<ZsuiThemeMode, String> {
+    match value {
+        "system" => Ok(ZsuiThemeMode::System),
+        "light" => Ok(ZsuiThemeMode::Light),
+        "dark" => Ok(ZsuiThemeMode::Dark),
+        "high-contrast" | "high_contrast" => Ok(ZsuiThemeMode::HighContrast),
+        _ => Err(format!(
+            "invalid theme {value:?}; expected system, light, dark, or high-contrast"
+        )),
+    }
 }
 
 fn inferred_binding_path(document: &Path) -> Option<PathBuf> {
@@ -305,12 +355,15 @@ fn run_smoke(
     source: &UiViewerSource,
     output_directory: &Path,
     smoke_duration_ms: u64,
+    theme: ZsuiThemeMode,
     require_reload: bool,
     require_binding_reset: bool,
     reload_injection: Option<ViewerReloadInjection>,
     smoke_clicks: &[Point],
+    smoke_click_nodes: &[String],
     smoke_scroll: Option<(Point, i32)>,
     smoke_items_repeater_drag: Option<&str>,
+    smoke_workbench_composer: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_directory)?;
     let screenshot = output_directory.join("window.png");
@@ -320,8 +373,90 @@ fn run_smoke(
     if !smoke_clicks.is_empty() {
         options = options.native_view_clicks(smoke_clicks.iter().copied());
     }
+    if !smoke_click_nodes.is_empty() {
+        let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
+            ZsuiError::host(
+                "ui_viewer_smoke",
+                "the Viewer did not expose a View interaction plan",
+            )
+        })?;
+        for node_id in smoke_click_nodes {
+            let widget = zsui::ui_document::UiNodeId::new(node_id)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?
+                .widget_id();
+            let target = interaction.hit_target_for_widget(widget).ok_or_else(|| {
+                ZsuiError::host(
+                    "ui_viewer_smoke",
+                    format!("node {node_id:?} did not expose an enabled click target"),
+                )
+            })?;
+            options = options.native_view_click(Point {
+                x: target.bounds.x + target.bounds.width / 2,
+                y: target.bounds.y + target.bounds.height / 2,
+            });
+        }
+    }
     if let Some((point, delta_y)) = smoke_scroll {
         options = options.native_view_scroll(point, delta_y);
+    }
+    if let Some(node_id) = smoke_workbench_composer {
+        let root = zsui::ui_document::UiNodeId::new(node_id)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?
+            .widget_id();
+        if !source.snapshot().nodes.iter().any(|node| {
+            node.id == node_id && node.component == "workbench_shell" && node.widget_id == root.0
+        }) {
+            return Err(Box::new(ZsuiError::host(
+                "ui_viewer_smoke",
+                format!("node {node_id:?} is not a workbench_shell"),
+            )));
+        }
+        let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
+            ZsuiError::host(
+                "ui_viewer_smoke",
+                "the Viewer did not expose a View interaction plan",
+            )
+        })?;
+        let editors = interaction
+            .hit_targets
+            .iter()
+            .filter(|target| target.kind == zsui::ViewHitTargetKind::TextEditor)
+            .copied()
+            .collect::<Vec<_>>();
+        if editors.len() != 1 {
+            return Err(Box::new(ZsuiError::host(
+                "ui_viewer_smoke",
+                format!(
+                    "workbench_shell {node_id:?} exposed {} Composer TextEditors instead of one",
+                    editors.len()
+                ),
+            )));
+        }
+        let editor = editors.into_iter().next().ok_or_else(|| {
+            ZsuiError::host(
+                "ui_viewer_smoke",
+                format!("workbench_shell {node_id:?} did not expose a Composer TextEditor"),
+            )
+        })?;
+        let y = editor.bounds.y + editor.bounds.height / 2;
+        let padding = (editor.bounds.height / 4).max(4);
+        let left = editor.bounds.x.saturating_add(padding);
+        let right = editor
+            .bounds
+            .x
+            .saturating_add(editor.bounds.width.saturating_sub(padding));
+        let focus = Point { x: left, y };
+        let selection_start = Point {
+            x: right.min(left.saturating_add((editor.bounds.width / 2).max(24))),
+            y,
+        };
+        let selection_end = Point { x: left, y };
+        options = options
+            .native_view_click(focus)
+            .native_view_text_input("中文 אבג e\u{301} 👩\u{200d}💻")
+            .native_view_key_down(NativeViewKey::Home)
+            .native_view_key_down(NativeViewKey::Right)
+            .native_view_drag(selection_start, selection_end);
     }
     if let Some(node_id) = smoke_items_repeater_drag {
         let widget = zsui::ui_document::UiNodeId::new(node_id)
@@ -371,8 +506,7 @@ fn run_smoke(
                 .bounds
                 .y
                 .saturating_add(track.bounds.height)
-                .saturating_sub(thumb.bounds.height / 2)
-                .saturating_sub(1),
+                .saturating_add(thumb.bounds.height),
         };
         options = options.native_view_drag(start, end);
     }
@@ -407,9 +541,21 @@ fn run_smoke(
             "the native Viewer did not route the ItemsRepeater thumb drag through typed viewport state",
         )));
     }
-    if !smoke_clicks.is_empty()
-        && (runtime.native_view_click_count < smoke_clicks.len()
-            || runtime.native_view_message_count < smoke_clicks.len())
+    if smoke_workbench_composer.is_some()
+        && (runtime.native_view_text_input_count == 0
+            || runtime.native_view_text_navigation_count < 2
+            || runtime.native_view_text_drag_count == 0
+            || runtime.native_view_text_selection_change_count == 0)
+    {
+        return Err(Box::new(ZsuiError::host(
+            "ui_viewer_smoke",
+            "the native Viewer did not route Composer text, navigation and selection through the shared text runtime",
+        )));
+    }
+    let expected_clicks = smoke_clicks.len() + smoke_click_nodes.len();
+    if expected_clicks > 0
+        && (runtime.native_view_click_count < expected_clicks
+            || runtime.native_view_message_count < expected_clicks)
     {
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
@@ -446,6 +592,7 @@ fn run_smoke(
         platform: capture.platform,
         capture_backend: capture.backend,
         display_server: capture.display_server,
+        theme,
         window: ViewerProofWindow {
             logical_width: capture.logical_width,
             logical_height: capture.logical_height,
@@ -513,6 +660,21 @@ mod tests {
     }
 
     #[test]
+    fn parser_accepts_explicit_native_theme_modes() {
+        for (value, expected) in [
+            ("system", ZsuiThemeMode::System),
+            ("light", ZsuiThemeMode::Light),
+            ("dark", ZsuiThemeMode::Dark),
+            ("high-contrast", ZsuiThemeMode::HighContrast),
+        ] {
+            let arguments =
+                parse_arguments(["ui.json".to_owned(), "--theme".to_owned(), value.to_owned()])
+                    .unwrap();
+            assert_eq!(arguments.theme, expected);
+        }
+    }
+
+    #[test]
     fn parser_accepts_native_scroll_smoke_input() {
         let arguments = parse_arguments([
             "ui.json".to_owned(),
@@ -546,6 +708,23 @@ mod tests {
     }
 
     #[test]
+    fn parser_accepts_workbench_composer_proof() {
+        let arguments = parse_arguments([
+            "ui.json".to_owned(),
+            "--smoke".to_owned(),
+            "proof".to_owned(),
+            "--smoke-workbench-composer".to_owned(),
+            "workbench".to_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            arguments.smoke_workbench_composer.as_deref(),
+            Some("workbench")
+        );
+    }
+
+    #[test]
     fn parser_accepts_repeated_native_click_smoke_input() {
         let arguments = parse_arguments([
             "ui.json".to_owned(),
@@ -564,6 +743,22 @@ mod tests {
             arguments.smoke_clicks,
             vec![Point { x: 120, y: 240 }, Point { x: 300, y: 160 }]
         );
+    }
+
+    #[test]
+    fn parser_accepts_repeated_stable_node_clicks() {
+        let arguments = parse_arguments([
+            "ui.json".to_owned(),
+            "--smoke".to_owned(),
+            "proof".to_owned(),
+            "--smoke-click-node".to_owned(),
+            "apply".to_owned(),
+            "--smoke-click-node".to_owned(),
+            "reset".to_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(arguments.smoke_click_nodes, vec!["apply", "reset"]);
     }
 
     #[test]

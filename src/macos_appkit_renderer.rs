@@ -6,24 +6,28 @@ use std::{
 };
 
 use objc2::rc::Retained;
-#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+#[cfg(feature = "accessibility")]
 use objc2::rc::Weak;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-#[cfg(all(
-    feature = "accessibility",
-    any(feature = "text-input-core", feature = "menu-flyout")
-))]
+#[cfg(feature = "accessibility")]
 use objc2::Message;
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
-#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+#[cfg(feature = "accessibility")]
 use objc2_app_kit::NSAccessibilityElement;
+#[cfg(feature = "accessibility")]
+use objc2_app_kit::{
+    NSAccessibilityApplicationRole, NSAccessibilityButtonRole, NSAccessibilityColorWellRole,
+    NSAccessibilityComboBoxRole, NSAccessibilityDateTimeAreaRole, NSAccessibilityGridRole,
+    NSAccessibilityGroupRole, NSAccessibilityHeadingRole, NSAccessibilityImageRole,
+    NSAccessibilityIncrementorRole, NSAccessibilityListRole, NSAccessibilityOutlineRole,
+    NSAccessibilityProgressIndicatorRole, NSAccessibilityRadioButtonRole, NSAccessibilityRowRole,
+    NSAccessibilitySheetRole, NSAccessibilitySliderRole, NSAccessibilityStaticTextRole,
+    NSAccessibilityTabGroupRole, NSAccessibilityTextAreaRole,
+};
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 use objc2_app_kit::{NSAccessibilityMenuItemRole, NSAccessibilityMenuRole};
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
-use objc2_app_kit::{
-    NSAccessibilitySecureTextFieldSubrole, NSAccessibilityTextAreaRole,
-    NSAccessibilityTextFieldRole,
-};
+use objc2_app_kit::{NSAccessibilitySecureTextFieldSubrole, NSAccessibilityTextFieldRole};
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBackspaceCharacter, NSBezierPath, NSBitmapImageFileType,
     NSBitmapImageRepPropertyKey, NSCarriageReturnCharacter, NSColor, NSColorSpace,
@@ -311,7 +315,7 @@ define_class!(
                 .is_some();
             #[cfg(not(feature = "text-input-core"))]
             let text = false;
-            menu || text
+            menu || (self.semantic_accessibility_nodes().is_empty() && text)
         }
 
         #[cfg(feature = "accessibility")]
@@ -376,10 +380,14 @@ define_class!(
             menu_identifier.or(text_identifier)
         }
 
-        #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+        #[cfg(feature = "accessibility")]
         #[unsafe(method_id(accessibilityChildren))]
         fn accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
-            self.menu_flyout_accessibility_children()
+            #[cfg(feature = "menu-flyout")]
+            if let Some(children) = self.menu_flyout_accessibility_children() {
+                return Some(children);
+            }
+            self.semantic_accessibility_children()
         }
 
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
@@ -765,6 +773,312 @@ define_class!(
     }
 );
 
+#[cfg(feature = "accessibility")]
+struct ZsuiAppKitSemanticAccessibilityElementIvars {
+    view: Weak<ZsuiAppKitDrawView>,
+    parent: Weak<AnyObject>,
+    children: RefCell<Option<Retained<NSArray<AnyObject>>>>,
+    node: crate::ZsAccessibilityNode,
+    identifier: Retained<NSString>,
+    frame: NSRect,
+}
+
+#[cfg(feature = "accessibility")]
+define_class!(
+    #[unsafe(super = NSAccessibilityElement)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = ZsuiAppKitSemanticAccessibilityElementIvars]
+    struct ZsuiAppKitSemanticAccessibilityElement;
+
+    unsafe impl NSObjectProtocol for ZsuiAppKitSemanticAccessibilityElement {}
+
+    impl ZsuiAppKitSemanticAccessibilityElement {
+        #[unsafe(method(isAccessibilityElement))]
+        fn is_accessibility_element(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method_id(accessibilityRole))]
+        fn accessibility_role(&self) -> Retained<NSString> {
+            appkit_semantic_accessibility_role(self.ivars().node.role)
+        }
+
+        #[unsafe(method_id(accessibilityLabel))]
+        fn accessibility_label(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .node
+                .label
+                .as_deref()
+                .map(NSString::from_str)
+        }
+
+        #[unsafe(method_id(accessibilityHelp))]
+        fn accessibility_help(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .node
+                .description
+                .as_deref()
+                .map(NSString::from_str)
+        }
+
+        #[unsafe(method_id(accessibilityIdentifier))]
+        fn accessibility_identifier(&self) -> Retained<NSString> {
+            self.ivars().identifier.clone()
+        }
+
+        #[unsafe(method(accessibilityFrame))]
+        fn accessibility_frame(&self) -> NSRect {
+            self.ivars().frame
+        }
+
+        #[unsafe(method_id(accessibilityParent))]
+        fn accessibility_parent(&self) -> Option<Retained<AnyObject>> {
+            self.ivars().parent.load()
+        }
+
+        #[unsafe(method_id(accessibilityChildren))]
+        fn accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
+            self.ivars().children.borrow().clone()
+        }
+
+        #[unsafe(method(isAccessibilityEnabled))]
+        fn is_accessibility_enabled(&self) -> bool {
+            self.ivars().node.enabled
+        }
+
+        #[unsafe(method(isAccessibilitySelected))]
+        fn is_accessibility_selected(&self) -> bool {
+            self.ivars().node.selected.unwrap_or(false)
+        }
+
+        #[unsafe(method(isAccessibilityFocused))]
+        fn is_accessibility_focused(&self) -> bool {
+            self.ivars()
+                .view
+                .load()
+                .is_some_and(|view| {
+                    view.ivars().runtime.borrow().focused_widget()
+                        == Some(self.ivars().node.widget)
+                })
+        }
+
+        #[unsafe(method(accessibilityPerformPress))]
+        fn accessibility_perform_press(&self) -> bool {
+            if self.ivars().node.enabled
+                && matches!(
+                    self.ivars().node.role,
+                    crate::ZsAccessibilityRole::Button
+                        | crate::ZsAccessibilityRole::ListItem
+                        | crate::ZsAccessibilityRole::Tab
+                )
+            {
+                self.ivars().view.load().is_some_and(|view| {
+                    let report = view
+                        .ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_accessibility_invoke(self.ivars().node.widget);
+                    view.apply_input_report(report).handled
+                })
+            } else {
+                false
+            }
+        }
+
+        #[unsafe(method(setAccessibilityFocused:))]
+        fn set_accessibility_focused(&self, focused: bool) {
+            if !focused {
+                return;
+            }
+            let Some(view) = self.ivars().view.load() else {
+                return;
+            };
+            let report = view
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_accessibility_focus(self.ivars().node.widget);
+            view.apply_input_report(report);
+        }
+
+        #[cfg(feature = "text-input-core")]
+        #[unsafe(method_id(accessibilityValue))]
+        fn accessibility_value(&self) -> Option<Retained<NSString>> {
+            (self.ivars().node.role == crate::ZsAccessibilityRole::TextBox)
+                .then(|| {
+                    self.ivars()
+                        .view
+                        .load()?
+                        .ivars()
+                        .runtime
+                        .borrow()
+                        .widget_text_value(self.ivars().node.widget)
+                })
+                .flatten()
+                .map(|value| NSString::from_str(&value))
+        }
+
+        #[cfg(feature = "text-input-core")]
+        #[unsafe(method(setAccessibilityValue:))]
+        fn set_accessibility_value(&self, value: &NSString) {
+            if self.ivars().node.role != crate::ZsAccessibilityRole::TextBox {
+                return;
+            }
+            let Some(view) = self.ivars().view.load() else {
+                return;
+            };
+            let report = view
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_accessibility_set_value(self.ivars().node.widget, &value.to_string());
+            view.apply_input_report(report);
+        }
+
+        #[cfg(feature = "text-input-core")]
+        #[unsafe(method(accessibilityNumberOfCharacters))]
+        fn accessibility_number_of_characters(&self) -> isize {
+            self.text_snapshot()
+                .map(|snapshot| snapshot.utf16_offset(snapshot.character_count()).unwrap_or(0))
+                .unwrap_or(0)
+                .min(isize::MAX as usize) as isize
+        }
+
+        #[cfg(feature = "text-input-core")]
+        #[unsafe(method_id(accessibilitySelectedText))]
+        fn accessibility_selected_text(&self) -> Option<Retained<NSString>> {
+            self.text_snapshot()
+                .map(|snapshot| NSString::from_str(&snapshot.selected_text()))
+        }
+
+        #[cfg(feature = "text-input-core")]
+        #[unsafe(method(accessibilitySelectedTextRange))]
+        fn accessibility_selected_text_range(&self) -> NSRange {
+            self.text_snapshot()
+                .map(|snapshot| {
+                    let range = snapshot.utf16_selection();
+                    NSRange::new(range.start, range.end.saturating_sub(range.start))
+                })
+                .unwrap_or_else(|| NSRange::new(NSNotFound as usize, 0))
+        }
+
+        #[cfg(feature = "text-input-core")]
+        #[unsafe(method(setAccessibilitySelectedTextRange:))]
+        fn set_accessibility_selected_text_range(&self, range: NSRange) {
+            let Some(view) = self.ivars().view.load() else {
+                return;
+            };
+            let Some(value) = view
+                .ivars()
+                .runtime
+                .borrow()
+                .widget_text_value(self.ivars().node.widget)
+            else {
+                return;
+            };
+            let Some((start, end)) = utf16_range_to_char_range(&value, range) else {
+                return;
+            };
+            let focus = view
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_accessibility_focus(self.ivars().node.widget);
+            view.apply_input_report(focus);
+            let report = view
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_accessibility_set_selection(
+                    crate::native_text_edit::NativeTextSelection {
+                        anchor: start,
+                        caret: end,
+                    },
+                );
+            view.apply_input_report(report);
+        }
+    }
+);
+
+#[cfg(feature = "accessibility")]
+impl ZsuiAppKitSemanticAccessibilityElement {
+    fn new(
+        view: &ZsuiAppKitDrawView,
+        parent: &AnyObject,
+        node: crate::ZsAccessibilityNode,
+        frame: NSRect,
+    ) -> Retained<Self> {
+        let identifier = NSString::from_str(&format!("zsui-semantic-{}", node.widget.0));
+        let this = Self::alloc(view.mtm()).set_ivars(ZsuiAppKitSemanticAccessibilityElementIvars {
+            view: Weak::new(view),
+            parent: Weak::new(parent),
+            children: RefCell::new(None),
+            node,
+            identifier,
+            frame,
+        });
+        unsafe { msg_send![super(this), init] }
+    }
+
+    #[cfg(feature = "text-input-core")]
+    fn text_snapshot(
+        &self,
+    ) -> Option<crate::native_accessibility::NativeTextAccessibilitySnapshot> {
+        (self.ivars().node.role == crate::ZsAccessibilityRole::TextBox)
+            .then(|| {
+                self.ivars()
+                    .view
+                    .load()?
+                    .ivars()
+                    .runtime
+                    .borrow()
+                    .focused_text_accessibility_snapshot()
+                    .filter(|snapshot| snapshot.widget() == self.ivars().node.widget)
+            })
+            .flatten()
+    }
+}
+
+#[cfg(feature = "accessibility")]
+fn appkit_semantic_accessibility_role(role: crate::ZsAccessibilityRole) -> Retained<NSString> {
+    let role = unsafe {
+        match role {
+            crate::ZsAccessibilityRole::Application => NSAccessibilityApplicationRole,
+            crate::ZsAccessibilityRole::Button => NSAccessibilityButtonRole,
+            crate::ZsAccessibilityRole::ColorWell => NSAccessibilityColorWellRole,
+            crate::ZsAccessibilityRole::ComboBox => NSAccessibilityComboBoxRole,
+            crate::ZsAccessibilityRole::DatePicker | crate::ZsAccessibilityRole::TimePicker => {
+                NSAccessibilityDateTimeAreaRole
+            }
+            crate::ZsAccessibilityRole::Dialog => NSAccessibilitySheetRole,
+            crate::ZsAccessibilityRole::Grid => NSAccessibilityGridRole,
+            crate::ZsAccessibilityRole::Heading => NSAccessibilityHeadingRole,
+            crate::ZsAccessibilityRole::Image => NSAccessibilityImageRole,
+            crate::ZsAccessibilityRole::List => NSAccessibilityListRole,
+            crate::ZsAccessibilityRole::ListItem => NSAccessibilityRowRole,
+            crate::ZsAccessibilityRole::ProgressBar => NSAccessibilityProgressIndicatorRole,
+            crate::ZsAccessibilityRole::Slider => NSAccessibilitySliderRole,
+            crate::ZsAccessibilityRole::SpinButton => NSAccessibilityIncrementorRole,
+            crate::ZsAccessibilityRole::Tab => NSAccessibilityRadioButtonRole,
+            crate::ZsAccessibilityRole::TabList => NSAccessibilityTabGroupRole,
+            crate::ZsAccessibilityRole::Text => NSAccessibilityStaticTextRole,
+            crate::ZsAccessibilityRole::TextBox => NSAccessibilityTextAreaRole,
+            crate::ZsAccessibilityRole::Tree => NSAccessibilityOutlineRole,
+            crate::ZsAccessibilityRole::Article
+            | crate::ZsAccessibilityRole::Complementary
+            | crate::ZsAccessibilityRole::Form
+            | crate::ZsAccessibilityRole::Group
+            | crate::ZsAccessibilityRole::Log
+            | crate::ZsAccessibilityRole::Main
+            | crate::ZsAccessibilityRole::Navigation
+            | crate::ZsAccessibilityRole::Region
+            | crate::ZsAccessibilityRole::Status
+            | crate::ZsAccessibilityRole::TabPanel => NSAccessibilityGroupRole,
+        }
+    };
+    role.retain()
+}
+
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 struct ZsuiAppKitMenuAccessibilityElementIvars {
     view: Weak<ZsuiAppKitDrawView>,
@@ -939,6 +1253,62 @@ impl ZsuiAppKitMenuAccessibilityElement {
 }
 
 impl ZsuiAppKitDrawView {
+    #[cfg(feature = "accessibility")]
+    fn semantic_accessibility_nodes(&self) -> Vec<crate::ZsAccessibilityNode> {
+        self.ivars()
+            .runtime
+            .borrow()
+            .current_interaction_plan()
+            .map(|interaction| interaction.accessibility_nodes)
+            .unwrap_or_default()
+    }
+
+    #[cfg(feature = "accessibility")]
+    fn semantic_accessibility_children(&self) -> Option<Retained<NSArray<AnyObject>>> {
+        let nodes = self.semantic_accessibility_nodes();
+        if nodes.is_empty() {
+            return None;
+        }
+        let parent: &AnyObject = self;
+        Some(self.build_semantic_accessibility_children(&nodes, None, parent))
+    }
+
+    #[cfg(feature = "accessibility")]
+    fn build_semantic_accessibility_children(
+        &self,
+        nodes: &[crate::ZsAccessibilityNode],
+        parent_widget: Option<crate::WidgetId>,
+        parent: &AnyObject,
+    ) -> Retained<NSArray<AnyObject>> {
+        let mut children = Vec::new();
+        for node in nodes.iter().filter(|node| match parent_widget {
+            Some(parent) => node.parent == Some(parent),
+            None => {
+                node.parent.is_none()
+                    || node
+                        .parent
+                        .is_some_and(|parent| !nodes.iter().any(|node| node.widget == parent))
+            }
+        }) {
+            let local = appkit_rect(node.bounds);
+            let screen = self
+                .window()
+                .map(|window| window.convertRectToScreen(self.convertRect_toView(local, None)))
+                .unwrap_or(local);
+            let element =
+                ZsuiAppKitSemanticAccessibilityElement::new(self, parent, node.clone(), screen);
+            let nested =
+                self.build_semantic_accessibility_children(nodes, Some(node.widget), &*element);
+            if !nested.is_empty() {
+                *element.ivars().children.borrow_mut() = Some(nested);
+            }
+            let element: Retained<NSAccessibilityElement> = Retained::into_super(element);
+            let element = Retained::into_super(Retained::into_super(element));
+            children.push(element);
+        }
+        NSArray::from_retained_slice(&children)
+    }
+
     #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
     fn menu_flyout_accessibility_snapshot(
         &self,
@@ -1212,6 +1582,50 @@ fn appkit_menu_accessibility_tree_counts(
     evidence
 }
 
+#[cfg(feature = "accessibility")]
+fn appkit_semantic_accessibility_tree_paths(children: &NSArray<AnyObject>) -> Vec<String> {
+    let mut paths = Vec::new();
+    for element in children.to_vec() {
+        let identifier: Option<Retained<NSString>> =
+            unsafe { msg_send![&*element, accessibilityIdentifier] };
+        paths.push(
+            identifier
+                .map(|identifier| identifier.to_string())
+                .unwrap_or_else(|| "<missing>".to_string()),
+        );
+        let nested: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send![&*element, accessibilityChildren] };
+        if let Some(nested) = nested {
+            paths.extend(appkit_semantic_accessibility_tree_paths(&nested));
+        }
+    }
+    paths
+}
+
+#[cfg(feature = "accessibility")]
+fn expected_appkit_semantic_accessibility_tree_paths(
+    nodes: &[crate::ZsAccessibilityNode],
+    parent_widget: Option<crate::WidgetId>,
+) -> Vec<String> {
+    let mut paths = Vec::new();
+    for node in nodes.iter().filter(|node| match parent_widget {
+        Some(parent) => node.parent == Some(parent),
+        None => {
+            node.parent.is_none()
+                || node
+                    .parent
+                    .is_some_and(|parent| !nodes.iter().any(|node| node.widget == parent))
+        }
+    }) {
+        paths.push(format!("zsui-semantic-{}", node.widget.0));
+        paths.extend(expected_appkit_semantic_accessibility_tree_paths(
+            nodes,
+            Some(node.widget),
+        ));
+    }
+    paths
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct MacosAppKitAccessibilityEvidence {
     pub(crate) node_count: usize,
@@ -1229,6 +1643,7 @@ impl MacosAppKitAccessibilityEvidence {
         self.node_count == self.expected_node_count
             && self.checked_count == self.expected_checked_count
             && self.expanded_count == self.expected_expanded_count
+            && self.paths == self.expected_paths
     }
 
     pub(crate) fn event(&self) -> String {
@@ -1339,6 +1754,27 @@ impl MacosAppKitDrawViewHost {
                     paths: evidence.paths,
                     expected_paths,
                 });
+            }
+        }
+        #[cfg(feature = "accessibility")]
+        {
+            let nodes = self.view.semantic_accessibility_nodes();
+            if !nodes.is_empty() {
+                if let Some(children) = self.view.semantic_accessibility_children() {
+                    let paths = appkit_semantic_accessibility_tree_paths(&children);
+                    let expected_paths =
+                        expected_appkit_semantic_accessibility_tree_paths(&nodes, None);
+                    return Some(MacosAppKitAccessibilityEvidence {
+                        node_count: paths.len(),
+                        expected_node_count: nodes.len(),
+                        checked_count: 0,
+                        expected_checked_count: 0,
+                        expanded_count: 0,
+                        expected_expanded_count: 0,
+                        paths,
+                        expected_paths,
+                    });
+                }
             }
         }
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]

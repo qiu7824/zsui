@@ -7925,7 +7925,7 @@ const SCROLL_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "content_height",
         value_type: UiValueType::Number,
-        required: true,
+        required: false,
     },
 ];
 const SCROLL_ACTIONS: &[ActionSpec] = &[ActionSpec {
@@ -8856,6 +8856,16 @@ fn validate_accessibility(
                 UiDiagnosticCode::InvalidAccessibility,
                 format!("{path}.accessibility.{name}"),
                 format!("accessibility field {name:?} must not be empty"),
+            );
+        }
+    }
+    if let Some(role) = accessibility.role.as_deref() {
+        if let Err(error) = role.parse::<crate::ZsAccessibilityRole>() {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::InvalidAccessibility,
+                format!("{path}.accessibility.role"),
+                error.to_string(),
             );
         }
     }
@@ -11897,7 +11907,7 @@ mod tests {
     }
 
     #[test]
-    fn scroll_contract_requires_one_child_and_nonnegative_geometry() {
+    fn scroll_contract_measures_content_or_accepts_a_nonnegative_virtual_extent() {
         let valid = UiDocument::from_json(
             r#"{
               "schema_version": 1,
@@ -11923,6 +11933,11 @@ mod tests {
             actions: BTreeMap::from([("scroll_changed".to_owned(), UiValueType::Number)]),
         };
         assert!(valid
+            .validate(&UiFeatureSet::new(["scroll", "label"]), &bindings)
+            .is_valid());
+        let mut measured = valid.clone();
+        measured.root.properties.remove("content_height");
+        assert!(measured
             .validate(&UiFeatureSet::new(["scroll", "label"]), &bindings)
             .is_valid());
         let handoff = UiAiHandoffPackage::build(
@@ -13049,5 +13064,29 @@ mod tests {
             UiEmbeddedDocument::decode(artifact.as_bytes(), &features, &UiBindingSchema::default()),
             Err(UiDocumentArtifactError::BindingSchemaMismatch)
         ));
+    }
+
+    #[test]
+    fn accessibility_roles_are_platform_neutral_and_strongly_validated() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "preview",
+                "component": "stack",
+                "accessibility": {
+                  "role": "NSAccessibilityImageRole",
+                  "label": "Preview"
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let report = document.validate(&UiFeatureSet::default(), &UiBindingSchema::default());
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == UiDiagnosticCode::InvalidAccessibility
+                && diagnostic.path == "$.root.accessibility.role"
+                && diagnostic.message.contains("unknown accessibility role")
+        }));
     }
 }

@@ -4017,6 +4017,248 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "grid", feature = "label"))]
+    fn grid_propagates_nested_intrinsic_height_to_its_following_sibling() {
+        let grid_id = WidgetId::new(82);
+        let nested_bottom = WidgetId::new(83);
+        let following = WidgetId::new(84);
+        let mut view: ViewNode<()> = column([
+            grid(
+                [ZsGridTrack::FLEX],
+                [ZsGridTrack::FLEX, ZsGridTrack::FLEX],
+                [
+                    ZsGridCell::new(
+                        0,
+                        0,
+                        column([text("A"), text("B")]).gap(Dp::new(6.0)),
+                    ),
+                    ZsGridCell::new(
+                        1,
+                        0,
+                        column([text("C"), text("D").id(nested_bottom)])
+                            .gap(Dp::new(6.0)),
+                    ),
+                ],
+            )
+            .id(grid_id)
+            .row_gap(Dp::new(10.0)),
+            text("After grid").id(following),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 60,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .unwrap()
+                .bounds
+        };
+        let grid_bounds = bounds_for(grid_id);
+        let nested_bottom_bounds = bounds_for(nested_bottom);
+        let following_bounds = bounds_for(following);
+
+        assert!(grid_bounds.height > 60);
+        assert!(nested_bottom_bounds.y + nested_bottom_bounds.height <= grid_bounds.y + grid_bounds.height);
+        assert!(following_bounds.y >= grid_bounds.y + grid_bounds.height + 8);
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn scroll_without_declared_content_height_measures_nested_content() {
+        let viewport = WidgetId::new(24);
+        let bottom = WidgetId::new(25);
+        let mut view: ViewNode<Msg> = scroll(column([
+            text("Top").height(Dp::new(56.0)),
+            column([text("Nested"), text("Bottom").id(bottom)])
+                .gap(Dp::new(8.0))
+                .padding(Dp::new(8.0)),
+        ]))
+        .id(viewport)
+        .on_scroll(Msg::ScrollChanged);
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 220,
+            height: 64,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+
+        assert!(view.resolved_scroll_content_height.0 > 64.0);
+        assert_eq!(view.widget_scroll_target(bottom), Some(viewport));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollBy {
+                widget: viewport,
+                delta_y: Dp::new(10_000.0),
+            },
+        );
+        let ViewNodeKind::Scroll { offset_y, .. } = view.kind else {
+            panic!("scroll constructor must retain a scroll node");
+        };
+        assert!(offset_y.0 > 0.0);
+        assert!(offset_y.0 < 10_000.0);
+        assert_eq!(events.into_messages(), vec![Msg::ScrollChanged(offset_y)]);
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn adaptive_page_scrolls_natural_content_without_parent_heights() {
+        let page_id = WidgetId::new(26);
+        let first = WidgetId::new(27);
+        let last = WidgetId::new(28);
+        let mut view: ViewNode<()> = column([
+            text("First").id(first).height(Dp::new(52.0)),
+            column([
+                text("Nested A").height(Dp::new(36.0)),
+                text("Nested B").id(last).height(Dp::new(36.0)),
+            ])
+            .gap(Dp::new(8.0)),
+        ])
+        .id(page_id)
+        .gap(Dp::new(8.0))
+        .auto_scroll_y();
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 72,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        assert!(view.resolved_scroll_content_height.0 > 72.0);
+        assert_eq!(view.widget_scroll_target(last), Some(page_id));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollBy {
+                widget: page_id,
+                delta_y: Dp::new(40.0),
+            },
+        );
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        assert_eq!(view.bounds(), Some(bounds));
+        assert!(view.children[0].bounds().unwrap().y < 0);
+        assert!(view.children[1].bounds().unwrap().y >= 0);
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn live_view_rebuilds_preserve_framework_owned_adaptive_scroll_offset() {
+        let page_id = WidgetId::new(32);
+        let first_id = WidgetId::new(33);
+        let runtime = live_view_runtime(
+            (),
+            move |_| {
+                column([
+                    text("First").id(first_id).height(Dp::new(56.0)),
+                    text("Second").height(Dp::new(56.0)),
+                    text("Third").height(Dp::new(56.0)),
+                ])
+                .id(page_id)
+                .auto_scroll_y()
+            },
+            |_, _: (), _| {},
+            Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 72,
+            },
+            Dpi::standard(),
+        );
+        runtime.dispatch_event(&ViewEvent::ScrollBy {
+            widget: page_id,
+            delta_y: Dp::new(44.0),
+        });
+        let text_y = |plan: NativeDrawPlan| {
+            plan.commands
+                .into_iter()
+                .find_map(|command| match command {
+                    NativeDrawCommand::Text(text) if text.text == "First" => Some(text.bounds.y),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(text_y(runtime.draw_plan()), -44);
+
+        runtime.refresh();
+        assert_eq!(text_y(runtime.draw_plan()), -44);
+    }
+
+    #[test]
+    #[cfg(all(feature = "scroll", feature = "tabs", feature = "label"))]
+    fn tabs_keep_the_strip_bounded_and_scroll_nested_content_without_overlap() {
+        let tabs_id = WidgetId::new(29);
+        let final_field = WidgetId::new(30);
+        let following = WidgetId::new(31);
+        let tab_id = ZsTabId::new(1);
+        let tab = tab_view(
+            [ZsTabItem::new(
+                tab_id,
+                "General",
+                column([
+                    text("Field A").height(Dp::new(36.0)),
+                    text("Field B").height(Dp::new(36.0)),
+                    text("Field C").id(final_field).height(Dp::new(36.0)),
+                ])
+                .gap(Dp::new(8.0)),
+            )],
+            Some(tab_id),
+        )
+        .id(tabs_id);
+        let mut view: ViewNode<()> = column([
+            tab,
+            text("Following sibling").id(following).height(Dp::new(20.0)),
+        ])
+        .gap(Dp::new(8.0));
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 260,
+            height: 112,
+        };
+        let output = view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        let tabs_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == tabs_id.into())
+            .unwrap()
+            .bounds;
+        let following_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == following.into())
+            .unwrap()
+            .bounds;
+        assert!(following_bounds.y >= tabs_bounds.y + tabs_bounds.height + 8);
+        assert!(tabs_bounds.y + tabs_bounds.height <= bounds.y + bounds.height);
+        assert_eq!(view.widget_scroll_target(final_field), Some(tabs_id));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollBy {
+                widget: tabs_id,
+                delta_y: Dp::new(32.0),
+            },
+        );
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        assert!(view.children[0].adaptive_scroll_offset_y.0 > 0.0);
+        assert_eq!(view.children[0].bounds(), Some(tabs_bounds));
+    }
+
+    #[test]
     #[cfg(all(feature = "virtual-list", feature = "label"))]
     fn virtual_list_layout_and_paint_only_touch_the_materialized_window() {
         let list_id = WidgetId::new(600);
@@ -4662,4 +4904,73 @@ mod tests {
         });
         assert_eq!(loading.background_poll_interval_ms(), Some(16));
     }
+
+#[cfg(all(feature = "tabs", feature = "accessibility"))]
+#[test]
+fn tab_view_semantics_remain_in_the_unified_native_accessibility_tree() {
+    let tabs = [ZsTabId::new(1), ZsTabId::new(2)];
+    let mut view = tab_view(
+        [
+            ZsTabItem::new(tabs[0], "General", spacer::<()>()),
+            ZsTabItem::new(tabs[1], "Advanced", spacer::<()>()),
+        ],
+        Some(tabs[1]),
+    );
+    view.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 400,
+        },
+        Dpi::standard(),
+    ));
+
+    let semantics = view.interaction_plan().accessibility_nodes;
+    let tab_list = semantics
+        .iter()
+        .find(|node| node.role == crate::ZsAccessibilityRole::TabList)
+        .expect("tab list semantics");
+    let headers = semantics
+        .iter()
+        .filter(|node| {
+            node.parent == Some(tab_list.widget)
+                && node.role == crate::ZsAccessibilityRole::Tab
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(headers.len(), 2);
+    assert_eq!(headers[0].label.as_deref(), Some("General"));
+    assert_eq!(headers[0].selected, Some(false));
+    assert_eq!(headers[1].label.as_deref(), Some("Advanced"));
+    assert_eq!(headers[1].selected, Some(true));
+    assert!(semantics.iter().any(|node| {
+        node.parent == Some(tab_list.widget)
+            && node.role == crate::ZsAccessibilityRole::TabPanel
+            && node.label.as_deref() == Some("Advanced content")
+    }));
+}
+
+#[cfg(all(feature = "button", feature = "accessibility"))]
+#[test]
+fn accessibility_modifiers_preserve_implicit_button_role_and_label() {
+    let mut view = button::<()>("Save").accessibility_description("Writes the document");
+    view.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 160,
+            height: 40,
+        },
+        Dpi::standard(),
+    ));
+
+    let semantics = view.interaction_plan().accessibility_nodes;
+    assert_eq!(semantics.len(), 1);
+    assert_eq!(semantics[0].role, crate::ZsAccessibilityRole::Button);
+    assert_eq!(semantics[0].label.as_deref(), Some("Save"));
+    assert_eq!(
+        semantics[0].description.as_deref(),
+        Some("Writes the document")
+    );
+}
 }

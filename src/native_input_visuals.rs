@@ -1719,7 +1719,17 @@ pub(crate) fn decorate_native_pointer_visuals(
         matches!(command, NativeDrawCommand::RoundRect { rect, .. }
             if rect_contains(*rect, target.bounds))
     });
-    let Some(backdrop_index) = backdrop_index else {
+    let content_index = plan.commands.iter().position(|command| match command {
+        NativeDrawCommand::Text(text) => rect_contains(target.bounds, text.bounds),
+        #[cfg(feature = "password-box")]
+        NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
+        NativeDrawCommand::Icon(icon) => rect_contains(target.bounds, icon.bounds),
+        _ => false,
+    });
+    let Some(insertion_index) = backdrop_index
+        .map(|index| index.saturating_add(1))
+        .or(content_index)
+    else {
         return 0;
     };
     #[cfg(feature = "date-picker")]
@@ -1752,7 +1762,7 @@ pub(crate) fn decorate_native_pointer_visuals(
         Dp::new(4.0).to_px(dpi).round_i32().max(1)
     };
     plan.commands.insert(
-        backdrop_index + 1,
+        insertion_index,
         NativeDrawCommand::RoundFill {
             rect,
             fill: NativeDrawFill::RoleWithAlpha {

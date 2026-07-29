@@ -76,6 +76,65 @@
         ]
       },
       {
+        "id": "layout-integrity-tabs",
+        "component": "tabs",
+        "properties": {
+          "labels": {
+            "layout-general": "常规 / General",
+            "layout-advanced": "高级 / Advanced"
+          },
+          "selected": "layout-general"
+        },
+        "children": [
+          {
+            "id": "layout-general",
+            "component": "stack",
+            "layout": {
+              "direction": "vertical",
+              "gap_token": "sm"
+            },
+            "children": [
+              {
+                "id": "layout-general-field-a",
+                "component": "text",
+                "properties": {
+                  "text": "字段 A 会贡献自己的固有行高 / Field A contributes its intrinsic line box.",
+                  "wrap": "word",
+                  "ellipsis": false
+                }
+              },
+              {
+                "id": "layout-general-field-b",
+                "component": "text",
+                "properties": {
+                  "text": "字段 B 不要求直接父节点复制高度 / Field B needs no copied parent height.",
+                  "wrap": "word",
+                  "ellipsis": false
+                }
+              },
+              {
+                "id": "layout-general-field-c",
+                "component": "text",
+                "properties": {
+                  "text": "内容超过面板时只滚动当前页 / Overflow scrolls only the selected panel.",
+                  "wrap": "word",
+                  "ellipsis": false
+                }
+              }
+            ]
+          },
+          {
+            "id": "layout-advanced",
+            "component": "text",
+            "properties": {
+              "text": "页签切换不改变共享布局规则 / Tab selection keeps the shared layout rule.",
+              "wrap": "word",
+              "ellipsis": false
+            }
+          }
+        ]
+      },
+      {
         "id": "layout-integrity-action-row",
         "component": "stack",
         "layout": {

@@ -422,6 +422,23 @@ fn run_native_window_smoke_event_loop(
             .iter()
             .map(|spec| format!("window_created:{}", spec.title)),
     );
+    #[cfg(feature = "accessibility")]
+    for window_handles in &handles {
+        if let Some((node_count, action_count)) =
+            crate::windows_semantic_uia::proof_provider_tree(window_handles.main())
+        {
+            report.native_accessibility_backend = Some("win32_uia");
+            report.native_accessibility_node_count = report
+                .native_accessibility_node_count
+                .saturating_add(node_count);
+            report.native_accessibility_action_count = report
+                .native_accessibility_action_count
+                .saturating_add(action_count);
+            report.events.push(format!(
+                "win32_uia_semantic_tree:nodes={node_count},actions={action_count}"
+            ));
+        }
+    }
 
     if let Some(menu) = windows.first().and_then(|window| window.menu.as_ref()) {
         let table = crate::windows_win32_host::WindowsWin32StatusMenuCommandTable::from_menu(menu);

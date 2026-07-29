@@ -314,13 +314,16 @@ fn compile_validated_document<Msg: Clone + 'static>(
     if !diagnostics.is_empty() {
         return Err(UiDocumentRuntimeError::Validation { diagnostics });
     }
-    compile_node(
+    let root = compile_node(
         &document.root,
         properties,
         &map_action,
         #[cfg(feature = "password-box")]
         None,
-    )
+    )?;
+    #[cfg(feature = "scroll")]
+    let root = root.auto_scroll_y_if_container();
+    Ok(root)
 }
 
 #[cfg(feature = "password-box")]
@@ -344,7 +347,10 @@ fn compile_validated_document_secure<Msg: Clone + 'static>(
         values: secrets,
         mapper: map_secret_action,
     };
-    compile_node(&document.root, properties, &map_action, Some(&secure))
+    let root = compile_node(&document.root, properties, &map_action, Some(&secure))?;
+    #[cfg(feature = "scroll")]
+    let root = root.auto_scroll_y_if_container();
+    Ok(root)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -478,13 +484,14 @@ fn compile_node<Msg: Clone + 'static>(
                     actual,
                 });
             }
-            let mut control = crate::scroll(child)
-                .scroll_y(Dp::new(
-                    number_property(node, properties, "offset_y", 0.0).max(0.0) as f32,
-                ))
-                .content_height(Dp::new(
+            let mut control = crate::scroll(child).scroll_y(Dp::new(
+                number_property(node, properties, "offset_y", 0.0).max(0.0) as f32,
+            ));
+            if node_has_property_source(node, "content_height") {
+                control = control.content_height(Dp::new(
                     number_property(node, properties, "content_height", 0.0).max(0.0) as f32,
                 ));
+            }
             if let Some(binding) = node.action_bindings.get("scroll") {
                 let mapper = mapper.clone();
                 let node_id = node.id.as_str().to_owned();
@@ -1573,6 +1580,33 @@ fn compile_node<Msg: Clone + 'static>(
             });
         }
     };
+    #[cfg(feature = "accessibility")]
+    if let Some(accessibility) = &node.accessibility {
+        if let Some(role) = &accessibility.role {
+            let role = role
+                .parse::<crate::ZsAccessibilityRole>()
+                .map_err(|error| {
+                    invalid_resolved_property(node, "accessibility.role", error.to_string())
+                })?;
+            view = view.accessibility_role(role);
+        }
+        if let Some(label) = &accessibility.label {
+            view = view.accessibility_label(label.clone());
+        }
+        if let Some(description) = &accessibility.description {
+            view = view.accessibility_description(description.clone());
+        }
+        if let Some(live_region) = accessibility.live_region {
+            view = view.accessibility_live_region(match live_region {
+                crate::ui_document::UiLiveRegion::Polite => {
+                    crate::ZsAccessibilityLiveRegion::Polite
+                }
+                crate::ui_document::UiLiveRegion::Assertive => {
+                    crate::ZsAccessibilityLiveRegion::Assertive
+                }
+            });
+        }
+    }
     // Tooltip is an attached modifier rather than another control, so the
     // wrapped control keeps the WidgetId used by hit testing and typed events.
     if node.component != "tooltip" {
@@ -1701,7 +1735,7 @@ fn document_positive_extent(
     Ok(Dp::new(value as f32))
 }
 
-#[cfg(feature = "teaching-tip")]
+#[cfg(any(feature = "teaching-tip", feature = "scroll"))]
 fn node_has_property_source(node: &UiNode, property: &str) -> bool {
     node.properties.contains_key(property)
         || node.property_bindings.contains_key(property)
@@ -5679,6 +5713,15 @@ mod tests {
                     && image.interpolation == crate::NativeImageInterpolation::Nearest
         )));
         assert_eq!(view.background_poll_interval_ms(), Some(16));
+        #[cfg(feature = "accessibility")]
+        {
+            let semantics = view.interaction_plan().accessibility_nodes;
+            assert_eq!(semantics.len(), 1);
+            assert_eq!(semantics[0].role, crate::ZsAccessibilityRole::Image);
+            assert_eq!(semantics[0].label.as_deref(), Some("Preview"));
+            assert_eq!(semantics[0].bounds.width, 100);
+            assert_eq!(semantics[0].bounds.height, 100);
+        }
 
         let mut invalid_values = values;
         invalid_values.insert(
@@ -5863,6 +5906,129 @@ mod tests {
         Action(UiDocumentAction),
         #[cfg(feature = "password-box")]
         Secret(UiDocumentSecretAction),
+    }
+
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    #[test]
+    fn document_root_and_scroll_measure_nested_content_without_manual_heights() {
+        let root_document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "root",
+                "component": "stack",
+                "layout": { "direction": "vertical", "gap": 8.0 },
+                "children": [
+                  { "id": "first", "component": "text", "layout": { "height": 48.0 }, "properties": { "text": "First" } },
+                  {
+                    "id": "nested",
+                    "component": "stack",
+                    "layout": { "direction": "vertical", "gap": 8.0 },
+                    "children": [
+                      { "id": "second", "component": "text", "layout": { "height": 40.0 }, "properties": { "text": "Second" } },
+                      { "id": "last", "component": "text", "layout": { "height": 40.0 }, "properties": { "text": "Last" } }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let mut root = ui_document_view(
+            &root_document,
+            &UiBindingSchema::default(),
+            &BTreeMap::new(),
+            Msg::Action,
+        )
+        .unwrap();
+        let root_id = root_document.root.id.widget_id();
+        let last_id = root_document.root.children[1].children[1].id.widget_id();
+        assert_eq!(root.id, Some(root_id));
+        assert_eq!(root.style.overflow_y, crate::ViewOverflow::Auto);
+        let root_bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 72,
+        };
+        root.layout(&mut ViewLayoutCx::new(root_bounds, Dpi::standard()));
+        assert_eq!(root.widget_scroll_target(last_id), Some(root_id));
+        let mut events = crate::ViewEventCx::new();
+        root.event(
+            &mut events,
+            &crate::ViewEvent::ScrollBy {
+                widget: root_id,
+                delta_y: Dp::new(40.0),
+            },
+        );
+        let scrolled = root.layout(&mut ViewLayoutCx::new(root_bounds, Dpi::standard()));
+        assert!(
+            scrolled
+                .children
+                .iter()
+                .find(
+                    |child| child.component == root_document.root.children[0].id.widget_id().into()
+                )
+                .unwrap()
+                .bounds
+                .y
+                < 0
+        );
+
+        let scroll_document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "viewport",
+                "component": "scroll",
+                "children": [{
+                  "id": "content",
+                  "component": "stack",
+                  "layout": { "direction": "vertical", "gap": 8.0 },
+                  "children": [
+                    { "id": "row-a", "component": "text", "layout": { "height": 48.0 }, "properties": { "text": "A" } },
+                    { "id": "row-b", "component": "text", "layout": { "height": 48.0 }, "properties": { "text": "B" } }
+                  ]
+                }]
+              }
+            }"#,
+        )
+        .unwrap();
+        let mut viewport = ui_document_view(
+            &scroll_document,
+            &UiBindingSchema::default(),
+            &BTreeMap::new(),
+            Msg::Action,
+        )
+        .unwrap();
+        assert!(matches!(
+            viewport.kind,
+            crate::ViewNodeKind::Scroll {
+                content_height: None,
+                ..
+            }
+        ));
+        viewport.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 56,
+            },
+            Dpi::standard(),
+        ));
+        let mut events = crate::ViewEventCx::new();
+        viewport.event(
+            &mut events,
+            &crate::ViewEvent::ScrollBy {
+                widget: scroll_document.root.id.widget_id(),
+                delta_y: Dp::new(10_000.0),
+            },
+        );
+        assert!(matches!(
+            viewport.kind,
+            crate::ViewNodeKind::Scroll { offset_y, .. } if offset_y.0 > 0.0
+        ));
     }
 
     #[test]

@@ -33,10 +33,12 @@ history remain authoritative for implementation status.
   editing and support release embedding without file watchers, preview
   transport, another mandatory process or other development-only dependencies.
   Stable IDs preserve compatible focus, selection, scrolling and control state.
-  UiDocument `scroll` owns exactly one child, nonnegative `content_height`, an
-  optional controlled `offset_y` number property and a typed `scroll` number
-  action. Viewer updates the explicit offset binding before rebuilding, and
-  layout clamps restored offsets to the current content range. Native scroll
+  UiDocument `scroll` owns exactly one child, an optional nonnegative virtual
+  `content_height` override, an optional controlled `offset_y` number property
+  and a typed `scroll` number action. Without an override, layout measures the
+  width-aware natural child height. Viewer updates the explicit offset binding
+  before rebuilding, and layout clamps restored offsets to the current content
+  range. Native scroll
   smoke must travel through the host input route rather than mutating the
   shared View directly.
   Viewer smoke reports use the versioned `zsui.ui-viewer-proof/v1` schema and
@@ -858,6 +860,14 @@ history remain authoritative for implementation status.
   glyphs or overlap the following sibling. A row measures wrapped text height
   from the width actually allocated after fixed controls and gaps, not from the
   text's shortest unbreakable segment.
+- Adaptive vertical overflow is a shared View rule, not a demo height patch.
+  `page`, UiDocument container roots and Tabs retain a bounded viewport, measure
+  width-aware natural descendant height, clamp offsets after resize and scroll
+  only when content exceeds the viewport. Tabs keep their strip fixed while the
+  selected panel scrolls. Grid row measurement uses allocated column widths and
+  propagates nested/span height. `scroll.content_height` is an optional virtual
+  extent override; ordinary nested content is measured without requiring each
+  direct parent to declare `height` or `min_height`.
 - `ViewStyle::flex` distributes only a Stack's main axis. Text fills the column
   cross-axis width even when wrapped text is content-height (`flex(0)`), while
   a wrapping label beside a fixed action uses explicit main-axis flex when it

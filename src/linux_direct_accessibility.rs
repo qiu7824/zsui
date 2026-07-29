@@ -4,8 +4,10 @@ use std::sync::{
     Arc, RwLock,
 };
 
+#[cfg(feature = "menu-flyout")]
+use accesskit::HasPopup;
 use accesskit::{
-    Action, ActionHandler, ActionRequest, ActivationHandler, Affine, DeactivationHandler, HasPopup,
+    Action, ActionHandler, ActionRequest, ActivationHandler, Affine, DeactivationHandler, Live,
     Node, NodeId, Rect as AccessRect, Role, Toggled, Tree, TreeId, TreeUpdate,
 };
 use accesskit_winit::Adapter;
@@ -259,15 +261,14 @@ fn build_tree_update(
     focused_widget: Option<crate::WidgetId>,
     tab_snapshots: LinuxTabAccessibilitySnapshots,
 ) -> (TreeUpdate, HashMap<NodeId, LinuxAccessibilityTarget>) {
-    let targets = interaction
-        .map(|interaction| interaction.hit_targets)
+    let (targets, semantic_nodes) = interaction
+        .map(|interaction| (interaction.hit_targets, interaction.accessibility_nodes))
         .unwrap_or_default();
     let targets = targets
         .into_iter()
         .enumerate()
         .map(|(index, target)| (NodeId(index as u64 + 1), target))
         .collect::<Vec<_>>();
-    #[cfg(feature = "tabs")]
     let mut next_synthetic_node_id = targets.len() as u64 + 1;
     #[cfg(feature = "tabs")]
     let tab_node_ids = targets
@@ -283,6 +284,8 @@ fn build_tree_update(
     let mut nodes = Vec::with_capacity(targets.len().saturating_add(1));
     let mut child_ids = Vec::with_capacity(targets.len());
     let mut focused_node = ROOT_NODE_ID;
+    let mut widget_node_ids = HashMap::new();
+    let mut target_bounds = HashMap::new();
 
     for (node_id, target) in targets {
         #[cfg(feature = "virtual-list")]
@@ -373,12 +376,20 @@ fn build_tree_update(
         if !is_nested_menu_flyout_item {
             child_ids.push(node_id);
         }
+        widget_node_ids.entry(target.widget).or_insert(node_id);
+        target_bounds.insert(node_id, target.bounds);
         node_targets.insert(node_id, LinuxAccessibilityTarget::View(target));
         nodes.push((node_id, node));
     }
 
     #[cfg(feature = "tabs")]
     for snapshot in tab_snapshots {
+        if semantic_nodes.iter().any(|semantic| {
+            semantic.widget == snapshot.tab_view
+                && semantic.role == crate::ZsAccessibilityRole::TabList
+        }) {
+            continue;
+        }
         let list_id = NodeId(next_synthetic_node_id);
         next_synthetic_node_id = next_synthetic_node_id.saturating_add(1);
         let panel_id = NodeId(next_synthetic_node_id);
@@ -391,7 +402,7 @@ fn build_tree_update(
         if item_ids.is_empty() {
             continue;
         }
-        for (item, item_id) in snapshot.items.iter().zip(item_ids.iter().copied()) {
+        for item_id in item_ids.iter().copied() {
             if let Some((_, node)) = nodes.iter_mut().find(|(node_id, _)| *node_id == item_id) {
                 node.set_controls(vec![panel_id]);
             }
@@ -425,8 +436,67 @@ fn build_tree_update(
         nodes.push((panel_id, panel));
     }
 
+    let mut semantic_entries = Vec::with_capacity(semantic_nodes.len());
+    for semantic in semantic_nodes {
+        let node_id = if let Some(node_id) = widget_node_ids.get(&semantic.widget).copied() {
+            if let Some((_, node)) = nodes
+                .iter_mut()
+                .find(|(candidate, _)| *candidate == node_id)
+            {
+                apply_semantic_accessibility_node(node, &semantic, content_offset_y);
+            }
+            node_id
+        } else {
+            let node_id = NodeId(next_synthetic_node_id);
+            next_synthetic_node_id = next_synthetic_node_id.saturating_add(1);
+            let mut node = Node::new(accesskit_semantic_role(semantic.role));
+            node.set_author_id(format!("zsui-semantic-{}", semantic.widget.0));
+            apply_semantic_accessibility_node(&mut node, &semantic, content_offset_y);
+            nodes.push((node_id, node));
+            widget_node_ids.insert(semantic.widget, node_id);
+            node_id
+        };
+        semantic_entries.push((node_id, semantic));
+    }
+
+    for (node_id, semantic) in &semantic_entries {
+        if let Some(parent_id) = semantic
+            .parent
+            .and_then(|parent| widget_node_ids.get(&parent).copied())
+        {
+            child_ids.retain(|candidate| candidate != node_id);
+            push_accessibility_child(&mut nodes, parent_id, *node_id);
+        } else if !child_ids.contains(node_id) {
+            child_ids.push(*node_id);
+        }
+    }
+
+    let mut semantic_parents = semantic_entries
+        .iter()
+        .filter(|(_, semantic)| semantic_role_can_contain_children(semantic.role))
+        .collect::<Vec<_>>();
+    semantic_parents.sort_by_key(|(_, semantic)| {
+        i64::from(semantic.bounds.width.max(0)) * i64::from(semantic.bounds.height.max(0))
+    });
+    for (parent_id, semantic) in semantic_parents {
+        let adopt = child_ids
+            .iter()
+            .copied()
+            .filter(|candidate| candidate != parent_id)
+            .filter(|candidate| {
+                target_bounds
+                    .get(candidate)
+                    .is_some_and(|bounds| rect_contains(semantic.bounds, *bounds))
+            })
+            .collect::<Vec<_>>();
+        for child in adopt {
+            child_ids.retain(|candidate| *candidate != child);
+            push_accessibility_child(&mut nodes, *parent_id, child);
+        }
+    }
+
     if let Some(menu) = menu {
-        let first_menu_node = nodes.len() as u64 + 1;
+        let first_menu_node = next_synthetic_node_id;
         let menu_bar_id = NodeId(first_menu_node);
         let root_ids = (0..menu.roots.len())
             .map(|index| NodeId(first_menu_node + 1 + index as u64))
@@ -519,6 +589,113 @@ fn menu_accessibility_node(item: &crate::linux_direct_menu::LinuxMenuAccessibili
     node
 }
 
+fn accesskit_semantic_role(role: crate::ZsAccessibilityRole) -> Role {
+    match role {
+        crate::ZsAccessibilityRole::Application => Role::Application,
+        crate::ZsAccessibilityRole::Article => Role::Article,
+        crate::ZsAccessibilityRole::Button => Role::Button,
+        crate::ZsAccessibilityRole::ColorWell => Role::ColorWell,
+        crate::ZsAccessibilityRole::ComboBox => Role::ComboBox,
+        crate::ZsAccessibilityRole::Complementary => Role::Complementary,
+        crate::ZsAccessibilityRole::DatePicker => Role::DateInput,
+        crate::ZsAccessibilityRole::Dialog => Role::Dialog,
+        crate::ZsAccessibilityRole::Form => Role::Form,
+        crate::ZsAccessibilityRole::Grid => Role::Grid,
+        crate::ZsAccessibilityRole::Group => Role::Group,
+        crate::ZsAccessibilityRole::Heading => Role::Heading,
+        crate::ZsAccessibilityRole::Image => Role::Image,
+        crate::ZsAccessibilityRole::List => Role::List,
+        crate::ZsAccessibilityRole::ListItem => Role::ListItem,
+        crate::ZsAccessibilityRole::Log => Role::Log,
+        crate::ZsAccessibilityRole::Main => Role::Main,
+        crate::ZsAccessibilityRole::Navigation => Role::Navigation,
+        crate::ZsAccessibilityRole::ProgressBar => Role::ProgressIndicator,
+        crate::ZsAccessibilityRole::Region => Role::Region,
+        crate::ZsAccessibilityRole::Slider => Role::Slider,
+        crate::ZsAccessibilityRole::SpinButton => Role::SpinButton,
+        crate::ZsAccessibilityRole::Status => Role::Status,
+        crate::ZsAccessibilityRole::Tab => Role::Tab,
+        crate::ZsAccessibilityRole::TabList => Role::TabList,
+        crate::ZsAccessibilityRole::TabPanel => Role::TabPanel,
+        crate::ZsAccessibilityRole::Text => Role::Label,
+        crate::ZsAccessibilityRole::TextBox => Role::MultilineTextInput,
+        crate::ZsAccessibilityRole::TimePicker => Role::TimeInput,
+        crate::ZsAccessibilityRole::Tree => Role::Tree,
+    }
+}
+
+fn apply_semantic_accessibility_node(
+    node: &mut Node,
+    semantic: &crate::ZsAccessibilityNode,
+    content_offset_y: i32,
+) {
+    node.set_role(accesskit_semantic_role(semantic.role));
+    node.set_author_id(format!("zsui-semantic-{}", semantic.widget.0));
+    node.set_bounds(accesskit_rect(Rect {
+        y: semantic.bounds.y.saturating_add(content_offset_y),
+        ..semantic.bounds
+    }));
+    if let Some(label) = &semantic.label {
+        node.set_label(label.clone());
+    }
+    if let Some(description) = &semantic.description {
+        node.set_description(description.clone());
+    }
+    if let Some(live_region) = semantic.live_region {
+        node.set_live(match live_region {
+            crate::ZsAccessibilityLiveRegion::Polite => Live::Polite,
+            crate::ZsAccessibilityLiveRegion::Assertive => Live::Assertive,
+        });
+    }
+    if !semantic.enabled {
+        node.set_disabled();
+    }
+    if let Some(selected) = semantic.selected {
+        node.set_selected(selected);
+    }
+}
+
+fn push_accessibility_child(nodes: &mut [(NodeId, Node)], parent: NodeId, child: NodeId) {
+    if let Some((_, node)) = nodes.iter_mut().find(|(candidate, _)| *candidate == parent) {
+        let mut children = node.children().to_vec();
+        if !children.contains(&child) {
+            children.push(child);
+            node.set_children(children);
+        }
+    }
+}
+
+fn semantic_role_can_contain_children(role: crate::ZsAccessibilityRole) -> bool {
+    matches!(
+        role,
+        crate::ZsAccessibilityRole::Application
+            | crate::ZsAccessibilityRole::Article
+            | crate::ZsAccessibilityRole::Complementary
+            | crate::ZsAccessibilityRole::Form
+            | crate::ZsAccessibilityRole::Group
+            | crate::ZsAccessibilityRole::List
+            | crate::ZsAccessibilityRole::ListItem
+            | crate::ZsAccessibilityRole::Log
+            | crate::ZsAccessibilityRole::Main
+            | crate::ZsAccessibilityRole::Navigation
+            | crate::ZsAccessibilityRole::Region
+            | crate::ZsAccessibilityRole::TabList
+            | crate::ZsAccessibilityRole::TabPanel
+    )
+}
+
+fn rect_contains(parent: Rect, child: Rect) -> bool {
+    let parent_right = parent.x.saturating_add(parent.width.max(0));
+    let parent_bottom = parent.y.saturating_add(parent.height.max(0));
+    let child_right = child.x.saturating_add(child.width.max(0));
+    let child_bottom = child.y.saturating_add(child.height.max(0));
+    child.x >= parent.x
+        && child.y >= parent.y
+        && child_right <= parent_right
+        && child_bottom <= parent_bottom
+}
+
+#[cfg(feature = "menu-flyout")]
 fn apply_view_accessibility_state(node: &mut Node, kind: ViewHitTargetKind) {
     #[cfg(feature = "menu-flyout")]
     if let ViewHitTargetKind::MenuFlyoutItem {
@@ -542,6 +719,9 @@ fn apply_view_accessibility_state(node: &mut Node, kind: ViewHitTargetKind) {
         node.set_selected(highlighted);
     }
 }
+
+#[cfg(not(feature = "menu-flyout"))]
+fn apply_view_accessibility_state(_node: &mut Node, _kind: ViewHitTargetKind) {}
 
 fn accesskit_rect(rect: Rect) -> AccessRect {
     AccessRect {
@@ -810,6 +990,103 @@ mod tests {
             accesskit_role(ViewHitTargetKind::ItemsRepeaterScrollbarThumb),
             Role::GenericContainer
         );
+    }
+
+    #[test]
+    fn semantic_groups_adopt_controls_and_preserve_explicit_children() {
+        let group_widget = crate::WidgetId(10);
+        let image_widget = crate::WidgetId(11);
+        let button_widget = crate::WidgetId(12);
+        let group_bounds = Rect {
+            x: 10,
+            y: 10,
+            width: 240,
+            height: 180,
+        };
+        let interaction = ViewInteractionPlan {
+            hit_targets: vec![ViewHitTarget::with_kind(
+                button_widget,
+                Rect {
+                    x: 30,
+                    y: 120,
+                    width: 100,
+                    height: 32,
+                },
+                ViewHitTargetKind::Button,
+            )],
+            accessibility_nodes: vec![
+                crate::ZsAccessibilityNode {
+                    widget: group_widget,
+                    parent: None,
+                    bounds: group_bounds,
+                    role: crate::ZsAccessibilityRole::Group,
+                    label: Some("Appearance".to_owned()),
+                    description: None,
+                    live_region: None,
+                    enabled: true,
+                    selected: None,
+                },
+                crate::ZsAccessibilityNode {
+                    widget: image_widget,
+                    parent: Some(group_widget),
+                    bounds: Rect {
+                        x: 30,
+                        y: 35,
+                        width: 64,
+                        height: 64,
+                    },
+                    role: crate::ZsAccessibilityRole::Image,
+                    label: Some("Theme preview".to_owned()),
+                    description: None,
+                    live_region: None,
+                    enabled: true,
+                    selected: None,
+                },
+            ],
+            #[cfg(feature = "tooltip")]
+            tooltip_targets: Vec::new(),
+        };
+        #[cfg(feature = "tabs")]
+        let tabs = Vec::new();
+        #[cfg(not(feature = "tabs"))]
+        let tabs = ();
+        let (tree, _) = build_tree_update(
+            "Settings",
+            Rect {
+                x: 0,
+                y: 0,
+                width: 300,
+                height: 240,
+            },
+            1.0,
+            0,
+            None,
+            &NativeDrawPlan::new([]),
+            Some(interaction),
+            None,
+            tabs,
+        );
+        let (_, root) = &tree.nodes[0];
+        assert_eq!(root.children().len(), 1);
+        let (group_id, group) = tree
+            .nodes
+            .iter()
+            .find(|(_, node)| node.role() == Role::Group)
+            .expect("semantic group");
+        assert_eq!(group.label(), Some("Appearance"));
+        assert_eq!(root.children(), &[*group_id]);
+        let child_roles = group
+            .children()
+            .iter()
+            .filter_map(|child| {
+                tree.nodes
+                    .iter()
+                    .find(|(node_id, _)| node_id == child)
+                    .map(|(_, node)| node.role())
+            })
+            .collect::<Vec<_>>();
+        assert!(child_roles.contains(&Role::Image));
+        assert!(child_roles.contains(&Role::Button));
     }
 
     #[cfg(feature = "menu-flyout")]

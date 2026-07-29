@@ -1156,6 +1156,12 @@ pub enum ViewNodeKind<Msg> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewOverflow {
+    Visible,
+    Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewStyle {
     pub padding: Option<Dp>,
     pub radius: Option<Dp>,
@@ -1167,6 +1173,8 @@ pub struct ViewStyle {
     pub flex: f32,
     pub gap: Option<Dp>,
     pub theme_mode: Option<ZsuiThemeMode>,
+    #[cfg(feature = "scroll")]
+    pub overflow_y: ViewOverflow,
 }
 
 impl Default for ViewStyle {
@@ -1182,6 +1190,8 @@ impl Default for ViewStyle {
             flex: 1.0,
             gap: None,
             theme_mode: None,
+            #[cfg(feature = "scroll")]
+            overflow_y: ViewOverflow::Visible,
         }
     }
 }
@@ -1194,6 +1204,8 @@ pub struct ViewNode<Msg> {
     pub children: Vec<ViewNode<Msg>>,
     #[cfg(feature = "tooltip")]
     tooltip: Option<crate::ZsTooltipSpec>,
+    #[cfg(feature = "accessibility")]
+    accessibility: Option<crate::ZsAccessibilitySpec>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
     #[cfg(all(
@@ -1215,6 +1227,10 @@ pub struct ViewNode<Msg> {
     combo_first_visible_option: Option<usize>,
     #[cfg(feature = "ui-viewer")]
     document_poll_interval_ms: Option<u64>,
+    #[cfg(feature = "scroll")]
+    adaptive_scroll_offset_y: Dp,
+    #[cfg(feature = "scroll")]
+    resolved_scroll_content_height: Dp,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -1227,6 +1243,8 @@ impl<Msg> ViewNode<Msg> {
             children: Vec::new(),
             #[cfg(feature = "tooltip")]
             tooltip: None,
+            #[cfg(feature = "accessibility")]
+            accessibility: None,
             bounds: None,
             layout_dpi: Dpi::standard(),
             #[cfg(all(
@@ -1248,12 +1266,78 @@ impl<Msg> ViewNode<Msg> {
             combo_first_visible_option: None,
             #[cfg(feature = "ui-viewer")]
             document_poll_interval_ms: None,
+            #[cfg(feature = "scroll")]
+            adaptive_scroll_offset_y: Dp::new(0.0),
+            #[cfg(feature = "scroll")]
+            resolved_scroll_content_height: Dp::new(0.0),
             message: PhantomData,
         }
     }
 
     pub fn id(mut self, id: WidgetId) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    /// Attaches platform-neutral semantic metadata to this retained node.
+    #[cfg(feature = "accessibility")]
+    pub fn accessibility(mut self, accessibility: crate::ZsAccessibilitySpec) -> Self {
+        self.accessibility = Some(accessibility);
+        self
+    }
+
+    /// Replaces only the accessible label while preserving the current role.
+    #[cfg(feature = "accessibility")]
+    pub fn accessibility_label(mut self, label: impl Into<String>) -> Self {
+        let current = self
+            .accessibility
+            .take()
+            .or_else(|| self.implicit_accessibility_spec())
+            .unwrap_or_else(|| {
+                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group)
+            });
+        self.accessibility = Some(current.label(label));
+        self
+    }
+
+    #[cfg(feature = "accessibility")]
+    pub fn accessibility_role(mut self, role: crate::ZsAccessibilityRole) -> Self {
+        let mut current = self
+            .accessibility
+            .take()
+            .or_else(|| self.implicit_accessibility_spec())
+            .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(role));
+        current.role = role;
+        self.accessibility = Some(current);
+        self
+    }
+
+    #[cfg(feature = "accessibility")]
+    pub fn accessibility_description(mut self, description: impl Into<String>) -> Self {
+        let current = self
+            .accessibility
+            .take()
+            .or_else(|| self.implicit_accessibility_spec())
+            .unwrap_or_else(|| {
+                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group)
+            });
+        self.accessibility = Some(current.description(description));
+        self
+    }
+
+    #[cfg(feature = "accessibility")]
+    pub fn accessibility_live_region(
+        mut self,
+        live_region: crate::ZsAccessibilityLiveRegion,
+    ) -> Self {
+        let current = self
+            .accessibility
+            .take()
+            .or_else(|| self.implicit_accessibility_spec())
+            .unwrap_or_else(|| {
+                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Status)
+            });
+        self.accessibility = Some(current.live_region(live_region));
         self
     }
 
@@ -1315,6 +1399,10 @@ impl<Msg> ViewNode<Msg> {
     fn accepts_automatic_widget_id(&self) -> bool {
         #[cfg(feature = "tooltip")]
         if self.tooltip.is_some() {
+            return true;
+        }
+        #[cfg(feature = "accessibility")]
+        if self.accessibility.is_some() {
             return true;
         }
         match &self.kind {
@@ -1496,6 +1584,66 @@ impl<Msg> ViewNode<Msg> {
     pub fn gap(mut self, gap: Dp) -> Self {
         self.style.gap = Some(gap);
         self
+    }
+
+    /// Keeps this node's viewport bounded and enables vertical scrolling only
+    /// when its width-aware natural content height exceeds the viewport.
+    #[cfg(feature = "scroll")]
+    pub fn auto_scroll_y(mut self) -> Self {
+        self.style.overflow_y = ViewOverflow::Auto;
+        self
+    }
+
+    #[cfg(all(feature = "scroll", feature = "ui-document-runtime"))]
+    pub(crate) fn auto_scroll_y_if_container(self) -> Self {
+        #[allow(unused_mut)]
+        let mut supports_overflow = matches!(self.kind, ViewNodeKind::Stack { .. });
+        #[cfg(feature = "grid")]
+        {
+            supports_overflow |= matches!(self.kind, ViewNodeKind::Grid { .. });
+        }
+        #[cfg(feature = "tabs")]
+        {
+            supports_overflow |= matches!(self.kind, ViewNodeKind::Tabs { .. });
+        }
+        #[cfg(feature = "list")]
+        {
+            supports_overflow |= matches!(self.kind, ViewNodeKind::List { .. });
+        }
+        if supports_overflow {
+            self.auto_scroll_y()
+        } else {
+            self
+        }
+    }
+
+    #[cfg(feature = "scroll")]
+    pub(crate) fn restore_adaptive_scroll_state(&mut self, previous: &Self) {
+        let same_node = self.id.is_some()
+            && self.id == previous.id
+            && std::mem::discriminant(&self.kind) == std::mem::discriminant(&previous.kind);
+        if same_node
+            && self.style.overflow_y == ViewOverflow::Auto
+            && previous.style.overflow_y == ViewOverflow::Auto
+        {
+            self.adaptive_scroll_offset_y = previous.adaptive_scroll_offset_y;
+        }
+
+        for (index, child) in self.children.iter_mut().enumerate() {
+            let previous_child = child
+                .id
+                .and_then(|id| previous.children.iter().find(|candidate| candidate.id == Some(id)))
+                .or_else(|| {
+                    child
+                        .id
+                        .is_none()
+                        .then(|| previous.children.get(index))
+                        .flatten()
+                });
+            if let Some(previous_child) = previous_child {
+                child.restore_adaptive_scroll_state(previous_child);
+            }
+        }
     }
 
     #[cfg(feature = "grid")]

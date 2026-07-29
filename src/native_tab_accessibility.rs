@@ -15,6 +15,7 @@ pub(crate) struct NativeTabAccessibilityItem {
     pub(crate) count: usize,
 }
 
+#[allow(dead_code)]
 impl NativeTabAccessibilityItem {
     pub(crate) const fn tab(&self) -> ZsTabId {
         match self.target.kind {
@@ -32,6 +33,7 @@ pub(crate) struct NativeTabAccessibilitySnapshot {
     pub(crate) items: Vec<NativeTabAccessibilityItem>,
 }
 
+#[allow(dead_code)]
 impl NativeTabAccessibilitySnapshot {
     pub(crate) fn selected_item(&self) -> Option<&NativeTabAccessibilityItem> {
         self.items.iter().find(|item| item.selected)

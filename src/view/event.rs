@@ -591,6 +591,9 @@ pub enum ViewHitTargetKind {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewInteractionPlan {
     pub hit_targets: Vec<ViewHitTarget>,
+    #[cfg(feature = "accessibility")]
+    #[serde(default)]
+    pub accessibility_nodes: Vec<crate::ZsAccessibilityNode>,
     #[cfg(feature = "tooltip")]
     #[serde(default)]
     pub tooltip_targets: Vec<ViewTooltipTarget>,
@@ -600,6 +603,8 @@ impl ViewInteractionPlan {
     pub fn new(hit_targets: impl IntoIterator<Item = ViewHitTarget>) -> Self {
         Self {
             hit_targets: hit_targets.into_iter().collect(),
+            #[cfg(feature = "accessibility")]
+            accessibility_nodes: Vec::new(),
             #[cfg(feature = "tooltip")]
             tooltip_targets: Vec::new(),
         }
@@ -616,6 +621,11 @@ impl ViewInteractionPlan {
 
     pub fn hit_target_count(&self) -> usize {
         self.hit_targets.len()
+    }
+
+    #[cfg(feature = "accessibility")]
+    pub fn accessibility_node_count(&self) -> usize {
+        self.accessibility_nodes.len()
     }
 
     pub fn target_at(&self, point: Point) -> Option<WidgetId> {

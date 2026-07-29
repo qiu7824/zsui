@@ -100,8 +100,6 @@ trait LiveViewDriver: Send {
     fn widget_color_picker_state(&self, widget: WidgetId) -> Option<ZsColorPickerState>;
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState>;
-    #[cfg(feature = "tabs")]
-    fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect>;
     #[cfg(all(test, feature = "tabs"))]
     fn widget_tab_view_state(&self, widget: WidgetId) -> Option<ZsTabViewState>;
     #[cfg(feature = "tabs")]
@@ -335,8 +333,12 @@ impl SharedLiveViewRuntime {
     }
 
     #[cfg(feature = "tabs")]
+    #[allow(dead_code)]
     pub(crate) fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
-        self.lock().widget_layout_bounds(widget)
+        self.lock()
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .map(|target| target.bounds)
     }
 
     #[cfg(all(test, feature = "tabs"))]
@@ -453,7 +455,14 @@ where
         if self.suspended {
             return;
         }
-        self.view = (self.view_fn)(&self.state);
+        let next_view = (self.view_fn)(&self.state);
+        #[cfg(feature = "scroll")]
+        let mut next_view = next_view;
+        #[cfg(feature = "scroll")]
+        next_view.assign_automatic_ids();
+        #[cfg(feature = "scroll")]
+        next_view.restore_adaptive_scroll_state(&self.view);
+        self.view = next_view;
         self.layout_current_view();
     }
 
@@ -609,6 +618,20 @@ where
         self.view.event(&mut event_cx, event);
         let messages = event_cx.into_messages();
         if messages.is_empty() {
+            let retained_geometry_changed = match event {
+                #[cfg(feature = "scroll")]
+                ViewEvent::ScrollBy { .. } => true,
+                #[cfg(feature = "virtual-list")]
+                ViewEvent::ItemsRepeaterScrollToRatio { .. } => true,
+                #[cfg(feature = "tabs")]
+                ViewEvent::TabSelected { .. } => true,
+                _ => false,
+            };
+            if retained_geometry_changed {
+                // Framework-owned scrolling and uncontrolled tab selection can
+                // change child geometry without emitting an application message.
+                self.layout_current_view();
+            }
             self.revision = self.revision.saturating_add(1);
             return LiveViewUpdate {
                 redraw: true,
@@ -785,11 +808,6 @@ where
     #[cfg(feature = "tabs")]
     fn widget_tab_header_state(&self, widget: WidgetId) -> Option<ZsTabHeaderState> {
         self.view.widget_tab_header_state(widget)
-    }
-
-    #[cfg(feature = "tabs")]
-    fn widget_layout_bounds(&self, widget: WidgetId) -> Option<Rect> {
-        self.view.widget_layout_bounds(widget)
     }
 
     #[cfg(all(test, feature = "tabs"))]

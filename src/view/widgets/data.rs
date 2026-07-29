@@ -31,12 +31,20 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
 /// workbench contract while each backend renders the resulting native plan.
 #[cfg(feature = "workbench")]
 pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
-    ViewNode::new(ViewNodeKind::Workbench {
+    #[cfg(feature = "accessibility")]
+    let accessible_title = spec.title.clone();
+    let node = ViewNode::new(ViewNodeKind::Workbench {
         spec,
         on_interaction: None,
     })
     .min_width(Dp::new(640.0))
-    .min_height(Dp::new(480.0))
+    .min_height(Dp::new(480.0));
+    #[cfg(feature = "accessibility")]
+    let node = node.accessibility(
+        crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Application)
+            .label(accessible_title),
+    );
+    node
 }
 
 /// Creates a retained native workbench from explicit shell, timeline,
@@ -74,9 +82,12 @@ pub fn inspector_panel(title: impl Into<String>) -> crate::ZsInspectorPanelSpec 
 /// [`ViewNode::padding`] or [`ViewNode::gap`] afterwards to override it.
 pub fn page<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNode<Msg> {
     let spacing = crate::ZsuiSpacingTokens::default();
-    column(children)
+    let page = column(children)
         .padding(spacing.page_padding)
-        .gap(spacing.content_gap)
+        .gap(spacing.content_gap);
+    #[cfg(feature = "scroll")]
+    let page = page.auto_scroll_y();
+    page
 }
 
 /// Groups related content using the target desktop's information architecture.
@@ -734,7 +745,13 @@ pub fn settings_card<Msg>(
     title: impl Into<String>,
     children: impl IntoIterator<Item = ViewNode<Msg>>,
 ) -> ViewNode<Msg> {
-    section(title, children)
+    let title = title.into();
+    let node = section(title.clone(), children);
+    #[cfg(feature = "accessibility")]
+    let node = node.accessibility(
+        crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group).label(title),
+    );
+    node
 }
 
 /// Builds a command bar using the target desktop's action density.
@@ -803,7 +820,7 @@ pub fn virtual_list<T, Msg>(
         row_indices.push(index);
         children.push(render(index, item));
     }
-    ViewNode::<Msg>::new(ViewNodeKind::VirtualList {
+    let node = ViewNode::<Msg>::new(ViewNodeKind::VirtualList {
         total_count,
         row_height: Dp::new(40.0),
         item_metrics: Vec::new(),
@@ -818,7 +835,12 @@ pub fn virtual_list<T, Msg>(
         loading: false,
         show_placeholders: true,
     })
-    .children(children)
+    .children(children);
+    #[cfg(feature = "accessibility")]
+    let node = node.accessibility(crate::ZsAccessibilitySpec::new(
+        crate::ZsAccessibilityRole::List,
+    ));
+    node
 }
 
 /// Creates an ItemsRepeater backed by the shared bounded virtual-list
@@ -848,13 +870,18 @@ pub fn scroll<Msg>(child: ViewNode<Msg>) -> ViewNode<Msg> {
 
 #[cfg(feature = "image-preview")]
 pub fn image_preview<Msg>(snapshot: &ZsImagePreviewSnapshot) -> ViewNode<Msg> {
-    ViewNode::<Msg>::new(ViewNodeKind::ImagePreview {
+    let node = ViewNode::<Msg>::new(ViewNodeKind::ImagePreview {
         snapshot: snapshot.clone(),
         fit: ZsImageFit::Contain,
         interpolation: NativeImageInterpolation::Smooth,
     })
     .min_width(Dp::new(48.0))
-    .min_height(Dp::new(48.0))
+    .min_height(Dp::new(48.0));
+    #[cfg(feature = "accessibility")]
+    let node = node.accessibility(crate::ZsAccessibilitySpec::new(
+        crate::ZsAccessibilityRole::Image,
+    ));
+    node
 }
 
 /// Creates a retained Image from one immutable premultiplied frame.
@@ -983,6 +1010,40 @@ mod data_tests {
     }
 
     #[test]
+    #[cfg(all(feature = "virtual-list", feature = "accessibility"))]
+    fn items_repeater_exposes_only_materialized_rows_with_stable_labels() {
+        let mut repeater = items_repeater::<_, ()>(2, [(0, "First"), (1, "Second")], |_, text| {
+            row([crate::text(text)])
+        })
+        .height(Dp::new(120.0));
+        repeater.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 120,
+            },
+            crate::Dpi::standard(),
+        ));
+
+        let semantics = repeater.interaction_plan().accessibility_nodes;
+        let list = semantics
+            .iter()
+            .find(|node| node.role == crate::ZsAccessibilityRole::List)
+            .expect("items repeater list semantics");
+        let items = semantics
+            .iter()
+            .filter(|node| {
+                node.parent == Some(list.widget)
+                    && node.role == crate::ZsAccessibilityRole::ListItem
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].label.as_deref(), Some("First"));
+        assert_eq!(items[1].label.as_deref(), Some("Second"));
+    }
+
+    #[test]
     #[cfg(feature = "image-preview")]
     fn image_keeps_the_immutable_frame_in_the_retained_native_surface() {
         let frame = crate::ZsImageFrame::from_rgba8(
@@ -1006,30 +1067,120 @@ mod data_tests {
     #[test]
     #[cfg(feature = "workbench")]
     fn named_workbench_components_build_one_retained_shell_surface() {
-        let timeline = message_timeline().message(crate::ZsWorkbenchMessageSpec::new(
-            "message",
-            crate::ZsWorkbenchMessageRole::Assistant,
-        ));
-        let shell = crate::ZsWorkbenchShellSpec::new(
-            "Workbench",
-            crate::ZsWorkbenchSidebarSpec::new("Threads"),
-            composer("Write a message"),
-        )
-        .timeline(timeline)
-        .inspector(
-            inspector_panel("Inspector").tab(crate::ZsWorkbenchActionSpec::new(
-                "details",
-                "Details",
-                crate::ZsIcon::Inspector,
+        let timeline = message_timeline().message(
+            crate::ZsWorkbenchMessageSpec::new(
+                "message",
+                crate::ZsWorkbenchMessageRole::Assistant,
+            )
+            .author("ZSUI")
+            .block(crate::ZsWorkbenchContentBlock::paragraph("Ready"))
+            .action(crate::ZsWorkbenchActionSpec::new(
+                "copy",
+                "Copy",
+                crate::ZsIcon::Copy,
             )),
         );
-        let view = workbench_shell::<()>(shell);
+        let shell = crate::ZsWorkbenchShellSpec::new(
+            "Workbench",
+            crate::ZsWorkbenchSidebarSpec::new("Threads")
+                .primary_action(crate::ZsWorkbenchActionSpec::new(
+                    "new",
+                    "New",
+                    crate::ZsIcon::Add,
+                ))
+                .group(
+                    crate::ZsWorkbenchConversationGroupSpec::new("today", "Today").conversation(
+                        crate::ZsWorkbenchConversationSpec::new("thread", "Thread")
+                            .selected(true),
+                    ),
+                ),
+            composer("Write a message")
+                .draft("Hello")
+                .action(crate::ZsWorkbenchActionSpec::new(
+                    "attach",
+                    "Attach",
+                    crate::ZsIcon::Attach,
+                )),
+        )
+        .toolbar_action(crate::ZsWorkbenchActionSpec::new(
+            "search",
+            "Search",
+            crate::ZsIcon::Search,
+        ))
+        .timeline(timeline)
+        .inspector(
+            inspector_panel("Inspector")
+                .selected_tab("details")
+                .tab(crate::ZsWorkbenchActionSpec::new(
+                    "details",
+                    "Details",
+                    crate::ZsIcon::Inspector,
+                )),
+        );
+        let mut view = workbench_shell::<()>(shell);
 
         assert!(matches!(
             &view.kind,
             ViewNodeKind::Workbench { spec, .. }
                 if spec.messages.len() == 1 && spec.inspector.is_some()
         ));
+        #[cfg(feature = "accessibility")]
+        {
+            view.layout(&mut crate::ViewLayoutCx::new(
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1400,
+                    height: 800,
+                },
+                crate::Dpi::standard(),
+            ));
+            let semantics = view.interaction_plan().accessibility_nodes;
+            assert!(semantics.iter().any(|node| {
+                node.role == crate::ZsAccessibilityRole::Application
+                    && node.label.as_deref() == Some("Workbench")
+            }));
+            assert!(semantics
+                .iter()
+                .any(|node| node.role == crate::ZsAccessibilityRole::Navigation));
+            assert!(semantics
+                .iter()
+                .any(|node| node.role == crate::ZsAccessibilityRole::Log));
+            assert!(semantics
+                .iter()
+                .any(|node| node.role == crate::ZsAccessibilityRole::TextBox));
+            assert!(semantics
+                .iter()
+                .any(|node| node.role == crate::ZsAccessibilityRole::Complementary));
+            assert!(semantics.iter().any(|node| {
+                node.role == crate::ZsAccessibilityRole::Article
+                    && node.label.as_deref() == Some("ZSUI. Ready")
+            }));
+            assert!(semantics.iter().any(|node| {
+                node.role == crate::ZsAccessibilityRole::ListItem
+                    && node.label.as_deref() == Some("Thread")
+                    && node.selected == Some(true)
+            }));
+            assert!(semantics.iter().any(|node| {
+                node.role == crate::ZsAccessibilityRole::Tab
+                    && node.label.as_deref() == Some("Details")
+                    && node.selected == Some(true)
+            }));
+            assert!(semantics.iter().any(|node| {
+                node.role == crate::ZsAccessibilityRole::TabPanel
+                    && node.label.as_deref() == Some("Details")
+            }));
+            assert!(semantics.iter().any(|node| {
+                node.role == crate::ZsAccessibilityRole::Button
+                    && node.label.as_deref() == Some("Send")
+                    && node.enabled
+            }));
+            assert!(semantics
+                .iter()
+                .filter(|node| node.role == crate::ZsAccessibilityRole::Button)
+                .count()
+                >= 6);
+        }
     }
 
     #[test]
@@ -1103,6 +1254,42 @@ mod data_tests {
                 .x,
             240
         );
+    }
+
+    #[cfg(all(feature = "shell", feature = "accessibility"))]
+    #[test]
+    fn settings_card_owns_its_static_text_and_action_semantics() {
+        let mut card = settings_card::<()>(
+            "Appearance",
+            [row([
+                text("Follow system theme").flex(1.0),
+                button("Apply").enabled(false),
+            ])],
+        );
+        card.layout(&mut crate::ViewLayoutCx::new(
+            crate::Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 240,
+            },
+            crate::Dpi::standard(),
+        ));
+
+        let semantics = card.interaction_plan().accessibility_nodes;
+        let group = semantics
+            .iter()
+            .find(|node| {
+                node.role == crate::ZsAccessibilityRole::Group
+                    && node.label.as_deref() == Some("Appearance")
+            })
+            .expect("settings group semantics");
+        assert!(semantics.iter().any(|node| {
+            node.parent == Some(group.widget)
+                && node.role == crate::ZsAccessibilityRole::Button
+                && node.label.as_deref() == Some("Apply")
+                && !node.enabled
+        }));
     }
 
     #[test]

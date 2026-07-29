@@ -43,7 +43,17 @@
             "record-00006": 6,
             "record-00007": 7,
             "record-00008": 8,
-            "record-00009": 9
+            "record-00009": 9,
+            "record-99990": 99990,
+            "record-99991": 99991,
+            "record-99992": 99992,
+            "record-99993": 99993,
+            "record-99994": 99994,
+            "record-99995": 99995,
+            "record-99996": 99996,
+            "record-99997": 99997,
+            "record-99998": 99998,
+            "record-99999": 99999
           },
           "item_heights": {
             "record-00001": 72,
@@ -150,6 +160,96 @@
             "children": [
               { "id": "record-00009-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#00009  末端占位 / Trailing placeholder" } },
               { "id": "record-00009-state", "component": "text", "properties": { "text": "按需 / On demand", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99990",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99990-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99990  末端窗口 / Final window" } },
+              { "id": "record-99990-state", "component": "text", "properties": { "text": "已实例化 / Materialized", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99991",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99991-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99991  可变行高 / Variable height" } },
+              { "id": "record-99991-state", "component": "text", "properties": { "text": "目标配置 / Target profile", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99992",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99992-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99992  稳定标识 / Stable identity" } },
+              { "id": "record-99992-state", "component": "text", "properties": { "text": "全局索引 / Global index", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99993",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99993-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99993  滚动条拖动 / Thumb drag" } },
+              { "id": "record-99993-state", "component": "text", "properties": { "text": "已路由 / Routed", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99994",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99994-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99994  视口状态 / Viewport state" } },
+              { "id": "record-99994-state", "component": "text", "properties": { "text": "受控 / Controlled", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99995",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99995-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99995  原生绘制 / Native paint" } },
+              { "id": "record-99995-state", "component": "text", "properties": { "text": "最终表面 / Final surface", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99996",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99996-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99996  平台字体 / Platform font" } },
+              { "id": "record-99996-state", "component": "text", "properties": { "text": "系统解析 / System resolved", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99997",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99997-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99997  语义列表 / Semantic list" } },
+              { "id": "record-99997-state", "component": "text", "properties": { "text": "辅助功能 / Accessible", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99998",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99998-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99998  边界检查 / Bounds check" } },
+              { "id": "record-99998-state", "component": "text", "properties": { "text": "通过 / Passed", "text_role": "caption" } }
+            ]
+          },
+          {
+            "id": "record-99999",
+            "component": "stack",
+            "layout": { "direction": "horizontal", "padding": 10, "gap": 12 },
+            "children": [
+              { "id": "record-99999-title", "component": "text", "layout": { "flex": 1 }, "properties": { "text": "#99999  最后一行 / Final row" } },
+              { "id": "record-99999-state", "component": "text", "properties": { "text": "100,000 项 / 100,000 items", "text_role": "caption" } }
             ]
           }
         ]

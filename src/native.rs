@@ -2025,6 +2025,29 @@ impl NativeViewInputRuntime {
         report
     }
 
+    #[cfg(feature = "accessibility")]
+    pub(crate) fn dispatch_accessibility_invoke(
+        &mut self,
+        widget: crate::WidgetId,
+    ) -> NativeViewInputDispatchReport {
+        let Some(target) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+        else {
+            return NativeViewInputDispatchReport::default();
+        };
+        self.dispatch_pointer_click(Point {
+            x: target
+                .bounds
+                .x
+                .saturating_add(target.bounds.width.max(1) / 2),
+            y: target
+                .bounds
+                .y
+                .saturating_add(target.bounds.height.max(1) / 2),
+        })
+    }
+
     #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
     pub(crate) fn dispatch_accessibility_menu_flyout_focus(
         &mut self,
@@ -10269,6 +10292,92 @@ mod tests {
             ))));
     }
 
+    #[cfg(feature = "workbench")]
+    #[test]
+    fn native_workbench_regions_share_hover_pressed_and_focus_visible_states() {
+        let root = crate::WidgetId::new(0x77_0001);
+        let spec = crate::ZsWorkbenchSpec::new(
+            "Workbench",
+            crate::ZsWorkbenchSidebarSpec::new("Workspace").primary_action(
+                crate::ZsWorkbenchActionSpec::new("new", "New", crate::ZsIcon::Add),
+            ),
+            crate::ZsWorkbenchComposerSpec::new("Write a message").action(
+                crate::ZsWorkbenchActionSpec::new("attach", "Attach", crate::ZsIcon::Attach),
+            ),
+        )
+        .toolbar_action(crate::ZsWorkbenchActionSpec::new(
+            "refresh",
+            "Refresh",
+            crate::ZsIcon::Refresh,
+        ));
+        let builder = native_window("Workbench states")
+            .size(960, 640)
+            .stateful_view(
+                false,
+                move |_| {
+                    crate::workbench::<bool>(spec.clone())
+                        .id(root)
+                        .on_workbench_interaction_with(|_| Some(true))
+                },
+                |handled, message, _cx| *handled = message,
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| {
+                plan.hit_targets
+                    .iter()
+                    .copied()
+                    .find(|target| target.kind == crate::ViewHitTargetKind::Button)
+            })
+            .expect("workbench should expose an enabled button region");
+        let point = Point {
+            x: target.bounds.x + target.bounds.width / 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        };
+        let mut runtime = builder.native_view_input_runtime();
+
+        let hovered = runtime.dispatch_pointer_move(point);
+        let pressed = runtime.dispatch_pointer_down(point, false);
+        let released = runtime.dispatch_pointer_up(point);
+        let focused = runtime.dispatch_key(NativeViewKey::Tab);
+
+        assert!(hovered.pointer_visual_changed);
+        assert!(pressed.pointer_visual_changed);
+        assert!(released.pointer_visual_changed);
+        assert!(hovered
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::RoundFill {
+                    fill: crate::NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::PrimaryText,
+                        alpha: 14,
+                    },
+                    ..
+                }
+            ))));
+        assert!(pressed
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::RoundFill {
+                    fill: crate::NativeDrawFill::RoleWithAlpha {
+                        role: crate::ColorRole::PrimaryText,
+                        alpha: 28,
+                    },
+                    ..
+                }
+            ))));
+        assert!(focused.handled);
+        assert!(focused.focus_visual_changed);
+        assert!(focused
+            .redraw_plan
+            .is_some_and(|plan| plan.commands.iter().any(|command| matches!(
+                command,
+                crate::NativeDrawCommand::StrokeRect { width: 2, .. }
+            ))));
+    }
+
     #[cfg(feature = "toggle-button")]
     #[test]
     fn native_view_runtime_toggles_button_from_pointer_and_space() {
@@ -10941,9 +11050,11 @@ mod tests {
             .stateful_view(
                 State::default(),
                 move |state| {
-                    crate::items_repeater(
+                    let list = crate::items_repeater(
                         40,
-                        (0..40).map(|index| (index, format!("Row {index}"))),
+                        (0..10)
+                            .chain(30..40)
+                            .map(|index| (index, format!("Row {index}"))),
                         |index, label| {
                             crate::text(label).id(crate::WidgetId::new(9_000 + index as u64))
                         },
@@ -10961,7 +11072,10 @@ mod tests {
                             .map(|viewport| viewport.offset_y)
                             .unwrap_or(crate::Dp::new(0.0)),
                     )
-                    .on_viewport_changed(Msg::Viewport)
+                    .on_viewport_changed(Msg::Viewport);
+                    crate::column([crate::text("Virtual records"), list])
+                        .padding(crate::Dp::new(8.0))
+                        .gap(crate::Dp::new(8.0))
                 },
                 |state, message, _cx| match message {
                     Msg::Viewport(viewport) => state.viewport = Some(viewport),
@@ -10997,6 +11111,19 @@ mod tests {
             y: track.bounds.y + track.bounds.height - 1,
         };
         let mut runtime = builder.native_view_input_runtime();
+        let title_bounds = builder
+            .native_live_view_runtime()
+            .expect("stateful view runtime")
+            .draw_plan()
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                crate::NativeDrawCommand::Text(command) if command.text == "Virtual records" => {
+                    Some(command.bounds)
+                }
+                _ => None,
+            })
+            .expect("title text command");
 
         let pressed = runtime.dispatch_pointer_down(press, false);
         let dragged = runtime.dispatch_pointer_move(end);
@@ -11008,7 +11135,17 @@ mod tests {
         assert!(dragged.items_repeater_viewport_changed);
         assert!(dragged.items_repeater_scrollbar_drag_active);
         assert_eq!(dragged.message_count, 1);
-        assert!(dragged.redraw_plan.is_some());
+        let redraw = dragged.redraw_plan.as_ref().expect("drag redraw plan");
+        assert_eq!(
+            redraw.commands.iter().find_map(|command| match command {
+                crate::NativeDrawCommand::Text(command) if command.text == "Virtual records" => {
+                    Some(command.bounds)
+                }
+                _ => None,
+            }),
+            Some(title_bounds),
+            "a controlled viewport rebuild must not move sibling content",
+        );
         assert!(!released.items_repeater_scrollbar_drag_active);
         let moved_thumb = runtime
             .current_interaction_plan()

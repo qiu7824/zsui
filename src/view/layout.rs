@@ -308,6 +308,7 @@ fn split_child_bounds<Msg>(
     gap: Option<Dp>,
     dpi: Dpi,
     typography_scale: f32,
+    _resolved_scroll_content_height: Option<Dp>,
 ) -> Vec<Rect> {
     let child_count = children.len();
     if child_count == 0 {
@@ -368,11 +369,10 @@ fn split_child_bounds<Msg>(
         #[cfg(feature = "scroll")]
         ViewNodeKind::Scroll {
             offset_y,
-            content_height,
             ..
         } => {
             let offset_y = offset_y.to_px(dpi).round_i32().max(0);
-            let height = content_height
+            let height = _resolved_scroll_content_height
                 .map(|height| height.to_px(dpi).round_i32())
                 .unwrap_or(bounds.height)
                 .max(bounds.height);
@@ -432,16 +432,19 @@ fn split_grid_child_bounds<Msg>(
         dpi,
         typography_scale,
     );
-    let row_minimums = grid_track_minimums(
+    let column_lengths =
+        allocate_grid_track_lengths(bounds.width, column_gap, columns, &column_minimums, dpi);
+    let row_minimums = grid_row_minimums_for_columns(
         rows.len(),
         placements,
         children,
-        true,
+        &column_lengths,
+        column_gap,
+        row_gap,
         dpi,
         typography_scale,
+        HeightMeasurement::Minimum,
     );
-    let column_lengths =
-        allocate_grid_track_lengths(bounds.width, column_gap, columns, &column_minimums, dpi);
     let row_lengths =
         allocate_grid_track_lengths(bounds.height, row_gap, rows, &row_minimums, dpi);
     (0..children.len())
@@ -542,6 +545,127 @@ fn grid_track_minimums<Msg>(
         minimums[track] = minimums[track].max(fixed.max(minimum).max(intrinsic));
     }
     minimums
+}
+
+#[cfg(feature = "grid")]
+fn grid_row_minimums_for_columns<Msg>(
+    row_count: usize,
+    placements: &[ZsGridPlacement],
+    children: &[ViewNode<Msg>],
+    column_lengths: &[i32],
+    column_gap: i32,
+    row_gap: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurement: HeightMeasurement,
+) -> Vec<i32> {
+    let mut minimums = vec![0; row_count];
+    for (placement, child) in placements.iter().zip(children) {
+        let Some((_, child_width)) = grid_axis_span(
+            0,
+            column_lengths,
+            column_gap,
+            placement.column,
+            placement.column_span,
+        ) else {
+            continue;
+        };
+        let child_height = measured_height_px(
+            child,
+            child_width,
+            dpi,
+            typography_scale,
+            measurement,
+        );
+        let start = placement.row;
+        if start >= row_count {
+            continue;
+        }
+        let end = start
+            .saturating_add(usize::from(placement.row_span.get()))
+            .min(row_count);
+        let covered = end.saturating_sub(start);
+        if covered == 0 {
+            continue;
+        }
+        let current = minimums[start..end]
+            .iter()
+            .copied()
+            .fold(0i32, i32::saturating_add)
+            .saturating_add(row_gap.max(0).saturating_mul(covered.saturating_sub(1) as i32));
+        let missing = child_height.saturating_sub(current).max(0);
+        if missing == 0 {
+            continue;
+        }
+        let quotient = missing / covered as i32;
+        let remainder = missing % covered as i32;
+        for (position, minimum) in minimums[start..end].iter_mut().enumerate() {
+            *minimum = minimum
+                .saturating_add(quotient)
+                .saturating_add(i32::from((position as i32) < remainder));
+        }
+    }
+    minimums
+}
+
+#[cfg(feature = "grid")]
+fn grid_intrinsic_height_px<Msg>(
+    available_width: i32,
+    columns: &[ZsGridTrack],
+    rows: &[ZsGridTrack],
+    placements: &[ZsGridPlacement],
+    children: &[ViewNode<Msg>],
+    column_gap: i32,
+    row_gap: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurement: HeightMeasurement,
+) -> i32 {
+    if rows.is_empty() || columns.is_empty() {
+        return 0;
+    }
+    let column_minimums = grid_track_minimums(
+        columns.len(),
+        placements,
+        children,
+        false,
+        dpi,
+        typography_scale,
+    );
+    let column_lengths = allocate_grid_track_lengths(
+        available_width.max(0),
+        column_gap,
+        columns,
+        &column_minimums,
+        dpi,
+    );
+    let row_minimums = grid_row_minimums_for_columns(
+        rows.len(),
+        placements,
+        children,
+        &column_lengths,
+        column_gap,
+        row_gap,
+        dpi,
+        typography_scale,
+        measurement,
+    );
+    let rows_height = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let fixed = match row {
+                ZsGridTrack::Fixed(size) => size.to_px(dpi).round_i32().max(0),
+                ZsGridTrack::Fraction(_) => 0,
+            };
+            fixed.max(row_minimums.get(index).copied().unwrap_or(0))
+        })
+        .fold(0i32, i32::saturating_add);
+    rows_height.saturating_add(
+        row_gap
+            .max(0)
+            .saturating_mul(rows.len().saturating_sub(1) as i32),
+    )
 }
 
 #[cfg(feature = "grid")]
@@ -1144,11 +1268,50 @@ fn intrinsic_min_width_px<Msg>(
     declared.max(content.saturating_add(padding.saturating_mul(2)))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeightMeasurement {
+    Minimum,
+    #[cfg(feature = "scroll")]
+    Natural,
+}
+
 fn intrinsic_min_height_px<Msg>(
     node: &ViewNode<Msg>,
     available_width: i32,
     dpi: Dpi,
     typography_scale: f32,
+) -> i32 {
+    measured_height_px(
+        node,
+        available_width,
+        dpi,
+        typography_scale,
+        HeightMeasurement::Minimum,
+    )
+}
+
+#[cfg(feature = "scroll")]
+fn natural_height_px<Msg>(
+    node: &ViewNode<Msg>,
+    available_width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+) -> i32 {
+    measured_height_px(
+        node,
+        available_width,
+        dpi,
+        typography_scale,
+        HeightMeasurement::Natural,
+    )
+}
+
+fn measured_height_px<Msg>(
+    node: &ViewNode<Msg>,
+    available_width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurement: HeightMeasurement,
 ) -> i32 {
     let declared_height = |value| {
         typography_aware_length_px(
@@ -1186,6 +1349,33 @@ fn intrinsic_min_height_px<Msg>(
         return declared;
     }
 
+    #[cfg(feature = "scroll")]
+    if measurement == HeightMeasurement::Minimum
+        && node.style.overflow_y == ViewOverflow::Auto
+    {
+        #[cfg(feature = "tabs")]
+        if matches!(node.kind, ViewNodeKind::Tabs { .. }) {
+            let metrics = crate::ZsTabViewMetrics::for_platform(
+                crate::ZsTabPlatformStyle::current(),
+            );
+            let chrome = metrics
+                .strip_height
+                .to_px(dpi)
+                .round_i32()
+                .max(0)
+                .saturating_add(
+                    metrics
+                        .content_padding
+                        .to_px(dpi)
+                        .round_i32()
+                        .max(0)
+                        .saturating_mul(2),
+                );
+            return declared.max(chrome.saturating_add(padding.saturating_mul(2)));
+        }
+        return declared.max(padding.saturating_mul(2));
+    }
+
     let content = match &node.kind {
         #[cfg(feature = "label")]
         ViewNodeKind::Text { text, style } => {
@@ -1219,7 +1409,7 @@ fn intrinsic_min_height_px<Msg>(
                 .iter()
                 .zip(widths)
                 .map(|(child, width)| {
-                    intrinsic_min_height_px(child, width, dpi, typography_scale)
+                    measured_height_px(child, width, dpi, typography_scale, measurement)
                 })
                 .max()
                 .unwrap_or(0)
@@ -1230,7 +1420,7 @@ fn intrinsic_min_height_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_height_px(child, content_width, dpi, typography_scale)
+                measured_height_px(child, content_width, dpi, typography_scale, measurement)
             })
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
@@ -1239,16 +1429,65 @@ fn intrinsic_min_height_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_height_px(child, content_width, dpi, typography_scale)
+                measured_height_px(child, content_width, dpi, typography_scale, measurement)
             })
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
+        #[cfg(feature = "grid")]
+        ViewNodeKind::Grid {
+            columns,
+            rows,
+            placements,
+            column_gap,
+            row_gap,
+        } => grid_intrinsic_height_px(
+            content_width,
+            columns,
+            rows,
+            placements,
+            &node.children,
+            column_gap
+                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .unwrap_or(gap),
+            row_gap
+                .map(|value| value.to_px(dpi).round_i32().max(0))
+                .unwrap_or(gap),
+            dpi,
+            typography_scale,
+            measurement,
+        ),
+        #[cfg(feature = "tabs")]
+        ViewNodeKind::Tabs { .. } => {
+            let metrics = crate::ZsTabViewMetrics::for_platform(
+                crate::ZsTabPlatformStyle::current(),
+            );
+            let strip = metrics.strip_height.to_px(dpi).round_i32().max(0);
+            let content_padding = metrics.content_padding.to_px(dpi).round_i32().max(0);
+            let tab_content_width = content_width.saturating_sub(content_padding.saturating_mul(2));
+            let selected_height = node
+                .children
+                .iter()
+                .map(|child| {
+                    measured_height_px(
+                        child,
+                        tab_content_width,
+                        dpi,
+                        typography_scale,
+                        measurement,
+                    )
+                })
+                .max()
+                .unwrap_or(0);
+            strip
+                .saturating_add(content_padding.saturating_mul(2))
+                .saturating_add(selected_height)
+        }
         ViewNodeKind::Spacer => 0,
         _ => node
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_height_px(child, content_width, dpi, typography_scale)
+                measured_height_px(child, content_width, dpi, typography_scale, measurement)
             })
             .max()
             .unwrap_or(0),

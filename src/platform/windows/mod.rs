@@ -105,10 +105,7 @@ use windows_sys::Win32::{
     },
 };
 
-#[cfg(all(
-    feature = "accessibility",
-    any(feature = "text-input-core", feature = "menu-flyout", feature = "tabs")
-))]
+#[cfg(feature = "accessibility")]
 use windows_sys::Win32::UI::WindowsAndMessaging::WM_GETOBJECT;
 
 #[cfg(feature = "menu-flyout")]

@@ -472,6 +472,8 @@ mod tests {
         let target = target();
         let interaction = ViewInteractionPlan {
             hit_targets: Vec::new(),
+            #[cfg(feature = "accessibility")]
+            accessibility_nodes: Vec::new(),
             tooltip_targets: vec![target.clone()],
         };
         let start = Instant::now();

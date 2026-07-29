@@ -522,18 +522,6 @@ pub(crate) fn handle_get_object(
     Some(result.0)
 }
 
-#[cfg(not(feature = "text-input-core"))]
-pub(crate) fn disconnect(hwnd: windows_sys::Win32::Foundation::HWND) {
-    unsafe {
-        let _ = UiaReturnRawElementProvider(
-            HWND(hwnd.cast()),
-            WPARAM(0),
-            LPARAM(0),
-            None::<&IRawElementProviderSimple>,
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

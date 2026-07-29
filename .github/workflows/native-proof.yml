@@ -31,9 +31,9 @@ concurrency:
 
 jobs:
   windows-viewer-proof:
-    name: Win32 Viewer Reload Proof
+    name: Win32 Viewer and Component Proof
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TZ: UTC
       ZSUI_NATIVE_PROOF_OS_FAMILY: windows-2025
@@ -67,7 +67,7 @@ jobs:
             --locked `
             --bin zsui-viewer `
             --no-default-features `
-            --features ui-viewer
+            --features ui-viewer,accessibility
 
       - name: Prepare deterministic reload sources
         shell: pwsh
@@ -83,6 +83,7 @@ jobs:
         shell: pwsh
         run: |
           $root = "target/native-proof/windows-2025-x86_64/ui-viewer-reload"
+          $global:LASTEXITCODE = 0
           $output = & .\target\release\zsui-viewer.exe `
             "$root/view.json" `
             --bindings "$root/view.bindings.json" `
@@ -101,6 +102,79 @@ jobs:
           if ($exitCode -ne 0) {
             exit $exitCode
           }
+
+      - name: Run Win32 named component proofs
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64"
+          foreach ($scene in @("ui-viewer-items-repeater", "ui-viewer-image", "ui-viewer-settings-card", "ui-viewer-workbench", "ui-viewer-workbench-dark", "ui-viewer-workbench-high-contrast")) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $root $scene) | Out-Null
+          }
+
+          $global:LASTEXITCODE = 0
+          & .\target\release\zsui-viewer.exe `
+            examples/ui-documents/items-repeater.json `
+            --bindings examples/ui-documents/items-repeater.bindings.json `
+            --values examples/ui-documents/items-repeater.values.json `
+            --width 960 `
+            --height 640 `
+            --smoke "$root/ui-viewer-items-repeater" `
+            --smoke-duration-ms 700 `
+            --smoke-items-repeater-drag records
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          foreach ($theme in @(
+            @{ Name = "dark"; Output = "ui-viewer-workbench-dark" },
+            @{ Name = "high-contrast"; Output = "ui-viewer-workbench-high-contrast" }
+          )) {
+            $global:LASTEXITCODE = 0
+            & .\target\release\zsui-viewer.exe `
+              examples/ui-documents/workbench.json `
+              --bindings examples/ui-documents/workbench.bindings.json `
+              --values examples/ui-documents/workbench.values.json `
+              --width 1280 `
+              --height 800 `
+              --theme $theme.Name `
+              --smoke "$root/$($theme.Output)" `
+              --smoke-duration-ms 700
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          $global:LASTEXITCODE = 0
+          & .\target\release\zsui-viewer.exe `
+            examples/ui-documents/image.json `
+            --bindings examples/ui-documents/image.bindings.json `
+            --values examples/ui-documents/image.values.json `
+            --width 960 `
+            --height 640 `
+            --smoke "$root/ui-viewer-image" `
+            --smoke-duration-ms 700
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $global:LASTEXITCODE = 0
+          & .\target\release\zsui-viewer.exe `
+            examples/ui-documents/settings-card.json `
+            --bindings examples/ui-documents/settings-card.bindings.json `
+            --values examples/ui-documents/settings-card.values.json `
+            --width 960 `
+            --height 640 `
+            --smoke "$root/ui-viewer-settings-card" `
+            --smoke-duration-ms 700 `
+            --smoke-click-node apply-appearance
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $global:LASTEXITCODE = 0
+          & .\target\release\zsui-viewer.exe `
+            examples/ui-documents/workbench.json `
+            --bindings examples/ui-documents/workbench.bindings.json `
+            --values examples/ui-documents/workbench.values.json `
+            --width 1280 `
+            --height 800 `
+            --smoke "$root/ui-viewer-workbench" `
+            --smoke-duration-ms 900 `
+            --smoke-scroll 600 400 96 `
+            --smoke-workbench-composer workbench
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Summarize Win32 Viewer proof failure
         if: failure() && steps.win32-viewer.outcome == 'failure'
@@ -177,13 +251,65 @@ jobs:
           Assert-True ($runtime.process_memory_during_runtime.resident_bytes -gt 0) "missing Win32 RSS evidence"
           Assert-True ($runtime.process_memory_during_runtime.private_bytes -gt 0) "missing Win32 private-byte evidence"
           Assert-True ($runtime.native_view_capture.typography.source -eq "win32_spi_message_font") "Viewer bypassed the system UI font"
+          Assert-True ($runtime.native_accessibility_backend -eq "win32_uia") "reload View did not expose Win32 UIA"
+          Assert-True ($runtime.native_accessibility_node_count -gt 0) "reload View exposed no UIA nodes"
+
+          $componentRoot = "target/native-proof/windows-2025-x86_64"
+          $minimumNodes = @{
+            "ui-viewer-items-repeater" = 20
+            "ui-viewer-image" = 8
+            "ui-viewer-settings-card" = 8
+            "ui-viewer-workbench" = 20
+            "ui-viewer-workbench-dark" = 20
+            "ui-viewer-workbench-high-contrast" = 20
+          }
+          foreach ($scene in $minimumNodes.Keys) {
+            $sceneRoot = Join-Path $componentRoot $scene
+            $scenePng = Join-Path $sceneRoot "window.png"
+            $sceneBytes = [IO.File]::ReadAllBytes($scenePng)
+            Assert-True (-not (Compare-Object $signature $sceneBytes[0..7])) "$scene screenshot is not a PNG"
+            $sceneProof = Get-Content (Join-Path $sceneRoot "proof.json") -Raw | ConvertFrom-Json
+            $sceneRuntime = $sceneProof.runtime
+            Assert-True ($sceneProof.platform -eq "windows") "$scene did not run on Win32"
+            Assert-True ($sceneProof.capture_backend -eq "win32_wm_printclient_dib_png") "$scene bypassed the Win32 final surface"
+            Assert-True ($sceneRuntime.native_accessibility_backend -eq "win32_uia") "$scene did not expose Win32 UIA"
+            Assert-True ($sceneRuntime.native_accessibility_node_count -ge $minimumNodes[$scene]) "$scene exposed too few UIA nodes"
+            Assert-True ($sceneRuntime.native_view_unhandled_click_count -eq 0) "$scene reported an unhandled click"
+          }
+
+          $repeater = Get-Content (Join-Path $componentRoot "ui-viewer-items-repeater/proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($repeater.source.node_count -eq 64) "ItemsRepeater proof used the wrong materialized document"
+          Assert-True ($repeater.runtime.native_view_items_repeater_viewport_change_count -gt 0) "ItemsRepeater viewport did not change"
+          Assert-True ($repeater.runtime.native_view_items_repeater_scrollbar_drag_count -eq 1) "ItemsRepeater thumb drag did not complete"
+
+          $settings = Get-Content (Join-Path $componentRoot "ui-viewer-settings-card/proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($settings.runtime.native_view_click_count -eq 1) "SettingsCard proof did not click its stable action node"
+          Assert-True ($settings.runtime.native_view_message_count -eq 1) "SettingsCard proof did not emit one typed action"
+
+          $workbench = Get-Content (Join-Path $componentRoot "ui-viewer-workbench/proof.json") -Raw | ConvertFrom-Json
+          $workbenchRuntime = $workbench.runtime
+          Assert-True ($workbenchRuntime.native_view_scroll_count -eq 1) "MessageTimeline did not route its native scroll"
+          Assert-True ($workbenchRuntime.native_view_unhandled_scroll_count -eq 0) "MessageTimeline scroll was unhandled"
+          Assert-True ($workbenchRuntime.native_view_text_input_count -gt 0) "Composer did not route native text"
+          Assert-True ($workbenchRuntime.native_view_text_navigation_count -ge 2) "Composer did not route native text navigation"
+          Assert-True ($workbenchRuntime.native_view_text_drag_count -gt 0) "Composer did not route pointer selection"
+          Assert-True ($workbenchRuntime.native_view_text_selection_change_count -gt 0) "Composer selection did not change"
+          Assert-True ($workbenchRuntime.native_view_unhandled_key_count -eq 0) "Composer reported an unhandled key"
+          $script = $workbenchRuntime.native_view_text_input_script_evidence[0]
+          Assert-True ($script.contains_cjk -and $script.contains_right_to_left -and $script.contains_combining_mark -and $script.contains_joiner) "Composer complex-script proof is incomplete"
+
+          $dark = Get-Content (Join-Path $componentRoot "ui-viewer-workbench-dark/proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($dark.theme -eq "Dark") "Workbench dark proof did not retain its explicit theme"
+          $contrast = Get-Content (Join-Path $componentRoot "ui-viewer-workbench-high-contrast/proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($contrast.theme -eq "HighContrast") "Workbench high-contrast proof did not retain its explicit theme"
+          Assert-True ($contrast.runtime.high_contrast_draw_plan_window_count -eq 1) "Workbench high-contrast draw plan was not active"
 
       - name: Upload Win32 Viewer proof
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: zsui-win32-viewer-reload-proof
-          path: target/native-proof/windows-2025-x86_64/ui-viewer-reload
+          name: zsui-win32-viewer-proof
+          path: target/native-proof/windows-2025-x86_64
           if-no-files-found: error
           retention-days: 30
 
@@ -238,7 +364,7 @@ jobs:
             --locked \
             --bin zsui-viewer \
             --no-default-features \
-            --features ui-viewer
+            --features ui-viewer,accessibility
 
       - name: Run real AppKit proof scenes
         run: |
@@ -301,6 +427,11 @@ jobs:
           set -o pipefail
           mkdir -p target/native-proof/macos-15-arm64/ui-viewer-scroll
           mkdir -p target/native-proof/macos-15-arm64/ui-viewer-items-repeater
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-image
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-settings-card
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-workbench
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-workbench-dark
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-workbench-high-contrast
           ./target/release/zsui-viewer \
               examples/ui-documents/scrolling.json \
               --bindings examples/ui-documents/scrolling.bindings.json \
@@ -319,6 +450,48 @@ jobs:
               --smoke target/native-proof/macos-15-arm64/ui-viewer-items-repeater \
               --smoke-items-repeater-drag records \
             2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-items-repeater/viewer.log
+          ./target/release/zsui-viewer \
+              examples/ui-documents/image.json \
+              --bindings examples/ui-documents/image.bindings.json \
+              --values examples/ui-documents/image.values.json \
+              --width 960 \
+              --height 640 \
+              --smoke target/native-proof/macos-15-arm64/ui-viewer-image \
+              --smoke-duration-ms 700 \
+            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-image/viewer.log
+          ./target/release/zsui-viewer \
+              examples/ui-documents/settings-card.json \
+              --bindings examples/ui-documents/settings-card.bindings.json \
+              --values examples/ui-documents/settings-card.values.json \
+              --width 960 \
+              --height 640 \
+              --smoke target/native-proof/macos-15-arm64/ui-viewer-settings-card \
+              --smoke-duration-ms 700 \
+              --smoke-click-node apply-appearance \
+            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-settings-card/viewer.log
+          ./target/release/zsui-viewer \
+              examples/ui-documents/workbench.json \
+              --bindings examples/ui-documents/workbench.bindings.json \
+              --values examples/ui-documents/workbench.values.json \
+              --width 1280 \
+              --height 800 \
+              --smoke target/native-proof/macos-15-arm64/ui-viewer-workbench \
+              --smoke-duration-ms 900 \
+              --smoke-scroll 600 400 96 \
+              --smoke-workbench-composer workbench \
+            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-workbench/viewer.log
+          for theme in dark high-contrast; do
+            ./target/release/zsui-viewer \
+                examples/ui-documents/workbench.json \
+                --bindings examples/ui-documents/workbench.bindings.json \
+                --values examples/ui-documents/workbench.values.json \
+                --width 1280 \
+                --height 800 \
+                --theme "$theme" \
+                --smoke "target/native-proof/macos-15-arm64/ui-viewer-workbench-$theme" \
+                --smoke-duration-ms 700 \
+              2>&1 | tee "target/native-proof/macos-15-arm64/ui-viewer-workbench-$theme/viewer.log"
+          done
 
       - name: Summarize AppKit Viewer proof failure
         if: failure() && steps.appkit-viewer.outcome == 'failure'
@@ -552,13 +725,61 @@ jobs:
           assert repeater["platform"] == "macos"
           assert repeater["capture_backend"] == "appkit_nsview_bitmap_cache"
           assert repeater["source"]["document_path"] == "examples/ui-documents/items-repeater.json"
-          assert repeater["source"]["node_count"] == 34
+          assert repeater["source"]["node_count"] == 64
           runtime = repeater["runtime"]
           assert runtime["native_view_items_repeater_viewport_change_count"] >= 1
           assert runtime["native_view_items_repeater_scrollbar_drag_count"] == 1
           assert runtime["native_view_pointer_down_count"] == 1
           assert runtime["native_view_pointer_move_count"] == 1
           assert runtime["native_view_pointer_up_count"] == 1
+          assert runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
+          assert runtime["native_accessibility_node_count"] >= 20
+
+          minimum_nodes = {
+              "ui-viewer-image": 8,
+              "ui-viewer-settings-card": 8,
+              "ui-viewer-workbench": 20,
+              "ui-viewer-workbench-dark": 20,
+              "ui-viewer-workbench-high-contrast": 20,
+          }
+          component_proofs = {}
+          for scene, minimum in minimum_nodes.items():
+              scene_root = root / scene
+              scene_png = scene_root / "window.png"
+              if scene_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit(f"{scene_png} is not a PNG")
+              scene_proof = json.loads(
+                  (scene_root / "proof.json").read_text(encoding="utf-8")
+              )
+              scene_runtime = scene_proof["runtime"]
+              assert scene_proof["platform"] == "macos"
+              assert scene_proof["capture_backend"] == "appkit_nsview_bitmap_cache"
+              assert scene_runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
+              assert scene_runtime["native_accessibility_node_count"] >= minimum
+              assert scene_runtime["native_view_unhandled_click_count"] == 0
+              component_proofs[scene] = scene_proof
+
+          settings_runtime = component_proofs["ui-viewer-settings-card"]["runtime"]
+          assert settings_runtime["native_view_click_count"] == 1
+          assert settings_runtime["native_view_message_count"] == 1
+
+          workbench_runtime = component_proofs["ui-viewer-workbench"]["runtime"]
+          assert workbench_runtime["native_view_scroll_count"] == 1
+          assert workbench_runtime["native_view_unhandled_scroll_count"] == 0
+          assert workbench_runtime["native_view_text_input_count"] > 0
+          assert workbench_runtime["native_view_text_navigation_count"] >= 2
+          assert workbench_runtime["native_view_text_drag_count"] > 0
+          assert workbench_runtime["native_view_text_selection_change_count"] > 0
+          assert workbench_runtime["native_view_unhandled_key_count"] == 0
+          script = workbench_runtime["native_view_text_input_script_evidence"][0]
+          assert script["contains_cjk"]
+          assert script["contains_right_to_left"]
+          assert script["contains_combining_mark"]
+          assert script["contains_joiner"]
+          assert component_proofs["ui-viewer-workbench-dark"]["theme"] == "Dark"
+          contrast = component_proofs["ui-viewer-workbench-high-contrast"]
+          assert contrast["theme"] == "HighContrast"
+          assert contrast["runtime"]["high_contrast_draw_plan_window_count"] == 1
 
           status = json.loads(
               Path("target/native-proof/macos-status-item/status-item-run.json")
@@ -654,7 +875,7 @@ jobs:
             --locked \
             --bin zsui-viewer \
             --no-default-features \
-            --features ui-viewer
+            --features ui-viewer,accessibility
 
       - name: Verify lite renderer linkage
         run: |
@@ -748,6 +969,11 @@ jobs:
           set -o pipefail
           mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-scroll
           mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-image
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-settings-card
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-dark
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-high-contrast
           dbus-run-session -- xvfb-run -a \
             ./target/release/zsui-viewer \
               examples/ui-documents/scrolling.json \
@@ -768,6 +994,52 @@ jobs:
               --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater \
               --smoke-items-repeater-drag records \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater/viewer.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/zsui-viewer \
+              examples/ui-documents/image.json \
+              --bindings examples/ui-documents/image.bindings.json \
+              --values examples/ui-documents/image.values.json \
+              --width 960 \
+              --height 640 \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-image \
+              --smoke-duration-ms 700 \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-image/viewer.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/zsui-viewer \
+              examples/ui-documents/settings-card.json \
+              --bindings examples/ui-documents/settings-card.bindings.json \
+              --values examples/ui-documents/settings-card.values.json \
+              --width 960 \
+              --height 640 \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-settings-card \
+              --smoke-duration-ms 700 \
+              --smoke-click-node apply-appearance \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-settings-card/viewer.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/zsui-viewer \
+              examples/ui-documents/workbench.json \
+              --bindings examples/ui-documents/workbench.bindings.json \
+              --values examples/ui-documents/workbench.values.json \
+              --width 1280 \
+              --height 800 \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench \
+              --smoke-duration-ms 900 \
+              --smoke-scroll 600 400 96 \
+              --smoke-workbench-composer workbench \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench/viewer.log
+          for theme in dark high-contrast; do
+            dbus-run-session -- xvfb-run -a \
+              ./target/release/zsui-viewer \
+                examples/ui-documents/workbench.json \
+                --bindings examples/ui-documents/workbench.bindings.json \
+                --values examples/ui-documents/workbench.values.json \
+                --width 1280 \
+                --height 800 \
+                --theme "$theme" \
+                --smoke "target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-$theme" \
+                --smoke-duration-ms 700 \
+              2>&1 | tee "target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-$theme/viewer.log"
+          done
 
       - name: Summarize Linux Viewer proof failure
         if: failure() && steps.linux-viewer.outcome == 'failure'
@@ -995,13 +1267,61 @@ jobs:
           assert repeater["platform"] == "linux"
           assert repeater["capture_backend"] == "winit_softbuffer_pango_cairo"
           assert repeater["source"]["document_path"] == "examples/ui-documents/items-repeater.json"
-          assert repeater["source"]["node_count"] == 34
+          assert repeater["source"]["node_count"] == 64
           runtime = repeater["runtime"]
           assert runtime["native_view_items_repeater_viewport_change_count"] >= 1
           assert runtime["native_view_items_repeater_scrollbar_drag_count"] == 1
           assert runtime["native_view_pointer_down_count"] == 1
           assert runtime["native_view_pointer_move_count"] == 1
           assert runtime["native_view_pointer_up_count"] == 1
+          assert runtime["native_accessibility_backend"] == "accesskit_atspi"
+          assert runtime["native_accessibility_node_count"] >= 20
+
+          minimum_nodes = {
+              "ui-viewer-image": 8,
+              "ui-viewer-settings-card": 8,
+              "ui-viewer-workbench": 20,
+              "ui-viewer-workbench-dark": 20,
+              "ui-viewer-workbench-high-contrast": 20,
+          }
+          component_proofs = {}
+          for scene, minimum in minimum_nodes.items():
+              scene_root = root / scene
+              scene_png = scene_root / "window.png"
+              if scene_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit(f"{scene_png} is not a PNG")
+              scene_proof = json.loads(
+                  (scene_root / "proof.json").read_text(encoding="utf-8")
+              )
+              scene_runtime = scene_proof["runtime"]
+              assert scene_proof["platform"] == "linux"
+              assert scene_proof["capture_backend"] == "winit_softbuffer_pango_cairo"
+              assert scene_runtime["native_accessibility_backend"] == "accesskit_atspi"
+              assert scene_runtime["native_accessibility_node_count"] >= minimum
+              assert scene_runtime["native_view_unhandled_click_count"] == 0
+              component_proofs[scene] = scene_proof
+
+          settings_runtime = component_proofs["ui-viewer-settings-card"]["runtime"]
+          assert settings_runtime["native_view_click_count"] == 1
+          assert settings_runtime["native_view_message_count"] == 1
+
+          workbench_runtime = component_proofs["ui-viewer-workbench"]["runtime"]
+          assert workbench_runtime["native_view_scroll_count"] == 1
+          assert workbench_runtime["native_view_unhandled_scroll_count"] == 0
+          assert workbench_runtime["native_view_text_input_count"] > 0
+          assert workbench_runtime["native_view_text_navigation_count"] >= 2
+          assert workbench_runtime["native_view_text_drag_count"] > 0
+          assert workbench_runtime["native_view_text_selection_change_count"] > 0
+          assert workbench_runtime["native_view_unhandled_key_count"] == 0
+          script = workbench_runtime["native_view_text_input_script_evidence"][0]
+          assert script["contains_cjk"]
+          assert script["contains_right_to_left"]
+          assert script["contains_combining_mark"]
+          assert script["contains_joiner"]
+          assert component_proofs["ui-viewer-workbench-dark"]["theme"] == "Dark"
+          contrast = component_proofs["ui-viewer-workbench-high-contrast"]
+          assert contrast["theme"] == "HighContrast"
+          assert contrast["runtime"]["high_contrast_draw_plan_window_count"] == 1
 
           lite_root = Path("target/native-proof/ubuntu-24.04-x86_64-lite")
           lite_png = lite_root / "notepad-interaction.png"

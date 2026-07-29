@@ -1,4 +1,22 @@
 impl WindowsWin32ViewInputRoute {
+    #[cfg(feature = "accessibility")]
+    fn dispatch_accessibility_focus(
+        &mut self,
+        widget: crate::WidgetId,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.dispatch_accessibility_focus(widget);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
+    #[cfg(feature = "accessibility")]
+    fn dispatch_accessibility_invoke(
+        &mut self,
+        widget: crate::WidgetId,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.dispatch_accessibility_invoke(widget);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
     fn dispatch_blur(&mut self) -> WindowsWin32ViewInputDispatchReport {
         let report = self.shared_runtime.blur_focus();
         self.adapt_shared_report(report, WindowsSharedInputKind::Blur)

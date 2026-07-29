@@ -99,7 +99,59 @@ impl<Msg: Clone> ViewNode<Msg> {
                 bounds: cx.bounds,
             });
         }
+        #[cfg(feature = "scroll")]
+        let adaptive_child_bounds = if self.style.overflow_y == ViewOverflow::Auto {
+            let natural_content_px = selected_index
+                .and_then(|index| self.children.get(index))
+                .map(|child| {
+                    natural_height_px(
+                        child,
+                        plan.content_bounds.width,
+                        cx.dpi,
+                        cx.typography_scale(),
+                    )
+                })
+                .unwrap_or(0);
+            let resolved_content_px = plan.content_bounds.height.max(natural_content_px);
+            self.resolved_scroll_content_height = Dp::new(
+                resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON),
+            );
+            let max_offset = scroll_max_offset_y(
+                Some(plan.content_bounds),
+                Some(self.resolved_scroll_content_height),
+                cx.dpi,
+            );
+            self.adaptive_scroll_offset_y = Dp::new(
+                self.adaptive_scroll_offset_y
+                    .0
+                    .max(0.0)
+                    .min(max_offset.0),
+            );
+            (natural_content_px > plan.content_bounds.height).then_some(Rect {
+                x: plan.content_bounds.x,
+                y: plan.content_bounds.y
+                    - self
+                        .adaptive_scroll_offset_y
+                        .to_px(cx.dpi)
+                        .round_i32()
+                        .max(0),
+                width: plan.content_bounds.width,
+                height: natural_content_px,
+            })
+        } else {
+            None
+        };
         if let Some(child) = selected_index.and_then(|index| self.children.get_mut(index)) {
+            #[cfg(feature = "scroll")]
+            let child_bounds = adaptive_child_bounds.unwrap_or_else(|| {
+                constrained_child_bounds(
+                    plan.content_bounds,
+                    child,
+                    cx.dpi,
+                    cx.typography_scale(),
+                )
+            });
+            #[cfg(not(feature = "scroll"))]
             let child_bounds = constrained_child_bounds(
                 plan.content_bounds,
                 child,
@@ -511,7 +563,33 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ..
         } = &mut self.kind
         {
-            let max_offset = scroll_max_offset_y(Some(content_bounds), *content_height, cx.dpi);
+            let natural_content_px = self
+                .children
+                .first()
+                .map(|child| {
+                    natural_height_px(
+                        child,
+                        content_bounds.width,
+                        cx.dpi,
+                        cx.typography_scale(),
+                    )
+                })
+                .unwrap_or(0);
+            let explicit_content_px = content_height
+                .map(|height| height.to_px(cx.dpi).ceil_i32().max(0))
+                .unwrap_or(0);
+            let resolved_content_px = content_bounds
+                .height
+                .max(natural_content_px)
+                .max(explicit_content_px);
+            self.resolved_scroll_content_height = Dp::new(
+                resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON),
+            );
+            let max_offset = scroll_max_offset_y(
+                Some(content_bounds),
+                Some(self.resolved_scroll_content_height),
+                cx.dpi,
+            );
             let requested = if offset_y.0.is_finite() {
                 offset_y.0.max(0.0)
             } else {
@@ -519,13 +597,64 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             };
             *offset_y = Dp::new(requested.min(max_offset.0));
         }
+        #[cfg(feature = "scroll")]
+        let child_layout_bounds = if self.style.overflow_y == ViewOverflow::Auto
+            && !matches!(self.kind, ViewNodeKind::Scroll { .. })
+        {
+            let padding = self
+                .style
+                .padding
+                .map(|value| value.to_px(cx.dpi).round_i32().max(0))
+                .unwrap_or(0);
+            let natural_content_px = natural_height_px(
+                self,
+                cx.bounds.width,
+                cx.dpi,
+                cx.typography_scale(),
+            )
+            .saturating_sub(padding.saturating_mul(2));
+            let resolved_content_px = content_bounds.height.max(natural_content_px);
+            self.resolved_scroll_content_height = Dp::new(
+                resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON),
+            );
+            let max_offset = scroll_max_offset_y(
+                Some(content_bounds),
+                Some(self.resolved_scroll_content_height),
+                cx.dpi,
+            );
+            self.adaptive_scroll_offset_y = Dp::new(
+                self.adaptive_scroll_offset_y
+                    .0
+                    .max(0.0)
+                    .min(max_offset.0),
+            );
+            Rect {
+                x: content_bounds.x,
+                y: content_bounds.y
+                    - self
+                        .adaptive_scroll_offset_y
+                        .to_px(cx.dpi)
+                        .round_i32()
+                        .max(0),
+                width: content_bounds.width,
+                height: resolved_content_px,
+            }
+        } else {
+            content_bounds
+        };
+        #[cfg(not(feature = "scroll"))]
+        let child_layout_bounds = content_bounds;
         let child_bounds = split_child_bounds(
-            content_bounds,
+            child_layout_bounds,
             &self.kind,
             &self.children,
             self.style.gap,
             cx.dpi,
             cx.typography_scale(),
+            #[cfg(feature = "scroll")]
+            Some(self.resolved_scroll_content_height),
+            #[cfg(not(feature = "scroll"))]
+            None,
         );
         for (child, bounds) in self.children.iter_mut().zip(child_bounds) {
             let mut child_cx = cx.child(bounds);
@@ -1165,6 +1294,43 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 child.event(cx, event);
             }
             return;
+        }
+
+        #[cfg(feature = "scroll")]
+        if let ViewEvent::ScrollBy { widget, delta_y } = event {
+            if self.style.overflow_y == ViewOverflow::Auto && self.id == Some(*widget) {
+                let viewport = self.bounds.map(|bounds| {
+                    #[cfg(feature = "tabs")]
+                    if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
+                        let selected_index = selected.and_then(|selected| {
+                            tabs.iter().position(|candidate| candidate.id == selected)
+                        });
+                        let tab_bounds = tab_layout_bounds(
+                            bounds,
+                            self.style.padding,
+                            self.layout_dpi,
+                        );
+                        return crate::zs_tab_view_render_plan_for_tabs(
+                            tab_bounds,
+                            tabs,
+                            selected_index,
+                            crate::ZsTabPlatformStyle::current(),
+                            self.layout_dpi,
+                        )
+                        .content_bounds;
+                    }
+                    inset_bounds(bounds, self.style.padding, self.layout_dpi)
+                });
+                let max_offset = scroll_max_offset_y(
+                    viewport,
+                    Some(self.resolved_scroll_content_height),
+                    self.layout_dpi,
+                );
+                self.adaptive_scroll_offset_y = Dp::new(
+                    (self.adaptive_scroll_offset_y.0 + delta_y.0)
+                        .clamp(0.0, max_offset.0),
+                );
+            }
         }
 
         #[cfg(feature = "tabs")]
@@ -2194,13 +2360,19 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 (
                     ViewNodeKind::Scroll {
                         offset_y,
-                        content_height,
                         on_scroll,
+                        ..
                     },
-                    ViewEvent::ScrollBy { delta_y, .. },
-                ) => {
-                    let max_offset =
-                        scroll_max_offset_y(self.bounds, *content_height, self.layout_dpi);
+                    ViewEvent::ScrollBy { widget, delta_y },
+                ) if self.id == Some(*widget) => {
+                    let viewport = self
+                        .bounds
+                        .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
+                    let max_offset = scroll_max_offset_y(
+                        viewport,
+                        Some(self.resolved_scroll_content_height),
+                        self.layout_dpi,
+                    );
                     let next = Dp::new((offset_y.0 + delta_y.0).clamp(0.0, max_offset.0));
                     *offset_y = next;
                     if let Some(message) = on_scroll {
@@ -3541,8 +3713,18 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Stack { .. } | ViewNodeKind::Spacer | ViewNodeKind::__Message(_) => {}
         }
 
+        #[cfg(feature = "scroll")]
+        if self.style.overflow_y == ViewOverflow::Auto {
+            cx.draw(NativeDrawCommand::PushClip {
+                rect: inset_bounds(bounds, self.style.padding, cx.dpi),
+            });
+        }
         for child in &self.children {
             child.paint(cx);
+        }
+        #[cfg(feature = "scroll")]
+        if self.style.overflow_y == ViewOverflow::Auto {
+            cx.draw(NativeDrawCommand::PopClip);
         }
         cx.finish_node(self);
     }

@@ -753,8 +753,16 @@ pub(crate) fn zs_workbench_region_widget_id(
         ZsWorkbenchRegionKind::InspectorTab => 10,
         ZsWorkbenchRegionKind::Timeline => 11,
     };
+    zs_workbench_named_widget_id(parent, local_kind, &region.id)
+}
+
+pub(crate) fn zs_workbench_named_widget_id(
+    parent: crate::WidgetId,
+    local_kind: u64,
+    id: &str,
+) -> crate::WidgetId {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ local_kind;
-    for byte in region.id.bytes() {
+    for byte in id.bytes() {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
