@@ -214,9 +214,7 @@ impl HostCapabilities {
                 "Win32 global hotkey APIs exist; generic PlatformHost currently records declarations",
             ),
             clipboard_text: CapabilitySupport::supported("text clipboard bridge is available"),
-            clipboard_image: CapabilitySupport::partial(
-                "image clipboard depends on backend integration",
-            ),
+            clipboard_image: native_image_clipboard_support(),
             clipboard_files: CapabilitySupport::partial(
                 "file clipboard support requires a native Windows host backend",
             ),
@@ -257,8 +255,7 @@ impl HostCapabilities {
             "owner-bound MessageBoxW dialogs map typed levels, button sets and responses; target interaction proof is pending",
         );
         capabilities.clipboard_text = native_text_clipboard_support();
-        capabilities.clipboard_image =
-            CapabilitySupport::unsupported("the native image clipboard service is not connected");
+        capabilities.clipboard_image = native_image_clipboard_support();
         capabilities.clipboard_files =
             CapabilitySupport::unsupported("the native file clipboard service is not connected");
         capabilities
@@ -290,9 +287,7 @@ impl HostCapabilities {
             clipboard_text: CapabilitySupport::partial(
                 "text clipboard requires the optional clipboard service; AppKit pasteboard is pending",
             ),
-            clipboard_image: CapabilitySupport::unsupported(
-                "AppKit image pasteboard support is not connected",
-            ),
+            clipboard_image: native_image_clipboard_support(),
             clipboard_files: CapabilitySupport::unsupported(
                 "AppKit file pasteboard support is not connected",
             ),
@@ -324,13 +319,24 @@ impl HostCapabilities {
                 "NSStatusItem and detached NSMenu resources are RAII-owned and command-routed by the AppKit event loop; fixed macOS 15 runtime smoke passed, while manual menu-bar interaction remains a release gate",
             );
         }
-        capabilities.clipboard_text = if cfg!(feature = "macos-appkit") {
-            CapabilitySupport::partial(
-                "NSPasteboard UTF-8 text read/write is connected; AppKit host proof is pending",
+        capabilities.clipboard_text = if cfg!(all(feature = "macos-appkit", feature = "clipboard"))
+        {
+            CapabilitySupport::supported(
+                "NSPasteboard UTF-8 text read/write is compiled by the optional clipboard service",
             )
         } else {
             CapabilitySupport::unsupported(
-                "enable macos-appkit to compile the native AppKit clipboard service",
+                "enable macos-appkit plus clipboard to compile the native AppKit clipboard service",
+            )
+        };
+        capabilities.clipboard_image = if cfg!(all(feature = "macos-appkit", feature = "clipboard"))
+        {
+            CapabilitySupport::supported(
+                "native NSPasteboard image transfer exposes validated RGBA pixels",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable macos-appkit plus clipboard to compile native AppKit image transfer",
             )
         };
         capabilities.menus = if cfg!(feature = "macos-appkit") {
@@ -389,9 +395,7 @@ impl HostCapabilities {
             clipboard_text: CapabilitySupport::partial(
                 "text clipboard requires the optional clipboard service; GTK clipboard is pending",
             ),
-            clipboard_image: CapabilitySupport::unsupported(
-                "GTK image clipboard support is not connected",
-            ),
+            clipboard_image: native_image_clipboard_support(),
             clipboard_files: CapabilitySupport::unsupported(
                 "GTK file clipboard support is not connected",
             ),
@@ -440,13 +444,29 @@ impl HostCapabilities {
             CapabilitySupport::partial(
                 "system UTF-8 text clipboard access is connected without GTK; Wayland/X11 ownership proof is pending",
             )
-        } else if cfg!(feature = "linux-gtk") {
+        } else if cfg!(all(feature = "linux-gtk", feature = "clipboard")) {
             CapabilitySupport::partial(
                 "GdkClipboard UTF-8 text read/write is connected; Wayland/X11 host proof is pending",
             )
         } else {
             CapabilitySupport::unsupported(
                 "enable linux-direct plus clipboard, or linux-gtk, to compile a Linux clipboard service",
+            )
+        };
+        capabilities.clipboard_image = if cfg!(all(
+            feature = "linux-direct-host",
+            feature = "clipboard"
+        )) {
+            CapabilitySupport::partial(
+                "native Wayland/X11 image clipboard transfer exposes validated RGBA pixels; compositor proof is pending",
+            )
+        } else if cfg!(all(feature = "linux-gtk", feature = "clipboard")) {
+            CapabilitySupport::partial(
+                "native GTK session image clipboard transfer exposes validated RGBA pixels; Wayland/X11 proof is pending",
+            )
+        } else {
+            CapabilitySupport::unsupported(
+                "enable linux-direct plus clipboard, or linux-gtk plus clipboard, to compile Linux image transfer",
             )
         };
         capabilities.menus = if cfg!(feature = "linux-direct-host") {
@@ -560,6 +580,18 @@ fn native_text_clipboard_support() -> CapabilitySupport {
     } else {
         CapabilitySupport::unsupported(
             "enable the clipboard feature to compile the native text clipboard service",
+        )
+    }
+}
+
+fn native_image_clipboard_support() -> CapabilitySupport {
+    if cfg!(feature = "clipboard") {
+        CapabilitySupport::supported(
+            "the optional native clipboard service transfers validated RGBA images",
+        )
+    } else {
+        CapabilitySupport::unsupported(
+            "enable the clipboard feature to compile native RGBA image transfer",
         )
     }
 }

@@ -798,6 +798,10 @@ Linux 的“原生”指真实系统窗口、窗口管理器事件、系统字�
 剪贴板、图标主题和桌面 portal 集成；ZSUI 控件仍是针对 Linux 平台参数自绘的
 框架控件，不是 `GtkWidget`。因此它属于原生窗口上的自绘 UI，而不是 GTK 原生控件树。
 
+可选 `clipboard` feature 通过统一的 `ClipboardData`/`ClipboardService` API 在
+Win32、AppKit 和 Linux 后端读写 UTF-8 文本及经过尺寸与字节数校验的 RGBA 图像；
+应用代码不接触平台剪贴板对象。文件列表传输仍保持明确的不支持状态。
+
 ## 目录
 
 - `src/`：公共 API、运行时、布局、协议和平台后端

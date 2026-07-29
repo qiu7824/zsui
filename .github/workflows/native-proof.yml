@@ -69,6 +69,28 @@ jobs:
             --no-default-features `
             --features ui-viewer,accessibility
 
+      - name: Run native Win32 RGBA clipboard proof
+        shell: pwsh
+        run: |
+          cargo run `
+            --release `
+            --locked `
+            --example native_clipboard_smoke `
+            --no-default-features `
+            --features windows-win32,clipboard `
+            -- `
+            --output target/native-proof/windows-2025-x86_64/clipboard-image.json
+          $proof = Get-Content target/native-proof/windows-2025-x86_64/clipboard-image.json -Raw | ConvertFrom-Json
+          if (
+            $proof.schema -ne "zsui.native-clipboard-proof/v1" -or
+            $proof.platform -ne "windows" -or
+            -not $proof.image_write_succeeded -or
+            -not $proof.image_read_succeeded -or
+            -not $proof.original_clipboard_restored
+          ) {
+            throw "Win32 RGBA clipboard proof is incomplete"
+          }
+
       - name: Prepare deterministic reload sources
         shell: pwsh
         run: |
@@ -394,10 +416,28 @@ jobs:
             --bin zsui-viewer \
             --no-default-features \
             --features ui-viewer,accessibility
+          cargo build \
+            --release \
+            --locked \
+            --example native_clipboard_smoke \
+            --no-default-features \
+            --features macos-appkit,clipboard
 
       - name: Run real AppKit proof scenes
         run: |
           mkdir -p target/native-proof/macos-15-arm64
+          ./target/release/examples/native_clipboard_smoke \
+            --output target/native-proof/macos-15-arm64/clipboard-image.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          proof = json.loads(Path("target/native-proof/macos-15-arm64/clipboard-image.json").read_text())
+          assert proof["schema"] == "zsui.native-clipboard-proof/v1"
+          assert proof["platform"] == "macos"
+          assert proof["image_write_succeeded"] is True
+          assert proof["image_read_succeeded"] is True
+          assert proof["original_clipboard_restored"] is True
+          PY
           for page in inputs collections navigation feedback catalog; do
             ./target/release/examples/component_gallery \
               --native-proof \
@@ -905,6 +945,12 @@ jobs:
             --bin zsui-viewer \
             --no-default-features \
             --features ui-viewer,accessibility
+          cargo build \
+            --release \
+            --locked \
+            --example native_clipboard_smoke \
+            --no-default-features \
+            --features linux-direct-lite,clipboard
 
       - name: Verify lite renderer linkage
         run: |
@@ -921,6 +967,19 @@ jobs:
           mkdir -p \
             target/native-proof/ubuntu-24.04-x86_64 \
             target/native-proof/ubuntu-24.04-x86_64-lite
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/native_clipboard_smoke \
+              --output target/native-proof/ubuntu-24.04-x86_64-lite/clipboard-image.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          proof = json.loads(Path("target/native-proof/ubuntu-24.04-x86_64-lite/clipboard-image.json").read_text())
+          assert proof["schema"] == "zsui.native-clipboard-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["image_write_succeeded"] is True
+          assert proof["image_read_succeeded"] is True
+          assert proof["original_clipboard_restored"] is True
+          PY
           for page in inputs collections navigation feedback catalog; do
             dbus-run-session -- xvfb-run -a \
               ./target/release/examples/component_gallery \

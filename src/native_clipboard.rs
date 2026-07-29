@@ -1,11 +1,21 @@
 use crate::{ClipboardData, ZsuiError, ZsuiResult};
 
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeClipboardTextWrite<'a> {
     Clear,
     Text(&'a str),
 }
 
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-appkit"),
+    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+))]
 pub(crate) fn native_clipboard_text_write(
     data: &ClipboardData,
 ) -> ZsuiResult<NativeClipboardTextWrite<'_>> {
@@ -19,6 +29,124 @@ pub(crate) fn native_clipboard_text_write(
         ClipboardData::Files(_) => Err(ZsuiError::unsupported(
             "clipboard_files",
             "the native file clipboard service is not connected",
+        )),
+    }
+}
+
+#[cfg(feature = "clipboard")]
+pub(crate) fn arboard_read_clipboard(operation: &'static str) -> ZsuiResult<Option<ClipboardData>> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
+    match clipboard.get_text() {
+        Ok(text) => Ok(Some(ClipboardData::Text(text))),
+        Err(arboard::Error::ContentNotAvailable) => match clipboard.get_image() {
+            Ok(image) => {
+                let bytes = image.bytes.into_owned();
+                ClipboardData::image_rgba(image.width, image.height, bytes).map(Some)
+            }
+            Err(arboard::Error::ContentNotAvailable) => Ok(None),
+            Err(error) => Err(ZsuiError::host(operation, error.to_string())),
+        },
+        Err(error) => Err(ZsuiError::host(operation, error.to_string())),
+    }
+}
+
+#[cfg(all(
+    feature = "clipboard",
+    any(
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )
+))]
+pub(crate) fn arboard_read_clipboard_image(
+    operation: &'static str,
+) -> ZsuiResult<Option<ClipboardData>> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
+    match clipboard.get_image() {
+        Ok(image) => {
+            let bytes = image.bytes.into_owned();
+            ClipboardData::image_rgba(image.width, image.height, bytes).map(Some)
+        }
+        Err(arboard::Error::ContentNotAvailable) => Ok(None),
+        Err(error) => Err(ZsuiError::host(operation, error.to_string())),
+    }
+}
+
+#[cfg(all(
+    not(feature = "clipboard"),
+    any(
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )
+))]
+pub(crate) fn arboard_read_clipboard_image(
+    _operation: &'static str,
+) -> ZsuiResult<Option<ClipboardData>> {
+    Err(ZsuiError::unsupported(
+        "clipboard_image",
+        "enable the clipboard feature to compile native image clipboard support",
+    ))
+}
+
+#[cfg(feature = "clipboard")]
+pub(crate) fn arboard_write_clipboard(
+    operation: &'static str,
+    data: &ClipboardData,
+) -> ZsuiResult<()> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
+    match data {
+        ClipboardData::Empty => clipboard
+            .clear()
+            .map_err(|error| ZsuiError::host(operation, error.to_string())),
+        ClipboardData::Text(text) => clipboard
+            .set_text(text.clone())
+            .map_err(|error| ZsuiError::host(operation, error.to_string())),
+        ClipboardData::ImageRgba {
+            width,
+            height,
+            bytes,
+        } => {
+            ClipboardData::validate_image_rgba(*width, *height, bytes)?;
+            clipboard
+                .set_image(arboard::ImageData {
+                    width: *width,
+                    height: *height,
+                    bytes: std::borrow::Cow::Borrowed(bytes),
+                })
+                .map_err(|error| ZsuiError::host(operation, error.to_string()))
+        }
+        ClipboardData::Files(_) => Err(ZsuiError::unsupported(
+            "clipboard_files",
+            "the native file clipboard service is not connected",
+        )),
+    }
+}
+
+#[cfg(all(
+    not(feature = "clipboard"),
+    any(
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )
+))]
+pub(crate) fn arboard_write_clipboard(
+    _operation: &'static str,
+    data: &ClipboardData,
+) -> ZsuiResult<()> {
+    match data {
+        ClipboardData::ImageRgba { .. } => Err(ZsuiError::unsupported(
+            "clipboard_image",
+            "enable the clipboard feature to compile native image clipboard support",
+        )),
+        ClipboardData::Files(_) => Err(ZsuiError::unsupported(
+            "clipboard_files",
+            "the native file clipboard service is not connected",
+        )),
+        ClipboardData::Empty | ClipboardData::Text(_) => Err(ZsuiError::unsupported(
+            "clipboard_text",
+            "enable the clipboard feature to compile native text clipboard support",
         )),
     }
 }

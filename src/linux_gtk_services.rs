@@ -418,13 +418,24 @@ pub struct LinuxGtkClipboardService;
 impl ClipboardService for LinuxGtkClipboardService {
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
         let clipboard = gtk_system_clipboard("gtk_read_clipboard")?;
-        MainContext::default()
+        let text = MainContext::default()
             .block_on(clipboard.read_text_future())
             .map(|text| text.map(|text| ClipboardData::Text(text.to_string())))
-            .map_err(|error| ZsuiError::host("gtk_read_clipboard", error.to_string()))
+            .map_err(|error| ZsuiError::host("gtk_read_clipboard", error.to_string()))?;
+        if text.is_some() {
+            Ok(text)
+        } else {
+            crate::native_clipboard::arboard_read_clipboard_image("gtk_read_clipboard_image")
+        }
     }
 
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
+        if matches!(
+            data,
+            ClipboardData::ImageRgba { .. } | ClipboardData::Files(_)
+        ) {
+            return crate::native_clipboard::arboard_write_clipboard("gtk_write_clipboard", data);
+        }
         let write = native_clipboard_text_write(data)?;
         let clipboard = gtk_system_clipboard("gtk_write_clipboard")?;
         match write {

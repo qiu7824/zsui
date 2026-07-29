@@ -118,6 +118,7 @@ mod native_accessibility;
 pub mod native_adapter_manifest;
 #[cfg(any(
     test,
+    feature = "clipboard",
     all(target_os = "macos", feature = "macos-appkit"),
     all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
 ))]

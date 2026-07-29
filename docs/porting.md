@@ -70,15 +70,15 @@ window and directly presents the ZSUI software surface. Both keep native
 objects behind strong `WindowId` routing.
 macOS maps open/save requests to
 `NSOpenPanel`/`NSSavePanel` and lowers `MenuSpec` into owned
-`NSMenu`/`NSMenuItem` objects; UTF-8 clipboard text uses `NSPasteboard`.
-`linux-direct` maps dialogs to the XDG desktop portal, text to the system
-clipboard, icons to the freedesktop theme and input to native Wayland/X11
+`NSMenu`/`NSMenuItem` objects; UTF-8 text and validated RGBA images use the
+native pasteboard path. `linux-direct` maps dialogs to the XDG desktop portal,
+text and RGBA images to the system clipboard, icons to the freedesktop theme and input to native Wayland/X11
 events. It renders a keyboard- and pointer-operable Linux desktop menu bar and
 popup inside the owned window, including checked state, separators, submenus
 and accelerator labels. This is a real application menu surface, not a claim
 of compositor-owned global-menu integration. The optional `linux-gtk`
 compatibility backend retains `FileChooserNative`, `GMenu`/`SimpleAction` and
-`GdkClipboard`. Clipboard images and files remain explicitly unsupported.
+`GdkClipboard`. Clipboard file lists remain explicitly unsupported.
 
 Stateful windows may opt into
 `NativeWindowResourcePolicy::ReleaseViewWhenHidden` through

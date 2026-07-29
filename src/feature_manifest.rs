@@ -571,7 +571,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec!["arboard"],
             Vec::new(),
-            "system text clipboard bridge; disabled builds use MemoryHost storage",
+            "system UTF-8 text and validated RGBA image clipboard bridge; file lists remain backend-gated",
         ),
         ZsuiCargoFeature::new(
             "accessibility",

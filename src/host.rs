@@ -310,9 +310,9 @@ impl ZsuiHost for PlatformHost {
             if !self.capabilities().clipboard_text.accepts_declaration() {
                 return self.inner.read_clipboard();
             }
-            match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
-                Ok(text) => return Ok(Some(ClipboardData::Text(text))),
-                Err(_) => return self.inner.read_clipboard(),
+            match crate::native_clipboard::arboard_read_clipboard("read_clipboard") {
+                Ok(Some(data)) => return Ok(Some(data)),
+                Ok(None) | Err(_) => return self.inner.read_clipboard(),
             }
         }
 
@@ -325,26 +325,22 @@ impl ZsuiHost for PlatformHost {
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
         #[cfg(feature = "clipboard")]
         {
-            return match data {
-                ClipboardData::Text(text) => {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        clipboard
-                            .set_text(text.clone())
-                            .map_err(|err| ZsuiError::host("write_clipboard", err.to_string()))?;
-                        self.inner.write_clipboard(data)?;
-                        return Ok(());
-                    }
-                    self.inner.write_clipboard(data)
+            crate::native_clipboard::arboard_write_clipboard("write_clipboard", data)?;
+            let mirror_supported = match data {
+                ClipboardData::Empty | ClipboardData::Text(_) => {
+                    self.capabilities().clipboard_text.accepts_declaration()
                 }
-                ClipboardData::Empty => self.inner.write_clipboard(data),
-                ClipboardData::ImageRgba { .. } => Err(ZsuiError::unsupported(
-                    "clipboard_image",
-                    "PlatformHost image clipboard bridge is not wired yet",
-                )),
-                ClipboardData::Files(_) => Err(ZsuiError::unsupported(
-                    "clipboard_files",
-                    "PlatformHost file clipboard bridge is not wired yet",
-                )),
+                ClipboardData::ImageRgba { .. } => {
+                    self.capabilities().clipboard_image.accepts_declaration()
+                }
+                ClipboardData::Files(_) => {
+                    self.capabilities().clipboard_files.accepts_declaration()
+                }
+            };
+            return if mirror_supported {
+                self.inner.write_clipboard(data)
+            } else {
+                Ok(())
             };
         }
 

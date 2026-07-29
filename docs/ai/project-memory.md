@@ -1351,6 +1351,13 @@ history remain authoritative for implementation status.
 
 ## Verification and delivery
 
+- The optional `clipboard` feature now carries both UTF-8 text and validated
+  RGBA image data through `ClipboardData` and `NativeClipboardService`.
+  `ClipboardData::image_rgba` rejects zero dimensions, arithmetic overflow and
+  incorrect byte lengths before backend entry. Win32, AppKit, Linux Direct and
+  GTK compatibility paths share the same image boundary; the native-proof
+  workflow runs a 2x2 write/read/restore round trip on Windows, macOS and Linux.
+  Clipboard file lists remain explicitly unsupported.
 - A control counts only after layout, state, events, themed paint and tests are
   connected. Platform completion additionally needs target evidence.
 - For each vertical slice, run focused checks, the required full gates, real

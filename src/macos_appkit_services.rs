@@ -589,14 +589,25 @@ pub struct MacosAppKitClipboardService;
 impl ClipboardService for MacosAppKitClipboardService {
     fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
         let _mtm = appkit_main_thread_marker("NSPasteboard")?;
-        Ok(NSPasteboard::generalPasteboard()
+        let text = NSPasteboard::generalPasteboard()
             .stringForType(unsafe { NSPasteboardTypeString })
-            .map(|text| ClipboardData::Text(text.to_string())))
+            .map(|text| ClipboardData::Text(text.to_string()));
+        if text.is_some() {
+            Ok(text)
+        } else {
+            crate::native_clipboard::arboard_read_clipboard_image("macos_read_clipboard_image")
+        }
     }
 
     fn write_clipboard(&mut self, data: &ClipboardData) -> ZsuiResult<()> {
-        let write = native_clipboard_text_write(data)?;
         let _mtm = appkit_main_thread_marker("NSPasteboard")?;
+        if matches!(
+            data,
+            ClipboardData::ImageRgba { .. } | ClipboardData::Files(_)
+        ) {
+            return crate::native_clipboard::arboard_write_clipboard("macos_write_clipboard", data);
+        }
+        let write = native_clipboard_text_write(data)?;
         let pasteboard = NSPasteboard::generalPasteboard();
         pasteboard.clearContents();
         match write {

@@ -182,6 +182,11 @@ path = "examples/ui_performance_minimal.rs"
 required-features = ["window", "button", "label"]
 
 [[example]]
+name = "native_clipboard_smoke"
+path = "examples/native_clipboard_smoke.rs"
+required-features = ["clipboard"]
+
+[[example]]
 name = "declaration_audit"
 path = "examples/declaration_audit.rs"
 required-features = ["button", "label"]

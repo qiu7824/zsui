@@ -405,8 +405,10 @@ GdkPixbuf decoding, and `linux-gtk` enables optional GTK4 compatibility
 bindings. Platform-native window, clipboard, file-dialog
 and menu adapters therefore do not enter builds that omit their backend
 feature. Window adapters own `NSWindow` or Wayland/X11 window instances behind
-strong `WindowId` values; clipboard adapters map `ClipboardData::Text`/`Empty`
-to the target system clipboard. Native toolkit objects and callback targets
+strong `WindowId` values; clipboard adapters map `ClipboardData::Text`,
+validated `ClipboardData::ImageRgba` and `Empty` to the target system
+clipboard. File-list transfer remains an explicit unsupported capability.
+Native toolkit objects and callback targets
 stay out of the public application API. The `window` umbrella selects Win32,
 AppKit or `linux-direct` by target; `desktop-winit` remains an explicit blank
 fallback and is not completion evidence for AppKit.

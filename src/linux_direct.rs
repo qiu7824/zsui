@@ -2532,38 +2532,12 @@ pub(crate) fn linux_direct_show_native_dialog(
 
 #[cfg(feature = "clipboard")]
 pub(crate) fn linux_direct_read_clipboard() -> ZsuiResult<Option<crate::ClipboardData>> {
-    let mut clipboard = arboard::Clipboard::new()
-        .map_err(|error| ZsuiError::host("linux_direct_read_clipboard", error.to_string()))?;
-    match clipboard.get_text() {
-        Ok(text) => Ok(Some(crate::ClipboardData::Text(text))),
-        Err(arboard::Error::ContentNotAvailable) => Ok(None),
-        Err(error) => Err(ZsuiError::host(
-            "linux_direct_read_clipboard",
-            error.to_string(),
-        )),
-    }
+    crate::native_clipboard::arboard_read_clipboard("linux_direct_read_clipboard")
 }
 
 #[cfg(feature = "clipboard")]
 pub(crate) fn linux_direct_write_clipboard(data: &crate::ClipboardData) -> ZsuiResult<()> {
-    let mut clipboard = arboard::Clipboard::new()
-        .map_err(|error| ZsuiError::host("linux_direct_write_clipboard", error.to_string()))?;
-    match data {
-        crate::ClipboardData::Text(text) => clipboard
-            .set_text(text.clone())
-            .map_err(|error| ZsuiError::host("linux_direct_write_clipboard", error.to_string())),
-        crate::ClipboardData::Empty => clipboard
-            .clear()
-            .map_err(|error| ZsuiError::host("linux_direct_write_clipboard", error.to_string())),
-        crate::ClipboardData::ImageRgba { .. } => Err(ZsuiError::unsupported(
-            "clipboard_image",
-            "the lightweight Linux backend currently exposes text clipboard data",
-        )),
-        crate::ClipboardData::Files(_) => Err(ZsuiError::unsupported(
-            "clipboard_files",
-            "the lightweight Linux backend currently exposes text clipboard data",
-        )),
-    }
+    crate::native_clipboard::arboard_write_clipboard("linux_direct_write_clipboard", data)
 }
 
 #[cfg(test)]

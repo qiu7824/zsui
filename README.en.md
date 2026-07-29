@@ -783,9 +783,10 @@ assert!(report.is_valid());
   `zsui_rust_first_goal_names()`
 
 `MemoryHost` is the deterministic test backend. `PlatformHost` is a small
-scaffold for the current target that records declarations and bridges text
-clipboard access when the `clipboard` feature is enabled. Without that feature
-it falls back to in-memory clipboard storage.
+scaffold for the current target that records declarations and bridges UTF-8
+text plus validated RGBA image clipboard access when the `clipboard` feature
+is enabled. Clipboard file lists remain explicitly unsupported. Without that
+feature it falls back to in-memory clipboard storage.
 
 ## Repository Shape
 
