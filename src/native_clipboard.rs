@@ -34,19 +34,39 @@ pub(crate) fn native_clipboard_text_write(
 }
 
 #[cfg(feature = "clipboard")]
+fn arboard_read_image(
+    operation: &'static str,
+    clipboard: &mut arboard::Clipboard,
+) -> ZsuiResult<Option<ClipboardData>> {
+    const IMAGE_READ_ATTEMPTS: usize = 4;
+    const IMAGE_READ_RETRY_MS: u64 = 8;
+
+    for attempt in 0..IMAGE_READ_ATTEMPTS {
+        match clipboard.get_image() {
+            Ok(image) => {
+                let bytes = image.bytes.into_owned();
+                return ClipboardData::image_rgba(image.width, image.height, bytes).map(Some);
+            }
+            Err(arboard::Error::ContentNotAvailable)
+                if attempt + 1 < IMAGE_READ_ATTEMPTS =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(IMAGE_READ_RETRY_MS));
+            }
+            Err(arboard::Error::ContentNotAvailable) => return Ok(None),
+            Err(error) => return Err(ZsuiError::host(operation, error.to_string())),
+        }
+    }
+
+    Ok(None)
+}
+
+#[cfg(feature = "clipboard")]
 pub(crate) fn arboard_read_clipboard(operation: &'static str) -> ZsuiResult<Option<ClipboardData>> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
     match clipboard.get_text() {
         Ok(text) => Ok(Some(ClipboardData::Text(text))),
-        Err(arboard::Error::ContentNotAvailable) => match clipboard.get_image() {
-            Ok(image) => {
-                let bytes = image.bytes.into_owned();
-                ClipboardData::image_rgba(image.width, image.height, bytes).map(Some)
-            }
-            Err(arboard::Error::ContentNotAvailable) => Ok(None),
-            Err(error) => Err(ZsuiError::host(operation, error.to_string())),
-        },
+        Err(arboard::Error::ContentNotAvailable) => arboard_read_image(operation, &mut clipboard),
         Err(error) => Err(ZsuiError::host(operation, error.to_string())),
     }
 }
@@ -63,14 +83,7 @@ pub(crate) fn arboard_read_clipboard_image(
 ) -> ZsuiResult<Option<ClipboardData>> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
-    match clipboard.get_image() {
-        Ok(image) => {
-            let bytes = image.bytes.into_owned();
-            ClipboardData::image_rgba(image.width, image.height, bytes).map(Some)
-        }
-        Err(arboard::Error::ContentNotAvailable) => Ok(None),
-        Err(error) => Err(ZsuiError::host(operation, error.to_string())),
-    }
+    arboard_read_image(operation, &mut clipboard)
 }
 
 #[cfg(all(
