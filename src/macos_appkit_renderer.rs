@@ -1544,6 +1544,29 @@ fn appkit_menu_flyout_path_identifier(path: crate::ZsMenuFlyoutPath) -> String {
 }
 
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+fn expected_appkit_menu_flyout_tree_paths(
+    snapshot: &crate::native_menu_accessibility::NativeMenuFlyoutAccessibilitySnapshot,
+    parent_path: Option<crate::ZsMenuFlyoutPath>,
+) -> Vec<String> {
+    let mut paths = Vec::new();
+    for item in snapshot
+        .items
+        .iter()
+        .filter(|item| item.path().parent() == parent_path)
+    {
+        paths.push(format!(
+            "zsui-menu-flyout-item-{}",
+            appkit_menu_flyout_path_identifier(item.path())
+        ));
+        paths.extend(expected_appkit_menu_flyout_tree_paths(
+            snapshot,
+            Some(item.path()),
+        ));
+    }
+    paths
+}
+
+#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 #[derive(Default)]
 struct AppKitMenuAccessibilityTreeCounts {
     node_count: usize,
@@ -1742,16 +1765,7 @@ impl MacosAppKitDrawViewHost {
                     .iter()
                     .filter(|item| item.expanded() == Some(true))
                     .count();
-                let expected_paths = snapshot
-                    .items
-                    .iter()
-                    .map(|item| {
-                        format!(
-                            "zsui-menu-flyout-item-{}",
-                            appkit_menu_flyout_path_identifier(item.path())
-                        )
-                    })
-                    .collect();
+                let expected_paths = expected_appkit_menu_flyout_tree_paths(&snapshot, None);
                 return Some(MacosAppKitAccessibilityEvidence {
                     node_count: evidence.node_count.saturating_add(1),
                     expected_node_count: snapshot.items.len().saturating_add(1),
