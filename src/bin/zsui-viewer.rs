@@ -438,25 +438,12 @@ fn run_smoke(
                 format!("workbench_shell {node_id:?} did not expose a Composer TextEditor"),
             )
         })?;
-        let y = editor.bounds.y + editor.bounds.height / 2;
-        let padding = (editor.bounds.height / 4).max(4);
-        let left = editor.bounds.x.saturating_add(padding);
-        let right = editor
-            .bounds
-            .x
-            .saturating_add(editor.bounds.width.saturating_sub(padding));
-        let focus = Point { x: left, y };
-        let selection_start = Point {
-            x: right.min(left.saturating_add((editor.bounds.width / 2).max(24))),
-            y,
-        };
-        let selection_end = Point { x: left, y };
         options = options
-            .native_view_click(focus)
+            .native_view_click_widget(editor.widget)
             .native_view_text_input("中文 אבג e\u{301} 👩\u{200d}💻")
             .native_view_key_down(NativeViewKey::Home)
             .native_view_key_down(NativeViewKey::Right)
-            .native_view_drag(selection_start, selection_end);
+            .native_view_drag_widget(editor.widget);
     }
     if let Some(node_id) = smoke_items_repeater_drag {
         let widget = zsui::ui_document::UiNodeId::new(node_id)

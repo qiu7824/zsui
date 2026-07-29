@@ -28,6 +28,44 @@ pub(crate) fn windows_win32_view_input_route(
         .map(WindowsWin32ViewInputRoute::from_shared_runtime)
 }
 
+pub(crate) fn resolve_windows_win32_view_smoke_input(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    input: &crate::NativeViewSmokeInput,
+) -> crate::NativeViewSmokeInput {
+    let points = window_view_input_routes()
+        .lock()
+        .ok()
+        .and_then(|routes| {
+            routes
+                .iter()
+                .find(|record| record.hwnd == hwnd as isize)
+                .and_then(|record| match input {
+                    crate::NativeViewSmokeInput::ClickWidget(widget)
+                    | crate::NativeViewSmokeInput::DragWidget(widget) => record
+                        .route
+                        .shared_runtime
+                        .native_proof_widget_points(*widget),
+                    _ => None,
+                })
+        });
+    match (input, points) {
+        (crate::NativeViewSmokeInput::ClickWidget(_), Some((point, _, _))) => {
+            crate::NativeViewSmokeInput::Click(point)
+        }
+        (crate::NativeViewSmokeInput::DragWidget(_), Some((_, start, end))) => {
+            crate::NativeViewSmokeInput::Drag { start, end }
+        }
+        (crate::NativeViewSmokeInput::ClickWidget(_), None) => {
+            crate::NativeViewSmokeInput::Click(crate::Point { x: 0, y: 0 })
+        }
+        (crate::NativeViewSmokeInput::DragWidget(_), None) => crate::NativeViewSmokeInput::Drag {
+            start: crate::Point { x: 0, y: 0 },
+            end: crate::Point { x: 0, y: 0 },
+        },
+        _ => input.clone(),
+    }
+}
+
 impl WindowsWin32ViewInputRoute {
     pub fn new(
         interaction_plan: ViewInteractionPlan,

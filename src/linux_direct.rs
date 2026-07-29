@@ -1016,6 +1016,18 @@ impl LinuxDirectWindow {
                 let report = self.runtime.dispatch_pointer_up(*point);
                 reports.push(self.apply_report(report, event_loop));
             }
+            crate::NativeViewSmokeInput::ClickWidget(widget) => {
+                if let Some((point, _, _)) = self.runtime.native_proof_widget_points(*widget) {
+                    self.cursor = point;
+                    let report = self.runtime.dispatch_pointer_down(point, false);
+                    reports.push(self.apply_report(report, event_loop));
+                    let report = self.runtime.dispatch_pointer_up(point);
+                    reports.push(self.apply_report(report, event_loop));
+                } else {
+                    reports.push(Default::default());
+                    reports.push(Default::default());
+                }
+            }
             crate::NativeViewSmokeInput::Drag { start, end } => {
                 self.cursor = *start;
                 let report = self.runtime.dispatch_pointer_down(*start, false);
@@ -1025,6 +1037,22 @@ impl LinuxDirectWindow {
                 reports.push(self.apply_report(report, event_loop));
                 let report = self.runtime.dispatch_pointer_up(*end);
                 reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::DragWidget(widget) => {
+                if let Some((_, start, end)) = self.runtime.native_proof_widget_points(*widget) {
+                    self.cursor = start;
+                    let report = self.runtime.dispatch_pointer_down(start, false);
+                    reports.push(self.apply_report(report, event_loop));
+                    self.cursor = end;
+                    let report = self.runtime.dispatch_pointer_move(end);
+                    reports.push(self.apply_report(report, event_loop));
+                    let report = self.runtime.dispatch_pointer_up(end);
+                    reports.push(self.apply_report(report, event_loop));
+                } else {
+                    reports.push(Default::default());
+                    reports.push(Default::default());
+                    reports.push(Default::default());
+                }
             }
             crate::NativeViewSmokeInput::PointerDrag {
                 start,

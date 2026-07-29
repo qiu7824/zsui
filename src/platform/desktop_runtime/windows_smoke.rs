@@ -188,11 +188,13 @@ fn post_windows_native_view_input(
             PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
             PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam);
         },
+        NativeViewSmokeInput::ClickWidget(_) => {}
         NativeViewSmokeInput::Drag { start, end } => unsafe {
             PostMessageW(hwnd, WM_LBUTTONDOWN, 0, windows_lparam_from_point(*start));
             PostMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*end));
             PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*end));
         },
+        NativeViewSmokeInput::DragWidget(_) => {}
         NativeViewSmokeInput::PointerDrag {
             start,
             end,
@@ -580,7 +582,11 @@ fn run_native_window_smoke_event_loop(
         }
     } else {
         for input in &options.native_view_inputs {
-            post_windows_native_view_input(handles[0].main(), input);
+            let resolved = crate::windows_win32_host::resolve_windows_win32_view_smoke_input(
+                handles[0].main(),
+                input,
+            );
+            post_windows_native_view_input(handles[0].main(), &resolved);
         }
     }
 

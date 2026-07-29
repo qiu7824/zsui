@@ -746,10 +746,20 @@ impl NativeViewKey {
 pub enum NativeViewSmokeInput {
     Move(Point),
     Click(Point),
+    /// Click the current bounds of a semantic widget after native layout.
+    ///
+    /// Native proof windows may be constrained by the runner's available
+    /// desktop area, so points calculated before the platform creates the
+    /// window can be stale. The platform host resolves this target against
+    /// its live interaction plan immediately before dispatch.
+    ClickWidget(crate::WidgetId),
     Drag {
         start: Point,
         end: Point,
     },
+    /// Drag across the current bounds of a semantic widget after native
+    /// layout. The host chooses stable interior points for the drag.
+    DragWidget(crate::WidgetId),
     PointerDrag {
         start: Point,
         end: Point,
@@ -934,6 +944,12 @@ impl NativeWindowSmokeRunOptions {
         self
     }
 
+    pub fn native_view_click_widget(mut self, widget: crate::WidgetId) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::ClickWidget(widget));
+        self
+    }
+
     pub fn native_view_pointer_move(mut self, point: Point) -> Self {
         self.native_view_inputs
             .push(NativeViewSmokeInput::Move(point));
@@ -950,6 +966,12 @@ impl NativeWindowSmokeRunOptions {
     pub fn native_view_drag(mut self, start: Point, end: Point) -> Self {
         self.native_view_inputs
             .push(NativeViewSmokeInput::Drag { start, end });
+        self
+    }
+
+    pub fn native_view_drag_widget(mut self, widget: crate::WidgetId) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::DragWidget(widget));
         self
     }
 
@@ -1955,6 +1977,31 @@ impl NativeViewInputRuntime {
             .as_ref()
             .map(ViewInteractionPlan::hit_target_count)
             .unwrap_or(0)
+    }
+
+    pub(crate) fn native_proof_widget_points(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(Point, Point, Point)> {
+        let bounds = self
+            .current_interaction_plan()?
+            .hit_target_for_widget(widget)?
+            .bounds;
+        let y = bounds.y + (bounds.height / 2).max(1);
+        let inset = (bounds.width / 4).max(4);
+        let left = bounds.x.saturating_add(inset);
+        let right = bounds
+            .x
+            .saturating_add(bounds.width.saturating_sub(inset))
+            .max(left);
+        Some((
+            Point {
+                x: bounds.x + (bounds.width / 2).max(1),
+                y,
+            },
+            Point { x: right, y },
+            Point { x: left, y },
+        ))
     }
 
     pub(crate) fn current_interaction_plan(&self) -> Option<ViewInteractionPlan> {
@@ -8148,8 +8195,10 @@ pub(crate) fn native_view_smoke_input_dispatch_count(inputs: &[NativeViewSmokeIn
     inputs
         .iter()
         .map(|input| match input {
-            NativeViewSmokeInput::Click(_) => 2,
-            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. } => 3,
+            NativeViewSmokeInput::Click(_) | NativeViewSmokeInput::ClickWidget(_) => 2,
+            NativeViewSmokeInput::Drag { .. }
+            | NativeViewSmokeInput::DragWidget(_)
+            | NativeViewSmokeInput::PointerDrag { .. } => 3,
             _ => 1,
         })
         .sum()
@@ -8166,8 +8215,10 @@ pub(crate) fn record_native_view_input_reports(
     let mut dispatch_index: usize = 0;
     for input in inputs {
         let dispatch_count = match input {
-            NativeViewSmokeInput::Click(_) => 2,
-            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. } => 3,
+            NativeViewSmokeInput::Click(_) | NativeViewSmokeInput::ClickWidget(_) => 2,
+            NativeViewSmokeInput::Drag { .. }
+            | NativeViewSmokeInput::DragWidget(_)
+            | NativeViewSmokeInput::PointerDrag { .. } => 3,
             _ => 1,
         };
         let end = dispatch_index
@@ -8186,7 +8237,9 @@ pub(crate) fn record_native_view_input_reports(
             if event_count >= 3
                 && matches!(
                     input,
-                    NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. }
+                    NativeViewSmokeInput::Drag { .. }
+                        | NativeViewSmokeInput::DragWidget(_)
+                        | NativeViewSmokeInput::PointerDrag { .. }
                 )
                 && input_dispatches
                     .last()
@@ -8198,7 +8251,9 @@ pub(crate) fn record_native_view_input_reports(
         #[cfg(feature = "virtual-list")]
         if matches!(
             input,
-            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::PointerDrag { .. }
+            NativeViewSmokeInput::Drag { .. }
+                | NativeViewSmokeInput::DragWidget(_)
+                | NativeViewSmokeInput::PointerDrag { .. }
         ) && input_dispatches
             .iter()
             .any(|dispatch| dispatch.items_repeater_scrollbar_drag_active)
@@ -8214,12 +8269,12 @@ pub(crate) fn record_native_view_input_reports(
 
         match input {
             NativeViewSmokeInput::Move(_) => report.native_view_pointer_move_count += 1,
-            NativeViewSmokeInput::Click(_) => {
+            NativeViewSmokeInput::Click(_) | NativeViewSmokeInput::ClickWidget(_) => {
                 report.native_view_click_count += 1;
                 report.native_view_pointer_down_count += 1;
                 report.native_view_pointer_up_count += 1;
             }
-            NativeViewSmokeInput::Drag { .. } => {
+            NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::DragWidget(_) => {
                 report.native_view_pointer_down_count += 1;
                 report.native_view_pointer_move_count += 1;
                 report.native_view_pointer_up_count += 1;
@@ -8278,8 +8333,8 @@ pub(crate) fn record_native_view_input_reports(
             "{backend}_proof_input:{}:{}",
             match input {
                 NativeViewSmokeInput::Move(_) => "move",
-                NativeViewSmokeInput::Click(_) => "click",
-                NativeViewSmokeInput::Drag { .. } => "drag",
+                NativeViewSmokeInput::Click(_) | NativeViewSmokeInput::ClickWidget(_) => "click",
+                NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::DragWidget(_) => "drag",
                 NativeViewSmokeInput::PointerDrag { .. } => "pointer_drag",
                 NativeViewSmokeInput::Text(_) => "text",
                 NativeViewSmokeInput::KeyDown(_) => "key_down",

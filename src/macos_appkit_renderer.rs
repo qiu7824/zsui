@@ -1843,6 +1843,34 @@ impl MacosAppKitDrawViewHost {
                         .dispatch_pointer_up(*point);
                     dispatch(up, &mut reports);
                 }
+                crate::NativeViewSmokeInput::ClickWidget(widget) => {
+                    let point = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow()
+                        .native_proof_widget_points(*widget)
+                        .map(|points| points.0);
+                    if let Some(point) = point {
+                        let down = self
+                            .view
+                            .ivars()
+                            .runtime
+                            .borrow_mut()
+                            .dispatch_pointer_down(point, false);
+                        dispatch(down, &mut reports);
+                        let up = self
+                            .view
+                            .ivars()
+                            .runtime
+                            .borrow_mut()
+                            .dispatch_pointer_up(point);
+                        dispatch(up, &mut reports);
+                    } else {
+                        reports.push(Default::default());
+                        reports.push(Default::default());
+                    }
+                }
                 crate::NativeViewSmokeInput::Drag { start, end } => {
                     let down = self
                         .view
@@ -1865,6 +1893,41 @@ impl MacosAppKitDrawViewHost {
                         .borrow_mut()
                         .dispatch_pointer_up(*end);
                     dispatch(up, &mut reports);
+                }
+                crate::NativeViewSmokeInput::DragWidget(widget) => {
+                    let points = self
+                        .view
+                        .ivars()
+                        .runtime
+                        .borrow()
+                        .native_proof_widget_points(*widget);
+                    if let Some((_, start, end)) = points {
+                        let down = self
+                            .view
+                            .ivars()
+                            .runtime
+                            .borrow_mut()
+                            .dispatch_pointer_down(start, false);
+                        dispatch(down, &mut reports);
+                        let moved = self
+                            .view
+                            .ivars()
+                            .runtime
+                            .borrow_mut()
+                            .dispatch_pointer_move(end);
+                        dispatch(moved, &mut reports);
+                        let up = self
+                            .view
+                            .ivars()
+                            .runtime
+                            .borrow_mut()
+                            .dispatch_pointer_up(end);
+                        dispatch(up, &mut reports);
+                    } else {
+                        reports.push(Default::default());
+                        reports.push(Default::default());
+                        reports.push(Default::default());
+                    }
                 }
                 crate::NativeViewSmokeInput::PointerDrag {
                     start,
