@@ -1099,8 +1099,8 @@ mod tests {
         );
         assert_eq!(
             macos.clipboard_text.status,
-            if cfg!(feature = "macos-appkit") {
-                CapabilityStatus::Partial
+            if cfg!(all(feature = "macos-appkit", feature = "clipboard")) {
+                CapabilityStatus::Supported
             } else {
                 CapabilityStatus::Unsupported
             }
