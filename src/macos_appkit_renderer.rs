@@ -18,11 +18,11 @@ use objc2_app_kit::NSAccessibilityElement;
 use objc2_app_kit::{
     NSAccessibilityApplicationRole, NSAccessibilityButtonRole, NSAccessibilityColorWellRole,
     NSAccessibilityComboBoxRole, NSAccessibilityDateTimeAreaRole, NSAccessibilityGridRole,
-    NSAccessibilityGroupRole, NSAccessibilityHeadingRole, NSAccessibilityImageRole,
-    NSAccessibilityIncrementorRole, NSAccessibilityListRole, NSAccessibilityOutlineRole,
-    NSAccessibilityProgressIndicatorRole, NSAccessibilityRadioButtonRole, NSAccessibilityRowRole,
-    NSAccessibilitySheetRole, NSAccessibilitySliderRole, NSAccessibilityStaticTextRole,
-    NSAccessibilityTabGroupRole, NSAccessibilityTextAreaRole,
+    NSAccessibilityGroupRole, NSAccessibilityImageRole, NSAccessibilityIncrementorRole,
+    NSAccessibilityListRole, NSAccessibilityOutlineRole, NSAccessibilityProgressIndicatorRole,
+    NSAccessibilityRadioButtonRole, NSAccessibilityRowRole, NSAccessibilitySheetRole,
+    NSAccessibilitySliderRole, NSAccessibilityStaticTextRole, NSAccessibilityTabGroupRole,
+    NSAccessibilityTextAreaRole,
 };
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 use objc2_app_kit::{NSAccessibilityMenuItemRole, NSAccessibilityMenuRole};
@@ -1056,7 +1056,11 @@ fn appkit_semantic_accessibility_role(role: crate::ZsAccessibilityRole) -> Retai
             }
             crate::ZsAccessibilityRole::Dialog => NSAccessibilitySheetRole,
             crate::ZsAccessibilityRole::Grid => NSAccessibilityGridRole,
-            crate::ZsAccessibilityRole::Heading => NSAccessibilityHeadingRole,
+            crate::ZsAccessibilityRole::Heading => {
+                // macOS 15 does not export the newer AppKit constant, while
+                // the accessibility role token itself remains stable.
+                return NSString::from_str("AXHeading");
+            }
             crate::ZsAccessibilityRole::Image => NSAccessibilityImageRole,
             crate::ZsAccessibilityRole::List => NSAccessibilityListRole,
             crate::ZsAccessibilityRole::ListItem => NSAccessibilityRowRole,
