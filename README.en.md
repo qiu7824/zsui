@@ -8,7 +8,7 @@ Compose with traits, route typed messages, and compile only the controls,
 services, and platform backends an application enables.
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.6-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.7-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -37,7 +37,7 @@ renderer or maintain three component trees.
 <table>
   <tr><th>Windows · Win32</th></tr>
   <tr>
-    <td><img src="docs/images/component-gallery-preview4-inputs.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
+    <td><img src="docs/images/component-gallery-preview7-windows.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
   </tr>
   <tr>
     <td align="center">Fluent navigation and cards</td>
@@ -422,7 +422,7 @@ Use a small feature set when embedding ZSUI into another Rust app:
 
 ```toml
 [dependencies]
-zsui = { version = "0.2.0-preview.6", default-features = false, features = [
+zsui = { version = "0.2.0-preview.7", default-features = false, features = [
     "window",
     "button",
     "toggle",

@@ -7,7 +7,7 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.6-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0--preview.7-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -34,7 +34,7 @@ Win32、AppKit 与 Linux 的组合规则、文字栈、渲染器、窗口宿主�
 <table>
   <tr><th>Windows · Win32</th></tr>
   <tr>
-    <td><img src="docs/images/component-gallery-preview4-inputs.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
+    <td><img src="docs/images/component-gallery-preview7-windows.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
   </tr>
   <tr>
     <td align="center">Fluent 导航与卡片</td>
@@ -603,7 +603,7 @@ let response = NativeDesktopDialogService::new().show_native_dialog(
 
 ```toml
 [dependencies]
-zsui = { version = "0.2.0-preview.6", default-features = false, features = [
+zsui = { version = "0.2.0-preview.7", default-features = false, features = [
     "window",
     "button",
     "label",
@@ -616,7 +616,7 @@ zsui = { version = "0.2.0-preview.6", default-features = false, features = [
 高级能力独立开启：
 
 ```toml
-zsui = { version = "0.2.0-preview.6", default-features = false, features = [
+zsui = { version = "0.2.0-preview.7", default-features = false, features = [
     "workbench",
     "document-shell",
     "calculator",

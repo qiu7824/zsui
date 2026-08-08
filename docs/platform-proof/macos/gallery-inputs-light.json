@@ -3,6 +3,7 @@
   "architecture": "arm64",
   "backend": "appkit",
   "capture_backend": "appkit_nsview_bitmap_cache",
+  "display_server": null,
   "errors": [],
   "focused_widget": "widget-109",
   "messages": [
@@ -14,16 +15,17 @@
   "platform": "macos",
   "process_memory": {
     "peak_private_bytes": null,
-    "peak_resident_bytes": 79921152,
+    "peak_resident_bytes": 81625088,
     "private_bytes": null,
-    "resident_bytes": 79921152,
-    "sample_point": "proof_document_serialization",
+    "proportional_set_size_bytes": null,
+    "resident_bytes": 81625088,
+    "sample_point": "native_window_before_teardown",
     "source": "macos_mach_task_basic_info",
-    "virtual_bytes": 421191057408
+    "virtual_bytes": 421202198528
   },
   "runner": {
     "image_os": "macos15",
-    "image_version": "20260715.0234.1"
+    "image_version": "20260727.0256.1"
   },
   "runtime": {
     "auto_close_after_ms": 1500,
@@ -39,11 +41,16 @@
       "appkit_proof_input:click:handled",
       "appkit_proof_input:click:handled",
       "appkit_proof_input:click:handled",
+      "native_accessibility_bridge:appkit_nsaccessibility:nodes=13",
       "screenshot_captured:target/native-proof/macos-15-arm64/gallery-inputs-light.png",
-      "screenshot_backend:appkit_nsview_bitmap_cache"
+      "screenshot_backend:appkit_nsview_bitmap_cache",
+      "appkit_accessibility_tree:nodes=13/13,checked=0/0,expanded=0/0,paths=[\"zsui-semantic-10\", \"zsui-semantic-11\", \"zsui-semantic-12\", \"zsui-semantic-13\", \"zsui-semantic-14\", \"zsui-semantic-100\", \"zsui-semantic-12431010179962342908\", \"zsui-semantic-13039666780819232834\", \"zsui-semantic-10660296169359434339\", \"zsui-semantic-10632412327971001877\", \"zsui-semantic-13011782939430800372\", \"zsui-semantic-101\", \"zsui-semantic-12120825222583453415\"]/[\"zsui-semantic-10\", \"zsui-semantic-11\", \"zsui-semantic-12\", \"zsui-semantic-13\", \"zsui-semantic-14\", \"zsui-semantic-100\", \"zsui-semantic-12431010179962342908\", \"zsui-semantic-13039666780819232834\", \"zsui-semantic-10660296169359434339\", \"zsui-semantic-10632412327971001877\", \"zsui-semantic-13011782939430800372\", \"zsui-semantic-101\", \"zsui-semantic-12120825222583453415\"]"
     ],
     "exited_by_auto_close": true,
     "high_contrast_draw_plan_window_count": 0,
+    "native_accessibility_action_count": 0,
+    "native_accessibility_backend": "appkit_nsaccessibility",
+    "native_accessibility_node_count": 13,
     "native_view_app_command_count": 0,
     "native_view_app_command_errors": [],
     "native_view_app_command_event_count": 0,
@@ -58,8 +65,11 @@
     "native_view_breadcrumb_expanded_change_count": 0,
     "native_view_breadcrumb_focus_count": 0,
     "native_view_breadcrumb_selection_count": 0,
+    "native_view_canvas_pointer_drag_count": 0,
+    "native_view_canvas_pointer_event_count": 0,
     "native_view_capture": {
       "backend": "appkit_nsview_bitmap_cache",
+      "display_server": null,
       "logical_height": 640,
       "logical_width": 1024,
       "pixel_height": 640,
@@ -111,13 +121,19 @@
     "native_view_focused_widget": 109,
     "native_view_grid_view_invoke_count": 0,
     "native_view_grid_view_selection_count": 0,
-    "native_view_hit_target_count": 17,
+    "native_view_hit_target_count": 26,
     "native_view_info_bar_event_count": 0,
     "native_view_info_bar_focus_count": 0,
+    "native_view_items_repeater_scrollbar_drag_count": 0,
+    "native_view_items_repeater_viewport_change_count": 0,
     "native_view_key_down_count": 0,
     "native_view_keyboard_activation_count": 0,
     "native_view_keyboard_selection_count": 0,
     "native_view_live_revision": 0,
+    "native_view_menu_flyout_highlight_change_count": 0,
+    "native_view_menu_flyout_invoke_count": 0,
+    "native_view_menu_flyout_open_change_count": 0,
+    "native_view_menu_flyout_submenu_change_count": 0,
     "native_view_message_count": 3,
     "native_view_pointer_down_count": 3,
     "native_view_pointer_move_count": 0,
@@ -128,6 +144,7 @@
     "native_view_radio_keyboard_selection_count": 0,
     "native_view_radio_selection_count": 0,
     "native_view_scroll_count": 0,
+    "native_view_scrollbar_drag_count": 0,
     "native_view_selection_count": 0,
     "native_view_slider_drag_count": 0,
     "native_view_slider_keyboard_change_count": 0,
@@ -148,7 +165,10 @@
     "native_view_text_edit_command_count": 0,
     "native_view_text_edit_command_errors": [],
     "native_view_text_input_count": 0,
+    "native_view_text_input_script_evidence": [],
     "native_view_text_navigation_count": 0,
+    "native_view_text_navigation_evidence": [],
+    "native_view_text_selection": null,
     "native_view_text_selection_change_count": 0,
     "native_view_text_undo_count": 0,
     "native_view_toast_focus_count": 0,
@@ -170,6 +190,19 @@
     "native_view_unhandled_scroll_count": 0,
     "native_view_window_close_request_count": 0,
     "native_view_window_close_veto_count": 0,
+    "native_window_resize": null,
+    "native_window_resize_error": null,
+    "native_window_resize_required": false,
+    "process_memory_during_runtime": {
+      "peak_private_bytes": null,
+      "peak_resident_bytes": 81625088,
+      "private_bytes": null,
+      "proportional_set_size_bytes": null,
+      "resident_bytes": 81625088,
+      "sample_point": "native_window_before_teardown",
+      "source": "macos_mach_task_basic_info",
+      "virtual_bytes": 421202198528
+    },
     "requested_window_count": 1,
     "screenshot_captured": true,
     "screenshot_error": null,
@@ -192,7 +225,10 @@
     "window_menu_command_error": null,
     "window_menu_command_routed": false,
     "window_menu_native_command_count": 0,
-    "window_menu_requested_count": 0
+    "window_menu_requested_count": 0,
+    "window_menu_surface_created": false,
+    "window_menu_surface_height": 0,
+    "window_menu_surface_open_at_capture": false
   },
   "scale_factor": 1.0,
   "scenario": "gallery-inputs-light",
@@ -229,7 +265,7 @@
       "role": "button",
       "width": 216,
       "x": 12,
-      "y": 59
+      "y": 53
     },
     {
       "enabled": true,
@@ -239,7 +275,7 @@
       "role": "button",
       "width": 216,
       "x": 12,
-      "y": 89
+      "y": 83
     },
     {
       "enabled": true,
@@ -249,7 +285,7 @@
       "role": "button",
       "width": 216,
       "x": 12,
-      "y": 119
+      "y": 113
     },
     {
       "enabled": true,
@@ -259,7 +295,7 @@
       "role": "button",
       "width": 216,
       "x": 12,
-      "y": 149
+      "y": 143
     },
     {
       "enabled": true,
@@ -269,7 +305,17 @@
       "role": "button",
       "width": 216,
       "x": 12,
-      "y": 179
+      "y": 173
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 28,
+      "id": "widget-11432376772278951810",
+      "role": "toggle",
+      "width": 42,
+      "x": 186,
+      "y": 585
     },
     {
       "enabled": true,
@@ -279,7 +325,17 @@
       "role": "button",
       "width": 144,
       "x": 260,
-      "y": 98
+      "y": 102
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 28,
+      "id": "widget-12431010179962342908",
+      "role": "toggle_button",
+      "width": 130,
+      "x": 416,
+      "y": 102
     },
     {
       "enabled": true,
@@ -289,7 +345,7 @@
       "role": "checkbox",
       "width": 226,
       "x": 260,
-      "y": 134
+      "y": 138
     },
     {
       "enabled": true,
@@ -298,8 +354,48 @@
       "id": "widget-109",
       "role": "toggle",
       "width": 42,
-      "x": 582,
-      "y": 164
+      "x": 616,
+      "y": 168
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 28,
+      "id": "widget-11279019682668043292",
+      "role": "toggle",
+      "width": 42,
+      "x": 616,
+      "y": 204
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 22,
+      "id": "widget-10342025948236773145",
+      "role": "radio_button",
+      "width": 140,
+      "x": 260,
+      "y": 240
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 22,
+      "id": "widget-12721396559696571640",
+      "role": "radio_button",
+      "width": 160,
+      "x": 412,
+      "y": 240
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 28,
+      "id": "widget-13039666780819232834",
+      "role": "slider",
+      "width": 398,
+      "x": 260,
+      "y": 294
     },
     {
       "enabled": true,
@@ -307,9 +403,9 @@
       "height": 28,
       "id": "widget-101",
       "role": "textbox",
-      "width": 364,
-      "x": 640,
-      "y": 98
+      "width": 330,
+      "x": 674,
+      "y": 102
     },
     {
       "enabled": true,
@@ -317,9 +413,9 @@
       "height": 28,
       "id": "widget-102",
       "role": "password_box",
-      "width": 364,
-      "x": 640,
-      "y": 134
+      "width": 330,
+      "x": 674,
+      "y": 138
     },
     {
       "enabled": true,
@@ -329,7 +425,37 @@
       "role": "password_box_reveal",
       "width": 28,
       "x": 976,
-      "y": 134
+      "y": 138
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 28,
+      "id": "widget-12120825222583453415",
+      "role": "number_box",
+      "width": 330,
+      "x": 674,
+      "y": 174
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 14,
+      "id": "widget-12120825222583453415",
+      "role": "number_box_decrement",
+      "width": 18,
+      "x": 986,
+      "y": 188
+    },
+    {
+      "enabled": true,
+      "focused": false,
+      "height": 14,
+      "id": "widget-12120825222583453415",
+      "role": "number_box_increment",
+      "width": 18,
+      "x": 986,
+      "y": 174
     },
     {
       "enabled": true,
@@ -337,9 +463,9 @@
       "height": 28,
       "id": "widget-103",
       "role": "auto_suggest_box",
-      "width": 364,
-      "x": 640,
-      "y": 206
+      "width": 330,
+      "x": 674,
+      "y": 210
     },
     {
       "enabled": true,
@@ -348,8 +474,8 @@
       "id": "widget-103",
       "role": "auto_suggest_search",
       "width": 24,
-      "x": 640,
-      "y": 206
+      "x": 674,
+      "y": 210
     },
     {
       "enabled": true,
@@ -357,9 +483,9 @@
       "height": 28,
       "id": "widget-104",
       "role": "combo_box",
-      "width": 364,
-      "x": 640,
-      "y": 242
+      "width": 330,
+      "x": 674,
+      "y": 246
     },
     {
       "enabled": true,
@@ -367,9 +493,9 @@
       "height": 28,
       "id": "widget-105",
       "role": "date_picker",
-      "width": 364,
-      "x": 640,
-      "y": 278
+      "width": 330,
+      "x": 674,
+      "y": 282
     },
     {
       "enabled": true,
@@ -377,9 +503,9 @@
       "height": 28,
       "id": "widget-106",
       "role": "time_picker",
-      "width": 364,
-      "x": 640,
-      "y": 314
+      "width": 330,
+      "x": 674,
+      "y": 318
     },
     {
       "enabled": true,
@@ -387,9 +513,9 @@
       "height": 28,
       "id": "widget-107",
       "role": "color_picker",
-      "width": 364,
-      "x": 640,
-      "y": 350
+      "width": 330,
+      "x": 674,
+      "y": 354
     }
   ],
   "window": {
