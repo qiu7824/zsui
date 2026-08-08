@@ -680,6 +680,7 @@ jobs:
             end tell
           end tell
           APPLESCRIPT
+          )
           screencapture -x -R"$geometry" "$screenshot"
           osascript <<'APPLESCRIPT'
           tell application "System Events"
@@ -1274,7 +1275,12 @@ jobs:
               echo "the Linux desktop dialog did not become visible" >&2
               exit 1
             fi
+            xdotool windowraise "$window" 2>/dev/null || true
+            sleep 0.5
             import -window "$window" "$screenshot"
+            if [ ! -s "$screenshot" ] || [ "$(stat --format=%s "$screenshot")" -lt 1024 ]; then
+              import -window root "$screenshot"
+            fi
             xdotool key --window "$window" Return
             wait "$dialog_pid"
           '
