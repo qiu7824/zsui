@@ -819,6 +819,15 @@ fn appkit_run_alert(alert: &NSAlert, owner: Option<&NSWindow>) -> objc2_app_kit:
 
 fn appkit_active_file_dialog_owner(mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
     let application = NSApplication::sharedApplication(mtm);
+    // Command-line tools can call desktop services before a ZSUI window host
+    // exists. In that case AppKit starts the process with a prohibited
+    // activation policy, so NSAlert/NSPanel may run modally without becoming a
+    // visible desktop application. Promote the process before resolving an
+    // owner; established GUI applications already use this policy and are
+    // unaffected.
+    application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    #[allow(deprecated)]
+    application.activateIgnoringOtherApps(true);
     application.keyWindow().or_else(|| application.mainWindow())
 }
 

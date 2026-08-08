@@ -648,7 +648,16 @@ jobs:
           dialog_pid=$!
 
           appkit_dialog_ready() {
-            osascript -e 'tell application "System Events" to tell process "native_dialog_smoke" to exists window 1'
+            osascript - "$dialog_pid" <<'APPLESCRIPT'
+          on run argv
+            set dialog_pid to item 1 of argv as integer
+            tell application "System Events"
+              tell first process whose unix id is dialog_pid
+                return exists window 1
+              end tell
+            end tell
+          end run
+          APPLESCRIPT
           }
 
           ready=false
@@ -670,30 +679,36 @@ jobs:
           fi
           sleep 0.2
 
-          geometry=$(osascript <<'APPLESCRIPT'
-          tell application "System Events"
-            tell process "native_dialog_smoke"
-              tell window 1
-                set origin to position
-                set dimensions to size
-                set originX to item 1 of origin
-                set originY to item 2 of origin
-                set windowWidth to item 1 of dimensions
-                set windowHeight to item 2 of dimensions
-                return (originX as text) & "," & (originY as text) & "," & (windowWidth as text) & "," & (windowHeight as text)
+          geometry=$(osascript - "$dialog_pid" <<'APPLESCRIPT'
+          on run argv
+            set dialog_pid to item 1 of argv as integer
+            tell application "System Events"
+              tell first process whose unix id is dialog_pid
+                tell window 1
+                  set origin to position
+                  set dimensions to size
+                  set originX to item 1 of origin
+                  set originY to item 2 of origin
+                  set windowWidth to item 1 of dimensions
+                  set windowHeight to item 2 of dimensions
+                  return (originX as text) & "," & (originY as text) & "," & (windowWidth as text) & "," & (windowHeight as text)
+                end tell
               end tell
             end tell
-          end tell
+          end run
           APPLESCRIPT
           )
           screencapture -x -R"$geometry" "$screenshot"
-          osascript <<'APPLESCRIPT'
-          tell application "System Events"
-            tell process "native_dialog_smoke"
-              set frontmost to true
-              key code 36
+          osascript - "$dialog_pid" <<'APPLESCRIPT'
+          on run argv
+            set dialog_pid to item 1 of argv as integer
+            tell application "System Events"
+              tell first process whose unix id is dialog_pid
+                set frontmost to true
+                key code 36
+              end tell
             end tell
-          end tell
+          end run
           APPLESCRIPT
           wait "$dialog_pid"
 
