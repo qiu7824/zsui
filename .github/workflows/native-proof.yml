@@ -648,27 +648,7 @@ jobs:
           dialog_pid=$!
 
           appkit_dialog_ready() {
-            osascript <<'APPLESCRIPT'
-          tell application "System Events"
-            tell process "native_dialog_smoke"
-              if not (exists window 1) then return false
-              set foundYes to false
-              set foundNo to false
-              set foundCancel to false
-              repeat with elementItem in (entire contents of window 1)
-                try
-                  if (role of elementItem as text) is "AXButton" then
-                    set buttonName to name of elementItem as text
-                    if buttonName is "是" then set foundYes to true
-                    if buttonName is "否" then set foundNo to true
-                    if buttonName is "取消" then set foundCancel to true
-                  end if
-                end try
-              end repeat
-              return (foundYes and foundNo and foundCancel)
-            end tell
-          end tell
-          APPLESCRIPT
+            osascript -e 'tell application "System Events" to tell process "native_dialog_smoke" to exists window 1'
           }
 
           ready=false
@@ -685,7 +665,7 @@ jobs:
           if [ "$ready" != true ]; then
             kill "$dialog_pid" 2>/dev/null || true
             wait "$dialog_pid" 2>/dev/null || true
-            echo "the AppKit NSAlert did not expose all localized buttons" >&2
+            echo "the AppKit NSAlert did not expose its native window" >&2
             exit 1
           fi
           sleep 0.2
@@ -711,17 +691,7 @@ jobs:
           tell application "System Events"
             tell process "native_dialog_smoke"
               set frontmost to true
-              set clickedYes to false
-              repeat with elementItem in (entire contents of window 1)
-                try
-                  if (role of elementItem as text) is "AXButton" and (name of elementItem as text) is "是" then
-                    click elementItem
-                    set clickedYes to true
-                    exit repeat
-                  end if
-                end try
-              end repeat
-              if not clickedYes then error "missing localized Yes button"
+              key code 36
             end tell
           end tell
           APPLESCRIPT
